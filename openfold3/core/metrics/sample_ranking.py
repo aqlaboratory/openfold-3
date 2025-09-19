@@ -250,68 +250,99 @@ def build_chain_interface_scores(
     **ptm_kwargs: Any,
 ) -> dict[str, torch.Tensor]:
     """
-    Compute the chain-level interface scores (ipTM) for all chain pairs in the complex 
+    Compute chain-level interface scores (ipTM) for all chain pairs in the complex,
     and the interface scores (bespoke ipTM) for each chain pair.
-      Returns:
-        all_ipTM_scores: {
+
+    Returns:
+      {
+        "all_ipTM_scores": {
           "iptm": {<chain_pair_key>: [B, S]},
           "bespoke_iptm": {<chain_pair_key>: [B, S]}
         }
+      }
     """
-    pae_logits = outputs["pae_logits"]  # [B,S,N,N,Bins]
-    B, S, N, _, _ = pae_logits.shape
+    pae_logits = outputs["pae_logits"]  # [B, S, N, N, Bins]
+    batch_size, num_samples, num_tokens, _, _ = pae_logits.shape
 
-    asym_3d = _expand_sample_dim(batch["asym_id"].long(), S)  # [B,S,N]
-    token_3d = _expand_sample_dim(batch["token_mask"].bool(), S)  # [B,S,N]
-    islig_3d = _expand_sample_dim(batch["is_ligand"].bool(), S)  # [B,S,N]
+    asym_ids_3d = _expand_sample_dim(batch["asym_id"].long(), num_samples)  # [B, S, N]
+    token_mask_3d = _expand_sample_dim(
+        batch["token_mask"].bool(), num_samples
+    )  # [B, S, N]
+    is_ligand_3d = _expand_sample_dim(
+        batch["is_ligand"].bool(), num_samples
+    )  # [B, S, N]
     has_frame = (
         has_frame.bool()
         if has_frame is not None
-        else torch.ones_like(token_3d, dtype=torch.bool)
+        else torch.ones_like(token_mask_3d, dtype=torch.bool)
     )
 
     device, dtype = pae_logits.device, pae_logits.dtype
-    # Per-batch compute (compact), then pad to C_max
-    results = [
+
+    # Per-batch compute (compact), then pad to max number of chains
+    per_batch_results = [
         compute_chain_interface_scores_for_batch(
             pae_logits[b],
-            asym_3d[b],
-            token_3d[b],
-            islig_3d[b],
+            asym_ids_3d[b],
+            token_mask_3d[b],
+            is_ligand_3d[b],
             has_frame[b],
             **ptm_kwargs,
         )
-        for b in range(B)
+        for b in range(batch_size)
     ]
-    chain_lists: list[torch.Tensor] = [r[3] for r in results]
-    C_max = max((int(c.numel()) for c in chain_lists), default=0)
 
-    M = torch.full((B, S, C_max, C_max), float("nan"), dtype=dtype, device=device)
-    R = torch.full((B, S, C_max), float("nan"), dtype=dtype, device=device)
-    I = torch.full((B, S, C_max, C_max), float("nan"), dtype=dtype, device=device)
+    chain_id_lists: list[torch.Tensor] = [res[3] for res in per_batch_results]
+    max_chains = max((int(ids.numel()) for ids in chain_id_lists), default=0)
 
-    for b, (M_b, R_b, I_b, chain_ids_b) in enumerate(results):
-        C_b = int(chain_ids_b.numel())
-        if C_b == 0:
+    # Allocate padded tensors
+    pair_iptm = torch.full(
+        (batch_size, num_samples, max_chains, max_chains),
+        float("nan"),
+        dtype=dtype,
+        device=device,
+    )
+    chain_score = torch.full(
+        (batch_size, num_samples, max_chains),
+        float("nan"),
+        dtype=dtype,
+        device=device,
+    )
+    interface_score = torch.full(
+        (batch_size, num_samples, max_chains, max_chains),
+        float("nan"),
+        dtype=dtype,
+        device=device,
+    )
+
+    # Insert per-batch results into padded tensors
+    for b, (pair_iptm_b, chain_score_b, interface_score_b, chain_ids_b) in enumerate(
+        per_batch_results
+    ):
+        num_chains_b = int(chain_ids_b.numel())
+        if num_chains_b == 0:
             continue
-        M[b, :, :C_b, :C_b] = M_b
-        R[b, :, :C_b] = R_b
-        I[b, :, :C_b, :C_b] = I_b
-    # writing of the scores
+        pair_iptm[b, :, :num_chains_b, :num_chains_b] = pair_iptm_b
+        chain_score[b, :, :num_chains_b] = chain_score_b
+        interface_score[b, :, :num_chains_b, :num_chains_b] = interface_score_b
+
+    # Write per-pair outputs keyed by the chain id pair (using the first batch's order)
     all_iptm_scores = {"iptm": {}, "bespoke_iptm": {}}
-    if C_max > 1 and len(chain_lists) > 0:
-        for i in range(C_max):
-            for j in range(i + 1, C_max):
+    if max_chains > 1 and len(chain_id_lists) > 0:
+        for i in range(max_chains):
+            for j in range(i + 1, max_chains):
                 try:
-                    key = str((chain_lists[0][i].item(), chain_lists[0][j].item()))
+                    key = str(
+                        (chain_id_lists[0][i].item(), chain_id_lists[0][j].item())
+                    )
                 except Exception:
                     continue
-                all_iptm_scores["iptm"][key] = M[:, :, i, j].detach().clone()
-                all_iptm_scores["bespoke_iptm"][key] = I[:, :, i, j].detach().clone()
+                all_iptm_scores["iptm"][key] = pair_iptm[:, :, i, j].detach().clone()
+                all_iptm_scores["bespoke_iptm"][key] = (
+                    interface_score[:, :, i, j].detach().clone()
+                )
 
-    return {
-        "all_ipTM_scores": all_iptm_scores,
-    }
+    return {"all_ipTM_scores": all_iptm_scores}
 
 
 def compute_chain_interface_scores_for_batch(
@@ -319,73 +350,88 @@ def compute_chain_interface_scores_for_batch(
     asym_id_b: torch.Tensor,  # [S, N]
     token_mask_b: torch.Tensor,  # [S, N]
     is_ligand_b: torch.Tensor,  # [S, N]
-    has_frame_b: torch.Tensor,  # [S, N] or None
+    has_frame_b: torch.Tensor,  # [S, N]
     *,
-    compact_submatrix: bool = True,  # NEW: slice to A∪B for ipTM
+    compact_submatrix: bool = True,  # slice to A∪B for ipTM
     **ptm_kwargs: Any,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Returns:
-      M_b  : [S, C_b, C_b]  ipTM per chain pair (NaN on diagonal)
-      R_b  : [S, C_b]       per-chain score (mean of chain pair ipTM with row gating)
-      I_b  : [S, C_b, C_b]  interface score (ligand ⇒ R(ligand); else 0.5*(R(A)+R(B)))
-      ids  : [C_b]          chain IDs in the used order
+      pair_iptm_b      : [S, C, C]  ipTM per chain pair (NaN on diagonal)
+      chain_score_b    : [S, C]     per-chain score (mean of chain-pair ipTM with row 
+      gating)
+      interface_score_b: [S, C, C]  interface score (ligand ⇒ R(ligand); 
+      else 0.5*(R(A)+R(B)))
+      chain_ids        : [C]        chain IDs in the used order
     """
-    S, N, _, _ = pae_logits_b.shape
+    num_samples, num_tokens, _, _ = pae_logits_b.shape
     device, dtype = pae_logits_b.device, pae_logits_b.dtype
 
     # Chain IDs from sample 0 (restricted to present tokens)
-    present_s0 = token_mask_b[0]
-    chain_ids = torch.unique(asym_id_b[0][present_s0])  # [C_b]
-    C = int(chain_ids.numel())
+    present_tokens_s0 = token_mask_b[0]
+    chain_ids = torch.unique(asym_id_b[0][present_tokens_s0])  # [C]
+    num_chains = int(chain_ids.numel())
 
-    M_b = torch.full((S, C, C), float("nan"), dtype=dtype, device=device)
-    R_b = torch.full((S, C), float("nan"), dtype=dtype, device=device)
-    I_b = torch.full((S, C, C), float("nan"), dtype=dtype, device=device)
-    if C <= 1:
-        return M_b, R_b, I_b, chain_ids
+    pair_iptm_b = torch.full(
+        (num_samples, num_chains, num_chains), float("nan"), dtype=dtype, device=device
+    )
+    chain_score_b = torch.full(
+        (num_samples, num_chains), float("nan"), dtype=dtype, device=device
+    )
+    interface_score_b = torch.full(
+        (num_samples, num_chains, num_chains), float("nan"), dtype=dtype, device=device
+    )
+    if num_chains <= 1:
+        return pair_iptm_b, chain_score_b, interface_score_b, chain_ids
 
     # Chain-level ligand flags (sample 0)
-    lig_s0 = is_ligand_b[0]
-    chain_is_ligand = torch.zeros(C, dtype=torch.bool, device=device)
-    for c in range(C):
-        c_mask = (asym_id_b[0] == chain_ids[c]) & present_s0
-        chain_is_ligand[c] = (lig_s0 & c_mask).any()
+    ligand_flags_s0 = is_ligand_b[0]
+    chain_is_ligand = torch.zeros(num_chains, dtype=torch.bool, device=device)
+    for c in range(num_chains):
+        chain_token_mask_c = (asym_id_b[0] == chain_ids[c]) & present_tokens_s0
+        chain_is_ligand[c] = (ligand_flags_s0 & chain_token_mask_c).any()
 
-    lig_i = chain_is_ligand.unsqueeze(1).expand(C, C)
-    lig_j = chain_is_ligand.unsqueeze(0).expand(C, C)
-    any_lig_pair = lig_i | lig_j
-    diag_mask = torch.eye(C, dtype=torch.bool, device=device)
+    ligand_i = chain_is_ligand.unsqueeze(1).expand(num_chains, num_chains)
+    ligand_j = chain_is_ligand.unsqueeze(0).expand(num_chains, num_chains)
+    pair_has_ligand = ligand_i | ligand_j
+    diagonal_mask = torch.eye(num_chains, dtype=torch.bool, device=device)
 
     # Precompute pair union indices ONCE from sample 0
-    chain_masks0 = [(asym_id_b[0] == cid) & present_s0 for cid in chain_ids]
-    i_ix, j_ix = torch.triu_indices(C, C, offset=1, device=device)  # [P], [P]
-    P = i_ix.numel()
-    pair_token_idx = []
-    for k in range(P):
-        i, j = i_ix[k].item(), j_ix[k].item()
-        idx = torch.nonzero(chain_masks0[i] | chain_masks0[j], as_tuple=True)[
-            0
-        ]  # [n_pair]
-        pair_token_idx.append(idx)
+    chain_token_masks_s0 = [
+        (asym_id_b[0] == cid) & present_tokens_s0 for cid in chain_ids
+    ]
+    pair_i_idx, pair_j_idx = torch.triu_indices(
+        num_chains, num_chains, offset=1, device=device
+    )  # [P], [P]
+    num_pairs = pair_i_idx.numel()
+    pair_union_token_indices = []
+    for k in range(num_pairs):
+        i = pair_i_idx[k].item()
+        j = pair_j_idx[k].item()
+        union_idx = torch.nonzero(
+            chain_token_masks_s0[i] | chain_token_masks_s0[j], as_tuple=True
+        )[0]  # [n_pair]
+        pair_union_token_indices.append(union_idx)
 
-    # 1) Pair-by-pair ipTM (M_b), computed only on A∪B (compact submatrix)
-    for s in range(S):
+    # 1) Pair-by-pair ipTM (pair_iptm_b), computed only on A∪B (compact submatrix)
+    for s in range(num_samples):
         logits_s = pae_logits_b[s]  # [N, N, Bins]
         asym_s = asym_id_b[s]  # [N]
-        frame_s = has_frame_b[s]
+        frame_s = has_frame_b[s]  # [N]
 
         if compact_submatrix:
-            for k in range(P):
-                idx = pair_token_idx[k]
-                if idx.numel() < 2:
+            for k in range(num_pairs):
+                union_idx = pair_union_token_indices[k]
+                if union_idx.numel() < 2:
                     continue
                 # Slice logits/asym/has_frame to A∪B
-                sub_logits = logits_s.index_select(0, idx).index_select(1, idx)
-                sub_asym = asym_s.index_select(0, idx)
-                sub_frame = frame_s.index_select(0, idx)
+                sub_logits = logits_s.index_select(0, union_idx).index_select(
+                    1, union_idx
+                )
+                sub_asym = asym_s.index_select(0, union_idx)
+                sub_frame = frame_s.index_select(0, union_idx)
 
-                iptm = compute_ptm(
+                iptm_val = compute_ptm(
                     logits=sub_logits,
                     has_frame=sub_frame,
                     D_mask=None,  # already compacted to A∪B
@@ -393,19 +439,19 @@ def compute_chain_interface_scores_for_batch(
                     interface=True,
                     **ptm_kwargs,
                 )
-                i = i_ix[k].item()
-                j = j_ix[k].item()
-                M_b[s, i, j] = iptm
-                M_b[s, j, i] = iptm
+                i = pair_i_idx[k].item()
+                j = pair_j_idx[k].item()
+                pair_iptm_b[s, i, j] = iptm_val
+                pair_iptm_b[s, j, i] = iptm_val
         else:
             # Fallback: original full-N masking path (kept for completeness)
             chain_token_masks = [(asym_s == cid) & token_mask_b[s] for cid in chain_ids]
-            for i in range(C):
-                for j in range(i + 1, C):
+            for i in range(num_chains):
+                for j in range(i + 1, num_chains):
                     pair_mask = chain_token_masks[i] | chain_token_masks[j]
                     if pair_mask.sum() < 2:
                         continue
-                    iptm = compute_ptm(
+                    iptm_val = compute_ptm(
                         logits=logits_s,
                         has_frame=frame_s,
                         D_mask=pair_mask,
@@ -413,13 +459,13 @@ def compute_chain_interface_scores_for_batch(
                         interface=True,
                         **ptm_kwargs,
                     )
-                    M_b[s, i, j] = iptm
-                    M_b[s, j, i] = iptm
+                    pair_iptm_b[s, i, j] = iptm_val
+                    pair_iptm_b[s, j, i] = iptm_val
 
-        M_b[s, diag_mask] = float("nan")
+        pair_iptm_b[s, diagonal_mask] = float("nan")
 
-    # 2) Per-chain score R_b (row-gated mean of touching pairs)
-    for s in range(S):
+    # 2) Per-chain score chain_score_b (row-gated mean of touching pairs)
+    for s in range(num_samples):
         asym_s = asym_id_b[s]
         token_mask_s = token_mask_b[s]
         frame_s = has_frame_b[s]
@@ -427,33 +473,35 @@ def compute_chain_interface_scores_for_batch(
         row_has_frame = torch.tensor(
             [
                 ((asym_s == chain_ids[c]) & token_mask_s & frame_s).any()
-                for c in range(C)
+                for c in range(num_chains)
             ],
             dtype=torch.bool,
             device=device,
         )
 
-        for c in range(C):
-            vals = []
+        for c in range(num_chains):
+            components = []
             if row_has_frame[c]:
-                vals.append(M_b[s, c, :C])  # row c
-            vals.append(M_b[s, :C, c][row_has_frame])  # column c from rows with frames
-            v = torch.cat(vals) if len(vals) == 2 else vals[0]
-            finite = ~torch.isnan(v)
+                components.append(pair_iptm_b[s, c, :num_chains])  # row c
+            components.append(
+                pair_iptm_b[s, :num_chains, c][row_has_frame]
+            )  # column c from rows with frames
+            values = torch.cat(components) if len(components) == 2 else components[0]
+            finite = ~torch.isnan(values)
             if finite.any():
-                R_b[s, c] = v[finite].mean()
+                chain_score_b[s, c] = values[finite].mean()
 
-    # 3) Interface score I_b (ligand vs polymer–polymer)
-    for s in range(S):
-        Ri = R_b[s, :C].unsqueeze(1).expand(C, C)
-        Rj = R_b[s, :C].unsqueeze(0).expand(C, C)
+    # 3) Interface score (ligand vs polymer–polymer)
+    for s in range(num_samples):
+        Ri = chain_score_b[s, :num_chains].unsqueeze(1).expand(num_chains, num_chains)
+        Rj = chain_score_b[s, :num_chains].unsqueeze(0).expand(num_chains, num_chains)
         polymer_polymer = 0.5 * (Ri + Rj)
-        ligand_pick = torch.where(lig_i, Ri, Rj)
-        I = torch.where(any_lig_pair, ligand_pick, polymer_polymer)
-        I[diag_mask] = float("nan")
-        I_b[s] = I
+        ligand_pick = torch.where(ligand_i, Ri, Rj)
+        I_mat = torch.where(pair_has_ligand, ligand_pick, polymer_polymer)
+        I_mat[diagonal_mask] = float("nan")
+        interface_score_b[s] = I_mat
 
-    return M_b, R_b, I_b, chain_ids
+    return pair_iptm_b, chain_score_b, interface_score_b, chain_ids
 
 
 def compute_modified_residue_plddt(
