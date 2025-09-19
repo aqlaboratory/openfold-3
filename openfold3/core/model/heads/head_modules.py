@@ -177,6 +177,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
+        offload_inference: bool = False,
         _mask_trans: bool = True,
     ):
         """
@@ -203,6 +204,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                 Mutually exclusive with use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
+            offload_inference:
+                Whether to offload some computation to CPU
             _mask_trans:
                 Whether to mask the output of the transition layers
 
@@ -226,22 +229,20 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         aux_out = {}
 
         out_dtype = output["atom_positions_predicted"].dtype
-        si_trunk = output["si_trunk"]
-        zij_trunk = output["zij_trunk"]
-        atom_positions_predicted = output["atom_positions_predicted"].to(
-            dtype=si_trunk.dtype
-        )
+        si = output["si_trunk"]
+        zij = output["zij_trunk"]
+        atom_positions_predicted = output["atom_positions_predicted"].to(dtype=si.dtype)
 
         # Distogram head: Main loop (Algorithm 1), line 17
         # Not enabled in finetuning 3 stage
         if self.config["distogram"]["enabled"]:
-            distogram_logits = self.distogram(z=zij_trunk)
+            distogram_logits = self.distogram(z=zij)
             aux_out["distogram_logits"] = distogram_logits
 
         # Stop grad
         si_input = si_input.detach().clone()
-        si_trunk = si_trunk.detach().clone()
-        zij_trunk = zij_trunk.detach().clone()
+        si = si.detach().clone()
+        zij = zij.detach().clone()
         atom_positions_predicted = atom_positions_predicted.detach().clone()
 
         token_mask = batch["token_mask"]
@@ -265,8 +266,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         # Embed trunk outputs
         si, zij = self.pairformer_embedding(
             si_input=si_input,
-            si=si_trunk,
-            zij=zij_trunk,
+            si=si,
+            zij=zij,
             x_pred=repr_x_pred,
             single_mask=repr_x_mask,
             pair_mask=pair_mask,
@@ -274,6 +275,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
+            offload_inference=offload_inference,
             _mask_trans=_mask_trans,
             apply_per_sample=apply_per_sample,
         )
@@ -288,6 +290,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             max_num_atoms_per_token=self.max_atoms_per_token,
         )
 
+        si = si.to(device=atom_positions_predicted.device)
         aux_out["plddt_logits"] = self.plddt(
             s=si, max_atom_per_token_mask=max_atom_per_token_mask
         )
@@ -297,10 +300,16 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
-        aux_out["pde_logits"] = self.pde(zij, apply_per_sample=apply_per_sample)
+        zij = zij.to(device=atom_positions_predicted.device)
+        offload_device = "cpu" if offload_inference else atom_positions_predicted.device
+        pde_logits = self.pde(zij, apply_per_sample=apply_per_sample).to(
+            device=offload_device
+        )
 
         if self.config.pae.enabled:
             aux_out["pae_logits"] = self.pae(zij, apply_per_sample=apply_per_sample)
+
+        aux_out["pde_logits"] = pde_logits.to(device=atom_positions_predicted.device)
 
         aux_out = {k: v.to(dtype=out_dtype) for k, v in aux_out.items()}
 

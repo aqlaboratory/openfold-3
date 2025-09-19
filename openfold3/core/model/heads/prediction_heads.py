@@ -124,24 +124,31 @@ class PairformerEmbedding(nn.Module):
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
+        offload_inference: bool = False,
         _mask_trans: bool = True,
     ):
         batch_dims = x_pred.shape[:-2]
         no_samples = x_pred.shape[-3]
 
+        device = "cpu" if offload_inference else x_pred.device
+
         # Prepare output tensors
-        si_out = torch.zeros_like(si.expand(*(batch_dims + si.shape[-2:])))
-        zij_out = torch.zeros_like(zij.expand(*(batch_dims + zij.shape[-3:])))
+        si_out = torch.zeros_like(si.expand(*(batch_dims + si.shape[-2:]))).to(
+            device=device
+        )
+        zij_out = torch.zeros_like(zij.expand(*(batch_dims + zij.shape[-3:]))).to(
+            device=device
+        )
 
         # TODO: Refactor to support inplace ops
         for i in range(no_samples):
-            zij_sample = self.embed_zij(
+            zij_chunk = self.embed_zij(
                 si_input=si_input, zij=zij, x_pred=x_pred[:, i : i + 1]
             )
 
             si_chunk, zij_chunk = self.pairformer_stack(
                 si.clone(),  # Avoid inplace ops on si for now
-                zij_sample,
+                zij_chunk,
                 single_mask,
                 pair_mask,
                 chunk_size=chunk_size,
@@ -151,8 +158,8 @@ class PairformerEmbedding(nn.Module):
                 _mask_trans=_mask_trans,
             )
 
-            si_out[..., i : i + 1, :, :] = si_chunk
-            zij_out[..., i : i + 1, :, :, :] = zij_chunk
+            si_out[..., i : i + 1, :, :] = si_chunk.to(device=device)
+            zij_out[..., i : i + 1, :, :, :] = zij_chunk.to(device=device)
 
         return si_out, zij_out
 
@@ -215,6 +222,7 @@ class PairformerEmbedding(nn.Module):
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
+        offload_inference: bool = False,
         _mask_trans: bool = True,
         apply_per_sample: bool = False,
     ):
@@ -243,6 +251,8 @@ class PairformerEmbedding(nn.Module):
                 Mutually exclusive with use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
+            offload_inference:
+                Whether to offload some computation to CPU
             _mask_trans:
                 Whether to mask the output of the transition layers
             apply_per_sample:
@@ -270,6 +280,7 @@ class PairformerEmbedding(nn.Module):
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
+                offload_inference=offload_inference,
                 _mask_trans=_mask_trans,
             )
         else:

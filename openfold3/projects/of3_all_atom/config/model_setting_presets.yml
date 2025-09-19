@@ -25,7 +25,6 @@ low_mem:
     memory:
       eval:
         chunk_size: 4
-        per_sample_token_cutoff: 0
-        per_sample_atom_cutoff: 0 
         offload_inference:
-          enabled: true
+          confidence_heads: true
+          token_cutoff: None
