@@ -17,6 +17,7 @@
 The main inference and training loops for AlphaFold3.
 """
 
+import gc
 import random
 
 import torch
@@ -656,5 +657,12 @@ class OpenFold3(nn.Module):
                         )
 
                         output.update(diffusion_output)
+
+        # Memory fragmentation can become a big problem at larger crop sizes
+        # due to different sizes of msa/all-atom tensors used between steps
+        # Clear the cache between steps if unallocated reserved mem is high
+        if self.settings.clear_cache_between_steps:
+            gc.collect()
+            torch.cuda.empty_cache()
 
         return batch, output
