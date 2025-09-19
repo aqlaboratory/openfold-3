@@ -250,12 +250,13 @@ def build_chain_interface_scores(
     **ptm_kwargs: Any,
 ) -> dict[str, torch.Tensor]:
     """
-    Public API: build_chain_interface_scores(batch, outputs, has_frame)
+    Compute the chain-level interface scores (ipTM) for all chain pairs in the complex 
+    and the interface scores (bespoke ipTM) for each chain pair.
       Returns:
-        - M:               [B, S, C_max, C_max]
-        - R:               [B, S, C_max]
-        - interface_score: [B, S, C_max, C_max]
-        - chains:          list[Tensor] (per-batch chain IDs)
+        all_ipTM_scores: {
+          "iptm": {<chain_pair_key>: [B, S]},
+          "bespoke_iptm": {<chain_pair_key>: [B, S]}
+        }
     """
     pae_logits = outputs["pae_logits"]  # [B,S,N,N,Bins]
     B, S, N, _, _ = pae_logits.shape

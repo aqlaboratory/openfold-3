@@ -10,7 +10,7 @@ from openfold3.core.metrics.confidence import (
     compute_predicted_distance_error,
 )
 from openfold3.core.metrics.sample_ranking import (
-    build_all_interface_ipTM_and_rankings_chunked_compact,
+    build_chain_interface_scores,
     compute_all_pTM,
     compute_modified_residue_plddt,
     full_complex_sample_ranking_metric,
@@ -63,11 +63,10 @@ def get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> dic
         confidence_scores.update(sample_ranking)
 
         if config.confidence.sample_ranking.all_ipTM.enabled:
-            ipTM_scores = build_all_interface_ipTM_and_rankings_chunked_compact(
+            ipTM_scores = build_chain_interface_scores(
                 batch=batch,
-                output=outputs,
+                outputs=outputs,
                 has_frame=valid_frame_mask,
-                pair_chunk=config.confidence.sample_ranking.pair_chunk,
                 **config.confidence.ptm,
             )
             confidence_scores.update(ipTM_scores)
