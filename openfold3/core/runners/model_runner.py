@@ -41,9 +41,7 @@ class ModelRunner(pl.LightningModule):
             torch.compile(model_class(config)) if _compile else model_class(config)
         )
 
-        self.ema = ExponentialMovingAverage(
-            model=self.model, **config.settings.ema
-        )
+        self.ema = ExponentialMovingAverage(model=self.model, **config.settings.ema)
         self.cached_weights = None
         self.last_lr_step = -1
 
