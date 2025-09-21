@@ -34,6 +34,7 @@ max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 # Cutoffs for chunking ops per diffusion sample
 per_sample_token_cutoff = mlc.FieldReference(750, field_type=int)
 per_sample_atom_cutoff = mlc.FieldReference(10000, field_type=int)
+low_mem_validation = mlc.FieldReference(False, field_type=bool)
 
 model_selection_metric_weights_config = mlc.FrozenConfigDict(
     {
@@ -94,6 +95,7 @@ model_config = mlc.ConfigDict(
                     },
                     "per_sample_token_cutoff": per_sample_token_cutoff,
                     "per_sample_atom_cutoff": per_sample_atom_cutoff,
+                    "low_mem_val": low_mem_validation,
                     "offload_inference": {
                         "msa_module": False,
                         "confidence_heads": False,
@@ -411,6 +413,7 @@ model_config = mlc.ConfigDict(
             },
             "loss_module": {
                 "per_sample_atom_cutoff": per_sample_atom_cutoff,
+                "low_mem_val": low_mem_validation,
                 "confidence_loss_names": [
                     "plddt",
                     "pde",
@@ -461,6 +464,7 @@ model_config = mlc.ConfigDict(
         },
         "confidence": {
             "per_sample_atom_cutoff": per_sample_atom_cutoff,
+            "low_mem_val": low_mem_validation,
             "pde": {
                 "max_bin": 31,
                 "no_bins": 64,

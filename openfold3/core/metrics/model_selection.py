@@ -37,7 +37,8 @@ def compute_valid_model_selection_metrics(
 
     num_atoms = outputs["atom_positions_predicted"].shape[-2]
     chunk_computation = (
-        confidence_config.per_sample_atom_cutoff is not None
+        confidence_config.low_mem_validation
+        and confidence_config.per_sample_atom_cutoff is not None
         and num_atoms > confidence_config.per_sample_atom_cutoff
     )
 

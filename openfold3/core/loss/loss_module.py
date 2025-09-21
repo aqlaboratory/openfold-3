@@ -259,11 +259,13 @@ class OpenFold3Loss(nn.Module):
             cum_loss: Scalar tensor representing the total loss
             losses: Dict containing individual loss components
         """
-        num_samples = output["atom_positions_predicted"].shape[-3]
+
+        # Having to chunk validation losses per sample is really only
+        # needed when training on 40gb GPUs
         num_atoms = output["atom_positions_predicted"].shape[-2]
         apply_per_sample = (
             not torch.is_grad_enabled()
-            and num_samples > 1
+            and self.config.low_mem_validation
             and self.config.per_sample_atom_cutoff is not None
             and num_atoms > self.config.per_sample_atom_cutoff
         )
