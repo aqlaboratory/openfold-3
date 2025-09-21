@@ -278,9 +278,8 @@ class OpenFold3AllAtom(ModelRunner):
         if self.ema.device != example_feat.device:
             self.ema.to(example_feat.device)
 
-        # TODO: Remove debug logic
-        pdb_id = ", ".join(batch.pop("pdb_id"))
-        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
+        pdb_id = ", ".join(batch["pdb_id"])
+        preferred_chain_or_interface = batch["preferred_chain_or_interface"]
         logger.debug(
             f"Started model forward pass for {pdb_id} with preferred chain or "
             f"interface {preferred_chain_or_interface} on rank {self.global_rank} "
@@ -318,11 +317,7 @@ class OpenFold3AllAtom(ModelRunner):
             self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
             self.model.load_state_dict(self.ema.state_dict()["params"])
 
-        # TODO: Remove debug logic
-        pdb_id = batch.pop("pdb_id")
-        preferred_chain_or_interface = batch.pop("preferred_chain_or_interface")
-        atom_array = batch.pop("atom_array")
-
+        pdb_id = batch["pdb_id"]
         is_repeated_sample = batch.get("repeated_sample").item()
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
@@ -335,10 +330,6 @@ class OpenFold3AllAtom(ModelRunner):
 
             # Compute loss and other metrics
             _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
-
-            batch["atom_array"] = atom_array
-            batch["pdb_id"] = pdb_id
-            batch["preferred_chain_or_interface"] = preferred_chain_or_interface
 
             if not is_repeated_sample:
                 self._log(loss_breakdown, batch, outputs, train=False)
@@ -555,10 +546,9 @@ class OpenFold3AllAtom(ModelRunner):
             self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
             self.model.load_state_dict(self.ema.state_dict()["params"])
 
-        query_id = batch.pop("query_id")
-        atom_array = batch.pop("atom_array")
+        query_id = batch["query_id"]
+        seed = batch["seed"]
 
-        seed = batch.pop("seed")
         self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now
 
         # Probably need to change the logic
@@ -568,10 +558,6 @@ class OpenFold3AllAtom(ModelRunner):
         )
         try:
             batch, outputs = self(batch)
-
-            batch["atom_array"] = atom_array
-            batch["query_id"] = query_id
-            batch["seed"] = seed
 
             # Generate confidence scores
             confidence_scores = self._compute_confidence_scores(batch, outputs)
