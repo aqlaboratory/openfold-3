@@ -95,7 +95,7 @@ model_config = mlc.ConfigDict(
                     },
                     "per_sample_token_cutoff": per_sample_token_cutoff,
                     "per_sample_atom_cutoff": per_sample_atom_cutoff,
-                    "low_mem_val": low_mem_validation,
+                    "low_mem_validation": low_mem_validation,
                     "offload_inference": {
                         "msa_module": False,
                         "confidence_heads": False,
@@ -413,7 +413,7 @@ model_config = mlc.ConfigDict(
             },
             "loss_module": {
                 "per_sample_atom_cutoff": per_sample_atom_cutoff,
-                "low_mem_val": low_mem_validation,
+                "low_mem_validation": low_mem_validation,
                 "confidence_loss_names": [
                     "plddt",
                     "pde",
@@ -464,7 +464,7 @@ model_config = mlc.ConfigDict(
         },
         "confidence": {
             "per_sample_atom_cutoff": per_sample_atom_cutoff,
-            "low_mem_val": low_mem_validation,
+            "low_mem_validation": low_mem_validation,
             "pde": {
                 "max_bin": 31,
                 "no_bins": 64,
