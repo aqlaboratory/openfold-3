@@ -1,3 +1,4 @@
+from pathlib import Path
 import operator
 import os
 import time
@@ -9,6 +10,9 @@ from dllogger import JSONStreamBackend, StdOutBackend, Verbosity
 from pytorch_lightning import Callback
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.utilities import rank_zero_info
+from lightning_fabric.utilities.rank_zero import (
+    rank_zero_only,
+)
 from torch.cuda import profiler as profiler
 
 
@@ -101,3 +105,18 @@ class PredictTimer(pl.Callback):
     def on_predict_end(self, trainer, pl_module):
         elapsed = time.time() - self.start_time
         print(f"Inference runtime: {elapsed} seconds")
+
+
+class LogInferenceQuerySet(pl.Callback):
+    def __init__(self, output_dir: Path):
+        self.output_dir = output_dir
+
+    @rank_zero_only
+    def on_predict_start(self, trainer, pl_module):
+        log_path = self.output_dir / "inference_query_set.json"
+        with open(log_path, "w") as fp:
+            fp.write(
+                pl_module.trainer.datamodule.inference_config.query_set.model_dump_json(
+                    indent=4
+                )
+            )
