@@ -1,18 +1,18 @@
-from pathlib import Path
 import operator
 import os
 import time
+from pathlib import Path
 
 import dllogger as logger
 import numpy as np
 import pytorch_lightning as pl
 from dllogger import JSONStreamBackend, StdOutBackend, Verbosity
-from pytorch_lightning import Callback
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.utilities import rank_zero_info
 from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
+from pytorch_lightning import Callback
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from pytorch_lightning.utilities import rank_zero_info
 from torch.cuda import profiler as profiler
 
 

@@ -183,7 +183,7 @@ def parse_mmcif(
                 **parser_args,
             )
         except Exception as e:
-            raise ValueError(f"Failed to parse {file_path}: ", e)
+            raise ValueError(f"Failed to parse {file_path}: ") from e
 
     # Skip structures where all atoms have zero occupancy
     if skip_all_zero_occ and atom_array.occupancy.sum() == 0:
