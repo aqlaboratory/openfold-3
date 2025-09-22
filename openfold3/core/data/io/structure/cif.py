@@ -178,9 +178,12 @@ def parse_mmcif(
             assembly_id="1",
         )
     else:
-        atom_array = pdbx.get_structure(
-            **parser_args,
-        )
+        try:
+            atom_array = pdbx.get_structure(
+                **parser_args,
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to parse {file_path}: ", e)
 
     # Skip structures where all atoms have zero occupancy
     if skip_all_zero_occ and atom_array.occupancy.sum() == 0:
