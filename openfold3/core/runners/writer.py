@@ -235,5 +235,5 @@ class OF3OutputWriter(BasePredictionWriter):
         print(f"  - Failed Queries:      {self.failed_count}")
 
         if self.failed_queries:
-            print(f"\nFailed Queries: {sorted(self.failed_queries)}")
+            print(f"\nFailed Queries: {', '.join(sorted(self.failed_queries))}")
         print("=" * 50 + "\n")
