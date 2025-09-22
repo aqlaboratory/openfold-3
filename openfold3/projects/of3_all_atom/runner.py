@@ -338,18 +338,6 @@ class OpenFold3AllAtom(ModelRunner):
             logger.exception(f"Validation step failed with pdb id {', '.join(pdb_id)}")
             raise
 
-    def transfer_batch_to_device(self, batch, device, dataloader_idx):
-        # This avoids slow loading for nested dicts in PL
-        # Less frequent hanging when non_blocking=True on P5e H200s
-        # TODO: Determine if this is really needed given other
-        #  recent hanging fixes
-        def to_device(t):
-            return t.to(device=device, non_blocking=True)
-
-        batch = tensor_tree_map(to_device, batch, strict_type=False)
-
-        return batch
-
     def _save_train_dataset_state_to_datamodule(self):
         self.trainer.datamodule.next_dataset_indices = (
             self.trainer.train_dataloader.dataset.next_dataset_indices
@@ -559,7 +547,10 @@ class OpenFold3AllAtom(ModelRunner):
             self.model.load_state_dict(self.ema.state_dict()["params"])
 
         query_id = batch["query_id"]
-        seed = batch["seed"]
+
+        # Convert seeds back to list
+        seed = batch["seed"].cpu().tolist()
+        batch["seed"] = seed
 
         self.reseed(seed[0])  # TODO: assuming we have bs = 1 for now
 
