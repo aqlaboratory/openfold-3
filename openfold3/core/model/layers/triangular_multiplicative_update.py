@@ -27,7 +27,6 @@ import torch.nn as nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import LayerNorm, Linear
-from openfold3.core.utils.precision_utils import is_fp16_enabled
 from openfold3.core.utils.tensor_utils import permute_final_dims
 
 
@@ -449,19 +448,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         b = b * self.sigmoid(self.linear_b_g(z))
         b = b * self.linear_b_p(z)
 
-        # Prevents overflow of torch.matmul in combine projections in
-        # reduced-precision modes
-        a_std = a.std()
-        b_std = b.std()
-        if is_fp16_enabled() and a_std != 0.0 and b_std != 0.0:
-            a = a / a.std()
-            b = b / b.std()
-
-        if is_fp16_enabled():
-            with torch.amp.autocast("cuda", enabled=False):
-                x = self._combine_projections(a.float(), b.float())
-        else:
-            x = self._combine_projections(a, b)
+        x = self._combine_projections(a, b)
 
         del a, b
         x = self.layer_norm_out(x)
@@ -614,19 +601,7 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         a = ab[..., : self.c_hidden]
         b = ab[..., self.c_hidden :]
 
-        # Prevents overflow of torch.matmul in combine projections in
-        # reduced-precision modes
-        a_std = a.std()
-        b_std = b.std()
-        if is_fp16_enabled() and a_std != 0.0 and b_std != 0.0:
-            a = a / a.std()
-            b = b / b.std()
-
-        if is_fp16_enabled():
-            with torch.amp.autocast("cuda", enabled=False):
-                x = self._combine_projections(a.float(), b.float())
-        else:
-            x = self._combine_projections(a, b)
+        x = self._combine_projections(a, b)
 
         del a, b
         x = self.layer_norm_out(x)
