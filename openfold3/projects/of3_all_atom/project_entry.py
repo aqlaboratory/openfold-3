@@ -15,7 +15,6 @@ from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
 class ModelUpdate(BaseModel):
     presets: list[str] = []
     custom: dict = {}
-    compile: bool = False
 
 
 @dataclass
@@ -60,20 +59,22 @@ class OF3ProjectEntry:
                 config = self.update_config_with_preset(config, preset)
         return config
 
+    def validate_model_config(self, model_config: ConfigDict) -> ConfigDict:
+        msa_embedder_config = model_config.architecture.msa.msa_module_embedder
+        assert not (
+            msa_embedder_config.subsample_main_msa
+            and msa_embedder_config.subsample_all_msa
+        ), (
+            "Invalid configuration: both `subsample_main_msa` and `subsample_all_msa` "
+            "are set to True. At most one subsampling strategy can be enabled."
+        )
+
     def get_model_config_with_update(
         self, model_update: Optional[ModelUpdate] = None
     ) -> ConfigDict:
         """Returns a model config with updates applied."""
         model_config = self.get_model_config_with_presets(model_update.presets)
-        try:
-            model_config.update(model_update.custom)
-        except ValueError as e:
-            # Handle case where the argument is passed as a flattened dict
-            # N.B. if the update is a mixture of flattened key and non-flattened dicts,
-            #   the non-flattened dict may override the whole ConfigDict
-            if "dots in field names" in str(e):
-                model_config.update_from_flattened_dict(model_update.custom)
-            else:
-                raise e
+        model_config.update(model_update.custom)
+        self.validate_model_config(model_config)
 
         return model_config

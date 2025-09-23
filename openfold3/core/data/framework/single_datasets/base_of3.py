@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 class BaseOF3Dataset(SingleDataset, ABC):
     """Implements a general SingleDataset for handling inputs for OF3.
 
-    The BaseAF3Dataset dataset
+    The BaseOF3Dataset dataset
     - implements a set of general class methods for processing and featurizing inputs
     for AF3
     - assigns general class attributes, including the dataset_cache property
@@ -66,8 +66,10 @@ class BaseOF3Dataset(SingleDataset, ABC):
     by setting the self.apply_crop attribute.
     """
 
-    def __init__(self, dataset_config: dict) -> None:
-        """Initializes a BaseAF3Dataset.
+    # TODO: add typehint - currently causes circular import issues
+    # dataset_config: DefaultDatasetConfigSection
+    def __init__(self, dataset_config) -> None:
+        """Initializes a BaseOF3Dataset.
 
         Args:
             dataset_config (dict):

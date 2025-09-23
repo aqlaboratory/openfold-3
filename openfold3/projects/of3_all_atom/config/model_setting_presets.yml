@@ -1,30 +1,31 @@
 train:
   settings:
     blocks_per_ckpt: 1
-    ckpt_intermediate_steps: True
+    ckpt_intermediate_steps: true
+  architecture:
+    loss_module:
+      diffusion:
+        chunk_size: 4
 
 predict:
   settings:
     diffusion_training_enabled: False
-
+    memory:
+      eval:
+        # This chunk size is the minimum value, it will be auto-tuned by default
+        chunk_size: 4
+  architecture:
+    msa:
+      msa_module_embedder:
+        subsample_main_msa: False
+        subsample_all_msa: True 
+        
 low_mem:
   settings:
     memory:
-      train:
-        msa_module:
-          swiglu_chunk_token_cutoff: null
-          swiglu_seq_chunk_size: 4000
       eval:
-        use_deepspeed_evo_attention: true
         chunk_size: 4
-        msa_module:
-          swiglu_chunk_token_cutoff: null
-          swiglu_seq_chunk_size: null
         per_sample_token_cutoff: 0
         per_sample_atom_cutoff: 0 
         offload_inference:
           enabled: true
-  architecture:
-    loss_module: 
-      diffusion:
-        chunk_size: 4

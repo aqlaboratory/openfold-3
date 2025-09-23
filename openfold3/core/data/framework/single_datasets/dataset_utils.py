@@ -1,3 +1,5 @@
+from itertools import cycle, islice
+
 import pandas as pd
 
 
@@ -16,14 +18,17 @@ def pad_to_world_size(df: pd.DataFrame, world_size: int | None = None) -> pd.Dat
     """
     num_examples = len(df)
 
-    if world_size and world_size != num_examples:
-        num_repeated_examples = world_size - num_examples % world_size
-        padded_df = pd.concat([df, df.iloc[:num_repeated_examples]], ignore_index=True)
-        padded_df["repeated_sample"] = [False] * num_examples + [
-            True
-        ] * num_repeated_examples
-    else:
+    if not world_size or num_examples % world_size == 0:
         padded_df = df.copy()
         padded_df["repeated_sample"] = [False] * num_examples
+        return padded_df
+
+    # otherwise we need to pad the dataframe
+    num_repeated_examples = world_size - num_examples % world_size
+    repeated_indices = list(islice(cycle(range(num_examples)), num_repeated_examples))
+    padded_df = pd.concat([df, df.iloc[repeated_indices]], ignore_index=True)
+    padded_df["repeated_sample"] = [False] * num_examples + [
+        True
+    ] * num_repeated_examples
 
     return padded_df

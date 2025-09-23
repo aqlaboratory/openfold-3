@@ -38,7 +38,6 @@ checkpoint:
 model_update:
   presets: 
     - train 
-  compile: false
 
 dataset_configs:
   train:
@@ -49,7 +48,7 @@ dataset_configs:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: False
+          take_top_k: false
         crop:
           token_budget: 384
           crop_weights:
@@ -64,7 +63,7 @@ dataset_configs:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: False
+          take_top_k: false
         sample_in_order: true
         crop:
           token_budget: 384
@@ -75,7 +74,6 @@ dataset_configs:
         loss:
           loss_weights:
             experimentally_resolved: 0.0
-            pae: 0.0
             plddt: 0.0
             pde: 0.0
 
@@ -86,7 +84,7 @@ dataset_configs:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: False
+          take_top_k: false
         sample_in_order: true
         crop:
           token_budget: 384
@@ -97,7 +95,6 @@ dataset_configs:
         loss:
           loss_weights:
             experimentally_resolved: 0.0
-            pae: 0.0
             plddt: 0.0
             pde: 0.0
 
@@ -108,8 +105,8 @@ dataset_configs:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: False
-        disable_non_protein_diffusion_weights: True
+          take_top_k: false
+        disable_non_protein_diffusion_weights: true
         crop:
           token_budget: 384
           crop_weights:
@@ -119,7 +116,6 @@ dataset_configs:
         loss:
           loss_weights:
             experimentally_resolved: 0.0
-            pae: 0.0
             plddt: 0.0
             pde: 0.0
 
@@ -130,7 +126,7 @@ dataset_configs:
         debug_mode: true
         template:
           n_templates: 4
-          take_top_k: True
+          take_top_k: true
 
 dataset_paths:
   weighted-pdb:

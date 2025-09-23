@@ -107,7 +107,7 @@ def get_query_structure_res_ids(atom_array_cropped_chain: AtomArray) -> np.ndarr
 @log_runtime_memory(runtime_dict_key="runtime-template-proc-sample", multicall=True)
 def sample_templates(
     assembly_data: dict[str, dict[str, Any]],
-    template_cache_directory: Path,
+    template_cache_directory: Path | None,
     n_templates: int,
     take_top_k: bool,
     chain_id: str,
@@ -122,8 +122,11 @@ def sample_templates(
         assembly_data (dict[str, dict[str, Any]]):
             Dict containing the alignment representatives and template IDs for each
             chain.
-        template_cache_directory (Path):
-            The directory where the template cache is stored.
+        template_cache_directory (Path | None):
+            The directory where the template cache is stored during training. For
+            inference, full paths to template cache entries are provided in the
+            `template_alignment_file_path` field of the `Chain` class following template
+            preprocessing.
         n_templates (int):
             The max number of templates to sample for each chain.
         take_top_k (bool):
@@ -179,14 +182,23 @@ def sample_templates(
         k = np.min([np.random.randint(0, l), n_templates])
 
     if k > 0:
-        # Load template cache numpy file
-        template_file_name = chain_data["alignment_representative_id"] + ".npz"
-        template_cache = np.load(
-            template_cache_directory / Path(template_file_name), allow_pickle=True
-        )
+        # Load template cache entry numpy file
+        # From the representative ID during training
+        if "alignment_representative_id" in chain_data:
+            template_file_name = chain_data["alignment_representative_id"] + ".npz"
+            template_cache_entry = np.load(
+                template_cache_directory / Path(template_file_name), allow_pickle=True
+            )
+        # From the file path during inference
+        else:
+            template_cache_entry = np.load(
+                chain_data["cache_entry_file_path"], allow_pickle=True
+            )
 
         # Unpack into dict
-        template_cache = {key: value.item() for key, value in template_cache.items()}
+        template_cache_entry = {
+            key: value.item() for key, value in template_cache_entry.items()
+        }
 
         # Randomly sample k templates (core PDB training sets) or take top k templates
         # (distillation, inference sets)
@@ -198,9 +210,9 @@ def sample_templates(
         # Wrap each subdict in a TemplateCacheEntry
         return {
             template_id: TemplateCacheEntry(
-                index=template_cache[template_id]["index"],
-                release_date=template_cache[template_id]["release_date"],
-                idx_map=template_cache[template_id]["idx_map"],
+                index=template_cache_entry[template_id]["index"],
+                release_date=template_cache_entry[template_id]["release_date"],
+                idx_map=template_cache_entry[template_id]["idx_map"],
             )
             for template_id in sampled_template_ids
         }

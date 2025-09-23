@@ -1,15 +1,17 @@
 import json
 import logging
 import os
+import shutil
 import sys
-import time
 from abc import ABC, abstractmethod
-from functools import cached_property
+from functools import cached_property, wraps
 from pathlib import Path
+from typing import Any
 
 import ml_collections as mlc
 import pytorch_lightning as pl
 import wandb
+from lightning_fabric.utilities.rank_zero import _get_rank
 from pydantic import BaseModel
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
@@ -17,13 +19,19 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
-from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
+from openfold3.core.data.framework.data_module import (
+    DataModule,
+    DataModuleConfig,
+    InferenceDataModule,
+)
 from openfold3.core.runners.writer import OF3OutputWriter
+from openfold3.core.utils.callbacks import PredictTimer
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
     ExperimentConfig,
     TrainingExperimentConfig,
+    generate_seeds,
 )
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
@@ -31,6 +39,20 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
     TrainingDatasetSpec,
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+
+logger = logging.getLogger(__name__)
+
+
+def rank_zero_only(fn):
+    """Decorator to ensure a function is only executed on rank zero."""
+
+    @wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        if self.is_rank_zero:
+            return fn(self, *args, **kwargs)
+        return None
+
+    return wrapper
 
 
 class ExperimentRunner(ABC):
@@ -45,7 +67,6 @@ class ExperimentRunner(ABC):
 
         # typical model update config
         self.model_update = experiment_config.model_update
-        self.compile = self.model_update.compile
 
     def setup(self) -> None:
         """Set up the experiment environment.
@@ -65,7 +86,7 @@ class ExperimentRunner(ABC):
         """Get the project entry from the registry."""
         return OF3ProjectEntry()
 
-    @property
+    @cached_property
     def model_config(self) -> mlc.ConfigDict:
         """Retrieve the model configuration."""
         return self.project_entry.get_model_config_with_update(self.model_update)
@@ -73,7 +94,7 @@ class ExperimentRunner(ABC):
     @cached_property
     def lightning_module(self) -> pl.LightningModule:
         """Instantiate and return the model."""
-        return self.project_entry.runner(self.model_config, _compile=self.compile)
+        return self.project_entry.runner(self.model_config)
 
     @cached_property
     def output_dir(self) -> Path:
@@ -130,9 +151,13 @@ class ExperimentRunner(ABC):
         return self.pl_trainer_args.mpi_plugin
 
     @property
-    def is_mpi_rank_zero(self) -> bool:
+    def is_rank_zero(self) -> bool:
         """Check if the current process is rank zero in an MPI environment."""
-        return self.is_mpi and self.cluster_environment.global_rank() == 0
+        if self.is_mpi:
+            return self.cluster_environment.global_rank() == 0
+        else:
+            _rank = _get_rank()
+            return (_rank is None) or (_rank == 0)
 
     @property
     def cluster_environment(self) -> MPIEnvironment | None:
@@ -207,14 +232,14 @@ class ExperimentRunner(ABC):
 
         return pl.Trainer(**trainer_args)
 
-    def run(self):
+    def run(self) -> Any:
         """Run the experiment in the specified mode.
 
         Depending on the mode (train, eval, test, predict), the corresponding
         PyTorch Lightning method is invoked.
         """
         # Run process appropriate process
-        logging.info(f"Running {self.mode} mode.")
+        logger.info(f"Running {self.mode} mode.")
         # Training + validation
         if self.mode == "train":
             target_method = self.trainer.fit
@@ -226,13 +251,19 @@ class ExperimentRunner(ABC):
             target_method = self.trainer.test
         elif self.mode == "predict":
             target_method = self.trainer.predict
+            return target_method(
+                model=self.lightning_module,
+                datamodule=self.lightning_data_module,
+                ckpt_path=self.ckpt_path,
+                return_predictions=False,
+            )
         else:
             raise ValueError(
                 f"""Invalid mode argument: {self.mode}. Choose one of "
                 "'train', 'test', 'predict', 'profile'."""
             )
 
-        target_method(
+        return target_method(
             model=self.lightning_module,
             datamodule=self.lightning_data_module,
             ckpt_path=self.ckpt_path,
@@ -290,18 +321,15 @@ class TrainingExperimentRunner(ExperimentRunner):
         """Determine if WandB should be used.
 
         Returns:
-            True if WandB configuration is provided and either
-            not using MPI or is the MPI rank zero.
+            True if WandB configuration is provided and is rank zero
         """
-        return self.logging_config.wandb_config and (
-            not self.is_mpi or self.is_mpi_rank_zero
-        )
+        return self.logging_config.wandb_config and self.is_rank_zero
 
     def _wandb_setup(self) -> None:
         """Initialize WandB logging and store configuration files."""
         self.wandb = WandbHandler(
             self.logging_config.wandb_config,
-            self.is_mpi_rank_zero,
+            self.is_rank_zero,
             self.output_dir,
         )
         self.wandb.store_configs(
@@ -335,7 +363,7 @@ class TrainingExperimentRunner(ExperimentRunner):
                 f"seed={seed} must be an integer. Please provide a valid seed."
             )
 
-        logging.info(f"Running with seed: {seed}")
+        logger.info(f"Running with seed: {seed}")
         pl.seed_everything(seed, workers=True)
 
     @cached_property
@@ -365,7 +393,15 @@ class TrainingExperimentRunner(ExperimentRunner):
 class InferenceExperimentRunner(ExperimentRunner):
     """Training experiment builder."""
 
-    def __init__(self, experiment_config):
+    def __init__(
+        self,
+        experiment_config,
+        num_diffusion_samples: int | None = None,
+        num_model_seeds: int | None = None,
+        use_msa_server: bool = False,
+        use_templates: bool = False,
+        output_dir: Path | None = None,
+    ):
         super().__init__(experiment_config)
 
         self.experiment_config = experiment_config
@@ -375,22 +411,78 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.data_module_args = experiment_config.data_module_args
         self.seeds = experiment_config.experiment_settings.seeds
         self.output_writer_settings = experiment_config.output_writer_settings
-        self.timer = ExperimentTimer()
+
+        self.update_config_with_cli_args(
+            num_diffusion_samples,
+            num_model_seeds,
+            output_dir,
+            use_msa_server,
+            use_templates,
+        )
+
+    def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
+        update_dict = {
+            "architecture": {
+                "shared": {
+                    "diffusion": {"no_full_rollout_samples": num_diffusion_samples}
+                }
+            }
+        }
+        model_config = self.model_config
+        model_config.update(update_dict)
+
+    def update_config_with_cli_args(
+        self,
+        num_diffusion_samples: int | None,
+        num_model_seeds: int | None,
+        output_dir: Path | None,
+        use_msa_server: bool = False,
+        use_templates: bool = False,
+    ):
+        """Updates configuration given command line args."""
+        if output_dir:
+            output_dir.mkdir(exist_ok=True, parents=True)
+            self.output_dir = output_dir
+            self.experiment_config.experiment_settings.output_dir = output_dir
+
+        if num_diffusion_samples:
+            logger.info(f"Set diffusion samples to {num_diffusion_samples}")
+            self.set_num_diffusion_samples(num_diffusion_samples)
+
+        if num_model_seeds:
+            start_seed = 42
+            self.seeds = generate_seeds(start_seed, num_model_seeds)
+
+        if use_msa_server:
+            self.experiment_config.experiment_settings.use_msa_server = True
+
+        if use_templates:
+            self.experiment_config.experiment_settings.use_templates = True
+
+    @cached_property
+    def use_msa_server(self) -> bool:
+        return self.experiment_config.experiment_settings.use_msa_server
+
+    @cached_property
+    def use_templates(self) -> bool:
+        return self.experiment_config.experiment_settings.use_templates
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
-        self.timer.start("Inference")
         self.inference_query_set = inference_query_set
-        self._log_inference_query_set()
         super().run()
-        self.timer.stop()
-        print(f"Inference Runtime: {self.timer.get('Inference')}")
+        self._log_inference_query_set()
+        self._log_experiment_config()
+        self._log_model_config()
 
     @cached_property
     def callbacks(self):
         """Set up prediction writer callback."""
         _callbacks = [
-            OF3OutputWriter(self.output_dir, **self.output_writer_settings.model_dump())
+            OF3OutputWriter(
+                self.output_dir, **self.output_writer_settings.model_dump()
+            ),
+            PredictTimer(),
         ]
         return _callbacks
 
@@ -399,8 +491,10 @@ class InferenceExperimentRunner(ExperimentRunner):
         inference_config = InferenceJobConfig(
             query_set=self.inference_query_set,
             seeds=self.seeds,
+            ccd_file_path=self.dataset_config_kwargs.ccd_file_path,
             msa=self.dataset_config_kwargs.msa,
             template=self.dataset_config_kwargs.template,
+            template_preprocessor=self.dataset_config_kwargs.template_preprocessor,
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(
@@ -408,15 +502,63 @@ class InferenceExperimentRunner(ExperimentRunner):
         )
 
     @cached_property
+    def lightning_data_module(self):
+        return InferenceDataModule(
+            self.data_module_config,
+            world_size=self.world_size,
+            use_msa_server=self.use_msa_server,
+            use_templates=self.use_templates,
+            msa_computation_settings=self.experiment_config.msa_computation_settings,
+        )
+
+    @cached_property
     def ckpt_path(self):
         """Get the checkpoint path for the model."""
         return self.inference_ckpt_path
 
+    @rank_zero_only
     def _log_inference_query_set(self):
         """Record the inference query set used for prediction"""
         log_path = self.output_dir / "inference_query_set.json"
         with open(log_path, "w") as fp:
             fp.write(self.inference_query_set.model_dump_json(indent=4))
+
+    @rank_zero_only
+    def _log_experiment_config(self):
+        """Record the experiment config used for this run."""
+        log_path = self.output_dir / "experiment_config.json"
+        with open(log_path, "w") as fp:
+            fp.write(self.experiment_config.model_dump_json(indent=4))
+
+    @rank_zero_only
+    def _log_model_config(self):
+        """Records the mlc.ConfigDict of the model configuration."""
+        log_path = self.output_dir / "model_config.json"
+        with open(log_path, "w") as fp:
+            fp.write(self.model_config.to_json_best_effort(indent=4))
+
+    def cleanup(self):
+        """Cleanup directories from colabfold MSA"""
+        if self.use_msa_server and self.is_rank_zero:
+            print("Cleaning up MSA directories...")
+
+            # Always remove raw directory
+            # TODO: Change to use ColabFoldQueryRunner.cleanup() when
+            # msa processing is performed in `prepare_data` lightning data hook
+            raw_colabfold_msa_path = (
+                self.experiment_config.msa_computation_settings.msa_output_directory
+                / "raw"
+            )
+            shutil.rmtree(raw_colabfold_msa_path)
+            if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
+                output_dir = (
+                    self.experiment_config.msa_computation_settings.msa_output_directory
+                )
+                logger.info(f"Removing MSA output directory: {output_dir}")
+                shutil.rmtree(output_dir)
+                if self.use_templates:
+                    template_dir = self.dataset_config_kwargs.template_preprocessor.structure_directory.parent  # noqa: E501
+                    shutil.rmtree(template_dir)
 
 
 class WandbHandler:
@@ -429,19 +571,19 @@ class WandbHandler:
     def __init__(
         self,
         wandb_args: BaseModel | None,
-        is_mpi_rank_zero: bool,
+        is_rank_zero: bool,
         output_dir: Path,
     ):
         """Initialize the WandbHandler.
 
         Args:
             wandb_args: The WandB related configuration.
-            is_mpi_rank_zero: True if the current process is rank zero in an MPI setup.
+            is_rank_zero: True if the current process is rank zero.
             output_dir: The directory to store WandB files.
         """
         self.wandb_args = wandb_args
         self.output_dir = output_dir
-        self.is_mpi_rank_zero = is_mpi_rank_zero
+        self.is_rank_zero = is_rank_zero
         self._logger = None
 
     def _init_logger(self) -> None:
@@ -460,9 +602,9 @@ class WandbHandler:
             id=self.wandb_args.id,
         )
 
-        # Only initialize wandb for rank zero worker (MPI env), or else
+        # Only initialize wandb for rank zero worker
         # each worker will generate a different id
-        if self.is_mpi_rank_zero:
+        if self.is_rank_zero:
             wandb.run = wandb.init(**wandb_init_dict)
 
         self._logger = WandbLogger(
@@ -500,6 +642,7 @@ class WandbHandler:
 
         wandb_experiment = self.logger.experiment
         # Save pip environment to wandb
+
         freeze_path = os.path.join(wandb_experiment.dir, "package_versions.txt")
         os.system(f"{sys.executable} -m pip freeze > {freeze_path}")
         wandb_experiment.save(f"{freeze_path}")
@@ -525,29 +668,3 @@ class WandbHandler:
         with open(model_config_path, "w") as fp:
             json.dump(model_config.to_dict(), fp, indent=4)
         wandb_experiment.save(model_config_path)
-
-
-class ExperimentTimer:
-    """Timer class that can be used to time different parts of the experiment."""
-
-    def __init__(self):
-        self.start_time = None
-        self.elapsed = {}
-
-    def start(self, label: str = "total"):
-        self.start_time = time.time()
-        self._label = label
-
-    def stop(self):
-        if self.start_time is None:
-            raise RuntimeError("Timer was not started.")
-        duration = time.time() - self.start_time
-        self.elapsed[self._label] = self.elapsed.get(self._label, 0.0) + duration
-        self.start_time = None
-        return duration
-
-    def get(self, label: str = "total"):
-        return self.elapsed.get(label, 0.0)
-
-    def summary(self):
-        return {k: round(v, 2) for k, v in self.elapsed.items()}
