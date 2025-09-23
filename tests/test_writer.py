@@ -122,11 +122,10 @@ class TestPredictionWriter:
         pl_module = DummyMock()
 
         writer.on_predict_batch_end(
-            self,
             trainer=trainer,
             pl_module=pl_module,
             outputs=None,
-            batch={},
+            batch={"query_id": "query_id"},
             batch_idx=0,
         )
 
