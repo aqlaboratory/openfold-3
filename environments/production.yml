@@ -5,7 +5,7 @@ channels:
   - pytorch
   - nvidia
 dependencies:
-  - python=3.10
+  - python
   - setuptools
   - pip
   - openmm

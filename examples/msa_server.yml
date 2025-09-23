@@ -1,7 +1,0 @@
-# This yaml is an example configuration for using the `run_msa_server` cli option in `run_openfold.py`
-
-# This uses the model defined by core.data.tools.colabfold_msa_server.MsaComputationSettings
-
-msa_file_format: a3m
-server_user_agent: example-agent
-server_url: https://example-private.url
