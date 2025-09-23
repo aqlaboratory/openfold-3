@@ -168,6 +168,12 @@ class TestDeepSpeedKernel(unittest.TestCase):
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
             self.assertTrue(err < eps, f"Error item {name}: {err}")
 
+    def _initialize_model_weights(self, model):
+        for module in model.modules():
+            if isinstance(module, torch.nn.Linear):
+                with torch.no_grad():
+                    lecun_normal_init_(module.weight)
+
     def compare_pairformer(self, dtype, eps):
         """
         Compare Pairformer output with and without using DeepSpeed Evoformer attention
@@ -214,11 +220,7 @@ class TestDeepSpeedKernel(unittest.TestCase):
             .to(device="cuda", dtype=dtype)
         )
 
-        # initialize parameters in pairformer block
-        for module in block.modules():
-            if isinstance(module, torch.nn.Linear):
-                with torch.no_grad():
-                    lecun_normal_init_(module.weight)
+        self._initialize_model_weights(block)
 
         s = torch.rand(batch_size, n_res, consts.c_s, device="cuda", dtype=dtype)
         z = torch.rand(batch_size, n_res, n_res, consts.c_z, device="cuda", dtype=dtype)
@@ -282,9 +284,12 @@ class TestDeepSpeedKernel(unittest.TestCase):
         of3_config = of3_proj_entry.get_model_config_with_presets()
         c_in = of3_config.architecture.template.template_pair_embedder.c_in
 
-        embedder = TemplateEmbedderAllAtom(of3_config.architecture.template).to(
-            device="cuda"
+        embedder = (
+            TemplateEmbedderAllAtom(of3_config.architecture.template)
+            .eval()
+            .to(device="cuda")
         )
+        self._initialize_model_weights(embedder)
 
         batch = {
             "token_mask": torch.ones((batch_size, n_token)),
@@ -321,8 +326,6 @@ class TestDeepSpeedKernel(unittest.TestCase):
                 chunk_size=None,
                 use_deepspeed_evo_attention=False,
             )
-            print("Template embedder mean output:", torch.mean(out_repro))
-            print("Template embedder std output:", torch.std(out_repro))
 
             out_repro_ds = embedder(
                 *args,
