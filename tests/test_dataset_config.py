@@ -290,7 +290,6 @@ class TestInferenceConfigConstruction:
             num_epochs=1,
         )
 
-        # DO NOT SUBMIT: Remove the actual colab call
         data_module = InferenceDataModule(
             data_config,
             use_msa_server=False,
