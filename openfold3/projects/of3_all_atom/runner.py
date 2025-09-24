@@ -50,14 +50,10 @@ REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_conf
 
 
 class OpenFold3AllAtom(ModelRunner):
-    def __init__(self, model_config, _compile=True):
-        super().__init__(model_class=OpenFold3, config=model_config, _compile=_compile)
+    def __init__(self, model_config):
+        super().__init__(model_class=OpenFold3, config=model_config)
 
-        self.loss = (
-            torch.compile(OpenFold3Loss(config=model_config.architecture.loss_module))
-            if _compile
-            else OpenFold3Loss(config=model_config.architecture.loss_module)
-        )
+        self.loss = OpenFold3Loss(config=model_config.architecture.loss_module)
 
         self.model_selection_weights = model_selection_metric_weights_config[
             self.config.settings.model_selection_weight_scheme

@@ -182,7 +182,6 @@ class PairFormerBlock(nn.Module):
                 z=z,
                 s=None,
                 mask=single_mask,
-                use_memory_efficient_kernel=False,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
             ),

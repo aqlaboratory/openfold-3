@@ -57,7 +57,7 @@ $ mamba activate openfold_env
 $ pip install environments/development.txt
 ```
 
-To run the tests, you may use `pytest` or `unittest`, e.g.
+To run the tests, you may use `pytest`, e.g.
 ```
 $ pytest tests/
 ```

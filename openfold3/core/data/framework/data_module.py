@@ -287,26 +287,12 @@ class DataModule(pl.LightningDataModule):
 
         return multi_dataset_config
 
-    @staticmethod
-    def run_checks(multi_dataset_config: MultiDatasetConfig) -> None:
-        """Runs checks on the provided crop weights and modes.
-
-        Checks for valid combinations of SingleDataset modes and normalizes weights and
-        cropping weights if available, and they do not sum to 1. Updates
-        multi_dataset_config in place.
-
-        Args:
-            multi_dataset_config: DatasetConfig:
-                Parsed dataset config.
-
-        Returns:
-            None.
-        """
-
-        # Check if provided weights sum to 1
-        train_dataset_config = multi_dataset_config.get_subset(
-            [mode == DatasetMode.train for mode in multi_dataset_config.modes]
-        )
+    @classmethod
+    def run_training_dataset_checks(
+        cls,
+        train_dataset_config: MultiDatasetConfig,
+    ) -> None:
+        """Check that dataset weights and crop weights are normalized"""
         if sum(train_dataset_config.weights) != 1:
             warnings.warn(
                 "Dataset weights do not sum to 1. Normalizing weights.",
@@ -331,6 +317,29 @@ class DataModule(pl.LightningDataModule):
                     for key, value in config_i_crop_weights.items()
                 }
                 print(f"{train_dataset_config.configs[idx].crop.crop_weights=}")
+
+    @classmethod
+    def run_checks(cls, multi_dataset_config: MultiDatasetConfig) -> None:
+        """Runs checks on the provided crop weights and modes.
+
+        Checks for valid combinations of SingleDataset modes and normalizes weights and
+        cropping weights if available, and they do not sum to 1. Updates
+        multi_dataset_config in place.
+
+        Args:
+            multi_dataset_config: DatasetConfig:
+                Parsed dataset config.
+
+        Returns:
+            None.
+        """
+
+        # Check if provided weights sum to 1
+        train_dataset_config = multi_dataset_config.get_subset(
+            [mode == DatasetMode.train for mode in multi_dataset_config.modes]
+        )
+        if len(train_dataset_config.classes):
+            cls.run_training_dataset_checks(train_dataset_config)
 
         # Check if provided dataset mode combination is valid
         modes = multi_dataset_config.modes

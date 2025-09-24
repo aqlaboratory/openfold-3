@@ -67,7 +67,6 @@ class ExperimentRunner(ABC):
 
         # typical model update config
         self.model_update = experiment_config.model_update
-        self.compile = self.model_update.compile
 
     def setup(self) -> None:
         """Set up the experiment environment.
@@ -95,7 +94,7 @@ class ExperimentRunner(ABC):
     @cached_property
     def lightning_module(self) -> pl.LightningModule:
         """Instantiate and return the model."""
-        return self.project_entry.runner(self.model_config, _compile=self.compile)
+        return self.project_entry.runner(self.model_config)
 
     @cached_property
     def output_dir(self) -> Path:

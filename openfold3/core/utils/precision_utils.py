@@ -21,16 +21,6 @@ from lightning_utilities import apply_to_collection
 from pytorch_lightning.plugins.precision.deepspeed import DeepSpeedPrecision
 
 
-def is_fp16_enabled():
-    # Autocast world
-    fp16_enabled = (
-        torch.cuda.is_available() and torch.get_autocast_dtype("cuda") == torch.float16
-    )
-    fp16_enabled = fp16_enabled and torch.is_autocast_enabled()
-
-    return fp16_enabled
-
-
 class OF3DeepSpeedPrecision(DeepSpeedPrecision):
     """Precision plugin to selectively convert inputs to the desired precision."""
 
