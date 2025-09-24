@@ -1,13 +1,13 @@
 [build-system]
 # torch used at build needs to match the one at runtime
-requires = ["setuptools", "pip", "torch ==2.5.1", "numpy"]
+requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "openfold3"
 version = "0.1.0"
 dependencies = [
-  "torch ==2.5.1",
+  "torch",# ==2.5.1",
   "pytorch-lightning",
   "numpy",
   "pandas",
@@ -21,7 +21,7 @@ dependencies = [
   "mkl",
   "aria2",
   "biotite >=1.1.0, <1.3",
-  "rdkit ==2024.9.4",
+  "rdkit",
   "boto3",
   "memory_profiler",
   "func_timeout",
@@ -30,19 +30,26 @@ dependencies = [
   "deepspeed",
   "dm-tree",
   "pdbeccdutils",
-  "nvidia-cutlass",
+  # For cutlass >=4, import library is cutlass_cppgen, but deepspeed is
+  # currently using cutlass.
+  "nvidia-cutlass <4",
 
   # additonal pins
+
   # https://github.com/triton-lang/triton/issues/5919
   # According to that issue, the pin may not be necessary in Python >3.13.
   # Note that this pin has the effect of pinning torch <=2.5.1.
-  "triton <3.2;python_version<\"3.13\"",
+
+  #"triton <3.2;python_version<\"3.13\"",
+  # Pinned cutlass <4 calls from cuda.__version__, which was removed when
+  # cuda-python went fully metapackage
+  "cuda-python <12.9.1",
 
   # tests still require
-  "biopython",
-  "modelcif",
-  "openmm",
-  "pdbfixer @ https://github.com/openmm/pdbfixer/archive/refs/tags/v1.11.tar.gz"
+  #"biopython",
+  #"modelcif",
+  #"openmm",
+  #"pdbfixer @ https://github.com/openmm/pdbfixer/archive/refs/tags/v1.11.tar.gz"
 ]
 description = "A PyTorch reimplementation of DeepMind's AlphaFold 2 & 3"
 requires-python = ">=3.10"
