@@ -11,7 +11,6 @@ from .initialization import (
     gating_init_,
     glorot_uniform_init_,
     he_normal_init_,
-    ipa_point_weights_init_,
     kaiming_normal_init_,
     lecun_normal_init_,
     normal_init_,
@@ -38,7 +37,6 @@ __all__ = [
     "gating_init_",
     "kaiming_normal_init_",
     "normal_init_",
-    "ipa_point_weights_init_",
     "AdaLN",
     "LayerNorm",
 ]

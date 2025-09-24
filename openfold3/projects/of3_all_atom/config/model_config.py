@@ -74,7 +74,7 @@ model_config = mlc.ConfigDict(
                 "train": {
                     "chunk_size": None,
                     # Use DeepSpeed memory-efficient attention kernel. Mutually
-                    # exclusive with use_lma and use_flash.
+                    # exclusive with use_lma.
                     "use_deepspeed_evo_attention": True,
                     "use_cueq_triangle_kernel": False,
                     # Use Staats & Rabe's low-memory attention algorithm. Mutually

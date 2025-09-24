@@ -15,8 +15,7 @@
 
 """
 Attention layers. Includes standard multi-head attention and global attention.
-Optimizations such as Openfold's Low-Memory Attention Kernel, LMA,
-DeepSpeed EvoformerAttention
+Optimizations such as LMA and DeepSpeed EvoformerAttention are included.
 """
 
 import importlib
@@ -30,7 +29,6 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
-from openfold3.core.utils.precision_utils import is_fp16_enabled
 from openfold3.core.utils.tensor_utils import flatten_final_dims
 
 from .linear import Linear
@@ -48,16 +46,10 @@ if deepspeed_is_installed:
 if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
-
-# To avoid errors if memory-efficient attention kernel is not installed
-attn_core_is_installed = importlib.util.find_spec("attn_core_inplace_cuda") is not None
-if attn_core_is_installed:
-    from openfold3.core.kernels.cuda.attention_core import attention_core
-
 cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
     from cuequivariance_torch.primitives.triangle import triangle_attention
-
+    
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
 
@@ -297,14 +289,11 @@ class Attention(nn.Module):
         q_x: torch.Tensor,
         kv_x: torch.Tensor,
         biases: Optional[list[torch.Tensor]] = None,
-        use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
-        use_flash: bool = False,
-        flash_mask: Optional[torch.Tensor] = None,
         use_high_precision: bool = False,
     ) -> torch.Tensor:
         """
@@ -315,11 +304,6 @@ class Attention(nn.Module):
                 [*, K, C_k] key data
             biases:
                 List of biases that broadcast to [*, H, Q, K]
-            use_memory_efficient_kernel:
-                Whether to use a custom memory-efficient attention kernel.
-                This should be the default choice for most. If none of the
-                "use_<...>" flags are True, a stock PyTorch implementation
-                is used instead
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory-efficient attention kernel.
                 If none of the "use_<...>" flags are True, a stock PyTorch
@@ -332,10 +316,6 @@ class Attention(nn.Module):
                 Query chunk size (for LMA)
             lma_kv_chunk_size:
                 Key/Value chunk size (for LMA)
-            use_flash:
-                Deprecated, and will throw an error
-            flash_mask:
-                Deprecated
             use_high_precision:
                 Whether to use high precision up until and including softmax.
                 This requires using the default implementation and cannot be
@@ -355,10 +335,8 @@ class Attention(nn.Module):
             use_deepspeed_evo_attention = False
 
         attn_options = [
-            use_memory_efficient_kernel,
             use_deepspeed_evo_attention,
             use_lma,
-            use_flash,
             use_high_precision,
             use_cueq_triangle_kernel,
         ]
@@ -374,22 +352,7 @@ class Attention(nn.Module):
             apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernel),
         )
 
-        if is_fp16_enabled():
-            use_memory_efficient_kernel = False
-
-        if use_memory_efficient_kernel:
-            if not attn_core_is_installed:
-                raise ValueError(
-                    "Memory-efficient kernel attention_core must be installed"
-                )
-            if len(biases) > 2:
-                raise ValueError(
-                    "If use_memory_efficient_kernel is True, you may only "
-                    "provide up to two bias terms"
-                )
-            o = attention_core(q, k, v, *((biases + [None] * 2)[:2]))
-            o = o.transpose(-2, -3)
-        elif use_deepspeed_evo_attention:
+        if use_deepspeed_evo_attention:
             if len(biases) > 2:
                 raise ValueError(
                     "If use_deepspeed_evo_attention is True, you may only "
@@ -403,9 +366,6 @@ class Attention(nn.Module):
             ]
             o = _lma(q, k, v, biases, lma_q_chunk_size, lma_kv_chunk_size)
             o = o.transpose(-2, -3)
-        elif use_flash:
-            ## leave this in for now but should eventually be removed
-            raise NotImplementedError("Flash attention is no longer supported")
         elif use_cueq_triangle_kernel:
             scale = 1.0 / math.sqrt(self.c_hidden)
             o = _cueq_triangle_attn(

@@ -122,7 +122,6 @@ class DiffusionTransformerBlock(nn.Module):
         z: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
-        use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
@@ -140,8 +139,6 @@ class DiffusionTransformerBlock(nn.Module):
                 [*, N] Mask for token-level embedding
             chunk_size:
                 Inference-time subbatch size
-            use_memory_efficient_kernel:
-                Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
@@ -159,7 +156,6 @@ class DiffusionTransformerBlock(nn.Module):
                 z=z,
                 s=s,
                 mask=mask,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
@@ -272,7 +268,6 @@ class DiffusionTransformer(nn.Module):
         z: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
-        use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
@@ -290,8 +285,6 @@ class DiffusionTransformer(nn.Module):
                 [*, N] Mask for token-level embedding
             chunk_size:
                 Inference-time subbatch size
-            use_memory_efficient_kernel:
-                Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
@@ -309,7 +302,6 @@ class DiffusionTransformer(nn.Module):
                 z=z,
                 mask=mask,
                 chunk_size=chunk_size,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,

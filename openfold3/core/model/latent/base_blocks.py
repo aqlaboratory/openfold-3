@@ -369,7 +369,6 @@ class PairBlock(nn.Module):
                     z,
                     mask=pair_mask,
                     chunk_size=_attn_chunk_size,
-                    use_memory_efficient_kernel=False,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                     use_lma=use_lma,
@@ -392,7 +391,6 @@ class PairBlock(nn.Module):
                     z,
                     mask=pair_mask.transpose(-1, -2),
                     chunk_size=_attn_chunk_size,
-                    use_memory_efficient_kernel=False,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                     use_lma=use_lma,
@@ -430,10 +428,7 @@ class PairBlock(nn.Module):
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma
-            use_cueq_triangle_kernel:
-                Whether to use cuEquivariance triangle multiplicative
-                update kernel and attention kernel.
+                Mutually exclusive with use_lma.
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with and use_deepspeed_evo_attention.
