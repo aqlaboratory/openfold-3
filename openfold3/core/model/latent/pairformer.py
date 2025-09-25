@@ -167,7 +167,7 @@ class PairFormerBlock(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair embedding
         """
-
+        assert not (use_cueq_triangle_kernel and use_deepspeed_evo_attention)
         single_trans_mask = single_mask if _mask_trans else None
 
         z = self.pair_stack(
@@ -190,6 +190,7 @@ class PairFormerBlock(nn.Module):
                 s=None,
                 mask=single_mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                 use_lma=use_lma,
             ),
             inplace=inplace_safe,

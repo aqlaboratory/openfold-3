@@ -18,6 +18,7 @@ The main inference and training loops for AlphaFold3.
 """
 
 import random
+import warnings 
 
 import torch
 from ml_collections import ConfigDict
@@ -178,6 +179,11 @@ class OpenFold3(nn.Module):
                 [*, N_token, N_token, C_z] Pair representation
         """
         mode_mem_settings = self._get_mode_mem_settings()
+        if mode_mem_settings.use_deepspeed_evo_attention and mode_mem_settings.use_cueq_triangle_kernel:
+            warnings.warn(
+                "Both DeepSpeed and cuEq are enabled. Defaulting to cuEq"
+            )
+            mode_mem_settings.use_deepspeed_evo_attention = False
 
         offload_inference = self._do_inference_offload(
             seq_len=batch["token_mask"].shape[-1]
@@ -322,6 +328,12 @@ class OpenFold3(nn.Module):
             all-atom positions, and confidence/distogram head logits
         """
         mode_mem_settings = self._get_mode_mem_settings()
+        if mode_mem_settings.use_deepspeed_evo_attention and mode_mem_settings.use_cueq_triangle_kernel:
+            warnings.warn(
+                "Both DeepSpeed and cuEq are enabled. Defaulting to cuEq"
+            )
+            mode_mem_settings.use_deepspeed_evo_attention = False
+            
 
         # Determine number of rollout steps and samples depending on training/eval mode
         no_rollout_steps = (
@@ -356,6 +368,7 @@ class OpenFold3(nn.Module):
                 noise_schedule=noise_schedule,
                 no_rollout_samples=no_rollout_samples,
                 use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                use_cueq_triangle_kernel=mode_mem_settings.use_cueq_triangle_kernel,
                 use_lma=mode_mem_settings.use_lma,
                 _mask_trans=True,
             )
@@ -377,6 +390,7 @@ class OpenFold3(nn.Module):
                     output=output,
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernel=mode_mem_settings.use_cueq_triangle_kernel,
                     use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
@@ -586,7 +600,7 @@ class OpenFold3(nn.Module):
         # Controls whether the model uses in-place operations throughout
         # The dual condition accounts for activation checkpoints
         inplace_safe = not (self.training or torch.is_grad_enabled())
-
+    
         # If training, we sample the number of recycles
         # This is the additional number of iterations through the trunk
         # TODO: Because the process seeds are set to the same initial value for all

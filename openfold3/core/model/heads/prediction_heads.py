@@ -112,6 +112,7 @@ class PairformerEmbedding(nn.Module):
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -129,6 +130,7 @@ class PairformerEmbedding(nn.Module):
                 pair_mask[..., i : i + 1, :, :],
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -146,6 +148,7 @@ class PairformerEmbedding(nn.Module):
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -166,6 +169,7 @@ class PairformerEmbedding(nn.Module):
             single_mask,
             pair_mask,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
@@ -187,6 +191,7 @@ class PairformerEmbedding(nn.Module):
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -212,6 +217,8 @@ class PairformerEmbedding(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma.
+            Use deepspeed_evo_attention:
+                Whether to use CuEquivariance kernels.
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
@@ -248,6 +255,7 @@ class PairformerEmbedding(nn.Module):
                 pair_mask=pair_mask,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernel =use_cueq_triangle_kernel, 
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -261,6 +269,7 @@ class PairformerEmbedding(nn.Module):
                 single_mask=single_mask,
                 pair_mask=pair_mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,

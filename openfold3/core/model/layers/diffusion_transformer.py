@@ -123,6 +123,7 @@ class DiffusionTransformerBlock(nn.Module):
         mask: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -157,6 +158,7 @@ class DiffusionTransformerBlock(nn.Module):
                 s=s,
                 mask=mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
             )
@@ -166,7 +168,7 @@ class DiffusionTransformerBlock(nn.Module):
                 z=z,
                 s=s,
                 mask=mask,
-                use_high_precision_attention=use_high_precision_attention,
+                use_high_precision_attention=use_high_precision_attention
             )
 
         trans_mask = mask if _mask_trans else None
@@ -269,6 +271,7 @@ class DiffusionTransformer(nn.Module):
         mask: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -303,6 +306,7 @@ class DiffusionTransformer(nn.Module):
                 mask=mask,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
