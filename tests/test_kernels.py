@@ -26,44 +26,50 @@ from torch.nn import functional as F
 import tests.compare_utils as compare_utils
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
-from openfold3.core.model.layers.triangular_multiplicative_update import (
-    TriangleMultiplicativeUpdate,
-)
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from tests.config import consts
+from tests.data_utils import (
+    random_attention_inputs,
+)
 
+from openfold3.core.model.layers.triangular_multiplicative_update import (
+    TriangleMultiplicativeUpdate,
+)
 
-@compare_utils.skip_unless_cueq_installed()
 @compare_utils.skip_unless_cuda_available()
-class TestCuEqKernels(unittest.TestCase):
-    def test_cueq_tri_attn_fwd(self):
-        """test cueq triangle attn forward pass."""
-        ## NOTE: this tests the forwards pass as seen in
-        ## the template module
+class TestKernels(unittest.TestCase):
+    def _compare_attn_kernel_forward(self,
+                                use_deepspeed_evo_attention=False,
+                                use_cueq_triangle_kernel=False,
+                                dtype = torch.float32
+                                ):
+        """Compare attention with and without using DeepSpeed Evoformer kernel."""
         batch_size = consts.batch_size
-        n_tmpl = 20
-        n_res = 64
-        c_in = 128
+        n_seq = 18
+        n_res = 20
         c_hidden = 32
         no_heads = 4
         eps = 2e-2
-        x = torch.randn(batch_size, n_tmpl, n_res, n_res, c_in).to("cuda")
-        mask_bias = torch.zeros(batch_size, n_tmpl, n_res, 1, 1, n_res).to("cuda")
-        triangle_bias = torch.randn(batch_size, n_tmpl, 1, no_heads, n_res, n_res).to(
-            "cuda"
+
+        q, kv, mask, biases = random_attention_inputs(
+            batch_size=batch_size,
+            n_seq=n_seq,
+            n=n_res,
+            no_heads=no_heads,
+            c_hidden=c_hidden,
+            dtype = dtype
         )
-        biases = [mask_bias, triangle_bias]
 
         a = Attention(
-            c_q=c_in,
-            c_k=c_in,
-            c_v=c_in,
-            c_hidden=c_hidden,
-            no_heads=no_heads,
-        ).to("cuda")
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            no_heads,
+        ).cuda()
 
         # Change output params init for testing since they are initialized with 'final'
         # init (zeros) Otherwise both will just return zero.
@@ -71,56 +77,76 @@ class TestCuEqKernels(unittest.TestCase):
             lecun_normal_init_(a.linear_g.weight)
             lecun_normal_init_(a.linear_o.weight)
 
-            real_out = a(x, x, biases=biases, use_cueq_triangle_kernel=False).cpu()
+            real_out = a(q, kv, biases=biases).cpu()
 
-            cueq_out = a(x, x, biases=biases, use_cueq_triangle_kernel=True).cpu()
+            kernel_out = a(q, kv, biases=biases, use_deepspeed_evo_attention = use_deepspeed_evo_attention, use_cueq_triangle_kernel=use_cueq_triangle_kernel).cpu()
 
-        err = torch.max(torch.abs(cueq_out - real_out))
-        print(f"Max error in cueq triangle attention forward: {err.item()}")
+        err = torch.max(torch.abs(kernel_out - real_out))
         self.assertTrue(err < eps, f"Error: {err}")
+    
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_dsk_forward_bf16(self):
+        self._compare_attn_kernel_forward(
+            use_deepspeed_evo_attention=True,
+            use_cueq_triangle_kernel=False,
+            dtype = torch.bfloat16
+        )
+    
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_dsk_forward_fp32(self):
+        self._compare_attn_kernel_forward(
+            use_deepspeed_evo_attention=True,
+            use_cueq_triangle_kernel=False,
+            dtype = torch.float32
+        )
+    
+    @compare_utils.skip_unless_cueq_installed()
+    def test_cueq_forward_fp32(self):
+        self._compare_attn_kernel_forward(
+            use_deepspeed_evo_attention=False,
+            use_cueq_triangle_kernel=True,
+            dtype = torch.float32
+        )
+    
+    @compare_utils.skip_unless_cueq_installed()
+    def test_cueq_forward_bf16(self):
+        self._compare_attn_kernel_forward(
+            use_deepspeed_evo_attention=False,
+            use_cueq_triangle_kernel=True,
+            dtype = torch.bfloat16
+        )
 
-    def test_cueq_tri_attn_bwd(self):
+    def _compare_attn_kernel_backward(self,
+                                use_deepspeed_evo_attention=False,
+                                use_cueq_triangle_kernel=False,
+                                dtype = torch.float32
+        ):
         """
-        test cu eq triangle attention backward pass. Right now
-        only bf16 is supported
+        Compare backward pass for regular attention vs. DeepSpeed Evoformer kernel.
         """
         batch_size = consts.batch_size
-        n_tmpl = 20
-        n_res = 64
-        c_in = 128
+        n_seq = 18
+        n_res = 20
         c_hidden = 32
         no_heads = 4
         eps = consts.eps
-        # NOTE: fp32 is not supported for the cueq kernel
-        # this is intentionally placed to trigger a warning
-        # that types get auto converted to bf16
-        dtype = torch.float32
-        x = torch.randn(
-            batch_size, n_tmpl, n_res, n_res, c_in, dtype=dtype, requires_grad=True
-        ).to("cuda")
-        q = x.clone()
-        kv = x.clone()
-        mask_bias = torch.zeros(batch_size, n_tmpl, n_res, 1, 1, n_res, dtype=dtype).to(
-            "cuda"
-        )
-        triangle_bias = torch.randn(
-            batch_size,
-            n_tmpl,
-            1,
-            no_heads,
-            n_res,
-            n_res,
-            dtype=dtype,
+
+        q, kv, _, biases = random_attention_inputs(
+            batch_size=batch_size,
+            n_seq=n_seq,
+            n=n_res,
+            no_heads=no_heads,
+            c_hidden=c_hidden,
             requires_grad=True,
-        ).to("cuda")
-        biases = [mask_bias, triangle_bias]
+            dtype=dtype
+        )
 
         attn = Attention(
-            c_q=c_in,
-            c_k=c_in,
-            c_v=c_in,
-            c_hidden=c_hidden,
-            no_heads=no_heads,
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            c_hidden,
+            no_heads,
         ).cuda()
 
         with torch.no_grad():
@@ -137,11 +163,11 @@ class TestCuEqKernels(unittest.TestCase):
         def init_attn():
             # Create new attention object with same initial weights
             a_clone = Attention(
-                c_q=c_in,
-                c_k=c_in,
-                c_v=c_in,
-                c_hidden=c_hidden,
-                no_heads=no_heads,
+                c_hidden,
+                c_hidden,
+                c_hidden,
+                c_hidden,
+                no_heads,
             ).cuda()
 
             a_clone.load_state_dict(attn.state_dict())
@@ -153,12 +179,11 @@ class TestCuEqKernels(unittest.TestCase):
         biases_repro = [clone(b) for b in biases]
 
         a_repro = init_attn()
-
-        attn.train()
-        a_repro.train()
-
         out_repro = a_repro(
-            q_repro, kv_repro, biases=biases_repro, use_cueq_triangle_kernel=True
+            q_repro, kv_repro, 
+            biases=biases_repro, 
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernel=use_cueq_triangle_kernel
         )
         loss_repro = torch.mean(out_repro)
         loss_repro.backward()
@@ -189,7 +214,40 @@ class TestCuEqKernels(unittest.TestCase):
             t_gt = a_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
             self.assertTrue(err < eps, f"Error item {name}: {err}")
+    
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_dsk_backward_bf16(self):
+        self._compare_attn_kernel_backward(
+            use_deepspeed_evo_attention=True,
+            use_cueq_triangle_kernel=False,
+            dtype = torch.bfloat16
+        )
+    
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_dsk_backward_fp32(self):
+        self._compare_attn_kernel_backward(
+            use_deepspeed_evo_attention=True,
+            use_cueq_triangle_kernel=False,
+            dtype = torch.float32
+        )
+    
+    @compare_utils.skip_unless_cueq_installed()    
+    def test_cueq_backward_fp32(self):
+        self._compare_attn_kernel_backward(
+            use_deepspeed_evo_attention=False,
+            use_cueq_triangle_kernel=True,
+            dtype = torch.float32
+        )
+    
+    @compare_utils.skip_unless_cueq_installed()
+    def test_cueq_backward_bf16(self):
+        self._compare_attn_kernel_backward(
+            use_deepspeed_evo_attention=False,
+            use_cueq_triangle_kernel=True,
+            dtype = torch.bfloat16
+        )
 
+    @compare_utils.skip_unless_cueq_installed()
     def test_cueq_tri_mult_fwd(self):
         batch = consts.batch_size
         n_tmpl = 20
@@ -223,10 +281,10 @@ class TestCuEqKernels(unittest.TestCase):
                 use_cueq_triangle_kernel=True,
             )
         err = torch.max(torch.abs(fwd_reg - fwd_cueq))
-        print(f"Max error in cueq triangle multiplicative update forward: {err.item()}")
         eps = 2e-2
         self.assertTrue(err < eps, f"Error: {err}")
 
+    @compare_utils.skip_unless_cueq_installed()
     def test_cueq_tri_mult_bwd(self):
         batch = consts.batch_size
         n_tmpl = 20
@@ -302,13 +360,26 @@ class TestCuEqKernels(unittest.TestCase):
             t_gt = tm_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
             self.assertTrue(err < eps, f"Error item {name}: {err}")
+                    
+    def _initialize_model_weights(self, model):
+        for module in model.modules():
+            if isinstance(module, torch.nn.Linear):
+                with torch.no_grad():
+                    lecun_normal_init_(module.weight)
 
-    def compare_pairformer(self, dtype, eps):
+    def _compare_pairformer(self,
+                        use_deepspeed_evo_attention=False,
+                        use_cueq_triangle_kernel=False, 
+                        dtype = torch.float32, 
+                        eps = 2e-2
+        ):
         """
-        Compare Pairformer output with and without using cueq kernels
-        kernel. Set dtype to confirm the kernel can be used during both training (BF16)
-        and inference (FP32), since the kernel itself can run with either BF16 or FP16
-        precision.
+        Compare Pairformer output with and without using optimized kernels
+        Set dtype to confirm the kernel can be used during both training (BF16)
+        and inference (FP32), since the kernels can run with either BF16 or FP16
+        precision. Notably, for cueq kernels when use_cueq_triangle_kernel is 
+        true, both the triangle_attention and triangle_multiplicative_update 
+        kernels will be active 
 
         TODO: Change the test to use a loaded Pairformer block from the trained model
           instead of a newly initialized block.
@@ -349,6 +420,8 @@ class TestCuEqKernels(unittest.TestCase):
             .to(device="cuda", dtype=dtype)
         )
 
+        self._initialize_model_weights(block)
+
         s = torch.rand(batch_size, n_res, consts.c_s, device="cuda", dtype=dtype)
         z = torch.rand(batch_size, n_res, n_res, consts.c_z, device="cuda", dtype=dtype)
 
@@ -356,50 +429,81 @@ class TestCuEqKernels(unittest.TestCase):
         z_mask = torch.randint(
             0, 2, (batch_size, n_res, n_res), device="cuda", dtype=dtype
         )
-        block.eval()
-        with torch.amp.autocast("cuda", dtype=dtype):
-            out_repro_single, out_repro_pair = block(
-                s=s.clone(),
-                z=z.clone(),
-                single_mask=s_mask.clone(),
-                pair_mask=z_mask.clone(),
-                use_deepspeed_evo_attention=False,
-                use_cueq_triangle_kernel=False,
-            )
+        with torch.no_grad():
+            with torch.amp.autocast("cuda", dtype=dtype):
+                out_repro_single, out_repro_pair = block(
+                    s=s,
+                    z=z,
+                    single_mask=s_mask,
+                    pair_mask=z_mask,
+                    use_deepspeed_evo_attention=False,
+                )
 
-            # In practice, layer norms applied later in the network make any
-            # kernel rounding errors negligible
-            out_repro_single = F.layer_norm(out_repro_single, (consts.c_s,)).cpu()
-            out_repro_pair = F.layer_norm(out_repro_pair, (consts.c_z,)).cpu()
+                # In practice, layer norms applied later in the network make any
+                # kernel rounding errors negligible
+                out_repro_single = F.layer_norm(out_repro_single, (consts.c_s,)).cpu()
+                out_repro_pair = F.layer_norm(out_repro_pair, (consts.c_z,)).cpu()
 
-            out_repro_single_ds, out_repro_pair_ds = block(
-                s=s.clone(),
-                z=z.clone(),
-                single_mask=s_mask.clone(),
-                pair_mask=z_mask.clone(),
-                use_deepspeed_evo_attention=False,
-                use_cueq_triangle_kernel=True,
-            )
-            out_repro_single_ds = F.layer_norm(out_repro_single_ds, (consts.c_s,)).cpu()
-            out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, (consts.c_z,)).cpu()
+                out_repro_single_ds, out_repro_pair_ds = block(
+                    s=s,
+                    z=z,
+                    single_mask=s_mask,
+                    pair_mask=z_mask,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernel=use_cueq_triangle_kernel
+                )
+                out_repro_single_ds = F.layer_norm(out_repro_single_ds, (consts.c_s,)).cpu()
+                out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, (consts.c_z,)).cpu()
 
-            compare_utils.assert_mean_abs_diff_small(
-                out_repro_single, out_repro_single_ds, eps
-            )
+                compare_utils.assert_mean_abs_diff_small(
+                    out_repro_single, out_repro_single_ds, eps
+                )
 
-            compare_utils.assert_mean_abs_diff_small(
-                out_repro_pair, out_repro_pair_ds, eps
-            )
+                compare_utils.assert_mean_abs_diff_small(
+                    out_repro_pair, out_repro_pair_ds, eps
+                )
 
-    def test_compare_pairformer_bf16(self):
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_compare_pairformer_dsk_bf16(self):
         """Run evoformer comparison test with BF16 precision."""
-        self.compare_pairformer(dtype=torch.bfloat16, eps=4e-2)
-
-    def test_compare_pairformer_fp32(self):
+        self._compare_pairformer(
+            use_deepspeed_evo_attention=True,
+            use_cueq_triangle_kernel=False,
+            dtype=torch.bfloat16, 
+            eps=4e-2)
+    
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_compare_pairformer_dsk_fp32(self):
         """Run evoformer comparison test with FP32 precision."""
-        self.compare_pairformer(dtype=torch.float32, eps=2e-2)
+        self._compare_pairformer(
+            use_deepspeed_evo_attention=True,
+            use_cueq_triangle_kernel=False,
+            dtype=torch.float32, 
+            eps=2e-2)
 
-    def test_compare_template_stack(self):
+    @compare_utils.skip_unless_cueq_installed()
+    def test_compare_pairformer_cueq_bf16(self):
+        """Run evoformer comparison test with BF16 precision."""
+        self._compare_pairformer(
+            use_deepspeed_evo_attention=False,
+            use_cueq_triangle_kernel=True,
+            dtype=torch.bfloat16, 
+            eps=2e-2)
+    
+    @compare_utils.skip_unless_cueq_installed()
+    def test_compare_pairformer_cueq_fp32(self):
+        """Run evoformer comparison test with FP32 precision."""
+        self._compare_pairformer(
+            use_deepspeed_evo_attention=False,
+            use_cueq_triangle_kernel=True,
+            dtype=torch.float32, 
+            eps=2e-2)
+
+    def _compare_template_stack(self,
+                        use_deepspeed_evo_attention=False,
+                        use_cueq_triangle_kernel=False, 
+                        dtype = torch.float32,                         
+        ):
         """
         Compare Template Stack output with and without using DeepSpeed Evoformer
         attention kernel. Kernel can be used for Triangle Attention in the Template Pair
@@ -413,9 +517,12 @@ class TestCuEqKernels(unittest.TestCase):
         of3_config = of3_proj_entry.get_model_config_with_presets()
         c_in = of3_config.architecture.template.template_pair_embedder.c_in
 
-        embedder = TemplateEmbedderAllAtom(of3_config.architecture.template).to(
-            device="cuda"
+        embedder = (
+            TemplateEmbedderAllAtom(of3_config.architecture.template)
+            .eval()
+            .to(device="cuda")
         )
+        self._initialize_model_weights(embedder)
 
         batch = {
             "token_mask": torch.ones((batch_size, n_token)),
@@ -440,32 +547,61 @@ class TestCuEqKernels(unittest.TestCase):
         pair_mask = torch.randint(0, 2, size=(batch_size, n_token, n_token))
 
         with torch.no_grad():
-            args = (
-                batch,
-                torch.as_tensor(z).cuda(),
-                torch.as_tensor(pair_mask).cuda(),
-            )
+            with torch.amp.autocast("cuda", dtype=dtype):
+                args = (
+                    batch,
+                    torch.as_tensor(z).cuda(),
+                    torch.as_tensor(pair_mask).cuda(),
+                )
 
-            out_repro = embedder(
-                *args,
-                inplace_safe=False,
-                chunk_size=None,
-                use_deepspeed_evo_attention=False,
-                use_cueq_triangle_kernel=False,
-            )
+                out_repro = embedder(
+                    *args,
+                    inplace_safe=False,
+                    chunk_size=None,
+                    use_deepspeed_evo_attention=False,
+                )
 
-            out_repro_ds = embedder(
-                *args,
-                inplace_safe=False,
-                chunk_size=None,
-                use_deepspeed_evo_attention=False,
-                use_cueq_triangle_kernel=True,
-            )
+                out_repro_ds = embedder(
+                    *args,
+                    inplace_safe=False,
+                    chunk_size=None,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernel = use_cueq_triangle_kernel
+                )
 
-            compare_utils.assert_max_abs_diff_small(
-                out_repro.cpu(), out_repro_ds.cpu(), 2e-2
-            )
+                compare_utils.assert_max_abs_diff_small(out_repro, out_repro_ds, 2e-2)
 
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_compare_template_stack_dsk_fp32(self):
+        self._compare_template_stack(
+            use_deepspeed_evo_attention=True,
+            use_cueq_triangle_kernel=False, 
+            dtype=torch.float32
+        )
+    
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_compare_template_stack_dsk_bf16(self):
+        self._compare_template_stack(
+            use_deepspeed_evo_attention=True,
+            use_cueq_triangle_kernel=False, 
+            dtype=torch.bfloat16
+        )
+    
+    @compare_utils.skip_unless_cueq_installed()
+    def test_compare_template_stack_cueq_fp32(self):
+        self._compare_template_stack(
+            use_deepspeed_evo_attention=False,
+            use_cueq_triangle_kernel=True, 
+            dtype=torch.float32
+        )
+        
+    @compare_utils.skip_unless_cueq_installed()
+    def test_compare_template_stack_cueq_bf16(self):
+        self._compare_template_stack(
+            use_deepspeed_evo_attention=False,
+            use_cueq_triangle_kernel=True,
+            dtype=torch.bfloat16
+        )
 
 if __name__ == "__main__":
     unittest.main()
