@@ -168,7 +168,7 @@ class DiffusionTransformerBlock(nn.Module):
                 z=z,
                 s=s,
                 mask=mask,
-                use_high_precision_attention=use_high_precision_attention
+                use_high_precision_attention=use_high_precision_attention,
             )
 
         trans_mask = mask if _mask_trans else None

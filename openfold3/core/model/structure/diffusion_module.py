@@ -382,7 +382,7 @@ class SampleDiffusion(nn.Module):
                 zij_trunk=zij_trunk,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernel =use_cueq_triangle_kernel,
+                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,

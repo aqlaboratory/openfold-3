@@ -49,7 +49,7 @@ if ds4s_is_installed:
 cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
     from cuequivariance_torch.primitives.triangle import triangle_attention
-    
+
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
 
@@ -309,7 +309,7 @@ class Attention(nn.Module):
                 If none of the "use_<...>" flags are True, a stock PyTorch
                 implementation is used instead
             use_cueq_triangle_kernel:
-                whether to use cuequivariance triangle kernels. Mutually 
+                whether to use cuequivariance triangle kernels. Mutually
                 exclusive with other use_<...> flags
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
@@ -371,9 +371,7 @@ class Attention(nn.Module):
             o = o.transpose(-2, -3)
         elif use_cueq_triangle_kernel:
             scale = 1.0 / math.sqrt(self.c_hidden)
-            o = _cueq_triangle_attn(
-                q, k, v, biases, scale=scale
-            )
+            o = _cueq_triangle_attn(q, k, v, biases, scale=scale)
         else:
             o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
             o = o.transpose(-2, -3)
@@ -626,14 +624,13 @@ def _cueq_triangle_attn(q, k, v, biases, scale):
     o = triangle_attention(q, k, v, bias=triangle_bias, mask=mask_bias, scale=scale)
 
     if len(q.shape) == 4:
-        ##VS: There's a bug in cueq where if the input is missing the batch dim 
+        ##VS: There's a bug in cueq where if the input is missing the batch dim
         ## the outputs adds it in and so we need to remove it here
         o = o.squeeze(0)
-    
+
     if is_batched_input:
         o = o.view(batch, n_tmpl, *o.shape[1:])
 
     o = o.transpose(-2, -3)
-
 
     return o

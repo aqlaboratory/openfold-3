@@ -2,7 +2,6 @@
 
 import json
 import logging
-import time
 from pathlib import Path
 
 import numpy as np

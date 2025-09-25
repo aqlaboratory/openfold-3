@@ -18,7 +18,7 @@ The main inference and training loops for AlphaFold3.
 """
 
 import random
-import warnings 
+import warnings
 
 import torch
 from ml_collections import ConfigDict
@@ -179,9 +179,14 @@ class OpenFold3(nn.Module):
                 [*, N_token, N_token, C_z] Pair representation
         """
         mode_mem_settings = self._get_mode_mem_settings()
-        if mode_mem_settings.use_deepspeed_evo_attention and mode_mem_settings.use_cueq_triangle_kernel:
+        if (
+            mode_mem_settings.use_deepspeed_evo_attention
+            and mode_mem_settings.use_cueq_triangle_kernel
+        ):
             warnings.warn(
-                "Both DeepSpeed and cuEq are enabled. Defaulting to cuEq"
+                "Both DeepSpeed and cuEq  kernels are enabled."
+                "Defaulting to cuEq kernels",
+                stacklevel=2,
             )
             mode_mem_settings.use_deepspeed_evo_attention = False
 
@@ -328,12 +333,16 @@ class OpenFold3(nn.Module):
             all-atom positions, and confidence/distogram head logits
         """
         mode_mem_settings = self._get_mode_mem_settings()
-        if mode_mem_settings.use_deepspeed_evo_attention and mode_mem_settings.use_cueq_triangle_kernel:
+        if (
+            mode_mem_settings.use_deepspeed_evo_attention
+            and mode_mem_settings.use_cueq_triangle_kernel
+        ):
             warnings.warn(
-                "Both DeepSpeed and cuEq are enabled. Defaulting to cuEq"
+                "Both DeepSpeed and cuEq  kernels are enabled."
+                "Defaulting to cuEq kernels",
+                stacklevel=2,
             )
             mode_mem_settings.use_deepspeed_evo_attention = False
-            
 
         # Determine number of rollout steps and samples depending on training/eval mode
         no_rollout_steps = (
@@ -600,7 +609,7 @@ class OpenFold3(nn.Module):
         # Controls whether the model uses in-place operations throughout
         # The dual condition accounts for activation checkpoints
         inplace_safe = not (self.training or torch.is_grad_enabled())
-    
+
         # If training, we sample the number of recycles
         # This is the additional number of iterations through the trunk
         # TODO: Because the process seeds are set to the same initial value for all

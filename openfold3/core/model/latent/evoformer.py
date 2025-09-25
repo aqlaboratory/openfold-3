@@ -93,7 +93,7 @@ class EvoformerBlock(MSABlock):
         chunk_size: Optional[int] = None,
         transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
-        use_cueq_triangle_kernel:bool = False, 
+        use_cueq_triangle_kernel: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,

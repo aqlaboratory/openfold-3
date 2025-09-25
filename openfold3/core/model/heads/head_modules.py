@@ -194,7 +194,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_cueq_triangle_kernel = use_cueq_triangle_kernel,
+            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,

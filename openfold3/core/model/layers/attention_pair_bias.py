@@ -383,7 +383,7 @@ class CrossAttentionPairBias(nn.Module):
         s: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
         use_high_precision_attention: bool = False,
-        use_cueq_triangle_kernel:bool = False 
+        use_cueq_triangle_kernel: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -421,7 +421,7 @@ class CrossAttentionPairBias(nn.Module):
             kv_x=a_k,
             biases=biases,
             use_high_precision=use_high_precision_attention,
-            use_cueq_triangle_kernel=use_cueq_triangle_kernel
+            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
         )
 
         # Convert back to unpadded and flattened atom representation

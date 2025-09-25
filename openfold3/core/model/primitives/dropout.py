@@ -67,7 +67,7 @@ class Dropout(nn.Module):
                 Tensor to which dropout is applied. Can have any shape
                 compatible with self.batch_dim
         """
-        # VS: Avoiding the extra allocation + multiplication op makes 
+        # VS: Avoiding the extra allocation + multiplication op makes
         # a measurable speed difference according to NVIDIA team
         if not self.training:
             return x

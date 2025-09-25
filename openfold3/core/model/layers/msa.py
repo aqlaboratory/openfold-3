@@ -284,7 +284,7 @@ class MSAAttention(nn.Module):
                 kv_x=m,
                 biases=biases,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernel = use_cueq_triangle_kernel,
+                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
                 use_lma=use_lma,
             )
 
@@ -407,7 +407,7 @@ class MSAColumnAttention(nn.Module):
             mask=mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_cueq_triangle_kernel = use_cueq_triangle_kernel,
+            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
             use_lma=use_lma,
         )
 
