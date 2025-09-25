@@ -308,6 +308,9 @@ class Attention(nn.Module):
                 Whether to use DeepSpeed memory-efficient attention kernel.
                 If none of the "use_<...>" flags are True, a stock PyTorch
                 implementation is used instead
+            use_cueq_triangle_kernel:
+                whether to use cuequivariance triangle kernels. Mutually 
+                exclusive with other use_<...> flags
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
                 none of the "use_<...>" flags are True, a stock PyTorch
@@ -369,7 +372,7 @@ class Attention(nn.Module):
         elif use_cueq_triangle_kernel:
             scale = 1.0 / math.sqrt(self.c_hidden)
             o = _cueq_triangle_attn(
-                q, k, v, biases, scale=scale, training=self.training
+                q, k, v, biases, scale=scale
             )
         else:
             o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
@@ -586,28 +589,13 @@ def _lma(
 
 
 @torch.compiler.disable
-def _cueq_triangle_attn(q, k, v, biases, scale, training=False):
+def _cueq_triangle_attn(q, k, v, biases, scale):
     is_batched_input = False
     assert len(biases) == 2, (
         "CUEQ triangle attention kernel requires two bias terms: "
         "mask_bias and triangle_bias"
     )
     mask_bias, triangle_bias = biases
-
-    ## FP32 is not supported for the cueq kernel in training
-    input_dtype = q.dtype
-    if (training) and (input_dtype == torch.float32):
-        warnings.warn(
-            "\n*FP32 is not supported for the cueq"
-            " triangle attention kernel in training. "
-            "Casting to bfloat16.*\n",
-            stacklevel=2,
-        )
-        q = q.to(torch.bfloat16)
-        k = k.to(torch.bfloat16)
-        v = v.to(torch.bfloat16)
-        mask_bias = mask_bias.to(torch.bfloat16)
-        triangle_bias = triangle_bias.to(torch.bfloat16)
 
     ##VS: the cueq attn kernel only allows up to 5 input dimensions:
     ## (batch,*,n_head, *,c_hidden); batch here denotes multiple
@@ -637,12 +625,15 @@ def _cueq_triangle_attn(q, k, v, biases, scale, training=False):
 
     o = triangle_attention(q, k, v, bias=triangle_bias, mask=mask_bias, scale=scale)
 
+    if len(q.shape) == 4:
+        ##VS: There's a bug in cueq where if the input is missing the batch dim 
+        ## the outputs adds it in and so we need to remove it here
+        o = o.squeeze(0)
+    
     if is_batched_input:
         o = o.view(batch, n_tmpl, *o.shape[1:])
 
     o = o.transpose(-2, -3)
 
-    if o.dtype != input_dtype:
-        o = o.to(input_dtype)
 
     return o
