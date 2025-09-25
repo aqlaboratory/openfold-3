@@ -126,9 +126,6 @@ opm_init = ConfigDict(
     }
 )
 
-# AF2-Monomer
-template_pointwise_init = ConfigDict({"mha": mha_init})
-
 # AF2
 msa_global_att_init = ConfigDict({"mha": mha_init})
 
@@ -236,40 +233,6 @@ diffusion_cond_init = ConfigDict(
 # Feature Embedders
 ########################
 
-# AF2-Monomer
-monomer_input_emb_init = ConfigDict(
-    {
-        "linear_tf_z_i": {"bias": True, "init": "default"},
-        "linear_tf_z_j": {"bias": True, "init": "default"},
-        "linear_tf_m": {"bias": True, "init": "default"},
-        "linear_msa_m": {"bias": True, "init": "default"},
-        "linear_relpos": {"bias": True, "init": "default"},
-    }
-)
-
-# Solo-Seq (AF2-Monomer)
-preembed_init = ConfigDict(
-    {
-        "linear_tf_m": {"bias": True, "init": "default"},
-        "linear_preemb_m": {"bias": True, "init": "default"},
-        "linear_preemb_z_i": {"bias": True, "init": "default"},
-        "linear_preemb_z_j": {"bias": True, "init": "default"},
-        "linear_relpos": {"bias": True, "init": "default"},
-    }
-)
-
-# AF2-Multimer
-multimer_input_emb_init = ConfigDict(
-    {
-        "linear_tf_z_i": {"bias": True, "init": "default"},
-        "linear_tf_z_j": {"bias": True, "init": "default"},
-        "linear_tf_m": {"bias": True, "init": "default"},
-        "linear_msa_m": {"bias": True, "init": "default"},
-        "linear_relpos": {"bias": True, "init": "default"},
-    }
-)
-
-# AF3
 all_atom_input_emb_init = ConfigDict(
     {
         "linear_s": {"bias": False, "init": "default"},
@@ -280,13 +243,6 @@ all_atom_input_emb_init = ConfigDict(
     }
 )
 
-# AF2
-recycling_emb_init = ConfigDict({"linear": {"bias": True, "init": "default"}})
-
-# AF2
-extra_msa_emb_init = ConfigDict({"linear": {"bias": True, "init": "default"}})
-
-# AF3
 msa_module_emb_init = ConfigDict(
     {
         "linear_m": {"bias": False, "init": "default"},
@@ -302,36 +258,6 @@ monomer_templ_single_feat_emb_init = ConfigDict(
     }
 )
 
-# AF2-Monomer
-monomer_templ_pair_feat_emb_init = ConfigDict(
-    {
-        "linear": {"bias": True, "init": "relu"},
-    }
-)
-
-# AF2-Multimer
-multimer_templ_single_feat_emb_init = ConfigDict(
-    {
-        "template_single_embedder": {"bias": True, "init": "default"},
-        "template_projector": {"bias": True, "init": "default"},
-    }
-)
-
-# AF2-Multimer
-multimer_templ_pair_feat_emb_init = ConfigDict(
-    {
-        "dgram_linear": {"bias": True, "init": "relu"},
-        "aatype_linear_1": {"bias": True, "init": "relu"},
-        "aatype_linear_2": {"bias": True, "init": "relu"},
-        "query_embedding_linear": {"bias": True, "init": "relu"},
-        "pseudo_beta_mask_linear": {"bias": True, "init": "relu"},
-        "x_linear": {"bias": True, "init": "relu"},
-        "y_linear": {"bias": True, "init": "relu"},
-        "z_linear": {"bias": True, "init": "relu"},
-        "backbone_mask_linear": {"bias": True, "init": "relu"},
-    }
-)
-
 # AF3
 all_atom_templ_pair_feat_emb_init = ConfigDict(
     {
@@ -343,24 +269,6 @@ all_atom_templ_pair_feat_emb_init = ConfigDict(
 ########################
 # Heads
 ########################
-
-# AF2
-lddt_ca_init = ConfigDict(
-    {
-        "linear_1": {"bias": True, "init": "relu"},
-        "linear_2": {"bias": True, "init": "relu"},
-        "linear_3": {"bias": True, "init": "final"},
-    }
-)
-
-# AF2
-exp_res_init = ConfigDict({"linear": {"bias": True, "init": "final"}})
-
-# AF2
-tm_score_init = ConfigDict({"linear": {"bias": True, "init": "final"}})
-
-# AF2
-masked_msa_init = ConfigDict({"linear": {"bias": True, "init": "final"}})
 
 # AF3
 pairformer_head_init = ConfigDict(
@@ -418,11 +326,6 @@ evo_block_init = ConfigDict(
     }
 )
 
-# AF2
-extra_msa_block_init = ConfigDict(
-    {**msa_block_init, "msa_col_att": msa_global_att_init}
-)
-
 # AF3
 msa_module_init = ConfigDict(
     {
@@ -440,9 +343,6 @@ pairformer_init = ConfigDict(
     }
 )
 
-# AF2-Multimer
-multimer_templ_module_init = ConfigDict({"linear_t": {"bias": True, "init": "default"}})
-
 # AF3
 all_atom_templ_module_init = ConfigDict(
     {"linear_t": {"bias": False, "init": "default"}}
@@ -451,86 +351,6 @@ all_atom_templ_module_init = ConfigDict(
 ########################
 # Structure
 ########################
-
-# AF2
-angle_resnet_block_init = ConfigDict(
-    {
-        "linear_1": {"bias": True, "init": "default"},
-        "linear_2": {"bias": True, "init": "final"},
-    }
-)
-
-# AF2
-angle_resnet_init = ConfigDict(
-    {
-        "linear_in": {"bias": True, "init": "default"},
-        "linear_initial": {"bias": True, "init": "default"},
-        "angle_resnet_block": angle_resnet_block_init,
-        "linear_out": {"bias": True, "init": "default"},
-    }
-)
-
-# AF2
-point_proj_init = ConfigDict(
-    {
-        "linear": {"bias": True, "init": "default"},
-    }
-)
-
-# AF2-Monomer
-monomer_ipa_init = ConfigDict(
-    {
-        "linear_q": {"bias": True, "init": "default"},
-        "linear_q_points": point_proj_init,
-        "linear_kv": {"bias": True, "init": "default"},
-        "linear_kv_points": point_proj_init,
-        "linear_b": {"bias": True, "init": "default"},
-        "linear_out": {"bias": True, "init": "final"},
-    }
-)
-
-# AF2-Multimer
-multimer_ipa_init = ConfigDict(
-    {
-        "linear_q": {"bias": False, "init": "default"},
-        "linear_q_points": point_proj_init,
-        "linear_k": {"bias": False, "init": "default"},
-        "linear_v": {"bias": False, "init": "default"},
-        "linear_k_points": point_proj_init,
-        "linear_v_points": point_proj_init,
-        "linear_b": {"bias": True, "init": "default"},
-        "linear_out": {"bias": True, "init": "final"},
-    }
-)
-
-# AF2
-bb_update_init = ConfigDict(
-    {
-        "linear": {"bias": True, "init": "final"},
-    }
-)
-
-# AF2-Monomer
-monomer_structure_module_init = ConfigDict(
-    {
-        "linear_in": {"bias": True, "init": "default"},
-        "ipa": monomer_ipa_init,
-        "transition": relu_transition_init,
-        "bb_update": bb_update_init,
-        "angle_resnet": angle_resnet_init,
-    }
-)
-
-# AF2-Multimer
-multimer_structure_module_init = ConfigDict(
-    {
-        "linear_in": {"bias": True, "init": "default"},
-        "ipa": multimer_ipa_init,
-        "transition": relu_transition_init,
-        "bb_update": bb_update_init,
-        "angle_resnet": angle_resnet_init,
-    }
-)
 
 # AF3
 diffusion_module_init = ConfigDict(
