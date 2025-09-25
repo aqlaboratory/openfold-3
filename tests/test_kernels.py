@@ -461,9 +461,7 @@ class TestKernels(unittest.TestCase):
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernel=use_cueq_triangle_kernel,
             )
-            out_repro_single_ds = F.layer_norm(
-                out_repro_single_ds, (consts.c_s,)
-            ).cpu()
+            out_repro_single_ds = F.layer_norm(out_repro_single_ds, (consts.c_s,)).cpu()
             out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, (consts.c_z,)).cpu()
 
             compare_utils.assert_mean_abs_diff_small(
