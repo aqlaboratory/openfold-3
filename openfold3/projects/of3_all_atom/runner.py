@@ -605,17 +605,17 @@ class OpenFold3AllAtom(ModelRunner):
         # Get traceback and format message
         error_traceback = traceback.format_exc()
 
-        log_entry = f"""
-    ==================================================
-    Timestamp: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-    Query ID(s): {", ".join(query_id)}
-    Error Type: {type(e).__name__}
-    Error Message: {e}
-    --------------------------------------------------
-    Traceback:
-    {error_traceback}
-    ==================================================
-        """
+        lines = [
+            "==================================================",
+            f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Query ID(s): {', '.join(query_id)}",
+            f"Error Type: {type(e).__name__}",
+            f"Error Message: {e}",
+            "--------------------------------------------------",
+            f"Traceback:{error_traceback}",
+            "==================================================",
+        ]
+        log_entry = "\n".join(lines)
 
         # Append the entry to the log file
         with open(log_file, "a") as f:
