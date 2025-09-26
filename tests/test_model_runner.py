@@ -45,7 +45,7 @@ def test_oom_exception_handling(batches):
     # two queries:
     project_entry = OF3ProjectEntry()
     config = project_entry.get_model_config_with_presets()
-    model_runner = OpenFold3AllAtom(model_config=config, _compile=False)
+    model_runner = OpenFold3AllAtom(model_config=config)
     batches = [
         {"query_id": ["oom_one"], "seed": torch.tensor([123])},
         {"query_id": ["two"], "seed": torch.tensor([456])},
