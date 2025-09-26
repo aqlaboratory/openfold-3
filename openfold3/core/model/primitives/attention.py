@@ -290,7 +290,7 @@ class Attention(nn.Module):
         kv_x: torch.Tensor,
         biases: Optional[list[torch.Tensor]] = None,
         use_deepspeed_evo_attention: bool = False,
-        use_cueq_triangle_kernel: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
@@ -308,7 +308,7 @@ class Attention(nn.Module):
                 Whether to use DeepSpeed memory-efficient attention kernel.
                 If none of the "use_<...>" flags are True, a stock PyTorch
                 implementation is used instead
-            use_cueq_triangle_kernel:
+            use_cueq_triangle_kernels:
                 whether to use cuequivariance triangle kernels. Mutually
                 exclusive with other use_<...> flags
             use_lma:
@@ -341,7 +341,7 @@ class Attention(nn.Module):
             use_deepspeed_evo_attention,
             use_lma,
             use_high_precision,
-            use_cueq_triangle_kernel,
+            use_cueq_triangle_kernels,
         ]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
@@ -352,7 +352,7 @@ class Attention(nn.Module):
         q, k, v = self._prep_qkv(
             q_x,
             kv_x,
-            apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernel),
+            apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels),
         )
 
         if use_deepspeed_evo_attention:
@@ -369,7 +369,7 @@ class Attention(nn.Module):
             ]
             o = _lma(q, k, v, biases, lma_q_chunk_size, lma_kv_chunk_size)
             o = o.transpose(-2, -3)
-        elif use_cueq_triangle_kernel:
+        elif use_cueq_triangle_kernels:
             scale = 1.0 / math.sqrt(self.c_hidden)
             o = _cueq_triangle_attn(q, k, v, biases, scale=scale)
         else:

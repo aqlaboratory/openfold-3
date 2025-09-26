@@ -109,7 +109,7 @@ class MSAAttention(nn.Module):
         biases: Optional[list[torch.Tensor]],
         chunk_size: int,
         use_deepspeed_evo_attention: bool,
-        use_cueq_triangle_kernel: bool,
+        use_cueq_triangle_kernels: bool,
         use_lma: bool,
     ) -> torch.Tensor:
         def fn(m, biases):
@@ -119,7 +119,7 @@ class MSAAttention(nn.Module):
                 kv_x=m,
                 biases=biases,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
             )
 
@@ -231,7 +231,7 @@ class MSAAttention(nn.Module):
         mask: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
-        use_cueq_triangle_kernel: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _chunk_logits: Optional[int] = None,
@@ -274,7 +274,7 @@ class MSAAttention(nn.Module):
                 biases,
                 chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
             )
         else:
@@ -284,7 +284,7 @@ class MSAAttention(nn.Module):
                 kv_x=m,
                 biases=biases,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
             )
 
@@ -383,7 +383,7 @@ class MSAColumnAttention(nn.Module):
         mask: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
-        use_cueq_triangle_kernel: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
     ) -> torch.Tensor:
         """
@@ -407,7 +407,7 @@ class MSAColumnAttention(nn.Module):
             mask=mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
         )
 

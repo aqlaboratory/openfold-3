@@ -44,7 +44,7 @@ class TestKernels(unittest.TestCase):
     def _compare_attn_kernel_forward(
         self,
         use_deepspeed_evo_attention=False,
-        use_cueq_triangle_kernel=False,
+        use_cueq_triangle_kernels=False,
         dtype=torch.float32,
     ):
         """Compare attention with and without using DeepSpeed Evoformer kernel."""
@@ -85,7 +85,7 @@ class TestKernels(unittest.TestCase):
                 kv,
                 biases=biases,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             ).cpu()
 
         err = torch.max(torch.abs(kernel_out - real_out))
@@ -95,7 +95,7 @@ class TestKernels(unittest.TestCase):
     def test_dsk_forward_bf16(self):
         self._compare_attn_kernel_forward(
             use_deepspeed_evo_attention=True,
-            use_cueq_triangle_kernel=False,
+            use_cueq_triangle_kernels=False,
             dtype=torch.bfloat16,
         )
 
@@ -103,7 +103,7 @@ class TestKernels(unittest.TestCase):
     def test_dsk_forward_fp32(self):
         self._compare_attn_kernel_forward(
             use_deepspeed_evo_attention=True,
-            use_cueq_triangle_kernel=False,
+            use_cueq_triangle_kernels=False,
             dtype=torch.float32,
         )
 
@@ -111,7 +111,7 @@ class TestKernels(unittest.TestCase):
     def test_cueq_forward_fp32(self):
         self._compare_attn_kernel_forward(
             use_deepspeed_evo_attention=False,
-            use_cueq_triangle_kernel=True,
+            use_cueq_triangle_kernels=True,
             dtype=torch.float32,
         )
 
@@ -119,14 +119,14 @@ class TestKernels(unittest.TestCase):
     def test_cueq_forward_bf16(self):
         self._compare_attn_kernel_forward(
             use_deepspeed_evo_attention=False,
-            use_cueq_triangle_kernel=True,
+            use_cueq_triangle_kernels=True,
             dtype=torch.bfloat16,
         )
 
     def _compare_attn_kernel_backward(
         self,
         use_deepspeed_evo_attention=False,
-        use_cueq_triangle_kernel=False,
+        use_cueq_triangle_kernels=False,
         dtype=torch.float32,
     ):
         """
@@ -192,7 +192,7 @@ class TestKernels(unittest.TestCase):
             kv_repro,
             biases=biases_repro,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
         )
         loss_repro = torch.mean(out_repro)
         loss_repro.backward()
@@ -228,7 +228,7 @@ class TestKernels(unittest.TestCase):
     def test_dsk_backward_bf16(self):
         self._compare_attn_kernel_backward(
             use_deepspeed_evo_attention=True,
-            use_cueq_triangle_kernel=False,
+            use_cueq_triangle_kernels=False,
             dtype=torch.bfloat16,
         )
 
@@ -236,7 +236,7 @@ class TestKernels(unittest.TestCase):
     def test_dsk_backward_fp32(self):
         self._compare_attn_kernel_backward(
             use_deepspeed_evo_attention=True,
-            use_cueq_triangle_kernel=False,
+            use_cueq_triangle_kernels=False,
             dtype=torch.float32,
         )
 
@@ -244,7 +244,7 @@ class TestKernels(unittest.TestCase):
     def test_cueq_backward_fp32(self):
         self._compare_attn_kernel_backward(
             use_deepspeed_evo_attention=False,
-            use_cueq_triangle_kernel=True,
+            use_cueq_triangle_kernels=True,
             dtype=torch.float32,
         )
 
@@ -252,7 +252,7 @@ class TestKernels(unittest.TestCase):
     def test_cueq_backward_bf16(self):
         self._compare_attn_kernel_backward(
             use_deepspeed_evo_attention=False,
-            use_cueq_triangle_kernel=True,
+            use_cueq_triangle_kernels=True,
             dtype=torch.bfloat16,
         )
 
@@ -282,12 +282,12 @@ class TestKernels(unittest.TestCase):
             fwd_reg = tm(
                 z=z,
                 mask=mask,
-                use_cueq_triangle_kernel=False,
+                use_cueq_triangle_kernels=False,
             )
             fwd_cueq = tm(
                 z=z,
                 mask=mask,
-                use_cueq_triangle_kernel=True,
+                use_cueq_triangle_kernels=True,
             )
         err = torch.max(torch.abs(fwd_reg - fwd_cueq))
         eps = 2e-2
@@ -346,7 +346,7 @@ class TestKernels(unittest.TestCase):
         out_repro = tm_repro(
             z=z_repro,
             mask=mask_repro,
-            use_cueq_triangle_kernel=True,
+            use_cueq_triangle_kernels=True,
         )
         loss_repro = torch.mean(out_repro)
         loss_repro.backward()
@@ -357,7 +357,7 @@ class TestKernels(unittest.TestCase):
         out_gt = tm_gt(
             z=z_gt,
             mask=mask_gt,
-            use_cueq_triangle_kernel=False,
+            use_cueq_triangle_kernels=False,
         )
         loss_gt = torch.mean(out_gt)
         loss_gt.backward()
@@ -379,7 +379,7 @@ class TestKernels(unittest.TestCase):
     def _compare_pairformer(
         self,
         use_deepspeed_evo_attention=False,
-        use_cueq_triangle_kernel=False,
+        use_cueq_triangle_kernels=False,
         dtype=torch.float32,
         eps=2e-2,
     ):
@@ -387,7 +387,7 @@ class TestKernels(unittest.TestCase):
         Compare Pairformer output with and without using optimized kernels
         Set dtype to confirm the kernel can be used during both training (BF16)
         and inference (FP32), since the kernels can run with either BF16 or FP16
-        precision. Notably, for cueq kernels when use_cueq_triangle_kernel is
+        precision. Notably, for cueq kernels when use_cueq_triangle_kernels is
         true, both the triangle_attention and triangle_multiplicative_update
         kernels will be active
 
@@ -459,7 +459,7 @@ class TestKernels(unittest.TestCase):
                 single_mask=s_mask,
                 pair_mask=z_mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             )
             out_repro_single_ds = F.layer_norm(out_repro_single_ds, (consts.c_s,)).cpu()
             out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, (consts.c_z,)).cpu()
@@ -477,7 +477,7 @@ class TestKernels(unittest.TestCase):
         """Run evoformer comparison test with BF16 precision."""
         self._compare_pairformer(
             use_deepspeed_evo_attention=True,
-            use_cueq_triangle_kernel=False,
+            use_cueq_triangle_kernels=False,
             dtype=torch.bfloat16,
             eps=4e-2,
         )
@@ -487,7 +487,7 @@ class TestKernels(unittest.TestCase):
         """Run evoformer comparison test with FP32 precision."""
         self._compare_pairformer(
             use_deepspeed_evo_attention=True,
-            use_cueq_triangle_kernel=False,
+            use_cueq_triangle_kernels=False,
             dtype=torch.float32,
             eps=2e-2,
         )
@@ -497,7 +497,7 @@ class TestKernels(unittest.TestCase):
         """Run evoformer comparison test with BF16 precision."""
         self._compare_pairformer(
             use_deepspeed_evo_attention=False,
-            use_cueq_triangle_kernel=True,
+            use_cueq_triangle_kernels=True,
             dtype=torch.bfloat16,
             eps=2e-2,
         )
@@ -507,7 +507,7 @@ class TestKernels(unittest.TestCase):
         """Run evoformer comparison test with FP32 precision."""
         self._compare_pairformer(
             use_deepspeed_evo_attention=False,
-            use_cueq_triangle_kernel=True,
+            use_cueq_triangle_kernels=True,
             dtype=torch.float32,
             eps=2e-2,
         )
@@ -515,7 +515,7 @@ class TestKernels(unittest.TestCase):
     def _compare_template_stack(
         self,
         use_deepspeed_evo_attention=False,
-        use_cueq_triangle_kernel=False,
+        use_cueq_triangle_kernels=False,
         dtype=torch.float32,
     ):
         """
@@ -579,7 +579,7 @@ class TestKernels(unittest.TestCase):
                 inplace_safe=False,
                 chunk_size=None,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             )
 
             compare_utils.assert_max_abs_diff_small(out_repro, out_repro_ds, 2e-2)
@@ -588,7 +588,7 @@ class TestKernels(unittest.TestCase):
     def test_compare_template_stack_dsk_fp32(self):
         self._compare_template_stack(
             use_deepspeed_evo_attention=True,
-            use_cueq_triangle_kernel=False,
+            use_cueq_triangle_kernels=False,
             dtype=torch.float32,
         )
 
@@ -596,7 +596,7 @@ class TestKernels(unittest.TestCase):
     def test_compare_template_stack_dsk_bf16(self):
         self._compare_template_stack(
             use_deepspeed_evo_attention=True,
-            use_cueq_triangle_kernel=False,
+            use_cueq_triangle_kernels=False,
             dtype=torch.bfloat16,
         )
 
@@ -604,7 +604,7 @@ class TestKernels(unittest.TestCase):
     def test_compare_template_stack_cueq_fp32(self):
         self._compare_template_stack(
             use_deepspeed_evo_attention=False,
-            use_cueq_triangle_kernel=True,
+            use_cueq_triangle_kernels=True,
             dtype=torch.float32,
         )
 
@@ -612,7 +612,7 @@ class TestKernels(unittest.TestCase):
     def test_compare_template_stack_cueq_bf16(self):
         self._compare_template_stack(
             use_deepspeed_evo_attention=False,
-            use_cueq_triangle_kernel=True,
+            use_cueq_triangle_kernels=True,
             dtype=torch.bfloat16,
         )
 

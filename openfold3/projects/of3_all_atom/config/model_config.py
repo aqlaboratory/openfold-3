@@ -76,7 +76,7 @@ model_config = mlc.ConfigDict(
                     # Use DeepSpeed memory-efficient attention kernel. Mutually
                     # exclusive with use_lma.
                     "use_deepspeed_evo_attention": True,
-                    "use_cueq_triangle_kernel": False,
+                    "use_cueq_triangle_kernels": False,
                     # Use Staats & Rabe's low-memory attention algorithm. Mutually
                     # exclusive with use_deepspeed_evo_attention.
                     "use_lma": False,
@@ -88,7 +88,7 @@ model_config = mlc.ConfigDict(
                 "eval": {
                     "chunk_size": None,
                     "use_deepspeed_evo_attention": True,
-                    "use_cueq_triangle_kernel": False,
+                    "use_cueq_triangle_kernels": False,
                     "use_lma": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,

@@ -423,7 +423,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         z: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         inplace_safe: bool = False,
-        use_cueq_triangle_kernel: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         _add_with_inplace: bool = False,
         _inplace_chunk_size: Optional[int] = 256,
     ) -> torch.Tensor:
@@ -436,11 +436,11 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
-        ## NOTE: valid for inplace safe and use_cueq_triangle_kernel to be enabled
+        ## NOTE: valid for inplace safe and use_cueq_triangle_kernels to be enabled
         ## inplace safe is used across the codebase and so should not
-        ## be disabled. So if use_cueq_triangle_kernel is True, it will always
+        ## be disabled. So if use_cueq_triangle_kernels is True, it will always
         ## supersede inplace_safe
-        if use_cueq_triangle_kernel:
+        if use_cueq_triangle_kernels:
             ## VS: The cuequivariance kernel is based on the boltz implementation
             ## of triangle multiplicative update, which fuses the linear_*_p
             ## projections into a single layer (similarly for linear_*_g).
@@ -613,7 +613,7 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         z: torch.Tensor,
         mask: Optional[torch.Tensor] = None,
         inplace_safe: bool = False,
-        use_cueq_triangle_kernel: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         _add_with_inplace: bool = False,
         _inplace_chunk_size: Optional[int] = 256,
     ) -> torch.Tensor:
@@ -626,7 +626,7 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
-        if use_cueq_triangle_kernel:
+        if use_cueq_triangle_kernels:
             raise NotImplementedError(
                 "CUEQ triangle multiplicative update kernel not"
                 "supported for FusedTriangleMultiplicativeUpdate."

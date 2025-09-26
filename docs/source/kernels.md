@@ -18,7 +18,7 @@ model_update:
     settings:
       memory:
         eval:
-          use_cueq_triangle_kernel: true
+          use_cueq_triangle_kernels: true
 ```
 
 This is specifically for inference, but something similar can be used for training. 

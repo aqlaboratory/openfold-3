@@ -96,7 +96,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         output: dict,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
-        use_cueq_triangle_kernel: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -120,7 +120,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma.
-            use_cueq_triangle_kernel:
+            use_cueq_triangle_kernels:
                 Whether to use cuEq triangle attention kernel.
                 Mutually exclusive with use_lma and use_deepspeed_evo_attention.
             use_lma:
@@ -194,7 +194,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,

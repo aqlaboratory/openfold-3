@@ -181,7 +181,7 @@ class OpenFold3(nn.Module):
         mode_mem_settings = self._get_mode_mem_settings()
         if (
             mode_mem_settings.use_deepspeed_evo_attention
-            and mode_mem_settings.use_cueq_triangle_kernel
+            and mode_mem_settings.use_cueq_triangle_kernels
         ):
             warnings.warn(
                 "Both DeepSpeed and cuEq  kernels are enabled."
@@ -233,7 +233,7 @@ class OpenFold3(nn.Module):
                         chunk_size=mode_mem_settings.chunk_size,
                         _mask_trans=True,
                         use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
-                        use_cueq_triangle_kernel=mode_mem_settings.use_cueq_triangle_kernel,
+                        use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                         use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
                     ),
@@ -263,7 +263,7 @@ class OpenFold3(nn.Module):
                         chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                         use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
-                        use_cueq_triangle_kernel=mode_mem_settings.use_cueq_triangle_kernel,
+                        use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                         use_lma=mode_mem_settings.use_lma,
                         _mask_trans=True,
                     )
@@ -278,7 +278,7 @@ class OpenFold3(nn.Module):
                         chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                         use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
-                        use_cueq_triangle_kernel=mode_mem_settings.use_cueq_triangle_kernel,
+                        use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                         use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
                         _mask_trans=True,
@@ -294,7 +294,7 @@ class OpenFold3(nn.Module):
                     pair_mask=pair_mask.to(dtype=s.dtype),
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
-                    use_cueq_triangle_kernel=mode_mem_settings.use_cueq_triangle_kernel,
+                    use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                     use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
@@ -335,7 +335,7 @@ class OpenFold3(nn.Module):
         mode_mem_settings = self._get_mode_mem_settings()
         if (
             mode_mem_settings.use_deepspeed_evo_attention
-            and mode_mem_settings.use_cueq_triangle_kernel
+            and mode_mem_settings.use_cueq_triangle_kernels
         ):
             warnings.warn(
                 "Both DeepSpeed and cuEq  kernels are enabled."
@@ -377,7 +377,7 @@ class OpenFold3(nn.Module):
                 noise_schedule=noise_schedule,
                 no_rollout_samples=no_rollout_samples,
                 use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
-                use_cueq_triangle_kernel=mode_mem_settings.use_cueq_triangle_kernel,
+                use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                 use_lma=mode_mem_settings.use_lma,
                 _mask_trans=True,
             )
@@ -399,7 +399,7 @@ class OpenFold3(nn.Module):
                     output=output,
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
-                    use_cueq_triangle_kernel=mode_mem_settings.use_cueq_triangle_kernel,
+                    use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                     use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,

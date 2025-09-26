@@ -485,7 +485,7 @@ class AtomAttentionEncoder(nn.Module):
         zij_trunk: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
-        use_cueq_triangle_kernel: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_high_precision_attention: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -552,7 +552,7 @@ class AtomAttentionEncoder(nn.Module):
             mask=atom_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_high_precision_attention=use_high_precision_attention,
         )
 
@@ -668,7 +668,7 @@ class AtomAttentionDecoder(nn.Module):
         plm: torch.Tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
-        use_cueq_triangle_kernel: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
         """
@@ -716,7 +716,7 @@ class AtomAttentionDecoder(nn.Module):
             mask=atom_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_cueq_triangle_kernel=use_cueq_triangle_kernel,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_high_precision_attention=use_high_precision_attention,
         )
 
