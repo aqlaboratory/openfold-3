@@ -19,6 +19,7 @@ The main inference and training loops for AlphaFold3.
 
 import random
 import warnings
+from enum import Enum
 
 import torch
 from ml_collections import ConfigDict
@@ -43,6 +44,11 @@ from openfold3.core.utils.permutation_alignment import (
     safe_multi_chain_permutation_alignment,
 )
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
+
+
+class OffloadModules(Enum):
+    MSA_MODULE = "msa_module"
+    CONFIDENCE_HEADS = "confidence_heads"
 
 
 class OpenFold3(nn.Module):
@@ -136,17 +142,17 @@ class OpenFold3(nn.Module):
         )
         return mode_mem_settings
 
-    def _do_inference_offload(self, seq_len: int) -> bool:
+    def _do_inference_offload(self, seq_len: int, module_name: str) -> bool:
         if self.training:
             return False
 
         offload_settings = self.settings.memory.eval.offload_inference
 
-        is_within_cutoff = (
+        is_above_cutoff = (
             offload_settings.token_cutoff is None
-            or offload_settings.token_cutoff > seq_len
+            or seq_len > offload_settings.token_cutoff
         )
-        offload_inference = offload_settings.enabled and is_within_cutoff
+        offload_inference = offload_settings[module_name] and is_above_cutoff
 
         return offload_inference
 
@@ -190,8 +196,9 @@ class OpenFold3(nn.Module):
             )
             mode_mem_settings.use_deepspeed_evo_attention = False
 
-        offload_inference = self._do_inference_offload(
-            seq_len=batch["token_mask"].shape[-1]
+        offload_msa_module = self._do_inference_offload(
+            seq_len=batch["token_mask"].shape[-1],
+            module_name=OffloadModules.MSA_MODULE.value,
         )
 
         s_input, s_init, z_init = self.input_embedder(
@@ -253,7 +260,7 @@ class OpenFold3(nn.Module):
                     if swiglu_token_cutoff is None or swiglu_token_cutoff > m.shape[-2]
                     else None
                 )
-                if offload_inference:
+                if offload_msa_module:
                     input_tensors = [m, z]
                     del m, z
                     z = self.msa_module.forward_offload(
@@ -344,6 +351,11 @@ class OpenFold3(nn.Module):
             )
             mode_mem_settings.use_deepspeed_evo_attention = False
 
+        offload_confidence_heads = self._do_inference_offload(
+            seq_len=batch["token_mask"].shape[-1],
+            module_name=OffloadModules.CONFIDENCE_HEADS.value,
+        )
+
         # Determine number of rollout steps and samples depending on training/eval mode
         no_rollout_steps = (
             self.shared.diffusion.no_mini_rollout_steps
@@ -390,7 +402,8 @@ class OpenFold3(nn.Module):
             "atom_positions_predicted": atom_positions_predicted,
         }
 
-        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+        cast_dtype = torch.float32 if self.training else si_trunk.dtype
+        with torch.amp.autocast(device_type="cuda", dtype=cast_dtype):
             # Compute confidence logits
             output.update(
                 self.aux_heads(
@@ -402,6 +415,7 @@ class OpenFold3(nn.Module):
                     use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                     use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,
+                    offload_inference=offload_confidence_heads,
                     _mask_trans=True,
                 )
             )
@@ -682,5 +696,11 @@ class OpenFold3(nn.Module):
                         )
 
                         output.update(diffusion_output)
+
+        # Memory fragmentation can become a big problem at larger crop sizes
+        # due to different sizes of msa/all-atom tensors used between steps
+        # Clear the cache between steps if unallocated reserved mem is high
+        if self.settings.clear_cache_between_steps:
+            torch.cuda.empty_cache()
 
         return batch, output
