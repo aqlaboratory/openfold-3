@@ -206,6 +206,7 @@ class MSABlock(nn.Module, ABC):
         chunk_size: Optional[int] = None,
         transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -305,14 +306,26 @@ class PairBlock(nn.Module):
         self.ps_dropout_row_layer = DropoutRowwise(pair_dropout)
 
     def tri_mul_out_in(
-        self, z: torch.Tensor, pair_mask: torch.Tensor, inplace_safe: bool
+        self,
+        z: torch.Tensor,
+        pair_mask: torch.Tensor,
+        inplace_safe: bool,
+        use_cueq_triangle_kernels: bool = False,
     ) -> torch.Tensor:
         """Perform the outgoing and incoming triangular multiplicative updates."""
+        inplace_safe = inplace_safe and (not use_cueq_triangle_kernels)
+        ## VS: having both inplace_safe and use_cueq_triangle_kernels set to
+        ## true causes `z = z + self.ps_dropout_row_layer(tmu_update)` below
+        ## to be skipped, as this is the expected output of tri_mult w/ inplace
+        ## safe, creating an error. So disable inplace_safe if
+        ## use_cueq_triangle_kernels is true. Ideally could be refactored to use
+        ## _add_with_inplace=False, then wrap with add as done elsewhere
         tmu_update = self.tri_mul_out(
             z,
             mask=pair_mask,
             inplace_safe=inplace_safe,
             _add_with_inplace=True,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
         )
         if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)
@@ -329,6 +342,7 @@ class PairBlock(nn.Module):
             mask=pair_mask,
             inplace_safe=inplace_safe,
             _add_with_inplace=True,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
         )
         if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)
@@ -343,6 +357,7 @@ class PairBlock(nn.Module):
         _attn_chunk_size: Optional[int],
         pair_mask: torch.Tensor,
         use_deepspeed_evo_attention: bool,
+        use_cueq_triangle_kernels: bool,
         use_lma: bool,
         inplace_safe: bool,
     ) -> torch.Tensor:
@@ -355,6 +370,7 @@ class PairBlock(nn.Module):
                     mask=pair_mask,
                     chunk_size=_attn_chunk_size,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                 )
@@ -376,6 +392,7 @@ class PairBlock(nn.Module):
                     mask=pair_mask.transpose(-1, -2),
                     chunk_size=_attn_chunk_size,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                 )
@@ -395,6 +412,7 @@ class PairBlock(nn.Module):
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -433,13 +451,19 @@ class PairBlock(nn.Module):
         if _attn_chunk_size is None:
             _attn_chunk_size = chunk_size
 
-        z = self.tri_mul_out_in(z=z, pair_mask=pair_mask, inplace_safe=inplace_safe)
+        z = self.tri_mul_out_in(
+            z=z,
+            pair_mask=pair_mask,
+            inplace_safe=inplace_safe,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+        )
 
         z = self.tri_att_start_end(
             z=z,
             _attn_chunk_size=_attn_chunk_size,
             pair_mask=pair_mask,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
         )

@@ -138,6 +138,7 @@ class OF3OutputWriter(BasePredictionWriter):
                 file_prefix.parent.mkdir(parents=True, exist_ok=True)
 
                 confidence_scores_sample = {}
+
                 for key, value in confidence_scores_batch.items():
                     if len(value.shape) < 1:
                         confidence_scores_sample[key] = value.item()
