@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+from torchmetrics.aggregation import SumMetric
 
 import numpy as np
 import torch
@@ -11,6 +12,7 @@ from pytorch_lightning.callbacks import BasePredictionWriter
 
 from openfold3.core.data.io.structure.cif import write_structure
 from openfold3.core.utils.tensor_utils import tensor_tree_map
+import torch.distributed as dist
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +50,10 @@ class OF3OutputWriter(BasePredictionWriter):
         self.write_latent_outputs = write_latent_outputs
 
         # Track successfully predicted samples
-        self.success_count = 0
-        self.failed_count = 0
+        self.success_count = SumMetric()
+        self.failed_count = SumMetric()
+        self.total_count = SumMetric()
         self.failed_queries = []
-        self.total_queries = 0
 
     @staticmethod
     def write_structure_prediction(
@@ -197,11 +199,16 @@ class OF3OutputWriter(BasePredictionWriter):
         if batch.get("repeated_sample"):
             return
 
-        self.total_queries += 1
+        if self.total_count.device != pl_module.device:
+            self.total_count.to(pl_module.device)
+            self.success_count.to(pl_module.device)
+            self.failed_count.to(pl_module.device)
+
+        self.total_count.update(1)
 
         # Skip and track failed samples
         if outputs is None:
-            self.failed_count += 1
+            self.failed_count.update(1)
             self.failed_queries.extend(batch["query_id"])
             return
 
@@ -214,9 +221,9 @@ class OF3OutputWriter(BasePredictionWriter):
             self.write_all_outputs(
                 batch=batch, outputs=outputs, confidence_scores=confidence_scores
             )
-            self.success_count += 1
+            self.success_count.update(1)
         except Exception as e:
-            self.failed_count += 1
+            self.failed_count.update(1)
             self.failed_queries.extend(batch["query_id"])
             logger.exception(
                 f"Failed to write predictions for query_id(s) "
@@ -227,13 +234,30 @@ class OF3OutputWriter(BasePredictionWriter):
 
     def on_predict_end(self, trainer, pl_module):
         """Print summary of inference run."""
-        print("\n" + "=" * 50)
-        print("    PREDICTION SUMMARY    ")
-        print("=" * 50)
-        print(f"Total Queries Processed: {self.total_queries}")
-        print(f"  - Successful Queries:  {self.success_count}")
-        print(f"  - Failed Queries:      {self.failed_count}")
 
-        if self.failed_queries:
-            print(f"\nFailed Queries: {', '.join(sorted(self.failed_queries))}")
-        print("=" * 50 + "\n")
+        # Gather failed queries from all processes
+        if dist.is_available() and dist.is_initialized():
+            gathered_lists = [None] * trainer.world_size
+            dist.all_gather_object(gathered_lists, self.failed_queries)
+        else:
+            gathered_lists = [self.failed_queries]
+
+        if trainer.is_global_zero:
+            # Flatten the list of failed query lists from all processes
+            final_failed_list = [item for sublist in gathered_lists for item in sublist]
+
+            # Compute the final counts, synced in compute()
+            total_queries = self.total_count.compute().item()
+            success_count = self.success_count.compute().item()
+            failed_count = self.failed_count.compute().item()
+
+            print("\n" + "=" * 50)
+            print("    PREDICTION SUMMARY    ")
+            print("=" * 50)
+            print(f"Total Queries Processed: {total_queries}")
+            print(f"  - Successful Queries:  {success_count}")
+            print(f"  - Failed Queries:      {failed_count}")
+
+            if final_failed_list:
+                print(f"\nFailed Queries: {', '.join(sorted(list(set(final_failed_list))))}")
+            print("=" * 50 + "\n")

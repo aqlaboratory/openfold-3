@@ -94,7 +94,7 @@ class ExperimentRunner(ABC):
     @cached_property
     def lightning_module(self) -> pl.LightningModule:
         """Instantiate and return the model."""
-        return self.project_entry.runner(self.model_config)
+        return self.project_entry.runner(self.model_config, output_dir=self.output_dir)
 
     @cached_property
     def output_dir(self) -> Path:

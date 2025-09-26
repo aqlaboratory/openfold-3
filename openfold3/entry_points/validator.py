@@ -61,7 +61,7 @@ class PlTrainerArgs(BaseModel):
     model_config = PydanticConfigDict(extra="allow")
     max_epochs: int = 1000  # pl_trainer default
     accelerator: str = "gpu"
-    precision: int | str = "bf16-mixed"
+    precision: int | str = "32-true"
     num_nodes: int = 1
     devices: int = 1  # number of GPUs per node
     profiler: Optional[str] = None
