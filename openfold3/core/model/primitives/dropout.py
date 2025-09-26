@@ -67,13 +67,17 @@ class Dropout(nn.Module):
                 Tensor to which dropout is applied. Can have any shape
                 compatible with self.batch_dim
         """
+        # VS: Avoiding the extra allocation + multiplication op makes
+        # a measurable speed difference according to NVIDIA team
+        if not self.training:
+            return x
         shape = list(x.shape)
         if self.batch_dim is not None:
             for bd in self.batch_dim:
                 shape[bd] = 1
         mask = x.new_ones(shape)
         mask = self.dropout(mask)
-        x *= mask
+        x = x * mask
         return x
 
 

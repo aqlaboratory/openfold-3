@@ -8,8 +8,6 @@ dependencies:
   - python
   - setuptools
   - pip
-  - openmm
-  - pdbfixer
   - pytorch-lightning
   - biopython
   - numpy

@@ -15,6 +15,15 @@ def skip_unless_ds4s_installed():
     )
 
 
+def skip_unless_cueq_installed():
+    cueq_is_installed = cueq_is_installed = (
+        importlib.util.find_spec("cuequivariance_torch") is not None
+    )
+    return unittest.skipUnless(
+        cueq_is_installed, "Requires CU-Equivaraince to be installed"
+    )
+
+
 def skip_unless_triton_installed():
     triton_is_installed = importlib.util.find_spec("triton") is not None
     return unittest.skipUnless(triton_is_installed, "Requires Triton")
