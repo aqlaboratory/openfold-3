@@ -82,6 +82,8 @@ class OutputWritingSettings(BaseModel):
 
     structure_format: Literal["pdb", "cif"] = "cif"
     full_confidence_output_format: Literal["json", "npz"] = "json"
+    write_features: bool = False
+    write_latent_outputs: bool = False
 
 
 class ExperimentSettings(BaseModel):

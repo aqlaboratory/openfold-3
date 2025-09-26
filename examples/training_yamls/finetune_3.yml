@@ -38,7 +38,6 @@ checkpoint:
 model_update:
   presets: 
     - train 
-  compile : false
   custom:
     settings:
       diffusion_training_enabled: false

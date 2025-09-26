@@ -21,15 +21,11 @@ import torch.nn as nn
 
 from openfold3.core.model.heads.prediction_heads import (
     DistogramHead,
-    ExperimentallyResolvedHead,
     ExperimentallyResolvedHeadAllAtom,
-    MaskedMSAHead,
     PairformerEmbedding,
     PerResidueLDDTAllAtom,
-    PerResidueLDDTCaPredictor,
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
-    TMScoreHead,
 )
 from openfold3.core.utils.atomize_utils import (
     broadcast_token_feat_to_atoms,
@@ -39,81 +35,6 @@ from openfold3.core.utils.atomize_utils import (
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
     import deepspeed
-
-
-class AuxiliaryHeadsAF2(nn.Module):
-    """
-    Auxiliary head for OF2
-    Implements section 1.9 (AF2)
-
-    Source: OpenFold
-    """
-
-    def __init__(self, config):
-        super().__init__()
-
-        self.plddt = PerResidueLDDTCaPredictor(
-            **config["lddt"],
-        )
-
-        self.distogram = DistogramHead(
-            **config["distogram"],
-        )
-
-        self.masked_msa = MaskedMSAHead(
-            **config["masked_msa"],
-        )
-
-        self.experimentally_resolved = ExperimentallyResolvedHead(
-            **config["experimentally_resolved"],
-        )
-
-        if config.tm.enabled:
-            self.tm = TMScoreHead(
-                **config.tm,
-            )
-
-        self.config = config
-
-    def forward(self, outputs):
-        """
-        Args:
-            outputs: Dict containing following keys and tensors:
-                "sm":
-                    "single": Single embedding
-                "pair": Pair embedding
-                "msa": MSA embedding
-        Returns:
-            aux_out: Dict containing:
-                "lddt_logits" ([*, N_res, bins_plddt]):
-                    pLDDT head out
-                "distogram_logits" ([*, N_res, N_res, bins_distogram]):
-                    Distogram head out
-                "masked_msa_logits" ([*, N_seq, N_res, bins_masked_msa]):
-                    Masked msa head out
-                "experimentally_resolved_logits" ([*, N_res, bins_resolved]):
-                    Resolved head out
-                "tm_logits" ([*, N_res, N_res, bins_pae]):
-                    Values identical to pae_logits
-        """
-        aux_out = {}
-        lddt_logits = self.plddt(outputs["sm"]["single"])
-        aux_out["lddt_logits"] = lddt_logits
-
-        distogram_logits = self.distogram(outputs["pair"])
-        aux_out["distogram_logits"] = distogram_logits
-
-        masked_msa_logits = self.masked_msa(outputs["msa"])
-        aux_out["masked_msa_logits"] = masked_msa_logits
-
-        experimentally_resolved_logits = self.experimentally_resolved(outputs["single"])
-        aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
-
-        if self.config.tm.enabled:
-            tm_logits = self.tm(outputs["pair"])
-            aux_out["tm_logits"] = tm_logits
-
-        return aux_out
 
 
 class AuxiliaryHeadsAllAtom(nn.Module):
@@ -175,6 +96,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         output: dict,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         offload_inference: bool = False,
@@ -199,6 +121,9 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma.
+            use_cueq_triangle_kernels:
+                Whether to use cuEq triangle attention kernel.
+                Mutually exclusive with use_lma and use_deepspeed_evo_attention.
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
@@ -276,6 +201,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             offload_inference=offload_inference,

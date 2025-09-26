@@ -14,18 +14,10 @@
 
 import unittest
 
-import numpy as np
 import torch
 
-import tests.compare_utils as compare_utils
 from openfold3.core.model.layers.outer_product_mean import OuterProductMean
-from openfold3.core.utils.tensor_utils import tree_map
 from tests.config import consts
-
-if compare_utils.alphafold_is_installed():
-    alphafold = compare_utils.import_alphafold()
-    import haiku as hk
-    import jax
 
 
 class TestOuterProductMean(unittest.TestCase):
@@ -41,55 +33,6 @@ class TestOuterProductMean(unittest.TestCase):
         self.assertTrue(
             m.shape == (consts.batch_size, consts.n_res, consts.n_res, consts.c_z)
         )
-
-    @compare_utils.skip_unless_alphafold_installed()
-    def test_opm_compare(self):
-        def run_opm(msa_act, msa_mask):
-            config = compare_utils.get_alphafold_config()
-            c_evo = config.model.embeddings_and_evoformer.evoformer
-            opm = alphafold.model.modules.OuterProductMean(
-                c_evo.outer_product_mean,
-                config.model.global_config,
-                consts.c_z,
-            )
-            act = opm(act=msa_act, mask=msa_mask)
-            return act
-
-        f = hk.transform(run_opm)
-
-        n_res = consts.n_res
-        n_seq = consts.n_seq
-        c_m = consts.c_m
-
-        msa_act = np.random.rand(n_seq, n_res, c_m).astype(np.float32) * 100
-        msa_mask = np.random.randint(low=0, high=2, size=(n_seq, n_res)).astype(
-            np.float32
-        )
-
-        # Fetch pretrained parameters (but only from one block)]
-        params = compare_utils.fetch_alphafold_module_weights(
-            "alphafold/alphafold_iteration/evoformer/"
-            + "evoformer_iteration/outer_product_mean"
-        )
-        params = tree_map(lambda n: n[0], params, jax.Array)
-
-        out_gt = f.apply(params, None, msa_act, msa_mask).block_until_ready()
-        out_gt = torch.as_tensor(np.array(out_gt))
-
-        model = compare_utils.get_global_pretrained_openfold()
-        out_repro = (
-            model.evoformer.blocks[0]
-            .outer_product_mean(
-                torch.as_tensor(msa_act).cuda(),
-                chunk_size=4,
-                mask=torch.as_tensor(msa_mask).cuda(),
-            )
-            .cpu()
-        )
-
-        # Even when correct, OPM has large, precision-related errors. It gets
-        # a special pass from consts.eps.
-        compare_utils.assert_max_abs_diff_small(out_gt, out_repro, 5e-4)
 
 
 if __name__ == "__main__":

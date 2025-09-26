@@ -5,12 +5,9 @@ channels:
   - pytorch
   - nvidia
 dependencies:
-  - librdkit==2025.03.3
-  - python=3.10
+  - python
   - setuptools
   - pip
-  - openmm
-  - pdbfixer
   - pytorch-lightning
   - biopython
   - numpy
@@ -24,23 +21,21 @@ dependencies:
   - modelcif
   - ml-collections
   - mkl
+  - rdkit
   - biotite==1.2.0
   - mmseqs2
   - bioconda::hmmer
   - bioconda::hhsuite
   - bioconda::kalign2
   - bioconda::snakemake
-  - pytorch::pytorch=2.4
-  - pytorch::pytorch-cuda=12.1
-  - memory_profiler==0.61.0
+  - pytorch::pytorch
+  - pytorch::pytorch-cuda
+  - memory_profiler
   - func_timeout
   - boto3
   - conda-forge::python-lmdb=1.6
   - conda-forge::ijson
   - pip:
-      - deepspeed==0.14.5
+      - deepspeed
       - dm-tree
-      - git+https://github.com/NVIDIA/dllogger.git
-      - flash-attn==2.6.0.post1
       - pdbeccdutils
-      - rdkit==2025.03.3 # pdbeccdutils will install an older version of rdkit, so we need to override 

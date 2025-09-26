@@ -79,8 +79,8 @@ class MSAStack(nn.Module, ABC):
         chunk_size: Optional[int],
         transition_ckpt_chunk_size: Optional[int],
         use_deepspeed_evo_attention: bool,
+        use_cueq_triangle_kernels: bool,
         use_lma: bool,
-        use_flash: bool,
         msa_mask: Optional[torch.Tensor],
         pair_mask: Optional[torch.Tensor],
         inplace_safe: bool,
@@ -101,8 +101,8 @@ class MSAStack(nn.Module, ABC):
                 chunk_size=chunk_size,
                 transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
-                use_flash=use_flash,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
             )
@@ -166,8 +166,8 @@ class MSAStack(nn.Module, ABC):
         chunk_size: Optional[int] = None,
         transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
-        use_flash: bool = False,
         _mask_trans: bool = True,
     ):
         assert not (self.training or torch.is_grad_enabled())
@@ -180,8 +180,8 @@ class MSAStack(nn.Module, ABC):
             chunk_size=chunk_size,
             transition_ckpt_chunk_size=transition_ckpt_chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
-            use_flash=use_flash,
             msa_mask=msa_mask,
             pair_mask=pair_mask,
             inplace_safe=True,
@@ -212,8 +212,8 @@ class MSAStack(nn.Module, ABC):
         chunk_size: Optional[int] = None,
         transition_ckpt_chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
-        use_flash: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
     ):
@@ -234,13 +234,10 @@ class MSAStack(nn.Module, ABC):
                 Chunk size for activation checkpointing in the transition layer
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
+                Mutually exclusive with use_lma.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
-            use_flash:
-                Whether to use FlashAttention where possible. Mutually
-                exclusive with use_lma and use_deepspeed_evo_attention.
+                Mutually exclusive with and use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
             _mask_trans:
@@ -257,8 +254,8 @@ class MSAStack(nn.Module, ABC):
             chunk_size=chunk_size,
             transition_ckpt_chunk_size=transition_ckpt_chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
-            use_flash=use_flash,
             msa_mask=msa_mask,
             pair_mask=pair_mask,
             inplace_safe=inplace_safe,
