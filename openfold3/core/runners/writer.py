@@ -244,23 +244,26 @@ class OF3OutputWriter(BasePredictionWriter):
             gathered_lists = [self.failed_queries]
 
         # Compute the final counts, synced in compute()
-        total_queries = self.total_count.compute().item()
-        success_count = self.success_count.compute().item()
-        failed_count = self.failed_count.compute().item()
+        total_queries = self.total_count.compute().int().item()
+        success_count = self.success_count.compute().int().item()
+        failed_count = self.failed_count.compute().int().item()
 
         if trainer.is_global_zero:
             # Flatten the list of failed query lists from all processes
             final_failed_list = [item for sublist in gathered_lists for item in sublist]
 
-            print("\n" + "=" * 50)
-            print("    PREDICTION SUMMARY    ")
-            print("=" * 50)
-            print(f"Total Queries Processed: {total_queries}")
-            print(f"  - Successful Queries:  {success_count}")
-            print(f"  - Failed Queries:      {failed_count}")
+            summary = [
+                "\n" + "=" * 50,
+                "    PREDICTION SUMMARY    ",
+                "=" * 50,
+                f"Total Queries Processed: {total_queries}",
+                f"  - Successful Queries:  {success_count}",
+                f"  - Failed Queries:      {failed_count}",
+            ]
 
             if final_failed_list:
                 failed_str = ", ".join(sorted(list(set(final_failed_list))))
-                print(f"\nFailed Queries: {failed_str}")
+                summary.append(f"\nFailed Queries: {failed_str}")
 
-            print("=" * 50 + "\n")
+            summary.append("=" * 50 + "\n")
+            print("\n".join(summary))
