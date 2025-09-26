@@ -19,6 +19,7 @@ The main inference and training loops for AlphaFold3.
 
 import random
 import warnings
+from enum import Enum
 
 import torch
 from ml_collections import ConfigDict
@@ -43,6 +44,11 @@ from openfold3.core.utils.permutation_alignment import (
     safe_multi_chain_permutation_alignment,
 )
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
+
+
+class OffloadModules(Enum):
+    MSA_MODULE = "msa_module"
+    CONFIDENCE_HEADS = "confidence_heads"
 
 
 class OpenFold3(nn.Module):
@@ -191,7 +197,8 @@ class OpenFold3(nn.Module):
             mode_mem_settings.use_deepspeed_evo_attention = False
 
         offload_msa_module = self._do_inference_offload(
-            seq_len=batch["token_mask"].shape[-1], module_name="msa_module"
+            seq_len=batch["token_mask"].shape[-1],
+            module_name=OffloadModules.MSA_MODULE.value,
         )
 
         s_input, s_init, z_init = self.input_embedder(
@@ -345,7 +352,8 @@ class OpenFold3(nn.Module):
             mode_mem_settings.use_deepspeed_evo_attention = False
 
         offload_confidence_heads = self._do_inference_offload(
-            seq_len=batch["token_mask"].shape[-1], module_name="confidence_heads"
+            seq_len=batch["token_mask"].shape[-1],
+            module_name=OffloadModules.CONFIDENCE_HEADS.value,
         )
 
         # Determine number of rollout steps and samples depending on training/eval mode

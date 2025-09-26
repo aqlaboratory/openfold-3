@@ -21,6 +21,9 @@ predict:
       eval:
         # This chunk size is the minimum value, it will be auto-tuned by default
         chunk_size: 4
+        offload_inference:
+          confidence_heads: true
+          token_cutoff: 2800
   architecture:
     msa:
       msa_module_embedder:
@@ -32,6 +35,9 @@ low_mem:
     clear_cache_between_steps: True
     memory:
       eval:
+        per_sample_token_cutoff: 0
+        per_sample_atom_cutoff: 0
         offload_inference:
+          msa_module: true
           confidence_heads: true
           token_cutoff: 0

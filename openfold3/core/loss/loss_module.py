@@ -23,8 +23,8 @@ import torch.nn as nn
 
 from openfold3.core.loss.confidence import confidence_loss
 from openfold3.core.loss.diffusion import diffusion_loss
-from openfold3.core.utils.tensor_utils import dict_multimap, tensor_tree_map
 from openfold3.core.loss.distogram import all_atom_distogram_loss
+from openfold3.core.utils.tensor_utils import dict_multimap, tensor_tree_map
 
 logger = logging.getLogger(__name__)
 
