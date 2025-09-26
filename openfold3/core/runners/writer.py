@@ -3,16 +3,16 @@
 import json
 import logging
 from pathlib import Path
-from torchmetrics.aggregation import SumMetric
 
 import numpy as np
 import torch
+import torch.distributed as dist
 from biotite import structure
 from pytorch_lightning.callbacks import BasePredictionWriter
+from torchmetrics.aggregation import SumMetric
 
 from openfold3.core.data.io.structure.cif import write_structure
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-import torch.distributed as dist
 
 logger = logging.getLogger(__name__)
 
@@ -260,5 +260,7 @@ class OF3OutputWriter(BasePredictionWriter):
             print(f"  - Failed Queries:      {failed_count}")
 
             if final_failed_list:
-                print(f"\nFailed Queries: {', '.join(sorted(list(set(final_failed_list))))}")
+                failed_str = ", ".join(sorted(list(set(final_failed_list))))
+                print(f"\nFailed Queries: {failed_str}")
+
             print("=" * 50 + "\n")
