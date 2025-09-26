@@ -195,14 +195,15 @@ class OF3OutputWriter(BasePredictionWriter):
         batch,
         batch_idx,
     ):
-        # Skip repeated samples
-        if batch.get("repeated_sample"):
-            return
-
+        # Move metrics to device
         if self.total_count.device != pl_module.device:
             self.total_count.to(pl_module.device)
             self.success_count.to(pl_module.device)
             self.failed_count.to(pl_module.device)
+
+        # Skip repeated samples
+        if batch.get("repeated_sample"):
+            return
 
         self.total_count.update(1)
 
@@ -242,14 +243,14 @@ class OF3OutputWriter(BasePredictionWriter):
         else:
             gathered_lists = [self.failed_queries]
 
+        # Compute the final counts, synced in compute()
+        total_queries = self.total_count.compute().item()
+        success_count = self.success_count.compute().item()
+        failed_count = self.failed_count.compute().item()
+
         if trainer.is_global_zero:
             # Flatten the list of failed query lists from all processes
             final_failed_list = [item for sublist in gathered_lists for item in sublist]
-
-            # Compute the final counts, synced in compute()
-            total_queries = self.total_count.compute().item()
-            success_count = self.success_count.compute().item()
-            failed_count = self.failed_count.compute().item()
 
             print("\n" + "=" * 50)
             print("    PREDICTION SUMMARY    ")

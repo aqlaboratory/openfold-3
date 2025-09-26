@@ -52,10 +52,10 @@ REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_conf
 
 
 class OpenFold3AllAtom(ModelRunner):
-    def __init__(self, model_config, output_dir: Path = None):
+    def __init__(self, model_config, log_dir: Path = None):
         super().__init__(model_class=OpenFold3, config=model_config)
 
-        self.output_dir = output_dir
+        self.log_dir = log_dir
 
         self.loss = OpenFold3Loss(config=model_config.architecture.loss_module)
 
@@ -571,7 +571,7 @@ class OpenFold3AllAtom(ModelRunner):
         except torch.OutOfMemoryError as e:
             logger.error(
                 f"OOM for query_id(s) {', '.join(query_id)}. "
-                f"See {self.output_dir}/predict_err_rank{self.global_rank}.log "
+                f"See {self.log_dir}/predict_err_rank{self.global_rank}.log "
                 f"for details."
             )
 
@@ -585,7 +585,7 @@ class OpenFold3AllAtom(ModelRunner):
         except Exception as e:
             logger.error(
                 f"Failed for query_id(s) {', '.join(query_id)}: {e}. "
-                f"See {self.output_dir}/predict_err_rank{self.global_rank}.log "
+                f"See {self.log_dir}/predict_err_rank{self.global_rank}.log "
                 f"for details."
             )
 
@@ -597,24 +597,24 @@ class OpenFold3AllAtom(ModelRunner):
         """Formats and appends exceptions to a rank-specific error log."""
 
         # Output dir is not specified
-        if self.output_dir is None:
+        if self.log_dir is None:
             return
 
-        log_file = self.output_dir / f"predict_err_rank{self.global_rank}.log"
+        log_file = self.log_dir / f"predict_err_rank{self.global_rank}.log"
 
         # Get traceback and format message
         error_traceback = traceback.format_exc()
 
         log_entry = f"""
-        ==================================================
-        Timestamp: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-        Query ID(s): {", ".join(query_id)}
-        Error Type: {type(e).__name__}
-        Error Message: {e}
-        --------------------------------------------------
-        Traceback:
-        {error_traceback}
-        ==================================================
+    ==================================================
+    Timestamp: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+    Query ID(s): {", ".join(query_id)}
+    Error Type: {type(e).__name__}
+    Error Message: {e}
+    --------------------------------------------------
+    Traceback:
+    {error_traceback}
+    ==================================================
         """
 
         # Append the entry to the log file

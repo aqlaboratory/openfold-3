@@ -94,7 +94,7 @@ class ExperimentRunner(ABC):
     @cached_property
     def lightning_module(self) -> pl.LightningModule:
         """Instantiate and return the model."""
-        return self.project_entry.runner(self.model_config, output_dir=self.output_dir)
+        return self.project_entry.runner(self.model_config, log_dir=self.log_dir)
 
     @cached_property
     def output_dir(self) -> Path:
@@ -102,6 +102,14 @@ class ExperimentRunner(ABC):
         _out_dir = self.experiment_config.experiment_settings.output_dir
         _out_dir.mkdir(exist_ok=True, parents=True)
         return _out_dir
+
+    @cached_property
+    def log_dir(self) -> Path:
+        """Get or create the log directory."""
+        _out_dir = self.experiment_config.experiment_settings.output_dir
+        _log_dir = _out_dir / "logs"
+        _log_dir.mkdir(exist_ok=True, parents=True)
+        return _log_dir
 
     @cached_property
     @abstractmethod
@@ -348,7 +356,7 @@ class TrainingExperimentRunner(ExperimentRunner):
             return
 
         log_level = log_level.upper()
-        log_filepath = self.output_dir / "console_logs.log"
+        log_filepath = self.log_dir / "console_logs.log"
         logging.basicConfig(filename=log_filepath, level=log_level, filemode="w")
 
     def _set_random_seed(self) -> None:
