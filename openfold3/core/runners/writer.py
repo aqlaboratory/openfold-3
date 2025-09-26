@@ -78,7 +78,6 @@ class OF3OutputWriter(BasePredictionWriter):
     ):
         """Writes confidence scores to disk"""
         plddt = confidence_scores["plddt"]
-        runtime = confidence_scores["runtime"]
         pde = confidence_scores["predicted_distance_error"]
         gpde = confidence_scores["global_predicted_distance_error"]
 
@@ -86,7 +85,6 @@ class OF3OutputWriter(BasePredictionWriter):
         aggregated_confidence_scores = {
             "avg_plddt": np.mean(plddt),
             "gpde": gpde,
-            "runtime": runtime,
         }
         out_file_agg = Path(f"{output_prefix}_confidences_aggregated.json")
         out_file_agg.write_text(
