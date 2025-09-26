@@ -111,7 +111,8 @@ class TestPredictionWriter:
 
     def test_skips_none_output(self, tmp_path):
         class DummyMock:
-            pass
+            def __init__(self):
+                self.device = "cpu"
 
         writer = OF3OutputWriter(
             output_dir=tmp_path,
