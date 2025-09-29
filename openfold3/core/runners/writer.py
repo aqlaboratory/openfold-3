@@ -51,7 +51,8 @@ class OF3OutputWriter(BasePredictionWriter):
         self.write_latent_outputs = write_latent_outputs
 
         # For recording runtime per batch
-        self.batch_start_time = None
+        # Will get overwritten by on_predict_batch_start()
+        self.batch_start_time = time.perf_counter()
 
         # Track successfully predicted samples
         self.success_count = SumMetric()
@@ -351,7 +352,7 @@ class OF3OutputWriter(BasePredictionWriter):
         """Writes this rank's local data to a unique file upon timeout."""
         fallback_file = self.output_dir / f"fallback_summary_rank_{global_rank}.log"
 
-        # We can still compute local metrics without syncing
+        # Compute local summary without syncing
         total = self.total_count.int().item()
         success = self.success_count.int().item()
         failed = self.failed_count.int().item()
