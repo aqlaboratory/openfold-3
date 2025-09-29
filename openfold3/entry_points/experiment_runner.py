@@ -182,6 +182,7 @@ class ExperimentRunner(ABC):
                 precision_plugin=OF3DeepSpeedPrecision(
                     precision=self.pl_trainer_args.precision
                 ),
+                timeout=self.pl_trainer_args.timeout,
             )
 
             _use_deepspeed_adam = (
@@ -196,6 +197,7 @@ class ExperimentRunner(ABC):
             return DDPStrategy(
                 find_unused_parameters=False,
                 cluster_environment=self.cluster_environment,
+                timeout=self.pl_trainer_args.timeout,
             )
 
         return "auto"
@@ -224,7 +226,7 @@ class ExperimentRunner(ABC):
     def trainer(self) -> pl.Trainer:
         """Create and return the trainer instance."""
         trainer_args = self.pl_trainer_args.model_dump(
-            exclude={"deepspeed_config_path", "mpi_plugin"}
+            exclude={"deepspeed_config_path", "timeout", "mpi_plugin"}
         )
         trainer_args.update(
             {

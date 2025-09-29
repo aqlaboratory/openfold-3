@@ -212,14 +212,13 @@ class OF3OutputWriter(BasePredictionWriter):
         self.batch_start_time = time.perf_counter()
 
     def _get_runtime(self):
+        """Record the runtime for the current batch."""
         if torch.cuda.is_available():
             torch.cuda.synchronize()
 
         batch_end_time = time.perf_counter()
 
-        runtime = batch_end_time - self.batch_start_time
-
-        return runtime
+        return batch_end_time - self.batch_start_time
 
     def on_predict_batch_end(
         self,
@@ -275,36 +274,98 @@ class OF3OutputWriter(BasePredictionWriter):
         del batch, outputs
 
     def on_predict_end(self, trainer, pl_module):
-        """Print summary of inference run."""
+        """
+        Print summary of inference run. Includes a timeout failsafe
+        for distributed runs.
+        """
 
-        # Gather failed queries from all processes
-        if dist.is_available() and dist.is_initialized():
-            gathered_lists = [None] * trainer.world_size
-            dist.all_gather_object(gathered_lists, self.failed_queries)
-        else:
+        try:
+            # Gather failed queries from all processes
             gathered_lists = [self.failed_queries]
+            if dist.is_available() and dist.is_initialized():
+                gathered_lists = [None] * trainer.world_size
+                dist.all_gather_object(gathered_lists, self.failed_queries)
 
-        # Compute the final counts, synced in compute()
-        total_queries = self.total_count.compute().int().item()
-        success_count = self.success_count.compute().int().item()
-        failed_count = self.failed_count.compute().int().item()
+            # Compute the final counts, synced in compute()
+            total_queries = self.total_count.compute()
+            success_count = self.success_count.compute()
+            failed_count = self.failed_count.compute()
 
-        if trainer.is_global_zero:
-            # Flatten the list of failed query lists from all processes
-            final_failed_list = [item for sublist in gathered_lists for item in sublist]
+            if trainer.is_global_zero:
+                final_failed_list = [
+                    item for sublist in gathered_lists for item in sublist
+                ]
+                summary = self._get_summary(
+                    total_queries=total_queries.int().item(),
+                    success_count=success_count.int().item(),
+                    failed_count=failed_count.int().item(),
+                    failed_list=final_failed_list,
+                    global_rank=trainer.global_rank,
+                    is_complete=True,
+                )
+                print(summary)
 
-            summary = [
-                "\n" + "=" * 50,
-                "    PREDICTION SUMMARY    ",
-                "=" * 50,
-                f"Total Queries Processed: {total_queries}",
-                f"  - Successful Queries:  {success_count}",
-                f"  - Failed Queries:      {failed_count}",
-            ]
+        except RuntimeError as e:
+            # This block executes if a process crashes and others time out
+            # waiting for it
+            error_str = str(e).lower()
+            if "timeout" in error_str or "timed out" in error_str:
+                logger.warning(
+                    f"[Rank {trainer.global_rank}] Distributed sync timed out! "
+                    f"Writing local results to a fallback log."
+                )
+                self._write_local_fallback_summary(trainer.global_rank)
+            else:
+                # Re-raise unexpected runtime errors
+                raise e
 
-            if final_failed_list:
-                failed_str = ", ".join(sorted(list(set(final_failed_list))))
-                summary.append(f"\nFailed Queries: {failed_str}")
+    @staticmethod
+    def _get_summary(
+        total_queries: int,
+        success_count: int,
+        failed_count: int,
+        failed_list: list,
+        global_rank: int = 0,
+        is_complete=True,
+    ):
+        """Helper to format the final summary."""
+        status = "COMPLETE" if is_complete else f"INCOMPLETE (Rank {global_rank})"
 
-            summary.append("=" * 50 + "\n")
-            print("\n".join(summary))
+        summary = [
+            "\n" + "=" * 50,
+            f"    PREDICTION SUMMARY ({status})    ",
+            "=" * 50,
+            f"Total Queries Processed: {total_queries}",
+            f"  - Successful Queries:  {success_count}",
+            f"  - Failed Queries:      {failed_count}",
+        ]
+
+        if failed_list:
+            failed_str = ", ".join(sorted(list(set(failed_list))))
+            summary.append(f"\nFailed Queries: {failed_str}")
+
+        summary.append("=" * 50 + "\n")
+        return "\n".join(summary)
+
+    def _write_local_fallback_summary(self, global_rank: int):
+        """Writes this rank's local data to a unique file upon timeout."""
+        fallback_file = self.output_dir / f"fallback_summary_rank_{global_rank}.log"
+
+        # We can still compute local metrics without syncing
+        total = self.total_count.int().item()
+        success = self.success_count.int().item()
+        failed = self.failed_count.int().item()
+
+        summary = self._get_summary(
+            total_queries=total,
+            success_count=success,
+            failed_count=failed,
+            failed_list=self.failed_queries,
+            global_rank=global_rank,
+            is_complete=False,
+        )
+        fallback_file.write_text(summary)
+
+        logger.warning(
+            f"Fallback summary for Rank {global_rank} saved to: {fallback_file}"
+        )

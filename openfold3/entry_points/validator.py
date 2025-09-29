@@ -1,7 +1,9 @@
 import random
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal, Optional
 
+from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
 from pydantic import BaseModel, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
@@ -71,6 +73,7 @@ class PlTrainerArgs(BaseModel):
 
     # Extra arguments that are not passed directly to pl.Trainer
     deepspeed_config_path: Path | None = None
+    timeout: Optional[timedelta] = default_pg_timeout
     mpi_plugin: bool = False
 
 
