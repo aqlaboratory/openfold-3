@@ -358,9 +358,9 @@ def compute_chain_interface_scores_for_batch(
     """
     Returns:
       pair_iptm_b      : [S, C, C]  ipTM per chain pair (NaN on diagonal)
-      chain_score_b    : [S, C]     per-chain score (mean of chain-pair ipTM with row 
+      chain_score_b    : [S, C]     per-chain score (mean of chain-pair ipTM with row
       gating)
-      interface_score_b: [S, C, C]  interface score (ligand ⇒ R(ligand); 
+      interface_score_b: [S, C, C]  interface score (ligand ⇒ R(ligand);
       else 0.5*(R(A)+R(B)))
       chain_ids        : [C]        chain IDs in the used order
     """

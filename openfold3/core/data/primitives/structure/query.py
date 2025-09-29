@@ -520,8 +520,29 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
     atom_array = None
     processed_reference_mols: list[ProcessedReferenceMolecule] = []
 
-    # Current entity ID
-    entity_id = 1
+    # Create entity mapping
+    all_entities = set()
+    for chain in query.chains:
+        if chain.sequence is not None:
+            all_entities.add(chain.sequence)
+        elif chain.ccd_codes is not None:
+            all_entities.add(chain.ccd_codes)
+        elif chain.smiles is not None:
+            all_entities.add(chain.smiles)
+    all_entities = sorted(all_entities)
+    entity_to_id = {e: i + 1 for i, e in enumerate(all_entities)}
+
+    # Create smiles->comp ID mapping to allow for distinguishing different ligands
+    # specified by smiles
+    all_smiles = set()
+    for chain in query.chains:
+        if chain.smiles is not None:
+            all_smiles.add(chain.smiles)
+    if len(all_smiles) > 0:
+        all_smiles = sorted(all_smiles)
+        smiles_to_comp_id = {s: f"LIG{i}" for i, s in enumerate(all_smiles)}
+    else:
+        smiles_to_comp_id = {}
 
     # Build the structure segment-wise from all chains in the query.
     for chain in query.chains:
@@ -537,6 +558,7 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                             non_canonical_residues=chain.non_canonical_residues,
                         )
                     )
+                    representation = chain.sequence
 
                 # Build ligand molecule
                 case MoleculeType.LIGAND:
@@ -546,9 +568,10 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                             structure_with_ref_mol_from_smiles(
                                 smiles=chain.smiles,
                                 chain_id=chain_id,
-                                res_name="LIG",
+                                res_name=smiles_to_comp_id[chain.smiles],
                             )
                         )
+                        representation = chain.smiles
 
                     # Build ligand from CCD code
                     elif chain.ccd_codes is not None:
@@ -565,6 +588,7 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                                 chain_id=chain_id,
                             )
                         )
+                        representation = chain.ccd_codes[0]
 
                     # Build ligand from SDF file
                     elif chain.sdf_file_path is not None:
@@ -580,7 +604,8 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
             processed_reference_mols.extend(segment_ref_mols)
 
             segment_atom_array.set_annotation(
-                "entity_id", np.repeat(entity_id, len(segment_atom_array))
+                "entity_id",
+                np.repeat(entity_to_id[representation], len(segment_atom_array)),
             )
 
             # Append atom array to end
@@ -588,10 +613,6 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                 atom_array = segment_atom_array
             else:
                 atom_array += segment_atom_array
-
-        # Each entry in `query.chains` defines a new entity. If an entry has multiple
-        # chains, they will all have the same entity ID.
-        entity_id += 1
 
     # Force coordinates to 0 for consistency
     atom_array.coord[:] = 0.0

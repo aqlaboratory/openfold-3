@@ -28,6 +28,11 @@ from openfold3.core.data.primitives.structure.labels import (
 from openfold3.core.data.primitives.structure.metadata import (
     get_cif_block,
     get_first_bioassembly_polymer_count,
+    writer_add_chem_comp,
+    writer_add_entity,
+    writer_add_pdbx_nonpoly_scheme,
+    writer_add_struct_asym,
+    writer_update_atom_site,
 )
 
 logger = logging.getLogger(__name__)
@@ -172,15 +177,31 @@ def parse_mmcif(
         )
         expand_bioassembly = False
 
-    if expand_bioassembly:
-        atom_array = pdbx.get_assembly(
-            **parser_args,
-            assembly_id="1",
+    try:
+        if expand_bioassembly:
+            atom_array = pdbx.get_assembly(
+                **parser_args,
+                assembly_id="1",
+            )
+        else:
+            atom_array = pdbx.get_structure(
+                **parser_args,
+            )
+    except ValueError as _:
+        logger.warning(
+            "Failed to get structure/bioassembly with 'altloc': 'occupancy' "
+            "retrying with 'altloc': 'first'."
         )
-    else:
-        atom_array = pdbx.get_structure(
-            **parser_args,
-        )
+        parser_args["altloc"] = "first"
+        if expand_bioassembly:
+            atom_array = pdbx.get_assembly(
+                **parser_args,
+                assembly_id="1",
+            )
+        else:
+            atom_array = pdbx.get_structure(
+                **parser_args,
+            )
 
     # Skip structures where all atoms have zero occupancy
     if skip_all_zero_occ and atom_array.occupancy.sum() == 0:
@@ -226,6 +247,8 @@ def _create_cif_file(
         raise ValueError("Suffix must be either .cif or .bcif")
 
     try:
+        # copy entity_id to label_entity_id so biotite uses it for the atom_site table
+        atom_array.set_annotation("label_entity_id", atom_array.entity_id)
         pdbx.set_structure(
             cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
         )
@@ -239,6 +262,14 @@ def _create_cif_file(
         pdbx.set_structure(
             cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
         )
+
+    # Update and add additional metadata tables
+    cif_block = get_cif_block(cif_file)
+    writer_update_atom_site(atom_array, cif_block)
+    writer_add_chem_comp(atom_array, cif_block)
+    writer_add_entity(atom_array, cif_block)
+    writer_add_struct_asym(atom_array, cif_block)
+    writer_add_pdbx_nonpoly_scheme(atom_array, cif_block)
 
     return cif_file
 
@@ -287,6 +318,7 @@ def write_structure(
                 data_block=data_block,
                 include_bonds=include_bonds,
             )
+
             file_obj.write(output_path)
 
         case ".pdb":
