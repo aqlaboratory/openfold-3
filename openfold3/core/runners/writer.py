@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 from pathlib import Path
 
 import numpy as np
@@ -48,6 +49,9 @@ class OF3OutputWriter(BasePredictionWriter):
         self.full_confidence_format = full_confidence_output_format
         self.write_features = write_features
         self.write_latent_outputs = write_latent_outputs
+
+        # For recording runtime per batch
+        self.batch_start_time = None
 
         # Track successfully predicted samples
         self.success_count = SumMetric()
@@ -109,11 +113,17 @@ class OF3OutputWriter(BasePredictionWriter):
         elif out_fmt == "npz":
             np.savez_compressed(out_file_full, **full_confidence_scores)
 
-    def write_all_outputs(self, batch: dict, outputs: dict, confidence_scores: dict):
+    def write_all_outputs(
+        self, batch: dict, outputs: dict, confidence_scores: dict, runtime: float
+    ):
         """Writes all outputs for a given batch."""
 
         batch_size = len(batch["atom_array"])
         sample_size = outputs["atom_positions_predicted"].shape[1]
+
+        # Calculate an average runtime for each sample in the batch
+        # This is always one sample for now
+        runtime_per_sample = runtime / batch_size
 
         # Iterate over all predictions in the batch
         for b in range(batch_size):
@@ -164,6 +174,11 @@ class OF3OutputWriter(BasePredictionWriter):
                     output_prefix=file_prefix,
                 )
 
+            # Save runtime for the batch
+            runtime_file = output_subdir / "timing.json"
+            runtime_json = {"runtime_s": runtime_per_sample}
+            runtime_file.write_text(json.dumps(runtime_json, indent=4))
+
             def fetch_cur_batch(t):
                 # Get tensor for current batch dim
                 # Remove expanded sample dim if it exists to get original tensor shapes
@@ -174,12 +189,15 @@ class OF3OutputWriter(BasePredictionWriter):
                 return cur_feats.detach().clone().cpu()
 
             file_prefix = output_subdir / f"{query_id}_seed_{seed}"
+
+            # Write out input feature dictionary
             if self.write_features:
                 out_file = Path(f"{file_prefix}_batch.pt")
                 cur_batch = tensor_tree_map(fetch_cur_batch, batch, strict_type=False)
                 torch.save(cur_batch, out_file)
                 del cur_batch
 
+            # Write out latent reps / raw model outputs
             if self.write_latent_outputs:
                 out_file = Path(f"{file_prefix}_latent_output.pt")
                 cur_output = tensor_tree_map(
@@ -188,6 +206,21 @@ class OF3OutputWriter(BasePredictionWriter):
                 torch.save(cur_output, out_file)
                 del cur_output
 
+    def on_predict_batch_start(
+        self, trainer, pl_module, batch, batch_idx, dataloader_idx: int = 0
+    ):
+        self.batch_start_time = time.perf_counter()
+
+    def _get_runtime(self):
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        batch_end_time = time.perf_counter()
+
+        runtime = batch_end_time - self.batch_start_time
+
+        return runtime
+
     def on_predict_batch_end(
         self,
         trainer,
@@ -195,7 +228,11 @@ class OF3OutputWriter(BasePredictionWriter):
         outputs,
         batch,
         batch_idx,
+        dataloader_idx=0,
     ):
+        # Get batch runtime
+        runtime = self._get_runtime()
+
         # Move metrics to device
         if self.total_count.device != pl_module.device:
             self.total_count.to(pl_module.device)
@@ -221,7 +258,10 @@ class OF3OutputWriter(BasePredictionWriter):
         # Optionally write out input features and latent outputs
         try:
             self.write_all_outputs(
-                batch=batch, outputs=outputs, confidence_scores=confidence_scores
+                batch=batch,
+                outputs=outputs,
+                confidence_scores=confidence_scores,
+                runtime=runtime,
             )
             self.success_count.update(1)
         except Exception as e:
