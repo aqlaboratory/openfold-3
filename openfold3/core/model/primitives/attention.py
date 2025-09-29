@@ -20,6 +20,7 @@ Optimizations such as LMA and DeepSpeed EvoformerAttention are included.
 
 import importlib
 import math
+import warnings
 from typing import Optional
 
 import torch
@@ -32,6 +33,8 @@ from openfold3.core.utils.tensor_utils import flatten_final_dims
 
 from .linear import Linear
 
+warnings.filterwarnings("once")
+
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 ds4s_is_installed = (
     deepspeed_is_installed
@@ -42,6 +45,10 @@ if deepspeed_is_installed:
 
 if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
+
+cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
+if cueq_is_installed:
+    from cuequivariance_torch.primitives.triangle import triangle_attention
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
@@ -283,6 +290,7 @@ class Attention(nn.Module):
         kv_x: torch.Tensor,
         biases: Optional[list[torch.Tensor]] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
@@ -300,6 +308,9 @@ class Attention(nn.Module):
                 Whether to use DeepSpeed memory-efficient attention kernel.
                 If none of the "use_<...>" flags are True, a stock PyTorch
                 implementation is used instead
+            use_cueq_triangle_kernels:
+                whether to use cuequivariance triangle kernels. Mutually
+                exclusive with other use_<...> flags
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
                 none of the "use_<...>" flags are True, a stock PyTorch
@@ -330,15 +341,19 @@ class Attention(nn.Module):
             use_deepspeed_evo_attention,
             use_lma,
             use_high_precision,
+            use_cueq_triangle_kernels,
         ]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
 
         if biases is None:
             biases = []
-
-        # DeepSpeed attention kernel applies scaling internally
-        q, k, v = self._prep_qkv(q_x, kv_x, apply_scale=not use_deepspeed_evo_attention)
+        # DeepSpeed attention kernel and cueqivarince kernel applies scaling internally
+        q, k, v = self._prep_qkv(
+            q_x,
+            kv_x,
+            apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels),
+        )
 
         if use_deepspeed_evo_attention:
             if len(biases) > 2:
@@ -354,6 +369,9 @@ class Attention(nn.Module):
             ]
             o = _lma(q, k, v, biases, lma_q_chunk_size, lma_kv_chunk_size)
             o = o.transpose(-2, -3)
+        elif use_cueq_triangle_kernels:
+            scale = 1.0 / math.sqrt(self.c_hidden)
+            o = _cueq_triangle_attn(q, k, v, biases, scale=scale)
         else:
             o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
             o = o.transpose(-2, -3)
@@ -564,5 +582,55 @@ def _lma(
         q_chunk_out = all_values / all_weights
 
         o[..., q_s : q_s + q_chunk_size, :] = q_chunk_out
+
+    return o
+
+
+@torch.compiler.disable
+def _cueq_triangle_attn(q, k, v, biases, scale):
+    is_batched_input = False
+    assert len(biases) == 2, (
+        "CUEQ triangle attention kernel requires two bias terms: "
+        "mask_bias and triangle_bias"
+    )
+    mask_bias, triangle_bias = biases
+
+    ##VS: the cueq attn kernel only allows up to 5 input dimensions:
+    ## (batch,*,n_head, *,c_hidden); batch here denotes multiple
+    ## structures in a single fwd pass; while this is fine for the
+    ## pairformer, in the template module we have
+    ## inputs of shape (batch, n_tmpl, n_res,n_head, n_res, c_in)
+    ## so therefore we need to reshape the input to remove the
+    ## extra batch dimension, then reshape it back to the original
+    if len(q.shape) > 5:
+        assert len(q.shape) == 6, (
+            "max number of dimensions for CUEQ triangle attention kernel is 6"
+        )
+        is_batched_input = True
+        batch, n_tmpl, n_res, n_head, c_hidden = q.shape[:5]
+        q = q.view(batch * n_tmpl, *q.shape[2:])
+        k = k.view(batch * n_tmpl, *k.shape[2:])
+        v = v.view(batch * n_tmpl, *v.shape[2:])
+        mask_bias = mask_bias.view(batch * n_tmpl, *mask_bias.shape[2:])
+        triangle_bias = triangle_bias.view(batch * n_tmpl, *triangle_bias.shape[2:])
+    ##VS: The mask for the triangle attention kernel needs to be a
+    ## boolean mask - the default mask is an additive mask, where
+    ## 0 means no masking and -inf means masking. so we need to
+    ## convert this to a boolean mask where positions to keep are
+    ## True, and positions to mask are False.
+    if mask_bias.dtype != torch.bool:
+        mask_bias = mask_bias == 0
+
+    o = triangle_attention(q, k, v, bias=triangle_bias, mask=mask_bias, scale=scale)
+
+    if len(q.shape) == 4:
+        ##VS: There's a bug in cueq where if the input is missing the batch dim
+        ## the outputs adds it in and so we need to remove it here
+        o = o.squeeze(0)
+
+    if is_batched_input:
+        o = o.view(batch, n_tmpl, *o.shape[1:])
+
+    o = o.transpose(-2, -3)
 
     return o
