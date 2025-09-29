@@ -10,7 +10,6 @@ import torch
 import torch.distributed as dist
 from biotite import structure
 from pytorch_lightning.callbacks import BasePredictionWriter
-from torchmetrics.aggregation import SumMetric
 
 from openfold3.core.data.io.structure.cif import write_structure
 from openfold3.core.utils.tensor_utils import tensor_tree_map
@@ -51,13 +50,12 @@ class OF3OutputWriter(BasePredictionWriter):
         self.write_latent_outputs = write_latent_outputs
 
         # For recording runtime per batch
-        # Will get overwritten by on_predict_batch_start()
-        self.batch_start_time = time.perf_counter()
+        self.batch_start_time = None
 
         # Track successfully predicted samples
-        self.success_count = SumMetric()
-        self.failed_count = SumMetric()
-        self.total_count = SumMetric()
+        self.success_count = 0
+        self.failed_count = 0
+        self.total_count = 0
         self.failed_queries = []
 
     @staticmethod
@@ -233,21 +231,15 @@ class OF3OutputWriter(BasePredictionWriter):
         # Get batch runtime
         runtime = self._get_runtime()
 
-        # Move metrics to device
-        if self.total_count.device != pl_module.device:
-            self.total_count.to(pl_module.device)
-            self.success_count.to(pl_module.device)
-            self.failed_count.to(pl_module.device)
-
         # Skip repeated samples
         if batch.get("repeated_sample"):
             return
 
-        self.total_count.update(1)
+        self.total_count += 1
 
         # Skip and track failed samples
         if outputs is None:
-            self.failed_count.update(1)
+            self.failed_count += 1
             self.failed_queries.extend(batch["query_id"])
             return
 
@@ -263,9 +255,9 @@ class OF3OutputWriter(BasePredictionWriter):
                 confidence_scores=confidence_scores,
                 runtime=runtime,
             )
-            self.success_count.update(1)
+            self.success_count += 1
         except Exception as e:
-            self.failed_count.update(1)
+            self.failed_count += 1
             self.failed_queries.extend(batch["query_id"])
             logger.exception(
                 f"Failed to write predictions for query_id(s) "
@@ -281,25 +273,32 @@ class OF3OutputWriter(BasePredictionWriter):
         """
 
         try:
-            # Gather failed queries from all processes
-            gathered_lists = [self.failed_queries]
-            if dist.is_available() and dist.is_initialized():
-                gathered_lists = [None] * trainer.world_size
-                dist.all_gather_object(gathered_lists, self.failed_queries)
+            # Gather summary data from all processes
+            final_summary_data = {
+                "total": self.total_count,
+                "success": self.success_count,
+                "failed": self.failed_count,
+                "failed_queries": self.failed_queries,
+            }
 
-            # Compute the final counts, synced in compute()
-            total_queries = self.total_count.compute()
-            success_count = self.success_count.compute()
-            failed_count = self.failed_count.compute()
+            gathered_data = [final_summary_data]
+            if dist.is_available() and dist.is_initialized():
+                gathered_data = [None] * trainer.world_size
+                dist.all_gather_object(gathered_data, final_summary_data)
 
             if trainer.is_global_zero:
+                # Aggregate the results from all processes on Rank 0
+                total_queries = sum(data["total"] for data in gathered_data)
+                success_count = sum(data["success"] for data in gathered_data)
+                failed_count = sum(data["failed"] for data in gathered_data)
                 final_failed_list = [
-                    item for sublist in gathered_lists for item in sublist
+                    item for data in gathered_data for item in data["failed_queries"]
                 ]
+
                 summary = self._get_summary(
-                    total_queries=total_queries.int().item(),
-                    success_count=success_count.int().item(),
-                    failed_count=failed_count.int().item(),
+                    total_queries=total_queries,
+                    success_count=success_count,
+                    failed_count=failed_count,
                     failed_list=final_failed_list,
                     global_rank=trainer.global_rank,
                     is_complete=True,
@@ -307,8 +306,10 @@ class OF3OutputWriter(BasePredictionWriter):
                 print(summary)
 
         except RuntimeError as e:
-            # This block executes if a process crashes and others time out
-            # waiting for it
+            # TODO: Due to additional sync PL does outside of this callback,
+            #  this won't be reached before the timeout error occurs.
+            #  Leaving this here for now in case we refactor the prediction
+            #  logic to avoid the extra syncs.
             error_str = str(e).lower()
             if "timeout" in error_str or "timed out" in error_str:
                 logger.warning(
@@ -352,15 +353,10 @@ class OF3OutputWriter(BasePredictionWriter):
         """Writes this rank's local data to a unique file upon timeout."""
         fallback_file = self.output_dir / f"fallback_summary_rank_{global_rank}.log"
 
-        # Compute local summary without syncing
-        total = self.total_count.int().item()
-        success = self.success_count.int().item()
-        failed = self.failed_count.int().item()
-
         summary = self._get_summary(
-            total_queries=total,
-            success_count=success,
-            failed_count=failed,
+            total_queries=self.total_count,
+            success_count=self.success_count,
+            failed_count=self.failed_count,
             failed_list=self.failed_queries,
             global_rank=global_rank,
             is_complete=False,
