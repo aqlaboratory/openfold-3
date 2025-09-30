@@ -526,7 +526,8 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
         if chain.sequence is not None:
             all_entities.add(chain.sequence)
         elif chain.ccd_codes is not None:
-            all_entities.add(chain.ccd_codes)
+            for ccd in chain.ccd_codes:
+                all_entities.add(ccd)
         elif chain.smiles is not None:
             all_entities.add(chain.smiles)
     all_entities = sorted(all_entities)

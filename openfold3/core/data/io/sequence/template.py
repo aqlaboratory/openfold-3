@@ -509,8 +509,11 @@ class TemplateParser(ABC):
                 template_start=int(row["start"]),
             )
             query_gap_mask = ~np.isin(query_aln_arr, ["-", "."])
-            seq_id = sum((template_aln_arr == query_aln_arr)[query_gap_mask]) / sum(
-                query_gap_mask
+            seq_id = (
+                sum((template_aln_arr == query_aln_arr)[query_gap_mask])
+                / sum(query_gap_mask)
+                if sum(query_gap_mask) > 0
+                else 0.0
             )
             q_cov = sum(query_gap_mask & template_gap_mask) / len(query_seq_str)
 
