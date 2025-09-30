@@ -550,6 +550,10 @@ class InferenceExperimentRunner(ExperimentRunner):
 
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
+        if not os.listdir(self.log_dir) and self.is_rank_zero:
+            print("Removing empty log directory...")
+            self.log_dir.rmdir()
+
         if self.use_msa_server and self.is_rank_zero:
             print("Cleaning up MSA directories...")
 
