@@ -94,7 +94,7 @@ class ExperimentRunner(ABC):
     @cached_property
     def lightning_module(self) -> pl.LightningModule:
         """Instantiate and return the model."""
-        return self.project_entry.runner(self.model_config)
+        return self.project_entry.runner(self.model_config, log_dir=self.log_dir)
 
     @cached_property
     def output_dir(self) -> Path:
@@ -102,6 +102,15 @@ class ExperimentRunner(ABC):
         _out_dir = self.experiment_config.experiment_settings.output_dir
         _out_dir.mkdir(exist_ok=True, parents=True)
         return _out_dir
+
+    @cached_property
+    def log_dir(self) -> Path:
+        """Get or create the log directory."""
+        _log_dir = self.experiment_config.experiment_settings.log_dir
+        if _log_dir is None:
+            _log_dir = self.output_dir / "logs"
+        _log_dir.mkdir(exist_ok=True, parents=True)
+        return _log_dir
 
     @cached_property
     @abstractmethod
@@ -174,6 +183,7 @@ class ExperimentRunner(ABC):
                 precision_plugin=OF3DeepSpeedPrecision(
                     precision=self.pl_trainer_args.precision
                 ),
+                timeout=self.pl_trainer_args.distributed_timeout,
             )
 
             _use_deepspeed_adam = (
@@ -188,6 +198,7 @@ class ExperimentRunner(ABC):
             return DDPStrategy(
                 find_unused_parameters=False,
                 cluster_environment=self.cluster_environment,
+                timeout=self.pl_trainer_args.distributed_timeout,
             )
 
         return "auto"
@@ -216,7 +227,7 @@ class ExperimentRunner(ABC):
     def trainer(self) -> pl.Trainer:
         """Create and return the trainer instance."""
         trainer_args = self.pl_trainer_args.model_dump(
-            exclude={"deepspeed_config_path", "mpi_plugin"}
+            exclude={"deepspeed_config_path", "distributed_timeout", "mpi_plugin"}
         )
         trainer_args.update(
             {
@@ -348,7 +359,7 @@ class TrainingExperimentRunner(ExperimentRunner):
             return
 
         log_level = log_level.upper()
-        log_filepath = self.output_dir / "console_logs.log"
+        log_filepath = self.log_dir / "console_logs.log"
         logging.basicConfig(filename=log_filepath, level=log_level, filemode="w")
 
     def _set_random_seed(self) -> None:
@@ -482,7 +493,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             OF3OutputWriter(
                 self.output_dir, **self.output_writer_settings.model_dump()
             ),
-            PredictTimer(),
+            PredictTimer(self.output_dir),
         ]
         return _callbacks
 
@@ -539,6 +550,10 @@ class InferenceExperimentRunner(ExperimentRunner):
 
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
+        if not os.listdir(self.log_dir) and self.is_rank_zero:
+            print("Removing empty log directory...")
+            self.log_dir.rmdir()
+
         if self.use_msa_server and self.is_rank_zero:
             print("Cleaning up MSA directories...")
 

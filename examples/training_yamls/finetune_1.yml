@@ -87,6 +87,7 @@ dataset_configs:
             spatial_interface: 0.0
         loss:
           loss_weights:
+            bond: 4.0
             smooth_lddt: 0.0
             experimentally_resolved: 0.0
             plddt: 0.0
@@ -110,6 +111,7 @@ dataset_configs:
             spatial_interface: 0.0
         loss:
           loss_weights:
+            bond: 4.0
             smooth_lddt: 0.0
             experimentally_resolved: 0.0
             plddt: 0.0
