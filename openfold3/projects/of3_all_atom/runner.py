@@ -11,7 +11,7 @@ import torch
 from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
 from openfold3.core.loss.loss_module import OpenFold3Loss
-from openfold3.core.metrics.confidence_scores import (
+from openfold3.core.metrics.aggregate_confidence_ranking import (
     get_confidence_scores,
     get_confidence_scores_chunked,
 )
