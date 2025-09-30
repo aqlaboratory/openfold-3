@@ -186,3 +186,26 @@ class TestPredictionWriter:
             np.testing.assert_array_equal(
                 expected_full_scores[k], actual_full_scores[k]
             )
+
+    def test_skips_none_output(self, tmp_path):
+        class DummyMock:
+            pass
+
+        writer = OF3OutputWriter(
+            output_dir=tmp_path,
+            structure_format="pdb",
+            full_confidence_output_format="npz",
+        )
+        trainer = DummyMock()
+        pl_module = DummyMock()
+
+        writer.on_predict_batch_end(
+            trainer=trainer,
+            pl_module=pl_module,
+            outputs=None,
+            batch={"query_id": "query_id"},
+            batch_idx=0,
+        )
+
+        assert writer.failed_count == 1
+        assert writer.success_count == 0

@@ -1,7 +1,9 @@
 import random
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal, Optional
 
+from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
 from pydantic import BaseModel, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
@@ -61,7 +63,7 @@ class PlTrainerArgs(BaseModel):
     model_config = PydanticConfigDict(extra="allow")
     max_epochs: int = 1000  # pl_trainer default
     accelerator: str = "gpu"
-    precision: int | str = "bf16-mixed"
+    precision: int | str = "32-true"
     num_nodes: int = 1
     devices: int = 1  # number of GPUs per node
     profiler: Optional[str] = None
@@ -71,6 +73,7 @@ class PlTrainerArgs(BaseModel):
 
     # Extra arguments that are not passed directly to pl.Trainer
     deepspeed_config_path: Path | None = None
+    distributed_timeout: Optional[timedelta] = default_pg_timeout
     mpi_plugin: bool = False
 
 
@@ -82,6 +85,8 @@ class OutputWritingSettings(BaseModel):
 
     structure_format: Literal["pdb", "cif"] = "cif"
     full_confidence_output_format: Literal["json", "npz"] = "json"
+    write_features: bool = False
+    write_latent_outputs: bool = False
 
 
 class ExperimentSettings(BaseModel):
@@ -89,6 +94,7 @@ class ExperimentSettings(BaseModel):
 
     mode: ValidModeType
     output_dir: Path = Path("./")
+    log_dir: Path | None = None
 
     @model_validator(mode="after")
     def create_output_dir(cls, model):

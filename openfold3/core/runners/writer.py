@@ -6,10 +6,12 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.distributed as dist
 from biotite import structure
 from pytorch_lightning.callbacks import BasePredictionWriter
 
 from openfold3.core.data.io.structure.cif import write_structure
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +62,22 @@ class OF3OutputWriter(BasePredictionWriter):
         pae_enabled: bool = False,
         structure_format: str = "pdb",
         full_confidence_output_format: str = "json",
+        write_features: bool = False,
+        write_latent_outputs: bool = False,
     ):
         super().__init__(write_interval="batch")
         self.output_dir = output_dir
         self.pae_enabled = pae_enabled
         self.structure_format = structure_format
         self.full_confidence_format = full_confidence_output_format
+        self.write_features = write_features
+        self.write_latent_outputs = write_latent_outputs
+
+        # Track successfully predicted samples
+        self.success_count = 0
+        self.failed_count = 0
+        self.total_count = 0
+        self.failed_queries = []
 
     @staticmethod
     def write_structure_prediction(
@@ -146,20 +158,8 @@ class OF3OutputWriter(BasePredictionWriter):
         elif out_fmt == "npz":
             np.savez_compressed(out_file_full, **full_confidence_scores)
 
-    def on_predict_batch_end(
-        self,
-        trainer,
-        pl_module,
-        outputs,
-        batch,
-        batch_idx,
-    ):
-        is_repeated_sample = batch.get("repeated_sample")
-        if outputs is None or is_repeated_sample:
-            return
-
-        batch, outputs = outputs
-        confidence_scores = outputs["confidence_scores"]
+    def write_all_outputs(self, batch: dict, outputs: dict, confidence_scores: dict):
+        """Writes all outputs for a given batch."""
 
         batch_size = len(batch["atom_array"])
         sample_size = outputs["atom_positions_predicted"].shape[1]
@@ -201,5 +201,177 @@ class OF3OutputWriter(BasePredictionWriter):
                     output_prefix=file_prefix,
                 )
 
-        del batch
-        del outputs
+            def fetch_cur_batch(t):
+                # Get tensor for current batch dim
+                # Remove expanded sample dim if it exists to get original tensor shapes
+                if t.ndim < 2:
+                    return t
+
+                cur_feats = t[b : b + 1].squeeze(1)  # noqa: B023
+                return cur_feats.detach().clone().cpu()
+
+            file_prefix = output_subdir / f"{query_id}_seed_{seed}"
+
+            # Write out input feature dictionary
+            if self.write_features:
+                out_file = Path(f"{file_prefix}_batch.pt")
+                cur_batch = tensor_tree_map(fetch_cur_batch, batch, strict_type=False)
+                torch.save(cur_batch, out_file)
+                del cur_batch
+
+            # Write out latent reps / raw model outputs
+            if self.write_latent_outputs:
+                out_file = Path(f"{file_prefix}_latent_output.pt")
+                cur_output = tensor_tree_map(
+                    fetch_cur_batch, outputs, strict_type=False
+                )
+                torch.save(cur_output, out_file)
+                del cur_output
+
+    def on_predict_batch_end(
+        self,
+        trainer,
+        pl_module,
+        outputs,
+        batch,
+        batch_idx,
+        dataloader_idx=0,
+    ):
+        # Skip repeated samples
+        if batch.get("repeated_sample"):
+            return
+
+        self.total_count += 1
+
+        # Skip and track failed samples
+        if outputs is None:
+            self.failed_count += 1
+            self.failed_queries.extend(batch["query_id"])
+            return
+
+        batch, outputs = outputs
+        confidence_scores = outputs["confidence_scores"]
+
+        # Write predictions and confidence scores
+        # Optionally write out input features and latent outputs
+        try:
+            self.write_all_outputs(
+                batch=batch,
+                outputs=outputs,
+                confidence_scores=confidence_scores,
+            )
+            self.success_count += 1
+        except Exception as e:
+            self.failed_count += 1
+            self.failed_queries.extend(batch["query_id"])
+            logger.exception(
+                f"Failed to write predictions for query_id(s) "
+                f"{', '.join(batch['query_id'])}: {e}"
+            )
+
+        del batch, outputs
+
+    def on_predict_end(self, trainer, pl_module):
+        """
+        Print summary of inference run. Includes a timeout failsafe
+        for distributed runs.
+        """
+
+        try:
+            # Gather summary data from all processes
+            final_summary_data = {
+                "total": self.total_count,
+                "success": self.success_count,
+                "failed": self.failed_count,
+                "failed_queries": self.failed_queries,
+            }
+
+            gathered_data = [final_summary_data]
+            if dist.is_available() and dist.is_initialized():
+                gathered_data = [None] * trainer.world_size
+                dist.all_gather_object(gathered_data, final_summary_data)
+
+            if trainer.is_global_zero:
+                # Aggregate the results from all processes on Rank 0
+                total_queries = sum(data["total"] for data in gathered_data)
+                success_count = sum(data["success"] for data in gathered_data)
+                failed_count = sum(data["failed"] for data in gathered_data)
+                final_failed_list = [
+                    item for data in gathered_data for item in data["failed_queries"]
+                ]
+
+                self._write_summary(
+                    total_queries=total_queries,
+                    success_count=success_count,
+                    failed_count=failed_count,
+                    failed_list=final_failed_list,
+                    global_rank=trainer.global_rank,
+                    is_complete=True,
+                )
+
+        except RuntimeError as e:
+            # TODO: Due to additional sync PL does outside of this callback,
+            #  this won't be reached before the timeout error occurs.
+            #  Leaving this here for now in case we refactor the prediction
+            #  logic to avoid the extra syncs.
+            error_str = str(e).lower()
+            if "timeout" in error_str or "timed out" in error_str:
+                logger.warning(
+                    f"[Rank {trainer.global_rank}] Distributed sync timed out! "
+                    f"Writing local results to a fallback log."
+                )
+
+                self._write_summary(
+                    total_queries=self.total_count,
+                    success_count=self.success_count,
+                    failed_count=self.failed_count,
+                    failed_list=self.failed_queries,
+                    global_rank=trainer.global_rank,
+                    is_complete=False,
+                )
+
+            else:
+                # Re-raise unexpected runtime errors
+                raise e
+
+    def _write_summary(
+        self,
+        total_queries: int,
+        success_count: int,
+        failed_count: int,
+        failed_list: list,
+        global_rank: int = 0,
+        is_complete=True,
+    ):
+        """Helper to format the final summary."""
+        if is_complete:
+            status = "COMPLETE"
+            out_file = self.output_dir / "summary.txt"
+        else:
+            status = f"INCOMPLETE (Rank {global_rank})"
+            out_file = self.output_dir / f"fallback_summary_rank_{global_rank}.txt"
+
+        summary = [
+            "\n" + "=" * 50,
+            f"    PREDICTION SUMMARY ({status})    ",
+            "=" * 50,
+            f"Total Queries Processed: {total_queries}",
+            f"  - Successful Queries:  {success_count}",
+            f"  - Failed Queries:      {failed_count}",
+        ]
+
+        if failed_list:
+            failed_str = ", ".join(sorted(list(set(failed_list))))
+            summary.append(f"\nFailed Queries: {failed_str}")
+
+        summary.append("=" * 50 + "\n")
+        summary = "\n".join(summary)
+
+        out_file.write_text(summary)
+
+        if is_complete:
+            print(summary)
+        else:
+            logger.warning(
+                f"Fallback summary for Rank {global_rank} saved to: {out_file}"
+            )

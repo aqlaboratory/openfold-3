@@ -167,8 +167,8 @@ class AttentionPairBias(nn.Module):
         z: torch.Tensor,
         s: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
-        use_memory_efficient_kernel: bool = False,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
@@ -183,8 +183,6 @@ class AttentionPairBias(nn.Module):
                 True
             mask:
                 [*, N] Mask for token or atom-level embedding
-            use_memory_efficient_kernel:
-                Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
@@ -215,8 +213,8 @@ class AttentionPairBias(nn.Module):
             q_x=a,
             kv_x=a,
             biases=biases,
-            use_memory_efficient_kernel=use_memory_efficient_kernel,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             use_high_precision=use_high_precision_attention,
         )
@@ -385,6 +383,7 @@ class CrossAttentionPairBias(nn.Module):
         s: Optional[torch.Tensor] = None,
         mask: Optional[torch.Tensor] = None,
         use_high_precision_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -422,6 +421,7 @@ class CrossAttentionPairBias(nn.Module):
             kv_x=a_k,
             biases=biases,
             use_high_precision=use_high_precision_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
         )
 
         # Convert back to unpadded and flattened atom representation
