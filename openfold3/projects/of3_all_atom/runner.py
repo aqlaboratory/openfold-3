@@ -319,9 +319,16 @@ class OpenFold3AllAtom(ModelRunner):
 
         pdb_id = batch["pdb_id"]
         is_repeated_sample = batch.get("repeated_sample").item()
+        if is_repeated_sample:
+            logger.debug(
+                f"Skipping repeated sample {', '.join(pdb_id)} on rank "
+                f"{self.global_rank}"
+            )
+            return
+
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
-            f"step {self.global_step}, repeated: {is_repeated_sample}"
+            f"step {self.global_step}"
         )
 
         try:
@@ -331,8 +338,7 @@ class OpenFold3AllAtom(ModelRunner):
             # Compute loss and other metrics
             _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
 
-            if not is_repeated_sample:
-                self._log(loss_breakdown, batch, outputs, train=False)
+            self._log(loss_breakdown, batch, outputs, train=False)
 
         except Exception:
             logger.exception(f"Validation step failed with pdb id {', '.join(pdb_id)}")
@@ -535,6 +541,12 @@ class OpenFold3AllAtom(ModelRunner):
         return confidence_scores
 
     def predict_step(self, batch, batch_idx):
+        # Skip if dataloader fails -> returns empty batch
+        is_repeated_sample = batch.get("repeated_sample").item()
+        valid_sample = batch.get("valid_sample").item()
+        if not valid_sample or is_repeated_sample:
+            return
+
         # At the start of inference, load the EMA weights
         if self.cached_weights is None:
             # model.state_dict() contains references to model weights rather
@@ -580,8 +592,6 @@ class OpenFold3AllAtom(ModelRunner):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-            return None
-
         except Exception as e:
             logger.error(
                 f"Failed for query_id(s) {', '.join(query_id)}: {e}. "
@@ -590,8 +600,6 @@ class OpenFold3AllAtom(ModelRunner):
             )
 
             self._log_predict_exception(e, query_id)
-
-            return None
 
     def _log_predict_exception(self, e, query_id):
         """Formats and appends exceptions to a rank-specific error log."""

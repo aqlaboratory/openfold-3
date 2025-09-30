@@ -106,8 +106,7 @@ class ExperimentRunner(ABC):
     @cached_property
     def log_dir(self) -> Path:
         """Get or create the log directory."""
-        _out_dir = self.experiment_config.experiment_settings.output_dir
-        _log_dir = _out_dir / "logs"
+        _log_dir = self.experiment_config.experiment_settings.log_dir
         _log_dir.mkdir(exist_ok=True, parents=True)
         return _log_dir
 
@@ -182,7 +181,7 @@ class ExperimentRunner(ABC):
                 precision_plugin=OF3DeepSpeedPrecision(
                     precision=self.pl_trainer_args.precision
                 ),
-                timeout=self.pl_trainer_args.timeout,
+                timeout=self.pl_trainer_args.distributed_timeout,
             )
 
             _use_deepspeed_adam = (
@@ -197,7 +196,7 @@ class ExperimentRunner(ABC):
             return DDPStrategy(
                 find_unused_parameters=False,
                 cluster_environment=self.cluster_environment,
-                timeout=self.pl_trainer_args.timeout,
+                timeout=self.pl_trainer_args.distributed_timeout,
             )
 
         return "auto"
@@ -492,7 +491,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             OF3OutputWriter(
                 self.output_dir, **self.output_writer_settings.model_dump()
             ),
-            PredictTimer(),
+            PredictTimer(self.output_dir),
         ]
         return _callbacks
 

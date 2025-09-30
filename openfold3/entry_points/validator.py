@@ -73,7 +73,7 @@ class PlTrainerArgs(BaseModel):
 
     # Extra arguments that are not passed directly to pl.Trainer
     deepspeed_config_path: Path | None = None
-    timeout: Optional[timedelta] = default_pg_timeout
+    distributed_timeout: Optional[timedelta] = default_pg_timeout
     mpi_plugin: bool = False
 
 
@@ -94,11 +94,14 @@ class ExperimentSettings(BaseModel):
 
     mode: ValidModeType
     output_dir: Path = Path("./")
+    log_dir: Path | None = None
 
     @model_validator(mode="after")
     def create_output_dir(cls, model):
-        if not model.output_dir.exists():
-            model.output_dir.mkdir(parents=True, exist_ok=True)
+        model.output_dir.mkdir(parents=True, exist_ok=True)
+        if model.log_dir is None:
+            model.log_dir = model.output_dir / "logs"
+        model.log_dir.mkdir(parents=True, exist_ok=True)
         return model
 
 
