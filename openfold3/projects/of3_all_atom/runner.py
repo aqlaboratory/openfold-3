@@ -512,6 +512,9 @@ class OpenFold3AllAtom(ModelRunner):
         return confidence_scores
 
     def predict_step(self, batch, batch_idx):
+        # Skip if dataloader fails -> returns empty batch
+        if (batch.get("query_id") is not None) and len(batch) == 2:
+            return None
         # At the start of inference, load the EMA weights
         if self.cached_weights is None:
             # model.state_dict() contains references to model weights rather

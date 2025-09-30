@@ -1652,9 +1652,16 @@ class TemplatePreprocessor:
     def _parse_inference_query_set(self) -> None:
         paths_seen = set()
         inputs = []
-        for query in self.input_set.queries.values():
+        for query_name, query in self.input_set.queries.items():
             for chain in query.chains:
                 if chain.molecule_type not in self.moltypes:
+                    continue
+
+                if chain.template_alignment_file_path is None:
+                    print(
+                        f"Warning: No template alignment file path provided for chain "
+                        f"{chain.chain_ids} of query {query_name}, skipping..."
+                    )
                     continue
 
                 template_alignment_path = Path(chain.template_alignment_file_path)

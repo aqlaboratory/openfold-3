@@ -4,6 +4,7 @@ Inference class template for first inference pipeline prototype.
 
 import itertools
 import logging
+import traceback
 from typing import Optional
 
 import pandas as pd
@@ -315,13 +316,33 @@ class InferenceDataset(Dataset):
         query_id = datapoint["query_id"]
         query = self.query_cache[query_id]
         seed = datapoint["seed"]
+        is_repeated_sample = datapoint["repeated_sample"]
 
-        # TODO: Could wrap this in try/except
-        features = self.create_all_features(query)
-        features["query_id"] = query_id
-        features["seed"] = torch.tensor([seed])
+        try:
+            # TODO: Could wrap this in try/except
+            features = self.create_all_features(query)
+            features["query_id"] = query_id
+            features["seed"] = torch.tensor([seed])
+            features["repeated_sample"] = torch.tensor(
+                [is_repeated_sample], dtype=torch.bool
+            )
 
-        return features
+            return features
+        except Exception as e:
+            tb = traceback.format_exc()
+            logger.warning(
+                "-" * 40
+                + "\n"
+                + f"Failed to process {query_id} with preferred"
+                + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                + "-" * 40
+            )
+            features = {}
+            features["query_id"] = query_id
+            features["repeated_sample"] = torch.tensor(
+                [is_repeated_sample], dtype=torch.bool
+            )
+            return features
 
     def __len__(self):
         return len(self.datapoint_cache)
