@@ -225,7 +225,7 @@ class ExperimentRunner(ABC):
     def trainer(self) -> pl.Trainer:
         """Create and return the trainer instance."""
         trainer_args = self.pl_trainer_args.model_dump(
-            exclude={"deepspeed_config_path", "timeout", "mpi_plugin"}
+            exclude={"deepspeed_config_path", "distributed_timeout", "mpi_plugin"}
         )
         trainer_args.update(
             {
