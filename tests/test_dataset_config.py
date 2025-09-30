@@ -278,7 +278,7 @@ class TestInferenceConfigConstruction:
 
         inference_config = InferenceJobConfig(
             query_set=inference_set,
-            template_preprocessor=TemplatePreprocessorSettings(mode="predict"),
+            template_preprocessor_settings=TemplatePreprocessorSettings(mode="predict"),
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         dataset_specs = [inference_spec]

@@ -515,7 +515,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             ccd_file_path=self.dataset_config_kwargs.ccd_file_path,
             msa=self.dataset_config_kwargs.msa,
             template=self.dataset_config_kwargs.template,
-            template_preprocessor=self.dataset_config_kwargs.template_preprocessor,
+            template_preprocessor_settings=self.experiment_config.template_preprocessor_settings,
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(
