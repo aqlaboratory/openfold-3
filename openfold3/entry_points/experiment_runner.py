@@ -107,6 +107,8 @@ class ExperimentRunner(ABC):
     def log_dir(self) -> Path:
         """Get or create the log directory."""
         _log_dir = self.experiment_config.experiment_settings.log_dir
+        if _log_dir is None:
+            _log_dir = self.output_dir / "logs"
         _log_dir.mkdir(exist_ok=True, parents=True)
         return _log_dir
 

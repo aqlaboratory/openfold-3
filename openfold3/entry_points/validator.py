@@ -98,10 +98,8 @@ class ExperimentSettings(BaseModel):
 
     @model_validator(mode="after")
     def create_output_dir(cls, model):
-        model.output_dir.mkdir(parents=True, exist_ok=True)
-        if model.log_dir is None:
-            model.log_dir = model.output_dir / "logs"
-        model.log_dir.mkdir(parents=True, exist_ok=True)
+        if not model.output_dir.exists():
+            model.output_dir.mkdir(parents=True, exist_ok=True)
         return model
 
 
