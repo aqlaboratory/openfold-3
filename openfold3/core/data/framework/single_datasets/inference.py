@@ -316,7 +316,7 @@ class InferenceDataset(Dataset):
         query_id = datapoint["query_id"]
         query = self.query_cache[query_id]
         seed = datapoint["seed"]
-        is_repeated_sample = datapoint["repeated_sample"]
+        is_repeated_sample = bool(datapoint["repeated_sample"])
 
         try:
             features = self.create_all_features(query)

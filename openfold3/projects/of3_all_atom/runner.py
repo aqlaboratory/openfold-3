@@ -318,7 +318,7 @@ class OpenFold3AllAtom(ModelRunner):
             self.model.load_state_dict(self.ema.state_dict()["params"])
 
         pdb_id = batch["pdb_id"]
-        is_repeated_sample = batch.get("repeated_sample").item()
+        is_repeated_sample = batch.get("repeated_sample")
         if is_repeated_sample:
             logger.debug(
                 f"Skipping repeated sample {', '.join(pdb_id)} on rank "
@@ -542,8 +542,8 @@ class OpenFold3AllAtom(ModelRunner):
 
     def predict_step(self, batch, batch_idx):
         # Skip if dataloader fails -> returns empty batch
-        is_repeated_sample = batch.get("repeated_sample").item()
-        valid_sample = batch.get("valid_sample").item()
+        is_repeated_sample = batch.get("repeated_sample")
+        valid_sample = batch.get("valid_sample")
         if not valid_sample or is_repeated_sample:
             return
 
