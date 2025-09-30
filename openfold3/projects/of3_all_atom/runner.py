@@ -2,6 +2,8 @@ import gc
 import importlib
 import itertools
 import logging
+import traceback
+from datetime import datetime
 from pathlib import Path
 
 import pytorch_lightning as pl
@@ -46,8 +48,10 @@ REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_conf
 
 
 class OpenFold3AllAtom(ModelRunner):
-    def __init__(self, model_config):
+    def __init__(self, model_config, log_dir: Path = None):
         super().__init__(model_class=OpenFold3, config=model_config)
+
+        self.log_dir = log_dir
 
         self.loss = OpenFold3Loss(config=model_config.architecture.loss_module)
 
@@ -541,11 +545,14 @@ class OpenFold3AllAtom(ModelRunner):
 
             return batch, outputs
 
-        except torch.OutOfMemoryError:
-            logger.exception(
-                f"Predict step failed with OOM for query_id(s) {', '.join(query_id)}, "
-                f"skipping batch."
+        except torch.OutOfMemoryError as e:
+            logger.error(
+                f"OOM for query_id(s) {', '.join(query_id)}. "
+                f"See {self.log_dir}/predict_err_rank{self.global_rank}.log "
+                f"for details."
             )
+
+            self._log_predict_exception(e, query_id)
 
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -553,7 +560,40 @@ class OpenFold3AllAtom(ModelRunner):
             return None
 
         except Exception as e:
-            logger.exception(
-                f"Predict step failed for query_id(s) {', '.join(query_id)}: {e}"
+            logger.error(
+                f"Failed for query_id(s) {', '.join(query_id)}: {e}. "
+                f"See {self.log_dir}/predict_err_rank{self.global_rank}.log "
+                f"for details."
             )
+
+            self._log_predict_exception(e, query_id)
+
             return None
+
+    def _log_predict_exception(self, e, query_id):
+        """Formats and appends exceptions to a rank-specific error log."""
+
+        # Output dir is not specified
+        if self.log_dir is None:
+            return
+
+        log_file = self.log_dir / f"predict_err_rank{self.global_rank}.log"
+
+        # Get traceback and format message
+        error_traceback = traceback.format_exc()
+
+        lines = [
+            "==================================================",
+            f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"Query ID(s): {', '.join(query_id)}",
+            f"Error Type: {type(e).__name__}",
+            f"Error Message: {e}",
+            "--------------------------------------------------",
+            f"Traceback:{error_traceback}",
+            "==================================================",
+        ]
+        log_entry = "\n".join(lines)
+
+        # Append the entry to the log file
+        with open(log_file, "a") as f:
+            f.write(log_entry)

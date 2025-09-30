@@ -241,7 +241,8 @@ class TestModelUpdate:
 
         # check low memory settings set correctly
         assert model_cfg.settings.memory.eval.chunk_size == 4
-        assert model_cfg.settings.memory.eval.offload_inference.enabled
+        assert model_cfg.settings.memory.eval.offload_inference.confidence_heads
+        assert model_cfg.settings.memory.eval.offload_inference.token_cutoff == 0
 
         # test existing setting in experiment runner is not overwritten
         assert not model_cfg.settings.memory.eval.use_lma

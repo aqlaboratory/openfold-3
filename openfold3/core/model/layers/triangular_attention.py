@@ -76,6 +76,7 @@ class TriangleAttention(nn.Module):
         biases: list[torch.Tensor],
         chunk_size: int,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -90,6 +91,7 @@ class TriangleAttention(nn.Module):
             partial(
                 self.mha,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
             ),
             mha_inputs,
@@ -104,6 +106,7 @@ class TriangleAttention(nn.Module):
         mask: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -114,6 +117,12 @@ class TriangleAttention(nn.Module):
         Returns:
             [*, I, J, C_in] output tensor
         """
+
+        if use_cueq_triangle_kernels and use_deepspeed_evo_attention:
+            # VS: Upstream in the Pairformer, its valid for both to be
+            # true. This would trigger an error in Attention, so we
+            # assume here if both are true, we just use cueq
+            raise ValueError("both deepspeed and cueq enabled!!")
         if mask is None:
             # [*, I, J]
             mask = x.new_ones(
@@ -145,6 +154,7 @@ class TriangleAttention(nn.Module):
                 chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 inplace_safe=inplace_safe,
             )
         else:
@@ -154,6 +164,7 @@ class TriangleAttention(nn.Module):
                 biases=biases,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             )
 
         if not self.starting:
