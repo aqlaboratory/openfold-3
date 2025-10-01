@@ -156,6 +156,7 @@ dataset_paths:
     template_structures_directory: none
     template_file_format: pkl
     ccd_file: /path 
+    use_roda_monomer_format: True
 
   short-monomer-distillation:
     alignments_directory: none 
@@ -170,6 +171,7 @@ dataset_paths:
     template_structures_directory: none
     template_file_format: pkl
     ccd_file: /path 
+    use_roda_monomer_format: True
 
   disordered-pdb:
     alignments_directory: none 

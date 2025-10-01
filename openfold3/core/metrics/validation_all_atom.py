@@ -1370,9 +1370,8 @@ def get_metrics(
         )
         metrics = metrics | ligand_validation_metrics
 
-        if compute_lig_diffusion_metrics:
-            pred_coords_diffusion = outputs["atom_positions_diffusion"]
-
+        pred_coords_diffusion = outputs.get("atom_positions_diffusion")
+        if compute_lig_diffusion_metrics and pred_coords_diffusion is not None:
             # Take only first sample for computational efficiency
             pred_coords_diffusion = pred_coords_diffusion[:, 0, ...].unsqueeze(1)
 

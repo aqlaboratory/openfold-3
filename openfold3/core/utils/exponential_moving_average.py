@@ -1,4 +1,6 @@
+import warnings
 from collections import OrderedDict
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -18,7 +20,12 @@ class ExponentialMovingAverage:
     where `decay` is an attribute of the ExponentialMovingAverage object.
     """
 
-    def __init__(self, model: nn.Module, decay: float):
+    def __init__(
+        self,
+        model: nn.Module,
+        decay: float,
+        submodule_enabled_subset: Optional[list] = None,
+    ):
         """
         Args:
             model:
@@ -26,6 +33,9 @@ class ExponentialMovingAverage:
             decay:
                 A value (usually close to 1.) by which updates are
                 weighted as part of the above formula
+            submodule_enabled_subset:
+                A list of submodules whose EMA weights will be updated.
+                If not specified, all weights are updated.
         """
         super().__init__()
 
@@ -34,11 +44,13 @@ class ExponentialMovingAverage:
 
         self.params = tensor_tree_map(clone_param, model.state_dict())
         self.decay = decay
+        self.submodule_enabled_subset = submodule_enabled_subset
         self.device = next(model.parameters()).device
 
     def to(self, device):
         self.params = tensor_tree_map(lambda t: t.to(device), self.params)
         self.device = device
+        return self
 
     def _update_state_dict_(self, update, state_dict):
         with torch.no_grad():
@@ -57,7 +69,33 @@ class ExponentialMovingAverage:
         module. The module should have the same structure as that used to
         initialize the ExponentialMovingAverage object.
         """
-        self._update_state_dict_(model.state_dict(), self.params)
+        if self.submodule_enabled_subset is None:
+            # If no subset is specified, update all parameters.
+            self._update_state_dict_(model.state_dict(), self.params)
+            return
+
+        # If a subset is specified, filter the state_dict to only include
+        # parameters from the enabled submodules.
+        update_dict = OrderedDict()
+        model_state_dict = model.state_dict()
+
+        for key, value in model_state_dict.items():
+            is_enabled = any(
+                key == prefix or key.startswith(f"{prefix}.")
+                for prefix in self.submodule_enabled_subset
+            )
+            if is_enabled:
+                update_dict[key] = value
+
+        if not update_dict:
+            warnings.warn(
+                "ExponentialMovingAverage: No parameters found for the specified "
+                f"submodule_enabled_subset: {self.submodule_enabled_subset}.",
+                stacklevel=2,
+            )
+            return
+
+        self._update_state_dict_(update_dict, self.params)
 
     def load_state_dict(self, state_dict: OrderedDict) -> None:
         for k in state_dict["params"]:

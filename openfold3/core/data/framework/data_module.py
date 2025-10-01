@@ -139,6 +139,7 @@ class DataModuleConfig(BaseModel):
     datasets: list[SerializeAsAny[BaseModel]]
     batch_size: int = 1
     num_workers: int = 0
+    num_workers_validation: int = 0
     data_seed: int = 42
     epoch_len: int = 1
     num_epochs: int = 1000  # PL default
@@ -155,6 +156,7 @@ class DataModule(pl.LightningDataModule):
         # Possibly initialize directly from DataModuleConfig
         self.batch_size = data_module_config.batch_size
         self.num_workers = data_module_config.num_workers
+        self.num_workers_validation = data_module_config.num_workers_validation
         self.data_seed = data_module_config.data_seed
         self.epoch_len = data_module_config.epoch_len
         self.num_epochs = data_module_config.num_epochs
@@ -408,10 +410,22 @@ class DataModule(pl.LightningDataModule):
         Returns:
             DataLoader: DataLoader object.
         """
+
+        # TODO: Val does not need this many workers. Due to memory leak issue,
+        #  reduce workers here to run with more workers overall in training
+        #  as temporary quick fix.
+        if (
+            mode == DatasetMode.validation
+            and DatasetMode.train in self.multi_dataset_config.modes
+        ):
+            num_workers = self.num_workers_validation
+        else:
+            num_workers = self.num_workers
+
         return DataLoader(
             dataset=self.datasets_by_mode[mode],
             batch_size=self.batch_size,
-            num_workers=self.num_workers,
+            num_workers=num_workers,
             collate_fn=openfold_batch_collator,
             generator=self.generator,
             worker_init_fn=self.worker_init_function_with_data_seed,

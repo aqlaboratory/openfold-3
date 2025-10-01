@@ -2,10 +2,9 @@ import random
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
-from openfold3.core.config.config_utils import FilePathOrNone
 from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetConfigKwargs,
@@ -40,6 +39,7 @@ class LoggingConfig(BaseModel):
     """Settings for training logging."""
 
     log_lr: bool = True
+    log_grads: bool = True
     log_level: Literal["debug", "info", "warning", "error"] | None = None
     wandb_config: WandbConfig | None = None
 
@@ -51,6 +51,7 @@ class DataModuleArgs(BaseModel):
     batch_size: int = 1
     data_seed: int = 1234
     num_workers: int = 10
+    num_workers_validation: int = 4
     epoch_len: int = 4
     num_epochs: int = 1000
 
@@ -104,7 +105,36 @@ class TrainingExperimentSettings(ExperimentSettings):
 
     mode: ValidModeType = "train"
     seed: int = 42
-    restart_checkpoint_path: FilePathOrNone = None
+    restart_checkpoint_path: Optional[str] = None
+
+    @classmethod
+    @field_validator("restart_checkpoint_path", mode="after")
+    def validate_checkpoint_path(cls, ckpt_path: Optional[str]) -> Optional[str]:
+        """
+        Validates the restart_checkpoint_path.
+
+        The path can be one of the following:
+        - None (if no checkpoint is provided).
+        - A special string: "last", "hpc", "registry" accepted by PL.
+        - A string representing a valid path to a file.
+        - A string representing a valid path to a directory (for deepspeed checkpoints).
+        """
+        if ckpt_path is None:
+            return ckpt_path
+
+        # PL accepted strings
+        allowed_strings = ["last", "hpc", "registry"]
+        if ckpt_path in allowed_strings:
+            return ckpt_path
+
+        # The path points to a valid file or directory
+        if Path(ckpt_path).exists():
+            return ckpt_path
+
+        raise ValueError(
+            f'"{ckpt_path}" is not a valid file, directory, or accepted keyword '
+            f"({', '.join(allowed_strings)})"
+        )
 
 
 def generate_seeds(start_seed, num_seeds):

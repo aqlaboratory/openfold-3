@@ -29,6 +29,7 @@ def process_template_structures_of3(
     template_structure_array_directory: Path | None,
     template_file_format: str,
     ccd: CIFFile | None,
+    use_s3_monomer_format: bool = False,
 ) -> TemplateSliceCollection:
     """Processes template structures for all chains of a given target structure.
 
@@ -63,7 +64,9 @@ def process_template_structures_of3(
         ccd (CIFFile | None):
             The parsed CCD file. Not used if template_structure_array_directory is
             provided.
-
+        use_s3_monomer_format (bool):
+            Whether template cache filepath is expected to be in the s3 monomer
+            format: <aln_dir>/<mgy_id>/template.npz
     Returns:
         TemplateSliceCollection:
             The sliced template atomarrays for each chain in the crop.
@@ -92,6 +95,7 @@ def process_template_structures_of3(
             chain_id=chain_id,
             template_structure_array_directory=template_structure_array_directory,
             template_file_format=template_file_format,
+            use_s3_monomer_format=use_s3_monomer_format,
         )
 
         # Map token positions to template atom arrays

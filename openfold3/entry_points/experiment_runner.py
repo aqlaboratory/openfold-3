@@ -25,7 +25,7 @@ from openfold3.core.data.framework.data_module import (
     InferenceDataModule,
 )
 from openfold3.core.runners.writer import OF3OutputWriter
-from openfold3.core.utils.callbacks import PredictTimer
+from openfold3.core.utils.callbacks import PredictTimer, RankSpecificSeedCallback
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
@@ -313,7 +313,7 @@ class TrainingExperimentRunner(ExperimentRunner):
         return DataModuleConfig(datasets=cfgs, **self.data_module_args.model_dump())
 
     @cached_property
-    def ckpt_path(self) -> Path | None:
+    def ckpt_path(self) -> str | None:
         return self.restart_checkpoint_path
 
     @property
@@ -332,6 +332,12 @@ class TrainingExperimentRunner(ExperimentRunner):
             self.is_rank_zero,
             self.output_dir,
         )
+
+        if self.is_rank_zero and self.logging_config.log_grads:
+            self.wandb.logger.watch(
+                self.lightning_module, log="gradients", log_graph=False
+            )
+
         self.wandb.store_configs(
             self.experiment_config,
             self.data_module_config,
@@ -366,6 +372,10 @@ class TrainingExperimentRunner(ExperimentRunner):
         logger.info(f"Running with seed: {seed}")
         pl.seed_everything(seed, workers=True)
 
+        update_dict = {"architecture": {"shared": {"sync_seed": seed}}}
+
+        self.model_config.update(update_dict)
+
     @cached_property
     def loggers(self):
         """Retrieve the list of loggers to be used in the experiment."""
@@ -377,7 +387,7 @@ class TrainingExperimentRunner(ExperimentRunner):
     @cached_property
     def callbacks(self):
         """Set up and return the list of training callbacks."""
-        _callbacks = []
+        _callbacks = [RankSpecificSeedCallback(base_seed=self.seed)]
 
         _checkpoint = self.checkpoint_config
         if _checkpoint is not None:

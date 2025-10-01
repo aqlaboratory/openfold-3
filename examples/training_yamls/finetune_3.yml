@@ -40,8 +40,15 @@ model_update:
     - train 
   custom:
     settings:
-      diffusion_training_enabled: false
+      train_confidence_only: true
       model_selection_weight_scheme: fine_tuning
+      ema:
+        submodule_enabled_subset:
+          - aux_heads.pairformer_embedding
+          - aux_heads.pde
+          - aux_heads.plddt
+          - aux_heads.experimentally_resolved
+          - aux_heads.pae
     architecture:
       shared: 
         diffusion:
@@ -49,8 +56,6 @@ model_update:
         heads:
           pae:
             enabled: true
-          distogram:
-            enabled: false
 
 dataset_configs:
   train:
@@ -73,7 +78,7 @@ dataset_configs:
             mse: 0.0
             smooth_lddt: 0.0
             distogram: 0.0
-            pae: 1e-4
+            pae: 0.0001
 
   validation:
     val-weighted-pdb:

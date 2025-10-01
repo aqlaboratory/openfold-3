@@ -49,6 +49,7 @@ def process_msas_of3(
     pairing_mask_keys: list[str],
     moltypes: list[str],
     msas_to_pair: list[str],
+    use_s3_monomer_format: bool = False,
 ) -> MsaArrayCollection:
     """Prepares the arrays needed to create MSA feature tensors.
 
@@ -97,7 +98,9 @@ def process_msas_of3(
             List of molecule types to consider in the MSA.
         msas_to_pair (list[str]):
             List of MSAs to pair for online pairing. If empty, no pairing will be done
-
+        use_s3_monomer_format (bool):
+            Whether input data is expected to be in the s3 monomer
+            format: <aln_dir>/<mgy_id>/alignment.npz
     Returns:
         MsaArrayCollection:
             The collection of MsaArrays in the processed state.
@@ -118,6 +121,7 @@ def process_msas_of3(
         alignment_index=alignment_index,
         alignment_array_directory=alignment_array_directory,
         max_seq_counts=max_seq_counts,
+        use_s3_monomer_format=use_s3_monomer_format,
     )
 
     # Create dicts with the processed query, paired and main MSA data per chain

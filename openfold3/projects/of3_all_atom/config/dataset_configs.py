@@ -59,6 +59,7 @@ class TrainingDatasetPaths(BaseModel):
     template_structure_array_directory: DirectoryPathOrNone = None
     template_file_format: Optional[str] = None
     ccd_file: FilePathOrNone = None
+    use_roda_monomer_format: bool = False
 
     @model_validator(mode="after")
     def _validate_paths(self):
@@ -166,8 +167,8 @@ class WeightedPDBConfig(DefaultDatasetConfigSection):
     }
 
 
-@register_dataset_config("ProteinMonomerDistillationDataset")
-class ProteinMonomerDistillationConfig(DefaultDatasetConfigSection):
+@register_dataset_config("ProteinMonomerDataset")
+class ProteinMonomerConfig(DefaultDatasetConfigSection):
     sample_in_order: bool = True
     crop: CropSettings = CropSettings(
         crop_weights={
