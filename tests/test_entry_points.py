@@ -207,7 +207,8 @@ class TestLowMemoryConfig:
         model_cfg = expt_runner.model_config
 
         # check that inference mode set correctly
-        assert not model_cfg.settings.diffusion_training_enabled
+        assert not model_cfg.architecture.msa.msa_module_embedder.subsample_main_msa
+        assert model_cfg.architecture.msa.msa_module_embedder.subsample_all_msa
 
         # check low memory settings set correctly
         assert model_cfg.settings.memory.eval.chunk_size == 4

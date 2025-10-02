@@ -16,7 +16,6 @@ train:
 
 predict:
   settings:
-    diffusion_training_enabled: False
     memory:
       eval:
         # This chunk size is the minimum value, it will be auto-tuned by default
