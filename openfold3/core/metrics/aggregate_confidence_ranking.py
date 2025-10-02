@@ -5,14 +5,11 @@ from ml_collections import ConfigDict
 
 from openfold3.core.metrics.confidence import (
     compute_global_predicted_distance_error,
-    compute_plddt,
-    compute_predicted_aligned_error,
-    compute_predicted_distance_error,
+    probs_to_expected_error,
 )
 from openfold3.core.metrics.sample_ranking import (
     build_chain_interface_scores,
     compute_all_pTM,
-    compute_modified_residue_plddt,
     full_complex_sample_ranking_metric,
 )
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
@@ -20,29 +17,42 @@ from openfold3.core.utils.tensor_utils import dict_multimap, tensor_tree_map
 
 
 def get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> dict:
-    # Used in modified residue ranking
     confidence_scores = {}
-    confidence_scores["plddt"] = compute_plddt(outputs["plddt_logits"])
-    confidence_scores.update(
-        compute_predicted_distance_error(
-            outputs["pde_logits"],
-            **config.confidence.pde,
-        )
+    confidence_scores["plddt"] = probs_to_expected_error(
+        torch.softmax(outputs["plddt_logits"], dim=-1),
+        **config.confidence.plddt
+    ).mean(dim=-1) * 100.0
+    
+    pde_probs = torch.softmax(outputs["pde_logits"], dim=-1)
+    confidence_scores["pde"] = probs_to_expected_error(
+        pde_probs,
+        **config.confidence.pde
     )
-    confidence_scores["global_predicted_distance_error"] = (
-        compute_global_predicted_distance_error(
-            pde=confidence_scores["predicted_distance_error"],
-            distogram_probs=torch.softmax(outputs["distogram_logits"], dim=-1),
-        )
+    if config.confidence.pde.return_probs:
+        confidence_scores["pde_probs"] = pde_probs
+    else:
+        del pde_probs
+    
+    confidence_scores["gpde"], contact_probs = compute_global_predicted_distance_error(
+        pde=confidence_scores["pde"],
+        logits=outputs["distogram_logits"], 
+        **config.confidence.distogram
     )
+    if config.confidence.distogram.return_contact_probs:
+        confidence_scores["contact_probs"] = contact_probs
+    else:
+        del contact_probs
 
     if config.architecture.heads.pae.enabled:
-        confidence_scores.update(
-            compute_predicted_aligned_error(
-                outputs["pae_logits"],
-                **config.confidence.pae,
-            )
+        pae_probs = torch.softmax(outputs["pae_logits"], dim=-1)
+        confidence_scores["pae"] = probs_to_expected_error(
+            pae_probs,
+            **config.confidence.pae
         )
+        if config.confidence.pae.return_probs:
+            confidence_scores["pae_probs"] = pae_probs
+        else:
+            del pae_probs
 
         _, valid_frame_mask = get_token_frame_atoms(
             batch=batch,
@@ -79,14 +89,6 @@ def get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> dic
                 **config.confidence.ptm,
             )
             confidence_scores.update(pTM_scores)
-
-        if config.confidence.sample_ranking.modified_residue_plddt.enabled:
-            modified_residue_scores = compute_modified_residue_plddt(
-                batch=batch,
-                outputs=outputs,
-                plddt=confidence_scores["plddt"],
-            )
-            confidence_scores.update(modified_residue_scores)
 
     return confidence_scores
 

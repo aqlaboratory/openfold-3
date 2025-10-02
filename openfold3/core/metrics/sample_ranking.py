@@ -47,22 +47,16 @@ def full_complex_sample_ranking_metric(
     pred_pos = output[
         "atom_positions_predicted"
     ]  # [*, n_sample, n_atom, 3] or [*, n_atom, 3]
-    atom_mask = batch["atom_mask"]  # [*, (n_sample), n_atom]
-    token_mask = batch["token_mask"]  # [*, (n_sample), n_tok]
-    asym_id = batch["asym_id"]  # [*, (n_sample), n_tok]
-    is_protein = batch["is_protein"]
-    is_rna = batch["is_rna"]
-    is_dna = batch["is_dna"]
     n_atoms_per_tok = batch["num_atoms_per_token"]
 
     # normalize sample dim for masks
     no_samples = pred_pos.shape[1] if pred_pos.ndim == 4 else 1
-    atom_mask = _expand_sample_dim(atom_mask, no_samples).bool()
-    token_mask = _expand_sample_dim(token_mask, no_samples)
-    asym_id = _expand_sample_dim(asym_id, no_samples)
-    is_protein = _expand_sample_dim(is_protein, no_samples)
-    is_rna = _expand_sample_dim(is_rna, no_samples)
-    is_dna = _expand_sample_dim(is_dna, no_samples)
+    atom_mask = _expand_sample_dim(batch["atom_mask"], no_samples).bool()
+    token_mask = _expand_sample_dim(batch["token_mask"], no_samples)
+    asym_id = _expand_sample_dim(batch["asym_id"], no_samples)
+    is_protein = _expand_sample_dim(batch["is_protein"], no_samples)
+    is_rna = _expand_sample_dim(batch["is_rna"], no_samples)
+    is_dna = _expand_sample_dim(batch["is_dna"], no_samples)
 
     # aggregated ipTM / pTM (Eqs. 17–18)
     iptm = compute_ptm(
@@ -502,99 +496,3 @@ def compute_chain_interface_scores_for_batch(
         interface_score_b[s] = I_mat
 
     return pair_iptm_b, chain_score_b, interface_score_b, chain_ids
-
-
-def compute_modified_residue_plddt(
-    batch: dict[str, torch.Tensor],
-    outputs: dict[str, torch.Tensor],
-    plddt: torch.Tensor,
-    eps: Optional[float] = 1e-10,
-) -> list[dict[tuple[int, int], torch.Tensor]]:
-    """
-    For every modified residue (is_atomized & ~is_ligand),
-    compute the mean per-atom pLDDT per sample.
-
-    Returns:
-        A list of length B. For each batch item:
-            {(chain_id, residue_id): Tensor[S] in [0,1] or NaN if no atoms}
-    """
-
-    plddt_atom_01 = plddt / 100
-    batch_size, n_samples, _ = plddt_atom_01.shape
-    device, dtype = plddt_atom_01.device, plddt_atom_01.dtype
-
-    token_mask = _expand_sample_dim(
-        batch["token_mask"], n_samples
-    ).bool()  # [B, S, N_tok]
-    chain_ids_tokens = _expand_sample_dim(
-        batch["asym_id"], n_samples
-    ).long()  # [B, S, N_tok]
-    residue_ids_tokens = _expand_sample_dim(
-        batch["residue_index"], n_samples
-    ).long()  # [B, S, N_tok]
-
-    is_modified_token = (
-        _expand_sample_dim(batch["is_atomized"], n_samples).bool()
-        & ~_expand_sample_dim(batch["is_ligand"], n_samples).bool()
-        & token_mask
-    )  # [B, S, N_tok]
-
-    atoms_per_residue = batch["num_atoms_per_token"]
-
-    atom_mask = _expand_sample_dim(
-        batch["atom_mask"], n_samples
-    ).bool()  # [B, S, N_atom]
-    chain_ids_atoms = broadcast_token_feat_to_atoms(
-        token_mask, atoms_per_residue, chain_ids_tokens
-    ).long()  # [B, S, N_atom]
-    residue_ids_atoms = broadcast_token_feat_to_atoms(
-        token_mask, atoms_per_residue, residue_ids_tokens
-    ).long()  # [B, S, N_atom]
-    is_modified_atom = broadcast_token_feat_to_atoms(
-        token_mask, atoms_per_residue, is_modified_token
-    ).bool()  # [B, S, N_atom]
-
-    per_batch_results = []
-
-    for b in range(batch_size):
-        modified_tokens_b0 = is_modified_token[b, 0]  # [N_tok]
-        if not torch.any(modified_tokens_b0):
-            per_batch_results.append({})
-            continue
-
-        chain_ids_b0 = chain_ids_tokens[b, 0, modified_tokens_b0]  # [R]
-        residue_ids_b0 = residue_ids_tokens[b, 0, modified_tokens_b0]  # [R]
-        unique_pairs = torch.unique(
-            torch.stack([chain_ids_b0, residue_ids_b0], dim=1), dim=0, sorted=True
-        )  # [R_unique, 2]
-
-        result_b = {}
-        plddt_b = plddt_atom_01[b]  # [S, N_atom]
-        atom_mask_b = atom_mask[b]  # [S, N_atom]
-        is_modified_atom_b = is_modified_atom[b]  # [S, N_atom]
-        chain_ids_atoms_b = chain_ids_atoms[b]  # [S, N_atom]
-        residue_ids_atoms_b = residue_ids_atoms[b]  # [S, N_atom]
-
-        for idx in range(unique_pairs.size(0)):
-            chain_id = int(unique_pairs[idx, 0].item())
-            residue_id = int(unique_pairs[idx, 1].item())
-
-            select_atoms = (
-                (chain_ids_atoms_b == chain_id)
-                & (residue_ids_atoms_b == residue_id)
-                & is_modified_atom_b
-                & atom_mask_b
-            )  # [S, N_atom]
-
-            atom_counts = select_atoms.sum(dim=-1)  # [S]
-            plddt_sum = (plddt_b * select_atoms.to(plddt_b.dtype)).sum(dim=-1)  # [S]
-
-            values = torch.full((n_samples,), float("nan"), device=device, dtype=dtype)
-            valid = atom_counts > 0
-            values[valid] = plddt_sum[valid] / (atom_counts[valid].to(dtype) + eps)
-
-            result_b[(chain_id, residue_id)] = values.unsqueeze(0)
-
-        per_batch_results.append(result_b)
-
-    return {"modified_residues_plddts": per_batch_results}

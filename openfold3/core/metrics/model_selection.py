@@ -5,7 +5,7 @@ from ml_collections import ConfigDict
 
 from openfold3.core.metrics.confidence import (
     compute_global_predicted_distance_error,
-    compute_predicted_distance_error,
+    probs_to_expected_error,
 )
 from openfold3.projects.of3_all_atom.constants import METRICS_MAXIMIZE, METRICS_MINIMIZE
 
@@ -49,17 +49,15 @@ def compute_valid_model_selection_metrics(
             pde_logits.shape[:-1], device=pde_logits.device, dtype=pde_logits.dtype
         )
         for i in range(pde_logits.shape[-4]):
-            pde[..., i : i + 1, :, :] = compute_predicted_distance_error(
-                logits=pde_logits[..., i : i + 1, :, :, :],
-                max_bin=confidence_config.pde.max_bin,
-                no_bins=confidence_config.pde.no_bins,
-            )["predicted_distance_error"]
+            pde[..., i : i + 1, :, :] = probs_to_expected_error(
+                torch.softmax(pde_logits[..., i : i + 1, :, :, :], dim=-1),
+                **confidence_config.pde
+            )
     else:
-        pde = compute_predicted_distance_error(
-            logits=outputs["pde_logits"].detach(),
-            max_bin=confidence_config.pde.max_bin,
-            no_bins=confidence_config.pde.no_bins,
-        )["predicted_distance_error"]
+        pde = probs_to_expected_error(
+            torch.softmax(pde_logits[..., i : i + 1, :, :, :], dim=-1).detach(),
+            **confidence_config.pde
+        )
 
     # Compute distogram-based contact probabilities (pij)
     # distogram_logits shape: [bs, n_samples, n_tokens, n_tokens, 38]
