@@ -476,31 +476,28 @@ def compute_disorder(
         If any chain in the structure fails during RASA computation, a warning is logged
         and NaN is returned.
     """
-    struct_arrays = batch["atom_array"]
+    atom_array = batch["atom_array"]
     atom_positions_predicted = outputs["atom_positions_predicted"]
-
-    # (N_batch, N_samples, N_atoms, 3)
-    n_batch, n_samples, n_atoms = atom_positions_predicted.shape[:3]
+    num_samples, num_atoms = atom_positions_predicted.shape[:2]
 
     disorder = torch.zeros(
-        (n_batch, n_samples),
+        num_samples,
         device=atom_positions_predicted.device,
         dtype=atom_positions_predicted.dtype,
     )
-    for k, atom_arr in enumerate(struct_arrays):
-        atom_arr.set_annotation("atom_resolved_mask", np.zeros(n_atoms, dtype=bool))
-        for sample in range(n_samples):
-            atom_positions = atom_positions_predicted[k, sample]
-            atom_arr.coord = atom_positions.float().detach().cpu().numpy()
+    atom_array.set_annotation("atom_resolved_mask", np.zeros(num_atoms, dtype=bool))
+    for sample in range(num_samples):
+        atom_positions = atom_positions_predicted[sample]
+        atom_array.coord = atom_positions.float().detach().cpu().numpy()
 
-            disorder[k, sample] = process_disorder(
-                struct_array=atom_arr,
-                disorder_threshold=disorder_threshold,
-                window=window,
-                max_acc_dict=max_acc_dict,
-                default_max_acc=default_max_acc,
-                vdw_radii=vdw_radii,
-                residue_sasa_scale=residue_sasa_scale,
-            )
+        disorder[sample] = process_disorder(
+            struct_array=atom_array,
+            disorder_threshold=disorder_threshold,
+            window=window,
+            max_acc_dict=max_acc_dict,
+            default_max_acc=default_max_acc,
+            vdw_radii=vdw_radii,
+            residue_sasa_scale=residue_sasa_scale,
+        )
 
     return disorder

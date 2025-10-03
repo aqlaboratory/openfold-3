@@ -1,14 +1,25 @@
-import torch
+# ruff: noqa: E501
+import copy
 import pickle
+from functools import partial
 from pathlib import Path
 from typing import Optional, Union
-from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+
+import torch
+from tqdm import tqdm
+
 from openfold3.core.metrics.aggregate_confidence_ranking import get_confidence_scores
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
-from openfold3.core.metrics.sample_ranking import _expand_sample_dim
-from tqdm import tqdm 
+from openfold3.core.utils.tensor_utils import dict_multimap, tensor_tree_map
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
-# from protenix
+
+def to_gpu(x):
+    return x.to("cuda:0")
+
+
+# All functions are adapted from Protenix
+# https://github.com/bytedance/Protenix/blob/main/protenix/model/sample_confidence.py
 def _compute_full_data_and_summary(
     pae_logits: torch.Tensor,
     plddt_logits: torch.Tensor,
@@ -65,7 +76,9 @@ def _compute_full_data_and_summary(
         pae_prob,
         has_frame=token_has_frame,
         asym_id=token_asym_id,
-        min_bin=0, max_bin=32, no_bins=64
+        min_bin=0,
+        max_bin=32,
+        no_bins=64,
     )  # [N_s, ]
 
     # Add: 'chain_gpde', 'chain_pair_gpde'
@@ -83,7 +96,9 @@ def _compute_full_data_and_summary(
             has_frame=token_has_frame,
             asym_id=token_asym_id,
             token_is_ligand=token_is_ligand,
-            min_bin=0, max_bin=32, no_bins=64
+            min_bin=0,
+            max_bin=32,
+            no_bins=64,
         )
     )
     del pae_prob
@@ -233,7 +248,6 @@ def calculate_ptm(
     )  # [N_bins]
 
     token_token_ptm = (pae_prob * per_bin_weight).sum(dim=-1)  # [..., N_d, N_d]
-
     ptm = token_token_ptm.mean(dim=-1)[..., has_frame].max(dim=-1).values
     return ptm
 
@@ -322,7 +336,7 @@ def calculate_chain_based_ptm(
     ]
 
     chain_iptm = torch.zeros(size=batch_shape + (N_chain,)).to(pae_prob.device)
-    for aid, asym_mask in asym_id_to_asym_mask.items():
+    for aid, _ in asym_id_to_asym_mask.items():
         pairs = [
             (i, j)
             for i in range(N_chain)
@@ -512,52 +526,104 @@ def compute_full_data_and_summary(
             pde_logits=pde_logits[i : i + 1],
             contact_probs=contact_probs[i],
             token_asym_id=token_asym_id,
-            token_has_frame=token_has_frame,
+            token_has_frame=token_has_frame[i],
             token_is_ligand=token_is_ligand,
         )
         summary_confidence.append(summary_confidence_i)
     return summary_confidence
 
+
 if __name__ == "__main__":
-    batch_dir = Path("/pscratch/sd/m/ml5045/MyQuota/val_batch")
+    batch_dir = Path("/pscratch/sd/m/ml5045/MyQuota/val_batch_after")
     output_dir = Path("/pscratch/sd/m/ml5045/MyQuota/val_outputs")
-    
-    for batch_path in tqdm(batch_dir.glob('*.pkl')):
-        with open(batch_path, 'rb') as file:
+    batches = list(batch_dir.glob("*.pkl"))
+    for batch_path in tqdm(batches[42:]):
+        with open(batch_path, "rb") as file:
             batch = pickle.load(file)
         output_path = output_dir / batch_path.name
-        with open(output_path, 'rb') as file:
+        with open(output_path, "rb") as file:
             outputs = pickle.load(file)
-            
+
+        batch = tensor_tree_map(to_gpu, batch, strict_type=False)
+        outputs = tensor_tree_map(to_gpu, outputs, strict_type=False)
+
+        x = outputs["atom_positions_predicted"]
+
+        num_samples = x.size(1)
+        device = x.device
+        dtype = x.dtype
+
+        def repeat_sample_dim(x):
+            reps = (1, num_samples, *([1] * (x.ndim - 2)))  # noqa: B023
+            return x.repeat(reps)
+
+        batch_for_frame_mask = copy.deepcopy(batch)
+        batch_for_frame_mask = tensor_tree_map(
+            repeat_sample_dim, batch_for_frame_mask, strict_type=False
+        )
+        _, valid_frame_mask = get_token_frame_atoms(
+            batch=batch_for_frame_mask,
+            x=x,
+            atom_mask=batch_for_frame_mask["atom_mask"],
+        )
+
         proj_entry = OF3ProjectEntry()
         config = proj_entry.get_model_config_with_presets()
         config.confidence.distogram.return_contact_probs = True
-        # config.architecture.heads.pae.enabled = True
-        
-        _, valid_frame_mask = get_token_frame_atoms(
-            batch=batch,
-            x=outputs["atom_positions_predicted"][:, 0],
-            atom_mask=batch["atom_mask"]
-        )
-        
-        # Protenix expects asym_id to be contiguous 0 - len(chains)-1 so map it        asym_id = batch["asym_id"]
+        config.architecture.heads.pae.enabled = True
+        config.confidence.sample_ranking.chain_ptm.enabled = True
+
+        # Protenix expects asym_id to be contiguous 0 - len(chains)-1 so map it
         _, asym_id = torch.unique(batch["asym_id"], return_inverse=True)
         batch["asym_id"] = asym_id
-        
-        of3_confidence = get_confidence_scores(batch, outputs, config)        
-        
-        # No batch dimension
+
+        of3_confidence = get_confidence_scores(batch, outputs, config)
+
+        # Protenix expects no batch dimension
         protenix_confidences = compute_full_data_and_summary(
-            pae_logits=outputs['pae_logits'][0],
-            plddt_logits=outputs['plddt_logits'][0],
-            pde_logits=outputs['pde_logits'][0],
-            contact_probs=of3_confidence['contact_probs'][0,0],
-            token_asym_id=asym_id[0],
+            pae_logits=outputs["pae_logits"][0],
+            plddt_logits=outputs["plddt_logits"][0],
+            pde_logits=outputs["pde_logits"][0],
+            contact_probs=of3_confidence["contact_probs"][0, 0],
+            token_asym_id=asym_id[0, 0],
             token_has_frame=valid_frame_mask[0],
-            token_is_ligand=batch['is_ligand'][0]
+            token_is_ligand=batch["is_ligand"][0, 0],
         )
-        
-        for i, protenix_confidence in enumerate(protenix_confidences):
-            assert torch.allclose(of3_confidence["plddt"][:,i],  protenix_confidence["plddt"])
-            assert torch.allclose(of3_confidence["gpde"][:,i], protenix_confidence["gpde"])
-        
+
+        # Cat sample dimension
+        protenix_confidences = dict_multimap(
+            partial(torch.concat, dim=0), protenix_confidences
+        )
+        for key in ["gpde", "plddt", "iptm", "ptm"]:
+            assert torch.allclose(of3_confidence[key][0], protenix_confidences[key])
+
+        # Need chain order used to build the pair keys "(aid_i,aid_j)"
+        unique_chains = torch.unique(batch["asym_id"]).tolist()
+        num_chains = len(unique_chains)
+
+        for of3_key, protenix_key in [
+            ["chain_pair_iptm", "chain_pair_iptm"],
+            ["bespoke_iptm", "chain_pair_iptm_global"],
+        ]:
+            chain_pair_from_of3 = torch.zeros(
+                (num_samples, num_chains, num_chains), device=device, dtype=dtype
+            )
+            for i, aid_i in enumerate(unique_chains):
+                for j, aid_j in enumerate(unique_chains):
+                    if i == j:
+                        continue
+                    key = f"({aid_i},{aid_j})"
+                    chain_pair_from_of3[:, i, j] = of3_confidence[of3_key][key]
+            assert torch.allclose(
+                chain_pair_from_of3, protenix_confidences[protenix_key]
+            )
+
+        ptm_from_of3 = torch.zeros(
+            (num_samples, num_chains), device=device, dtype=dtype
+        )
+        for i, aid in enumerate(unique_chains):
+            ptm_from_of3[:, i] = of3_confidence["chain_ptm"][aid]
+        assert torch.allclose(
+            ptm_from_of3,
+            protenix_confidences["chain_ptm"],
+        )

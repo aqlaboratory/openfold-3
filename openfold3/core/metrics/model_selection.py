@@ -51,12 +51,12 @@ def compute_valid_model_selection_metrics(
         for i in range(pde_logits.shape[-4]):
             pde[..., i : i + 1, :, :] = probs_to_expected_error(
                 torch.softmax(pde_logits[..., i : i + 1, :, :, :], dim=-1),
-                **confidence_config.pde
+                **confidence_config.pde,
             )
     else:
         pde = probs_to_expected_error(
             torch.softmax(pde_logits[..., i : i + 1, :, :, :], dim=-1).detach(),
-            **confidence_config.pde
+            **confidence_config.pde,
         )
 
     # Compute distogram-based contact probabilities (pij)

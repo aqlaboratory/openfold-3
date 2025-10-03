@@ -468,10 +468,10 @@ model_config = mlc.ConfigDict(
             "per_sample_atom_cutoff": per_sample_atom_cutoff,
             "low_mem_validation": low_mem_validation,
             "plddt": {
-				"no_bins": 50,
+                "no_bins": 50,
                 "bin_min": 0,
                 "bin_max": 1,
-			},
+            },
             "pde": {
                 "bin_min": 0,
                 "bin_max": 32,
@@ -503,8 +503,8 @@ model_config = mlc.ConfigDict(
                     "has_clash_weight": -100.0,
                     "disorder_threshold": 0.581,
                 },
-                "all_ipTM": {"enabled": True},
-                "all_pTM": {"enabled": True},
+                "chain_pair_iptm": {"enabled": True},
+                "chain_ptm": {"enabled": True},
                 "pair_chunk": 32,
             },
             "clash": {

@@ -11,10 +11,7 @@ import torch
 from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
 from openfold3.core.loss.loss_module import OpenFold3Loss
-from openfold3.core.metrics.aggregate_confidence_ranking import (
-    get_confidence_scores,
-    get_confidence_scores_chunked,
-)
+from openfold3.core.metrics.aggregate_confidence_ranking import get_confidence_scores
 from openfold3.core.metrics.model_selection import (
     compute_final_model_selection_metric,
     compute_valid_model_selection_metrics,
@@ -496,24 +493,18 @@ class OpenFold3AllAtom(ModelRunner):
         """
         num_samples = self.config.architecture.shared.diffusion.no_full_rollout_samples
         num_atoms = outputs["atom_positions_predicted"].shape[-2]
-        chunk_computation = (
+        compute_per_sample = (
             num_samples > 1
             and self.config.settings.memory.eval.per_sample_atom_cutoff is not None
             and num_atoms > self.config.settings.memory.eval.per_sample_atom_cutoff
         )
 
-        if chunk_computation:
-            confidence_scores = get_confidence_scores_chunked(
-                batch=batch,
-                outputs=outputs,
-                config=self.config,
-            )
-        else:
-            confidence_scores = get_confidence_scores(
-                batch=batch,
-                outputs=outputs,
-                config=self.config,
-            )
+        confidence_scores = get_confidence_scores(
+            batch=batch,
+            outputs=outputs,
+            config=self.config,
+            compute_per_sample=compute_per_sample,
+        )
 
         return confidence_scores
 
