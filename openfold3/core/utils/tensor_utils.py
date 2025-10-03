@@ -99,7 +99,7 @@ def dict_map(fn, dic, leaf_type, strict_type=True):
     return new_dict
 
 
-def tree_map(fn, tree, leaf_type, strict_type=True):
+def tree_map(fn, tree, leaf_type, strict_type=False):
     if isinstance(tree, dict):
         return dict_map(fn, tree, leaf_type, strict_type=strict_type)
     elif isinstance(tree, list):
