@@ -107,19 +107,14 @@ class OF3OutputWriter(BasePredictionWriter):
             "disorder",
             "has_clash",
             "sample_ranking_score",
+            "chain_ptm",
+            "chain_pair_iptm",
+            "bespoke_iptm"
         ]
 
         for key in single_value_keys:
             pae_confidence_scores[key] = confidence_scores[key]
-
-        pae_confidence_scores["ptm_by_asym_id"] = confidence_scores["pTM_by_asym_id"]
-        pae_confidence_scores["iptm_by_asym_id_pair"] = {
-            str(k): v for k, v in confidence_scores["all_ipTM_scores"]["iptm"].items()
-        }
-        pae_confidence_scores["bespoke_iptm_by_asym_id_pair"] = {
-            str(k): v
-            for k, v in confidence_scores["all_ipTM_scores"]["bespoke_iptm"].items()
-        }
+            
         return pae_confidence_scores
 
     def write_confidence_scores(
@@ -127,8 +122,8 @@ class OF3OutputWriter(BasePredictionWriter):
     ):
         """Writes confidence scores to disk"""
         plddt = confidence_scores["plddt"]
-        pde = confidence_scores["predicted_distance_error"]
-        gpde = confidence_scores["global_predicted_distance_error"]
+        pde = confidence_scores["pde"]
+        gpde = confidence_scores["gpde"]
         aggregated_confidence_scores = {"avg_plddt": np.mean(plddt), "gpde": gpde}
 
         if self.pae_enabled:

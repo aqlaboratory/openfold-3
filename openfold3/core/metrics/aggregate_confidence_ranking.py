@@ -21,8 +21,7 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
     confidence_scores["plddt"] = (
         probs_to_expected_error(
             torch.softmax(outputs["plddt_logits"], dim=-1), **config.confidence.plddt
-        ).mean(dim=-1)
-        * 100.0
+        ) * 100.0
     )
 
     pde_probs = torch.softmax(outputs["pde_logits"], dim=-1)

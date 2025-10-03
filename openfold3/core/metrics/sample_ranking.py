@@ -292,7 +292,7 @@ def compute_chain_pair_iptm(
     bespoke_iptm_map: dict[str, torch.Tensor] = {}
     for i in range(num_chains):
         for j in range(num_chains):
-            if i == j:
+            if i >= j:
                 continue
             key = f"({unique_chains[i]},{unique_chains[j]})"
             chain_pair_iptm_map[key] = chain_pair_iptm[:, i, j]
