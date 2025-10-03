@@ -184,10 +184,9 @@ def ost_compare_protein_ligand_complex(input_paths: list[Path, Path, Path],
         "-o", str(output_path),
     ]
     if lddt_pli:
+        cmd.append("--lddt-pli")
         if use_amc:
             cmd.append("--lddt-pli-amc")
-        else:
-            cmd.append("--lddt-pli")
     if rmsd:
         cmd.append("--rmsd")
 
