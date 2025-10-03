@@ -25,7 +25,7 @@ from openfold3.core.data.framework.data_module import (
     InferenceDataModule,
 )
 from openfold3.core.runners.writer import OF3OutputWriter
-from openfold3.core.utils.callbacks import PredictTimer
+from openfold3.core.utils.callbacks import LogInferenceQuerySet, PredictTimer
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
@@ -482,7 +482,6 @@ class InferenceExperimentRunner(ExperimentRunner):
         """Set up the experiment environment."""
         self.inference_query_set = inference_query_set
         super().run()
-        self._log_inference_query_set()
         self._log_experiment_config()
         self._log_model_config()
 
@@ -494,6 +493,7 @@ class InferenceExperimentRunner(ExperimentRunner):
                 self.output_dir, **self.output_writer_settings.model_dump()
             ),
             PredictTimer(self.output_dir),
+            LogInferenceQuerySet(self.output_dir),
         ]
         return _callbacks
 
@@ -526,13 +526,6 @@ class InferenceExperimentRunner(ExperimentRunner):
     def ckpt_path(self):
         """Get the checkpoint path for the model."""
         return self.inference_ckpt_path
-
-    @rank_zero_only
-    def _log_inference_query_set(self):
-        """Record the inference query set used for prediction"""
-        log_path = self.output_dir / "inference_query_set.json"
-        with open(log_path, "w") as fp:
-            fp.write(self.inference_query_set.model_dump_json(indent=4))
 
     @rank_zero_only
     def _log_experiment_config(self):
