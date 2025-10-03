@@ -11,8 +11,10 @@ import torch.distributed as dist
 from biotite import structure
 from pytorch_lightning.callbacks import BasePredictionWriter
 
+from openfold3.core.data.io.structure.atom_array import write_atomarray_to_npz
 from openfold3.core.data.io.structure.cif import write_structure
 from openfold3.core.utils.tensor_utils import tensor_tree_map
+from tests.custom_assert_utils import AtomArray
 
 logger = logging.getLogger(__name__)
 
@@ -98,12 +100,13 @@ class OF3OutputWriter(BasePredictionWriter):
         # Set coordinates and plddt scores
         atom_array.coord = predicted_coords
         atom_array.set_annotation("b_factor", plddt)
+        write_atomarray_to_npz(atom_array, output_file.with_suffix(".npz"))
 
         # Write the output file
         logger.info(f"Writing predicted structure to {output_file}")
         write_structure(atom_array, output_file, include_bonds=True)
 
-    def get_pae_confidence_scores(self, confidence_scores):
+    def get_pae_confidence_scores(self, confidence_scores, atom_array):
         pae_confidence_scores = {}
         single_value_keys = [
             "iptm",
@@ -116,18 +119,40 @@ class OF3OutputWriter(BasePredictionWriter):
         for key in single_value_keys:
             pae_confidence_scores[key] = confidence_scores[key]
 
-        pae_confidence_scores["ptm_by_asym_id"] = confidence_scores["pTM_by_asym_id"]
-        pae_confidence_scores["iptm_by_asym_id_pair"] = {
-            str(k): v for k, v in confidence_scores["all_ipTM_scores"]["iptm"].items()
+        # Get map from asym id to chain id
+        renum_ids = np.unique(atom_array.chain_id, return_inverse=True)[1] + 1
+        asym_id_to_chain_id = {
+            k: v
+            for (k, v) in set(
+                [(int(x[0]), str(x[1])) for x in zip(renum_ids, atom_array.chain_id)]
+            )
         }
-        pae_confidence_scores["bespoke_iptm_by_asym_id_pair"] = {
-            str(k): v
-            for k, v in confidence_scores["all_ipTM_scores"]["bespoke_iptm"].items()
+
+        pae_confidence_scores["ptm_by_asym_id"] = {
+            asym_id_to_chain_id[int(k)]: v
+            for k, v in confidence_scores["pTM_by_asym_id"].items()
         }
+        pae_confidence_scores["iptm_by_asym_id_pair"] = {}
+        pae_confidence_scores["bespoke_iptm_by_asym_id_pair"] = {}
+        for k, v in confidence_scores["all_ipTM_scores"]["iptm"].items():
+            # split '(1, 2)' into 1, 2
+            k1, k2 = [
+                asym_id_to_chain_id[int(i)].strip() for i in k.strip("()").split(",")
+            ]
+            pae_confidence_scores["iptm_by_asym_id_pair"][f"({k1}, {k2})"] = v
+        for k, v in confidence_scores["all_ipTM_scores"]["bespoke_iptm"].items():
+            # split '(1, 2)' into 1, 2
+            k1, k2 = [
+                asym_id_to_chain_id[int(i)].strip() for i in k.strip("()").split(",")
+            ]
+            pae_confidence_scores["bespoke_iptm_by_asym_id_pair"][f"({k1}, {k2})"] = v
         return pae_confidence_scores
 
     def write_confidence_scores(
-        self, confidence_scores: dict[str, np.ndarray], output_prefix: Path
+        self,
+        confidence_scores: dict[str, np.ndarray],
+        atom_array: AtomArray,
+        output_prefix: Path,
     ):
         """Writes confidence scores to disk"""
         plddt = confidence_scores["plddt"]
@@ -138,7 +163,7 @@ class OF3OutputWriter(BasePredictionWriter):
         if self.pae_enabled:
             logger.info("Recording PAE confidence outputs")
             aggregated_confidence_scores |= self.get_pae_confidence_scores(
-                confidence_scores
+                confidence_scores, atom_array
             )
 
         out_file_agg = Path(f"{output_prefix}_confidences_aggregated.json")
@@ -209,6 +234,7 @@ class OF3OutputWriter(BasePredictionWriter):
                 self.write_confidence_scores(
                     confidence_scores=confidence_scores_sample,
                     output_prefix=file_prefix,
+                    atom_array=atom_array_batch,
                 )
 
             # Save runtime for the batch

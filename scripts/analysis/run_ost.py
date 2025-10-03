@@ -1,20 +1,18 @@
-
+import inspect
 import json
-from operator import itemgetter
-from pathlib import Path
+import logging
+import multiprocessing as mp
+import os
 import shutil
 import subprocess
-from typing import Literal, Optional
-import click
-from pydantic import BaseModel, model_validator
-import os
-import multiprocessing as mp
-from tqdm import tqdm
-import traceback
 from functools import partial
-import inspect
-import logging
+from operator import itemgetter
+from pathlib import Path
+from typing import Literal, Optional
 
+import click
+from pydantic import BaseModel
+from tqdm import tqdm
 
 from openfold3.core.config.config_utils import load_yaml
 
@@ -24,6 +22,7 @@ class OstRunnerSettings(BaseModel):
     n_processes: int = 1
     chunksize: int = 1
     log_dir: Optional[Path] = None
+
 
 class OstPLRunnerSettings(OstRunnerSettings):
     """Protein-ligand OST pipeline settings."""
@@ -37,6 +36,7 @@ class OstPLRunnerSettings(OstRunnerSettings):
     #     pass
     #     return self
 
+
 class OstRunnerInput(BaseModel):
     pred_paths: list[Path]
     ref_paths: list[Path]
@@ -44,6 +44,7 @@ class OstRunnerInput(BaseModel):
 
     def zip(self):
         return zip(self.pred_paths, self.ref_paths, self.output_paths)
+
 
 class OstRunner:
     """
@@ -55,34 +56,30 @@ class OstRunner:
 
         # only include function parameters
         func_params = set(
-            inspect.signature(OST_PIPELINE_REGISTRY[self.settings.mode]).parameters.keys()
+            inspect.signature(
+                OST_PIPELINE_REGISTRY[self.settings.mode]
+            ).parameters.keys()
         )
-        ost_kwargs = {k: v for k, v in self.settings.model_dump().items() 
-                      if k in func_params}
-        ost_pipeline = partial(
-            OST_PIPELINE_REGISTRY[self.settings.mode], 
-            **ost_kwargs
-        )
+        ost_kwargs = {
+            k: v for k, v in self.settings.model_dump().items() if k in func_params
+        }
+        ost_pipeline = partial(OST_PIPELINE_REGISTRY[self.settings.mode], **ost_kwargs)
 
         self.ost_pipeline = ost_pipeline
-        
 
     def __call__(self, ost_input: OstRunnerInput) -> tuple[list[str], list[str]]:
-
         successful = []
         failed = []
-        
+
         # Set up worker initialization if logging is enabled
         initializer = None
         initargs = ()
         if self.settings.log_dir is not None:
             initializer = self.worker_init
             initargs = (self.settings.log_dir,)
-        
+
         with mp.Pool(
-            self.settings.n_processes, 
-            initializer=initializer, 
-            initargs=initargs
+            self.settings.n_processes, initializer=initializer, initargs=initargs
         ) as pool:
             for id, success in tqdm(
                 pool.imap_unordered(
@@ -97,7 +94,7 @@ class OstRunner:
                     successful.append(id)
                 else:
                     failed.append(id)
-        
+
         return successful, failed
 
     @staticmethod
@@ -141,8 +138,10 @@ class OstRunner:
                     try:
                         seed, sample = itemgetter(-4, -2)(pred_path.stem.split("_"))
                     except IndexError:
-                        msg = (f"WARNING: Cannot parse seed and sample from "
-                               f"filename: {pred_path.stem}")
+                        msg = (
+                            f"WARNING: Cannot parse seed and sample from "
+                            f"filename: {pred_path.stem}"
+                        )
                         main_logger.warning(msg) if main_logger else print(msg)
                         continue
                     ref_path = ref_dir / f"{query}.cif"
@@ -157,12 +156,16 @@ class OstRunner:
 
         return pred_paths, ref_paths, output_paths
 
+
 # primitives - TODO move to primitives
 
-def ost_compare_protein_ligand_complex(input_paths: list[Path, Path, Path],
-                                       lddt_pli: bool = True,
-                                       rmsd: bool = True,
-                                       use_amc: bool = True,) -> tuple[str, bool]:
+
+def ost_compare_protein_ligand_complex(
+    input_paths: list[Path, Path, Path],
+    lddt_pli: bool = True,
+    rmsd: bool = True,
+    use_amc: bool = True,
+) -> tuple[str, bool]:
     # Unpack input paths
     pred_path, ref_path, output_path = input_paths
 
@@ -174,14 +177,19 @@ def ost_compare_protein_ligand_complex(input_paths: list[Path, Path, Path],
             logger.info(message)
         else:
             print(message)
-    
+
     # Construct OST command
     cmd = [
-        "ost", "compare-ligand-structures",
-        "-m", str(pred_path),
-        "-r", str(ref_path),
-        "-mf", "cif",
-        "-o", str(output_path),
+        "ost",
+        "compare-ligand-structures",
+        "-m",
+        str(pred_path),
+        "-r",
+        str(ref_path),
+        "-mf",
+        "cif",
+        "-o",
+        str(output_path),
     ]
     if lddt_pli:
         cmd.append("--lddt-pli")
@@ -196,14 +204,17 @@ def ost_compare_protein_ligand_complex(input_paths: list[Path, Path, Path],
         log_message(f"SUCCESS: {output_path}")
         success = True
     except FileNotFoundError as _:
-        log_message("ERROR: 'ost' command not found. "
-                   "Please install OpenStructure (OST) to use this function.")
+        log_message(
+            "ERROR: 'ost' command not found. "
+            "Please install OpenStructure (OST) to use this function."
+        )
         success = False
     except subprocess.CalledProcessError as e:
         log_message(f"FAILED: {cmd}\nError: {e.stderr}")
         success = False
 
     return pred_path.stem, success
+
 
 OST_SETTINGS_REGISTRY = {
     "protein_ligand": OstPLRunnerSettings,
@@ -212,13 +223,12 @@ OST_PIPELINE_REGISTRY = {
     "protein_ligand": ost_compare_protein_ligand_complex,
 }
 
+
 @click.command()
 @click.option(
     "--pred-dir",
     required=True,
-    help=(
-        "Path to a dir of OF3 outputs."
-    ),
+    help=("Path to a dir of OF3 outputs."),
     type=click.Path(
         file_okay=False,
         dir_okay=True,
@@ -241,9 +251,7 @@ OST_PIPELINE_REGISTRY = {
 @click.option(
     "--output-dir",
     required=True,
-    help=(
-        "Dir where the OST output jsons are saved."
-    ),
+    help=("Dir where the OST output jsons are saved."),
     type=click.Path(
         file_okay=False,
         dir_okay=True,
@@ -253,9 +261,7 @@ OST_PIPELINE_REGISTRY = {
 @click.option(
     "--runner-yml",
     required=True,
-    help=(
-        "Runner.yml file to be parsed into settings for the OST runner."
-    ),
+    help=("Runner.yml file to be parsed into settings for the OST runner."),
     type=click.Path(
         file_okay=True,
         dir_okay=False,
@@ -302,12 +308,14 @@ def main(
     if log_dir:
         log_dir.mkdir(parents=True, exist_ok=True)
 
-    main_logger = (OstRunner.worker_init(log_directory=log_dir, is_main=True) 
-                   if log_dir else None)
+    main_logger = (
+        OstRunner.worker_init(log_directory=log_dir, is_main=True) if log_dir else None
+    )
 
     # Convert any Path objects to strings for JSON serialization
-    serializable_args = {k: str(v) if isinstance(v, Path) else v 
-                        for k, v in runner_args.items()}
+    serializable_args = {
+        k: str(v) if isinstance(v, Path) else v for k, v in runner_args.items()
+    }
     args_msg = f"Loaded runner args:\n{json.dumps(serializable_args, indent=4)}"
     main_logger.info(args_msg) if main_logger else print(args_msg)
 
@@ -315,7 +323,7 @@ def main(
         pred_dir=pred_dir,
         ref_dir=ref_dir,
         output_dir=output_dir,
-        main_logger=main_logger
+        main_logger=main_logger,
     )
 
     # Set up runner and run OST
@@ -337,10 +345,13 @@ def main(
     )
     successful, failed = ost_runner(ost_input=ost_input)
 
-    msg = (f"Done. Successful: {len(successful)}, Failed: {len(failed)}\n"
-           "Successful entries:\n" + "\n".join(successful) + "\n"
-           "Failed entries:\n" + "\n".join(failed) + "\n")
+    msg = (
+        f"Done. Successful: {len(successful)}, Failed: {len(failed)}\n"
+        "Successful entries:\n" + "\n".join(successful) + "\n"
+        "Failed entries:\n" + "\n".join(failed) + "\n"
+    )
     main_logger.info(msg) if main_logger else print(msg)
+
 
 if __name__ == "__main__":
     main()
