@@ -88,7 +88,7 @@ def full_complex_sample_ranking_metric(
     scores = {}
     scores["iptm"] = iptm.detach().clone()
     scores["ptm"] = ptm.detach().clone()
-    # scores["disorder"] = disorder
+    scores["disorder"] = disorder
     scores["has_clash"] = has_clash
     scores["sample_ranking_score"] = (
         (
