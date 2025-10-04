@@ -504,7 +504,7 @@ model_config = mlc.ConfigDict(
                     "disorder_threshold": 0.581,
                 },
                 "chain_pair_iptm": {"enabled": True},
-                "chain_ptm": {"enabled": True}
+                "chain_ptm": {"enabled": True},
             },
             "clash": {
                 "min_distance": 1.1,

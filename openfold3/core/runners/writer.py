@@ -109,12 +109,12 @@ class OF3OutputWriter(BasePredictionWriter):
             "sample_ranking_score",
             "chain_ptm",
             "chain_pair_iptm",
-            "bespoke_iptm"
+            "bespoke_iptm",
         ]
 
         for key in single_value_keys:
             pae_confidence_scores[key] = confidence_scores[key]
-            
+
         return pae_confidence_scores
 
     def write_confidence_scores(
