@@ -37,12 +37,12 @@ def compute_plddt(logits):
 def compute_global_predicted_distance_error(
     pde: torch.Tensor,
     logits: torch.Tensor,
-    bin_min: int = 2,
-    bin_max: int = 22,
-    no_bins: int = 64,
+    bin_min: int,
+    bin_max: int,
+    no_bins: int,
     eps: float = 1e-8,
     **kwargs,
-) -> torch.Tensor:
+) -> [torch.Tensor, torch.Tensor]:
     """Computes the gPDE metric as defined in AF3 SI 5.7 (16)"""
     device = pde.device
     probs = torch.softmax(logits, dim=-1)

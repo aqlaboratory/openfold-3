@@ -16,7 +16,6 @@ def compute_valid_model_selection_metrics(
     confidence_config: ConfigDict,
     outputs: dict,
     metrics: dict,
-    eps: float = 1e-8,
 ) -> dict:
     """
     Implements Model Selection (Section 5.7.3) LDDT metrics computation
@@ -25,7 +24,6 @@ def compute_valid_model_selection_metrics(
         confidence_config: Config for confidence metrics (needed for PDE)
         outputs: Output dictionary from the model
         metrics: Dict of metrics for all rollout samples
-        eps: Small value to avoid division by zero
 
     Returns:
         final_metrics:
@@ -55,20 +53,18 @@ def compute_valid_model_selection_metrics(
             )
     else:
         pde = probs_to_expected_error(
-            torch.softmax(pde_logits[..., i : i + 1, :, :, :], dim=-1).detach(),
+            torch.softmax(pde_logits, dim=-1),
             **confidence_config.pde,
         )
 
     # Compute distogram-based contact probabilities (pij)
     # distogram_logits shape: [bs, n_samples, n_tokens, n_tokens, 38]
     distogram_logits = outputs["distogram_logits"].detach()
-    distogram_probs = torch.softmax(distogram_logits, dim=-1)
 
-    global_pde = compute_global_predicted_distance_error(
+    global_pde, _ = compute_global_predicted_distance_error(
         pde=pde,
-        distogram_probs=distogram_probs,
-        min_bin=confidence_config.distogram.min_bin,
-        max_bin=confidence_config.distogram.max_bin,
+        logits=distogram_logits,
+        **confidence_config.distogram,
     )
 
     # Find the top-1 sample per batch based on global pde
