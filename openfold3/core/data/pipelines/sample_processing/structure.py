@@ -42,7 +42,7 @@ def process_target_structure_of3(
     preferred_chain_or_interface: str | list[str, str] | None,
     structure_format: Literal["pkl", "npz"],
     per_chain_metadata: dict[str, PreprocessingChainData],
-    use_s3_monomer_format: bool = False,
+    use_roda_monomer_format: bool = False,
 ) -> ProcessedTargetStructure:
     """AF3 pipeline for processing target structure into AtomArrays.
 
@@ -65,8 +65,8 @@ def process_target_structure_of3(
         per_chain_metadata (dict[str, PreprocessingChainData]):
             Metadata for each chain in the target structure, obtained from the dataset
             cache.
-        use_s3_monomer_format (bool):
-            Whether input filepath is expected to be in the s3 monomer
+        use_roda_monomer_format (bool):
+            Whether input filepath is expected to be in the s3 RODA monomer
             format: <struc_dir>/<mgy_id>/structure.npz
 
     Returns:
@@ -80,7 +80,7 @@ def process_target_structure_of3(
         target_structures_directory,
         pdb_id,
         structure_format,
-        use_s3_monomer_format=use_s3_monomer_format,
+        use_roda_monomer_format=use_roda_monomer_format,
     )
 
     # Mark individual components (which get unique conformers)

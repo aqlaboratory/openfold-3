@@ -29,8 +29,8 @@ class CheckpointConfig(BaseModel):
 class WandbConfig(BaseModel):
     """Configuration for Weights and Biases experiment result logging."""
 
-    project: str = "my project"
-    experiment_name: str = "expt_name"
+    project: str
+    experiment_name: str
     entity: Optional[str] = None
     group: Optional[str] = None
     id: Optional[str] = None
@@ -41,7 +41,7 @@ class LoggingConfig(BaseModel):
     """Settings for training logging."""
 
     log_lr: bool = True
-    log_grads: bool = True
+    log_grads: bool = False
     log_level: Literal["debug", "info", "warning", "error"] | None = None
     wandb_config: WandbConfig | None = None
 
@@ -51,11 +51,10 @@ class DataModuleArgs(BaseModel):
 
     model_config = PydanticConfigDict(extra="forbid")
     batch_size: int = 1
-    data_seed: int = 1234
+    data_seed: Optional[int] = None
     num_workers: int = 10
     num_workers_validation: int = 4
     epoch_len: int = 4
-    num_epochs: int = 1000
 
 
 class PlTrainerArgs(BaseModel):
@@ -110,6 +109,9 @@ class TrainingExperimentSettings(ExperimentSettings):
     mode: ValidModeType = "train"
     seed: int = 42
     restart_checkpoint_path: Optional[str] = None
+    load_ema_weights: bool = False
+    reset_scheduler: bool = False
+    reset_optimizer_states: bool = False
 
     @classmethod
     @field_validator("restart_checkpoint_path", mode="after")
@@ -166,7 +168,7 @@ class InferenceExperimentSettings(ExperimentSettings):
                 raise ValueError(
                     "num_seeds must be provided when seeds is a single int"
                 )
-            generate_seeds(model.seeds, model.num_seeds)
+            model.seeds = generate_seeds(model.seeds, model.num_seeds)
         elif model.seeds is None:
             raise ValueError("seeds must be provided (either int or list[int])")
 
@@ -196,6 +198,20 @@ class TrainingExperimentConfig(ExperimentConfig):
     model_update: ModelUpdate = ModelUpdate(presets=["train"])
     data_module_args: DataModuleArgs = DataModuleArgs()
 
+    @model_validator(mode="after")
+    def synchronize_seeds(cls, model):
+        """
+        Ensures data_seed in DataModuleArgs is set. If it isn't, it will
+        default to the model seed.
+        """
+        model_seed = model.experiment_settings.seed
+        data_seed = model.data_module_args.data_seed
+
+        if data_seed is None:
+            model.data_module_args.data_seed = model_seed
+
+        return model
+
 
 class InferenceExperimentConfig(ExperimentConfig):
     """Inference experiment config"""
@@ -211,3 +227,17 @@ class InferenceExperimentConfig(ExperimentConfig):
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
     msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
+
+    @model_validator(mode="after")
+    def synchronize_seeds(cls, model):
+        """
+        Ensures data_seed in DataModuleArgs is set. If it isn't, it will
+        default to the first model seed in the provided list.
+        """
+        model_seeds = model.experiment_settings.seeds
+        data_seed = model.data_module_args.data_seed
+
+        if data_seed is None:
+            model.data_module_args.data_seed = model_seeds[0]
+
+        return model

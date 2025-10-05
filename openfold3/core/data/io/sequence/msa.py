@@ -385,7 +385,7 @@ def parse_msas_sample(
     alignment_index: dict | None,
     alignment_array_directory: Path | None,
     max_seq_counts: dict[str, int] | None,
-    use_s3_monomer_format: bool = False,
+    use_roda_monomer_format: bool = False,
 ) -> MsaArrayCollection:
     """Parses MSA(s) for a training sample.
 
@@ -421,8 +421,8 @@ def parse_msas_sample(
             Dictionary mapping filename strings (without extension) to the max number of
             sequences to parse from the corresponding MSA file. Only alignment files
             whose names are keys in this dict will be parsed.
-        use_s3_monomer_format (bool):
-            Whether input data is expected to be in the s3 monomer
+        use_roda_monomer_format (bool):
+            Whether input data is expected to be in the s3 RODA monomer
             format: <aln_dir>/<mgy_id>/alignment.npz
     Returns:
         MsaArrayCollection:
@@ -459,7 +459,7 @@ def parse_msas_sample(
         representative_msas = {}
         for rep_id in representative_chain_ids:
             if alignment_array_directory is not None:
-                if use_s3_monomer_format:
+                if use_roda_monomer_format:
                     pre_parsed_msas = (
                         alignment_array_directory / rep_id / "alignment.npz"
                     )

@@ -142,7 +142,6 @@ class DataModuleConfig(BaseModel):
     num_workers_validation: int = 0
     data_seed: int = 42
     epoch_len: int = 1
-    num_epochs: int = 1000  # PL default
 
 
 class DataModule(pl.LightningDataModule):
@@ -159,7 +158,6 @@ class DataModule(pl.LightningDataModule):
         self.num_workers_validation = data_module_config.num_workers_validation
         self.data_seed = data_module_config.data_seed
         self.epoch_len = data_module_config.epoch_len
-        self.num_epochs = data_module_config.num_epochs
         self.world_size = world_size
 
         # Parse datasets
@@ -226,7 +224,6 @@ class DataModule(pl.LightningDataModule):
                 datasets=all_train_datasets,
                 dataset_probabilities=multi_dataset_config_train.weights,
                 epoch_len=self.epoch_len,
-                num_epochs=self.num_epochs,
                 generator=self.generator,
                 next_dataset_indices=self.next_dataset_indices,
             )
