@@ -356,3 +356,148 @@ def compute_rasa_batch(
             )
 
     return unresolved_rasas
+
+
+def process_disorder(
+    struct_array: AtomArray,
+    disorder_threshold: float = 0.581,
+    window: int = 25,
+    max_acc_dict: dict = None,
+    default_max_acc: float = 113.0,
+    vdw_radii: str = "ProtOr",
+    residue_sasa_scale: str = None,
+) -> float:
+    """
+    Process protein chains in a Biotite structure array and compute the average
+    RASA value for all unresolved residues across all chains.
+
+    Args:
+        struct_array:
+            The full structure array (which may contain multiple chains).
+        window:
+            The window size for smoothing RASA values (default = 25).
+        max_acc_dict:
+            Dictionary mapping residue names to their maximum accessible surface area.
+        default_max_acc:
+            Default maximum accessible surface area for residues not in the dictionary.
+            Defaults to 113.0.
+        vdw_radii:
+            The set of van der Waals radii to use for SASA calculation
+                (default = "ProtOr").
+        residue_sasa_scale:
+            The residue SASA scale to use (default is "Sander").
+        pdb_id:
+            The PDB ID of the structure.
+
+    Returns:
+        The mean RASA value for unresolved residues across all processed protein chains.
+        Returns NaN if no unresolved residues are found or if an error occurs.
+
+    Notes:
+        If any chain in the structure fails during RASA computation, a warning is logged
+        and nan is returned.
+    """
+    if residue_sasa_scale is None:
+        residue_sasa_scale = "Sander"
+
+    if max_acc_dict is None:
+        max_acc_dict = RESIDUE_SASA_SCALES[residue_sasa_scale]
+
+    all_residues_rasa = []
+
+    # Filter the structure to only consider the specified polymer type (e.g., peptides)
+    filtered = struct_array[struct_array.molecule_type_id == MoleculeType.PROTEIN]
+
+    if len(filtered) == 0:
+        logger.debug("No protein chains found")
+        return float("nan")
+
+    # Set a default max_acc for fallback residues
+    if default_max_acc is None:
+        default_max_acc = max_acc_dict.get("ALA", 113.0)
+
+    for chain in struc.chain_iter(filtered):
+        try:
+            res_rasa, unresolved_residues = calculate_res_rasa(
+                chain=chain,
+                window=window,
+                max_acc_dict=max_acc_dict,
+                default_max_acc=default_max_acc,
+                vdw_radii=vdw_radii,
+            )
+            # Extend the list with RASA values for all unresolved residues in this chain
+            all_residues_rasa.extend(res_rasa[unresolved_residues])
+        except Exception as e:
+            logger.warning(f"RASA computation failed: {e}")
+    if not all_residues_rasa:
+        return float("nan")
+    all_residues_rasa = np.array(all_residues_rasa)
+    return np.mean((all_residues_rasa) > disorder_threshold)
+
+
+def compute_disorder(
+    batch: dict,
+    outputs: dict,
+    disorder_threshold: float = 0.581,
+    window: int = 25,
+    max_acc_dict: dict = None,
+    default_max_acc: float = 113.0,
+    vdw_radii: str = "ProtOr",
+    residue_sasa_scale: str = None,
+) -> torch.Tensor:
+    """
+    Compute the average RASA value for unresolved residues across all protein chains
+    in a batch of Biotite structure arrays.
+
+    Args:
+        batch :
+            A batch of data containing Biotite structure arrays and other metadata.
+        outputs:
+            The model outputs containing predicted atom positions.
+        window :
+            The window size for smoothing RASA values (default = 25).
+        max_acc_dict:
+            Dictionary mapping residue names to their maximum accessible surface area.
+        default_max_acc:
+            Default maximum accessible surface area for residues not in the dictionary.
+            Defaults to 113.0.
+        vdw_radii:
+            The set of van der Waals radii to use for SASA calculation
+                (default = "ProtOr").
+        residue_sasa_scale:
+            The residue SASA scale to use (default is "Sander").
+
+    Returns:
+        The mean RASA value for unresolved residues across all processed protein chains
+        in each structure array. Returns 0.0 if no unresolved residues are found
+        or if an error occurs.
+
+    Notes:
+        If any chain in the structure fails during RASA computation, a warning is logged
+        and NaN is returned.
+    """
+    atom_array = batch["atom_array"]
+    atom_positions_predicted = outputs["atom_positions_predicted"]
+    num_samples, num_atoms = atom_positions_predicted.shape[:2]
+
+    disorder = torch.zeros(
+        num_samples,
+        device=atom_positions_predicted.device,
+        dtype=atom_positions_predicted.dtype,
+    )
+    atom_array.set_annotation("atom_resolved_mask", np.zeros(num_atoms, dtype=bool))
+    for sample in range(num_samples):
+        atom_positions = atom_positions_predicted[sample]
+        atom_array.coord = atom_positions.float().detach().cpu().numpy()
+
+        disorder[sample] = process_disorder(
+            struct_array=atom_array,
+            disorder_threshold=disorder_threshold,
+            window=window,
+            max_acc_dict=max_acc_dict,
+            default_max_acc=default_max_acc,
+            vdw_radii=vdw_radii,
+            residue_sasa_scale=residue_sasa_scale,
+        )
+
+    return disorder

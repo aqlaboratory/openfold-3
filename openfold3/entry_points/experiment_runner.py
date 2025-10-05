@@ -478,6 +478,10 @@ class InferenceExperimentRunner(ExperimentRunner):
     def use_templates(self) -> bool:
         return self.experiment_config.experiment_settings.use_templates
 
+    @cached_property
+    def pae_enabled(self) -> bool:
+        return self.model_config.architecture.heads.pae.enabled
+
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
         self.inference_query_set = inference_query_set
@@ -490,7 +494,9 @@ class InferenceExperimentRunner(ExperimentRunner):
         """Set up prediction writer callback."""
         _callbacks = [
             OF3OutputWriter(
-                self.output_dir, **self.output_writer_settings.model_dump()
+                output_dir=self.output_dir,
+                pae_enabled=self.pae_enabled,
+                **self.output_writer_settings.model_dump(),
             ),
             PredictTimer(self.output_dir),
             LogInferenceQuerySet(self.output_dir),
@@ -543,7 +549,7 @@ class InferenceExperimentRunner(ExperimentRunner):
 
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
-        if not os.listdir(self.log_dir) and self.is_rank_zero:
+        if self.is_rank_zero and self.log_dir.is_dir() and not os.listdir(self.log_dir):
             print("Removing empty log directory...")
             self.log_dir.rmdir()
 
