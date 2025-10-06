@@ -316,16 +316,16 @@ class InferenceDataset(Dataset):
         query_id = datapoint["query_id"]
         query = self.query_cache[query_id]
         seed = datapoint["seed"]
-        is_repeated_sample = datapoint["repeated_sample"]
+        is_repeated_sample = bool(datapoint["repeated_sample"])
 
         try:
-            # TODO: Could wrap this in try/except
             features = self.create_all_features(query)
             features["query_id"] = query_id
             features["seed"] = torch.tensor([seed])
             features["repeated_sample"] = torch.tensor(
                 [is_repeated_sample], dtype=torch.bool
             )
+            features["valid_sample"] = torch.tensor([True], dtype=torch.bool)
 
             return features
         except Exception as e:
@@ -337,11 +337,12 @@ class InferenceDataset(Dataset):
                 + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
                 + "-" * 40
             )
-            features = {}
-            features["query_id"] = query_id
-            features["repeated_sample"] = torch.tensor(
-                [is_repeated_sample], dtype=torch.bool
-            )
+            features = {
+                "query_id": query_id,
+                "repeated_sample": torch.tensor([is_repeated_sample], dtype=torch.bool),
+                "valid_sample": torch.tensor([False], dtype=torch.bool),
+            }
+
             return features
 
     def __len__(self):

@@ -76,12 +76,9 @@ class TestPredictionWriter:
         n_atoms = 5
         confidence_scores = {
             "plddt": np.random.uniform(size=n_atoms),
-            "distance_confidence_probs": np.random.uniform(
-                size=(n_tokens, n_tokens, 64)
-            ),
-            "predicted_distance_error": np.random.uniform(size=(n_tokens, n_tokens)),
-            "max_predicted_distance_error": np.float32(15.2),
-            "global_predicted_distance_error": np.float32(16.2),
+            "pde_probs": np.random.uniform(size=(n_tokens, n_tokens, 64)),
+            "pde": np.random.uniform(size=(n_tokens, n_tokens)),
+            "gpde": np.float32(16.2),
         }
 
         writer = OF3OutputWriter(
@@ -95,7 +92,7 @@ class TestPredictionWriter:
         # Check aggregated confidence scores
         expected_agg_scores = {
             "avg_plddt": np.mean(confidence_scores["plddt"]),
-            "gpde": confidence_scores["global_predicted_distance_error"],
+            "gpde": confidence_scores["gpde"],
         }
         out_file_agg = Path(f"{output_prefix}_confidences_aggregated.json")
         actual_agg_scores = json.loads(out_file_agg.read_text())
@@ -104,7 +101,7 @@ class TestPredictionWriter:
         # Check full confidence scores:
         expected_full_scores = {
             "plddt": confidence_scores["plddt"],
-            "pde": confidence_scores["predicted_distance_error"],
+            "pde": confidence_scores["pde"],
         }
         out_file_full = Path(f"{output_prefix}_confidences.{output_fmt}")
         actual_full_scores = self._load_full_confidence_scores(out_file_full)
@@ -125,26 +122,26 @@ class TestPredictionWriter:
         n_atoms = 5
         confidence_scores = {
             "plddt": np.random.uniform(size=n_atoms),
-            "distance_confidence_probs": np.random.uniform(
-                size=(n_tokens, n_tokens, 64)
-            ),
-            "predicted_distance_error": np.random.uniform(size=(n_tokens, n_tokens)),
-            "max_predicted_distance_error": np.random.uniform(size=(1,)),
-            "global_predicted_distance_error": np.random.uniform(size=(1,)),
-            "disorder": np.random.uniform(size=(1,)),
+            "pde_probs": np.random.uniform(size=(n_tokens, n_tokens, 64)),
+            "pde": np.random.uniform(size=(n_tokens, n_tokens)),
+            "gpde": np.random.uniform(size=(1,)),
+            "pae_probs": np.random.uniform(size=(n_tokens, n_tokens, 64)),
+            "pae": np.random.uniform(size=(n_tokens, n_tokens)),
             "iptm": np.random.uniform(size=(1,)),
             "ptm": np.random.uniform(size=(1,)),
+            "disorder": np.random.uniform(size=(1,)),
             "has_clash": np.float32(0.0),
             "sample_ranking_score": np.random.uniform(size=(1,)),
-            "all_ipTM_scores": {
-                "iptm": {"(1, 2)": np.float32(0.72873056)},
-                "bespoke_iptm": {"(1, 2)": np.float32(0.6871613)},
+            "chain_ptm": {
+                "1": np.random.uniform(size=(1,)),
+                "2": np.random.uniform(size=(1,)),
             },
-            "pTM_by_asym_id": {
-                "1": np.float32(0.82020026),
-                "2": np.float32(0.8262863),
+            "chain_pair_iptm": {
+                "(1, 2)": np.random.uniform(size=(1,)),
             },
-            "modified_residues_plddts": [{}],
+            "bespoke_iptm": {
+                "(1, 2)": np.random.uniform(size=(1,)),
+            },
         }
 
         output_writer = OF3OutputWriter(
@@ -164,9 +161,9 @@ class TestPredictionWriter:
             "disorder",
             "has_clash",
             "sample_ranking_score",
-            "ptm_by_asym_id",
-            "bespoke_iptm_by_asym_id_pair",
-            "iptm_by_asym_id_pair",
+            "chain_ptm",
+            "chain_pair_iptm",
+            "bespoke_iptm",
         ]
 
         out_file_agg = Path(f"{output_prefix}_confidences_aggregated.json")
@@ -176,7 +173,7 @@ class TestPredictionWriter:
         # Check full confidence scores:
         expected_full_scores = {
             "plddt": confidence_scores["plddt"],
-            "pde": confidence_scores["predicted_distance_error"],
+            "pde": confidence_scores["pde"],
         }
         out_file_full = Path(f"{output_prefix}_confidences.{output_fmt}")
         actual_full_scores = self._load_full_confidence_scores(out_file_full)
@@ -198,13 +195,6 @@ class TestPredictionWriter:
         )
         trainer = DummyMock()
         pl_module = DummyMock()
-
-        writer.on_predict_batch_start(
-            trainer=trainer,
-            pl_module=pl_module,
-            batch={"query_id": "query_id"},
-            batch_idx=0,
-        )
 
         writer.on_predict_batch_end(
             trainer=trainer,

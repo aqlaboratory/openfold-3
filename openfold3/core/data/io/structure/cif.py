@@ -193,15 +193,18 @@ def parse_mmcif(
             "retrying with 'altloc': 'first'."
         )
         parser_args["altloc"] = "first"
-        if expand_bioassembly:
-            atom_array = pdbx.get_assembly(
-                **parser_args,
-                assembly_id="1",
-            )
-        else:
-            atom_array = pdbx.get_structure(
-                **parser_args,
-            )
+        try:
+            if expand_bioassembly:
+                atom_array = pdbx.get_assembly(
+                    **parser_args,
+                    assembly_id="1",
+                )
+            else:
+                atom_array = pdbx.get_structure(
+                        **parser_args,
+                    )
+        except Exception as e:
+            raise ValueError(f"Failed to parse {file_path}: ") from e
 
     # Skip structures where all atoms have zero occupancy
     if skip_all_zero_occ and atom_array.occupancy.sum() == 0:

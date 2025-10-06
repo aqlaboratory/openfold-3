@@ -73,7 +73,7 @@ class PlTrainerArgs(BaseModel):
 
     # Extra arguments that are not passed directly to pl.Trainer
     deepspeed_config_path: Path | None = None
-    timeout: Optional[timedelta] = default_pg_timeout
+    distributed_timeout: Optional[timedelta] = default_pg_timeout
     mpi_plugin: bool = False
 
 
@@ -94,6 +94,7 @@ class ExperimentSettings(BaseModel):
 
     mode: ValidModeType
     output_dir: Path = Path("./")
+    log_dir: Path | None = None
 
     @model_validator(mode="after")
     def create_output_dir(cls, model):
@@ -175,7 +176,7 @@ class InferenceExperimentConfig(ExperimentConfig):
     inference_ckpt_path: Path
 
     experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()
-    model_update: ModelUpdate = ModelUpdate(presets=["predict"])
+    model_update: ModelUpdate = ModelUpdate(presets=["predict", "pae_enabled"])
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()

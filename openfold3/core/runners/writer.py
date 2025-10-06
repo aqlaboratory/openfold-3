@@ -2,7 +2,6 @@
 
 import json
 import logging
-import time
 from pathlib import Path
 
 import numpy as np
@@ -76,9 +75,6 @@ class OF3OutputWriter(BasePredictionWriter):
         self.write_features = write_features
         self.write_latent_outputs = write_latent_outputs
 
-        # For recording runtime per batch
-        self.batch_start_time = None
-
         # Track successfully predicted samples
         self.success_count = 0
         self.failed_count = 0
@@ -128,24 +124,29 @@ class OF3OutputWriter(BasePredictionWriter):
             )
         }
 
-        pae_confidence_scores["ptm_by_asym_id"] = {
+        # Asym id -> chain id for chain_ptm
+        pae_confidence_scores["chain_ptm"] = {
             asym_id_to_chain_id[int(k)]: v
-            for k, v in confidence_scores["pTM_by_asym_id"].items()
+            for k, v in confidence_scores["chain_ptm"].items()
         }
-        pae_confidence_scores["iptm_by_asym_id_pair"] = {}
-        pae_confidence_scores["bespoke_iptm_by_asym_id_pair"] = {}
-        for k, v in confidence_scores["all_ipTM_scores"]["iptm"].items():
+
+        # Asym id -> chain id for chain_pair_iptm
+        pae_confidence_scores["chain_pair_iptm"] = {}
+        for k, v in confidence_scores["chain_pair_iptm"].items():
             # split '(1, 2)' into 1, 2
             k1, k2 = [
                 asym_id_to_chain_id[int(i)].strip() for i in k.strip("()").split(",")
             ]
-            pae_confidence_scores["iptm_by_asym_id_pair"][f"({k1}, {k2})"] = v
-        for k, v in confidence_scores["all_ipTM_scores"]["bespoke_iptm"].items():
+            pae_confidence_scores["chain_pair_iptm"][f"({k1}, {k2})"] = v
+
+        # Asym id -> chain id for bespoke_iptm
+        pae_confidence_scores["bespoke_iptm"] = {}
+        for k, v in confidence_scores["bespoke_iptm"].items():
             # split '(1, 2)' into 1, 2
             k1, k2 = [
                 asym_id_to_chain_id[int(i)].strip() for i in k.strip("()").split(",")
             ]
-            pae_confidence_scores["bespoke_iptm_by_asym_id_pair"][f"({k1}, {k2})"] = v
+            pae_confidence_scores["bespoke_iptm"][f"({k1}, {k2})"] = v
         return pae_confidence_scores
 
     def write_confidence_scores(
@@ -156,8 +157,8 @@ class OF3OutputWriter(BasePredictionWriter):
     ):
         """Writes confidence scores to disk"""
         plddt = confidence_scores["plddt"]
-        pde = confidence_scores["predicted_distance_error"]
-        gpde = confidence_scores["global_predicted_distance_error"]
+        pde = confidence_scores["pde"]
+        gpde = confidence_scores["gpde"]
         aggregated_confidence_scores = {"avg_plddt": np.mean(plddt), "gpde": gpde}
 
         if self.pae_enabled:
@@ -187,17 +188,11 @@ class OF3OutputWriter(BasePredictionWriter):
         elif out_fmt == "npz":
             np.savez_compressed(out_file_full, **full_confidence_scores)
 
-    def write_all_outputs(
-        self, batch: dict, outputs: dict, confidence_scores: dict, runtime: float
-    ):
+    def write_all_outputs(self, batch: dict, outputs: dict, confidence_scores: dict):
         """Writes all outputs for a given batch."""
 
         batch_size = len(batch["atom_array"])
         sample_size = outputs["atom_positions_predicted"].shape[1]
-
-        # Calculate an average runtime for each sample in the batch
-        # This is always one sample for now
-        runtime_per_sample = runtime / batch_size
 
         # Iterate over all predictions in the batch
         for b in range(batch_size):
@@ -237,11 +232,6 @@ class OF3OutputWriter(BasePredictionWriter):
                     atom_array=atom_array_batch,
                 )
 
-            # Save runtime for the batch
-            runtime_file = output_subdir / "timing.json"
-            runtime_json = {"runtime_s": runtime_per_sample}
-            runtime_file.write_text(json.dumps(runtime_json, indent=4))
-
             def fetch_cur_batch(t):
                 # Get tensor for current batch dim
                 # Remove expanded sample dim if it exists to get original tensor shapes
@@ -269,20 +259,6 @@ class OF3OutputWriter(BasePredictionWriter):
                 torch.save(cur_output, out_file)
                 del cur_output
 
-    def on_predict_batch_start(
-        self, trainer, pl_module, batch, batch_idx, dataloader_idx: int = 0
-    ):
-        self.batch_start_time = time.perf_counter()
-
-    def _get_runtime(self):
-        """Record the runtime for the current batch."""
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-
-        batch_end_time = time.perf_counter()
-
-        return batch_end_time - self.batch_start_time
-
     def on_predict_batch_end(
         self,
         trainer,
@@ -292,9 +268,6 @@ class OF3OutputWriter(BasePredictionWriter):
         batch_idx,
         dataloader_idx=0,
     ):
-        # Get batch runtime
-        runtime = self._get_runtime()
-
         # Skip repeated samples
         if batch.get("repeated_sample"):
             return
@@ -317,7 +290,6 @@ class OF3OutputWriter(BasePredictionWriter):
                 batch=batch,
                 outputs=outputs,
                 confidence_scores=confidence_scores,
-                runtime=runtime,
             )
             self.success_count += 1
         except Exception as e:
@@ -359,7 +331,7 @@ class OF3OutputWriter(BasePredictionWriter):
                     item for data in gathered_data for item in data["failed_queries"]
                 ]
 
-                summary = self._get_summary(
+                self._write_summary(
                     total_queries=total_queries,
                     success_count=success_count,
                     failed_count=failed_count,
@@ -367,7 +339,6 @@ class OF3OutputWriter(BasePredictionWriter):
                     global_rank=trainer.global_rank,
                     is_complete=True,
                 )
-                print(summary)
 
         except RuntimeError as e:
             # TODO: Due to additional sync PL does outside of this callback,
@@ -380,13 +351,22 @@ class OF3OutputWriter(BasePredictionWriter):
                     f"[Rank {trainer.global_rank}] Distributed sync timed out! "
                     f"Writing local results to a fallback log."
                 )
-                self._write_local_fallback_summary(trainer.global_rank)
+
+                self._write_summary(
+                    total_queries=self.total_count,
+                    success_count=self.success_count,
+                    failed_count=self.failed_count,
+                    failed_list=self.failed_queries,
+                    global_rank=trainer.global_rank,
+                    is_complete=False,
+                )
+
             else:
                 # Re-raise unexpected runtime errors
                 raise e
 
-    @staticmethod
-    def _get_summary(
+    def _write_summary(
+        self,
         total_queries: int,
         success_count: int,
         failed_count: int,
@@ -395,7 +375,12 @@ class OF3OutputWriter(BasePredictionWriter):
         is_complete=True,
     ):
         """Helper to format the final summary."""
-        status = "COMPLETE" if is_complete else f"INCOMPLETE (Rank {global_rank})"
+        if is_complete:
+            status = "COMPLETE"
+            out_file = self.output_dir / "summary.txt"
+        else:
+            status = f"INCOMPLETE (Rank {global_rank})"
+            out_file = self.output_dir / f"fallback_summary_rank_{global_rank}.txt"
 
         summary = [
             "\n" + "=" * 50,
@@ -411,22 +396,13 @@ class OF3OutputWriter(BasePredictionWriter):
             summary.append(f"\nFailed Queries: {failed_str}")
 
         summary.append("=" * 50 + "\n")
-        return "\n".join(summary)
+        summary = "\n".join(summary)
 
-    def _write_local_fallback_summary(self, global_rank: int):
-        """Writes this rank's local data to a unique file upon timeout."""
-        fallback_file = self.output_dir / f"fallback_summary_rank_{global_rank}.log"
+        out_file.write_text(summary)
 
-        summary = self._get_summary(
-            total_queries=self.total_count,
-            success_count=self.success_count,
-            failed_count=self.failed_count,
-            failed_list=self.failed_queries,
-            global_rank=global_rank,
-            is_complete=False,
-        )
-        fallback_file.write_text(summary)
-
-        logger.warning(
-            f"Fallback summary for Rank {global_rank} saved to: {fallback_file}"
-        )
+        if is_complete:
+            print(summary)
+        else:
+            logger.warning(
+                f"Fallback summary for Rank {global_rank} saved to: {out_file}"
+            )

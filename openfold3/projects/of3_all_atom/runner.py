@@ -11,10 +11,7 @@ import torch
 from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
 from openfold3.core.loss.loss_module import OpenFold3Loss
-from openfold3.core.metrics.confidence_scores import (
-    get_confidence_scores,
-    get_confidence_scores_chunked,
-)
+from openfold3.core.metrics.aggregate_confidence_ranking import get_confidence_scores
 from openfold3.core.metrics.model_selection import (
     compute_final_model_selection_metric,
     compute_valid_model_selection_metrics,
@@ -314,10 +311,17 @@ class OpenFold3AllAtom(ModelRunner):
             self.model.load_state_dict(self.ema.state_dict()["params"])
 
         pdb_id = batch["pdb_id"]
-        is_repeated_sample = batch.get("repeated_sample").item()
+        is_repeated_sample = batch.get("repeated_sample")
+        if is_repeated_sample:
+            logger.debug(
+                f"Skipping repeated sample {', '.join(pdb_id)} on rank "
+                f"{self.global_rank}"
+            )
+            return
+
         logger.debug(
             f"Started validation for {', '.join(pdb_id)} on rank {self.global_rank} "
-            f"step {self.global_step}, repeated: {is_repeated_sample}"
+            f"step {self.global_step}"
         )
 
         try:
@@ -327,8 +331,7 @@ class OpenFold3AllAtom(ModelRunner):
             # Compute loss and other metrics
             _, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
 
-            if not is_repeated_sample:
-                self._log(loss_breakdown, batch, outputs, train=False)
+            self._log(loss_breakdown, batch, outputs, train=False)
 
         except Exception:
             logger.exception(f"Validation step failed with pdb id {', '.join(pdb_id)}")
@@ -490,31 +493,28 @@ class OpenFold3AllAtom(ModelRunner):
         """
         num_samples = self.config.architecture.shared.diffusion.no_full_rollout_samples
         num_atoms = outputs["atom_positions_predicted"].shape[-2]
-        chunk_computation = (
+        compute_per_sample = (
             num_samples > 1
             and self.config.settings.memory.eval.per_sample_atom_cutoff is not None
             and num_atoms > self.config.settings.memory.eval.per_sample_atom_cutoff
         )
 
-        if chunk_computation:
-            confidence_scores = get_confidence_scores_chunked(
-                batch=batch,
-                outputs=outputs,
-                config=self.config,
-            )
-        else:
-            confidence_scores = get_confidence_scores(
-                batch=batch,
-                outputs=outputs,
-                config=self.config,
-            )
+        confidence_scores = get_confidence_scores(
+            batch=batch,
+            outputs=outputs,
+            config=self.config,
+            compute_per_sample=compute_per_sample,
+        )
 
         return confidence_scores
 
     def predict_step(self, batch, batch_idx):
         # Skip if dataloader fails -> returns empty batch
-        if (batch.get("query_id") is not None) and len(batch) == 2:
-            return None
+        is_repeated_sample = batch.get("repeated_sample")
+        valid_sample = batch.get("valid_sample")
+        if not valid_sample or is_repeated_sample:
+            return
+
         # At the start of inference, load the EMA weights
         if self.cached_weights is None:
             # model.state_dict() contains references to model weights rather
@@ -560,8 +560,6 @@ class OpenFold3AllAtom(ModelRunner):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-            return None
-
         except Exception as e:
             logger.error(
                 f"Failed for query_id(s) {', '.join(query_id)}: {e}. "
@@ -570,8 +568,6 @@ class OpenFold3AllAtom(ModelRunner):
             )
 
             self._log_predict_exception(e, query_id)
-
-            return None
 
     def _log_predict_exception(self, e, query_id):
         """Formats and appends exceptions to a rank-specific error log."""

@@ -25,7 +25,7 @@ from openfold3.core.data.framework.data_module import (
     InferenceDataModule,
 )
 from openfold3.core.runners.writer import OF3OutputWriter
-from openfold3.core.utils.callbacks import PredictTimer
+from openfold3.core.utils.callbacks import LogInferenceQuerySet, PredictTimer
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
@@ -106,8 +106,9 @@ class ExperimentRunner(ABC):
     @cached_property
     def log_dir(self) -> Path:
         """Get or create the log directory."""
-        _out_dir = self.experiment_config.experiment_settings.output_dir
-        _log_dir = _out_dir / "logs"
+        _log_dir = self.experiment_config.experiment_settings.log_dir
+        if _log_dir is None:
+            _log_dir = self.output_dir / "logs"
         _log_dir.mkdir(exist_ok=True, parents=True)
         return _log_dir
 
@@ -182,7 +183,7 @@ class ExperimentRunner(ABC):
                 precision_plugin=OF3DeepSpeedPrecision(
                     precision=self.pl_trainer_args.precision
                 ),
-                timeout=self.pl_trainer_args.timeout,
+                timeout=self.pl_trainer_args.distributed_timeout,
             )
 
             _use_deepspeed_adam = (
@@ -197,7 +198,7 @@ class ExperimentRunner(ABC):
             return DDPStrategy(
                 find_unused_parameters=False,
                 cluster_environment=self.cluster_environment,
-                timeout=self.pl_trainer_args.timeout,
+                timeout=self.pl_trainer_args.distributed_timeout,
             )
 
         return "auto"
@@ -226,7 +227,7 @@ class ExperimentRunner(ABC):
     def trainer(self) -> pl.Trainer:
         """Create and return the trainer instance."""
         trainer_args = self.pl_trainer_args.model_dump(
-            exclude={"deepspeed_config_path", "timeout", "mpi_plugin"}
+            exclude={"deepspeed_config_path", "distributed_timeout", "mpi_plugin"}
         )
         trainer_args.update(
             {
@@ -485,7 +486,6 @@ class InferenceExperimentRunner(ExperimentRunner):
         """Set up the experiment environment."""
         self.inference_query_set = inference_query_set
         super().run()
-        self._log_inference_query_set()
         self._log_experiment_config()
         self._log_model_config()
 
@@ -498,7 +498,8 @@ class InferenceExperimentRunner(ExperimentRunner):
                 pae_enabled=self.pae_enabled,
                 **self.output_writer_settings.model_dump(),
             ),
-            PredictTimer(),
+            PredictTimer(self.output_dir),
+            LogInferenceQuerySet(self.output_dir),
         ]
         return _callbacks
 
@@ -533,13 +534,6 @@ class InferenceExperimentRunner(ExperimentRunner):
         return self.inference_ckpt_path
 
     @rank_zero_only
-    def _log_inference_query_set(self):
-        """Record the inference query set used for prediction"""
-        log_path = self.output_dir / "inference_query_set.json"
-        with open(log_path, "w") as fp:
-            fp.write(self.inference_query_set.model_dump_json(indent=4))
-
-    @rank_zero_only
     def _log_experiment_config(self):
         """Record the experiment config used for this run."""
         log_path = self.output_dir / "experiment_config.json"
@@ -555,6 +549,10 @@ class InferenceExperimentRunner(ExperimentRunner):
 
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
+        if self.is_rank_zero and self.log_dir.is_dir() and not os.listdir(self.log_dir):
+            print("Removing empty log directory...")
+            self.log_dir.rmdir()
+
         if self.use_msa_server and self.is_rank_zero:
             print("Cleaning up MSA directories...")
 

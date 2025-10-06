@@ -26,13 +26,38 @@ def mock_forward_with_name_based_oom(batch):
 
 
 one_oom_in_batch = [
-    {"query_id": ["oom_one"], "seed": torch.tensor([123])},
-    {"query_id": ["two"], "seed": torch.tensor([456])},
+    {
+        "query_id": ["oom_one"],
+        "seed": torch.tensor([123]),
+        "is_repeated_sample": torch.tensor([False]),
+        "valid_sample": True,
+    },
+    {
+        "query_id": ["two"],
+        "seed": torch.tensor([456]),
+        "is_repeated_sample": torch.tensor([False]),
+        "valid_sample": torch.tensor([True]),
+    },
 ]
 multiple_ooms_in_batch = [
-    {"query_id": ["oom_one"], "seed": torch.tensor([123])},
-    {"query_id": ["two"], "seed": torch.tensor([456])},
-    {"query_id": ["oom_three"], "seed": torch.tensor([789])},
+    {
+        "query_id": ["oom_one"],
+        "seed": torch.tensor([123]),
+        "is_repeated_sample": torch.tensor([False]),
+        "valid_sample": torch.tensor([True]),
+    },
+    {
+        "query_id": ["two"],
+        "seed": torch.tensor([456]),
+        "is_repeated_sample": torch.tensor([False]),
+        "valid_sample": torch.tensor([True]),
+    },
+    {
+        "query_id": ["oom_three"],
+        "seed": torch.tensor([789]),
+        "is_repeated_sample": torch.tensor([False]),
+        "valid_sample": torch.tensor([True]),
+    },
 ]
 
 
@@ -47,8 +72,18 @@ def test_oom_exception_handling(batches):
     config = project_entry.get_model_config_with_presets()
     model_runner = OpenFold3AllAtom(model_config=config)
     batches = [
-        {"query_id": ["oom_one"], "seed": torch.tensor([123])},
-        {"query_id": ["two"], "seed": torch.tensor([456])},
+        {
+            "query_id": ["oom_one"],
+            "seed": torch.tensor([123]),
+            "is_repeated_sample": torch.tensor([False]),
+            "valid_sample": torch.tensor([True]),
+        },
+        {
+            "query_id": ["two"],
+            "seed": torch.tensor([456]),
+            "is_repeated_sample": torch.tensor([False]),
+            "valid_sample": torch.tensor([True]),
+        },
     ]
     results = {}
 

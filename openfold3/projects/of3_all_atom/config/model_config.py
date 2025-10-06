@@ -467,20 +467,32 @@ model_config = mlc.ConfigDict(
         "confidence": {
             "per_sample_atom_cutoff": per_sample_atom_cutoff,
             "low_mem_validation": low_mem_validation,
+            "plddt": {
+                "no_bins": 50,
+                "bin_min": 0,
+                "bin_max": 1,
+            },
             "pde": {
-                "max_bin": 31,
+                "bin_min": 0,
+                "bin_max": 32,
                 "no_bins": 64,
+                "return_probs": False,
             },
             "pae": {
-                "max_bin": 31,
+                "bin_min": 0,
+                "bin_max": 32,
                 "no_bins": 64,
+                "return_probs": False,
             },
             "distogram": {
-                "min_bin": 2,
-                "max_bin": 22,
+                "bin_min": 2,
+                "bin_max": 22,
+                "no_bins": 64,
+                "return_contact_probs": False,
             },
             "ptm": {
-                "max_bin": 31,
+                "bin_min": 0,
+                "bin_max": 32,
                 "no_bins": 64,
             },
             "sample_ranking": {
@@ -491,10 +503,8 @@ model_config = mlc.ConfigDict(
                     "has_clash_weight": -100.0,
                     "disorder_threshold": 0.581,
                 },
-                "all_ipTM": {"enabled": True},
-                "all_pTM": {"enabled": True},
-                "modified_residue_plddt": {"enabled": True},
-                "pair_chunk": 32,
+                "chain_pair_iptm": {"enabled": True},
+                "chain_ptm": {"enabled": True},
             },
             "clash": {
                 "min_distance": 1.1,
