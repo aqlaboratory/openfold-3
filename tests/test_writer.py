@@ -70,21 +70,8 @@ class TestPredictionWriter:
                 actual_full_scores = np.load(output_file_path)
         return actual_full_scores
 
-    @pytest.mark.parametrize(
-        "output_fmt",
-        ["json", "npz"],
-        ids=lambda x: x,
-    )
-    def test_confidence_writer_without_pae(self, tmp_path, output_fmt):
-        n_tokens = 3
-        n_atoms = 5
-        confidence_scores = {
-            "plddt": np.random.uniform(size=n_atoms),
-            "pde_probs": np.random.uniform(size=(n_tokens, n_tokens, 64)),
-            "pde": np.random.uniform(size=(n_tokens, n_tokens)),
-            "gpde": np.float32(16.2),
-        }
-
+    @pytest.fixture
+    def dummy_atom_array(self):
         # Create dummy atom array
         coords = np.array(
             [
@@ -99,6 +86,24 @@ class TestPredictionWriter:
         atom_array = AtomArray(len(coords))
         atom_array.coord = coords
         atom_array.chain_id = np.array(["A", "A", "B", "B", "B"])
+        return atom_array
+
+    @pytest.mark.parametrize(
+        "output_fmt",
+        ["json", "npz"],
+        ids=lambda x: x,
+    )
+    def test_confidence_writer_without_pae(
+        self, tmp_path, output_fmt, dummy_atom_array
+    ):
+        n_tokens = 3
+        n_atoms = 5
+        confidence_scores = {
+            "plddt": np.random.uniform(size=n_atoms),
+            "pde_probs": np.random.uniform(size=(n_tokens, n_tokens, 64)),
+            "pde": np.random.uniform(size=(n_tokens, n_tokens)),
+            "gpde": np.float32(16.2),
+        }
 
         writer = OF3OutputWriter(
             output_dir=tmp_path,
@@ -106,7 +111,9 @@ class TestPredictionWriter:
             full_confidence_output_format=output_fmt,
         )
         output_prefix = tmp_path / "test"
-        writer.write_confidence_scores(confidence_scores, atom_array, output_prefix)
+        writer.write_confidence_scores(
+            confidence_scores, dummy_atom_array, output_prefix
+        )
 
         # Check aggregated confidence scores
         expected_agg_scores = {
@@ -136,25 +143,9 @@ class TestPredictionWriter:
         ["json", "npz"],
         ids=lambda x: x,
     )
-    def test_confidence_writer_with_pae(self, tmp_path, output_fmt):
+    def test_confidence_writer_with_pae(self, tmp_path, output_fmt, dummy_atom_array):
         n_tokens = 3
         n_atoms = 5
-
-        # Create dummy atom array
-        coords = np.array(
-            [
-                [0.0, 0.0, 0.0],
-                [1.2, 0.0, 0.0],
-                [2.4, 0.0, 0.0],
-                [3.0, 0.0, 0.0],
-                [4.4, 0.0, 0.0],
-            ],
-            dtype=float,
-        )
-        atom_array = AtomArray(len(coords))
-        atom_array.coord = coords
-        atom_array.chain_id = np.array(["A", "A", "B", "B", "B"])
-        atom_array.entity_id = np.array(["A", "A", "B", "B", "B"])
 
         confidence_scores = {
             "plddt": np.random.uniform(size=n_atoms),
@@ -188,7 +179,7 @@ class TestPredictionWriter:
 
         output_prefix = tmp_path / "test"
         output_writer.write_confidence_scores(
-            confidence_scores, atom_array, output_prefix
+            confidence_scores, dummy_atom_array, output_prefix
         )
 
         expected_agg_score_keys = [
