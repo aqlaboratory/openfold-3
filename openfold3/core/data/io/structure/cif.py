@@ -201,8 +201,8 @@ def parse_mmcif(
                 )
             else:
                 atom_array = pdbx.get_structure(
-                        **parser_args,
-                    )
+                    **parser_args,
+                )
         except Exception as e:
             raise ValueError(f"Failed to parse {file_path}: ") from e
 
