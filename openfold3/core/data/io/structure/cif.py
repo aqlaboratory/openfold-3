@@ -239,7 +239,11 @@ def parse_mmcif(
 
 
 def _create_cif_file(
-    suffix: str, atom_array: AtomArray, data_block: str, include_bonds: bool
+    suffix: str,
+    atom_array: AtomArray,
+    data_block: str,
+    include_bonds: bool,
+    make_ost_compatible: bool = True,
 ):
     """Helper function to create and populate CIF or BCIF files."""
     if suffix == ".cif":
@@ -267,12 +271,13 @@ def _create_cif_file(
         )
 
     # Update and add additional metadata tables
-    cif_block = get_cif_block(cif_file)
-    writer_update_atom_site(atom_array, cif_block)
-    writer_add_chem_comp(atom_array, cif_block)
-    writer_add_entity(atom_array, cif_block)
-    writer_add_struct_asym(atom_array, cif_block)
-    writer_add_pdbx_nonpoly_scheme(atom_array, cif_block)
+    if make_ost_compatible:
+        cif_block = get_cif_block(cif_file)
+        writer_update_atom_site(atom_array, cif_block)
+        writer_add_chem_comp(atom_array, cif_block)
+        writer_add_entity(atom_array, cif_block)
+        writer_add_struct_asym(atom_array, cif_block)
+        writer_add_pdbx_nonpoly_scheme(atom_array, cif_block)
 
     return cif_file
 
@@ -282,6 +287,7 @@ def write_structure(
     output_path: Path | str,
     data_block: str = None,
     include_bonds: bool = True,
+    make_ost_compatible: bool = True,
 ) -> None:
     """Write a structure file from an AtomArray
 
@@ -320,6 +326,7 @@ def write_structure(
                 atom_array=atom_array,
                 data_block=data_block,
                 include_bonds=include_bonds,
+                make_ost_compatible=make_ost_compatible,
             )
 
             file_obj.write(output_path)

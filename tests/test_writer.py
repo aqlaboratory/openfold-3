@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest  # noqa: F401  - used for pytest tmp fixture
 from biotite import structure
+from biotite.structure import AtomArray
 from biotite.structure.io import pdb, pdbx
 
 from openfold3.core.runners.writer import OF3OutputWriter
@@ -21,6 +22,9 @@ class TestPredictionWriter:
         atom3 = structure.Atom([3, 4, 5], chain_id="B")
 
         atom_array = structure.array([atom1, atom2, atom3])
+        atom_array.entity_id = np.array(["A", "A", "B"])
+        atom_array.molecule_type_id = np.array(["0", "0", "1"])
+        atom_array.pdbx_formal_charge = np.array(["1", "1", "1"])
 
         # add extra dimension for sample
         new_coords = np.array(
@@ -40,7 +44,7 @@ class TestPredictionWriter:
         )
         tmp_file = tmp_path / f"TEST.{structure_format}"
         output_writer.write_structure_prediction(
-            atom_array, new_coords, dummy_plddt, tmp_file
+            atom_array, new_coords, dummy_plddt, tmp_file, False
         )
 
         match structure_format:
@@ -81,13 +85,28 @@ class TestPredictionWriter:
             "gpde": np.float32(16.2),
         }
 
+        # Create dummy atom array
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.2, 0.0, 0.0],
+                [2.4, 0.0, 0.0],
+                [3.0, 0.0, 0.0],
+                [4.4, 0.0, 0.0],
+            ],
+            dtype=float,
+        )
+        atom_array = AtomArray(len(coords))
+        atom_array.coord = coords
+        atom_array.chain_id = np.array(["A", "A", "B", "B", "B"])
+
         writer = OF3OutputWriter(
             output_dir=tmp_path,
             pae_enabled=False,
             full_confidence_output_format=output_fmt,
         )
         output_prefix = tmp_path / "test"
-        writer.write_confidence_scores(confidence_scores, output_prefix)
+        writer.write_confidence_scores(confidence_scores, atom_array, output_prefix)
 
         # Check aggregated confidence scores
         expected_agg_scores = {
@@ -120,6 +139,23 @@ class TestPredictionWriter:
     def test_confidence_writer_with_pae(self, tmp_path, output_fmt):
         n_tokens = 3
         n_atoms = 5
+
+        # Create dummy atom array
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.2, 0.0, 0.0],
+                [2.4, 0.0, 0.0],
+                [3.0, 0.0, 0.0],
+                [4.4, 0.0, 0.0],
+            ],
+            dtype=float,
+        )
+        atom_array = AtomArray(len(coords))
+        atom_array.coord = coords
+        atom_array.chain_id = np.array(["A", "A", "B", "B", "B"])
+        atom_array.entity_id = np.array(["A", "A", "B", "B", "B"])
+
         confidence_scores = {
             "plddt": np.random.uniform(size=n_atoms),
             "pde_probs": np.random.uniform(size=(n_tokens, n_tokens, 64)),
@@ -151,7 +187,9 @@ class TestPredictionWriter:
         )
 
         output_prefix = tmp_path / "test"
-        output_writer.write_confidence_scores(confidence_scores, output_prefix)
+        output_writer.write_confidence_scores(
+            confidence_scores, atom_array, output_prefix
+        )
 
         expected_agg_score_keys = [
             "avg_plddt",

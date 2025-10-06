@@ -10,7 +10,6 @@ import torch.distributed as dist
 from biotite import structure
 from pytorch_lightning.callbacks import BasePredictionWriter
 
-from openfold3.core.data.io.structure.atom_array import write_atomarray_to_npz
 from openfold3.core.data.io.structure.cif import write_structure
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from tests.custom_assert_utils import AtomArray
@@ -87,6 +86,7 @@ class OF3OutputWriter(BasePredictionWriter):
         predicted_coords: np.ndarray,
         plddt: np.ndarray,
         output_file: Path,
+        make_ost_compatible: bool = True,
     ):
         """Writes predicted coordinates to atom_array and writes mmcif file to disk.
 
@@ -96,11 +96,15 @@ class OF3OutputWriter(BasePredictionWriter):
         # Set coordinates and plddt scores
         atom_array.coord = predicted_coords
         atom_array.set_annotation("b_factor", plddt)
-        write_atomarray_to_npz(atom_array, output_file.with_suffix(".npz"))
 
         # Write the output file
         logger.info(f"Writing predicted structure to {output_file}")
-        write_structure(atom_array, output_file, include_bonds=True)
+        write_structure(
+            atom_array,
+            output_file,
+            include_bonds=True,
+            make_ost_compatible=make_ost_compatible,
+        )
 
     def get_pae_confidence_scores(self, confidence_scores, atom_array):
         pae_confidence_scores = {}
