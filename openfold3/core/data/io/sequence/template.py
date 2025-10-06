@@ -482,6 +482,24 @@ class TemplateParser(ABC):
         """Main entry point to parse an alignment source."""
         raise NotImplementedError
 
+    @staticmethod
+    def compute_sequence_identity_and_coverage(
+        query_aln_arr: np.ndarray, template_aln_arr: np.ndarray, query_seq_str: str
+    ):
+        query_gap_mask = ~np.isin(query_aln_arr, ["-", "."])
+        num_matches = sum(query_gap_mask)
+        if num_matches > 0:
+            seq_id = (
+                sum((template_aln_arr == query_aln_arr)[query_gap_mask]) / num_matches
+            )
+        else:
+            seq_id = 0.0
+
+        q_cov = sum(query_gap_mask & (~np.isin(template_aln_arr, ["-", "."]))) / len(
+            query_seq_str
+        )
+        return seq_id, q_cov
+
     def _process_alignment_hits(
         self,
         query_seq_str: str,
@@ -508,14 +526,11 @@ class TemplateParser(ABC):
                 query_start=query_start_idx,
                 template_start=int(row["start"]),
             )
-            query_gap_mask = ~np.isin(query_aln_arr, ["-", "."])
-            seq_id = (
-                sum((template_aln_arr == query_aln_arr)[query_gap_mask])
-                / sum(query_gap_mask)
-                if sum(query_gap_mask) > 0
-                else 0.0
+            seq_id, q_cov = self.compute_sequence_identity_and_coverage(
+                query_aln_arr=query_aln_arr,
+                template_aln_arr=template_aln_arr,
+                query_seq_str=query_seq_str,
             )
-            q_cov = sum(query_gap_mask & template_gap_mask) / len(query_seq_str)
 
             entry_id, chain_id = row["id"].split("_")
             templates[row.name] = TemplateData(
