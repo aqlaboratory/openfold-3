@@ -1517,7 +1517,7 @@ class TemplatePreprocessorSettings(BaseModel):
     max_seq_id: float | None = None
     min_align: float | None = None
     min_len: int | None = None
-    max_release_date: str | datetime | None = None
+    max_release_date: datetime | None = None
     min_release_date_diff: int | None = None
     max_templates: int = 20
 
@@ -1582,9 +1582,6 @@ class TemplatePreprocessorSettings(BaseModel):
         ):
             if d is not None:
                 os.makedirs(d, exist_ok=True)
-
-        if isinstance(self.max_release_date, str):
-            self.max_release_date = datetime.strptime(self.max_release_date, "%Y-%m-%d")
 
         return self
 
