@@ -85,6 +85,7 @@ class OF3OutputWriter(BasePredictionWriter):
         predicted_coords: np.ndarray,
         plddt: np.ndarray,
         output_file: Path,
+        make_ost_compatible: bool = True,
     ):
         """Writes predicted coordinates to atom_array and writes mmcif file to disk.
 
@@ -97,9 +98,14 @@ class OF3OutputWriter(BasePredictionWriter):
 
         # Write the output file
         logger.info(f"Writing predicted structure to {output_file}")
-        write_structure(atom_array, output_file, include_bonds=True)
+        write_structure(
+            atom_array,
+            output_file,
+            include_bonds=True,
+            make_ost_compatible=make_ost_compatible,
+        )
 
-    def get_pae_confidence_scores(self, confidence_scores):
+    def get_pae_confidence_scores(self, confidence_scores, atom_array):
         pae_confidence_scores = {}
         single_value_keys = [
             "iptm",
@@ -107,18 +113,50 @@ class OF3OutputWriter(BasePredictionWriter):
             "disorder",
             "has_clash",
             "sample_ranking_score",
-            "chain_ptm",
-            "chain_pair_iptm",
-            "bespoke_iptm",
         ]
 
         for key in single_value_keys:
             pae_confidence_scores[key] = confidence_scores[key]
 
+        # Get map from asym id to chain id
+        renum_ids = np.unique(atom_array.chain_id, return_inverse=True)[1] + 1
+        asym_id_to_chain_id = {
+            k: v
+            for (k, v) in set(
+                [(int(x[0]), str(x[1])) for x in zip(renum_ids, atom_array.chain_id)]
+            )
+        }
+
+        # Asym id -> chain id for chain_ptm
+        pae_confidence_scores["chain_ptm"] = {
+            asym_id_to_chain_id[int(k)]: v
+            for k, v in confidence_scores["chain_ptm"].items()
+        }
+
+        # Asym id -> chain id for chain_pair_iptm
+        pae_confidence_scores["chain_pair_iptm"] = {}
+        for k, v in confidence_scores["chain_pair_iptm"].items():
+            # split '(1, 2)' into 1, 2
+            k1, k2 = [
+                asym_id_to_chain_id[int(i)].strip() for i in k.strip("()").split(",")
+            ]
+            pae_confidence_scores["chain_pair_iptm"][f"({k1}, {k2})"] = v
+
+        # Asym id -> chain id for bespoke_iptm
+        pae_confidence_scores["bespoke_iptm"] = {}
+        for k, v in confidence_scores["bespoke_iptm"].items():
+            # split '(1, 2)' into 1, 2
+            k1, k2 = [
+                asym_id_to_chain_id[int(i)].strip() for i in k.strip("()").split(",")
+            ]
+            pae_confidence_scores["bespoke_iptm"][f"({k1}, {k2})"] = v
         return pae_confidence_scores
 
     def write_confidence_scores(
-        self, confidence_scores: dict[str, np.ndarray], output_prefix: Path
+        self,
+        confidence_scores: dict[str, np.ndarray],
+        atom_array: structure.AtomArray,
+        output_prefix: Path,
     ):
         """Writes confidence scores to disk"""
         plddt = confidence_scores["plddt"]
@@ -129,7 +167,7 @@ class OF3OutputWriter(BasePredictionWriter):
         if self.pae_enabled:
             logger.info("Recording PAE confidence outputs")
             aggregated_confidence_scores |= self.get_pae_confidence_scores(
-                confidence_scores
+                confidence_scores, atom_array
             )
 
         out_file_agg = Path(f"{output_prefix}_confidences_aggregated.json")
@@ -194,6 +232,7 @@ class OF3OutputWriter(BasePredictionWriter):
                 self.write_confidence_scores(
                     confidence_scores=confidence_scores_sample,
                     output_prefix=file_prefix,
+                    atom_array=atom_array_batch,
                 )
 
             def fetch_cur_batch(t):

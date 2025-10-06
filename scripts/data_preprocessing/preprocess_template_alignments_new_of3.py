@@ -85,6 +85,11 @@ def main(
     # Load runner YAML and template_preprocessor_settings
     runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
     template_preprocessor_kwargs = runner_args.get("template_preprocessor_settings", {})
+    if "mode" in template_preprocessor_kwargs:
+        raise ValueError(
+            "Do not specify 'mode' in the runner YAML."
+            " Instead use the --input_set_type argument."
+        )
 
     # Override defaults
     template_preprocessor_settings = TemplatePreprocessorSettings(
