@@ -189,7 +189,8 @@ def parse_mmcif(
             )
     except ValueError as _:
         logger.warning(
-            "Failed to get structure/bioassembly with 'altloc': 'occupancy' "
+            f"Failed to get structure/bioassembly at {file_path} with"
+            " 'altloc': 'occupancy' "
             "retrying with 'altloc': 'first'."
         )
         parser_args["altloc"] = "first"
