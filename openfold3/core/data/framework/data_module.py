@@ -510,7 +510,7 @@ class InferenceDataModule(DataModule):
         if self.use_templates:
             template_preprocessor = TemplatePreprocessor(
                 input_set=self.inference_config.query_set,
-                config=self.inference_config.template_preprocessor,
+                config=self.inference_config.template_preprocessor_settings,
             )
             template_preprocessor()
 

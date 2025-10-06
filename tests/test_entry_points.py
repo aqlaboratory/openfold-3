@@ -337,3 +337,21 @@ class TestInferenceCommandLineSettings:
             expt_config, use_templates=use_templates_cli_arg
         )
         assert expt_runner.use_templates == use_templates_cli_arg
+
+
+class TestTemplatePreprocessorSettings:
+    def test_overwrite_output_dir(self, tmp_path):
+        test_yaml_str = textwrap.dedent(f"""\
+        template_preprocessor_settings:
+            output_directory: {tmp_path / "custom_dir"}
+        """)
+        test_yaml_file = tmp_path / "runner.yml"
+        dummy_ckpt = tmp_path / "dummy.ckpt.pt"
+        test_yaml_file.write_text(test_yaml_str)
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt, **config_utils.load_yaml(test_yaml_file)
+        )
+
+        assert expt_config.template_preprocessor_settings.output_directory == (
+            tmp_path / "custom_dir"
+        ), "Expected structure directory to match config file setting"

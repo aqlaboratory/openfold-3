@@ -6,6 +6,7 @@ import os
 import random
 import tempfile
 import traceback
+import warnings
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
@@ -19,7 +20,6 @@ from biotite.structure.io.pdbx import CIFFile
 from pydantic import (
     BaseModel,
     BeforeValidator,
-    DirectoryPath,
     model_validator,
 )
 from pydantic import ConfigDict as PydanticConfigDict
@@ -1526,7 +1526,7 @@ class TemplatePreprocessorSettings(BaseModel):
     n_processes: int = 4
     chunksize: int = 1
 
-    structure_directory: DirectoryPath | None = None
+    structure_directory: Path | None = None
     structure_file_format: str = "cif"
     output_directory: Path | None = None
 
@@ -1546,10 +1546,10 @@ class TemplatePreprocessorSettings(BaseModel):
                 "preprocessing due to metadata requirements of the template pipeline."
             )
 
-        if self.output_directory is not None:
-            base = Path(self.output_directory)
-        else:
-            base = Path(tempfile.gettempdir()) / "of3_template_data"
+        self.output_directory = (
+            self.output_directory or Path(tempfile.gettempdir()) / "of3_template_data"
+        )
+        base = self.output_directory
 
         # only set these if the user did not give them explicitly
         self.structure_directory = self.structure_directory or (
@@ -1789,8 +1789,13 @@ class TemplatePreprocessor:
                     (not precache_entry_available) | (not structure_arrays_available)
                 ):
                     if not self.fetch_missing_structures:
-                        # TODO: add warning - missing template structure data but
-                        # fetching turned off
+                        warnings.warn(
+                            f"Template structure for {template.entry_id} is missing,"
+                            "but fetching is disabled. Please either provide the"
+                            "missing template structure or set "
+                            "`template_preprocessor_settings.fetch_missing_structures=True`.",
+                            stacklevel=2,
+                        )
                         continue
                     else:
                         fetch(
