@@ -6,6 +6,9 @@ from pathlib import Path
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from lightning_fabric.utilities.rank_zero import (
+    rank_zero_only,
+)
 
 
 class PredictTimer(pl.Callback):
@@ -134,3 +137,18 @@ class RankSpecificSeedCallback(pl.Callback):
             f"SEEDING: Base seed set to {self.base_seed}. Rank {trainer.global_rank} "
             f"initialized with seed {self.base_seed + rank}."
         )
+
+
+class LogInferenceQuerySet(pl.Callback):
+    def __init__(self, output_dir: Path):
+        self.output_dir = output_dir
+
+    @rank_zero_only
+    def on_predict_start(self, trainer, pl_module):
+        log_path = self.output_dir / "inference_query_set.json"
+        with open(log_path, "w") as fp:
+            fp.write(
+                pl_module.trainer.datamodule.inference_config.query_set.model_dump_json(
+                    indent=4
+                )
+            )

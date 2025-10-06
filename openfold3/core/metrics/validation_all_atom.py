@@ -992,7 +992,7 @@ def get_plddt_metrics(
     out = {}
 
     # Report plddt scaled to 0-1
-    plddt_complex = compute_plddt(plddt_logits) / 100
+    plddt_complex = compute_plddt(plddt_logits)
 
     out["plddt_complex"] = torch.sum(plddt_complex * intra_filter_atomized, dim=-1) / (
         torch.sum(intra_filter_atomized, dim=-1) + eps

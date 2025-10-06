@@ -59,6 +59,10 @@ def dict_multimap(fn, dicts):
         all_v = [d[k] for d in dicts]
         if isinstance(v, dict):
             new_dict[k] = dict_multimap(fn, all_v)
+        elif isinstance(v, list):
+            new_dict[k] = [
+                dict_multimap(fn, [x[idx] for x in all_v]) for idx in range(len(v))
+            ]
         elif isinstance(v, (AtomArray, str)):
             new_dict[k] = all_v
         else:

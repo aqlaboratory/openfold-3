@@ -102,8 +102,8 @@ def compute_conformer(
 def multistrategy_compute_conformer(
     mol: Mol,
     remove_hs: bool = True,
-    timeout_standard: Optional[float] = 30.0,
-    timeout_rand_init: Optional[float] = 30.0,
+    timeout_standard: Optional[float] = None,
+    timeout_rand_init: Optional[float] = None,
 ) -> tuple[Mol, int, Literal["default", "random_init"]]:
     """Computes 3D coordinates for a molecule trying different initializations.
 

@@ -13,13 +13,7 @@ import torch
 from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
 from openfold3.core.loss.loss_module import OpenFold3Loss
-from openfold3.core.metrics.confidence import (
-    compute_global_predicted_distance_error,
-    compute_plddt,
-    compute_predicted_aligned_error,
-    compute_predicted_distance_error,
-    compute_weighted_ptm,
-)
+from openfold3.core.metrics.aggregate_confidence_ranking import get_confidence_scores
 from openfold3.core.metrics.model_selection import (
     compute_final_model_selection_metric,
     compute_valid_model_selection_metrics,
@@ -29,7 +23,6 @@ from openfold3.core.metrics.validation_all_atom import (
     get_metrics_chunked,
 )
 from openfold3.core.runners.model_runner import ModelRunner
-from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.core.utils.timing import PerformanceTimer
@@ -592,45 +585,20 @@ class OpenFold3AllAtom(ModelRunner):
                 Dict containing the following confidence measures:
                 pLDDT, PDE, PAE, pTM, iPTM, weighted pTM
         """
-        # Used in modified residue ranking
-        confidence_scores = {}
-        confidence_scores["plddt"] = compute_plddt(outputs["plddt_logits"])
-        confidence_scores.update(
-            compute_predicted_distance_error(
-                outputs["pde_logits"],
-                **self.config.confidence.pde,
-            )
-        )
-        confidence_scores["global_predicted_distance_error"] = (
-            compute_global_predicted_distance_error(
-                pde=confidence_scores["predicted_distance_error"],
-                distogram_probs=torch.softmax(outputs["distogram_logits"], dim=-1),
-            )
+        num_samples = self.config.architecture.shared.diffusion.no_full_rollout_samples
+        num_atoms = outputs["atom_positions_predicted"].shape[-2]
+        compute_per_sample = (
+            num_samples > 1
+            and self.config.settings.memory.eval.per_sample_atom_cutoff is not None
+            and num_atoms > self.config.settings.memory.eval.per_sample_atom_cutoff
         )
 
-        if self.config.architecture.heads.pae.enabled:
-            confidence_scores.update(
-                compute_predicted_aligned_error(
-                    outputs["pae_logits"],
-                    **self.config.confidence.pae,
-                )
-            )
-
-            _, valid_frame_mask = get_token_frame_atoms(
-                batch=batch,
-                x=outputs["atom_positions_predicted"],
-                atom_mask=batch["atom_mask"],
-            )
-
-            # Compute weighted pTM score
-            # Uses pae_logits (SI pg. 27)
-            ptm_scores = compute_weighted_ptm(
-                logits=outputs["pae_logits"],
-                asym_id=batch["asym_id"],
-                mask=valid_frame_mask,
-                **self.config.confidence.ptm,
-            )
-            confidence_scores.update(ptm_scores)
+        confidence_scores = get_confidence_scores(
+            batch=batch,
+            outputs=outputs,
+            config=self.config,
+            compute_per_sample=compute_per_sample,
+        )
 
         return confidence_scores
 

@@ -30,12 +30,36 @@ class NumpyEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+def _take_batch_dim(x, b: int):
+    if isinstance(x, torch.Tensor):
+        if len(x.shape) > 1:
+            return x[b].cpu().float().numpy()
+        else:
+            return x
+    if isinstance(x, dict):
+        return {k: _take_batch_dim(v, b) for k, v in x.items()}
+    return x
+
+
+def _take_sample_dim(x, s: int):
+    if isinstance(x, np.ndarray):
+        if x.ndim == 0:
+            return x.item()
+        if x.shape[0] == 1:
+            return x[0]
+        return x[s]
+    if isinstance(x, dict):
+        return {k: _take_sample_dim(v, s) for k, v in x.items()}
+    return x
+
+
 class OF3OutputWriter(BasePredictionWriter):
     """Callback for writing AF3 predicted structure and confidence outputs"""
 
     def __init__(
         self,
         output_dir: Path,
+        pae_enabled: bool = False,
         structure_format: str = "pdb",
         full_confidence_output_format: str = "json",
         write_features: bool = False,
@@ -43,6 +67,7 @@ class OF3OutputWriter(BasePredictionWriter):
     ):
         super().__init__(write_interval="batch")
         self.output_dir = output_dir
+        self.pae_enabled = pae_enabled
         self.structure_format = structure_format
         self.full_confidence_format = full_confidence_output_format
         self.write_features = write_features
@@ -60,6 +85,7 @@ class OF3OutputWriter(BasePredictionWriter):
         predicted_coords: np.ndarray,
         plddt: np.ndarray,
         output_file: Path,
+        make_ost_compatible: bool = True,
     ):
         """Writes predicted coordinates to atom_array and writes mmcif file to disk.
 
@@ -72,21 +98,78 @@ class OF3OutputWriter(BasePredictionWriter):
 
         # Write the output file
         logger.info(f"Writing predicted structure to {output_file}")
-        write_structure(atom_array, output_file, include_bonds=True)
+        write_structure(
+            atom_array,
+            output_file,
+            include_bonds=True,
+            make_ost_compatible=make_ost_compatible,
+        )
+
+    def get_pae_confidence_scores(self, confidence_scores, atom_array):
+        pae_confidence_scores = {}
+        single_value_keys = [
+            "iptm",
+            "ptm",
+            "disorder",
+            "has_clash",
+            "sample_ranking_score",
+        ]
+
+        for key in single_value_keys:
+            pae_confidence_scores[key] = confidence_scores[key]
+
+        # Get map from asym id to chain id
+        renum_ids = np.unique(atom_array.chain_id, return_inverse=True)[1] + 1
+        asym_id_to_chain_id = {
+            k: v
+            for (k, v) in set(
+                [(int(x[0]), str(x[1])) for x in zip(renum_ids, atom_array.chain_id)]
+            )
+        }
+
+        # Asym id -> chain id for chain_ptm
+        pae_confidence_scores["chain_ptm"] = {
+            asym_id_to_chain_id[int(k)]: v
+            for k, v in confidence_scores["chain_ptm"].items()
+        }
+
+        # Asym id -> chain id for chain_pair_iptm
+        pae_confidence_scores["chain_pair_iptm"] = {}
+        for k, v in confidence_scores["chain_pair_iptm"].items():
+            # split '(1, 2)' into 1, 2
+            k1, k2 = [
+                asym_id_to_chain_id[int(i)].strip() for i in k.strip("()").split(",")
+            ]
+            pae_confidence_scores["chain_pair_iptm"][f"({k1}, {k2})"] = v
+
+        # Asym id -> chain id for bespoke_iptm
+        pae_confidence_scores["bespoke_iptm"] = {}
+        for k, v in confidence_scores["bespoke_iptm"].items():
+            # split '(1, 2)' into 1, 2
+            k1, k2 = [
+                asym_id_to_chain_id[int(i)].strip() for i in k.strip("()").split(",")
+            ]
+            pae_confidence_scores["bespoke_iptm"][f"({k1}, {k2})"] = v
+        return pae_confidence_scores
 
     def write_confidence_scores(
-        self, confidence_scores: dict[str, np.ndarray], output_prefix: Path
+        self,
+        confidence_scores: dict[str, np.ndarray],
+        atom_array: structure.AtomArray,
+        output_prefix: Path,
     ):
         """Writes confidence scores to disk"""
         plddt = confidence_scores["plddt"]
-        pde = confidence_scores["predicted_distance_error"]
-        gpde = confidence_scores["global_predicted_distance_error"]
+        pde = confidence_scores["pde"]
+        gpde = confidence_scores["gpde"]
+        aggregated_confidence_scores = {"avg_plddt": np.mean(plddt), "gpde": gpde}
 
-        # Single-valued aggregated confidence scores
-        aggregated_confidence_scores = {
-            "avg_plddt": np.mean(plddt),
-            "gpde": gpde,
-        }
+        if self.pae_enabled:
+            logger.info("Recording PAE confidence outputs")
+            aggregated_confidence_scores |= self.get_pae_confidence_scores(
+                confidence_scores, atom_array
+            )
+
         out_file_agg = Path(f"{output_prefix}_confidences_aggregated.json")
         out_file_agg.write_text(
             json.dumps(aggregated_confidence_scores, indent=4, cls=NumpyEncoder)
@@ -126,26 +209,14 @@ class OF3OutputWriter(BasePredictionWriter):
             predicted_coords_batch = (
                 outputs["atom_positions_predicted"][b].cpu().float().numpy()
             )
-            confidence_scores_batch = {
-                key: value[b].cpu().float().numpy() if len(value.shape) > 1 else value
-                for key, value in confidence_scores.items()
-            }
+            confidence_scores_batch = _take_batch_dim(confidence_scores, b)
 
             # Iterate over all diffusion samples
             for s in range(sample_size):
                 file_prefix = output_subdir / f"{query_id}_seed_{seed}_sample_{s + 1}"
                 file_prefix.parent.mkdir(parents=True, exist_ok=True)
 
-                confidence_scores_sample = {}
-
-                for key, value in confidence_scores_batch.items():
-                    if len(value.shape) < 1:
-                        confidence_scores_sample[key] = value.item()
-                    elif value.shape[0] == 1:
-                        confidence_scores_sample[key] = value[0]
-                    else:
-                        confidence_scores_sample[key] = value[s]
-
+                confidence_scores_sample = _take_sample_dim(confidence_scores_batch, s)
                 predicted_coords_sample = predicted_coords_batch[s]
 
                 # Save predicted structure
@@ -161,6 +232,7 @@ class OF3OutputWriter(BasePredictionWriter):
                 self.write_confidence_scores(
                     confidence_scores=confidence_scores_sample,
                     output_prefix=file_prefix,
+                    atom_array=atom_array_batch,
                 )
 
             def fetch_cur_batch(t):

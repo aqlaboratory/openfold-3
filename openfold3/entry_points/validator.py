@@ -226,7 +226,7 @@ class InferenceExperimentConfig(ExperimentConfig):
     inference_ckpt_path: Path
 
     experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()
-    model_update: ModelUpdate = ModelUpdate(presets=["predict"])
+    model_update: ModelUpdate = ModelUpdate(presets=["predict", "pae_enabled"])
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()

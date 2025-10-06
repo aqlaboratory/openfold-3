@@ -25,7 +25,11 @@ from openfold3.core.data.framework.data_module import (
     InferenceDataModule,
 )
 from openfold3.core.runners.writer import OF3OutputWriter
-from openfold3.core.utils.callbacks import PredictTimer, RankSpecificSeedCallback
+from openfold3.core.utils.callbacks import (
+    LogInferenceQuerySet,
+    PredictTimer,
+    RankSpecificSeedCallback,
+)
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
@@ -488,11 +492,14 @@ class InferenceExperimentRunner(ExperimentRunner):
     def use_templates(self) -> bool:
         return self.experiment_config.experiment_settings.use_templates
 
+    @cached_property
+    def pae_enabled(self) -> bool:
+        return self.model_config.architecture.heads.pae.enabled
+
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
         self.inference_query_set = inference_query_set
         super().run()
-        self._log_inference_query_set()
         self._log_experiment_config()
         self._log_model_config()
 
@@ -501,9 +508,12 @@ class InferenceExperimentRunner(ExperimentRunner):
         """Set up prediction writer callback."""
         _callbacks = [
             OF3OutputWriter(
-                self.output_dir, **self.output_writer_settings.model_dump()
+                output_dir=self.output_dir,
+                pae_enabled=self.pae_enabled,
+                **self.output_writer_settings.model_dump(),
             ),
             PredictTimer(self.output_dir),
+            LogInferenceQuerySet(self.output_dir),
         ]
         return _callbacks
 
@@ -538,13 +548,6 @@ class InferenceExperimentRunner(ExperimentRunner):
         return self.inference_ckpt_path
 
     @rank_zero_only
-    def _log_inference_query_set(self):
-        """Record the inference query set used for prediction"""
-        log_path = self.output_dir / "inference_query_set.json"
-        with open(log_path, "w") as fp:
-            fp.write(self.inference_query_set.model_dump_json(indent=4))
-
-    @rank_zero_only
     def _log_experiment_config(self):
         """Record the experiment config used for this run."""
         log_path = self.output_dir / "experiment_config.json"
@@ -560,7 +563,7 @@ class InferenceExperimentRunner(ExperimentRunner):
 
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
-        if not os.listdir(self.log_dir) and self.is_rank_zero:
+        if self.is_rank_zero and self.log_dir.is_dir() and not os.listdir(self.log_dir):
             print("Removing empty log directory...")
             self.log_dir.rmdir()
 
