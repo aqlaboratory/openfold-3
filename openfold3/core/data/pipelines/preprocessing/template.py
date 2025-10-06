@@ -1790,7 +1790,7 @@ class TemplatePreprocessor:
             template_ids = []
             for _, template in templates.items():
                 # A. Sequence checks
-                if run_template_sequence_checks(
+                if fails_template_sequence_checks(
                     template, self.max_seq_id, self.min_align, self.min_len
                 ):
                     if self.create_logs:
@@ -1941,7 +1941,7 @@ class TemplatePreprocessor:
                 # F. Apply release date checks
                 if not isinstance(release_date, datetime):
                     release_date = datetime.strptime(release_date, "%Y-%m-%d")
-                if run_template_release_date_checks(
+                if fails_template_release_date_checks(
                     template_release_date=release_date,
                     query_release_date=None,  # TODO: add for training logic
                     max_template_release_date=self.max_release_date,
@@ -2185,6 +2185,7 @@ def fails_template_sequence_checks(
     min_align: float | None,
     min_len: int | None,
 ) -> bool:
+    """True if fails to pass thresholds on seq_id, sequence length, and coverage."""
     fails = False
     if max_seq_id is not None:
         fails |= template.seq_id > max_seq_id
@@ -2195,12 +2196,13 @@ def fails_template_sequence_checks(
     return fails
 
 
-def run_template_release_date_checks(
+def fails_template_release_date_checks(
     template_release_date: datetime,
     query_release_date: datetime | None,
     max_template_release_date: datetime | None,
     min_release_date_diff: int | None,
 ) -> bool:
+    """True if release date does not meet max date or date difference criteria."""
     fails = False
     if min_release_date_diff is not None:
         if query_release_date is None:
