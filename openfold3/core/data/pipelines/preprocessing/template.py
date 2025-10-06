@@ -1,6 +1,5 @@
 """Preprocessing pipelines for template data ran before training/evaluation."""
 
-import hashlib
 import logging
 import multiprocessing as mp
 import os
@@ -47,6 +46,7 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
     TEMPLATE_PROCESS_LOGGER,
     configure_template_logger,
 )
+from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
 from openfold3.core.data.primitives.sequence.template import (
     TemplateHitCollection,
     _TemplateQueryEntry,
@@ -2179,15 +2179,7 @@ class TemplateStructurePreprocessor:
             )
 
 
-# New primitives: TODO move to primitives
-def get_sequence_hash(sequence_str: str) -> str:
-    """Generates a SHA-256 hash for the given sequence string."""
-    hasher = hashlib.sha256()
-    hasher.update(sequence_str.encode("utf-8"))
-    return hasher.hexdigest()
-
-
-def run_template_sequence_checks(
+def fails_template_sequence_checks(
     template: TemplateData,
     max_seq_id: float | None,
     min_align: float | None,
