@@ -12,7 +12,6 @@ from pytorch_lightning.callbacks import BasePredictionWriter
 
 from openfold3.core.data.io.structure.cif import write_structure
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from tests.custom_assert_utils import AtomArray
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +155,7 @@ class OF3OutputWriter(BasePredictionWriter):
     def write_confidence_scores(
         self,
         confidence_scores: dict[str, np.ndarray],
-        atom_array: AtomArray,
+        atom_array: structure.AtomArray,
         output_prefix: Path,
     ):
         """Writes confidence scores to disk"""
