@@ -247,6 +247,8 @@ class InferenceExperimentConfig(ExperimentConfig):
         if data_seed is None:
             model.data_module_args.data_seed = model_seeds[0]
 
+        return model
+
     @model_validator(mode="after")
     def copy_ccd_file_path(cls, model):
         """Copies ccd_file_path dataset_config_kwargs>template_preprocessor_settings."""
