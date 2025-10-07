@@ -120,8 +120,9 @@ def get_confidence_scores(
         return t
 
     def slice_sample(t: torch.Tensor, j: int):
-        if isinstance(t, torch.Tensor) and t.ndim >= 2:
-            return t[:, j : j + 1]  # keep sample dim
+        ## skip tensors with batch size 1
+        if isinstance(t, torch.Tensor) and t.ndim >= 2 and t.shape[0] != 1:
+            return t[j : j + 1]  # keep sample dim
         return t
 
     per_batch_metrics = []
@@ -153,8 +154,8 @@ def get_confidence_scores(
                         batch=cur_batch_b, outputs=cur_outputs_bs, config=config
                     )
                 )
-            # Concat samples back on dim=1 for this batch item
-            cat_samples = partial(torch.concat, dim=1)
+            # Concat samples back on dim=0 for this batch item
+            cat_samples = partial(torch.concat, dim=0)
             metrics_b = dict_multimap(cat_samples, per_sample_metrics_list)
         else:
             # Compute once for all samples of this batch item

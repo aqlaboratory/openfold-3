@@ -642,6 +642,11 @@ def writer_add_pdbx_nonpoly_scheme(
         "pdb_strand_id": np.array([], dtype=str),  # chain_id
         "pdb_ins_code": np.array([], dtype=str),  # .
     }
+
+    ## if they are not ligands, don't write empty schema
+    if len(atom_array[masks["LIGAND"]]) == 0:
+        return
+
     for entity_id, chain_id, res_id, res_name in sorted(
         set(
             [
