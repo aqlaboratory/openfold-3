@@ -117,9 +117,8 @@ class TrainingExperimentSettings(ExperimentSettings):
     reset_scheduler: bool = False
     reset_optimizer_states: bool = False
 
-    @classmethod
-    @field_validator("restart_checkpoint_path", mode="after")
-    def validate_checkpoint_path(cls, ckpt_path: Optional[str]) -> Optional[str]:
+    @field_validator("restart_checkpoint_path", mode="before")
+    def validate_checkpoint_path(cls, value: Any) -> Optional[str]:
         """
         Validates the restart_checkpoint_path.
 
@@ -129,22 +128,16 @@ class TrainingExperimentSettings(ExperimentSettings):
         - A string representing a valid path to a file.
         - A string representing a valid path to a directory (for deepspeed checkpoints).
         """
-        if ckpt_path is None:
-            return ckpt_path
-
         # PL accepted strings
         allowed_strings = ["last", "hpc", "registry"]
-        if ckpt_path in allowed_strings:
-            return ckpt_path
+        allowed_values = allowed_strings + [None]
 
-        # The path points to a valid file or directory
-        if Path(ckpt_path).exists():
-            return ckpt_path
-
-        raise ValueError(
-            f'"{ckpt_path}" is not a valid file, directory, or accepted keyword '
-            f"({', '.join(allowed_strings)})"
-        )
+        if value not in allowed_values and not Path(value).exists():
+            raise ValueError(
+                f'"{value}" is not a valid file, directory, or accepted keyword '
+                f"({', '.join(allowed_strings)})"
+            )
+        return value
 
 
 def generate_seeds(start_seed, num_seeds):

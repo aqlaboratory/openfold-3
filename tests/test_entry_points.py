@@ -20,7 +20,9 @@ from openfold3.entry_points.experiment_runner import (
 )
 from openfold3.entry_points.validator import (
     InferenceExperimentConfig,
+    PlTrainerArgs,
     TrainingExperimentConfig,
+    TrainingExperimentSettings,
     WandbConfig,
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
@@ -141,6 +143,29 @@ class TestTrainingExperiment:
         weighted_pdb_spec = expt_runner.data_module_config.datasets[0]
         assert weighted_pdb_spec.weight == 1
         assert weighted_pdb_spec.config.crop.token_budget == 640
+
+    @pytest.mark.parametrize("pl_checkpoint_option", [None, "last", "hpc", "registry"])
+    def test_pl_checkpoint_load_options(self, pl_checkpoint_option):
+        expt_config = TrainingExperimentSettings.model_validate(
+            {"restart_checkpoint_path": pl_checkpoint_option}
+        )
+        print(expt_config.restart_checkpoint_path)
+        assert expt_config.restart_checkpoint_path == pl_checkpoint_option
+
+    def test_pl_checkpoint_load_from_path(self, tmp_path):
+        dummy_ckpt = tmp_path / "dummy.ckpt"
+        dummy_ckpt.write_text("test")
+        expt_config = TrainingExperimentSettings.model_validate(
+            {"restart_checkpoint_path": str(dummy_ckpt)}
+        )
+        assert expt_config.restart_checkpoint_path == str(dummy_ckpt)
+
+        # check that loading fails when given an invalid string / path
+        non_existant_path = "nonexistant.ckpt"
+        with pytest.raises(ValueError):
+            TrainingExperimentSettings.model_validate(
+                {"restart_checkpoint_path": non_existant_path}
+            )
 
 
 class TestModelUpdate:
