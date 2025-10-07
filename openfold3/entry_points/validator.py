@@ -163,11 +163,16 @@ class InferenceExperimentSettings(ExperimentSettings):
         elif isinstance(model.seeds, int):
             if model.num_seeds is None:
                 raise ValueError(
-                    "num_seeds must be provided when seeds is a single int"
+                    "Attempted to generate seeds using starting"
+                    f" seed{model.seeds} but num_seeds was not provided."
+                    "Please either provide `num_seeds` or a list of seeds."
                 )
             model.seeds = generate_seeds(model.seeds, model.num_seeds)
         elif model.seeds is None:
-            raise ValueError("seeds must be provided (either int or list[int])")
+            raise ValueError(
+                "seeds must be provided (either int or list[int]),"
+                f" received {model.seeds}"
+            )
 
         return model
 
@@ -196,18 +201,18 @@ class TrainingExperimentConfig(ExperimentConfig):
     data_module_args: DataModuleArgs = DataModuleArgs()
 
     @model_validator(mode="after")
-    def synchronize_seeds(cls, model):
+    def synchronize_seeds(self):
         """
         Ensures data_seed in DataModuleArgs is set. If it isn't, it will
         default to the model seed.
         """
-        model_seed = model.experiment_settings.seed
-        data_seed = model.data_module_args.data_seed
+        model_seed = self.experiment_settings.seed
+        data_seed = self.data_module_args.data_seed
 
         if data_seed is None:
-            model.data_module_args.data_seed = model_seed
+            self.data_module_args.data_seed = model_seed
 
-        return model
+        return self
 
 
 class InferenceExperimentConfig(ExperimentConfig):

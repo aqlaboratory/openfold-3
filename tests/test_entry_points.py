@@ -20,7 +20,6 @@ from openfold3.entry_points.experiment_runner import (
 )
 from openfold3.entry_points.validator import (
     InferenceExperimentConfig,
-    PlTrainerArgs,
     TrainingExperimentConfig,
     TrainingExperimentSettings,
     WandbConfig,
@@ -166,6 +165,34 @@ class TestTrainingExperiment:
             TrainingExperimentSettings.model_validate(
                 {"restart_checkpoint_path": non_existant_path}
             )
+
+    @pytest.mark.parametrize(
+        "data_seed, model_seed, expected_data_seed", [(114, 42, 114), (None, 123, 123)]
+    )
+    def test_synchronize_seeds_respects_data_seed(
+        self, data_seed, model_seed, expected_data_seed, tmp_path
+    ):
+        test_yaml_str = textwrap.dedent(f"""\
+            experiment_settings:
+                seed: {model_seed}
+            """)
+
+        if data_seed:
+            test_yaml_str += textwrap.dedent(f"""\
+                    data_module_args:
+                        data_seed: {data_seed}
+            """)
+
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+
+        expt_config = TrainingExperimentConfig(
+            dataset_paths={},
+            dataset_configs={},
+            **config_utils.load_yaml(test_yaml_file),
+        )
+        assert expt_config.experiment_settings.seed == model_seed
+        assert expt_config.data_module_args.data_seed == expected_data_seed
 
 
 class TestModelUpdate:
@@ -392,6 +419,62 @@ class TestInferenceCommandLineSettings:
             expt_config, use_templates=use_templates_cli_arg
         )
         assert expt_runner.use_templates == use_templates_cli_arg
+
+    def test_seeding_from_num_seeds(self, tmp_path):
+        dummy_ckpt_path = tmp_path / "dummy.ckpt.pt"
+        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_path)
+        num_seeds = 7
+        expt_runner = InferenceExperimentRunner(expt_config, num_model_seeds=num_seeds)
+        assert len(expt_runner.seeds) == num_seeds
+
+
+class TestInferneceExperimentSettings:
+    def test_seeding_from_list(self, tmp_path):
+        test_yaml_str = textwrap.dedent("""\
+            experiment_settings:
+                seeds:
+                  - 17 
+                  - 101
+            """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+        dummy_ckpt_path = tmp_path / "dummy.ckpt.pt"
+
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_path,
+            **config_utils.load_yaml(test_yaml_file),
+        )
+        assert expt_config.experiment_settings.seeds == [17, 101]
+
+    @pytest.mark.parametrize(
+        "data_seed, model_seed, expected_data_seed", [(114, 42, 114), (None, 123, 123)]
+    )
+    def test_synchronize_seeds_respects_data_seed(
+        self, data_seed, model_seed, expected_data_seed, tmp_path
+    ):
+        test_yaml_str = textwrap.dedent(f"""\
+            experiment_settings:
+                seeds:
+                  - {model_seed} 
+                  - 101
+            """)
+
+        if data_seed:
+            test_yaml_str += textwrap.dedent(f"""\
+                    data_module_args:
+                        data_seed: {data_seed}
+            """)
+
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+        dummy_ckpt_path = tmp_path / "dummy.ckpt.pt"
+
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_path,
+            **config_utils.load_yaml(test_yaml_file),
+        )
+        assert expt_config.experiment_settings.seeds == [model_seed, 101]
+        assert expt_config.data_module_args.data_seed == expected_data_seed
 
 
 class TestTemplatePreprocessorSettings:
