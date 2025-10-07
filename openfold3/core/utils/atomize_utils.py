@@ -635,7 +635,10 @@ def get_token_frame_atoms(
                 "atom_positions": torch.gather(
                     x,
                     dim=-2,
-                    index=frame_atoms[key]["index"].unsqueeze(-1).long(),
+                    index=frame_atoms[key]["index"]
+                    .unsqueeze(-1)
+                    .expand(*(x.shape[:-2] + (frame_atoms[key]["index"].shape[-1], 3)))
+                    .long(),
                 ),
                 "asym_id": torch.gather(
                     atom_asym_id.expand(*x.shape[:-2], atom_asym_id.shape[-1]),
