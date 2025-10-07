@@ -46,7 +46,6 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
 
     if config.architecture.heads.pae.enabled:
         pae_probs = torch.softmax(outputs["pae_logits"], dim=-1)
-        device = pae_probs.device
         confidence_scores["pae"] = probs_to_expected_error(
             pae_probs, **config.confidence.pae
         )
@@ -55,16 +54,13 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
         else:
             del pae_probs
 
-        num_samples = outputs["atom_positions_predicted"].size(0)
-        valid_frame_mask = []
-        for i in range(num_samples):
-            _, v = get_token_frame_atoms(
-                batch=batch,
-                x=outputs["atom_positions_predicted"][i],
-                atom_mask=batch["atom_mask"],
-            )
-            valid_frame_mask.append(v)
-        valid_frame_mask = torch.stack(valid_frame_mask).bool().to(device)
+        _, valid_frame_mask = get_token_frame_atoms(
+            batch=batch,
+            x=outputs["atom_positions_predicted"],
+            atom_mask=batch["atom_mask"],
+        )
+
+        valid_frame_mask = valid_frame_mask.bool()
 
         confidence_scores.update(
             full_complex_sample_ranking_metric(
