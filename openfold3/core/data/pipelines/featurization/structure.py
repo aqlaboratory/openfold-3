@@ -167,12 +167,12 @@ def featurize_structure_of3(
 
         # Renumber these as numerical IDs (starting from 1)
         unique_ids, renum_ids = np.unique(chain_ids_token, return_inverse=True)
-        renum_ids = renum_ids + 1
+        asym_id = torch.tensor(renum_ids + 1, dtype=torch.int32)
 
-        if len(unique_ids) != len(torch.unique_consecutive(renum_ids)):
+        if len(unique_ids) != len(torch.unique_consecutive(asym_id)):
             logger.warning("Chain IDs are not unique within complex.")
 
-        features["asym_id"] = torch.tensor(renum_ids, dtype=torch.int32)
+        features["asym_id"] = asym_id
 
         features["entity_id"] = torch.tensor(
             atom_array.entity_id[token_starts], dtype=torch.int32
