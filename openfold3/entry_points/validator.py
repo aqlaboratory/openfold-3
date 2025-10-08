@@ -27,9 +27,9 @@ DEFAULT_CACHE_PATH = Path("~/.openfold3/").expanduser()
 
 
 def get_openfold_cache_dir() -> Path:
-    """Identifies the default cache directory.
-    Prioritizes $OPENFOLD3_CACHE_DIR, then ~/.openfold3."""
-    cache_path = os.environ.get("OPENFOLD3_CACHE_DIR")
+    """Identifies the default cache directory. 
+        Prioritizes $OPENFOLD3_CACHE_DIR, then ~/.openfold3."""
+    cache_path = os.environ.get("OPENFOLD3_CACHE")
     if cache_path is None:
         cache_path = DEFAULT_CACHE_PATH
     return Path(cache_path)
@@ -202,5 +202,5 @@ class InferenceExperimentConfig(ExperimentConfig):
     @field_validator("inference_ckpt_path", mode="before")
     def _try_default_ckpt_path(cls, value):
         if value is None:
-            return get_openfold_cache_dir() / "model_checkpoints" / "of3_v19_ft3_v1.pt"
+            return get_openfold_cache_dir() / "model_checkpoints" / "of3_ft3_v1.pt" 
         return value

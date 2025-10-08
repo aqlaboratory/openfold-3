@@ -68,3 +68,28 @@ Note: To build deepspeed, it may be necessary to include the environment `$LD_LI
 export LIBRARY_PATH=$CONDA_PREFIX/lib:$LIBRARY_PATH
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 ```
+
+## Downloading OpenFold3 model parameters
+
+The model parameters for the trained OpenFold3 model can be downloaded from our AWS RODA bucket with the following script:
+
+```
+./scripts/download_openfold_params.sh
+```
+
+By default, these weights will be downloaded to `~/.openfold3/model_checkpoints/`. 
+You can customize the downloaad directory by providing your own download directory as follows.
+
+```
+./scripts/download_openfold_params.sh --download_dir=<target-dir>
+```
+
+### Setting OpenFold3 Cache environment variable
+You can optionally set your OpenFold3 Cache path as an environment variable:
+
+```
+export OPENFOLD3_CACHE=`/<custom-dir>/.openfold3/`
+```
+
+If this variable is set, then the inference code will look for model checkpoints under `$OPENFOLD3_CACHE/model_checkpoitns/`
+If this variable is not set, then `~/.openfold3/` will be used as the cache directory.
