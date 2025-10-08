@@ -8,6 +8,10 @@ from packaging import version
 if version.parse(gemmi.__version__) >= version.parse("0.7.3"):
     gemmi.set_leak_warnings(False)
 
+# Used to disable nanobind leak warnings from gemmi project. 
+import gemmi
+gemmi.set_leak_warnings(False)
+
 
 def skip_unless_ds4s_installed():
     deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
