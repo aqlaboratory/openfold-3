@@ -1,10 +1,11 @@
+import os
 import random
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal, Optional
 
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, field_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
@@ -16,6 +17,16 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
 
 ValidModeType = Literal["train", "predict", "eval", "test"]
+DEFAULT_CACHE_PATH = Path("~/.openfold3/").expanduser()
+
+def get_openfold_cache_dir() -> Path:
+    """Identifies the default cache directory. 
+        Prioritizes $OPENFOLD3_CACHE_DIR, then ~/.openfold3."""
+    cache_path = os.environ.get("OPENFOLD3_CACHE_DIR")
+    if cache_path is None:
+        cache_path = DEFAULT_CACHE_PATH 
+    return Path(cache_path)
+
 
 
 class CheckpointConfig(BaseModel):
@@ -173,7 +184,7 @@ class InferenceExperimentConfig(ExperimentConfig):
     # pydantic model setting to prevent extra fields in main experiment config
     model_config = PydanticConfigDict(extra="forbid")
     # Required inputs for performing inference
-    inference_ckpt_path: Path
+    inference_ckpt_path: Path | None = None
 
     experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()
     model_update: ModelUpdate = ModelUpdate(presets=["predict", "pae_enabled"])
@@ -181,3 +192,9 @@ class InferenceExperimentConfig(ExperimentConfig):
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
     msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
+
+    @field_validator("inference_ckpt_path", mode="before")
+    def _try_default_ckpt_path(cls, value):
+        if value is None:
+            return get_openfold_cache_dir() / "model_checkpoints" / "of3_v19_ft3_v1.pt" 
+        return value
