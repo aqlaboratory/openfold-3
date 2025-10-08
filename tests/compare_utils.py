@@ -8,8 +8,9 @@ from packaging import version
 if version.parse(gemmi.__version__) >= version.parse("0.7.3"):
     gemmi.set_leak_warnings(False)
 
-# Used to disable nanobind leak warnings from gemmi project. 
+# Used to disable nanobind leak warnings from gemmi project.
 import gemmi
+
 gemmi.set_leak_warnings(False)
 
 

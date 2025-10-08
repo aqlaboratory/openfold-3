@@ -8,6 +8,8 @@ from functools import cached_property, wraps
 from pathlib import Path
 from typing import Any
 
+# Used to disable nanobind leak warnings from gemmi project.
+import gemmi
 import ml_collections as mlc
 import pytorch_lightning as pl
 import wandb
@@ -40,8 +42,6 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
-# Used to disable nanobind leak warnings from gemmi project. 
-import gemmi
 gemmi.set_leak_warnings(False)
 
 logger = logging.getLogger(__name__)
