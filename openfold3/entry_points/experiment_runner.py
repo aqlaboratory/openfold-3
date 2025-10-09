@@ -629,7 +629,7 @@ class InferenceExperimentRunner(ExperimentRunner):
                 logger.info(f"Removing MSA output directory: {output_dir}")
                 shutil.rmtree(output_dir)
                 if self.use_templates:
-                    template_dir = self.dataset_config_kwargs.template_preprocessor.structure_directory.parent  # noqa: E501
+                    template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
                     shutil.rmtree(template_dir)
 
 

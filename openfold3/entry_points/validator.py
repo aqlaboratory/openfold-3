@@ -129,9 +129,8 @@ class TrainingExperimentSettings(ExperimentSettings):
     restart_checkpoint_path: Optional[str] = None
     ckpt_load_settings: CheckpointLoadingSettings = ()
 
-    @classmethod
-    @field_validator("restart_checkpoint_path", mode="after")
-    def validate_checkpoint_path(cls, ckpt_path: Optional[str]) -> Optional[str]:
+    @field_validator("restart_checkpoint_path", mode="before")
+    def validate_checkpoint_path(cls, value: Any) -> Optional[str]:
         """
         Validates the restart_checkpoint_path.
 
@@ -141,22 +140,16 @@ class TrainingExperimentSettings(ExperimentSettings):
         - A string representing a valid path to a file.
         - A string representing a valid path to a directory (for deepspeed checkpoints).
         """
-        if ckpt_path is None:
-            return ckpt_path
-
         # PL accepted strings
         allowed_strings = ["last", "hpc", "registry"]
-        if ckpt_path in allowed_strings:
-            return ckpt_path
+        allowed_values = allowed_strings + [None]
 
-        # The path points to a valid file or directory
-        if Path(ckpt_path).exists():
-            return ckpt_path
-
-        raise ValueError(
-            f'"{ckpt_path}" is not a valid file, directory, or accepted keyword '
-            f"({', '.join(allowed_strings)})"
-        )
+        if value not in allowed_values and not Path(value).exists():
+            raise ValueError(
+                f'"{value}" is not a valid file, directory, or accepted keyword '
+                f"({', '.join(allowed_strings)})"
+            )
+        return value
 
     @model_validator(mode="after")
     def validate_ckpt_load_settings(cls, model):
@@ -210,11 +203,16 @@ class InferenceExperimentSettings(ExperimentSettings):
         elif isinstance(model.seeds, int):
             if model.num_seeds is None:
                 raise ValueError(
-                    "num_seeds must be provided when seeds is a single int"
+                    "Attempted to generate seeds using starting"
+                    f" seed{model.seeds} but num_seeds was not provided."
+                    "Please either provide `num_seeds` or a list of seeds."
                 )
             model.seeds = generate_seeds(model.seeds, model.num_seeds)
         elif model.seeds is None:
-            raise ValueError("seeds must be provided (either int or list[int])")
+            raise ValueError(
+                "seeds must be provided (either int or list[int]),"
+                f" received {model.seeds}"
+            )
 
         return model
 
@@ -243,18 +241,18 @@ class TrainingExperimentConfig(ExperimentConfig):
     data_module_args: DataModuleArgs = DataModuleArgs()
 
     @model_validator(mode="after")
-    def synchronize_seeds(cls, model):
+    def synchronize_seeds(self):
         """
         Ensures data_seed in DataModuleArgs is set. If it isn't, it will
         default to the model seed.
         """
-        model_seed = model.experiment_settings.seed
-        data_seed = model.data_module_args.data_seed
+        model_seed = self.experiment_settings.seed
+        data_seed = self.data_module_args.data_seed
 
         if data_seed is None:
-            model.data_module_args.data_seed = model_seed
+            self.data_module_args.data_seed = model_seed
 
-        return model
+        return self
 
 
 class InferenceExperimentConfig(ExperimentConfig):
