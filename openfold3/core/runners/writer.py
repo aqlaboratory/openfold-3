@@ -123,7 +123,10 @@ class OF3OutputWriter(BasePredictionWriter):
         asym_id_to_chain_id = {
             k: v
             for (k, v) in set(
-                [(int(x[0]), str(x[1])) for x in zip(renum_ids, atom_array.chain_id)]
+                [
+                    (int(x[0]), str(x[1]))
+                    for x in zip(renum_ids, atom_array.chain_id, strict=False)
+                ]
             )
         }
 

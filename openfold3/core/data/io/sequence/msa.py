@@ -184,7 +184,7 @@ def parse_stockholm(
         # Count the number of deletions w.r.t. query.
         deletion_vec = []
         deletion_count = 0
-        for seq_res, query_res in zip(sequence, query):
+        for seq_res, query_res in zip(sequence, query, strict=False):
             if seq_res not in gap_symbols or query_res not in gap_symbols:
                 if query_res in gap_symbols:
                     deletion_count += 1

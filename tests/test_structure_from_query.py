@@ -84,5 +84,6 @@ def test_structure_from_query(query: Query, ground_truth_file: Path):
     for ref_mol, ref_mol_gt in zip(
         structure_with_ref_mols.processed_reference_mols,
         structure_with_ref_mols_gt.processed_reference_mols,
+        strict=False,
     ):
         assert_ref_mols_equal(ref_mol, ref_mol_gt)

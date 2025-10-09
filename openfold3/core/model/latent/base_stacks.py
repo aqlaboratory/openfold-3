@@ -21,7 +21,6 @@ MSAModule.
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from functools import partial
-from typing import Optional
 
 import torch
 from torch import nn
@@ -38,8 +37,8 @@ class MSAStack(nn.Module, ABC):
     @abstractmethod
     def __init__(
         self,
-        blocks_per_ckpt: Optional[int],
-        use_reentrant: Optional[bool] = None,
+        blocks_per_ckpt: int | None,
+        use_reentrant: bool | None = None,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -76,13 +75,13 @@ class MSAStack(nn.Module, ABC):
         self,
         m: torch.Tensor,
         z: torch.Tensor,
-        chunk_size: Optional[int],
-        transition_ckpt_chunk_size: Optional[int],
+        chunk_size: int | None,
+        transition_ckpt_chunk_size: int | None,
         use_deepspeed_evo_attention: bool,
         use_cueq_triangle_kernels: bool,
         use_lma: bool,
-        msa_mask: Optional[torch.Tensor],
-        pair_mask: Optional[torch.Tensor],
+        msa_mask: torch.Tensor | None,
+        pair_mask: torch.Tensor | None,
         inplace_safe: bool,
         _mask_trans: bool,
     ):
@@ -163,8 +162,8 @@ class MSAStack(nn.Module, ABC):
         input_tensors: Sequence[torch.Tensor],
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
-        transition_ckpt_chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
+        transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
@@ -209,8 +208,8 @@ class MSAStack(nn.Module, ABC):
         z: torch.Tensor,
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
-        transition_ckpt_chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
+        transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,

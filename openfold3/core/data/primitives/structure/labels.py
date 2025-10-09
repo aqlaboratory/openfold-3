@@ -37,6 +37,7 @@ def get_chain_to_entity_dict(atom_array: struc.AtomArray) -> dict[int, int]:
         zip(
             atom_array[chain_starts].chain_id.tolist(),
             atom_array[chain_starts].entity_id.tolist(),
+            strict=False,
         )
     )
 
@@ -63,6 +64,7 @@ def get_chain_to_author_chain_dict(atom_array: struc.AtomArray) -> dict[int, str
         zip(
             atom_array[chain_starts].chain_id.tolist(),
             atom_array[chain_starts].auth_asym_id.tolist(),
+            strict=False,
         )
     )
 
@@ -83,6 +85,7 @@ def get_chain_to_pdb_chain_dict(atom_array: struc.AtomArray) -> dict[int, str]:
         zip(
             atom_array[chain_starts].chain_id.tolist(),
             atom_array[chain_starts].label_asym_id.tolist(),
+            strict=False,
         )
     )
 
@@ -103,6 +106,7 @@ def get_chain_to_molecule_type_id_dict(atom_array: struc.AtomArray) -> dict[int,
         zip(
             atom_array[chain_starts].chain_id.tolist(),
             atom_array[chain_starts].molecule_type_id.tolist(),
+            strict=False,
         )
     )
 
@@ -463,7 +467,7 @@ def assign_molecule_type_ids(atom_array: AtomArray, cif_file: pdbx.CIFFile) -> N
     try:
         chem_comp_id_to_type = {
             k: CHEM_COMP_TYPE_TO_MOLECULE_TYPE[v.upper()]
-            for k, v in zip(chem_comp_ids, chem_comp_types)
+            for k, v in zip(chem_comp_ids, chem_comp_types, strict=False)
         }
     except KeyError:
         missing_types = chem_comp_types[
@@ -481,7 +485,7 @@ def assign_molecule_type_ids(atom_array: AtomArray, cif_file: pdbx.CIFFile) -> N
             k: CHEM_COMP_TYPE_TO_MOLECULE_TYPE.get(
                 v.upper(), CHEM_COMP_TYPE_TO_MOLECULE_TYPE["OTHER"]
             )
-            for k, v in zip(chem_comp_ids, chem_comp_types)
+            for k, v in zip(chem_comp_ids, chem_comp_types, strict=False)
         }
 
     @np.vectorize
@@ -495,7 +499,7 @@ def assign_molecule_type_ids(atom_array: AtomArray, cif_file: pdbx.CIFFile) -> N
 
     # Zip together chain starts
     for chain_start, next_chain_start in zip(
-        chain_start_idxs[:-1], chain_start_idxs[1:]
+        chain_start_idxs[:-1], chain_start_idxs[1:], strict=False
     ):
         chain_array = atom_array[chain_start:next_chain_start]
         is_polymeric = struc.get_residue_count(chain_array) > 1
@@ -686,7 +690,7 @@ def component_view_iter(atom_array: AtomArray) -> Generator[AtomArrayView, None,
             AtomArrayView for a single component.
     """
     component_starts = get_component_starts(atom_array, add_exclusive_stop=True)
-    for start, stop in zip(component_starts[:-1], component_starts[1:]):
+    for start, stop in zip(component_starts[:-1], component_starts[1:], strict=False):
         yield AtomArrayView(atom_array, slice(start, stop))
 
 
@@ -702,7 +706,7 @@ def residue_view_iter(atom_array: AtomArray) -> Generator[AtomArrayView, None, N
             AtomArrayView for a single residue.
     """
     residue_starts = struc.get_residue_starts(atom_array, add_exclusive_stop=True)
-    for start, stop in zip(residue_starts[:-1], residue_starts[1:]):
+    for start, stop in zip(residue_starts[:-1], residue_starts[1:], strict=False):
         yield AtomArrayView(atom_array, slice(start, stop))
 
 
@@ -718,7 +722,7 @@ def chain_view_iter(atom_array: AtomArray) -> Generator[AtomArrayView, None, Non
             AtomArrayView for a single chain.
     """
     chain_starts = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
-    for start, stop in zip(chain_starts[:-1], chain_starts[1:]):
+    for start, stop in zip(chain_starts[:-1], chain_starts[1:], strict=False):
         yield AtomArrayView(atom_array, slice(start, stop))
 
 

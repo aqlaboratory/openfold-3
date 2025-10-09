@@ -108,7 +108,7 @@ def assert_resid_asym_refuid_match(features):
     result_ids = []
 
     # Iterate over elements of both tensors
-    for a, b in zip(atom_resids, atom_asymids):
+    for a, b in zip(atom_resids, atom_asymids, strict=False):
         tup = (a.item(), b.item())
 
         if tup not in unique_tuples:
@@ -142,7 +142,7 @@ def assert_one_entityid_per_asymid(features):
     """Asserts that there is only one entity_id per asym_id."""
 
     tups = set()
-    for a, b in zip(features["asym_id"], features["entity_id"]):
+    for a, b in zip(features["asym_id"], features["entity_id"], strict=False):
         t = (a.item(), b.item())
         if ((t[0] != 0) & (t[1] != 0)) & (t not in tups):
             tups.add(t)

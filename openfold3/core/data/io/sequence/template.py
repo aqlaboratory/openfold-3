@@ -188,7 +188,9 @@ def _convert_sto_seq_to_a3m(query_non_gaps: list[bool], sto_seq: str) -> Iterabl
         Iterator[Iterable[str]]:
             Converted a3m sequence.
     """
-    for is_query_res_non_gap, sequence_res in zip(query_non_gaps, sto_seq):
+    for is_query_res_non_gap, sequence_res in zip(
+        query_non_gaps, sto_seq, strict=False
+    ):
         if is_query_res_non_gap:
             yield sequence_res
         elif sequence_res != "-":
@@ -282,7 +284,7 @@ def parse_hmmsearch_a3m(a3m_string: str) -> dict[int, TemplateHit]:
             template hit.
     """
     # Zip the descriptions and MSAs together
-    parsed_a3m = list(zip(*parse_fasta(a3m_string)))
+    parsed_a3m = list(zip(*parse_fasta(a3m_string), strict=False))
 
     hits = {}
     for i, (hit_sequence, hit_description) in enumerate(parsed_a3m):
@@ -447,7 +449,7 @@ def calculate_ids_hit_cigar(
     if not op_details:
         return np.array([], dtype=int), np.array([], dtype=int)
 
-    lengths, ops = zip(*op_details)
+    lengths, ops = zip(*op_details, strict=False)
     lengths = np.array(lengths, dtype=int)
 
     def ops_to_idx(ops, lengths, start, gap_char, aln_ops):
@@ -513,7 +515,9 @@ class TemplateParser(ABC):
             query_aln_str, dtype="<U1", count=len(query_aln_str)
         )
 
-        for template_aln_str, (_, row) in zip(template_alignments, headers.iterrows()):
+        for template_aln_str, (_, row) in zip(
+            template_alignments, headers.iterrows(), strict=False
+        ):
             template_aln_arr = np.fromiter(
                 template_aln_str, dtype="<U1", count=len(template_aln_str)
             )
@@ -711,7 +715,7 @@ class A3mParser(TemplateParser):
             # - Realign is explicitly requested, OR
             # - Headers lack coordinate information
             all_sequences = f">query\n{query_seq_str}\n"
-            for header, seq in zip(headers_raw, alignments):
+            for header, seq in zip(headers_raw, alignments, strict=False):
                 ungapped_seq = "".join(c for c in seq if c.isupper())
                 all_sequences += f">{header}\n{ungapped_seq}\n"
 

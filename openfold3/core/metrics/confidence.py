@@ -1,5 +1,3 @@
-from typing import Optional
-
 import torch
 
 
@@ -71,7 +69,7 @@ def compute_ptm(
     bin_max: int,
     no_bins: int,
     mask_i: torch.Tensor,
-    asym_id: Optional[torch.Tensor] = None,
+    asym_id: torch.Tensor | None = None,
     interface: bool = False,
     eps: float = 1e-8,
 ) -> torch.Tensor:

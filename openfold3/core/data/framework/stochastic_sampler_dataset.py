@@ -171,6 +171,7 @@ class SamplerDataset(Dataset):
         for dataset_idx, num_datapoints_per_dataset in zip(
             torch.arange(n_datasets),
             torch.bincount(dataset_indices, minlength=n_datasets),
+            strict=False,
         ):
             if num_datapoints_per_dataset == 0:
                 continue

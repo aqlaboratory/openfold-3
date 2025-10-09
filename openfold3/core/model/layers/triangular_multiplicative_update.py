@@ -22,7 +22,6 @@ import importlib
 import warnings
 from abc import ABC, abstractmethod
 from functools import partialmethod
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -73,7 +72,7 @@ class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
         self,
         a: torch.Tensor,
         b: torch.Tensor,
-        _inplace_chunk_size: Optional[int] = None,
+        _inplace_chunk_size: int | None = None,
     ) -> torch.Tensor:
         if self._outgoing:
             a = permute_final_dims(a, (2, 0, 1))
@@ -101,7 +100,7 @@ class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
     def forward(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
         inplace_safe: bool = False,
         _add_with_inplace: bool = False,
     ) -> torch.Tensor:
@@ -155,8 +154,8 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     def _inference_forward(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        inplace_chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        inplace_chunk_size: int | None = None,
         with_add: bool = True,
     ):
         """
@@ -330,12 +329,13 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             # of the chunks in the middle to address that problem.
             i_range = list(range(0, half_n, inplace_chunk_size))
             initial_offsets = [
-                i_2 - i_1 for i_1, i_2 in zip(i_range, i_range[1:] + [half_n])
+                i_2 - i_1
+                for i_1, i_2 in zip(i_range, i_range[1:] + [half_n], strict=False)
             ]
             after_half = list(range(half_n, n, inplace_chunk_size))
             after_half_offsets = [inplace_chunk_size for _ in after_half]
             combined_range_with_offsets = zip(
-                i_range + after_half, initial_offsets + after_half_offsets
+                i_range + after_half, initial_offsets + after_half_offsets, strict=False
             )
             for i, offset in combined_range_with_offsets:
                 if not z_cache_rotated and i >= half_n:
@@ -421,11 +421,11 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     def forward(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
         inplace_safe: bool = False,
         use_cueq_triangle_kernels: bool = False,
         _add_with_inplace: bool = False,
-        _inplace_chunk_size: Optional[int] = 256,
+        _inplace_chunk_size: int | None = 256,
     ) -> torch.Tensor:
         """
         Args:
@@ -557,8 +557,8 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     def _inference_forward(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        _inplace_chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        _inplace_chunk_size: int | None = None,
         with_add: bool = True,
     ):
         """
@@ -611,11 +611,11 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     def forward(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
         inplace_safe: bool = False,
         use_cueq_triangle_kernels: bool = False,
         _add_with_inplace: bool = False,
-        _inplace_chunk_size: Optional[int] = 256,
+        _inplace_chunk_size: int | None = 256,
     ) -> torch.Tensor:
         """
         Args:
@@ -691,7 +691,7 @@ def _cueq_triangle_mult(
     g_in_weight: torch.Tensor,
     p_in_weight: torch.Tensor,
     _outgoing: bool,
-    mask: Optional[torch.Tensor],
+    mask: torch.Tensor | None,
     norm_in_weight: torch.Tensor,
     norm_in_bias: torch.Tensor,
     norm_out_weight: torch.Tensor,

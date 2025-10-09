@@ -85,7 +85,7 @@ def featurize_reference_conformers_of3(
         mol_ref_mask = []
 
         # Featurize the parts of the molecule that ended up in the selected crop
-        for atom, mask in zip(mol.GetAtoms(), in_crop_mask):
+        for atom, mask in zip(mol.GetAtoms(), in_crop_mask, strict=False):
             # Skip atom not in crop
             if mask == 0:
                 continue

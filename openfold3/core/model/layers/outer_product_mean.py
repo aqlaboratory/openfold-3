@@ -16,7 +16,6 @@
 """Outer product mean layer."""
 
 from functools import partial
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -79,7 +78,7 @@ class OuterProductMean(nn.Module):
         a_reshape = a.reshape((-1,) + a.shape[-3:])
         b_reshape = b.reshape((-1,) + b.shape[-3:])
         out = []
-        for a_prime, b_prime in zip(a_reshape, b_reshape):
+        for a_prime, b_prime in zip(a_reshape, b_reshape, strict=False):
             outer = chunk_layer(
                 partial(self._opm, b=b_prime),
                 {"a": a_prime},
@@ -101,8 +100,8 @@ class OuterProductMean(nn.Module):
     def _forward(
         self,
         m: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
         """
@@ -153,8 +152,8 @@ class OuterProductMean(nn.Module):
     def forward(
         self,
         m: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
         return self._forward(m, mask, chunk_size, inplace_safe)

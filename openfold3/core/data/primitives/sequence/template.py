@@ -413,7 +413,7 @@ def create_residue_idx_map(query: TemplateHit, hit: TemplateHit) -> np.ndarray[i
     return np.asarray(
         [
             (q_i, h_i)
-            for q_i, h_i in zip(query.indices_hit, hit.indices_hit)
+            for q_i, h_i in zip(query.indices_hit, hit.indices_hit, strict=False)
             if h_i != -1
         ],
         dtype=int,

@@ -1,5 +1,5 @@
 import math
-from typing import Literal, Optional
+from typing import Literal
 
 import torch
 
@@ -14,8 +14,8 @@ def broadcast_token_feat_to_atoms(
     token_mask: torch.Tensor,
     num_atoms_per_token: torch.Tensor,
     token_feat: torch.Tensor,
-    token_dim: Optional[int] = -1,
-    max_num_atoms_per_token: Optional[int] = None,
+    token_dim: int | None = -1,
+    max_num_atoms_per_token: int | None = None,
 ):
     """
     Broadcast token-level features to atom-level features.
@@ -103,7 +103,7 @@ def aggregate_atom_feat_to_tokens(
     atom_to_token_index: torch.Tensor,
     atom_mask: torch.Tensor,
     atom_feat: torch.Tensor,
-    atom_dim: Optional[int] = -1,
+    atom_dim: int | None = -1,
     aggregate_fn: Literal["mean", "sum"] = "mean",
     eps: float = 1e-9,
 ):
@@ -272,7 +272,10 @@ def max_atom_per_token_masked_select(
         per_batch_mask = torch.unbind(max_atom_per_token_mask, dim=0)
 
         atom_feat = torch.stack(
-            [select_atoms(l, m) for l, m in zip(per_batch_logits, per_batch_mask)],
+            [
+                select_atoms(l, m)
+                for l, m in zip(per_batch_logits, per_batch_mask, strict=False)
+            ],
             dim=0,
         )
     else:

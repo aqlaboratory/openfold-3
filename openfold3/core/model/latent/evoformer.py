@@ -17,7 +17,6 @@
 
 import sys
 from collections.abc import Sequence
-from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -86,20 +85,20 @@ class EvoformerBlock(MSABlock):
 
     def forward(
         self,
-        m: Optional[torch.Tensor],
-        z: Optional[torch.Tensor],
+        m: torch.Tensor | None,
+        z: torch.Tensor | None,
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
-        transition_ckpt_chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
+        transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
-        _attn_chunk_size: Optional[int] = None,
+        _attn_chunk_size: int | None = None,
         _offload_inference: bool = False,
-        _offloadable_inputs: Optional[Sequence[torch.Tensor]] = None,
+        _offloadable_inputs: Sequence[torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         msa_trans_mask = msa_mask if _mask_trans else None
 
@@ -253,11 +252,11 @@ class EvoformerStack(MSAStack):
         no_column_attention: bool,
         opm_first: bool,
         fuse_projection_weights: bool,
-        blocks_per_ckpt: Optional[int],
+        blocks_per_ckpt: int | None,
         inf: float,
         eps: float,
         linear_init_params: ConfigDict = lin_init.evo_block_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,

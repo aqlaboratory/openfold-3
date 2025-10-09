@@ -5,7 +5,6 @@ Inference class template for first inference pipeline prototype.
 import itertools
 import logging
 import traceback
-from typing import Optional
 
 import pandas as pd
 import torch
@@ -71,7 +70,7 @@ class InferenceDataset(Dataset):
     def __init__(
         self,
         dataset_config: DefaultDatasetConfigSection,
-        world_size: Optional[int] = None,
+        world_size: int | None = None,
     ) -> None:
         """Initializes the InferenceDataset."""
         super().__init__()
@@ -132,7 +131,7 @@ class InferenceDataset(Dataset):
         )
 
         qid_values, seed_values = zip(
-            *[(q, s) for q, s in itertools.product(qids, self.seeds)]
+            *[(q, s) for q, s in itertools.product(qids, self.seeds)], strict=False
         )
 
         _datapoint_cache = pd.DataFrame(

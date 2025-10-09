@@ -1,7 +1,7 @@
 import random
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
 from pydantic import BaseModel, model_validator
@@ -32,9 +32,9 @@ class WandbConfig(BaseModel):
 
     project: str = "my project"
     experiment_name: str = "expt_name"
-    entity: Optional[str] = None
-    group: Optional[str] = None
-    id: Optional[str] = None
+    entity: str | None = None
+    group: str | None = None
+    id: str | None = None
     offline: bool = False
 
 
@@ -66,14 +66,14 @@ class PlTrainerArgs(BaseModel):
     precision: int | str = "32-true"
     num_nodes: int = 1
     devices: int = 1  # number of GPUs per node
-    profiler: Optional[str] = None
+    profiler: str | None = None
     log_every_n_steps: int = 1
     enable_checkpointing: bool = True
     enable_model_summary: bool = False
 
     # Extra arguments that are not passed directly to pl.Trainer
     deepspeed_config_path: Path | None = None
-    distributed_timeout: Optional[timedelta] = default_pg_timeout
+    distributed_timeout: timedelta | None = default_pg_timeout
     mpi_plugin: bool = False
 
 

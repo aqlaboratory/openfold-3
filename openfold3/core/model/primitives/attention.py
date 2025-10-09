@@ -21,7 +21,6 @@ Optimizations such as LMA and DeepSpeed EvoformerAttention are included.
 import importlib
 import math
 import warnings
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -288,7 +287,7 @@ class Attention(nn.Module):
         self,
         q_x: torch.Tensor,
         kv_x: torch.Tensor,
-        biases: Optional[list[torch.Tensor]] = None,
+        biases: list[torch.Tensor] | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,

@@ -1,7 +1,7 @@
 import sys
+from collections.abc import Callable
 from multiprocessing import Pool
 from pathlib import Path
-from typing import Callable
 
 from Bio import SeqIO
 
