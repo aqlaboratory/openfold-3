@@ -25,7 +25,6 @@ n_key = mlc.FieldReference(128, field_type=int)
 # Model components
 train_confidence_only = mlc.FieldReference(False, field_type=bool)
 pae_head_enabled = mlc.FieldReference(False, field_type=bool)
-# templates_enabled = mlc.FieldReference(True, field_type=bool)
 
 eps = mlc.FieldReference(1e-8, field_type=float)
 inf = mlc.FieldReference(1e9, field_type=float)
@@ -128,7 +127,7 @@ model_config = mlc.ConfigDict(
                 "decay_every_n_steps": 50000,
                 "decay_factor": 0.95,
             },
-            "ema": {"decay": 0.999, "submodule_enabled_subset": None},
+            "ema": {"decay": 0.999, "submodules_to_update": None},
             "gradient_clipping": 10.0,
             "model_selection_weight_scheme": "initial_training",
             "debug": {

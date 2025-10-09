@@ -43,7 +43,7 @@ model_update:
       train_confidence_only: true
       model_selection_weight_scheme: fine_tuning
       ema:
-        submodule_enabled_subset:
+        submodules_to_update:
           - aux_heads.pairformer_embedding
           - aux_heads.pde
           - aux_heads.plddt
