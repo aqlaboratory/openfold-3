@@ -24,6 +24,7 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
     WandbConfig,
     get_openfold_cache_dir,
+    CHECKPOINT_NAME,
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
 
@@ -372,7 +373,7 @@ class TestInferenceCommandLineSettings:
     @pytest.mark.parametrize(
         ("input_ckpt_path", "expected_path"),
         [
-            (None, get_openfold_cache_dir() / "model_checkpoints" / "of3_ft3_v1.pt"),
+            (None, get_openfold_cache_dir() / CHECKPOINT_NAME),
             ("/tmp/dummy.ckpt", Path("/tmp/dummy.ckpt")),
         ],
     )

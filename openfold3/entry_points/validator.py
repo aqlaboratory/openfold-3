@@ -1,9 +1,13 @@
+import logging
 import os
 import random
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
 
+import boto3
+import botocore
+from botocore.config import Config as botocoreConfig
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
 from pydantic import BaseModel, model_validator, field_validator
 from pydantic import ConfigDict as PydanticConfigDict
@@ -24,8 +28,11 @@ if version.parse(gemmi.__version__) >= version.parse("0.7.3"):
     gemmi.set_leak_warnings(False)
 
 
+logger = logging.getLogger(__name__)
+
 ValidModeType = Literal["train", "predict", "eval", "test"]
 DEFAULT_CACHE_PATH = Path("~/.openfold3/").expanduser()
+CHECKPOINT_NAME = "of3_ft3_v1.pt"
 
 
 def get_openfold_cache_dir() -> Path:
@@ -35,6 +42,40 @@ def get_openfold_cache_dir() -> Path:
     if cache_path is None:
         cache_path = DEFAULT_CACHE_PATH
     return Path(cache_path)
+
+
+def _maybe_download_parameters(target_path: Path):
+    """Checks if the openfold3 model parametrs """
+    openfold_bucket = "openfold"
+    checkpoint_path = f"openfold3_params/{CHECKPOINT_NAME}"
+
+    if target_path.exists():
+
+        return
+
+    s3 = boto3.client('s3', config=botocoreConfig(signature_version=botocore.UNSIGNED))
+
+    try:
+        # Get file size
+        response = s3.head_object(Bucket=openfold_bucket, Key=checkpoint_path)
+        size_bytes = response['ContentLength']
+        size_gb = size_bytes / (1024 ** 3)
+        
+        # Ask for confirmation with file size
+        confirm = input(
+            f"Download {checkpoint_path} ({size_gb:.2f} GB) "
+            f"from s3://{openfold_bucket}? (yes/no): "
+        )
+        
+        if confirm.lower() in ['yes', 'y']:
+            logger.info(f"Downloading to {target_path}...")
+            s3.download_file(openfold_bucket, checkpoint_path, target_path)
+            logger.info("Download complete!")
+        else:
+            logger.warning("Download cancelled")
+            
+    except Exception as e:
+        print(f"Error: {e}")
 
 
 class CheckpointConfig(BaseModel):
@@ -204,5 +245,6 @@ class InferenceExperimentConfig(ExperimentConfig):
     @field_validator("inference_ckpt_path", mode="before")
     def _try_default_ckpt_path(cls, value):
         if value is None:
-            return get_openfold_cache_dir() / "model_checkpoints" / "of3_ft3_v1.pt"
+            value = get_openfold_cache_dir() / CHECKPOINT_NAME 
+            _maybe_download_parameters(value)
         return value
