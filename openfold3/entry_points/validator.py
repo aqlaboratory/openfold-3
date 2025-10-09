@@ -107,15 +107,27 @@ class ExperimentSettings(BaseModel):
         return model
 
 
+class CheckpointLoadingSettings(BaseModel):
+    """
+    Provides more granular control over checkpoint loading.
+    While the standard PL process restores the entire training state,
+    these settings allow for selective loading of specific components.
+    """
+
+    manual_checkpoint_loading: bool = False
+    init_from_ema_weights: bool = False
+    restore_lr_scheduler: bool = False
+    restore_time_step: bool = False
+    strict_loading: bool = True
+
+
 class TrainingExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
     mode: ValidModeType = "train"
     seed: int = 42
     restart_checkpoint_path: Optional[str] = None
-    load_ema_weights: bool = False
-    reset_scheduler: bool = False
-    reset_optimizer_states: bool = False
+    ckpt_load_settings: CheckpointLoadingSettings = ()
 
     @classmethod
     @field_validator("restart_checkpoint_path", mode="after")
@@ -145,6 +157,34 @@ class TrainingExperimentSettings(ExperimentSettings):
             f'"{ckpt_path}" is not a valid file, directory, or accepted keyword '
             f"({', '.join(allowed_strings)})"
         )
+
+    @model_validator(mode="after")
+    def validate_ckpt_load_settings(cls, model):
+        manual_settings_enabled = any(
+            [
+                model.ckpt_load_settings.init_from_ema_weights,
+                model.ckpt_load_settings.restore_lr_scheduler,
+                model.ckpt_load_settings.restore_time_step,
+            ]
+        )
+        if (
+            not model.ckpt_load_settings.manual_checkpoint_loading
+            and manual_settings_enabled
+        ):
+            raise ValueError(
+                "If any manual checkpoint loading settings are enabled, "
+                "manual_checkpoint_loading must be set to True."
+            )
+        if (
+            model.restart_checkpoint_path is None
+            and model.ckpt_load_settings.manual_checkpoint_loading
+        ):
+            raise ValueError(
+                "If manual_checkpoint_loading is set to True, "
+                "restart_checkpoint_path must be provided."
+            )
+
+        return model
 
 
 def generate_seeds(start_seed, num_seeds):

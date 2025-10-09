@@ -10,6 +10,7 @@ from typing import Any
 
 import ml_collections as mlc
 import pytorch_lightning as pl
+import torch
 import wandb
 from lightning_fabric.utilities.rank_zero import _get_rank
 from pydantic import BaseModel
@@ -32,6 +33,7 @@ from openfold3.core.utils.callbacks import (
 )
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
+from openfold3.entry_points.utils import get_state_dict_from_checkpoint, load_checkpoint
 from openfold3.entry_points.validator import (
     ExperimentConfig,
     TrainingExperimentConfig,
@@ -295,6 +297,9 @@ class TrainingExperimentRunner(ExperimentRunner):
         self.restart_checkpoint_path = (
             experiment_config.experiment_settings.restart_checkpoint_path
         )
+        self.ckpt_load_setings = (
+            experiment_config.experiment_settings.ckpt_load_settings
+        )
         self.dataset_paths = experiment_config.dataset_paths
         self.dataset_configs = experiment_config.dataset_configs
         self.data_module_args = experiment_config.data_module_args
@@ -313,6 +318,9 @@ class TrainingExperimentRunner(ExperimentRunner):
         if self.use_wandb:
             self._wandb_setup()
 
+        if self.do_manual_ckpt_loading:
+            self.manual_load_checkpoint()
+
     @cached_property
     def data_module_config(self) -> DataModuleConfig:
         """Make a DataModuleConfig from self.dataset_paths and self.dataset_configs."""
@@ -327,8 +335,44 @@ class TrainingExperimentRunner(ExperimentRunner):
 
         return DataModuleConfig(datasets=cfgs, **self.data_module_args.model_dump())
 
+    @property
+    def do_manual_ckpt_loading(self) -> bool:
+        return self.ckpt_load_setings.manual_checkpoint_loading
+
+    def manual_load_checkpoint(self):
+        init_from_ema_weights = self.ckpt_load_setings.init_from_ema_weights
+        ckpt = load_checkpoint(Path(self.restart_checkpoint_path))
+        state_dict = get_state_dict_from_checkpoint(
+            ckpt, init_from_ema_weights=init_from_ema_weights
+        )
+
+        logger.info(
+            f"Restoring model and EMA weights from {self.restart_checkpoint_path}..."
+        )
+        self.lightning_module.load_state_dict(
+            state_dict, strict=self.ckpt_load_setings.strict_loading
+        )
+        self.lightning_module.ema.load_state_dict(ckpt["ema"])
+
+        if self.ckpt_load_setings.restore_lr_scheduler:
+            last_global_step = int(ckpt["global_step"])
+
+            logger.info(f"Restoring last lr step {last_global_step}...")
+            self.lightning_module.resume_last_lr_step(last_global_step)
+
+        if self.ckpt_load_setings.restore_time_step:
+            if "DataModule" in ckpt:
+                logger.info(f"Restoring datamodule states...")
+                self.lightning_data_module.load_state_dict(ckpt["DataModule"])
+
+            logger.info("Restoring fit loop counters...")
+            self.trainer.fit_loop.load_state_dict(ckpt["loops"]["fit_loop"])
+
     @cached_property
     def ckpt_path(self) -> str | None:
+        if self.do_manual_ckpt_loading:
+            return None
+
         return self.restart_checkpoint_path
 
     @property
