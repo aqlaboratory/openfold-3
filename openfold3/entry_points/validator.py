@@ -146,7 +146,7 @@ class InferenceExperimentSettings(ExperimentSettings):
         elif self.seeds is None:
             raise ValueError("seeds must be provided (either int or list[int])")
 
-        return self 
+        return self
 
 
 class ExperimentConfig(BaseModel):
