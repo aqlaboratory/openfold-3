@@ -6,7 +6,7 @@ import biotite.structure as struc
 import numpy as np
 from biotite.structure import BondType
 from biotite.structure.info.bonds import BOND_TYPES
-from biotite.structure.io.pdbx import BinaryCIFFile, CIFBlock, CIFFile
+from biotite.structure.io.pdbx import BinaryCIFFile, CIFBlock, CIFCategory, CIFFile
 
 from openfold3.core.data.primitives.structure.labels import (
     get_chain_to_entity_dict,
@@ -14,6 +14,7 @@ from openfold3.core.data.primitives.structure.labels import (
 from openfold3.core.data.resources.residues import (
     CHEM_COMP_TYPE_TO_MOLECULE_TYPE,
     STANDARD_PROTEIN_RESIDUES_1,
+    STANDARD_RESIDUES_3,
     STANDARD_RNA_RESIDUES,
     MoleculeType,
 )
@@ -459,3 +460,237 @@ def get_first_bioassembly_polymer_count(cif_data: CIFBlock) -> int:
         .as_array(dtype=int)[0]
         .item()
     )
+
+
+def writer_update_atom_site(
+    atom_array: struc.AtomArray, cif_block: CIFBlock, make_ost_compatible: bool = True
+) -> None:
+    """Updates the atom_site field to be consistent with regular PDB-RCSB format."""
+    masks = {
+        mtn: atom_array.molecule_type_id == mt
+        for mt, mtn in zip(MoleculeType, MoleculeType._member_names_)
+    }
+
+    label_seq_id = cif_block["atom_site"]["label_seq_id"].as_array()
+    label_seq_id[masks["LIGAND"]] = "."
+    cif_block["atom_site"]["label_seq_id"] = label_seq_id
+
+    PDB_ins_code = cif_block["atom_site"]["pdbx_PDB_ins_code"].as_array()
+    PDB_ins_code[masks["LIGAND"]] = "?"
+    cif_block["atom_site"]["pdbx_PDB_ins_code"] = PDB_ins_code
+
+    if make_ost_compatible:
+        formal_charge = cif_block["atom_site"]["pdbx_formal_charge"].as_array()
+        for i in range(1, 8):
+            fc_mask = formal_charge == f"+{i}"
+            if np.any(fc_mask):
+                formal_charge[formal_charge == f"+{i}"] = f"{i}"
+        cif_block["atom_site"]["pdbx_formal_charge"] = formal_charge
+
+
+def writer_add_chem_comp(atom_array: struc.AtomArray, cif_block: CIFBlock) -> None:
+    """Adds the chem_comp cif field to a CIFBlock."""
+    masks = {
+        mtn: atom_array.molecule_type_id == mt
+        for mt, mtn in zip(MoleculeType, MoleculeType._member_names_)
+    }
+    polymer_types = [MoleculeType.PROTEIN, MoleculeType.RNA, MoleculeType.DNA]
+
+    chem_comp_data = {
+        "id": np.array([], dtype=str),
+        "type": np.array([], dtype=str),
+        "mon_nstd_flag": np.array([], dtype=str),
+        "name": np.array([], dtype=str),
+    }
+    for mt, mtn in zip(MoleculeType, MoleculeType._member_names_):
+        chem_comp_i = np.array(
+            [str(i) for i in sorted(set(atom_array.res_name[masks[mtn]]))]
+        )
+
+        if (mt in polymer_types) & (len(chem_comp_i) > 0):
+            mon_nstd_flag = np.array(["n" for _ in range(len(chem_comp_i))])
+            is_standard = np.isin(chem_comp_i, STANDARD_RESIDUES_3)
+            mon_nstd_flag[is_standard] = "y"
+            # TODO: add support for more types, see keys in
+            # core/data/resources/residues.py CHEM_COMP_TYPE_TO_MOLECULE_TYPE keys
+            match mt:
+                case MoleculeType.PROTEIN:
+                    chem_comp_type = np.array(
+                        ["L-peptide linking" for _ in range(len(chem_comp_i))]
+                    )
+                case MoleculeType.RNA:
+                    chem_comp_type = np.array(
+                        ["RNA linking" for _ in range(len(chem_comp_i))]
+                    )
+                case MoleculeType.DNA:
+                    chem_comp_type = np.array(
+                        ["DNA linking" for _ in range(len(chem_comp_i))]
+                    )
+        else:
+            mon_nstd_flag = np.array(["." for _ in range(len(chem_comp_i))])
+            chem_comp_type = np.array(["non-polymer" for _ in range(len(chem_comp_i))])
+
+        chem_comp_data["id"] = np.concatenate(
+            (chem_comp_data["id"], chem_comp_i), axis=0
+        )
+        chem_comp_data["type"] = np.concatenate(
+            (chem_comp_data["type"], chem_comp_type), axis=0
+        )
+        chem_comp_data["mon_nstd_flag"] = np.concatenate(
+            (chem_comp_data["mon_nstd_flag"], mon_nstd_flag), axis=0
+        )
+        # TODO: update name to actual names
+        chem_comp_data["name"] = np.concatenate(
+            (chem_comp_data["name"], chem_comp_i), axis=0
+        )
+        # TODO add columns if needed:
+        # pdbx_synonyms, formula, formula_weight
+
+    cif_block["chem_comp"] = CIFCategory(chem_comp_data)
+
+
+def writer_add_entity(atom_array: struc.AtomArray, cif_block: CIFBlock) -> None:
+    """Adds the entity cif field to a CIFBlock."""
+    entity_data = {
+        "id": np.array([], dtype=str),
+        "type": np.array([], dtype=str),
+        "pdbx_description": np.array([], dtype=str),
+        "details": np.array([], dtype=str),
+    }
+    for entity_id, mt in sorted(
+        set(
+            [
+                (str(i), MoleculeType(int(j)))
+                for i, j in zip(atom_array.entity_id, atom_array.molecule_type_id)
+            ]
+        )
+    ):
+        match mt:
+            case MoleculeType.PROTEIN:
+                entity_type = "polymer"
+                description = details = "?"
+            case MoleculeType.RNA:
+                entity_type = "polymer"
+                description = details = "?"
+            case MoleculeType.DNA:
+                entity_type = "polymer"
+                description = details = "?"
+            case MoleculeType.LIGAND:
+                entity_type = "non-polymer"
+                description = details = "?"
+
+        entity_data["id"] = np.concatenate(
+            (entity_data["id"], np.array([entity_id], dtype=str)), axis=0
+        )
+        entity_data["type"] = np.concatenate(
+            (entity_data["type"], np.array([entity_type], dtype=str)), axis=0
+        )
+        entity_data["pdbx_description"] = np.concatenate(
+            (entity_data["pdbx_description"], np.array([description], dtype=str)),
+            axis=0,
+        )
+        entity_data["details"] = np.concatenate(
+            (entity_data["details"], np.array([details], dtype=str)), axis=0
+        )
+
+    cif_block["entity"] = CIFCategory(entity_data)
+
+
+def writer_add_struct_asym(atom_array: struc.AtomArray, cif_block: CIFBlock) -> None:
+    struct_asym_data = {
+        "id": np.array([], dtype=str),
+        "entity_id": np.array([], dtype=str),
+        "details": np.array([], dtype=str),
+    }
+    for chain_id, entity_id in sorted(
+        set(
+            [
+                (str(i), str(j))
+                for i, j in zip(atom_array.chain_id, atom_array.entity_id)
+            ]
+        )
+    ):
+        struct_asym_data["id"] = np.concatenate(
+            (struct_asym_data["id"], np.array([chain_id], dtype=str)), axis=0
+        )
+        struct_asym_data["entity_id"] = np.concatenate(
+            (struct_asym_data["entity_id"], np.array([entity_id], dtype=str)), axis=0
+        )
+        struct_asym_data["details"] = np.concatenate(
+            (struct_asym_data["details"], np.array(["?"], dtype=str)), axis=0
+        )
+
+    cif_block["struct_asym"] = CIFCategory(struct_asym_data)
+
+
+def writer_add_pdbx_nonpoly_scheme(
+    atom_array: struc.AtomArray, cif_block: CIFBlock
+) -> None:
+    masks = {
+        mtn: atom_array.molecule_type_id == mt
+        for mt, mtn in zip(MoleculeType, MoleculeType._member_names_)
+    }
+    nonpoly_scheme_data = {
+        "entity_id": np.array([], dtype=str),  # entity_id
+        "asym_id": np.array([], dtype=str),  # chain_id
+        "mon_id": np.array([], dtype=str),  # component code
+        "pdb_mon_id": np.array([], dtype=str),  # component code
+        "auth_mon_id": np.array([], dtype=str),  # component code
+        "ndb_seq_num": np.array([], dtype=str),  # res_id
+        "pdb_seq_num": np.array([], dtype=str),  # res_id
+        "auth_seq_num": np.array([], dtype=str),  # res_id
+        "pdb_strand_id": np.array([], dtype=str),  # chain_id
+        "pdb_ins_code": np.array([], dtype=str),  # .
+    }
+
+    ## if they are not ligands, don't write empty schema
+    if len(atom_array[masks["LIGAND"]]) == 0:
+        return
+
+    for entity_id, chain_id, res_id, res_name in sorted(
+        set(
+            [
+                (str(i), str(j), str(k), str(l))
+                for i, j, k, l in zip(
+                    atom_array[masks["LIGAND"]].entity_id,
+                    atom_array[masks["LIGAND"]].chain_id,
+                    atom_array[masks["LIGAND"]].res_id,
+                    atom_array[masks["LIGAND"]].res_name,
+                )
+            ]
+        )
+    ):
+        nonpoly_scheme_data["entity_id"] = np.concatenate(
+            (nonpoly_scheme_data["entity_id"], np.array([entity_id], dtype=str)), axis=0
+        )
+        nonpoly_scheme_data["asym_id"] = np.concatenate(
+            (nonpoly_scheme_data["asym_id"], np.array([chain_id], dtype=str)), axis=0
+        )
+        nonpoly_scheme_data["mon_id"] = np.concatenate(
+            (nonpoly_scheme_data["mon_id"], np.array([res_name], dtype=str)), axis=0
+        )
+        nonpoly_scheme_data["pdb_mon_id"] = np.concatenate(
+            (nonpoly_scheme_data["pdb_mon_id"], np.array([res_name], dtype=str)), axis=0
+        )
+        nonpoly_scheme_data["auth_mon_id"] = np.concatenate(
+            (nonpoly_scheme_data["auth_mon_id"], np.array([res_name], dtype=str)),
+            axis=0,
+        )
+        nonpoly_scheme_data["pdb_strand_id"] = np.concatenate(
+            (nonpoly_scheme_data["pdb_strand_id"], np.array([chain_id], dtype=str)),
+            axis=0,
+        )
+        nonpoly_scheme_data["ndb_seq_num"] = np.concatenate(
+            (nonpoly_scheme_data["ndb_seq_num"], np.array([res_id], dtype=str)), axis=0
+        )
+        nonpoly_scheme_data["pdb_seq_num"] = np.concatenate(
+            (nonpoly_scheme_data["pdb_seq_num"], np.array([res_id], dtype=str)), axis=0
+        )
+        nonpoly_scheme_data["auth_seq_num"] = np.concatenate(
+            (nonpoly_scheme_data["auth_seq_num"], np.array([res_id], dtype=str)), axis=0
+        )
+        nonpoly_scheme_data["pdb_ins_code"] = np.concatenate(
+            (nonpoly_scheme_data["pdb_ins_code"], np.array(["."], dtype=str)), axis=0
+        )
+
+    cif_block["pdbx_nonpoly_scheme"] = CIFCategory(nonpoly_scheme_data)

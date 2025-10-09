@@ -168,7 +168,6 @@ class TestModelUpdate:
             **config_utils.load_yaml(test_yaml_file),
         )
         expt_runner = InferenceExperimentRunner(expt_config)
-
         expected_num_diffusion_samples = 17
         expt_runner.set_num_diffusion_samples(expected_num_diffusion_samples)
         model_config = expt_runner.model_config
@@ -179,8 +178,39 @@ class TestModelUpdate:
         # Verify settings from model_update section are also applied
         assert model_config.architecture.shared.num_recycles == 1
 
+    def test_pae_disabled_if_preset_not_selected(self, tmp_path):
+        """Test pae not set if only predict preset specified experiment runner."""
+        test_yaml_str = textwrap.dedent("""\
+            model_update:
+              presets: 
+                - predict
+        """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=tmp_path / "dummy.ckpt.pt",
+            **config_utils.load_yaml(test_yaml_file),
+        )
+        expt_runner = InferenceExperimentRunner(expt_config)
+        assert not expt_runner.pae_enabled, "Expected pae_head not to be enabled."
 
-class TestLowMemoryConfig:
+    def test_pae_enabled(self, tmp_path):
+        """Test pae enabled updates experiment runner."""
+        test_yaml_str = textwrap.dedent("""\
+            model_update:
+              presets: 
+                - predict
+                - pae_enabled
+        """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=tmp_path / "dummy.ckpt.pt",
+            **config_utils.load_yaml(test_yaml_file),
+        )
+        expt_runner = InferenceExperimentRunner(expt_config)
+        assert expt_runner.pae_enabled
+
     def test_low_mem_model_config_preset(self, tmp_path):
         test_dummy_file = tmp_path / "test.json"
         test_dummy_file.write_text("test")
@@ -211,7 +241,8 @@ class TestLowMemoryConfig:
 
         # check low memory settings set correctly
         assert model_cfg.settings.memory.eval.chunk_size == 4
-        assert model_cfg.settings.memory.eval.offload_inference.enabled
+        assert model_cfg.settings.memory.eval.offload_inference.confidence_heads
+        assert model_cfg.settings.memory.eval.offload_inference.token_cutoff == 0
 
         # test existing setting in experiment runner is not overwritten
         assert not model_cfg.settings.memory.eval.use_lma

@@ -15,7 +15,6 @@ from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
 class ModelUpdate(BaseModel):
     presets: list[str] = []
     custom: dict = {}
-    compile: bool = False
 
 
 @dataclass

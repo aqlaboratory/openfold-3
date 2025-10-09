@@ -38,7 +38,6 @@ checkpoint:
 model_update:
   presets: 
     - train 
-  compile : false
   custom:
     settings:
       model_selection_weight_scheme: fine_tuning
@@ -69,6 +68,7 @@ dataset_configs:
         loss:
           loss_weights:
             bond: 4.0
+            smooth_lddt: 0.0
 
     long-monomer-distillation:
       class: ProteinMonomerDataset
@@ -87,6 +87,8 @@ dataset_configs:
             spatial_interface: 0.0
         loss:
           loss_weights:
+            bond: 4.0
+            smooth_lddt: 0.0
             experimentally_resolved: 0.0
             plddt: 0.0
             pde: 0.0
@@ -108,6 +110,8 @@ dataset_configs:
             spatial_interface: 0.0
         loss:
           loss_weights:
+            bond: 4.0
+            smooth_lddt: 0.0
             experimentally_resolved: 0.0
             plddt: 0.0
             pde: 0.0
@@ -130,6 +134,7 @@ dataset_configs:
         loss:
           loss_weights:
             bond: 4.0
+            smooth_lddt: 0.0
             experimentally_resolved: 0.0
             plddt: 0.0
             pde: 0.0

@@ -31,13 +31,6 @@ from torch import nn
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
-    TemplatePairEmbedderMonomer,
-    TemplatePairEmbedderMultimer,
-    TemplateSingleEmbedderMonomer,
-    TemplateSingleEmbedderMultimer,
-)
-from openfold3.core.model.layers.template_pointwise_attention import (
-    TemplatePointwiseAttention,
 )
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.checkpointing import checkpoint_blocks
@@ -114,6 +107,7 @@ class TemplatePairBlock(PairBlock):
         mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -129,10 +123,10 @@ class TemplatePairBlock(PairBlock):
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
+                Mutually exclusive with use_lma.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
+                Mutually exclusive with use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
             _mask_trans:
@@ -162,6 +156,7 @@ class TemplatePairBlock(PairBlock):
                     _attn_chunk_size=_attn_chunk_size,
                     pair_mask=t_pair_mask,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                 )
@@ -172,6 +167,7 @@ class TemplatePairBlock(PairBlock):
                         _attn_chunk_size=_attn_chunk_size,
                         pair_mask=t_pair_mask,
                         use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                        use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                         use_lma=use_lma,
                         inplace_safe=inplace_safe,
                     ),
@@ -293,6 +289,7 @@ class TemplatePairStack(nn.Module):
         mask: torch.tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -307,10 +304,10 @@ class TemplatePairStack(nn.Module):
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
+                Mutually exclusive with use_lma.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
+                Mutually exclusive with use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
             _mask_trans:
@@ -330,6 +327,7 @@ class TemplatePairStack(nn.Module):
                 mask=mask,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -365,262 +363,6 @@ class TemplatePairStack(nn.Module):
         return t
 
 
-class TemplateEmbedderMonomer(nn.Module):
-    """Implements AF2 Algorithm 2 lines 7-13."""
-
-    def __init__(self, config: ConfigDict):
-        """
-        Args:
-            config:
-                ConfigDict with template config.
-        """
-        super().__init__()
-
-        self.config = config
-        self.template_single_embedder = TemplateSingleEmbedderMonomer(
-            **config.template_single_embedder,
-        )
-        self.template_pair_embedder = TemplatePairEmbedderMonomer(
-            **config.template_pair_embedder,
-        )
-        self.template_pair_stack = TemplatePairStack(
-            **config.template_pair_stack,
-        )
-        self.template_pointwise_att = TemplatePointwiseAttention(
-            **config.template_pointwise_attention,
-        )
-
-    def forward(
-        self,
-        batch,
-        z,
-        pair_mask,
-        templ_dim,
-        chunk_size,
-        _mask_trans=True,
-        use_deepspeed_evo_attention=False,
-        use_lma=False,
-        inplace_safe=False,
-    ):
-        """
-        Args:
-            batch:
-                Input feature dictionary
-            z:
-                [*, N_res, N_res, C_z] Pair embedding
-            pair_mask:
-                [*, N_res, N_res] Pair mask
-            templ_dim:
-                The template dimension of the template tensors in batch
-            chunk_size:
-                Inference-time subbatch size.
-            _mask_trans:
-                Whether to mask the output of the transition layers
-            use_deepspeed_evo_attention:
-                Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
-            use_lma:
-                Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
-            inplace_safe:
-                Whether inplace operations can be performed
-
-        Returns:
-            t:
-                [*, N_res, N_res, C_z] Template embedding
-        """
-        # Embed the templates one at a time (with a poor man's vmap)
-        pair_embeds = []
-        n = z.shape[-2]
-        n_templ = batch["template_aatype"].shape[templ_dim]
-
-        if inplace_safe:
-            # We'll preallocate the full pair tensor now to avoid manifesting
-            # a second copy during the stack later on
-            t_pair = z.new_zeros(
-                z.shape[:-3] + (n_templ, n, n, self.config.template_pair_embedder.c_out)
-            )
-
-        for i in range(n_templ):
-            idx = batch["template_aatype"].new_tensor(i)
-            single_template_feats = tensor_tree_map(
-                lambda t: torch.index_select(t, templ_dim, idx).squeeze(templ_dim),  # noqa: B023
-                batch,
-            )
-
-            # [*, N, N, C_t]
-            t = self.template_pair_embedder(
-                batch=single_template_feats,
-                distogram_config=self.config.distogram,
-                use_unit_vector=self.config.use_unit_vector,
-                inf=self.config.inf,
-                eps=self.config.eps,
-            )
-
-            if inplace_safe:
-                t_pair[..., i, :, :, :] = t
-            else:
-                pair_embeds.append(t)
-
-            del t
-
-        if not inplace_safe:
-            t_pair = torch.stack(pair_embeds, dim=templ_dim)
-
-        del pair_embeds
-
-        # [*, S_t, N, N, C_z]
-        t = self.template_pair_stack(
-            t_pair,
-            pair_mask.unsqueeze(-3).to(dtype=z.dtype),
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_lma=use_lma,
-            inplace_safe=inplace_safe,
-            _mask_trans=_mask_trans,
-        )
-        del t_pair
-
-        # [*, N, N, C_z]
-        t = self.template_pointwise_att(
-            t,
-            z,
-            template_mask=batch["template_mask"].to(dtype=z.dtype),
-            use_lma=use_lma,
-        )
-
-        t_mask = torch.sum(batch["template_mask"], dim=-1) > 0
-        # Append singletons
-        t_mask = t_mask.reshape(
-            *t_mask.shape, *([1] * (len(t.shape) - len(t_mask.shape)))
-        )
-
-        if inplace_safe:
-            t *= t_mask
-        else:
-            t = t * t_mask
-
-        ret = {}
-
-        ret.update({"template_pair_embedding": t})
-
-        del t
-
-        if self.config.embed_angles:
-            # [*, S_t, N, C_m]
-            a = self.template_single_embedder(batch)
-
-            ret["template_single_embedding"] = a
-
-        return ret
-
-
-class TemplateEmbedderMultimer(nn.Module):
-    """Implements AF2-Multimer version of Algorithm 2 lines 7-13."""
-
-    def __init__(self, config: ConfigDict):
-        """
-        Args:
-            config:
-                ConfigDict with template config.
-        """
-        super().__init__()
-
-        self.config = config
-        self.template_single_embedder = TemplateSingleEmbedderMultimer(
-            **config.template_single_embedder,
-        )
-        self.template_pair_embedder = TemplatePairEmbedderMultimer(
-            **config.template_pair_embedder,
-        )
-        self.template_pair_stack = TemplatePairStack(
-            **config.template_pair_stack,
-        )
-
-        templ_init = config.get(
-            "linear_init_params", lin_init.multimer_templ_module_init
-        )
-        self.linear_t = Linear(config.c_t, config.c_z, **templ_init.linear_t)
-
-    def forward(
-        self,
-        batch,
-        z,
-        pair_mask,
-        templ_dim,
-        chunk_size,
-        multichain_mask_2d,
-        _mask_trans=True,
-        use_deepspeed_evo_attention=False,
-        use_lma=False,
-        inplace_safe=False,
-    ):
-        """
-        Args:
-            batch:
-                Input feature dictionary
-            z:
-                [*, N_res, N_res, C_z] Pair embedding
-            pair_mask:
-                [*, N_res, N_res] Pair mask
-            templ_dim:
-                The template dimension of the template tensors in batch
-            chunk_size:
-                Inference-time subbatch size.
-            multichain_mask_2d:
-                [*, N_res, N_res] Multichain mask built from asym IDs
-            _mask_trans:
-                Whether to mask the output of the transition layers
-            use_deepspeed_evo_attention:
-                Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
-            use_lma:
-                Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
-            inplace_safe:
-                Whether inplace operations can be performed
-
-        Returns:
-            t:
-                [*, N_res, N_res, C_z] Template embedding
-        """
-        template_embeds = {}
-        n_templ = batch["template_aatype"].shape[templ_dim]
-
-        pair_act = self.template_pair_embedder(
-            batch=batch,
-            distogram_config=self.config.distogram,
-            query_embedding=z,
-            multichain_mask_2d=multichain_mask_2d,
-            inf=self.config.inf,
-        )
-
-        template_embeds["template_pair_embedding"] = pair_act
-        template_embeds.update(
-            self.template_single_embedder(
-                batch,
-            )
-        )
-
-        # [*, S_t, N, N, C_z]
-        t = self.template_pair_stack(
-            template_embeds["template_pair_embedding"],
-            pair_mask.unsqueeze(-3).to(dtype=z.dtype),
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_lma=use_lma,
-            inplace_safe=inplace_safe,
-            _mask_trans=_mask_trans,
-        )
-        # [*, N, N, C_z]
-        t = torch.sum(t, dim=-4) / n_templ
-        t = torch.nn.functional.relu(t)
-        t = self.linear_t(t)
-        template_embeds["template_pair_embedding"] = t
-
-        return template_embeds
-
-
 class TemplateEmbedderAllAtom(nn.Module):
     """Implements AF3 Algorithm 16."""
 
@@ -653,6 +395,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         chunk_size: Optional[int] = None,
         _mask_trans: bool = True,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -670,10 +413,10 @@ class TemplateEmbedderAllAtom(nn.Module):
                 Whether to mask the output of the transition layers
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
+                Mutually exclusive with use_lma.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
+                Mutually exclusive with and use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
 
@@ -695,6 +438,7 @@ class TemplateEmbedderAllAtom(nn.Module):
             pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,

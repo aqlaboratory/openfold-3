@@ -3,8 +3,8 @@ from typing import Literal, Optional
 
 import torch
 
-from openfold3.core.np.residue_constants import restype_order
-from openfold3.core.np.token_atom_constants import (
+from openfold3.core.data.resources.residues import STANDARD_PROTEIN_RESIDUES_ORDER
+from openfold3.core.data.resources.token_atom_constants import (
     TOKEN_TYPES_WITH_GAP,
     atom_name_to_index_by_restype,
 )
@@ -418,7 +418,8 @@ def get_token_representative_atoms(
     # Create masks for standard amino acid residues
     is_standard_protein = batch["is_protein"] * (1 - batch["is_atomized"])
     is_standard_glycine = (
-        is_standard_protein * batch["restype"][..., restype_order["G"]]
+        is_standard_protein
+        * batch["restype"][..., STANDARD_PROTEIN_RESIDUES_ORDER["G"]]
     )
 
     # Create masks for purines and pyrimadines
@@ -555,6 +556,9 @@ def get_token_frame_atoms(
     # Find indices of two closest atoms for start atoms
     # [*, N_token]
     start_atom_index = batch["start_atom_index"].long()
+    start_atom_index = start_atom_index.expand(
+        *x.shape[:-2], start_atom_index.shape[-1]
+    )
     _, closest_atom_index = torch.topk(d, k=3, dim=-1, largest=False)
     a_index = torch.gather(closest_atom_index[..., 1], dim=-1, index=start_atom_index)
     c_index = torch.gather(closest_atom_index[..., 2], dim=-1, index=start_atom_index)
@@ -637,25 +641,14 @@ def get_token_frame_atoms(
                     .long(),
                 ),
                 "asym_id": torch.gather(
-                    atom_asym_id,
+                    atom_asym_id.expand(*x.shape[:-2], atom_asym_id.shape[-1]),
                     dim=-1,
-                    index=frame_atoms[key]["index"]
-                    .expand(
-                        *(
-                            atom_asym_id.shape[:-1]
-                            + (frame_atoms[key]["index"].shape[-1],)
-                        )
-                    )
-                    .long(),
+                    index=frame_atoms[key]["index"].long(),
                 ),
                 "atom_mask": torch.gather(
-                    atom_mask,
+                    atom_mask.expand(*x.shape[:-2], atom_mask.shape[-1]),
                     dim=-1,
-                    index=frame_atoms[key]["index"]
-                    .expand(
-                        *(atom_mask.shape[:-1] + (frame_atoms[key]["index"].shape[-1],))
-                    )
-                    .long(),
+                    index=frame_atoms[key]["index"].long(),
                 )
                 * batch["token_mask"]
                 * frame_atoms[key]["token_atom_mask"],

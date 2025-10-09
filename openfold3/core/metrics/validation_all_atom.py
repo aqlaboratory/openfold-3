@@ -5,10 +5,63 @@ import torch
 
 from openfold3.core.metrics.confidence import compute_plddt
 from openfold3.core.metrics.rasa import compute_rasa_batch
-from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.geometry.kabsch_alignment import kabsch_align
 from openfold3.core.utils.tensor_utils import tensor_tree_map
+
+
+def gdt(p1, p2, mask, cutoffs):
+    n = torch.sum(mask, dim=-1)
+
+    p1 = p1.float()
+    p2 = p2.float()
+
+    distances = torch.sqrt(torch.sum((p1 - p2) ** 2, dim=-1))
+    scores = [torch.sum((distances <= c) * mask, dim=-1) / n for c in cutoffs]
+
+    return torch.sum(torch.stack(scores, dim=-1), dim=-1) / len(scores)
+
+
+def gdt_ts(p1, p2, mask):
+    return gdt(p1, p2, mask, [1.0, 2.0, 4.0, 8.0])
+
+
+def gdt_ha(p1, p2, mask):
+    return gdt(p1, p2, mask, [0.5, 1.0, 2.0, 4.0])
+
+
+def rmsd(
+    pred_positions: torch.Tensor,
+    target_positions: torch.Tensor,
+    positions_mask: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Computes the Root Mean Square Deviation of Atomic Positions (RMSD) between a
+    set of predicted and ground-truth coordinates.
+
+    Args:
+        pred_positions:
+            [*, N, 3] the predicted coordinates
+        target_positions:
+            [*, N, 3] the ground-truth coordinates
+        positions_mask:
+            [*, N] mask for coordinates that should not be considered
+
+    Returns:
+        [*] the RMSDs of the predicted coordinates for each "batch" dimension
+        (e.g. actual batch dimension and/or structure module layers)
+    """
+    squared_error_dists = torch.sum((pred_positions - target_positions) ** 2, dim=-1)
+
+    # mask unobserved atoms
+    squared_error_dists = squared_error_dists * positions_mask
+    n_observed_atoms = torch.sum(positions_mask, dim=-1)
+
+    # compute RMSD
+    msd = torch.sum(squared_error_dists, dim=-1) / n_observed_atoms
+    rmsd = torch.sqrt(msd)
+
+    return rmsd
 
 
 def select_inter_filter_mask(
@@ -939,7 +992,7 @@ def get_plddt_metrics(
     out = {}
 
     # Report plddt scaled to 0-1
-    plddt_complex = compute_plddt(plddt_logits) / 100
+    plddt_complex = compute_plddt(plddt_logits)
 
     out["plddt_complex"] = torch.sum(plddt_complex * intra_filter_atomized, dim=-1) / (
         torch.sum(intra_filter_atomized, dim=-1) + eps

@@ -18,7 +18,9 @@ class ModelRunner(pl.LightningModule):
     https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#hooks"""
 
     def __init__(
-        self, model_class: torch.nn.Module, config: ConfigDict, _compile: bool = True
+        self,
+        model_class: torch.nn.Module,
+        config: ConfigDict,
     ) -> None:
         """Assign general attributes and initialize the model.
 
@@ -28,8 +30,6 @@ class ModelRunner(pl.LightningModule):
             config (ConfigDict):
                 <Here, need a description of general config structure and
                 arguments.>
-            _compile (bool):
-                Whether to compile the model using torch.compile. Defaults to True.
         """
         super().__init__()
         # Save hyperparameters before defining model as recommended here:
@@ -37,12 +37,10 @@ class ModelRunner(pl.LightningModule):
         self.save_hyperparameters()
         self.config = config
 
-        self.model = (
-            torch.compile(model_class(config)) if _compile else model_class(config)
-        )
+        self.model = model_class(self.config)
 
         self.ema = ExponentialMovingAverage(
-            model=self.model, decay=config.settings.ema.decay
+            model=self.model, decay=self.config.settings.ema.decay
         )
         self.cached_weights = None
         self.last_lr_step = -1
