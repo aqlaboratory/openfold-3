@@ -276,7 +276,7 @@ class InferenceDatasetConfigKwargs(BaseModel):
                 )
             self.template_preprocessor_settings.ccd_file_path = self.ccd_file_path
 
-        return self 
+        return self
 
 
 class InferenceJobConfig(BaseModel):
