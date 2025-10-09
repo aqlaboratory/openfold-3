@@ -4,10 +4,8 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-import gemmi  # noqa: E402
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
-from packaging import version  # noqa: E402
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, model_validator, field_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
@@ -18,6 +16,10 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
 
+# ruff: noqa: I001
+from packaging import version  # noqa: E402
+import gemmi  # noqa: E402
+
 if version.parse(gemmi.__version__) >= version.parse("0.7.3"):
     gemmi.set_leak_warnings(False)
 
@@ -27,8 +29,8 @@ DEFAULT_CACHE_PATH = Path("~/.openfold3/").expanduser()
 
 
 def get_openfold_cache_dir() -> Path:
-    """Identifies the default cache directory. 
-        Prioritizes $OPENFOLD3_CACHE_DIR, then ~/.openfold3."""
+    """Identifies the default cache directory.
+    Prioritizes $OPENFOLD3_CACHE_DIR, then ~/.openfold3."""
     cache_path = os.environ.get("OPENFOLD3_CACHE")
     if cache_path is None:
         cache_path = DEFAULT_CACHE_PATH
@@ -144,20 +146,20 @@ class InferenceExperimentSettings(ExperimentSettings):
     use_templates: bool = False
 
     @model_validator(mode="after")
-    def generate_seeds(cls, model):
+    def generate_seeds(self):
         """Creates a list of seeds if a list of seeds is not provided."""
-        if isinstance(model.seeds, list):
+        if isinstance(self.seeds, list):
             pass
-        elif isinstance(model.seeds, int):
-            if model.num_seeds is None:
+        elif isinstance(self.seeds, int):
+            if self.num_seeds is None:
                 raise ValueError(
                     "num_seeds must be provided when seeds is a single int"
                 )
-            generate_seeds(model.seeds, model.num_seeds)
-        elif model.seeds is None:
+            generate_seeds(self.seeds, self.num_seeds)
+        elif self.seeds is None:
             raise ValueError("seeds must be provided (either int or list[int])")
 
-        return model
+        return self
 
 
 class ExperimentConfig(BaseModel):
@@ -202,5 +204,5 @@ class InferenceExperimentConfig(ExperimentConfig):
     @field_validator("inference_ckpt_path", mode="before")
     def _try_default_ckpt_path(cls, value):
         if value is None:
-            return get_openfold_cache_dir() / "model_checkpoints" / "of3_ft3_v1.pt" 
+            return get_openfold_cache_dir() / "model_checkpoints" / "of3_ft3_v1.pt"
         return value

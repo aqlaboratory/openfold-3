@@ -19,6 +19,7 @@ from openfold3.entry_points.experiment_runner import (
     WandbHandler,
 )
 from openfold3.entry_points.validator import (
+    get_openfold_cache_dir,
     InferenceExperimentConfig,
     TrainingExperimentConfig,
     WandbConfig,
@@ -371,10 +372,7 @@ class TestInferenceCommandLineSettings:
     @pytest.mark.parametrize(
         ("input_ckpt_path", "expected_path"),
         [
-            (
-                None,
-                get_openfold_cache_dir() / "model_checkpoints" / "of3_v19_ft3_v1.pt",
-            ),
+            (None, get_openfold_cache_dir() / "model_checkpoints" / "of3_ft3_v1.pt"),
             ("/tmp/dummy.ckpt", Path("/tmp/dummy.ckpt")),
         ],
     )
