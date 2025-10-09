@@ -127,7 +127,7 @@ class TrainingExperimentSettings(ExperimentSettings):
     mode: ValidModeType = "train"
     seed: int = 42
     restart_checkpoint_path: Optional[str] = None
-    ckpt_load_settings: CheckpointLoadingSettings = ()
+    ckpt_load_settings: CheckpointLoadingSettings = CheckpointLoadingSettings()
 
     @field_validator("restart_checkpoint_path", mode="before")
     def validate_checkpoint_path(cls, value: Any) -> Optional[str]:
