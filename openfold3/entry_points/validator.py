@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
@@ -16,6 +16,12 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
 
 ValidModeType = Literal["train", "predict", "eval", "test"]
+
+import gemmi  # noqa: E402
+from packaging import version  # noqa: E402
+
+if version.parse(gemmi.__version__) >= version.parse("0.7.3"):
+    gemmi.set_leak_warnings(False)
 
 
 class CheckpointConfig(BaseModel):
@@ -96,11 +102,11 @@ class ExperimentSettings(BaseModel):
     output_dir: Path = Path("./")
     log_dir: Path | None = None
 
-    @model_validator(mode="after")
-    def create_output_dir(cls, model):
-        if not model.output_dir.exists():
-            model.output_dir.mkdir(parents=True, exist_ok=True)
-        return model
+    @field_validator("output_dir", mode="after")
+    def create_output_dir(cls, value: Path):
+        if not value.exists():
+            value.mkdir(parents=True, exist_ok=True)
+        return value
 
 
 class TrainingExperimentSettings(ExperimentSettings):
