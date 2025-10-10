@@ -1,7 +1,14 @@
+# ruff: noqa: I001
 import importlib
 import unittest
 
 import torch
+
+import gemmi
+from packaging import version
+
+if version.parse(gemmi.__version__) >= version.parse("0.7.3"):
+    gemmi.set_leak_warnings(False)
 
 
 def skip_unless_ds4s_installed():
