@@ -192,18 +192,20 @@ class PairformerEmbedding(nn.Module):
 
         batch_dims = x_pred.shape[:-2]
 
-        # Expand sample dimension and reshape for DS kernel
-        # TODO: Make this less awkward, DS kernel has strict shape asserts
-        #  and expects mask and pair terms to have specific shapes
+        # TODO: Possibly remove if the reshaping for the template stack in
+        #  _cueq_triangle_attn() is already sufficient
+        # Flatten batch dims, only really necessary for cuEq kernels
         def reshape_inputs(x: torch.Tensor, feat_dims: list):
-            x = x.expand(*(batch_dims + feat_dims))
-            x = x.reshape(-1, *feat_dims)
-            return x
+            return x.reshape(-1, *feat_dims)
 
         def reshape_outputs(x: torch.Tensor, feat_dims: list):
             return x.reshape(*batch_dims, *feat_dims)
 
-        si = reshape_inputs(x=si.clone(), feat_dims=si.shape[-2:])
+        # Expand si to N samples
+        # [*, N_sample, N_token, C_s]
+        si = si.expand(*(batch_dims + si.shape[-2:])).clone()
+
+        si = reshape_inputs(x=si, feat_dims=si.shape[-2:])
         zij = reshape_inputs(x=zij, feat_dims=zij.shape[-3:])
         single_mask = reshape_inputs(x=single_mask, feat_dims=single_mask.shape[-1:])
         pair_mask = reshape_inputs(x=pair_mask, feat_dims=pair_mask.shape[-2:])

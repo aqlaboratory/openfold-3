@@ -144,11 +144,6 @@ class AttentionPairBias(nn.Module):
                 a.shape[:-1],
             )
 
-        # DS kernel has strict shape asserts and expects the mask to be
-        # tiled to the correct shape for the batch dims
-        batch_dims = a.shape[:-2]
-        mask = mask.expand((*batch_dims, -1))
-
         # [*, 1, 1, N]
         mask_bias = (self.inf * (mask - 1))[..., None, None, :]
         biases = [mask_bias]
