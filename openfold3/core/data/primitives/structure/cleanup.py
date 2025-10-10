@@ -453,7 +453,7 @@ def remove_clashing_chains(
     """
     # Get atom counts of each chain in the total atom array
     unique_chains, counts = np.unique(atom_array.chain_id, return_counts=True)
-    chain_to_atom_count = dict(zip(unique_chains, counts, strict=False))
+    chain_to_atom_count = dict(zip(unique_chains, counts, strict=True))
 
     ## Get the clashing chains to remove
     chain_ids_to_remove = set()

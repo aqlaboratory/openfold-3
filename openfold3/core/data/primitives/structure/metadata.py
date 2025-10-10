@@ -175,7 +175,7 @@ def get_entity_to_canonical_seq_dict(
     polymer_canonical_seqs = np.char.replace(polymer_canonical_seqs, "\n", "")
 
     entity_to_canonical_seq_dict = dict(
-        zip(polymer_entities.tolist(), polymer_canonical_seqs.tolist(), strict=False)
+        zip(polymer_entities.tolist(), polymer_canonical_seqs.tolist(), strict=True)
     )
 
     if not multi_letter_res_to_X:
@@ -474,7 +474,7 @@ def writer_update_atom_site(
     """Updates the atom_site field to be consistent with regular PDB-RCSB format."""
     masks = {
         mtn: atom_array.molecule_type_id == mt
-        for mt, mtn in zip(MoleculeType, MoleculeType._member_names_, strict=False)
+        for mt, mtn in zip(MoleculeType, MoleculeType._member_names_, strict=True)
     }
 
     label_seq_id = cif_block["atom_site"]["label_seq_id"].as_array()
@@ -498,7 +498,7 @@ def writer_add_chem_comp(atom_array: struc.AtomArray, cif_block: CIFBlock) -> No
     """Adds the chem_comp cif field to a CIFBlock."""
     masks = {
         mtn: atom_array.molecule_type_id == mt
-        for mt, mtn in zip(MoleculeType, MoleculeType._member_names_, strict=False)
+        for mt, mtn in zip(MoleculeType, MoleculeType._member_names_, strict=True)
     }
     polymer_types = [MoleculeType.PROTEIN, MoleculeType.RNA, MoleculeType.DNA]
 
@@ -508,7 +508,7 @@ def writer_add_chem_comp(atom_array: struc.AtomArray, cif_block: CIFBlock) -> No
         "mon_nstd_flag": np.array([], dtype=str),
         "name": np.array([], dtype=str),
     }
-    for mt, mtn in zip(MoleculeType, MoleculeType._member_names_, strict=False):
+    for mt, mtn in zip(MoleculeType, MoleculeType._member_names_, strict=True):
         chem_comp_i = np.array(
             [str(i) for i in sorted(set(atom_array.res_name[masks[mtn]]))]
         )
@@ -614,7 +614,7 @@ def writer_add_struct_asym(atom_array: struc.AtomArray, cif_block: CIFBlock) -> 
         set(
             [
                 (str(i), str(j))
-                for i, j in zip(atom_array.chain_id, atom_array.entity_id, strict=False)
+                for i, j in zip(atom_array.chain_id, atom_array.entity_id, strict=True)
             ]
         )
     ):
@@ -636,7 +636,7 @@ def writer_add_pdbx_nonpoly_scheme(
 ) -> None:
     masks = {
         mtn: atom_array.molecule_type_id == mt
-        for mt, mtn in zip(MoleculeType, MoleculeType._member_names_, strict=False)
+        for mt, mtn in zip(MoleculeType, MoleculeType._member_names_, strict=True)
     }
     nonpoly_scheme_data = {
         "entity_id": np.array([], dtype=str),  # entity_id

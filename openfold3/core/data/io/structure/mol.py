@@ -93,7 +93,7 @@ def read_single_annotated_sdf(path: PathLike) -> AnnotatedMol:
             key = key[5:]
 
             # Set to atom-wise annotations with proper type
-            for atom, annot in zip(mol.GetAtoms(), value.split(), strict=False):
+            for atom, annot in zip(mol.GetAtoms(), value.split(), strict=True):
                 if annot.lower() == "true":
                     atom.SetBoolProp(key, True)
                 elif annot.lower() == "false":

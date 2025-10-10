@@ -121,7 +121,7 @@ class MultiDatasetConfig:
         """
 
         def apply_bool(value, idx):
-            return [v for v, i in zip(value, idx, strict=False) if i]
+            return [v for v, i in zip(value, idx, strict=True) if i]
 
         return MultiDatasetConfig(
             classes=apply_bool(self.classes, index),
@@ -388,7 +388,7 @@ class DataModule(pl.LightningDataModule):
         for dataset_class, dataset_config in zip(
             multi_dataset_config.classes,
             multi_dataset_config.configs,
-            strict=False,
+            strict=True,
         ):
             if set_world_size:
                 dataset = DATASET_REGISTRY[dataset_class](

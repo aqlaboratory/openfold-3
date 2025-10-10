@@ -125,7 +125,7 @@ class OF3OutputWriter(BasePredictionWriter):
             for (k, v) in set(
                 [
                     (int(x[0]), str(x[1]))
-                    for x in zip(renum_ids, atom_array.chain_id, strict=False)
+                    for x in zip(renum_ids, atom_array.chain_id, strict=True)
                 ]
             )
         }

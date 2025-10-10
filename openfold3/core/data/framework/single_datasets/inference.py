@@ -131,7 +131,7 @@ class InferenceDataset(Dataset):
         )
 
         qid_values, seed_values = zip(
-            *[(q, s) for q, s in itertools.product(qids, self.seeds)], strict=False
+            *[(q, s) for q, s in itertools.product(qids, self.seeds)], strict=True
         )
 
         _datapoint_cache = pd.DataFrame(

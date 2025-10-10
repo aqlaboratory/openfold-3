@@ -87,7 +87,7 @@ def _get_minimal_slice_set(
         start_edges = [s == 0 for s in start]
         reduce_edge_list(start_edges)
     if end_edges is None:
-        end_edges = [e == (d - 1) for e, d in zip(end, dims, strict=False)]
+        end_edges = [e == (d - 1) for e, d in zip(end, dims, strict=True)]
         reduce_edge_list(end_edges)
 
     # Base cases. Either start/end are empty and we're done, or the final,
@@ -101,7 +101,7 @@ def _get_minimal_slice_set(
     path = []
 
     # Dimensions common to start and end can be selected directly
-    for s, e in zip(start, end, strict=False):
+    for s, e in zip(start, end, strict=True):
         if s == e:
             path.append(slice(s, s + 1))
         else:
@@ -246,7 +246,7 @@ def chunk_layer(
         raise ValueError("Must provide at least one input")
 
     initial_dims = [shape[:no_batch_dims] for shape in _fetch_dims(inputs)]
-    orig_batch_dims = tuple([max(s) for s in zip(*initial_dims, strict=False)])
+    orig_batch_dims = tuple([max(s) for s in zip(*initial_dims, strict=True)])
 
     def _prep_inputs(t):
         if not low_mem:
@@ -321,7 +321,7 @@ def chunk_layer(
 
             assign(out, output_chunk)
         elif out_type is tuple:
-            for x1, x2 in zip(out, output_chunk, strict=False):
+            for x1, x2 in zip(out, output_chunk, strict=True):
                 if _add_into_out:
                     x1[i : i + chunk_size] += x2
                 else:
@@ -388,7 +388,7 @@ class ChunkSizeTuner:
 
     def _compare_arg_caches(self, ac1, ac2):
         consistent = True
-        for a1, a2 in zip(ac1, ac2, strict=False):
+        for a1, a2 in zip(ac1, ac2, strict=True):
             assert type(a1) is type(a2)
             if isinstance(a1, (list, tuple)):
                 consistent &= self._compare_arg_caches(a1, a2)
