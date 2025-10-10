@@ -42,13 +42,6 @@ from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 logger = logging.getLogger(__name__)
 
-# ruff: noqa: E402, I001
-import gemmi
-from packaging import version
-
-if version.parse(gemmi.__version__) >= version.parse("0.7.3"):
-    gemmi.set_leak_warnings(False)
-
 
 def rank_zero_only(fn):
     """Decorator to ensure a function is only executed on rank zero."""
