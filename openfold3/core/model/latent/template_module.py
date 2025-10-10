@@ -22,7 +22,6 @@ feature embedding functions in openfold3.core.model.feature_embedders.
 import math
 import sys
 from functools import partial
-from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -105,13 +104,13 @@ class TemplatePairBlock(PairBlock):
         self,
         z: torch.Tensor,
         mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
-        _attn_chunk_size: Optional[int] = None,
+        _attn_chunk_size: int | None = None,
     ):
         """
         Args:
@@ -212,7 +211,7 @@ class TemplatePairStack(nn.Module):
         blocks_per_ckpt,
         inf=1e9,
         linear_init_params=lin_init.pair_block_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
         tune_chunk_size: bool = False,
         **kwargs,
     ):
@@ -287,7 +286,7 @@ class TemplatePairStack(nn.Module):
         self,
         t: torch.tensor,
         mask: torch.tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
@@ -392,7 +391,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         batch: dict,
         z: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         _mask_trans: bool = True,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,

@@ -16,7 +16,7 @@
 """Linear layer with nonstandard initializations."""
 
 import importlib
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import torch
 import torch.nn as nn
@@ -50,7 +50,7 @@ class Linear(nn.Linear):
         out_dim: int,
         bias: bool = True,
         init: str = "default",
-        init_fn: Optional[Callable[[torch.Tensor, torch.Tensor], None]] = None,
+        init_fn: Callable[[torch.Tensor, torch.Tensor], None] | None = None,
         precision=None,
     ):
         """

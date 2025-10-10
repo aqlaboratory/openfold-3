@@ -1,5 +1,3 @@
-from typing import Optional
-
 import torch
 
 from openfold3.core.metrics.confidence import compute_ptm
@@ -12,7 +10,7 @@ from openfold3.core.utils.atomize_utils import (
 def full_complex_sample_ranking_metric(
     batch: dict[str, torch.Tensor],
     output: dict[str, torch.Tensor],
-    has_frame: Optional[torch.Tensor] = None,
+    has_frame: torch.Tensor | None = None,
     ptm_weight: float = 0.2,
     iptm_weight: float = 0.8,
     disorder_weight: float = 0.5,

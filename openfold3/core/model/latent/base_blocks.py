@@ -22,7 +22,6 @@ the EvoformerStack, ExtraMSAStack, and MSAModule.
 import sys
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -163,7 +162,7 @@ class MSABlock(nn.Module, ABC):
         self,
         input_tensors: Sequence[torch.Tensor],
         msa_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         inplace_safe: bool = False,
         _offload_inference: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -199,20 +198,20 @@ class MSABlock(nn.Module, ABC):
     @abstractmethod
     def forward(
         self,
-        m: Optional[torch.Tensor],
-        z: Optional[torch.Tensor],
+        m: torch.Tensor | None,
+        z: torch.Tensor | None,
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
-        transition_ckpt_chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
+        transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
-        _attn_chunk_size: Optional[int] = None,
+        _attn_chunk_size: int | None = None,
         _offload_inference: bool = False,
-        _offloadable_inputs: Optional[Sequence[torch.Tensor]] = None,
+        _offloadable_inputs: Sequence[torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         pass
 
@@ -354,7 +353,7 @@ class PairBlock(nn.Module):
     def tri_att_start_end(
         self,
         z: torch.Tensor,
-        _attn_chunk_size: Optional[int],
+        _attn_chunk_size: int | None,
         pair_mask: torch.Tensor,
         use_deepspeed_evo_attention: bool,
         use_cueq_triangle_kernels: bool,
@@ -410,13 +409,13 @@ class PairBlock(nn.Module):
         self,
         z: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
-        _attn_chunk_size: Optional[int] = None,
+        _attn_chunk_size: int | None = None,
     ) -> torch.Tensor:
         """
         Args:

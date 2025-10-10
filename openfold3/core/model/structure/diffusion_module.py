@@ -17,8 +17,6 @@ Diffusion module. Implements the algorithms in section 3.7 of the
 Supplementary Information.
 """
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
 
@@ -173,7 +171,7 @@ class DiffusionModule(nn.Module):
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
@@ -313,7 +311,7 @@ class SampleDiffusion(nn.Module):
         zij_trunk: torch.Tensor,
         noise_schedule: torch.Tensor,
         no_rollout_samples: int,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,

@@ -20,7 +20,7 @@ import logging
 import os
 import subprocess
 from collections.abc import Mapping, Sequence
-from typing import Any, Optional
+from typing import Any
 
 from openfold3.core.data.tools import utils
 
@@ -44,7 +44,7 @@ class HHBlits:
         maxfilt: int = 100_000,
         min_prefilter_hits: int = 1000,
         all_seqs: bool = False,
-        alt: Optional[int] = None,
+        alt: int | None = None,
         p: int = _HHBLITS_DEFAULT_P,
         z: int = _HHBLITS_DEFAULT_Z,
     ):

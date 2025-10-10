@@ -16,11 +16,10 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Union
 
 import torch
 
-Float = Union[float, torch.Tensor]
+Float = float | torch.Tensor
 
 
 @dataclasses.dataclass(frozen=True)

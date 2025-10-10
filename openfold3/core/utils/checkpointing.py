@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import importlib
-from collections.abc import Sequence
-from typing import Any, Callable, Optional
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import torch
 import torch.utils.checkpoint
@@ -34,7 +34,7 @@ def is_deepspeed_configured() -> bool:
     return deepspeed_is_installed and deepspeed.checkpointing.is_configured()
 
 
-def get_checkpoint_fn(use_reentrant: Optional[bool] = None):
+def get_checkpoint_fn(use_reentrant: bool | None = None):
     if is_deepspeed_configured():
         if use_reentrant is False:
             checkpoint = ds_non_reentrant_checkpoint
@@ -50,8 +50,8 @@ def get_checkpoint_fn(use_reentrant: Optional[bool] = None):
 def checkpoint_blocks(
     blocks: list[Callable],
     args: BLOCK_ARGS,
-    blocks_per_ckpt: Optional[int],
-    use_reentrant: Optional[bool] = None,
+    blocks_per_ckpt: int | None,
+    use_reentrant: bool | None = None,
 ) -> BLOCK_ARGS:
     """
     Chunk a list of blocks and run each chunk with activation
@@ -117,8 +117,8 @@ def checkpoint_blocks(
 def checkpoint_section(
     fn: Callable,
     args: BLOCK_ARGS,
-    apply_ckpt: Optional[bool] = True,
-    use_reentrant: Optional[bool] = None,
+    apply_ckpt: bool | None = True,
+    use_reentrant: bool | None = None,
 ):
     """
     Apply checkpointing to a single function.
