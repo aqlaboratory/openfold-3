@@ -42,7 +42,7 @@ from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 logger = logging.getLogger(__name__)
 
-# ruff: noqa: E402, I001 
+# ruff: noqa: E402, I001
 import gemmi
 from packaging import version
 
