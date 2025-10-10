@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
@@ -96,11 +96,11 @@ class ExperimentSettings(BaseModel):
     output_dir: Path = Path("./")
     log_dir: Path | None = None
 
-    @model_validator(mode="after")
-    def create_output_dir(cls, model):
-        if not model.output_dir.exists():
-            model.output_dir.mkdir(parents=True, exist_ok=True)
-        return model
+    @field_validator("output_dir", mode="after")
+    def create_output_dir(cls, value: Path):
+        if not value.exists():
+            value.mkdir(parents=True, exist_ok=True)
+        return value
 
 
 class TrainingExperimentSettings(ExperimentSettings):
@@ -127,20 +127,20 @@ class InferenceExperimentSettings(ExperimentSettings):
     use_templates: bool = False
 
     @model_validator(mode="after")
-    def generate_seeds(cls, model):
+    def generate_seeds(self):
         """Creates a list of seeds if a list of seeds is not provided."""
-        if isinstance(model.seeds, list):
+        if isinstance(self.seeds, list):
             pass
-        elif isinstance(model.seeds, int):
-            if model.num_seeds is None:
+        elif isinstance(self.seeds, int):
+            if self.num_seeds is None:
                 raise ValueError(
                     "num_seeds must be provided when seeds is a single int"
                 )
-            generate_seeds(model.seeds, model.num_seeds)
-        elif model.seeds is None:
+            generate_seeds(self.seeds, self.num_seeds)
+        elif self.seeds is None:
             raise ValueError("seeds must be provided (either int or list[int])")
 
-        return model
+        return self
 
 
 class ExperimentConfig(BaseModel):
