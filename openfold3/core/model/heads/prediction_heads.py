@@ -203,7 +203,7 @@ class PairformerEmbedding(nn.Module):
         def reshape_outputs(x: torch.Tensor, feat_dims: list):
             return x.reshape(*batch_dims, *feat_dims)
 
-        si = reshape_inputs(x=si.clone(), feat_dims=si.shape[-2:])
+        si = reshape_inputs(x=si, feat_dims=si.shape[-2:])
         zij = reshape_inputs(x=zij, feat_dims=zij.shape[-3:])
         single_mask = reshape_inputs(x=single_mask, feat_dims=single_mask.shape[-1:])
         pair_mask = reshape_inputs(x=pair_mask, feat_dims=pair_mask.shape[-2:])
