@@ -255,7 +255,7 @@ class LoggingMixin:
         # Iterate over asserts and update compliance array
         try:
             for i, (assert_i, args_i) in enumerate(
-                zip(ENSEMBLED_ASSERTS, ensembled_args, strict=False)
+                zip(ENSEMBLED_ASSERTS, ensembled_args, strict=True)
             ):
                 assert_i(*args_i)
                 compliance[i] = 1

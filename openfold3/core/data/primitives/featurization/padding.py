@@ -31,7 +31,7 @@ def pad_token_dim(
             dim_sizes_padded = [
                 dim_size if (i not in token_dim) else token_budget
                 for dim_size, i in zip(
-                    dim_sizes, range(-len(dim_sizes), 0), strict=False
+                    dim_sizes, range(-len(dim_sizes), 0), strict=True
                 )
             ]
             feature_padded = (
@@ -41,9 +41,7 @@ def pad_token_dim(
             feature_padded[
                 tuple(
                     slice(start, stop)
-                    for start, stop in zip(
-                        [0] * len(dim_sizes), dim_sizes, strict=False
-                    )
+                    for start, stop in zip([0] * len(dim_sizes), dim_sizes, strict=True)
                 )
             ] = feature
             features[feature_name] = feature_padded

@@ -330,7 +330,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             i_range = list(range(0, half_n, inplace_chunk_size))
             initial_offsets = [
                 i_2 - i_1
-                for i_1, i_2 in zip(i_range, i_range[1:] + [half_n], strict=False)
+                for i_1, i_2 in zip(i_range, i_range[1:] + [half_n], strict=True)
             ]
             after_half = list(range(half_n, n, inplace_chunk_size))
             after_half_offsets = [inplace_chunk_size for _ in after_half]

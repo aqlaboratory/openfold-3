@@ -68,7 +68,7 @@ class TrainingDatasetPaths(BaseModel):
             which_paths_exist = [p is not None for p in path_values]
             if sum(which_paths_exist) != 1:
                 existing_paths = [
-                    p for p, b in zip(path_values, which_paths_exist, strict=False) if b
+                    p for p, b in zip(path_values, which_paths_exist, strict=True) if b
                 ]
                 raise ValueError(
                     f"Exactly one path in set of {group_name} should exist."
@@ -264,19 +264,19 @@ class InferenceDatasetConfigKwargs(BaseModel):
     )
 
     @model_validator(mode="after")
-    def copy_ccd_file_path(cls, model):
+    def copy_ccd_file_path(self):
         """Copies ccd_file_path dataset_config_kwargs>template_preprocessor_settings."""
-        if model.ccd_file_path is not None:
-            if model.template_preprocessor_settings.ccd_file_path is not None:
+        if self.ccd_file_path is not None:
+            if self.template_preprocessor_settings.ccd_file_path is not None:
                 warnings.warn(
                     "Overwriting ccd_file_path in template_preprocessor_settings with "
                     "dataset_config_kwargs.ccd_file_path. We recommend specifying"
                     "ccd_file_path only in dataset_config_kwargs.",
                     stacklevel=2,
                 )
-            model.template_preprocessor_settings.ccd_file_path = model.ccd_file_path
+            self.template_preprocessor_settings.ccd_file_path = self.ccd_file_path
 
-        return model
+        return self
 
 
 class InferenceJobConfig(BaseModel):

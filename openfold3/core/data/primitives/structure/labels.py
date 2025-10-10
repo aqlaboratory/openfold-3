@@ -467,7 +467,7 @@ def assign_molecule_type_ids(atom_array: AtomArray, cif_file: pdbx.CIFFile) -> N
     try:
         chem_comp_id_to_type = {
             k: CHEM_COMP_TYPE_TO_MOLECULE_TYPE[v.upper()]
-            for k, v in zip(chem_comp_ids, chem_comp_types, strict=False)
+            for k, v in zip(chem_comp_ids, chem_comp_types, strict=True)
         }
     except KeyError:
         missing_types = chem_comp_types[
@@ -485,7 +485,7 @@ def assign_molecule_type_ids(atom_array: AtomArray, cif_file: pdbx.CIFFile) -> N
             k: CHEM_COMP_TYPE_TO_MOLECULE_TYPE.get(
                 v.upper(), CHEM_COMP_TYPE_TO_MOLECULE_TYPE["OTHER"]
             )
-            for k, v in zip(chem_comp_ids, chem_comp_types, strict=False)
+            for k, v in zip(chem_comp_ids, chem_comp_types, strict=True)
         }
 
     @np.vectorize
@@ -690,7 +690,7 @@ def component_view_iter(atom_array: AtomArray) -> Generator[AtomArrayView, None,
             AtomArrayView for a single component.
     """
     component_starts = get_component_starts(atom_array, add_exclusive_stop=True)
-    for start, stop in zip(component_starts[:-1], component_starts[1:], strict=False):
+    for start, stop in zip(component_starts[:-1], component_starts[1:], strict=True):
         yield AtomArrayView(atom_array, slice(start, stop))
 
 
@@ -706,7 +706,7 @@ def residue_view_iter(atom_array: AtomArray) -> Generator[AtomArrayView, None, N
             AtomArrayView for a single residue.
     """
     residue_starts = struc.get_residue_starts(atom_array, add_exclusive_stop=True)
-    for start, stop in zip(residue_starts[:-1], residue_starts[1:], strict=False):
+    for start, stop in zip(residue_starts[:-1], residue_starts[1:], strict=True):
         yield AtomArrayView(atom_array, slice(start, stop))
 
 
@@ -722,7 +722,7 @@ def chain_view_iter(atom_array: AtomArray) -> Generator[AtomArrayView, None, Non
             AtomArrayView for a single chain.
     """
     chain_starts = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
-    for start, stop in zip(chain_starts[:-1], chain_starts[1:], strict=False):
+    for start, stop in zip(chain_starts[:-1], chain_starts[1:], strict=True):
         yield AtomArrayView(atom_array, slice(start, stop))
 
 

@@ -113,7 +113,7 @@ def set_atomwise_annotation(
         An RDKit molecule object with the atom-wise annotations set as properties under
         "annot_{property_name}".
     """
-    for atom, annotation in zip(mol.GetAtoms(), annotations, strict=False):
+    for atom, annotation in zip(mol.GetAtoms(), annotations, strict=True):
         if isinstance(annotation, bool):
             atom.SetBoolProp(f"annot_{property_name}", annotation)
         elif isinstance(annotation, int):
@@ -305,7 +305,7 @@ def remove_hydrogen_values(values: Iterable, atom_elements: Iterable) -> list:
     """
     return [
         x
-        for x, element in zip(values, atom_elements, strict=False)
+        for x, element in zip(values, atom_elements, strict=True)
         if element not in ("H", "D")
     ]
 

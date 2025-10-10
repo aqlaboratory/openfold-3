@@ -510,7 +510,7 @@ def preprocess_structure_and_write_outputs_of3(
         for pdb_chain_id, new_chain_id in zip(
             atom_array.label_asym_id[chain_starts],
             atom_array.chain_id[chain_starts],
-            strict=False,
+            strict=True,
         )
     }
     logger.info(f"label_asym_id to new chain_id mapping: {chain_to_pdb_chain}")
@@ -830,7 +830,7 @@ def preprocess_cif_dir_of3(
         for structure_metadata_dict, ref_mol_metadata_dict in tqdm(
             map(
                 wrapped_preprocessing_func,
-                zip(cif_files, cif_output_dirs, strict=False),
+                zip(cif_files, cif_output_dirs, strict=True),
             ),
             total=len(cif_files),
         ):
@@ -853,7 +853,7 @@ def preprocess_cif_dir_of3(
                 tqdm(
                     pool.imap_unordered(
                         wrapped_preprocessing_func,
-                        zip(cif_files, cif_output_dirs, strict=False),
+                        zip(cif_files, cif_output_dirs, strict=True),
                         chunksize=chunksize,
                     ),
                     total=len(cif_files),
