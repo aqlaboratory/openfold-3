@@ -6,6 +6,7 @@ channels:
   - nvidia
 dependencies:
   - python
+  - awscli
   - setuptools
   - pip
   - pytorch-lightning
