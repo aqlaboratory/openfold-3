@@ -20,13 +20,6 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
 
-# ruff: noqa: I001
-from packaging import version  # noqa: E402
-import gemmi  # noqa: E402
-
-if version.parse(gemmi.__version__) >= version.parse("0.7.3"):
-    gemmi.set_leak_warnings(False)
-
 
 logger = logging.getLogger(__name__)
 
