@@ -4,17 +4,19 @@ Runs two small inference queries without msa or templates.
 """
 
 import logging
+
 import pytest
 
 from openfold3.entry_points.experiment_runner import InferenceExperimentRunner
 from openfold3.entry_points.validator import (
     InferenceExperimentConfig,
-    InferenceExperimentSettings,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 from tests.compare_utils import skip_unless_cuda_available
+
+pytestmark = pytest.mark.inference_verification
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +57,7 @@ protein_and_ligand_query = InferenceQuerySet.model_validate(
     }
 )
 
-@pytest.mark.skip(
-    reason="Manually enable this for now, will add flag to run slow tests later."
-)
+
 @skip_unless_cuda_available()
 @pytest.mark.parametrize("query_set", [protein_only_query, protein_and_ligand_query])
 def test_inference_run(tmp_path, query_set):

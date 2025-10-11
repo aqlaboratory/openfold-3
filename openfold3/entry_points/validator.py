@@ -20,7 +20,6 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
 
-
 logger = logging.getLogger(__name__)
 
 ValidModeType = Literal["train", "predict", "eval", "test"]
@@ -38,35 +37,34 @@ def get_openfold_cache_dir() -> Path:
 
 
 def _maybe_download_parameters(target_path: Path):
-    """Checks if the openfold3 model parametrs """
+    """Checks if the openfold3 model parametrs"""
     openfold_bucket = "openfold"
     checkpoint_path = f"openfold3_params/{CHECKPOINT_NAME}"
 
     if target_path.exists():
-
         return
 
-    s3 = boto3.client('s3', config=botocoreConfig(signature_version=botocore.UNSIGNED))
+    s3 = boto3.client("s3", config=botocoreConfig(signature_version=botocore.UNSIGNED))
 
     try:
         # Get file size
         response = s3.head_object(Bucket=openfold_bucket, Key=checkpoint_path)
-        size_bytes = response['ContentLength']
-        size_gb = size_bytes / (1024 ** 3)
-        
+        size_bytes = response["ContentLength"]
+        size_gb = size_bytes / (1024**3)
+
         # Ask for confirmation with file size
         confirm = input(
             f"Download {checkpoint_path} ({size_gb:.2f} GB) "
             f"from s3://{openfold_bucket}? (yes/no): "
         )
-        
-        if confirm.lower() in ['yes', 'y']:
+
+        if confirm.lower() in ["yes", "y"]:
             logger.info(f"Downloading to {target_path}...")
             s3.download_file(openfold_bucket, checkpoint_path, target_path)
             logger.info("Download complete!")
         else:
             logger.warning("Download cancelled")
-            
+
     except Exception as e:
         print(f"Error: {e}")
 
@@ -238,6 +236,6 @@ class InferenceExperimentConfig(ExperimentConfig):
     @field_validator("inference_ckpt_path", mode="before")
     def _try_default_ckpt_path(cls, value):
         if value is None:
-            value = get_openfold_cache_dir() / CHECKPOINT_NAME 
+            value = get_openfold_cache_dir() / CHECKPOINT_NAME
             _maybe_download_parameters(value)
         return value
