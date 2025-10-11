@@ -19,12 +19,11 @@ from openfold3.entry_points.experiment_runner import (
     WandbHandler,
 )
 from openfold3.entry_points.validator import (
-    get_openfold_cache_dir,
+    CHECKPOINT_NAME,
     InferenceExperimentConfig,
     TrainingExperimentConfig,
     WandbConfig,
     get_openfold_cache_dir,
-    CHECKPOINT_NAME,
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
 
