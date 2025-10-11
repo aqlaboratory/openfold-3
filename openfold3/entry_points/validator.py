@@ -9,7 +9,7 @@ import boto3
 import botocore
 from botocore.config import Config as botocoreConfig
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
-from pydantic import BaseModel, model_validator, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
