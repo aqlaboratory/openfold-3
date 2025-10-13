@@ -180,7 +180,7 @@ class PairformerEmbedding(nn.Module):
         x_pred: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,

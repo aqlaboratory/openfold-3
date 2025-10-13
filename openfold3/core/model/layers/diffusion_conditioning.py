@@ -1,5 +1,3 @@
-from typing import Optional
-
 import torch
 from ml_collections import ConfigDict
 from torch import nn
@@ -149,7 +147,7 @@ class DiffusionConditioning(nn.Module):
         si: torch.Tensor,
         zij: torch.Tensor,
         token_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         pair_token_mask = token_mask.unsqueeze(-1) * token_mask.unsqueeze(-2)
 
@@ -197,7 +195,7 @@ class DiffusionConditioning(nn.Module):
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
