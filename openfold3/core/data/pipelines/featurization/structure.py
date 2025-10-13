@@ -1,7 +1,6 @@
 """This module contains featurization pipelines for structural data."""
 
 import logging
-from typing import Union
 
 import numpy as np
 import torch
@@ -213,7 +212,7 @@ def featurize_target_gt_structure_of3(
     atom_array: AtomArray,
     atom_array_gt: AtomArray,
     n_tokens: int,
-) -> dict[str, Union[torch.Tensor, dict[str, torch.Tensor]]]:
+) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
     """Wraps featurize_structure_af3 for creating target AND gt structure features.
 
     Expects the cropped and duplicate-expanded AtomArray as input. The target structure

@@ -1,7 +1,7 @@
 import logging
 import random
 from collections.abc import Iterable
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 from func_timeout import FunctionTimedOut, func_timeout
@@ -27,7 +27,7 @@ def compute_conformer(
     mol: Mol,
     use_random_coord_init: bool = False,
     remove_hs: bool = True,
-    timeout: Optional[float] = 30.0,
+    timeout: float | None = 30.0,
 ) -> tuple[Mol, int]:
     """Computes a conformer with the ETKDGv3 strategy.
 
@@ -102,8 +102,8 @@ def compute_conformer(
 def multistrategy_compute_conformer(
     mol: Mol,
     remove_hs: bool = True,
-    timeout_standard: Optional[float] = None,
-    timeout_rand_init: Optional[float] = None,
+    timeout_standard: float | None = None,
+    timeout_rand_init: float | None = None,
 ) -> tuple[Mol, int, Literal["default", "random_init"]]:
     """Computes 3D coordinates for a molecule trying different initializations.
 

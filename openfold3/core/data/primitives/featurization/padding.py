@@ -1,7 +1,5 @@
 """This module contains padding primitives."""
 
-from typing import Optional, Union
-
 import torch
 
 
@@ -9,7 +7,7 @@ def pad_token_dim(
     features: dict[str, torch.Tensor],
     token_budget: int,
     token_dim_index_map: dict[str, int],
-    pad_value: Optional[Union[int, float]] = 0,
+    pad_value: int | float | None = 0,
 ) -> dict[str, torch.Tensor]:
     """Pads a dict of tensors along the token dimension to a given budget.
 

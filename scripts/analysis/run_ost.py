@@ -8,7 +8,7 @@ import subprocess
 from functools import partial
 from operator import itemgetter
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 import click
 from pydantic import BaseModel
@@ -21,7 +21,7 @@ class OstRunnerSettings(BaseModel):
     mode: Literal["protein_ligand"]
     n_processes: int = 1
     chunksize: int = 1
-    log_dir: Optional[Path] = None
+    log_dir: Path | None = None
 
 
 class OstPLRunnerSettings(OstRunnerSettings):
@@ -100,7 +100,7 @@ class OstRunner:
     @staticmethod
     def worker_init(
         log_directory: Path, is_main: bool = False
-    ) -> Optional[logging.Logger]:
+    ) -> logging.Logger | None:
         """Initialize logging for worker processes."""
         worker_logger = logging.getLogger(f"ost_logger_{os.getpid()}")
         worker_logger.setLevel(logging.INFO)
@@ -122,7 +122,7 @@ class OstRunner:
         pred_dir: Path,
         ref_dir: Path,
         output_dir: Path,
-        main_logger: Optional[logging.Logger] = None,
+        main_logger: logging.Logger | None = None,
     ) -> tuple[list[Path], list[Path], list[Path]]:
         """Prepare input paths for OST processing."""
         pred_paths = []
@@ -287,7 +287,7 @@ def main(
     ref_dir: Path,
     output_dir: Path,
     runner_yml: Path,
-    log_dir: Optional[Path],
+    log_dir: Path | None,
 ) -> None:
     """Run OST on Openfold3 outputs."""
     # Check if OST is available

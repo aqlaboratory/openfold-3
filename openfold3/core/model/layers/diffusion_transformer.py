@@ -16,7 +16,6 @@
 """Diffusion transformer block and stack."""
 
 from functools import partial
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -44,8 +43,8 @@ class DiffusionTransformerBlock(nn.Module):
         no_heads: int,
         n_transition: int,
         use_ada_layer_norm: bool,
-        n_query: Optional[int],
-        n_key: Optional[int],
+        n_query: int | None,
+        n_key: int | None,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
     ):
@@ -120,8 +119,8 @@ class DiffusionTransformerBlock(nn.Module):
         a: torch.Tensor,
         s: torch.Tensor,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
@@ -198,12 +197,12 @@ class DiffusionTransformer(nn.Module):
         no_blocks: int,
         n_transition: int,
         use_ada_layer_norm: bool,
-        n_query: Optional[int],
-        n_key: Optional[int],
+        n_query: int | None,
+        n_key: int | None,
         inf: float,
-        blocks_per_ckpt: Optional[int] = None,
+        blocks_per_ckpt: int | None = None,
         linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
     ):
         """
         Args:
@@ -268,8 +267,8 @@ class DiffusionTransformer(nn.Module):
         a: torch.Tensor,
         s: torch.Tensor,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,

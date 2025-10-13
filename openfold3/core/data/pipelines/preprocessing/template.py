@@ -9,7 +9,7 @@ import traceback
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal
 
 import numpy as np
 import pandas as pd
@@ -771,8 +771,8 @@ def filter_template_cache_for_query(
     template_cache_directory: Path,
     max_templates: int,
     is_core_train: bool,
-    max_release_date: Optional[datetime | str] = None,
-    min_release_date_diff: Optional[int] = None,
+    max_release_date: datetime | str | None = None,
+    min_release_date_diff: int | None = None,
 ) -> TemplateHitCollection:
     """Filters the template cache for a query chain.
 
