@@ -102,7 +102,7 @@ class ValidationPDBDataset(BaseOF3Dataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
-        is_repeated_sample = datapoint["repeated_sample"]
+        is_repeated_sample = bool(datapoint["repeated_sample"])
 
         if not self.debug_mode:
             sample_data = self.create_all_features(

@@ -75,7 +75,7 @@ def compute_conformer(
     strategy.clearConfs = False
     # RDKit always seems to start from some internal seed instead of a truly random seed
     # initialization if no seed is given, so we set a random seed here
-    strategy.randomSeed = random.randint(0, 1e9)
+    strategy.randomSeed = random.randint(0, 10**9)
 
     # Disable overly verbose conformer generation warnings
     blocker = rdBase.BlockLogs()
@@ -102,8 +102,8 @@ def compute_conformer(
 def multistrategy_compute_conformer(
     mol: Mol,
     remove_hs: bool = True,
-    timeout_standard: Optional[float] = 30.0,
-    timeout_rand_init: Optional[float] = 30.0,
+    timeout_standard: Optional[float] = None,
+    timeout_rand_init: Optional[float] = None,
 ) -> tuple[Mol, int, Literal["default", "random_init"]]:
     """Computes 3D coordinates for a molecule trying different initializations.
 

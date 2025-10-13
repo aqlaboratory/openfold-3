@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install miniforge
 RUN wget -P /tmp \
-    "https://github.com/conda-forge/miniforge/releases/download/23.3.1-1/Miniforge3-Linux-x86_64.sh" \
+    "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh" \
     && bash /tmp/Miniforge3-Linux-x86_64.sh -b -p /opt/conda \
     && rm /tmp/Miniforge3-Linux-x86_64.sh
 
@@ -41,7 +41,7 @@ RUN python3 setup.py install
 ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
 
 # Pre-compile DeepSpeed operations with full performance
-RUN python3 -c "import deepspeed; deepspeed.ops.op_builder.EvoformerBuilder().load()" || \
+RUN python3 -c "import deepspeed; deepspeed.ops.op_builder.EvoformeAttnBuilder().load()" || \
     python3 -c "import deepspeed; print('DeepSpeed ops loaded successfully')"
 
 # Runtime stage - use devel image for full CUDA support

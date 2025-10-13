@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import sys
 from typing import Optional
 
 import torch
@@ -122,35 +123,54 @@ class PairformerEmbedding(nn.Module):
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
+        offload_inference: bool = False,
         _mask_trans: bool = True,
     ):
-        # PairFormer embedding
+        batch_dims = x_pred.shape[:-2]
         no_samples = x_pred.shape[-3]
-        si_out = torch.zeros_like(si.expand(*(x_pred.shape[:-2] + si.shape[-2:])))
-        zij_out = torch.zeros_like(zij.expand(*(x_pred.shape[:-2] + zij.shape[-3:])))
 
+        device = "cpu" if offload_inference else x_pred.device
+
+        # Prepare output tensors
+        si_out = torch.zeros_like(
+            si.expand(*(batch_dims + si.shape[-2:])), device=device
+        )
+        zij_out = torch.zeros_like(
+            zij.expand(*(batch_dims + zij.shape[-3:])), device=device
+        )
+
+        # TODO: Refactor to support inplace ops
         for i in range(no_samples):
-            zij_sample = self.embed_zij(
+            zij_chunk = self.embed_zij(
                 si_input=si_input, zij=zij, x_pred=x_pred[:, i : i + 1]
             )
 
             si_chunk, zij_chunk = self.pairformer_stack(
-                si,
-                zij_sample,
+                si.clone(),  # Avoid inplace ops on si for now
+                zij_chunk,
                 single_mask,
                 pair_mask,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
             )
 
-            si_out[..., i : i + 1, :, :] = si_chunk
-            zij_out[..., i : i + 1, :, :, :] = zij_chunk
+            if offload_inference:
+                assert sys.getrefcount(si_chunk) == 2
+                assert sys.getrefcount(zij_chunk) == 2
 
+            si_out[..., i : i + 1, :, :] = si_chunk.to(device=device)
+            zij_out[..., i : i + 1, :, :, :] = zij_chunk.to(device=device)
+
+            del si_chunk, zij_chunk
+
+        # If offloading, do not return to device for now and let caller handle it
         return si_out, zij_out
 
     def pairformer_emb(
@@ -163,6 +183,7 @@ class PairformerEmbedding(nn.Module):
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -182,7 +203,7 @@ class PairformerEmbedding(nn.Module):
         def reshape_outputs(x: torch.Tensor, feat_dims: list):
             return x.reshape(*batch_dims, *feat_dims)
 
-        si = reshape_inputs(x=si.clone(), feat_dims=si.shape[-2:])
+        si = reshape_inputs(x=si, feat_dims=si.shape[-2:])
         zij = reshape_inputs(x=zij, feat_dims=zij.shape[-3:])
         single_mask = reshape_inputs(x=single_mask, feat_dims=single_mask.shape[-1:])
         pair_mask = reshape_inputs(x=pair_mask, feat_dims=pair_mask.shape[-2:])
@@ -195,6 +216,7 @@ class PairformerEmbedding(nn.Module):
             pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
@@ -215,8 +237,10 @@ class PairformerEmbedding(nn.Module):
         pair_mask: torch.Tensor,
         chunk_size: Optional[int] = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
+        offload_inference: bool = False,
         _mask_trans: bool = True,
         apply_per_sample: bool = False,
     ):
@@ -240,11 +264,15 @@ class PairformerEmbedding(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma.
+            use_cueq_triangle_kernels:
+                Whether to use CuEquivariance kernels.
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
+            offload_inference:
+                Whether to offload some computation to CPU
             _mask_trans:
                 Whether to mask the output of the transition layers
             apply_per_sample:
@@ -270,8 +298,10 @@ class PairformerEmbedding(nn.Module):
                 pair_mask=pair_mask,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
+                offload_inference=offload_inference,
                 _mask_trans=_mask_trans,
             )
         else:
@@ -284,6 +314,7 @@ class PairformerEmbedding(nn.Module):
                 pair_mask=pair_mask,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -503,50 +534,6 @@ class PerResidueLDDTAllAtom(nn.Module):
         return logits
 
 
-class PerResidueLDDTCaPredictor(nn.Module):
-    """
-    Implements plddtHead for AF2, subsection 1.9.10
-
-    Source: OpenFold
-    """
-
-    def __init__(
-        self,
-        no_bins: int,
-        c_in: int,
-        c_hidden: int,
-        linear_init_params: ConfigDict = lin_init.lddt_ca_init,
-        **kwargs,
-    ):
-        super().__init__()
-
-        self.no_bins = no_bins
-        self.c_in = c_in
-        self.c_hidden = c_hidden
-
-        self.layer_norm = LayerNorm(self.c_in)
-
-        self.linear_1 = Linear(self.c_in, self.c_hidden, **linear_init_params.linear_1)
-        self.linear_2 = Linear(
-            self.c_hidden, self.c_hidden, **linear_init_params.linear_2
-        )
-        self.linear_3 = Linear(
-            self.c_hidden, self.no_bins, **linear_init_params.linear_3
-        )
-
-        self.relu = nn.ReLU()
-
-    def forward(self, s):
-        s = self.layer_norm(s)
-        s = self.linear_1(s)
-        s = self.relu(s)
-        s = self.linear_2(s)
-        s = self.relu(s)
-        s = self.linear_3(s)
-
-        return s
-
-
 class ExperimentallyResolvedHeadAllAtom(nn.Module):
     """
     Implements resolvedHeads for AF3, subsection 4.3.3
@@ -619,51 +606,6 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
         return logits
 
 
-class ExperimentallyResolvedHead(nn.Module):
-    """
-    Implements resolvedHeads for AF2.
-    For use in computation of experimentally resolved loss, subsection 1.9.10 (AF2)
-
-    Source: OpenFold
-    """
-
-    def __init__(
-        self,
-        c_s: int,
-        c_out: int,
-        linear_init_params: ConfigDict = lin_init.exp_res_init,
-        **kwargs,
-    ):
-        """
-        Args:
-            c_s:
-                Input channel dimension
-            c_out:
-                Number of experimentally resolved atom bins
-            linear_init_params:
-                Linear layer initialization parameters
-        """
-        super().__init__()
-
-        self.c_s = c_s
-        self.c_out = c_out
-
-        self.linear = Linear(self.c_s, self.c_out, **linear_init_params.linear)
-
-    def forward(self, s):
-        """
-        Args:
-            s:
-                [*, N, C_s] Single embedding
-        Returns:
-            logits:
-                [*, N, C_out] Logits
-        """
-
-        logits = self.linear(s)
-        return logits
-
-
 class DistogramHead(nn.Module):
     """
     Implementation of distogram head for both AF2 and AF3.
@@ -712,90 +654,4 @@ class DistogramHead(nn.Module):
 
         logits = self.linear(z)
         logits = logits + logits.transpose(-2, -3)
-        return logits
-
-
-class TMScoreHead(nn.Module):
-    """
-    For use in computation of TM-score, subsection 1.9.7 (AF2)
-    """
-
-    def __init__(
-        self,
-        c_z: int,
-        c_out: int,
-        linear_init_params: ConfigDict = lin_init.tm_score_init,
-        **kwargs,
-    ):
-        """
-        Args:
-            c_z:
-                Input channel dimension
-            c_out:
-                Number of bins
-            linear_init_params:
-                Linear layer initialization parameters
-        """
-        super().__init__()
-
-        self.c_z = c_z
-        self.c_out = c_out
-
-        self.linear = Linear(self.c_z, self.c_out, **linear_init_params.linear)
-
-    def forward(self, z):
-        """
-        Args:
-            z:
-                [*, N, N, C_z] Pairwise embedding
-        Returns:
-            logits:
-                [*, N, N, C_out] Logits
-        """
-
-        logits = self.linear(z)
-        return logits
-
-
-class MaskedMSAHead(nn.Module):
-    """
-    For use in computation of masked MSA loss, subsection 1.9.9 (AF2)
-
-    Source: OpenFold
-    """
-
-    def __init__(
-        self,
-        c_m: int,
-        c_out: int,
-        linear_init_params: ConfigDict = lin_init.masked_msa_init,
-        **kwargs,
-    ):
-        """
-        Args:
-            c_m:
-                MSA channel dimension
-            c_out:
-                Output channel dimension
-            linear_init_params:
-                Linear layer initialization parameters
-        """
-        super().__init__()
-
-        self.c_m = c_m
-        self.c_out = c_out
-
-        self.linear = Linear(self.c_m, self.c_out, **linear_init_params.linear)
-
-    def forward(self, m):
-        """
-        Args:
-            m:
-                [*, N_seq, N_res, C_m] MSA embedding
-        Returns:
-            logits:
-                [*, N_seq, N_res, C_out] Logits
-        """
-
-        logits = self.linear(m)
         return logits

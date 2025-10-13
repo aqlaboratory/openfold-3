@@ -38,7 +38,6 @@ checkpoint:
 model_update:
   presets: 
     - train 
-  compile : false
   custom:
     settings:
       diffusion_training_enabled: false
@@ -50,8 +49,6 @@ model_update:
         heads:
           pae:
             enabled: true
-          distogram:
-            enabled: false
 
 dataset_configs:
   train:
@@ -74,7 +71,7 @@ dataset_configs:
             mse: 0.0
             smooth_lddt: 0.0
             distogram: 0.0
-            pae: 1e-4
+            pae: 0.0001
 
   validation:
     val-weighted-pdb:
