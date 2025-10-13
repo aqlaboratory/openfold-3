@@ -36,7 +36,7 @@ def get_openfold_cache_dir() -> Path:
     return Path(cache_path)
 
 
-def _maybe_download_parameters(target_path: Path)-> None:
+def _maybe_download_parameters(target_path: Path) -> None:
     """Checks if OpenFold parameters are present, and downloads them if not."""
     openfold_bucket = "openfold"
     checkpoint_path = f"openfold3_params/{CHECKPOINT_NAME}"
@@ -234,8 +234,13 @@ class InferenceExperimentConfig(ExperimentConfig):
     msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
 
     @field_validator("inference_ckpt_path", mode="before")
-    def _try_default_ckpt_path(cls, value):
+    def _try_default_ckpt_path(cls, value: Path | None) -> Path:
         if value is None:
-            value = get_openfold_cache_dir() / CHECKPOINT_NAME
+            # TODO: change this to read the path written to $OPENFOLD_CACHE / ckpt_path.txt
+            ckpt_path_file = get_openfold_cache_dir() / "ckpt_path.txt"
+            if ckpt_path_file.exists():
+                with open(ckpt_path_file, "r") as f:
+                    param_dir = f.read().strip()
+                    value = Path(param_dir) / CHECKPOINT_NAME
             _maybe_download_parameters(value)
         return value
