@@ -17,7 +17,6 @@
 import os
 import subprocess
 from collections.abc import Sequence
-from typing import Optional
 
 from absl import logging
 
@@ -34,7 +33,7 @@ class Hmmsearch:
         binary_path: str,
         hmmbuild_binary_path: str,
         database_path: str,
-        flags: Optional[Sequence[str]] = None,
+        flags: Sequence[str] | None = None,
     ):
         """Initializes the Python hmmsearch wrapper.
 
@@ -83,14 +82,14 @@ class Hmmsearch:
     def input_format(self) -> str:
         return "sto"
 
-    def query(self, msa_sto: str, output_dir: Optional[str] = None) -> str:
+    def query(self, msa_sto: str, output_dir: str | None = None) -> str:
         """Queries the database using hmmsearch using a given stockholm msa."""
         hmm = self.hmmbuild_runner.build_profile_from_sto(
             msa_sto, model_construction="hand"
         )
         return self.query_with_hmm(hmm, output_dir)
 
-    def query_with_hmm(self, hmm: str, output_dir: Optional[str] = None) -> str:
+    def query_with_hmm(self, hmm: str, output_dir: str | None = None) -> str:
         """Queries the database using hmmsearch using a given hmm."""
         with utils.tmpdir_manager() as query_tmp_dir:
             hmm_input_path = os.path.join(query_tmp_dir, "query.hmm")

@@ -16,8 +16,8 @@
 """Diffusion losses."""
 
 import logging
+from collections.abc import Callable
 from functools import partial
-from typing import Callable, Optional
 
 import torch
 
@@ -350,7 +350,7 @@ def diffusion_loss(
     rna_weight: float = 5.0,
     ligand_weight: float = 10.0,
     eps: float = 1e-8,
-    chunk_size: Optional[int] = None,
+    chunk_size: int | None = None,
     **kwargs,
 ) -> [torch.Tensor, dict]:
     """

@@ -16,7 +16,6 @@
 """Outer product mean layer."""
 
 from functools import partial
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -101,8 +100,8 @@ class OuterProductMean(nn.Module):
     def _forward(
         self,
         m: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
         """
@@ -153,8 +152,8 @@ class OuterProductMean(nn.Module):
     def forward(
         self,
         m: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
         return self._forward(m, mask, chunk_size, inplace_safe)

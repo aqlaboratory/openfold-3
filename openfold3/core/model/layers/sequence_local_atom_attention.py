@@ -18,8 +18,6 @@ Sequence-local atom attention modules. Includes AtomAttentionEncoder,
 AtomAttentionDecoder, and AtomTransformer.
 """
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
@@ -283,13 +281,13 @@ class AtomAttentionEncoder(nn.Module):
         n_query: int,
         n_key: int,
         use_ada_layer_norm: bool,
-        c_s: Optional[int] = None,
-        c_z: Optional[int] = None,
-        blocks_per_ckpt: Optional[int] = None,
+        c_s: int | None = None,
+        c_z: int | None = None,
+        blocks_per_ckpt: int | None = None,
         ckpt_intermediate_steps: bool = False,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_enc_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
     ):
         """
         Args:
@@ -399,9 +397,9 @@ class AtomAttentionEncoder(nn.Module):
     def get_atom_reps(
         self,
         batch: TensorDict,
-        rl: Optional[torch.Tensor] = None,
-        si_trunk: Optional[torch.Tensor] = None,
-        zij_trunk: Optional[torch.Tensor] = None,
+        rl: torch.Tensor | None = None,
+        si_trunk: torch.Tensor | None = None,
+        zij_trunk: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -475,10 +473,10 @@ class AtomAttentionEncoder(nn.Module):
         self,
         batch: TensorDict,
         atom_mask: torch.Tensor,
-        rl: Optional[torch.Tensor] = None,
-        si_trunk: Optional[torch.Tensor] = None,
-        zij_trunk: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        rl: torch.Tensor | None = None,
+        si_trunk: torch.Tensor | None = None,
+        zij_trunk: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         use_high_precision_attention: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -582,10 +580,10 @@ class AtomAttentionDecoder(nn.Module):
         n_query: int,
         n_key: int,
         use_ada_layer_norm: bool,
-        blocks_per_ckpt: Optional[int] = None,
+        blocks_per_ckpt: int | None = None,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_dec_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
     ):
         """
         Args:
@@ -655,7 +653,7 @@ class AtomAttentionDecoder(nn.Module):
         ql: torch.Tensor,
         cl: torch.Tensor,
         plm: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
         """

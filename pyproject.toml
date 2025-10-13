@@ -22,6 +22,7 @@ select = [
 ignore = [
     "E741",
     "SIM108",
+    "B905",  # explicit strict= for zip
 ]
 extend-safe-fixes = ["UP006"]
 

@@ -1,7 +1,6 @@
 import logging
 import random
 import traceback
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -51,7 +50,7 @@ def make_chain_pair_mask_padded(
 class ValidationPDBDataset(BaseOF3Dataset):
     """Validation Dataset class."""
 
-    def __init__(self, dataset_config: dict, world_size: Optional[int] = None) -> None:
+    def __init__(self, dataset_config: dict, world_size: int | None = None) -> None:
         """Initializes a ValidationDataset.
 
         Args:
@@ -237,7 +236,7 @@ class ValidationPDBDataset(BaseOF3Dataset):
     def create_all_features(
         self,
         pdb_id: str,
-        preferred_chain_or_interface: Optional[str],
+        preferred_chain_or_interface: str | None,
         return_atom_arrays: bool,
         return_crop_strategy: bool,
     ) -> dict:

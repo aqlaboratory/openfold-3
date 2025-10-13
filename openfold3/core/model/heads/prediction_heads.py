@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import sys
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -121,7 +120,7 @@ class PairformerEmbedding(nn.Module):
         x_pred: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
@@ -235,7 +234,7 @@ class PairformerEmbedding(nn.Module):
         x_pred: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,

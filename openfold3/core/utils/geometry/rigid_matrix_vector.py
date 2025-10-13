@@ -16,13 +16,12 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Union
 
 import torch
 
 from openfold3.core.utils.geometry import rotation_matrix, vector
 
-Float = Union[float, torch.Tensor]
+Float = float | torch.Tensor
 
 
 @dataclasses.dataclass(frozen=True)

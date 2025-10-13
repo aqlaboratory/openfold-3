@@ -10,7 +10,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
-from typing import NamedTuple, Union
+from typing import NamedTuple
 
 import requests
 from tqdm import tqdm
@@ -138,8 +138,8 @@ def filter_by_token_count(
 
 def filter_by_release_date(
     structure_cache: StructureDataCache,
-    min_date: Union[date | str] | None = None,
-    max_date: Union[date | str] | None = None,
+    min_date: date | str | None = None,
+    max_date: date | str | None = None,
 ) -> StructureDataCache:
     """Filters the cache to only include entries within a specified date range.
 

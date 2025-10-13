@@ -5,7 +5,7 @@ Helper functions for converting between yaml, dicts, and config dicts.
 import json
 import logging
 from pathlib import Path
-from typing import Annotated, Any, Optional, Union
+from typing import Annotated, Any
 
 import yaml
 from pydantic import (
@@ -17,7 +17,7 @@ from pydantic import (
 from openfold3.core.data.resources.residues import MoleculeType
 
 
-def load_yaml(path: Union[Path, str]) -> dict[str, Any]:
+def load_yaml(path: Path | str) -> dict[str, Any]:
     """Loads a yaml file as a dictionary."""
     if not isinstance(path, Path):
         path = Path(path)
@@ -26,7 +26,7 @@ def load_yaml(path: Union[Path, str]) -> dict[str, Any]:
     return yaml_dict
 
 
-def load_json(path: Union[Path, str]) -> dict[str, Any]:
+def load_json(path: Path | str) -> dict[str, Any]:
     """Loads a json file as a dictionary."""
     if not isinstance(path, Path):
         path = Path(path)
@@ -71,7 +71,7 @@ def _convert_molecule_type(value: Any) -> Any:
         return [_convert_molecule_type(v) for v in value]
 
 
-def is_path_none(value: Optional[Union[str, Path]]) -> Optional[Path]:
+def is_path_none(value: str | Path | None) -> Path | None:
     if isinstance(value, Path):
         return value
     elif value is None or value.lower() in ["none", "null"]:
@@ -80,5 +80,5 @@ def is_path_none(value: Optional[Union[str, Path]]) -> Optional[Path]:
         return Path(value)
 
 
-FilePathOrNone = Annotated[Optional[FilePath], BeforeValidator(is_path_none)]
-DirectoryPathOrNone = Annotated[Optional[DirectoryPath], BeforeValidator(is_path_none)]
+FilePathOrNone = Annotated[FilePath | None, BeforeValidator(is_path_none)]
+DirectoryPathOrNone = Annotated[DirectoryPath | None, BeforeValidator(is_path_none)]

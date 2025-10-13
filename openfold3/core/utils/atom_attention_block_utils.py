@@ -1,5 +1,4 @@
 import math
-from typing import Optional
 
 import torch
 
@@ -206,8 +205,8 @@ def convert_single_rep_to_blocks(
     ql: torch.Tensor,
     n_query: int,
     n_key: int,
-    atom_mask: Optional[torch.Tensor] = None,
-) -> tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+    atom_mask: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
     """
     Convert single atom representation to q/k blocks for attention.
     Optionally convert the atom mask to a 2D mask to account for the padding on the

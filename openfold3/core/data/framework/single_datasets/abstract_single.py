@@ -28,7 +28,6 @@ and highlight where you currently are in the process:
 """
 
 from abc import ABC, abstractmethod
-from typing import Union
 
 import torch
 from torch.utils.data import Dataset
@@ -102,7 +101,7 @@ class SingleDataset(ABC, Dataset):
         self.datapoint_index = index
 
     @abstractmethod
-    def __getitem__(self, index: int) -> dict[str, Union[torch.Tensor]]:
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         """Getitem of a specific SingleDataset class.
 
         Called by the DataLoader directly or indirectly via the SamplerDataset
