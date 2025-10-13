@@ -5,8 +5,28 @@
 # Global variable for parameter directory
 # Configuration variables
 OPENFOLD_CACHE=""
+# Path for where the checkpoints were saved previously
 CKPT_PATH_FILE=""
 PARAM_DIR=""
+
+setup_conda_commands(){
+    echo "Setting up conda shell environment..."
+    # Check if running in a conda environment
+    if [ -z "$CONDA_PREFIX" ]; then
+        echo "Error: This script must be run from within a conda environment."
+        echo "Please activate your conda environment first:"
+        echo "  conda activate your_env_name"
+        exit 1
+    fi
+
+    # Initialize conda by sourcing conda.sh
+    if [ -n "$CONDA_EXE" ]; then
+        CONDA_BASE=$(dirname $(dirname "$CONDA_EXE"))
+        source "$CONDA_BASE/etc/profile.d/conda.sh"
+    else
+        echo "Warning: Could not find conda executable. Conda commands may not work."
+    fi
+}
 
 # Function to set up the OpenFold cache directory
 setup_openfold_cache() {
@@ -31,7 +51,8 @@ setup_openfold_cache() {
     CKPT_PATH_FILE="$OPENFOLD_CACHE/ckpt_path.txt"
     
     # Export as environment variable
-    export OPENFOLD_CACHE
+    export OPENFOLD_CACHE="$OPENFOLD_CACHE"
+    conda env config vars set OPENFOLD_CACHE="$OPENFOLD_CACHE"
     echo "OPENFOLD_CACHE environment variable set to: $OPENFOLD_CACHE"
 }
 
@@ -82,7 +103,7 @@ setup_param_directory() {
         
         # Use user input if provided, otherwise use default
         if [ -z "$user_input" ]; then
-            PARAM_DIR="$HOME/.openfold3"
+            PARAM_DIR="$OPENFOLD_CACHE"
         else
             PARAM_DIR="$user_input"
         fi
@@ -118,6 +139,9 @@ download_parameters() {
     
 
 # Main script execution
+
+# Step 0: Setup conda source
+setup_conda_commands
 
 # Step 1: Set up OpenFold cache directory
 setup_openfold_cache
