@@ -48,7 +48,7 @@ setup_openfold_cache() {
     mkdir -p "$OPENFOLD_CACHE"
     
     # Set the param path file location
-    CKPT_PATH_FILE="$OPENFOLD_CACHE/ckpt_path.txt"
+    CKPT_PATH_FILE="$OPENFOLD_CACHE/ckpt_path"
     
     # Export as environment variable
     export OPENFOLD_CACHE="$OPENFOLD_CACHE"

@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 ValidModeType = Literal["train", "predict", "eval", "test"]
 DEFAULT_CACHE_PATH = Path("~/.openfold3/").expanduser()
+CHECKPOINT_PATH_FILENAME= "ckpt_path"
 CHECKPOINT_NAME = "of3_ft3_v1.pt"
 
 
@@ -236,7 +237,7 @@ class InferenceExperimentConfig(ExperimentConfig):
     @field_validator("inference_ckpt_path", mode="before")
     def _try_default_ckpt_path(cls, value: Path | None) -> Path:
         if value is None:
-            ckpt_path_file = get_openfold_cache_dir() / "ckpt_path.txt"
+            ckpt_path_file = get_openfold_cache_dir() / CHECKPOINT_PATH_FILENAME 
             if ckpt_path_file.exists():
                 with open(ckpt_path_file) as f:
                     param_dir = f.read().strip()
