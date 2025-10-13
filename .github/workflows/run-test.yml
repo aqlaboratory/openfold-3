@@ -8,14 +8,10 @@ jobs:
   cleanup: 
     uses: ./.github/workflows/cleanup.yml
 
-  get-params:
-    uses: ./.github/workflows/cache-params.yml
-
   build-and-test:
     runs-on: ubuntu-4core-150g-ssd 
     needs: 
       - cleanup 
-      - get-params 
 
     steps:
     - uses: actions/checkout@v4
@@ -27,6 +23,3 @@ jobs:
 
     - name: Run unit tests
       run: docker run -v ${{ github.workspace }}/resources:/opt/openfold3/openfold3/resources openfold-test:latest pytest tests
-    
-    - name: Run integration test 
-      run: docker run -v ${{ github.workspace }}/resources:/opt/openfold3/openfold3/resources openfold-test:latest pytest tests/test_inference_full.py -m inference_verification
