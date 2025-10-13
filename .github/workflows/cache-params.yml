@@ -1,0 +1,33 @@
+name: Cache params 
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  cleanup: 
+    uses: ./.github/workflows/cleanup.yml
+
+  download-params:
+    runs-on: ubuntu-latest
+    needs: cleanup
+    steps:
+    - name: Cache download of parameters 
+      id: cache-openfold_parameters
+      uses: actions/cache@v4
+      with:
+        path: $HOME/.openfold3/*
+        key: shared-params_of3
+        restore-keys: |
+          shared-params_of3
+    
+    - name: Install AWS CLI and Download OpenFold parameters
+      if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
+      run: |
+        echo "Cache miss: Downloading OpenFold parameters..."
+        echo "Installing AWS CLI...""
+        curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+        unzip awscliv2.zip
+        sudo ./aws/install
+        echo "Downloading parameters...""
+        aws s3 sync s3://openfold/ $HOME/.openfold3/ --no-sign-request
