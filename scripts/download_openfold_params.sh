@@ -24,10 +24,10 @@ done
 
 # Use provided directory or default
 if [[ -z "${DOWNLOAD_DIR}" ]]; then
-    if [[ -z "${OPENFOLD3_CACHE}" ]]; then
-        DOWNLOAD_DIR="${HOME}/openfold3/model_checkpoints"
+    if [[ -z "${OPENFOLD_CACHE}" ]]; then
+        DOWNLOAD_DIR="${HOME}/openfold3/"
     else
-        DOWNLOAD_DIR="${OPENFOLD3_CACHE}/model_checkpoints"
+        DOWNLOAD_DIR="${OPENFOLD_CACHE}/"
     fi
     echo "No download directory provided. Using default: ${DOWNLOAD_DIR}"
 fi
