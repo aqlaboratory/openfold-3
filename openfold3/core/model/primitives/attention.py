@@ -503,6 +503,17 @@ def _check_ds_evo_kernal_inputs(q, k, biases):
         except RuntimeError:
             return False
 
+    # TODO: Make asserts more robust
+    # Keep some of the checks from DS4Sci_EvoformerAttention
+    # Bias 1 is the attention mask, where the batch/sample dims
+    # need to be the same as q otherwise NaNs can occur
+    bias_1_full_shape = lambda x: (*x.shape[:-3], 1, 1, x.shape[-2])
+    # Bias 2 is the pair bias, here we only check that the last 3 dims
+    # are correct. The starting dimensions are broadcastable, for example
+    # [N_batch, N_head, N_query, N_key] (AttentionPairBias) and
+    # [N_batch, 1, N_head, N_query, N_key] (TriAttention) would work.
+    bias_2_end_shape = lambda x: (x.shape[-3], x.shape[-2], x.shape[-2])
+
     attn_score_shape = q.shape[:-2] + (q.shape[-2], k.shape[-2])
 
     if biases[0] is not None:
@@ -510,11 +521,20 @@ def _check_ds_evo_kernal_inputs(q, k, biases):
             f"bias1 shape {biases[0].shape} is not broadcastable to attention "
             f"score shape {attn_score_shape}"
         )
+        bias1_expected = bias_1_full_shape(q)
+        assert biases[0].shape == bias1_expected, (
+            f"bias1 shape {biases[0].shape}, expecting {bias1_expected}"
+        )
 
     if biases[1] is not None:
         assert are_shapes_broadcastable(biases[1].shape, attn_score_shape), (
             f"bias2 shape {biases[1].shape} is not broadcastable to attention "
             f"score shape {attn_score_shape}"
+        )
+        bias2_actual = biases[1].shape[-3:]
+        bias2_expected = bias_2_end_shape(q)
+        assert bias2_actual == bias2_expected, (
+            f"bias2 shape is {bias2_actual}, expecting {bias2_expected}"
         )
 
 
@@ -546,7 +566,7 @@ def _deepspeed_evo_attn(
         )
 
     # Replace strict shape checks in DS4Sci_EvoformerAttention with
-    # broadcastability checks
+    # more lenient checks
     _check_ds_evo_kernal_inputs(q, k, biases)
 
     # Deepspeed kernel expects [*, Q/K, H, C_hidden] inputs

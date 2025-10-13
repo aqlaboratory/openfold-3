@@ -16,11 +16,6 @@
 """
 Sequence-local atom attention modules. Includes AtomAttentionEncoder,
 AtomAttentionDecoder, and AtomTransformer.
-
-Note: The DeepSpeed EvoAttention kernel is not enabled for the atom attention
-encoder/decoder currently as this does not pass the shape asserts. Ignoring asserts
-results in NaNs. The option is still available here in case of future improvements,
-but it is not recommended to use it at the moment.
 """
 
 from typing import Optional
@@ -484,7 +479,6 @@ class AtomAttentionEncoder(nn.Module):
         si_trunk: Optional[torch.Tensor] = None,
         zij_trunk: Optional[torch.Tensor] = None,
         chunk_size: Optional[int] = None,
-        use_deepspeed_evo_attention: bool = False,
         use_high_precision_attention: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -514,8 +508,6 @@ class AtomAttentionEncoder(nn.Module):
                 [*, N_atom, N_atom, c_z] Trunk pair representation (optional)
             chunk_size:
                 Inference-time subbatch size
-            use_deepspeed_evo_attention:
-                Whether to use DeepSpeed Evo Attention kernel
             use_high_precision_attention:
                 Whether to run attention in high precision
         Returns:
@@ -550,7 +542,6 @@ class AtomAttentionEncoder(nn.Module):
             z=plm,
             mask=atom_mask,
             chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_high_precision_attention=use_high_precision_attention,
         )
 
@@ -665,7 +656,6 @@ class AtomAttentionDecoder(nn.Module):
         cl: torch.Tensor,
         plm: torch.Tensor,
         chunk_size: Optional[int] = None,
-        use_deepspeed_evo_attention: bool = False,
         use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
         """
@@ -687,8 +677,6 @@ class AtomAttentionDecoder(nn.Module):
                 Note: Converted to block format in AtomAttentionEncoder
             chunk_size:
                 Inference-time subbatch size
-            use_deepspeed_evo_attention:
-                Whether to use DeepSpeed Evo Attention kernel
             use_high_precision_attention:
                 Whether to run attention in high precision
         Returns:
@@ -712,7 +700,6 @@ class AtomAttentionDecoder(nn.Module):
             z=plm,
             mask=atom_mask,
             chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_high_precision_attention=use_high_precision_attention,
         )
 
