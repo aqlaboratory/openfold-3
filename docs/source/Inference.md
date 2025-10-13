@@ -118,11 +118,10 @@ python run_openfold.py predict \
 - `--query_json` *(Path)*
     - Path to the input query JSON file.
 
-- `--inference_ckpt_path` *(Path)*
-    - Path to the model checkpoint file (`.pt` file).
-
-
 **Optional arguments**
+
+- `--inference_ckpt_path` *(Path)*
+    - Path to the model checkpoint file (`.pt` file). If not specified, the script will attempt to find cached parameters or download parameters.
 
 - `--use_msa_server` *(bool, optional, default = True)*
     - Whether to use the ColabFold server for MSA generation.

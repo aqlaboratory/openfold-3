@@ -96,7 +96,9 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     "--inference_ckpt_path",
     type=click.Path(exists=True, file_okay=True, dir_okay=True, path_type=Path),
     required=False,
-    help="Path for model checkpoint to be used for inference",
+    help="Path for model checkpoint to be used for inference. "
+    "If not specified, will attempt to find or download parameters to "
+    "$OPENFOLD_CACHE [default: ~/.openfold3/]",
 )
 @click.option(
     "--num_diffusion_samples",

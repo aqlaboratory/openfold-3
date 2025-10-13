@@ -41,6 +41,47 @@ $ mamba env create -n openfold_env -f environments/production.yml
 
 **Note:** You’ll need to have mamba installed; see the [mamba documentation](https://mamba.readthedocs.io/en/latest/) if needed.
 
+
+## Downloading OpenFold3 model parameters
+
+### Easiest: Use `./scripts/setup_openfold3.sh` to download and setup default parameter paths
+
+The [`setup_openfold3.sh`](../scripts/setup_openfold3.sh) script sets up quick defaults for parameter paths and saves selected paths as default variables. 
+
+In detail, this script will:
+- Setup an `$OPENFOLD_CACHE` environment [Optional, default: `~/.openfold3`]
+- Setup a directory for OpenFold3 model parameters [default: `~/.openfold3`]
+    - Writes the path to `$OPENFOLD_CACHE/ckpt_path` 
+- Download the model parameters, if the parameter file does not already exist 
+- Runs an inference integration test on two samples, without MSA alignments (long)
+
+We recommend running this script as a one-stop script to download parameters and verify your installation.
+
+### Downloading the model parameters manually
+
+The model parameters for the trained OpenFold3 model can be downloaded from our AWS RODA bucket with the following script:
+
+```
+./scripts/download_openfold_params.sh
+```
+
+By default, these weights will be downloaded to `~/.openfold3/`. 
+You can customize the downloaad directory by providing your own download directory as follows.
+
+```
+./scripts/download_openfold_params.sh --download_dir=<target-dir>
+```
+
+### Setting OpenFold3 Cache environment variable
+You can optionally set your OpenFold3 Cache path as an environment variable:
+
+```
+export OPENFOLD_CACHE=`/<custom-dir>/.openfold3/`
+```
+
+If this variable is set, then the inference code will look for model checkpoints under `$OPENFOLD_CACHE/`
+If this variable is not set, then `~/.openfold3/` will be used as a default. 
+
 ### Running OpenFold Tests
 
 OpenFold tests require the additional packages listed in `environments/development.txt`
@@ -68,28 +109,3 @@ Note: To build deepspeed, it may be necessary to include the environment `$LD_LI
 export LIBRARY_PATH=$CONDA_PREFIX/lib:$LIBRARY_PATH
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 ```
-
-## Downloading OpenFold3 model parameters
-
-The model parameters for the trained OpenFold3 model can be downloaded from our AWS RODA bucket with the following script:
-
-```
-./scripts/download_openfold_params.sh
-```
-
-By default, these weights will be downloaded to `~/.openfold3/model_checkpoints/`. 
-You can customize the downloaad directory by providing your own download directory as follows.
-
-```
-./scripts/download_openfold_params.sh --download_dir=<target-dir>
-```
-
-### Setting OpenFold3 Cache environment variable
-You can optionally set your OpenFold3 Cache path as an environment variable:
-
-```
-export OPENFOLD3_CACHE=`/<custom-dir>/.openfold3/`
-```
-
-If this variable is set, then the inference code will look for model checkpoints under `$OPENFOLD3_CACHE/model_checkpoitns/`
-If this variable is not set, then `~/.openfold3/` will be used as the cache directory.
