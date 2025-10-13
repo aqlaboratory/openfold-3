@@ -30,5 +30,6 @@ jobs:
         curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
         unzip awscliv2.zip
         sudo ./aws/install
-        echo "Downloading parameters...""
-        aws s3 sync s3://openfold/openfold3_params/of3_ft3_v1.pt $HOME/.openfold3/ --no-sign-request
+        echo "Downloading parameters..."
+        mkdir -p ~/.openfold3
+        aws s3 sync s3://openfold/openfold3_params/of3_ft3_v1.pt ~/.openfold3/ --no-sign-request
