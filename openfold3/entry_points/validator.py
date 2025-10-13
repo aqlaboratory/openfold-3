@@ -29,15 +29,15 @@ CHECKPOINT_NAME = "of3_ft3_v1.pt"
 
 def get_openfold_cache_dir() -> Path:
     """Identifies the default cache directory.
-    Prioritizes $OPENFOLD3_CACHE_DIR, then ~/.openfold3."""
-    cache_path = os.environ.get("OPENFOLD3_CACHE")
+    Prioritizes the environment variable $OPENFOLD_CACHE, then ~/.openfold3."""
+    cache_path = os.environ.get("OPENFOLD_CACHE")
     if cache_path is None:
         cache_path = DEFAULT_CACHE_PATH
     return Path(cache_path)
 
 
-def _maybe_download_parameters(target_path: Path):
-    """Checks if the openfold3 model parametrs"""
+def _maybe_download_parameters(target_path: Path)-> None:
+    """Checks if OpenFold parameters are present, and downloads them if not."""
     openfold_bucket = "openfold"
     checkpoint_path = f"openfold3_params/{CHECKPOINT_NAME}"
 
