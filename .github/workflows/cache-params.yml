@@ -26,4 +26,4 @@ jobs:
       if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
       run: |
         echo "Cache miss: Downloading OpenFold parameters..."
-        aws s3 sync s3://openfold/openfold3_params/of3_ft3_v1.pt ~/.openfold3/ --no-sign-request
+        aws s3 cp s3://openfold/openfold3_params/of3_ft3_v1.pt ~/.openfold3/ --no-sign-request
