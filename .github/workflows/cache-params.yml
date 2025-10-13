@@ -6,12 +6,9 @@ on:
   push:
 
 jobs:
-  cleanup: 
-    uses: ./.github/workflows/cleanup.yml
-
   download-params:
     runs-on: ubuntu-latest
-    needs: cleanup
+
     steps:
     - name: Cache download of parameters 
       id: cache-openfold_parameters
@@ -26,7 +23,7 @@ jobs:
       if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
       run: |
         echo "Cache miss: Downloading OpenFold parameters..."
-        echo "Installing AWS CLI...""
+        echo "Installing AWS CLI..."
         curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
         unzip awscliv2.zip
         sudo ./aws/install

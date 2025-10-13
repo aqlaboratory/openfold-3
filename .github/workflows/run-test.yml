@@ -10,6 +10,7 @@ jobs:
 
   get-params:
     uses: ./.github/workflows/cache-params.yml
+    needs: cleanup
 
   build:
     runs-on: ubuntu-4core-150g-ssd 
