@@ -19,6 +19,24 @@ jobs:
       run: |
            docker build -f Dockerfile -t openfold-base . 
            docker build -f tests/Dockerfile -t openfold-test .
+
+    - name: Cache download of parameters 
+      id: cache-openfold_parameters
+      uses: actions/cache@v4
+      with:
+        path: $HOME/.openfold3/*
+        key: shared-params_of3
+        restore-keys: |
+          shared-params_of3
+    
+    - name: Download OpenFold parameters
+      if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
+      run: |
+           docker run -v $HOME/.openfold3:/root/.openfold3 openfold-test:latest bash /opt/openfold3/download_openfold_params.sh 
+
     
     - name: Run unit tests
       run: docker run -v ${{ github.workspace }}/resources:/opt/openfold3/openfold3/resources openfold-test:latest pytest tests
+    
+    - name: Run integration test 
+      run: docker run -v ${{ github.workspace }}/resources:/opt/openfold3/openfold3/resources openfold-test:latest pytest tests/test_inference_full.py -m inference_verification
