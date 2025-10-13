@@ -1,7 +1,6 @@
-name: Cache params 
+name: Cache Openfold parameters 
 
 on:
-  push:
   workflow_dispatch:
   workflow_call:
 
@@ -31,4 +30,4 @@ jobs:
         unzip awscliv2.zip
         sudo ./aws/install
         echo "Downloading parameters...""
-        aws s3 sync s3://openfold/ $HOME/.openfold3/ --no-sign-request
+        aws s3 sync s3://openfold/openfold3_params/of3_ft3_v1.pt $HOME/.openfold3/ --no-sign-request
