@@ -3,7 +3,6 @@ name: Cache Openfold parameters
 on:
   workflow_dispatch:
   workflow_call:
-  push:
 
 jobs:
   download-params:
