@@ -236,10 +236,9 @@ class InferenceExperimentConfig(ExperimentConfig):
     @field_validator("inference_ckpt_path", mode="before")
     def _try_default_ckpt_path(cls, value: Path | None) -> Path:
         if value is None:
-            # TODO: change this to read the path written to $OPENFOLD_CACHE / ckpt_path.txt
             ckpt_path_file = get_openfold_cache_dir() / "ckpt_path.txt"
             if ckpt_path_file.exists():
-                with open(ckpt_path_file, "r") as f:
+                with open(ckpt_path_file) as f:
                     param_dir = f.read().strip()
                     value = Path(param_dir) / CHECKPOINT_NAME
             _maybe_download_parameters(value)
