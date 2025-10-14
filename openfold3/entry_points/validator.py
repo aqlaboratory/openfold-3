@@ -266,8 +266,8 @@ class InferenceExperimentConfig(ExperimentConfig):
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
     msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
-    template_preprocessor: TemplatePreprocessorSettings = TemplatePreprocessorSettings(
-        mode="predict"
+    template_preprocessor_settings: TemplatePreprocessorSettings = (
+        TemplatePreprocessorSettings(mode="predict")
     )
 
     @model_validator(mode="after")
@@ -287,7 +287,7 @@ class InferenceExperimentConfig(ExperimentConfig):
     @model_validator(mode="after")
     def copy_ccd_file_path(self):
         """Copies ccd_file_path dataset_config_kwargs>template_preprocessor_settings."""
-        if self.ccd_file_path is not None:
+        if self.dataset_config_kwargs.ccd_file_path is not None:
             if self.template_preprocessor_settings.ccd_file_path is not None:
                 warnings.warn(
                     "Overwriting ccd_file_path in template_preprocessor_settings with "
@@ -295,6 +295,8 @@ class InferenceExperimentConfig(ExperimentConfig):
                     "ccd_file_path only in dataset_config_kwargs.",
                     stacklevel=2,
                 )
-            self.template_preprocessor_settings.ccd_file_path = self.ccd_file_path
+            self.template_preprocessor_settings.ccd_file_path = (
+                self.dataset_config_kwargs.ccd_file_path
+            )
 
         return self
