@@ -152,16 +152,16 @@ class TrainingExperimentSettings(ExperimentSettings):
         return value
 
     @model_validator(mode="after")
-    def validate_ckpt_load_settings(cls, model):
+    def validate_ckpt_load_settings(self):
         manual_settings_enabled = any(
             [
-                model.ckpt_load_settings.init_from_ema_weights,
-                model.ckpt_load_settings.restore_lr_scheduler,
-                model.ckpt_load_settings.restore_time_step,
+                self.ckpt_load_settings.init_from_ema_weights,
+                self.ckpt_load_settings.restore_lr_scheduler,
+                self.ckpt_load_settings.restore_time_step,
             ]
         )
         if (
-            not model.ckpt_load_settings.manual_checkpoint_loading
+            not self.ckpt_load_settings.manual_checkpoint_loading
             and manual_settings_enabled
         ):
             raise ValueError(
@@ -169,15 +169,15 @@ class TrainingExperimentSettings(ExperimentSettings):
                 "manual_checkpoint_loading must be set to True."
             )
         if (
-            model.restart_checkpoint_path is None
-            and model.ckpt_load_settings.manual_checkpoint_loading
+            self.restart_checkpoint_path is None
+            and self.ckpt_load_settings.manual_checkpoint_loading
         ):
             raise ValueError(
                 "If manual_checkpoint_loading is set to True, "
                 "restart_checkpoint_path must be provided."
             )
 
-        return model
+        return self
 
 
 def generate_seeds(start_seed, num_seeds):
@@ -271,18 +271,18 @@ class InferenceExperimentConfig(ExperimentConfig):
     )
 
     @model_validator(mode="after")
-    def synchronize_seeds(cls, model):
+    def synchronize_seeds(self):
         """
         Ensures data_seed in DataModuleArgs is set. If it isn't, it will
         default to the first model seed in the provided list.
         """
-        model_seeds = model.experiment_settings.seeds
-        data_seed = model.data_module_args.data_seed
+        model_seeds = self.experiment_settings.seeds
+        data_seed = self.data_module_args.data_seed
 
         if data_seed is None:
-            model.data_module_args.data_seed = model_seeds[0]
+            self.data_module_args.data_seed = model_seeds[0]
 
-        return model
+        return self
 
     @model_validator(mode="after")
     def copy_ccd_file_path(self):
