@@ -2,8 +2,7 @@
 
 #!/bin/bash
 
-# Global variable for parameter directory
-# Configuration variables
+# Configuration variables: DO NOT SET HERE, to be set when running `setup_openfold3.sh`
 OPENFOLD_CACHE=""
 # Path for where the checkpoints were saved previously
 CKPT_PATH_FILE=""
