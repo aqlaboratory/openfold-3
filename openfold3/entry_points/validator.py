@@ -227,20 +227,15 @@ class InferenceExperimentConfig(ExperimentConfig):
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
     msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
 
-    @field_validator("cache_path", mode="before")
-    def get_openfold_cache_dir(cls, value: Path | None) -> Path:
-        """Identifies the default cache directory.
-        Prioritizes the environment variable $OPENFOLD_CACHE, then ~/.openfold3."""
-        if value is None:
-            cache_path = os.environ.get("OPENFOLD_CACHE")
-            if cache_path is None:
-                cache_path = DEFAULT_CACHE_PATH
-                cache_path.mkdir(parents=True, exist_ok=True)
-            return Path(cache_path)
-        else:
-            if not value.exists():
-                raise ValueError(f"Provided cache path {value} does not exist")
-            return value
+    @model_validator(mode="before")
+    @classmethod
+    def set_default_cache_path(cls, data):
+        """Set default cache_path if not provided"""
+        if data.get("cache_path") is None:
+            cache_path = os.environ.get("OPENFOLD_CACHE") or DEFAULT_CACHE_PATH
+            Path(cache_path).mkdir(parents=True, exist_ok=True)
+            data["cache_path"] = cache_path
+        return data
 
     @model_validator(mode="after")
     def _try_default_ckpt_path(self):

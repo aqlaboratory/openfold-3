@@ -61,7 +61,8 @@ protein_and_ligand_query = InferenceQuerySet.model_validate(
 @skip_unless_cuda_available()
 @pytest.mark.parametrize("query_set", [protein_only_query, protein_and_ligand_query])
 def test_inference_run(tmp_path, query_set):
-    experiment_config = InferenceExperimentConfig()
+    # Trigger validation logic to replace the cache path
+    experiment_config = InferenceExperimentConfig.model_validate({})
     expt_runner = InferenceExperimentRunner(
         experiment_config, num_diffusion_samples=1, output_dir=tmp_path
     )
