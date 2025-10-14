@@ -10,7 +10,6 @@ from typing import Any
 
 import ml_collections as mlc
 import pytorch_lightning as pl
-import torch
 import wandb
 from lightning_fabric.utilities.rank_zero import _get_rank
 from pydantic import BaseModel
@@ -362,7 +361,7 @@ class TrainingExperimentRunner(ExperimentRunner):
 
         if self.ckpt_load_setings.restore_time_step:
             if "DataModule" in ckpt:
-                logger.info(f"Restoring datamodule states...")
+                logger.info("Restoring datamodule states...")
                 self.lightning_data_module.load_state_dict(ckpt["DataModule"])
 
             logger.info("Restoring fit loop counters...")

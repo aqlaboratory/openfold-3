@@ -1,6 +1,5 @@
 import warnings
 from collections import OrderedDict
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -24,7 +23,7 @@ class ExponentialMovingAverage:
         self,
         model: nn.Module,
         decay: float,
-        submodules_to_update: Optional[list] = None,
+        submodules_to_update: list | None = None,
     ):
         """
         Args:

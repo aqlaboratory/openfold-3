@@ -14,8 +14,8 @@
 
 """Confidence losses from predicted logits in the Confidence Module."""
 
+from collections.abc import Callable
 from functools import partial
-from typing import Callable
 
 import torch
 import torch.nn.functional as F
