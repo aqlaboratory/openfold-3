@@ -53,20 +53,20 @@ In detail, this script will:
 - Setup a directory for OpenFold3 model parameters [default: `~/.openfold3`]
     - Writes the path to `$OPENFOLD_CACHE/ckpt_path` 
 - Download the model parameters, if the parameter file does not already exist 
-- Runs an inference integration test on two samples, without MSA alignments (long)
+- Runs an inference integration test on two samples, without MSA alignments (~5 min on A100)
 
 We recommend running this script as a one-stop script to download parameters and verify your installation.
 
 ### Downloading the model parameters manually
 
-The model parameters for the trained OpenFold3 model can be downloaded from our AWS RODA bucket with the following script:
+The model parameters (~5GB) for the trained OpenFold3 model can be downloaded from [our AWS RODA bucket](https://registry.opendata.aws/openfold/) with the following script:
 
 ```
 ./scripts/download_openfold_params.sh
 ```
 
 By default, these weights will be downloaded to `~/.openfold3/`. 
-You can customize the downloaad directory by providing your own download directory as follows.
+You can customize the download directory by providing your own download directory as follows.
 
 ```
 ./scripts/download_openfold_params.sh --download_dir=<target-dir>
@@ -79,10 +79,18 @@ You can optionally set your OpenFold3 Cache path as an environment variable:
 export OPENFOLD_CACHE=`/<custom-dir>/.openfold3/`
 ```
 
-If this variable is set, then the inference code will look for model checkpoints under `$OPENFOLD_CACHE/`
-If this variable is not set, then `~/.openfold3/` will be used as a default. 
+This can be used to provide some default paths for model parameters (see section below).
 
-### Running OpenFold Tests
+### Where does OpenFold3 look for model parameters? 
+
+OpenFold3 looks for parameters in the following order:
+1. Use `inference_ckpt_path` that the user provides either as a command line argument or in the `experiment_settings.inference_ckpt_path` section in `runner.yml`
+2. If the `$OPENFOLD_CACHE` value is set, either in the `runner.yml` under `experiment_settings.cache_path`, the path written in the file `$OPENFOLD_CACHE/ckpt_path` will be used
+    - If no `$OPENFOLD_CACHE/ckpt_path` file is set, will attempt to download the parameters to `$OPENFOLD_CACHE` (and write `ckpt_path` file storing the cache)
+3. If no `$OPENFOLD_CACHE` value is set, attempts to download the parameters to `~/.openfold3`.
+
+
+## Running OpenFold Tests
 
 OpenFold tests require the additional packages listed in `environments/development.txt`
 
@@ -101,6 +109,11 @@ $ pip install environments/development.txt
 To run the tests, you may use `pytest`, e.g.
 ```
 $ pytest tests/
+```
+
+To run the inference verification tests, run:
+```
+$ pytest tests/ -m "inference_verification"
 ```
 
 Note: To build deepspeed, it may be necessary to include the environment `$LD_LIBRARY_PATH` and `$LIBRARY_PATH`, which can be done via the following

@@ -121,7 +121,7 @@ python run_openfold.py predict \
 **Optional arguments**
 
 - `--inference_ckpt_path` *(Path)*
-    - Path to the model checkpoint file (`.pt` file). If not specified, the script will attempt to find cached parameters or download parameters.
+    - Path to the model checkpoint file (`.pt` file). If not specified, will attempt to use or download parameters in `$OPENFOLD_CACHE`
 
 - `--use_msa_server` *(bool, optional, default = True)*
     - Whether to use the ColabFold server for MSA generation.
