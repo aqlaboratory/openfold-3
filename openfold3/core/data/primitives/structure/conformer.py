@@ -119,10 +119,10 @@ def multistrategy_compute_conformer(
             Whether to remove hydrogens from the molecule after conformer generation.
         timeout_standard:
             The maximum time in seconds to allow for conformer generation with the
-            standard strategy. Default value is 30 seconds. If None, no timeout is set.
+            standard strategy. The default is None, where no timeout is set.
         timeout_rand_init:
             The maximum time in seconds to allow for conformer generation with random
-            initialization. Default value is 30 seconds. If None, no timeout is set.
+            initialization. The default is None, where no timeout is set.
     Returns:
         mol:
             The molecule for which the 3D coordinates should be computed.
