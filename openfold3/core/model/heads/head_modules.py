@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import importlib
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -94,7 +93,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         batch: dict,
         si_input: torch.Tensor,
         output: dict,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,

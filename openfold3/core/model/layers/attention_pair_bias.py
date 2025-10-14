@@ -15,8 +15,6 @@
 
 """Attention layer with pair bias."""
 
-from typing import Optional
-
 import torch
 from ml_collections import ConfigDict
 from torch import nn
@@ -51,7 +49,7 @@ class AttentionPairBias(nn.Module):
         use_ada_layer_norm: bool = False,
         gating: bool = True,
         inf=1e9,
-        linear_init_params: Optional[ConfigDict] = None,
+        linear_init_params: ConfigDict | None = None,
     ):
         """
         Args:
@@ -123,8 +121,8 @@ class AttentionPairBias(nn.Module):
     def _prep_bias(
         self,
         a: torch.Tensor,
-        z: Optional[torch.Tensor],
-        mask: Optional[torch.Tensor],
+        z: torch.Tensor | None,
+        mask: torch.Tensor | None,
     ) -> list[torch.Tensor]:
         """
         Args:
@@ -165,8 +163,8 @@ class AttentionPairBias(nn.Module):
         self,
         a: torch.Tensor,
         z: torch.Tensor,
-        s: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
+        s: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
@@ -246,11 +244,11 @@ class CrossAttentionPairBias(nn.Module):
         c_hidden: int,
         no_heads: int,
         use_ada_layer_norm: bool = False,
-        n_query: Optional[int] = None,
-        n_key: Optional[int] = None,
+        n_query: int | None = None,
+        n_key: int | None = None,
         gating: bool = True,
         inf=1e9,
-        linear_init_params: Optional[ConfigDict] = None,
+        linear_init_params: ConfigDict | None = None,
     ):
         """
         Args:
@@ -334,8 +332,8 @@ class CrossAttentionPairBias(nn.Module):
     def _prep_block_inputs(
         self,
         a: torch.Tensor,
-        z: Optional[torch.Tensor],
-        mask: Optional[torch.Tensor],
+        z: torch.Tensor | None,
+        mask: torch.Tensor | None,
     ) -> tuple:
         """
         Args:
@@ -380,8 +378,8 @@ class CrossAttentionPairBias(nn.Module):
         self,
         a: torch.Tensor,
         z: torch.Tensor,
-        s: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
+        s: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
         use_high_precision_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
     ) -> torch.Tensor:

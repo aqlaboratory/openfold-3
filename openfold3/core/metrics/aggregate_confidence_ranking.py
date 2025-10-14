@@ -46,7 +46,6 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
 
     if config.architecture.heads.pae.enabled:
         pae_probs = torch.softmax(outputs["pae_logits"], dim=-1)
-        device = pae_probs.device
         confidence_scores["pae"] = probs_to_expected_error(
             pae_probs, **config.confidence.pae
         )
@@ -55,16 +54,13 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
         else:
             del pae_probs
 
-        num_samples = outputs["atom_positions_predicted"].size(0)
-        valid_frame_mask = []
-        for i in range(num_samples):
-            _, v = get_token_frame_atoms(
-                batch=batch,
-                x=outputs["atom_positions_predicted"][i],
-                atom_mask=batch["atom_mask"],
-            )
-            valid_frame_mask.append(v)
-        valid_frame_mask = torch.stack(valid_frame_mask).bool().to(device)
+        _, valid_frame_mask = get_token_frame_atoms(
+            batch=batch,
+            x=outputs["atom_positions_predicted"],
+            atom_mask=batch["atom_mask"],
+        )
+
+        valid_frame_mask = valid_frame_mask.bool()
 
         confidence_scores.update(
             full_complex_sample_ranking_metric(
@@ -120,8 +116,9 @@ def get_confidence_scores(
         return t
 
     def slice_sample(t: torch.Tensor, j: int):
-        if isinstance(t, torch.Tensor) and t.ndim >= 2:
-            return t[:, j : j + 1]  # keep sample dim
+        ## skip tensors with batch size 1
+        if isinstance(t, torch.Tensor) and t.ndim >= 2 and t.shape[0] != 1:
+            return t[j : j + 1]  # keep sample dim
         return t
 
     per_batch_metrics = []
@@ -153,8 +150,8 @@ def get_confidence_scores(
                         batch=cur_batch_b, outputs=cur_outputs_bs, config=config
                     )
                 )
-            # Concat samples back on dim=1 for this batch item
-            cat_samples = partial(torch.concat, dim=1)
+            # Concat samples back on dim=0 for this batch item
+            cat_samples = partial(torch.concat, dim=0)
             metrics_b = dict_multimap(cat_samples, per_sample_metrics_list)
         else:
             # Compute once for all samples of this batch item

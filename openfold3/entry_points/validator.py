@@ -2,7 +2,7 @@ import random
 import warnings
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
 from pydantic import BaseModel, field_validator, model_validator
@@ -35,9 +35,9 @@ class WandbConfig(BaseModel):
 
     project: str
     experiment_name: str
-    entity: Optional[str] = None
-    group: Optional[str] = None
-    id: Optional[str] = None
+    entity: str | None = None
+    group: str | None = None
+    id: str | None = None
     offline: bool = False
 
 
@@ -55,7 +55,7 @@ class DataModuleArgs(BaseModel):
 
     model_config = PydanticConfigDict(extra="forbid")
     batch_size: int = 1
-    data_seed: Optional[int] = None
+    data_seed: int | None = None
     num_workers: int = 10
     num_workers_validation: int = 4
     epoch_len: int = 4
@@ -70,14 +70,14 @@ class PlTrainerArgs(BaseModel):
     precision: int | str = "32-true"
     num_nodes: int = 1
     devices: int = 1  # number of GPUs per node
-    profiler: Optional[str] = None
+    profiler: str | None = None
     log_every_n_steps: int = 1
     enable_checkpointing: bool = True
     enable_model_summary: bool = False
 
     # Extra arguments that are not passed directly to pl.Trainer
     deepspeed_config_path: Path | None = None
-    distributed_timeout: Optional[timedelta] = default_pg_timeout
+    distributed_timeout: timedelta | None = default_pg_timeout
     mpi_plugin: bool = False
 
 
@@ -100,11 +100,11 @@ class ExperimentSettings(BaseModel):
     output_dir: Path = Path("./")
     log_dir: Path | None = None
 
-    @model_validator(mode="after")
-    def create_output_dir(cls, model):
-        if not model.output_dir.exists():
-            model.output_dir.mkdir(parents=True, exist_ok=True)
-        return model
+    @field_validator("output_dir", mode="after")
+    def create_output_dir(cls, value: Path):
+        if not value.exists():
+            value.mkdir(parents=True, exist_ok=True)
+        return value
 
 
 class CheckpointLoadingSettings(BaseModel):
@@ -126,11 +126,11 @@ class TrainingExperimentSettings(ExperimentSettings):
 
     mode: ValidModeType = "train"
     seed: int = 42
-    restart_checkpoint_path: Optional[str] = None
+    restart_checkpoint_path: str | None = None
     ckpt_load_settings: CheckpointLoadingSettings = CheckpointLoadingSettings()
 
     @field_validator("restart_checkpoint_path", mode="before")
-    def validate_checkpoint_path(cls, value: Any) -> Optional[str]:
+    def validate_checkpoint_path(cls, value: Any) -> str | None:
         """
         Validates the restart_checkpoint_path.
 
@@ -196,25 +196,22 @@ class InferenceExperimentSettings(ExperimentSettings):
     use_templates: bool = False
 
     @model_validator(mode="after")
-    def generate_seeds(cls, model):
+    def generate_seeds(self):
         """Creates a list of seeds if a list of seeds is not provided."""
-        if isinstance(model.seeds, list):
+        if isinstance(self.seeds, list):
             pass
-        elif isinstance(model.seeds, int):
-            if model.num_seeds is None:
+        elif isinstance(self.seeds, int):
+            if self.num_seeds is None:
                 raise ValueError(
                     "Attempted to generate seeds using starting"
-                    f" seed{model.seeds} but num_seeds was not provided."
+                    f" seed {self.seeds} but num_seeds was not provided."
                     "Please either provide `num_seeds` or a list of seeds."
                 )
-            model.seeds = generate_seeds(model.seeds, model.num_seeds)
-        elif model.seeds is None:
-            raise ValueError(
-                "seeds must be provided (either int or list[int]),"
-                f" received {model.seeds}"
-            )
+            self.seeds = generate_seeds(self.seeds, self.num_seeds)
+        elif self.seeds is None:
+            raise ValueError("seeds must be provided (either int or list[int])")
 
-        return model
+        return self
 
 
 class ExperimentConfig(BaseModel):
@@ -269,8 +266,8 @@ class InferenceExperimentConfig(ExperimentConfig):
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
     msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
-    template_preprocessor_settings: TemplatePreprocessorSettings = (
-        TemplatePreprocessorSettings(mode="predict")
+    template_preprocessor: TemplatePreprocessorSettings = TemplatePreprocessorSettings(
+        mode="predict"
     )
 
     @model_validator(mode="after")
@@ -288,18 +285,16 @@ class InferenceExperimentConfig(ExperimentConfig):
         return model
 
     @model_validator(mode="after")
-    def copy_ccd_file_path(cls, model):
+    def copy_ccd_file_path(self):
         """Copies ccd_file_path dataset_config_kwargs>template_preprocessor_settings."""
-        if model.dataset_config_kwargs.ccd_file_path is not None:
-            if model.template_preprocessor_settings.ccd_file_path is not None:
+        if self.ccd_file_path is not None:
+            if self.template_preprocessor_settings.ccd_file_path is not None:
                 warnings.warn(
                     "Overwriting ccd_file_path in template_preprocessor_settings with "
                     "dataset_config_kwargs.ccd_file_path. We recommend specifying"
                     "ccd_file_path only in dataset_config_kwargs.",
                     stacklevel=2,
                 )
-            model.template_preprocessor_settings.ccd_file_path = (
-                model.dataset_config_kwargs.ccd_file_path
-            )
+            self.template_preprocessor_settings.ccd_file_path = self.ccd_file_path
 
-        return model
+        return self

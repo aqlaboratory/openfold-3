@@ -1,5 +1,5 @@
 import math
-from typing import Literal, Optional
+from typing import Literal
 
 import torch
 
@@ -14,8 +14,8 @@ def broadcast_token_feat_to_atoms(
     token_mask: torch.Tensor,
     num_atoms_per_token: torch.Tensor,
     token_feat: torch.Tensor,
-    token_dim: Optional[int] = -1,
-    max_num_atoms_per_token: Optional[int] = None,
+    token_dim: int | None = -1,
+    max_num_atoms_per_token: int | None = None,
 ):
     """
     Broadcast token-level features to atom-level features.
@@ -103,7 +103,7 @@ def aggregate_atom_feat_to_tokens(
     atom_to_token_index: torch.Tensor,
     atom_mask: torch.Tensor,
     atom_feat: torch.Tensor,
-    atom_dim: Optional[int] = -1,
+    atom_dim: int | None = -1,
     aggregate_fn: Literal["mean", "sum"] = "mean",
     eps: float = 1e-9,
 ):
@@ -556,6 +556,9 @@ def get_token_frame_atoms(
     # Find indices of two closest atoms for start atoms
     # [*, N_token]
     start_atom_index = batch["start_atom_index"].long()
+    start_atom_index = start_atom_index.expand(
+        *x.shape[:-2], start_atom_index.shape[-1]
+    )
     _, closest_atom_index = torch.topk(d, k=3, dim=-1, largest=False)
     a_index = torch.gather(closest_atom_index[..., 1], dim=-1, index=start_atom_index)
     c_index = torch.gather(closest_atom_index[..., 2], dim=-1, index=start_atom_index)
@@ -638,25 +641,14 @@ def get_token_frame_atoms(
                     .long(),
                 ),
                 "asym_id": torch.gather(
-                    atom_asym_id,
+                    atom_asym_id.expand(*x.shape[:-2], atom_asym_id.shape[-1]),
                     dim=-1,
-                    index=frame_atoms[key]["index"]
-                    .expand(
-                        *(
-                            atom_asym_id.shape[:-1]
-                            + (frame_atoms[key]["index"].shape[-1],)
-                        )
-                    )
-                    .long(),
+                    index=frame_atoms[key]["index"].long(),
                 ),
                 "atom_mask": torch.gather(
-                    atom_mask,
+                    atom_mask.expand(*x.shape[:-2], atom_mask.shape[-1]),
                     dim=-1,
-                    index=frame_atoms[key]["index"]
-                    .expand(
-                        *(atom_mask.shape[:-1] + (frame_atoms[key]["index"].shape[-1],))
-                    )
-                    .long(),
+                    index=frame_atoms[key]["index"].long(),
                 )
                 * batch["token_mask"]
                 * frame_atoms[key]["token_atom_mask"],

@@ -16,7 +16,6 @@
 """PairFormer block and stack."""
 
 from functools import partial
-from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -119,17 +118,17 @@ class PairFormerBlock(nn.Module):
 
     def forward(
         self,
-        s: Optional[torch.Tensor],
-        z: Optional[torch.Tensor],
+        s: torch.Tensor | None,
+        z: torch.Tensor | None,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
-        _attn_chunk_size: Optional[int] = None,
+        _attn_chunk_size: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -227,10 +226,10 @@ class PairFormerStack(nn.Module):
         transition_n: int,
         pair_dropout: float,
         fuse_projection_weights: bool,
-        blocks_per_ckpt: Optional[int],
+        blocks_per_ckpt: int | None,
         inf: float,
         linear_init_params: ConfigDict = lin_init.pairformer_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -316,9 +315,9 @@ class PairFormerStack(nn.Module):
         self,
         s: torch.Tensor,
         z: torch.Tensor,
-        single_mask: Optional[torch.Tensor],
-        pair_mask: Optional[torch.Tensor],
-        chunk_size: Optional[int],
+        single_mask: torch.Tensor | None,
+        pair_mask: torch.Tensor | None,
+        chunk_size: int | None,
         use_deepspeed_evo_attention: bool,
         use_cueq_triangle_kernels: bool,
         use_lma: bool,
@@ -386,7 +385,7 @@ class PairFormerStack(nn.Module):
         z: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,

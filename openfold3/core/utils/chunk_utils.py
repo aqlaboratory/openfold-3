@@ -13,9 +13,9 @@
 # limitations under the License.
 import logging
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import partial
-from typing import Any, Callable, Optional
+from typing import Any
 
 import torch
 
@@ -60,8 +60,8 @@ def _get_minimal_slice_set(
     start: Sequence[int],
     end: Sequence[int],
     dims: int,
-    start_edges: Optional[Sequence[bool]] = None,
-    end_edges: Optional[Sequence[bool]] = None,
+    start_edges: Sequence[bool] | None = None,
+    end_edges: Sequence[bool] | None = None,
 ) -> Sequence[tuple[int]]:
     """
     Produces an ordered sequence of tensor slices that, when used in

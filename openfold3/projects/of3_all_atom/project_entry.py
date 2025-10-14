@@ -2,7 +2,6 @@ import copy
 import importlib.resources
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 from ml_collections import ConfigDict
 from pydantic import BaseModel
@@ -47,7 +46,7 @@ class OF3ProjectEntry:
 
     def get_model_config_with_presets(
         self,
-        presets: Optional[list[str]] = None,
+        presets: list[str] | None = None,
     ) -> ConfigDict:
         """Retrieves a config with specified preset applied"""
         config = copy.deepcopy(self.model_config_base)
@@ -70,7 +69,7 @@ class OF3ProjectEntry:
         )
 
     def get_model_config_with_update(
-        self, model_update: Optional[ModelUpdate] = None
+        self, model_update: ModelUpdate | None = None
     ) -> ConfigDict:
         """Returns a model config with updates applied."""
         model_config = self.get_model_config_with_presets(model_update.presets)

@@ -15,7 +15,7 @@ These fields are parsed by the DataModule to create the appropriate Dataset clas
 """
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import (
     BaseModel,
@@ -56,14 +56,14 @@ class TrainingDatasetPaths(BaseModel):
     template_cache_directory: DirectoryPathOrNone = None
     template_structures_directory: DirectoryPathOrNone = None
     template_structure_array_directory: DirectoryPathOrNone = None
-    template_file_format: Optional[str] = None
+    template_file_format: str | None = None
     ccd_file: FilePathOrNone = None
     use_roda_monomer_format: bool = False
 
     @model_validator(mode="after")
     def _validate_paths(self):
         def _validate_exactly_one_path_exists(
-            group_name: str, path_values: list[Optional[Path]]
+            group_name: str, path_values: list[Path | None]
         ):
             which_paths_exist = [p is not None for p in path_values]
             if sum(which_paths_exist) != 1:
@@ -236,7 +236,7 @@ class TrainingDatasetSpec(DatasetSpec):
     name: str
     dataset_class: str
     mode: DatasetMode
-    weight: Optional[float] = None
+    weight: float | None = None
     config: SerializeAsAny[BaseModel] = Field(
         default_factory=lambda: DefaultDatasetConfigSection
     )
@@ -278,5 +278,5 @@ class InferenceDatasetSpec(DatasetSpec):
     name: str = "inference"
     dataset_class: str = "InferenceDataset"
     mode: DatasetMode = DatasetMode.prediction
-    weight: Optional[float] = None
+    weight: float | None = None
     config: InferenceJobConfig

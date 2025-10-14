@@ -15,7 +15,7 @@
 """Confidence losses from predicted logits in the Confidence Module."""
 
 from functools import partial
-from typing import Callable, Optional
+from typing import Callable
 
 import torch
 import torch.nn.functional as F
@@ -514,7 +514,7 @@ def confidence_loss(
     pde: dict,
     experimentally_resolved: dict,
     pae: dict,
-    per_sample_atom_cutoff: Optional[int] = None,
+    per_sample_atom_cutoff: int | None = None,
     eps: float = 1e-8,
     inf: float = 1e9,
     **kwargs,
