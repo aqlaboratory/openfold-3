@@ -28,15 +28,6 @@ CHECKPOINT_PATH_FILENAME = "ckpt_path"
 CHECKPOINT_NAME = "of3_ft3_v1.pt"
 
 
-def get_openfold_cache_dir() -> Path:
-    """Identifies the default cache directory.
-    Prioritizes the environment variable $OPENFOLD_CACHE, then ~/.openfold3."""
-    cache_path = os.environ.get("OPENFOLD_CACHE")
-    if cache_path is None:
-        cache_path = DEFAULT_CACHE_PATH
-    return Path(cache_path)
-
-
 def _maybe_download_parameters(target_path: Path) -> None:
     """Checks if OpenFold parameters are present, and downloads them if not."""
     openfold_bucket = "openfold"
@@ -226,6 +217,8 @@ class InferenceExperimentConfig(ExperimentConfig):
     model_config = PydanticConfigDict(extra="forbid")
     # Required inputs for performing inference
     inference_ckpt_path: Path | None = None
+    # default location to look for parameters if no ckpt_path is given
+    cache_path: Path | None = None
 
     experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()
     model_update: ModelUpdate = ModelUpdate(presets=["predict", "pae_enabled"])
@@ -234,13 +227,45 @@ class InferenceExperimentConfig(ExperimentConfig):
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
     msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
 
-    @field_validator("inference_ckpt_path", mode="before")
-    def _try_default_ckpt_path(cls, value: Path | None) -> Path:
+    @field_validator("cache_path", mode="before")
+    def get_openfold_cache_dir(cls, value: Path | None) -> Path:
+        """Identifies the default cache directory.
+        Prioritizes the environment variable $OPENFOLD_CACHE, then ~/.openfold3."""
         if value is None:
-            ckpt_path_file = get_openfold_cache_dir() / CHECKPOINT_PATH_FILENAME
-            if ckpt_path_file.exists():
-                with open(ckpt_path_file) as f:
+            cache_path = os.environ.get("OPENFOLD_CACHE")
+            if cache_path is None:
+                cache_path = DEFAULT_CACHE_PATH
+                cache_path.mkdir(parents=True, exist_ok=True)
+            return Path(cache_path)
+        else:
+            if not value.exists():
+                raise ValueError(f"Provided cache path {value} does not exist")
+            return value
+
+    @model_validator(mode="after")
+    def _try_default_ckpt_path(self):
+        if (
+            isinstance(self.inference_ckpt_path, Path)
+            and self.inference_ckpt_path.exists()
+        ):
+            return self
+        elif self.inference_ckpt_path is None:
+            # Try using path set in cache
+            path_to_ckpt = self.cache_path / CHECKPOINT_PATH_FILENAME
+            if path_to_ckpt.exists():
+                with open(path_to_ckpt) as f:
                     param_dir = f.read().strip()
-                    value = Path(param_dir) / CHECKPOINT_NAME
-            _maybe_download_parameters(value)
-        return value
+                    self.inference_ckpt_path = Path(param_dir) / CHECKPOINT_NAME
+            # If not set, write pararms to default dictionary
+            else:
+                param_dir = self.cache_path
+                logger.info("Storing path to OpenFold parameters in %s", path_to_ckpt)
+                with open(path_to_ckpt, "w") as f:
+                    f.write(str(param_dir))
+                self.inference_ckpt_path = param_dir / CHECKPOINT_NAME
+            _maybe_download_parameters(self.inference_ckpt_path)
+        else:
+            raise ValueError(
+                f"Provided checkpoint path {self.inference_ckpt_path} does not exist"
+            )
+        return self
