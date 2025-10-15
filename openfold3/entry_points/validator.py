@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 ValidModeType = Literal["train", "predict", "eval", "test"]
 DEFAULT_CACHE_PATH = Path("~/.openfold3/").expanduser()
-CHECKPOINT_PATH_FILENAME = "ckpt_path"
+CHECKPOINT_ROOT_FILENAME = "ckpt_root"
 CHECKPOINT_NAME = "of3_ft3_v1.pt"
 
 
@@ -47,7 +47,7 @@ def _maybe_download_parameters(target_path: Path) -> None:
         # Ask for confirmation with file size
         confirm = input(
             f"Download {checkpoint_path} ({size_gb:.2f} GB) "
-            f"from s3://{openfold_bucket}? (yes/no): "
+            f"from s3://{openfold_bucket} to {target_path}? (yes/no): "
         )
 
         if confirm.lower() in ["yes", "y"]:
@@ -246,7 +246,7 @@ class InferenceExperimentConfig(ExperimentConfig):
             return self
         elif self.inference_ckpt_path is None:
             # Try using path set in cache
-            path_to_ckpt = self.cache_path / CHECKPOINT_PATH_FILENAME
+            path_to_ckpt = self.cache_path / CHECKPOINT_ROOT_FILENAME
             if path_to_ckpt.exists():
                 with open(path_to_ckpt) as f:
                     param_dir = f.read().strip()

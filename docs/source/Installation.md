@@ -85,8 +85,8 @@ This can be used to provide some default paths for model parameters (see section
 
 OpenFold3 looks for parameters in the following order:
 1. Use `inference_ckpt_path` that the user provides either as a command line argument or in the `experiment_settings.inference_ckpt_path` section in `runner.yml`
-2. If the `$OPENFOLD_CACHE` value is set, either in the `runner.yml` under `experiment_settings.cache_path`, the path written in the file `$OPENFOLD_CACHE/ckpt_path` will be used
-    - If no `$OPENFOLD_CACHE/ckpt_path` file is set, will attempt to download the parameters to `$OPENFOLD_CACHE` (and write `ckpt_path` file storing the cache)
+2. If the `$OPENFOLD_CACHE` value is set, either in the `runner.yml` under `experiment_settings.cache_path`, `$OPENFOLD_CACHE/ckpt_root` will be used
+    - If no `$OPENFOLD_CACHE/ckpt_root` file is set, will attempt to download the parameters to `$OPENFOLD_CACHE` (and write `ckpt_root` file storing the cache)
 3. If no `$OPENFOLD_CACHE` value is set, attempts to download the parameters to `~/.openfold3`.
 
 

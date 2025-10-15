@@ -5,8 +5,8 @@
 # Configuration variables: DO NOT SET HERE, to be set when running `setup_openfold3.sh`
 OPENFOLD_CACHE=""
 # Path for where the checkpoints were saved previously
-CKPT_PATH_FILE=""
-PARAM_DIR=""
+CKPT_ROOT_FILE=""
+CKPT_DIR=""
 
 setup_conda_commands(){
     echo "Setting up conda shell environment..."
@@ -47,10 +47,10 @@ setup_openfold_cache() {
     mkdir -p "$OPENFOLD_CACHE"
     
     # Set the param path file location
-    CKPT_PATH_FILE="$OPENFOLD_CACHE/ckpt_path"
+    CKPT_ROOT_FILE="$OPENFOLD_CACHE/ckpt_root"
     
     # Export as environment variable
-    export OPENFOLD_CACHE="$OPENFOLD_CACHE"
+    export OPENFOLD_CACHE
     conda env config vars set OPENFOLD_CACHE="$OPENFOLD_CACHE"
     echo "OPENFOLD_CACHE environment variable set to: $OPENFOLD_CACHE"
 }
@@ -59,8 +59,8 @@ setup_openfold_cache() {
 setup_param_directory() {
     
     # Check if parameters have already been downloaded
-    if [ -f $CKPT_PATH_FILE ]; then
-        EXISTING_PATH=$(cat "$CKPT_PATH_FILE")
+    if [ -f $CKPT_ROOT_FILE ]; then
+        EXISTING_PATH=$(cat "$CKPT_ROOT_FILE")
         echo "OpenFold3 parameters may already be installed at: $EXISTING_PATH"
         echo "Do you want to:"
         echo "1) Use existing parameters (skip download)"
@@ -71,7 +71,7 @@ setup_param_directory() {
         case $choice in
             1)
                 echo "Using existing parameters at: $EXISTING_PATH" 
-                PARAM_DIR="$EXISTING_PATH"
+                CKPT_DIR="$EXISTING_PATH"
                 return 1  # Return non-zero to skip download
                 ;;
             2)
@@ -81,11 +81,11 @@ setup_param_directory() {
                     echo "No directory specified. Exiting."
                     exit 1
                 fi
-                PARAM_DIR="$user_input"
+                CKPT_DIR="$user_input"
                 ;;
             3)
                 echo "Re-downloading to: $EXISTING_PATH"
-                PARAM_DIR="$EXISTING_PATH"
+                CKPT_DIR="$EXISTING_PATH"
                 ;;
             *)
                 echo "Invalid choice. Exiting."
@@ -102,36 +102,33 @@ setup_param_directory() {
         
         # Use user input if provided, otherwise use default
         if [ -z "$user_input" ]; then
-            PARAM_DIR="$OPENFOLD_CACHE"
+            CKPT_DIR="$OPENFOLD_CACHE"
         else
-            PARAM_DIR="$user_input"
+            CKPT_DIR="$user_input"
         fi
     fi
 
     # Expand tilde to home directory if present
-    PARAM_DIR="${PARAM_DIR/#\~/$HOME}"
+    CKPT_DIR="${CKPT_DIR/#\~/$HOME}"
     
     # Create the directory if it doesn't exist
-    mkdir -p "$PARAM_DIR"
-    
-    # Create the .openfold3 directory if it doesn't exist (for storing the path file)
-    mkdir -p "$HOME/.openfold3"
+    mkdir -p "$CKPT_DIR"
     
     # Save the path to $HOME/.openfold3/param_path.txt
-    echo "$PARAM_DIR" > $CKPT_PATH_FILE 
+    echo "$CKPT_DIR" > $CKPT_ROOT_FILE 
     
-    echo "Parameters directory set to: $PARAM_DIR"
-    echo "Path saved to: $CKPT_PATH_FILE" 
+    echo "Parameters directory set to: $CKPT_DIR"
+    echo "Path saved to: $CKPT_ROOT_FILE" 
     
     return 0  # Return zero to proceed with download
 }
 
 # Function to perform the download
 download_parameters() {
-    local PARAM_DIR=$1
+    local CKPT_DIR=$1
     
     echo "Starting parameter download..."
-    bash scripts/download_openfold_params.sh --download_dir="$PARAM_DIR"
+    bash scripts/download_openfold_params.sh --download_dir="$CKPT_DIR"
     
     return $?  # Return the exit code of the download script
 }
@@ -152,7 +149,7 @@ SETUP_STATUS=$?
 # If setup_param_directory returns non-zero, user chose to use existing params
 if [ "$SETUP_STATUS" -eq 0 ]; then
     # 2. Perform download
-    download_parameters "$PARAM_DIR"
+    download_parameters "$CKPT_DIR"
     if [ $? -ne 0 ]; then
         echo "Download failed. Exiting."
         exit 1
