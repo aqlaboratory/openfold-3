@@ -210,13 +210,19 @@ class DiffusionModule(nn.Module):
             [*, N_atom, 3] Denoised atom positions
         """
         si, zij = self.diffusion_conditioning(
-            batch=batch, t=t, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+            batch=batch,
+            t=t,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            chunk_size=chunk_size,
         )
 
         xl_noisy = xl_noisy * atom_mask[..., None]
 
         rl_noisy = xl_noisy / torch.sqrt(t[..., None, None] ** 2 + self.sigma_data**2)
 
+        # Note: These modules are not memory-intensive so chunking is unnecessary.
         ai, ql, cl, plm = self.atom_attn_enc(
             batch=batch,
             atom_mask=atom_mask,
@@ -233,7 +239,6 @@ class DiffusionModule(nn.Module):
             s=si,
             z=zij,
             mask=token_mask,
-            chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,

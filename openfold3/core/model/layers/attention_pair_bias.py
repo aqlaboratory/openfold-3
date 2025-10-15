@@ -199,6 +199,15 @@ class AttentionPairBias(nn.Module):
 
         biases = self._prep_bias(a=a, z=z, mask=mask)
 
+        # TODO: Make this less awkward, DS kernel has strict shape asserts
+        #  and expects batch and seq dims to exist
+        #  Current reshape function only expects missing batch dim
+        batch_dims = a.shape[:-2]
+        reshape_for_ds_kernel = use_deepspeed_evo_attention and len(batch_dims) == 1
+        if reshape_for_ds_kernel:
+            a = a.unsqueeze(1)
+            biases = [b.unsqueeze(1) for b in biases]
+
         a = self.mha(
             q_x=a,
             kv_x=a,
@@ -208,6 +217,9 @@ class AttentionPairBias(nn.Module):
             use_lma=use_lma,
             use_high_precision=use_high_precision_attention,
         )
+
+        if reshape_for_ds_kernel:
+            a = a.squeeze(1)
 
         if self.use_ada_layer_norm:
             a = self.sigmoid(self.linear_ada_out(s)) * a

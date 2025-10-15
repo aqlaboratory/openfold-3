@@ -43,7 +43,7 @@ if deepspeed_is_installed:
     import deepspeed
 
 if ds4s_is_installed:
-    from deepspeed.ops.deepspeed4science import EvoformerFusedAttention
+    from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
 cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
@@ -453,60 +453,6 @@ class GlobalAttention(nn.Module):
         return m
 
 
-def _check_ds_evo_kernal_inputs(q, k, biases):
-    assert len(biases) <= 2
-
-    if len(biases) == 0:
-        biases.append(None)
-
-    if len(biases) == 1:
-        biases.append(None)
-
-    def are_shapes_broadcastable(shape1: torch.Size, shape2: torch.Size) -> bool:
-        try:
-            torch.broadcast_shapes(shape1, shape2)
-            return True
-        except RuntimeError:
-            return False
-
-    attn_score_shape = q.shape[:-2] + (q.shape[-2], k.shape[-2])
-
-    # TODO: Make shape asserts more robust
-    # Keep some of the checks from DS4Sci_EvoformerAttention
-    # Bias 1 is the attention mask, where the batch/sample dims
-    # need to be the same as q otherwise NaNs can occur
-    def bias_1_full_shape(x: torch.Tensor) -> tuple:
-        return *x.shape[:-3], 1, 1, x.shape[-2]
-
-    # Bias 2 is the pair bias, here we only check that the last 3 dims
-    # are correct. The starting dimensions are broadcastable, for example
-    # [N_batch, N_head, N_query, N_key] (AttentionPairBias) and
-    # [N_batch, 1, N_head, N_query, N_key] (TriAttention) would work.
-    def bias_2_end_shape(x: torch.Tensor) -> tuple:
-        return x.shape[-3], x.shape[-2], x.shape[-2]
-
-    if biases[0] is not None:
-        assert are_shapes_broadcastable(biases[0].shape, attn_score_shape), (
-            f"bias1 shape {biases[0].shape} is not broadcastable to attention "
-            f"score shape {attn_score_shape}"
-        )
-        bias1_expected = bias_1_full_shape(q)
-        assert biases[0].shape == bias1_expected, (
-            f"bias1 shape {biases[0].shape}, expecting {bias1_expected}"
-        )
-
-    if biases[1] is not None:
-        assert are_shapes_broadcastable(biases[1].shape, attn_score_shape), (
-            f"bias2 shape {biases[1].shape} is not broadcastable to attention "
-            f"score shape {attn_score_shape}"
-        )
-        bias2_actual = biases[1].shape[-3:]
-        bias2_expected = bias_2_end_shape(q)
-        assert bias2_actual == bias2_expected, (
-            f"bias2 shape is {bias2_actual}, expecting {bias2_expected}"
-        )
-
-
 @torch.compiler.disable
 def _deepspeed_evo_attn(
     q: torch.Tensor,
@@ -514,8 +460,8 @@ def _deepspeed_evo_attn(
     v: torch.Tensor,
     biases: list[torch.Tensor],
 ):
-    """
-    Compute attention using the DeepSpeed EvoformerFusedAttention kernel.
+    """ ""
+    Compute attention using the DeepSpeed DS4Sci_EvoformerAttention kernel.
 
     Args:
         q:
@@ -534,14 +480,27 @@ def _deepspeed_evo_attn(
             "and that the deepspeed.ops.deepspeed4science package exists"
         )
 
-    # Replace strict shape checks in DS4Sci_EvoformerAttention with
-    # more lenient checks
-    _check_ds_evo_kernal_inputs(q, k, biases)
-
-    # Deepspeed kernel expects [*, Q/K, H, C_hidden] inputs
+    # [*, Q/K, H, C_hidden]
     q = q.transpose(-2, -3)
     k = k.transpose(-2, -3)
     v = v.transpose(-2, -3)
+
+    def reshape_dims(x):
+        no_batch_dims = len(x.shape[:-3])
+        if no_batch_dims < 2:
+            return x.reshape(*((1,) * (2 - no_batch_dims) + x.shape))
+        if no_batch_dims > 2:
+            return x.reshape(*((x.shape[0], -1) + x.shape[-3:]))
+        return x
+
+    # Reshape tensors to match expected input shape [B, N, Q/K, H, C_hidden]
+    # for DS4Sci_EvoformerAttention() by adding or flattening batch dims as needed.
+    orig_shape = q.shape
+    if len(orig_shape[:-3]) != 2:
+        q = reshape_dims(q)
+        k = reshape_dims(k)
+        v = reshape_dims(v)
+        biases = [reshape_dims(b) for b in biases]
 
     def convert_dtype(x: torch.Tensor) -> torch.Tensor:
         if x.dtype not in [torch.bfloat16, torch.float16]:
@@ -556,10 +515,10 @@ def _deepspeed_evo_attn(
     v = convert_dtype(v)
     biases = [convert_dtype(b) for b in biases]
 
-    o = EvoformerFusedAttention.apply(q, k, v, biases[0], biases[1])
+    o = DS4Sci_EvoformerAttention(q, k, v, biases)
 
     # Convert back to original shape and dtype
-    o = o.to(dtype=orig_dtype)
+    o = o.reshape(orig_shape).to(dtype=orig_dtype)
 
     return o
 

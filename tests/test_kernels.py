@@ -26,6 +26,7 @@ from torch.nn import functional as F
 import tests.compare_utils as compare_utils
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
+from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.layers.triangular_multiplicative_update import (
     TriangleMultiplicativeUpdate,
 )
@@ -381,6 +382,7 @@ class TestKernels(unittest.TestCase):
         use_deepspeed_evo_attention=False,
         use_cueq_triangle_kernels=False,
         dtype=torch.float32,
+        chunk_size=None,
         eps=2e-2,
     ):
         """
@@ -395,6 +397,10 @@ class TestKernels(unittest.TestCase):
           instead of a newly initialized block.
         """
         batch_size = consts.batch_size
+        if chunk_size is not None and use_deepspeed_evo_attention:
+            # Chunk tuning is not supported with batch size > 1 for DeepSpeed kernel
+            batch_size = 1
+
         n_res = consts.n_res
         c_s = consts.c_s
         c_z = consts.c_z
@@ -425,6 +431,7 @@ class TestKernels(unittest.TestCase):
                 fuse_projection_weights=False,
                 blocks_per_ckpt=None,
                 inf=inf,
+                tune_chunk_size=chunk_size is not None,
             )
             .eval()
             .to(device="cuda", dtype=dtype)
@@ -439,6 +446,7 @@ class TestKernels(unittest.TestCase):
         z_mask = torch.randint(
             0, 2, (batch_size, n_res, n_res), device="cuda", dtype=dtype
         )
+
         with torch.no_grad(), torch.amp.autocast("cuda", dtype=dtype):
             out_repro_single, out_repro_pair = block(
                 s=s,
@@ -446,6 +454,7 @@ class TestKernels(unittest.TestCase):
                 single_mask=s_mask,
                 pair_mask=z_mask,
                 use_deepspeed_evo_attention=False,
+                chunk_size=None,  # Test against non-chunked version
             )
 
             # In practice, layer norms applied later in the network make any
@@ -460,6 +469,7 @@ class TestKernels(unittest.TestCase):
                 pair_mask=z_mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                chunk_size=chunk_size,
             )
             out_repro_single_ds = F.layer_norm(out_repro_single_ds, (consts.c_s,)).cpu()
             out_repro_pair_ds = F.layer_norm(out_repro_pair_ds, (consts.c_z,)).cpu()
@@ -474,7 +484,7 @@ class TestKernels(unittest.TestCase):
 
     @compare_utils.skip_unless_ds4s_installed()
     def test_compare_pairformer_dsk_bf16(self):
-        """Run evoformer comparison test with BF16 precision."""
+        """Run Pairformer comparison test with BF16 precision."""
         self._compare_pairformer(
             use_deepspeed_evo_attention=True,
             use_cueq_triangle_kernels=False,
@@ -484,7 +494,7 @@ class TestKernels(unittest.TestCase):
 
     @compare_utils.skip_unless_ds4s_installed()
     def test_compare_pairformer_dsk_fp32(self):
-        """Run evoformer comparison test with FP32 precision."""
+        """Run Pairformer comparison test with FP32 precision."""
         self._compare_pairformer(
             use_deepspeed_evo_attention=True,
             use_cueq_triangle_kernels=False,
@@ -492,9 +502,20 @@ class TestKernels(unittest.TestCase):
             eps=2e-2,
         )
 
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_compare_pairformer_dsk_fp32_chunk(self):
+        """Run Pairformer comparison test with chunk tuning enabled."""
+        self._compare_pairformer(
+            use_deepspeed_evo_attention=True,
+            use_cueq_triangle_kernels=False,
+            dtype=torch.float32,
+            chunk_size=4,
+            eps=4e-2,
+        )
+
     @compare_utils.skip_unless_cueq_installed()
     def test_compare_pairformer_cueq_bf16(self):
-        """Run evoformer comparison test with BF16 precision."""
+        """Run Pairformer comparison test with BF16 precision."""
         self._compare_pairformer(
             use_deepspeed_evo_attention=False,
             use_cueq_triangle_kernels=True,
@@ -504,7 +525,7 @@ class TestKernels(unittest.TestCase):
 
     @compare_utils.skip_unless_cueq_installed()
     def test_compare_pairformer_cueq_fp32(self):
-        """Run evoformer comparison test with FP32 precision."""
+        """Run Pairformer comparison test with FP32 precision."""
         self._compare_pairformer(
             use_deepspeed_evo_attention=False,
             use_cueq_triangle_kernels=True,
@@ -512,18 +533,144 @@ class TestKernels(unittest.TestCase):
             eps=2e-2,
         )
 
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_compare_pairformer_cueq_fp32_chunk(self):
+        """Run Pairformer comparison test with chunk tuning enabled."""
+        self._compare_pairformer(
+            use_deepspeed_evo_attention=False,
+            use_cueq_triangle_kernels=True,
+            dtype=torch.float32,
+            chunk_size=4,
+            eps=4e-2,
+        )
+
+    def _compare_diffusion_transformer(
+        self,
+        use_deepspeed_evo_attention=False,
+        dtype=torch.float32,
+        chunk_size=None,
+        eps=2e-2,
+    ):
+        """
+        Compare DiffusionTransformer output with and without using optimized kernels
+
+        TODO: Change the test to use a loaded DiffusionTransformer block from the
+          trained model instead of a newly initialized block.
+        """
+        batch_size = consts.batch_size
+        n_sample = 5
+        n_res = consts.n_res
+        c_a = 768
+        c_s = consts.c_s
+        c_z = consts.c_z
+        c_hidden = 48
+        no_heads = 16
+        no_blocks = 2
+        n_transition = 2
+        inf = 1e9
+
+        block = (
+            DiffusionTransformer(
+                c_a=c_a,
+                c_s=c_s,
+                c_z=c_z,
+                c_hidden=c_hidden,
+                no_heads=no_heads,
+                no_blocks=no_blocks,
+                n_transition=n_transition,
+                use_ada_layer_norm=True,
+                n_query=None,
+                n_key=None,
+                inf=inf,
+                tune_chunk_size=chunk_size is not None,
+            )
+            .eval()
+            .to(device="cuda", dtype=dtype)
+        )
+
+        self._initialize_model_weights(block)
+
+        a = torch.rand(batch_size, n_sample, n_res, c_a, device="cuda", dtype=dtype)
+        s = torch.rand(
+            batch_size, n_sample, n_res, consts.c_s, device="cuda", dtype=dtype
+        )
+        z = torch.rand(
+            batch_size, 1, n_res, n_res, consts.c_z, device="cuda", dtype=dtype
+        )
+
+        mask = torch.randint(0, 2, (batch_size, 1, n_res), device="cuda", dtype=dtype)
+
+        with torch.no_grad(), torch.amp.autocast("cuda", dtype=dtype):
+            out_repro_a = block(
+                a=a,
+                s=s,
+                z=z,
+                mask=mask,
+                use_deepspeed_evo_attention=False,
+                chunk_size=None,  # Test against non-chunked version
+            )
+
+            # In practice, layer norms applied later in the network make any
+            # kernel rounding errors negligible
+            out_repro_a = F.layer_norm(out_repro_a, (c_a,)).cpu()
+
+            out_repro_a_ds = block(
+                a=a,
+                s=s,
+                z=z,
+                mask=mask,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                chunk_size=chunk_size,
+            )
+            out_repro_a_ds = F.layer_norm(out_repro_a_ds, (c_a,)).cpu()
+
+            compare_utils.assert_mean_abs_diff_small(out_repro_a, out_repro_a_ds, eps)
+
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_compare_diffusion_transformer_dsk_bf16(self):
+        """Run Diffusion Transformer comparison test with BF16 precision."""
+        self._compare_diffusion_transformer(
+            use_deepspeed_evo_attention=True,
+            dtype=torch.bfloat16,
+            eps=4e-2,
+        )
+
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_compare_diffusion_transformer_dsk_fp32(self):
+        """Run Diffusion Transformer comparison test with FP32 precision."""
+        self._compare_diffusion_transformer(
+            use_deepspeed_evo_attention=True,
+            dtype=torch.float32,
+            eps=2e-2,
+        )
+
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_compare_diffusion_transformer_dsk_fp32_chunk(self):
+        """Run Diffusion Transformer comparison test with chunk tuning enabled."""
+        self._compare_diffusion_transformer(
+            use_deepspeed_evo_attention=True,
+            dtype=torch.float32,
+            chunk_size=4,
+            eps=4e-2,
+        )
+
     def _compare_template_stack(
         self,
         use_deepspeed_evo_attention=False,
         use_cueq_triangle_kernels=False,
         dtype=torch.float32,
+        chunk_size=None,
     ):
         """
         Compare Template Stack output with and without using DeepSpeed Evoformer
         attention kernel. Kernel can be used for Triangle Attention in the Template Pair
         Stack.
         """
-        batch_size = 1
+        batch_size = consts.batch_size
+        if chunk_size is not None and use_deepspeed_evo_attention:
+            # Chunk tuning is not supported with batch size > 1 for DeepSpeed kernel
+            batch_size = 1
+
         n_templ = 3
         n_token = 10
 
@@ -570,14 +717,14 @@ class TestKernels(unittest.TestCase):
             out_repro = embedder(
                 *args,
                 inplace_safe=False,
-                chunk_size=None,
                 use_deepspeed_evo_attention=False,
+                chunk_size=None,  # Test against non-chunked version
             )
 
             out_repro_ds = embedder(
                 *args,
                 inplace_safe=False,
-                chunk_size=None,
+                chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             )
@@ -601,6 +748,15 @@ class TestKernels(unittest.TestCase):
         )
 
     @compare_utils.skip_unless_cueq_installed()
+    def test_compare_template_stack_dsk_fp32_chunk(self):
+        self._compare_template_stack(
+            use_deepspeed_evo_attention=True,
+            use_cueq_triangle_kernels=False,
+            dtype=torch.float32,
+            chunk_size=4,
+        )
+
+    @compare_utils.skip_unless_cueq_installed()
     def test_compare_template_stack_cueq_fp32(self):
         self._compare_template_stack(
             use_deepspeed_evo_attention=False,
@@ -614,6 +770,15 @@ class TestKernels(unittest.TestCase):
             use_deepspeed_evo_attention=False,
             use_cueq_triangle_kernels=True,
             dtype=torch.bfloat16,
+        )
+
+    @compare_utils.skip_unless_cueq_installed()
+    def test_compare_template_stack_cueq_fp32_chunk(self):
+        self._compare_template_stack(
+            use_deepspeed_evo_attention=False,
+            use_cueq_triangle_kernels=True,
+            dtype=torch.float32,
+            chunk_size=4,
         )
 
 

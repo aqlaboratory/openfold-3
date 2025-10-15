@@ -202,12 +202,22 @@ class PairformerEmbedding(nn.Module):
         def reshape_outputs(x: torch.Tensor, feat_dims: list):
             return x.reshape(*batch_dims, *feat_dims)
 
-        si = reshape_inputs(x=si, feat_dims=si.shape[-2:])
+        si = reshape_inputs(x=si, feat_dims=si.shape[-2:]).clone()
         zij = reshape_inputs(x=zij, feat_dims=zij.shape[-3:])
         single_mask = reshape_inputs(x=single_mask, feat_dims=single_mask.shape[-1:])
         pair_mask = reshape_inputs(x=pair_mask, feat_dims=pair_mask.shape[-2:])
 
-        # PairFormer embedding
+        # Using the DS kernel with chunk tuning and multiple samples causes shape issues
+        # in the DS kernel. To avoid this, chunk tuning is disabled in this case.
+        # Both DS and cuEq kernels can be enabled, where cuEq takes precedence, so
+        # allow chunking if cuEq is set.
+        if (
+            use_deepspeed_evo_attention
+            and not use_cueq_triangle_kernels
+            and si.shape[0] > 1
+        ):
+            chunk_size = None
+
         si, zij = self.pairformer_stack(
             si,
             zij,
