@@ -68,7 +68,7 @@ class TrainingDatasetPaths(BaseModel):
             which_paths_exist = [p is not None for p in path_values]
             if sum(which_paths_exist) != 1:
                 existing_paths = [
-                    p for p, b in zip(path_values, which_paths_exist) if b
+                    p for p, b in zip(path_values, which_paths_exist, strict=True) if b
                 ]
                 raise ValueError(
                     f"Exactly one path in set of {group_name} should exist."

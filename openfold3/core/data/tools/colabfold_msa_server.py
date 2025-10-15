@@ -700,7 +700,9 @@ class ColabFoldQueryRunner:
         )
         m_with_templates = set(template_alignments[0])
 
-        for rep_id, aln in zip(self.colabfold_mapper.rep_ids, a3m_lines_main):
+        for rep_id, aln in zip(
+            self.colabfold_mapper.rep_ids, a3m_lines_main, strict=False
+        ):
             rep_dir = main_alignments_path / str(rep_id)
             template_rep_dir = template_alignments_path / str(rep_id)
 
@@ -766,7 +768,7 @@ class ColabFoldQueryRunner:
             # TODO: process the returned MSAs - save per representative ID
             complex_directory = paired_alignments_directory / str(complex_group.rep_id)
             complex_directory.mkdir(parents=True, exist_ok=True)
-            for seq, aln in zip(complex_group, a3m_lines_paired):
+            for seq, aln in zip(complex_group, a3m_lines_paired, strict=True):
                 rep_dir = complex_directory / str(get_sequence_hash(seq))
 
                 # If save as a3m...

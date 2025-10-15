@@ -379,7 +379,7 @@ class BaseOF3Dataset(SingleDataset, ABC):
             pdb_id
         ].chains.items():
             assembly_data[chain_id] = {}
-            for field, default in zip(fields, defaults):
+            for field, default in zip(fields, defaults, strict=True):
                 if hasattr(chain_data, field):
                     assembly_data[chain_id][field] = getattr(chain_data, field)
                 else:

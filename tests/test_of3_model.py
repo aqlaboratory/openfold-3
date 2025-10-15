@@ -161,9 +161,7 @@ class TestOF3Model:
             use_deepspeed_evo_attention=True,
         )
 
-    @pytest.mark.skip(
-        reason="Manually enable this for now, will add flag to run slow tests later."
-    )
+    @pytest.mark.slow
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     @pytest.mark.parametrize(

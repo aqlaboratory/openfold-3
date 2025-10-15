@@ -43,7 +43,7 @@ class OstRunnerInput(BaseModel):
     output_paths: list[Path]
 
     def zip(self):
-        return zip(self.pred_paths, self.ref_paths, self.output_paths)
+        return zip(self.pred_paths, self.ref_paths, self.output_paths, strict=True)
 
 
 class OstRunner:

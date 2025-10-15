@@ -95,8 +95,10 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
 @click.option(
     "--inference_ckpt_path",
     type=click.Path(exists=True, file_okay=True, dir_okay=True, path_type=Path),
-    required=True,
-    help="Path for model checkpoint to be used for inference",
+    required=False,
+    help="Path for model checkpoint to be used for inference. "
+    "If not specified, will attempt to find or download parameters to "
+    "$OPENFOLD_CACHE [default: ~/.openfold3/]",
 )
 @click.option(
     "--num_diffusion_samples",
@@ -138,7 +140,7 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
 )
 def predict(
     query_json: Path,
-    inference_ckpt_path: Path,
+    inference_ckpt_path: Path | None = None,
     num_diffusion_samples: int | None = None,
     num_model_seeds: int | None = None,
     runner_yaml: Path | None = None,
@@ -163,7 +165,7 @@ def predict(
     )
 
     # Dump experiment runner
-    with open(output_dir / "experiment_config.json", "w") as f:
+    with open(expt_runner.output_dir / "experiment_config.json", "w") as f:
         json.dump(expt_config.model_dump_json(indent=2), f)
 
     # Load inference query set

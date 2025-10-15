@@ -255,7 +255,7 @@ class LoggingMixin:
         # Iterate over asserts and update compliance array
         try:
             for i, (assert_i, args_i) in enumerate(
-                zip(ENSEMBLED_ASSERTS, ensembled_args)
+                zip(ENSEMBLED_ASSERTS, ensembled_args, strict=True)
             ):
                 assert_i(*args_i)
                 compliance[i] = 1
@@ -501,7 +501,9 @@ class LoggingMixin:
                 statistics += [len(torch.unique_consecutive(resid_tensor))]
 
             # Unresolved data
-            for aa, rs in zip(full_aa, [residue_starts, residue_starts_cropped]):
+            for aa, rs in zip(
+                full_aa, [residue_starts, residue_starts_cropped], strict=False
+            ):
                 if len(aa) > 0:
                     # Number of unresolved atoms
                     statistics += [np.isnan(aa.coord).any(axis=1).sum()]
@@ -543,6 +545,7 @@ class LoggingMixin:
                 [STANDARD_PROTEIN_RESIDUES_3] * 2
                 + [STANDARD_RNA_RESIDUES] * 2
                 + [STANDARD_DNA_RESIDUES] * 2,
+                strict=False,
             ):
                 if len(aa) > 0:
                     # number of residue tokens atomized due to special
@@ -573,6 +576,7 @@ class LoggingMixin:
                 ]
                 * 4,
                 per_moltype_aa,
+                strict=False,
             ):
                 if (len(aa_a) > 0) & (len(aa_b) > 0):
                     statistics += [get_interface_string(aa_a, aa_b, "NaN")]
@@ -861,6 +865,7 @@ def init_datasets_with_logging(
             multi_dataset_config.classes,
             multi_dataset_config.configs,
             multi_dataset_config.modes,
+            strict=False,
         )
         if dataset_type in types_to_init
     ]
