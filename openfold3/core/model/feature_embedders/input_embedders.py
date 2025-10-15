@@ -319,11 +319,15 @@ class MSAModuleEmbedder(nn.Module):
         # Apply the permutation and keep seq_subsample_dim sequences
         sampled_chain_feats = [
             feat[..., perm, :, :]
-            for feat, perm in zip(per_chain_msa_feat, chain_index_permutations)
+            for feat, perm in zip(
+                per_chain_msa_feat, chain_index_permutations, strict=False
+            )
         ]
         sampled_chain_masks = [
             mask[..., perm, :]
-            for mask, perm in zip(per_chain_msa_mask, chain_index_permutations)
+            for mask, perm in zip(
+                per_chain_msa_mask, chain_index_permutations, strict=False
+            )
         ]
 
         # Concatenate the chains back together

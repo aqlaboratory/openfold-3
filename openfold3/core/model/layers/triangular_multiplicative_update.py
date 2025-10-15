@@ -329,12 +329,13 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             # of the chunks in the middle to address that problem.
             i_range = list(range(0, half_n, inplace_chunk_size))
             initial_offsets = [
-                i_2 - i_1 for i_1, i_2 in zip(i_range, i_range[1:] + [half_n])
+                i_2 - i_1
+                for i_1, i_2 in zip(i_range, i_range[1:] + [half_n], strict=True)
             ]
             after_half = list(range(half_n, n, inplace_chunk_size))
             after_half_offsets = [inplace_chunk_size for _ in after_half]
             combined_range_with_offsets = zip(
-                i_range + after_half, initial_offsets + after_half_offsets
+                i_range + after_half, initial_offsets + after_half_offsets, strict=False
             )
             for i, offset in combined_range_with_offsets:
                 if not z_cache_rotated and i >= half_n:

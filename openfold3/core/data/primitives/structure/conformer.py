@@ -427,7 +427,7 @@ def renumber_permutations(
     # IDs
     required_gt_atoms = np.array(sorted(required_gt_atoms))
     required_gt_atoms_remapped = np.arange(len(required_gt_atoms))
-    atom_idx_map = dict(zip(required_gt_atoms, required_gt_atoms_remapped))
+    atom_idx_map = dict(zip(required_gt_atoms, required_gt_atoms_remapped, strict=True))
     atom_idx_mapper = np.vectorize(lambda x: atom_idx_map[x])
 
     # Update the set of atoms in the permutations to reflect the new indices

@@ -453,7 +453,7 @@ def remove_clashing_chains(
     """
     # Get atom counts of each chain in the total atom array
     unique_chains, counts = np.unique(atom_array.chain_id, return_counts=True)
-    chain_to_atom_count = dict(zip(unique_chains, counts))
+    chain_to_atom_count = dict(zip(unique_chains, counts, strict=True))
 
     ## Get the clashing chains to remove
     chain_ids_to_remove = set()
@@ -1006,7 +1006,9 @@ def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
     std_nucleic_acid_residues = set(STANDARD_NUCLEIC_ACID_RESIDUES)
 
     # Iterate through all chains
-    for chain_start, chain_end in zip(chain_starts[:-1], chain_starts[1:]):
+    for chain_start, chain_end in zip(
+        chain_starts[:-1], chain_starts[1:], strict=False
+    ):
         chain = atom_array[chain_start:chain_end]
         chain_idx = np.arange(chain_start, chain_end)
 

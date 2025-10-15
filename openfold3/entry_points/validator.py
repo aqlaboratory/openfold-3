@@ -1,9 +1,14 @@
+import logging
+import os
 import random
 import warnings
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
 
+import boto3
+import botocore
+from botocore.config import Config as botocoreConfig
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
 from pydantic import BaseModel, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
@@ -18,7 +23,45 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
 
+logger = logging.getLogger(__name__)
+
 ValidModeType = Literal["train", "predict", "eval", "test"]
+DEFAULT_CACHE_PATH = Path("~/.openfold3/").expanduser()
+CHECKPOINT_ROOT_FILENAME = "ckpt_root"
+CHECKPOINT_NAME = "of3_ft3_v1.pt"
+
+
+def _maybe_download_parameters(target_path: Path) -> None:
+    """Checks if OpenFold parameters are present, and downloads them if not."""
+    openfold_bucket = "openfold"
+    checkpoint_path = f"openfold3_params/{CHECKPOINT_NAME}"
+
+    if target_path.exists():
+        return
+
+    s3 = boto3.client("s3", config=botocoreConfig(signature_version=botocore.UNSIGNED))
+
+    try:
+        # Get file size
+        response = s3.head_object(Bucket=openfold_bucket, Key=checkpoint_path)
+        size_bytes = response["ContentLength"]
+        size_gb = size_bytes / (1024**3)
+
+        # Ask for confirmation with file size
+        confirm = input(
+            f"Download {checkpoint_path} ({size_gb:.2f} GB) "
+            f"from s3://{openfold_bucket} to {target_path}? (yes/no): "
+        )
+
+        if confirm.lower() in ["yes", "y"]:
+            logger.info(f"Downloading to {target_path}...")
+            s3.download_file(openfold_bucket, checkpoint_path, target_path)
+            logger.info("Download complete!")
+        else:
+            logger.warning("Download cancelled")
+
+    except Exception as e:
+        print(f"Error: {e}")
 
 
 class CheckpointConfig(BaseModel):
@@ -258,7 +301,9 @@ class InferenceExperimentConfig(ExperimentConfig):
     # pydantic model setting to prevent extra fields in main experiment config
     model_config = PydanticConfigDict(extra="forbid")
     # Required inputs for performing inference
-    inference_ckpt_path: Path
+    inference_ckpt_path: Path | None = None
+    # default location to look for parameters if no ckpt_path is given
+    cache_path: Path | None = None
 
     experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()
     model_update: ModelUpdate = ModelUpdate(presets=["predict", "pae_enabled"])
@@ -269,6 +314,44 @@ class InferenceExperimentConfig(ExperimentConfig):
     template_preprocessor_settings: TemplatePreprocessorSettings = (
         TemplatePreprocessorSettings(mode="predict")
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def set_default_cache_path(cls, data):
+        """Set default cache_path if not provided"""
+        if data.get("cache_path") is None:
+            cache_path = os.environ.get("OPENFOLD_CACHE") or DEFAULT_CACHE_PATH
+            Path(cache_path).mkdir(parents=True, exist_ok=True)
+            data["cache_path"] = cache_path
+        return data
+
+    @model_validator(mode="after")
+    def _try_default_ckpt_path(self):
+        if (
+            isinstance(self.inference_ckpt_path, Path)
+            and self.inference_ckpt_path.exists()
+        ):
+            return self
+        elif self.inference_ckpt_path is None:
+            # Try using path set in cache
+            path_to_ckpt = self.cache_path / CHECKPOINT_ROOT_FILENAME
+            if path_to_ckpt.exists():
+                with open(path_to_ckpt) as f:
+                    param_dir = f.read().strip()
+                    self.inference_ckpt_path = Path(param_dir) / CHECKPOINT_NAME
+            # If not set, write pararms to default dictionary
+            else:
+                param_dir = self.cache_path
+                logger.info("Storing path to OpenFold parameters in %s", path_to_ckpt)
+                with open(path_to_ckpt, "w") as f:
+                    f.write(str(param_dir))
+                self.inference_ckpt_path = param_dir / CHECKPOINT_NAME
+            _maybe_download_parameters(self.inference_ckpt_path)
+        else:
+            raise ValueError(
+                f"Provided checkpoint path {self.inference_ckpt_path} does not exist"
+            )
+        return self
 
     @model_validator(mode="after")
     def synchronize_seeds(self):

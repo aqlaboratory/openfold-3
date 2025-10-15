@@ -88,7 +88,7 @@ def get_mol_id_to_tanimoto_ligands(
     val_fps = precompute_fingerprints(val_smiles, mfpgen)
 
     assert len(val_refids) == len(val_fps)
-    val_refid_to_fp = dict(zip(val_refids, val_fps))
+    val_refid_to_fp = dict(zip(val_refids, val_fps, strict=True))
 
     # Precompute fingerprints for training SMILES
     train_refids = list(train_refid_to_smiles.keys())

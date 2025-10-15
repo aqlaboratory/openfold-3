@@ -19,12 +19,26 @@ from openfold3.entry_points.experiment_runner import (
     WandbHandler,
 )
 from openfold3.entry_points.validator import (
+    CHECKPOINT_NAME,
     InferenceExperimentConfig,
     TrainingExperimentConfig,
     TrainingExperimentSettings,
     WandbConfig,
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
+
+
+@pytest.fixture
+def dummy_ckpt_file(tmp_path: Path) -> Path:
+    dummy_ckpt = tmp_path / "dummy.ckpt"
+    dummy_ckpt.write_text("dummy content")
+    return dummy_ckpt
+
+
+def _create_fake_file(path: Path) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write("dummy content")
 
 
 class TestTrainingExperiment:
@@ -204,7 +218,7 @@ class TestModelUpdate:
         with pytest.raises(KeyError, match="config is locked"):
             project_entry.get_model_config_with_update(model_update)
 
-    def test_model_update_with_diffusion_samples(self, tmp_path):
+    def test_model_update_with_diffusion_samples(self, tmp_path, dummy_ckpt_file):
         """Test application of model update and num_diffusion_samples cli argument."""
         test_yaml_str = textwrap.dedent("""\
             model_update:
@@ -216,7 +230,7 @@ class TestModelUpdate:
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
         expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=tmp_path / "dummy.ckpt.pt",
+            inference_ckpt_path=dummy_ckpt_file,
             **config_utils.load_yaml(test_yaml_file),
         )
         expt_runner = InferenceExperimentRunner(expt_config)
@@ -230,7 +244,7 @@ class TestModelUpdate:
         # Verify settings from model_update section are also applied
         assert model_config.architecture.shared.num_recycles == 1
 
-    def test_pae_disabled_if_preset_not_selected(self, tmp_path):
+    def test_pae_disabled_if_preset_not_selected(self, tmp_path, dummy_ckpt_file):
         """Test pae not set if only predict preset specified experiment runner."""
         test_yaml_str = textwrap.dedent("""\
             model_update:
@@ -240,13 +254,13 @@ class TestModelUpdate:
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
         expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=tmp_path / "dummy.ckpt.pt",
+            inference_ckpt_path=dummy_ckpt_file,
             **config_utils.load_yaml(test_yaml_file),
         )
         expt_runner = InferenceExperimentRunner(expt_config)
         assert not expt_runner.pae_enabled, "Expected pae_head not to be enabled."
 
-    def test_pae_enabled(self, tmp_path):
+    def test_pae_enabled(self, tmp_path, dummy_ckpt_file):
         """Test pae enabled updates experiment runner."""
         test_yaml_str = textwrap.dedent("""\
             model_update:
@@ -257,13 +271,13 @@ class TestModelUpdate:
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
         expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=tmp_path / "dummy.ckpt.pt",
+            inference_ckpt_path=dummy_ckpt_file,
             **config_utils.load_yaml(test_yaml_file),
         )
         expt_runner = InferenceExperimentRunner(expt_config)
         assert expt_runner.pae_enabled
 
-    def test_low_mem_model_config_preset(self, tmp_path):
+    def test_low_mem_model_config_preset(self, tmp_path, dummy_ckpt_file):
         test_dummy_file = tmp_path / "test.json"
         test_dummy_file.write_text("test")
 
@@ -278,11 +292,11 @@ class TestModelUpdate:
             """)
 
         test_yaml_file = tmp_path / "runner.yml"
-        dummy_ckpt = tmp_path / "dummy.ckpt.pt"
         test_yaml_file.write_text(test_yaml_str)
 
         expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=dummy_ckpt, **config_utils.load_yaml(test_yaml_file)
+            inference_ckpt_path=dummy_ckpt_file,
+            **config_utils.load_yaml(test_yaml_file),
         )
 
         expt_runner = InferenceExperimentRunner(expt_config)
@@ -401,35 +415,28 @@ class TestWandbHandler(unittest.TestCase):
 
 class TestInferenceCommandLineSettings:
     @pytest.mark.parametrize("use_msa_cli_arg", [True, False])
-    def test_use_msa_cli(self, use_msa_cli_arg, tmp_path):
-        expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=tmp_path / "dummy.ckpt"
-        )
+    def test_use_msa_cli(self, use_msa_cli_arg, tmp_path, dummy_ckpt_file):
+        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
         expt_runner = InferenceExperimentRunner(
             expt_config, use_msa_server=use_msa_cli_arg
         )
         assert expt_runner.use_msa_server == use_msa_cli_arg
 
     @pytest.mark.parametrize("use_templates_cli_arg", [True, False])
-    def test_use_templates_cli(self, use_templates_cli_arg, tmp_path):
-        expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=tmp_path / "dummy.ckpt"
-        )
+    def test_use_templates_cli(self, use_templates_cli_arg, tmp_path, dummy_ckpt_file):
+        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
         expt_runner = InferenceExperimentRunner(
             expt_config, use_templates=use_templates_cli_arg
         )
         assert expt_runner.use_templates == use_templates_cli_arg
 
-    def test_seeding_from_num_seeds(self, tmp_path):
-        dummy_ckpt_path = tmp_path / "dummy.ckpt.pt"
-        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_path)
+    def test_seeding_from_num_seeds(self, dummy_ckpt_file):
+        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
         num_seeds = 7
         expt_runner = InferenceExperimentRunner(expt_config, num_model_seeds=num_seeds)
         assert len(expt_runner.seeds) == num_seeds
 
-
-class TestInferneceExperimentSettings:
-    def test_seeding_from_list(self, tmp_path):
+    def test_seeding_from_list(self, tmp_path, dummy_ckpt_file):
         test_yaml_str = textwrap.dedent("""\
             experiment_settings:
                 seeds:
@@ -438,10 +445,9 @@ class TestInferneceExperimentSettings:
             """)
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
-        dummy_ckpt_path = tmp_path / "dummy.ckpt.pt"
 
         expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=dummy_ckpt_path,
+            inference_ckpt_path=dummy_ckpt_file,
             **config_utils.load_yaml(test_yaml_file),
         )
         assert expt_config.experiment_settings.seeds == [17, 101]
@@ -450,7 +456,12 @@ class TestInferneceExperimentSettings:
         "data_seed, model_seed, expected_data_seed", [(114, 42, 114), (None, 123, 123)]
     )
     def test_synchronize_seeds_respects_data_seed(
-        self, data_seed, model_seed, expected_data_seed, tmp_path
+        self,
+        data_seed,
+        model_seed,
+        expected_data_seed,
+        tmp_path,
+        dummy_ckpt_file,
     ):
         test_yaml_str = textwrap.dedent(f"""\
             experiment_settings:
@@ -467,27 +478,44 @@ class TestInferneceExperimentSettings:
 
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
-        dummy_ckpt_path = tmp_path / "dummy.ckpt.pt"
 
         expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=dummy_ckpt_path,
+            inference_ckpt_path=dummy_ckpt_file,
             **config_utils.load_yaml(test_yaml_file),
         )
         assert expt_config.experiment_settings.seeds == [model_seed, 101]
         assert expt_config.data_module_args.data_seed == expected_data_seed
 
 
+class TestInferenceCheckpointLoading:
+    def test_inference_ckpt_path_user_defined(self, dummy_ckpt_file):
+        expt_config = InferenceExperimentConfig.model_validate(
+            {"inference_ckpt_path": dummy_ckpt_file}
+        )
+        assert expt_config.inference_ckpt_path == dummy_ckpt_file
+
+    def test_inference_ckpt_path_defaults(self, tmp_path):
+        with patch(
+            "openfold3.entry_points.validator._maybe_download_parameters",
+            side_effect=_create_fake_file,
+        ):
+            expt_config = InferenceExperimentConfig.model_validate(
+                {"cache_path": tmp_path}
+            )
+        assert expt_config.inference_ckpt_path == tmp_path / CHECKPOINT_NAME
+
+
 class TestTemplatePreprocessorSettings:
-    def test_overwrite_output_dir(self, tmp_path):
+    def test_overwrite_output_dir(self, tmp_path, dummy_ckpt_file):
         test_yaml_str = textwrap.dedent(f"""\
         template_preprocessor_settings:
             output_directory: {tmp_path / "custom_dir"}
         """)
         test_yaml_file = tmp_path / "runner.yml"
-        dummy_ckpt = tmp_path / "dummy.ckpt.pt"
         test_yaml_file.write_text(test_yaml_str)
         expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=dummy_ckpt, **config_utils.load_yaml(test_yaml_file)
+            inference_ckpt_path=dummy_ckpt_file,
+            **config_utils.load_yaml(test_yaml_file),
         )
 
         assert expt_config.template_preprocessor_settings.output_directory == (

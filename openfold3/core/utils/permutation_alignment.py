@@ -1143,6 +1143,7 @@ def get_final_atom_permutation_index(
             gt_positions_subset_grouped,
             gt_resolved_mask_subset_grouped,
             gt_atom_idx_subset_grouped,
+            strict=False,
         ):
             # All possible permutations for this conformer
             permutations = pred_ref_space_uid_to_perm[ref_space_uid.item()]
