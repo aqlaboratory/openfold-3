@@ -1,5 +1,6 @@
 # Copyright 2021 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
+# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -341,11 +342,12 @@ class TemplatePairStack(nn.Module):
                 args=(t.clone(),),
                 min_chunk_size=chunk_size,
             )
+            attn_chunk = tuned_chunk_size if use_cueq_triangle_kernels else (tuned_chunk_size // 4)
             blocks = [
                 partial(
                     b,
                     chunk_size=tuned_chunk_size,
-                    _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
+                    _attn_chunk_size=max(chunk_size, attn_chunk),
                 )
                 for b in blocks
             ]

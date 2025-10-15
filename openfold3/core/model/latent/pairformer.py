@@ -1,5 +1,6 @@
 # Copyright 2021 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
+# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -166,7 +167,7 @@ class PairFormerBlock(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair embedding
         """
-        assert not (use_cueq_triangle_kernels and use_deepspeed_evo_attention)
+
         single_trans_mask = single_mask if _mask_trans else None
 
         z = self.pair_stack(
@@ -366,13 +367,14 @@ class PairFormerStack(nn.Module):
                 ),
                 min_chunk_size=chunk_size,
             )
+            attn_chunk = tuned_chunk_size if use_cueq_triangle_kernels else (tuned_chunk_size // 4)
             blocks = [
                 partial(
                     b,
                     chunk_size=tuned_chunk_size,
                     # A temporary measure to address torch's occasional
                     # inability to allocate large tensors
-                    _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
+                    _attn_chunk_size=max(chunk_size, attn_chunk),
                 )
                 for b in blocks
             ]

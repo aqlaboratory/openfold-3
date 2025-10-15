@@ -1,5 +1,6 @@
 # Copyright 2021 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
+# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,7 +49,24 @@ if ds4s_is_installed:
 cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
     from cuequivariance_torch.primitives.triangle import triangle_attention
-
+    try:
+        from cuequivariance_torch.primitives.triangle import should_fall_back
+    except ImportError:
+        from cuequivariance_ops_torch.triangle_attention import CUEQ_TRIATTN_FALLBACK_THRESHOLD
+        def should_fall_back(q_x):
+            # for q_x, dimension -2 is the context length.
+            if q_x.shape[-2] <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
+                return True
+            hidden_dim = q_x.shape[-1]
+            if q_x.dtype == torch.float32:
+                if hidden_dim > 32 or hidden_dim % 4 != 0:
+                    return True
+            else:
+                # float16, bfloat16
+                if hidden_dim > 128 or hidden_dim % 8 != 0:
+                    return True
+            return False
+    
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
 
@@ -309,7 +327,7 @@ class Attention(nn.Module):
                 implementation is used instead
             use_cueq_triangle_kernels:
                 whether to use cuequivariance triangle kernels. Mutually
-                exclusive with other use_<...> flags
+                exclusive with use_lma
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
                 none of the "use_<...>" flags are True, a stock PyTorch
@@ -331,16 +349,20 @@ class Attention(nn.Module):
                 "lma_kv_chunk_size must be provided"
             )
 
+        if use_cueq_triangle_kernels:
+            # cuEquivariance -> Torch fallback for small sequence length and some shapes
+            if should_fall_back(q_x):
+                use_cueq_triangle_kernels = False
+        
         # TODO: Make this more explicit
         # The EvoformerAttention kernel can only be used for sequence lengths > 16
         if use_deepspeed_evo_attention and q_x.shape[-2] <= 16:
             use_deepspeed_evo_attention = False
 
         attn_options = [
-            use_deepspeed_evo_attention,
+            use_deepspeed_evo_attention or use_cueq_triangle_kernels,
             use_lma,
             use_high_precision,
-            use_cueq_triangle_kernels,
         ]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
@@ -354,7 +376,11 @@ class Attention(nn.Module):
             apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels),
         )
 
-        if use_deepspeed_evo_attention:
+        # cueqivarince kernel takes precedence over use_deepspeed_evo_attention
+        if use_cueq_triangle_kernels:
+            scale = 1.0 / math.sqrt(self.c_hidden)
+            o = _cueq_triangle_attn(q, k, v, biases, scale=scale)
+        elif use_deepspeed_evo_attention:
             if len(biases) > 2:
                 raise ValueError(
                     "If use_deepspeed_evo_attention is True, you may only "
@@ -368,9 +394,6 @@ class Attention(nn.Module):
             ]
             o = _lma(q, k, v, biases, lma_q_chunk_size, lma_kv_chunk_size)
             o = o.transpose(-2, -3)
-        elif use_cueq_triangle_kernels:
-            scale = 1.0 / math.sqrt(self.c_hidden)
-            o = _cueq_triangle_attn(q, k, v, biases, scale=scale)
         else:
             o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
             o = o.transpose(-2, -3)
