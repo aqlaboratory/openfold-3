@@ -38,6 +38,7 @@ def load_checkpoint(ckpt_path: Path) -> dict:
 
 
 def get_state_dict_from_checkpoint(ckpt: dict, init_from_ema_weights: bool) -> dict:
+    """Retrieves state dict from various checkpoint formats."""
     is_pretrained_model = "module" not in ckpt or "state_dict" not in ckpt
 
     # Loading from pre-trained model
