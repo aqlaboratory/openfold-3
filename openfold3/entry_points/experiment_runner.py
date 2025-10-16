@@ -30,9 +30,12 @@ from openfold3.core.utils.callbacks import (
     PredictTimer,
     RankSpecificSeedCallback,
 )
+from openfold3.core.utils.checkpoint_loading_utils import (
+    get_state_dict_from_checkpoint,
+    load_checkpoint,
+)
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
-from openfold3.core.utils.checkpoint_loading_utils import get_state_dict_from_checkpoint, load_checkpoint
 from openfold3.entry_points.validator import (
     ExperimentConfig,
     TrainingExperimentConfig,
@@ -537,8 +540,8 @@ class InferenceExperimentRunner(ExperimentRunner):
     @cached_property
     def pae_enabled(self) -> bool:
         return self.model_config.architecture.heads.pae.enabled
-    
-    def setup(self)-> None:
+
+    def setup(self) -> None:
         """Set up environment and load checkpoints."""
         super().setup()
         logger.info(f"Loading weights from {self.ckpt_path}")

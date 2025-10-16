@@ -1,9 +1,11 @@
 """
-Converts a full checkpoint file to a checkpoint that only contains EMA weights for inference.
+Converts a full checkpoint file to a checkpoint that only contains EMA weights
+for inference.
 
 Usage:
 
-python scripts/dev/convert_ckpt_to_ema_only.py /path/to/full_checkpoint /path/to/output_ema_only_checkpoint
+python scripts/dev/convert_ckpt_to_ema_only.py /path/to/full_checkpoint
+/path/to/output_ema_only_checkpoint
 """
 
 import argparse
@@ -20,7 +22,6 @@ def convert_checkpoint_to_ema_only(args):
 
     ema_parameters = full_ckpt["ema"]["params"]
     torch.save(ema_parameters, output_path)
-
 
 
 if __name__ == "__main__":
