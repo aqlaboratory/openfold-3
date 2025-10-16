@@ -373,14 +373,14 @@ class Attention(nn.Module):
 
         if biases is None:
             biases = []
-        # DeepSpeed attention kernel and cueqivarince kernel applies scaling internally
+        # DeepSpeed attention kernel and cuequivariance kernel apply scaling internally
         q, k, v = self._prep_qkv(
             q_x,
             kv_x,
             apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels),
         )
 
-        # cueqivarince kernel takes precedence over use_deepspeed_evo_attention
+        # cuequivariance kernel takes precedence over use_deepspeed_evo_attention
         if use_cueq_triangle_kernels:
             if not cueq_is_installed:
                 raise ValueError(
