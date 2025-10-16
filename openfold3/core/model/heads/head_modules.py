@@ -122,7 +122,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                 Mutually exclusive with use_lma.
             use_cueq_triangle_kernels:
                 Whether to use cuEq triangle attention kernel.
-                Mutually exclusive with use_lma and use_deepspeed_evo_attention.
+                Mutually exclusive with use_lma
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
