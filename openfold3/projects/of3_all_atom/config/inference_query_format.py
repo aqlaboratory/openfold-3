@@ -143,7 +143,7 @@ def remove_completed_queries_from_query_json(
     if query_input_cfg["queries"]:
         print(
             "Skipping existing structures is enabled.Will skip "
-            "the following {len(removed_structures)} structures:"
+            f"the following {len(removed_structures)} structures:"
         )
         print(removed_structures)
         return json.dumps(query_input_cfg)
