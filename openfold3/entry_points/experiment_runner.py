@@ -269,12 +269,7 @@ class ExperimentRunner(ABC):
         elif self.mode == "test":
             target_method = self.trainer.test
         elif self.mode == "predict":
-            target_method = self.trainer.predict
-            return target_method(
-                model=self.lightning_module,
-                datamodule=self.lightning_data_module,
-                return_predictions=False,
-            )
+	    raise NotImplementedError("To be implemented by `InferenceExperimentRunner`)
         else:
             raise ValueError(
                 f"""Invalid mode argument: {self.mode}. Choose one of "
@@ -552,7 +547,12 @@ class InferenceExperimentRunner(ExperimentRunner):
     def run(self, inference_query_set) -> None:
         """Load the inference query set to run predictions."""
         self.inference_query_set = inference_query_set
-        super().run()
+        logger.info("Beginning inference prediction")
+        self.trainer.predict(
+            model=self.lightning_module,
+            datamodule=self.lightning_data_module,
+            return_predictions=False
+        )
         self._log_experiment_config()
         self._log_model_config()
 
