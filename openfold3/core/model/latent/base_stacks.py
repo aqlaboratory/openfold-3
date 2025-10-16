@@ -130,7 +130,11 @@ class MSAStack(nn.Module, ABC):
                 ),
                 min_chunk_size=chunk_size,
             )
-            attn_chunk = tuned_chunk_size if use_cueq_triangle_kernels else (tuned_chunk_size // 4)
+            attn_chunk = (
+                tuned_chunk_size
+                if use_cueq_triangle_kernels
+                else (tuned_chunk_size // 4)
+            )
             blocks = [
                 partial(
                     b,

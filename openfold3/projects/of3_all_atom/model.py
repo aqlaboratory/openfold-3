@@ -18,7 +18,6 @@ The main inference and training loops for AlphaFold3.
 """
 
 import random
-import warnings
 from enum import Enum
 
 import torch
