@@ -53,6 +53,12 @@ dev = [
   "pytest",
   "ruff",
 ]
+cuequivariance = [
+  "cuequivariance>=0.6.1",
+  "cuequivariance-ops-torch-cu12>=0.6.1",
+  "cuequivariance-torch>=0.6.1",
+  "torch>=2.7",
+]
 
 [tool.setuptools]
 include-package-data = true
