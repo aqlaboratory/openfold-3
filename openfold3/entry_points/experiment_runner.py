@@ -8,7 +8,6 @@ from functools import cached_property, wraps
 from pathlib import Path
 from typing import Any
 
-# Used to disable nanobind leak warnings from gemmi project.
 import ml_collections as mlc
 import pytorch_lightning as pl
 import wandb
@@ -271,7 +270,6 @@ class ExperimentRunner(ABC):
             return target_method(
                 model=self.lightning_module,
                 datamodule=self.lightning_data_module,
-                ckpt_path=self.ckpt_path,
                 return_predictions=False,
             )
         else:
@@ -543,6 +541,7 @@ class InferenceExperimentRunner(ExperimentRunner):
     def setup(self)-> None:
         """Set up environment and load checkpoints."""
         super().setup()
+        logger.info(f"Loading weights from {self.ckpt_path}")
         ckpt = load_checkpoint(self.ckpt_path)
         state_dict = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
         self.lightning_module.load_state_dict(state_dict, strict=True)
