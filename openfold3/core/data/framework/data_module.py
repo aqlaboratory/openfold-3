@@ -29,7 +29,7 @@ import dataclasses
 import enum
 import random
 import warnings
-from typing import Any, Optional, Union
+from typing import Any
 
 import pytorch_lightning as pl
 import torch
@@ -80,7 +80,7 @@ class DatasetSpec(BaseModel):
     name: str
     dataset_class: str
     mode: DatasetMode
-    weight: Optional[float] = None
+    weight: float | None = None
     config: SerializeAsAny[BaseModel] = SerializeAsAny()
 
 
@@ -102,7 +102,7 @@ class MultiDatasetConfig:
 
     classes: list[str]
     modes: list[str]
-    configs: list[Union[dict[str, Any], None]]
+    configs: list[dict[str, Any] | None]
     weights: list[float]
 
     def __len__(self):
@@ -121,7 +121,7 @@ class MultiDatasetConfig:
         """
 
         def apply_bool(value, idx):
-            return [v for v, i in zip(value, idx) if i]
+            return [v for v, i in zip(value, idx, strict=True) if i]
 
         return MultiDatasetConfig(
             classes=apply_bool(self.classes, index),
@@ -148,7 +148,7 @@ class DataModule(pl.LightningDataModule):
     """A LightningDataModule class for organizing Datasets and DataLoaders."""
 
     def __init__(
-        self, data_module_config: DataModuleConfig, world_size: Optional[int] = None
+        self, data_module_config: DataModuleConfig, world_size: int | None = None
     ) -> None:
         super().__init__()
 
@@ -174,7 +174,7 @@ class DataModule(pl.LightningDataModule):
     def setup(self, stage=None):
         # Custom worker init function with manual data seed
         def worker_init_function_with_data_seed(
-            worker_id: int, rank: Optional[int] = None
+            worker_id: int, rank: int | None = None
         ) -> None:
             """Modified default Lightning worker_init_fn with manual data seed.
 
@@ -388,6 +388,7 @@ class DataModule(pl.LightningDataModule):
         for dataset_class, dataset_config in zip(
             multi_dataset_config.classes,
             multi_dataset_config.configs,
+            strict=True,
         ):
             if set_world_size:
                 dataset = DATASET_REGISTRY[dataset_class](

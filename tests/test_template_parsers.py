@@ -47,7 +47,9 @@ def test_sto_parser(file_path, output_path, max_sequences):
     templates = sto_parser(sto_string, QUERY_SEQUENCE)
     expected_templates = np.load(output_path, allow_pickle=True)["templates"].item()
     assert len(templates) == len(expected_templates)
-    for actual, expected in zip(templates.values(), expected_templates.values()):
+    for actual, expected in zip(
+        templates.values(), expected_templates.values(), strict=False
+    ):
         _compare_template_data(actual, expected)
 
 
@@ -73,7 +75,9 @@ def test_a3m_parser(file_path, output_path, max_sequences):
     templates = a3m_parser(a3m_string, query_seq_str=QUERY_SEQUENCE)
     expected_templates = np.load(output_path, allow_pickle=True)["templates"].item()
     assert len(templates) == len(expected_templates)
-    for actual, expected in zip(templates.values(), expected_templates.values()):
+    for actual, expected in zip(
+        templates.values(), expected_templates.values(), strict=False
+    ):
         _compare_template_data(actual, expected)
 
 
@@ -87,7 +91,9 @@ def test_m8_parser():
     templates = m8_parser(m8_cigar, query_seq_str=QUERY_SEQUENCE)
     expected_templates = np.load(output_path, allow_pickle=True)["templates"].item()
     assert len(templates) == len(expected_templates)
-    for actual, expected in zip(templates.values(), expected_templates.values()):
+    for actual, expected in zip(
+        templates.values(), expected_templates.values(), strict=False
+    ):
         _compare_template_data(actual, expected)
 
     m8_no_cigar = m8_cigar.loc[:, m8_cigar.columns != "cigar"].copy()
@@ -98,7 +104,7 @@ def test_m8_parser():
     ].item()
     assert len(templates) == len(expected_templates)
     for actual, expected in zip(
-        templates_no_cigar.values(), expected_templates_no_cigar.values()
+        templates_no_cigar.values(), expected_templates_no_cigar.values(), strict=False
     ):
         _compare_template_data(actual, expected)
 

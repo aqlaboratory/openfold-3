@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from typing import Optional
 
 import torch
 
@@ -102,9 +101,9 @@ def lddt(
     intra_mask_filter: torch.Tensor,
     inter_mask_filter: torch.Tensor,
     asym_id: torch.Tensor,
-    threshold: Optional[Sequence] = (0.5, 1.0, 2.0, 4.0),
-    cutoff: Optional[float] = 15.0,
-    eps: Optional[float] = 1e-10,
+    threshold: Sequence | None = (0.5, 1.0, 2.0, 4.0),
+    cutoff: float | None = 15.0,
+    eps: float | None = 1e-10,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Calculates lddt scores from pair distances
@@ -184,8 +183,8 @@ def interface_lddt(
     all_atom_mask1: torch.Tensor,
     all_atom_mask2: torch.Tensor,
     filter_mask: torch.Tensor,
-    cutoff: Optional[float] = 15.0,
-    eps: Optional[float] = 1e-10,
+    cutoff: float | None = 15.0,
+    eps: float | None = 1e-10,
 ) -> torch.Tensor:
     """
     Calculates interface_lddt (ilddt) score between two different molecules
@@ -253,7 +252,7 @@ def drmsd(
     pair_dist_gt_pos: torch.Tensor,
     all_atom_mask: torch.Tensor,
     asym_id: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Computes drmsds from pair distances
@@ -312,7 +311,7 @@ def get_protein_metrics(
     pred_coords: torch.Tensor,
     gt_coords: torch.Tensor,
     all_atom_mask: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of protein
@@ -416,7 +415,7 @@ def get_nucleic_acid_metrics(
     all_atom_mask: torch.Tensor,
     is_protein_atomized: torch.Tensor,
     substrate: str,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of nucleic acids (dna/rna)
@@ -593,7 +592,7 @@ def get_ligand_metrics(
     gt_coords: torch.Tensor,
     all_atom_mask: torch.Tensor,
     is_protein_atomized: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of a ligand
@@ -759,8 +758,8 @@ def steric_clash(
     pred_pair: torch.Tensor,
     all_atom_mask: torch.Tensor,
     asym_id: torch.Tensor,
-    threshold: Optional[float] = 1.1,
-    eps: Optional[float] = 1e-10,
+    threshold: float | None = 1.1,
+    eps: float | None = 1e-10,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Computes steric clash score
@@ -818,8 +817,8 @@ def interface_steric_clash(
     pred_substrate: torch.Tensor,
     all_atom_mask_protein: torch.Tensor,
     all_atom_mask_substrate: torch.Tensor,
-    threshold: Optional[float] = 1.1,
-    eps: Optional[float] = 1e-10,
+    threshold: float | None = 1.1,
+    eps: float | None = 1e-10,
 ) -> torch.Tensor:
     """
     Computes steric clash score across protein and substrate
@@ -913,7 +912,7 @@ def get_full_complex_lddt(
     pred_coords: torch.Tensor,
     gt_coords: torch.Tensor,
     all_atom_mask: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Computes lddt for the full complex, subject to intra chain filters
@@ -970,7 +969,7 @@ def get_plddt_metrics(
     is_dna_atomized: torch.Tensor,
     intra_filter_atomized: torch.Tensor,
     plddt_logits: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute plddt metric and report for different atom types.
@@ -992,7 +991,7 @@ def get_plddt_metrics(
     out = {}
 
     # Report plddt scaled to 0-1
-    plddt_complex = compute_plddt(plddt_logits) / 100
+    plddt_complex = compute_plddt(plddt_logits)
 
     out["plddt_complex"] = torch.sum(plddt_complex * intra_filter_atomized, dim=-1) / (
         torch.sum(intra_filter_atomized, dim=-1) + eps
@@ -1041,7 +1040,7 @@ def get_validation_lddt_metrics(
     asym_id_atomized: torch.Tensor,
     intra_filter_atomized: torch.Tensor,
     inter_filter_atomized: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ):
     """Compute lddt metrics for ligand-RNA, ligand-DNA and modified residues.
     These extra metrics are required for model selection metric.

@@ -41,7 +41,7 @@ RUN python3 setup.py install
 ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
 
 # Pre-compile DeepSpeed operations with full performance
-RUN python3 -c "import deepspeed; deepspeed.ops.op_builder.EvoformerBuilder().load()" || \
+RUN python3 -c "import deepspeed; deepspeed.ops.op_builder.EvoformerAttnBuilder().load()" || \
     python3 -c "import deepspeed; print('DeepSpeed ops loaded successfully')"
 
 # Runtime stage - use devel image for full CUDA support

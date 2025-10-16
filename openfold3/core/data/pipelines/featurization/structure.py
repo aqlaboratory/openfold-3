@@ -1,6 +1,6 @@
 """This module contains featurization pipelines for structural data."""
 
-from typing import Union
+import logging
 
 import numpy as np
 import torch
@@ -22,6 +22,9 @@ from openfold3.core.data.resources.residues import (
     MoleculeType,
     get_with_unknown_3_to_idx,
 )
+
+logger = logging.getLogger(__name__)
+
 
 TOKEN_DIM_INDEX_MAP = {
     "residue_index": [-1],
@@ -160,14 +163,15 @@ def featurize_structure_of3(
 
         # Chain IDs are int-like in our training code, but not necessarily in inference
         chain_ids_token = atom_array.chain_id[token_starts]
-        try:
-            features["asym_id"] = torch.tensor(
-                chain_ids_token.astype(int), dtype=torch.int32
-            )
-        except ValueError:
-            # Renumber these as numerical IDs (starting from 1)
-            renum_ids = np.unique(chain_ids_token, return_inverse=True)[1] + 1
-            features["asym_id"] = torch.tensor(renum_ids, dtype=torch.int32)
+
+        # Renumber these as numerical IDs (starting from 1)
+        unique_ids, renum_ids = np.unique(chain_ids_token, return_inverse=True)
+        asym_id = torch.tensor(renum_ids + 1, dtype=torch.int32)
+
+        if len(unique_ids) != len(torch.unique_consecutive(asym_id)):
+            logger.warning("Chain IDs are not unique within complex.")
+
+        features["asym_id"] = asym_id
 
         features["entity_id"] = torch.tensor(
             atom_array.entity_id[token_starts], dtype=torch.int32
@@ -208,7 +212,7 @@ def featurize_target_gt_structure_of3(
     atom_array: AtomArray,
     atom_array_gt: AtomArray,
     n_tokens: int,
-) -> dict[str, Union[torch.Tensor, dict[str, torch.Tensor]]]:
+) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
     """Wraps featurize_structure_af3 for creating target AND gt structure features.
 
     Expects the cropped and duplicate-expanded AtomArray as input. The target structure

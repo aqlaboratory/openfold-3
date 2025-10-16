@@ -6,10 +6,9 @@ channels:
   - nvidia
 dependencies:
   - python
+  - awscli
   - setuptools
   - pip
-  - openmm
-  - pdbfixer
   - pytorch-lightning
   - biopython
   - numpy

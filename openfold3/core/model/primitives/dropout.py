@@ -30,7 +30,6 @@
 """Dropout layers."""
 
 from functools import partialmethod
-from typing import Union
 
 import torch
 import torch.nn as nn
@@ -44,7 +43,7 @@ class Dropout(nn.Module):
     If not in training mode, this module computes the identity function.
     """
 
-    def __init__(self, r: float, batch_dim: Union[int, list[int]]):
+    def __init__(self, r: float, batch_dim: int | list[int]):
         """
         Args:
             r:
@@ -67,13 +66,17 @@ class Dropout(nn.Module):
                 Tensor to which dropout is applied. Can have any shape
                 compatible with self.batch_dim
         """
+        # VS: Avoiding the extra allocation + multiplication op makes
+        # a measurable speed difference according to NVIDIA team
+        if not self.training:
+            return x
         shape = list(x.shape)
         if self.batch_dim is not None:
             for bd in self.batch_dim:
                 shape[bd] = 1
         mask = x.new_ones(shape)
         mask = self.dropout(mask)
-        x *= mask
+        x = x * mask
         return x
 
 

@@ -1,7 +1,7 @@
 import logging
 import random
 from collections.abc import Iterable
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 from func_timeout import FunctionTimedOut, func_timeout
@@ -27,7 +27,7 @@ def compute_conformer(
     mol: Mol,
     use_random_coord_init: bool = False,
     remove_hs: bool = True,
-    timeout: Optional[float] = 30.0,
+    timeout: float | None = 30.0,
 ) -> tuple[Mol, int]:
     """Computes a conformer with the ETKDGv3 strategy.
 
@@ -102,8 +102,8 @@ def compute_conformer(
 def multistrategy_compute_conformer(
     mol: Mol,
     remove_hs: bool = True,
-    timeout_standard: Optional[float] = 30.0,
-    timeout_rand_init: Optional[float] = 30.0,
+    timeout_standard: float | None = None,
+    timeout_rand_init: float | None = None,
 ) -> tuple[Mol, int, Literal["default", "random_init"]]:
     """Computes 3D coordinates for a molecule trying different initializations.
 
@@ -427,7 +427,7 @@ def renumber_permutations(
     # IDs
     required_gt_atoms = np.array(sorted(required_gt_atoms))
     required_gt_atoms_remapped = np.arange(len(required_gt_atoms))
-    atom_idx_map = dict(zip(required_gt_atoms, required_gt_atoms_remapped))
+    atom_idx_map = dict(zip(required_gt_atoms, required_gt_atoms_remapped, strict=True))
     atom_idx_mapper = np.vectorize(lambda x: atom_idx_map[x])
 
     # Update the set of atoms in the permutations to reflect the new indices

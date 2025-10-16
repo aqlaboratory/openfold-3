@@ -188,7 +188,7 @@ def _convert_sto_seq_to_a3m(query_non_gaps: list[bool], sto_seq: str) -> Iterabl
         Iterator[Iterable[str]]:
             Converted a3m sequence.
     """
-    for is_query_res_non_gap, sequence_res in zip(query_non_gaps, sto_seq):
+    for is_query_res_non_gap, sequence_res in zip(query_non_gaps, sto_seq, strict=True):
         if is_query_res_non_gap:
             yield sequence_res
         elif sequence_res != "-":
@@ -282,7 +282,7 @@ def parse_hmmsearch_a3m(a3m_string: str) -> dict[int, TemplateHit]:
             template hit.
     """
     # Zip the descriptions and MSAs together
-    parsed_a3m = list(zip(*parse_fasta(a3m_string)))
+    parsed_a3m = list(zip(*parse_fasta(a3m_string), strict=True))
 
     hits = {}
     for i, (hit_sequence, hit_description) in enumerate(parsed_a3m):
@@ -447,7 +447,7 @@ def calculate_ids_hit_cigar(
     if not op_details:
         return np.array([], dtype=int), np.array([], dtype=int)
 
-    lengths, ops = zip(*op_details)
+    lengths, ops = zip(*op_details, strict=True)
     lengths = np.array(lengths, dtype=int)
 
     def ops_to_idx(ops, lengths, start, gap_char, aln_ops):
@@ -482,6 +482,24 @@ class TemplateParser(ABC):
         """Main entry point to parse an alignment source."""
         raise NotImplementedError
 
+    @staticmethod
+    def compute_sequence_identity_and_coverage(
+        query_aln_arr: np.ndarray, template_aln_arr: np.ndarray, query_seq_str: str
+    ):
+        query_gap_mask = ~np.isin(query_aln_arr, ["-", "."])
+        num_matches = sum(query_gap_mask)
+        if num_matches > 0:
+            seq_id = (
+                sum((template_aln_arr == query_aln_arr)[query_gap_mask]) / num_matches
+            )
+        else:
+            seq_id = 0.0
+
+        q_cov = sum(query_gap_mask & (~np.isin(template_aln_arr, ["-", "."]))) / len(
+            query_seq_str
+        )
+        return seq_id, q_cov
+
     def _process_alignment_hits(
         self,
         query_seq_str: str,
@@ -495,7 +513,9 @@ class TemplateParser(ABC):
             query_aln_str, dtype="<U1", count=len(query_aln_str)
         )
 
-        for template_aln_str, (_, row) in zip(template_alignments, headers.iterrows()):
+        for template_aln_str, (_, row) in zip(
+            template_alignments, headers.iterrows(), strict=True
+        ):
             template_aln_arr = np.fromiter(
                 template_aln_str, dtype="<U1", count=len(template_aln_str)
             )
@@ -508,11 +528,11 @@ class TemplateParser(ABC):
                 query_start=query_start_idx,
                 template_start=int(row["start"]),
             )
-            query_gap_mask = ~np.isin(query_aln_arr, ["-", "."])
-            seq_id = sum((template_aln_arr == query_aln_arr)[query_gap_mask]) / sum(
-                query_gap_mask
+            seq_id, q_cov = self.compute_sequence_identity_and_coverage(
+                query_aln_arr=query_aln_arr,
+                template_aln_arr=template_aln_arr,
+                query_seq_str=query_seq_str,
             )
-            q_cov = sum(query_gap_mask & template_gap_mask) / len(query_seq_str)
 
             entry_id, chain_id = row["id"].split("_")
             templates[row.name] = TemplateData(
@@ -693,7 +713,7 @@ class A3mParser(TemplateParser):
             # - Realign is explicitly requested, OR
             # - Headers lack coordinate information
             all_sequences = f">query\n{query_seq_str}\n"
-            for header, seq in zip(headers_raw, alignments):
+            for header, seq in zip(headers_raw, alignments, strict=True):
                 ungapped_seq = "".join(c for c in seq if c.isupper())
                 all_sequences += f">{header}\n{ungapped_seq}\n"
 

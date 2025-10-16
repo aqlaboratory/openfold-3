@@ -34,6 +34,7 @@ max_atoms_per_token = mlc.FieldReference(23, field_type=int)
 # Cutoffs for chunking ops per diffusion sample
 per_sample_token_cutoff = mlc.FieldReference(750, field_type=int)
 per_sample_atom_cutoff = mlc.FieldReference(10000, field_type=int)
+low_mem_validation = mlc.FieldReference(False, field_type=bool)
 
 model_selection_metric_weights_config = mlc.FrozenConfigDict(
     {
@@ -76,17 +77,19 @@ model_config = mlc.ConfigDict(
                     # Use DeepSpeed memory-efficient attention kernel. Mutually
                     # exclusive with use_lma.
                     "use_deepspeed_evo_attention": True,
+                    "use_cueq_triangle_kernels": False,
                     # Use Staats & Rabe's low-memory attention algorithm. Mutually
                     # exclusive with use_deepspeed_evo_attention.
                     "use_lma": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
-                        "swiglu_seq_chunk_size": 4000,
+                        "swiglu_seq_chunk_size": None,
                     },
                 },
                 "eval": {
                     "chunk_size": None,
                     "use_deepspeed_evo_attention": True,
+                    "use_cueq_triangle_kernels": False,
                     "use_lma": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
@@ -94,8 +97,10 @@ model_config = mlc.ConfigDict(
                     },
                     "per_sample_token_cutoff": per_sample_token_cutoff,
                     "per_sample_atom_cutoff": per_sample_atom_cutoff,
+                    "low_mem_validation": low_mem_validation,
                     "offload_inference": {
-                        "enabled": False,
+                        "msa_module": False,
+                        "confidence_heads": False,
                         "token_cutoff": None,
                     },
                 },
@@ -104,6 +109,7 @@ model_config = mlc.ConfigDict(
             #  to allow per-module overrides
             "blocks_per_ckpt": blocks_per_ckpt,
             "ckpt_intermediate_steps": ckpt_intermediate_steps,
+            "clear_cache_between_steps": False,
             "diffusion_training_enabled": diffusion_training_enabled,
             "optimizer": {
                 "use_deepspeed_adam": False,
@@ -408,6 +414,8 @@ model_config = mlc.ConfigDict(
                 },
             },
             "loss_module": {
+                "per_sample_atom_cutoff": per_sample_atom_cutoff,
+                "low_mem_validation": low_mem_validation,
                 "confidence_loss_names": [
                     "plddt",
                     "pde",
@@ -458,23 +466,45 @@ model_config = mlc.ConfigDict(
         },
         "confidence": {
             "per_sample_atom_cutoff": per_sample_atom_cutoff,
+            "low_mem_validation": low_mem_validation,
+            "plddt": {
+                "no_bins": 50,
+                "bin_min": 0,
+                "bin_max": 1,
+            },
             "pde": {
-                "max_bin": 31,
+                "bin_min": 0,
+                "bin_max": 32,
                 "no_bins": 64,
+                "return_probs": False,
             },
             "pae": {
-                "max_bin": 31,
+                "bin_min": 0,
+                "bin_max": 32,
                 "no_bins": 64,
+                "return_probs": False,
             },
             "distogram": {
-                "min_bin": 2,
-                "max_bin": 22,
+                "bin_min": 2,
+                "bin_max": 22,
+                "no_bins": 64,
+                "return_contact_probs": False,
             },
             "ptm": {
-                "max_bin": 31,
+                "bin_min": 0,
+                "bin_max": 32,
                 "no_bins": 64,
-                "ptm_weight": 0.2,
-                "iptm_weight": 0.8,
+            },
+            "sample_ranking": {
+                "full_complex": {
+                    "ptm_weight": 0.2,
+                    "iptm_weight": 0.8,
+                    "disorder_weight": 0.5,
+                    "has_clash_weight": -100.0,
+                    "disorder_threshold": 0.581,
+                },
+                "chain_pair_iptm": {"enabled": True},
+                "chain_ptm": {"enabled": True},
             },
             "clash": {
                 "min_distance": 1.1,

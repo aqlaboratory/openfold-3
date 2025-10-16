@@ -261,7 +261,9 @@ def get_mol_residue_index_mappings() -> tuple[dict, dict, dict, dict]:
     for moltype in MoleculeType:
         residue_pos_map = {}
         for residue, residue_idx in zip(
-            MOLECULE_TYPE_TO_RESIDUES_1[moltype], molecule_type_to_residues_pos[moltype]
+            MOLECULE_TYPE_TO_RESIDUES_1[moltype],
+            molecule_type_to_residues_pos[moltype],
+            strict=False,
         ):
             residue_pos_map[residue] = residue_idx
         molecule_type_to_residues_pos_map[moltype] = residue_pos_map

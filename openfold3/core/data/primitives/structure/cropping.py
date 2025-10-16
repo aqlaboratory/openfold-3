@@ -1,7 +1,6 @@
 """This module contains building blocks for cropping."""
 
 import random
-from typing import Optional
 
 import numpy as np
 import torch
@@ -24,7 +23,7 @@ NO_CROPPING_TOKEN_BUDGET_SENTINEL = -1
 
 
 def crop_contiguous(
-    atom_array: AtomArray, token_budget: int, generator: Optional[Generator] = None
+    atom_array: AtomArray, token_budget: int, generator: Generator | None = None
 ) -> None:
     """Implements Contiguous Cropping from AF3 SI, 2.7.1.
 

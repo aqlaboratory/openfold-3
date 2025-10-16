@@ -67,7 +67,7 @@ def superimpose(reference, coords, mask):
     flat_mask = mask.reshape((-1,) + mask.shape[-1:])
     superimposed_list = []
     rmsds = []
-    for r, c, m in zip(flat_reference, flat_coords, flat_mask):
+    for r, c, m in zip(flat_reference, flat_coords, flat_mask, strict=True):
         r_unmasked_coords = select_unmasked_coords(r, m)
         c_unmasked_coords = select_unmasked_coords(c, m)
         superimposed, rmsd = _superimpose_single(r_unmasked_coords, c_unmasked_coords)

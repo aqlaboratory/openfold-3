@@ -376,7 +376,7 @@ def chain_paired_interface_atom_iter(
     group_end_idx = np.roll(group_start_idx, shift=-1)
     group_end_idx[-1] = len(chain_pairs_grouped)
 
-    for start_idx, end_idx in zip(group_start_idx, group_end_idx):
+    for start_idx, end_idx in zip(group_start_idx, group_end_idx, strict=True):
         yield (
             tuple(chain_pairs_grouped[start_idx]),
             atom_pairs_grouped[start_idx:end_idx],

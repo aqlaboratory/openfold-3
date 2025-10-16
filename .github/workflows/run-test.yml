@@ -8,9 +8,10 @@ jobs:
   cleanup: 
     uses: ./.github/workflows/cleanup.yml
 
-  build:
+  build-and-test:
     runs-on: ubuntu-4core-150g-ssd 
-    needs: cleanup 
+    needs: 
+      - cleanup 
 
     steps:
     - uses: actions/checkout@v4
@@ -19,6 +20,6 @@ jobs:
       run: |
            docker build -f Dockerfile -t openfold-base . 
            docker build -f tests/Dockerfile -t openfold-test .
-    
+
     - name: Run unit tests
       run: docker run -v ${{ github.workspace }}/resources:/opt/openfold3/openfold3/resources openfold-test:latest pytest tests

@@ -113,6 +113,7 @@ select = [
 ignore = [
     "E741",
     "SIM108",
+    "B905",  # explicit strict= for zip
 ]
 extend-safe-fixes = ["UP006"]
 
@@ -123,3 +124,7 @@ log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(linen
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+markers = [
+    "inference_verification: Tests to verify installation on inference example",
+    "slow: Large size test"
+]

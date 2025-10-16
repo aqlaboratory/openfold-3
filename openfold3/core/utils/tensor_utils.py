@@ -59,6 +59,10 @@ def dict_multimap(fn, dicts):
         all_v = [d[k] for d in dicts]
         if isinstance(v, dict):
             new_dict[k] = dict_multimap(fn, all_v)
+        elif isinstance(v, list):
+            new_dict[k] = [
+                dict_multimap(fn, [x[idx] for x in all_v]) for idx in range(len(v))
+            ]
         elif isinstance(v, (AtomArray, str)):
             new_dict[k] = all_v
         else:
@@ -99,7 +103,7 @@ def dict_map(fn, dic, leaf_type, strict_type=True):
     return new_dict
 
 
-def tree_map(fn, tree, leaf_type, strict_type=True):
+def tree_map(fn, tree, leaf_type, strict_type=False):
     if isinstance(tree, dict):
         return dict_map(fn, tree, leaf_type, strict_type=strict_type)
     elif isinstance(tree, list):

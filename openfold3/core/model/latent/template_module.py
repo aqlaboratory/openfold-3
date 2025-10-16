@@ -1,5 +1,6 @@
 # Copyright 2021 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
+# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +23,6 @@ feature embedding functions in openfold3.core.model.feature_embedders.
 import math
 import sys
 from functools import partial
-from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -105,12 +105,13 @@ class TemplatePairBlock(PairBlock):
         self,
         z: torch.Tensor,
         mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
-        _attn_chunk_size: Optional[int] = None,
+        _attn_chunk_size: int | None = None,
     ):
         """
         Args:
@@ -155,6 +156,7 @@ class TemplatePairBlock(PairBlock):
                     _attn_chunk_size=_attn_chunk_size,
                     pair_mask=t_pair_mask,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                 )
@@ -165,6 +167,7 @@ class TemplatePairBlock(PairBlock):
                         _attn_chunk_size=_attn_chunk_size,
                         pair_mask=t_pair_mask,
                         use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                        use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                         use_lma=use_lma,
                         inplace_safe=inplace_safe,
                     ),
@@ -209,7 +212,7 @@ class TemplatePairStack(nn.Module):
         blocks_per_ckpt,
         inf=1e9,
         linear_init_params=lin_init.pair_block_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
         tune_chunk_size: bool = False,
         **kwargs,
     ):
@@ -284,8 +287,9 @@ class TemplatePairStack(nn.Module):
         self,
         t: torch.tensor,
         mask: torch.tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -323,6 +327,7 @@ class TemplatePairStack(nn.Module):
                 mask=mask,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -337,11 +342,12 @@ class TemplatePairStack(nn.Module):
                 args=(t.clone(),),
                 min_chunk_size=chunk_size,
             )
+            attn_chunk = tuned_chunk_size if use_cueq_triangle_kernels else (tuned_chunk_size // 4)
             blocks = [
                 partial(
                     b,
                     chunk_size=tuned_chunk_size,
-                    _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
+                    _attn_chunk_size=max(chunk_size, attn_chunk),
                 )
                 for b in blocks
             ]
@@ -387,9 +393,10 @@ class TemplateEmbedderAllAtom(nn.Module):
         batch: dict,
         z: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         _mask_trans: bool = True,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -432,6 +439,7 @@ class TemplateEmbedderAllAtom(nn.Module):
             pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,

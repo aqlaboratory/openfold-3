@@ -17,8 +17,6 @@ Diffusion module. Implements the algorithms in section 3.7 of the
 Supplementary Information.
 """
 
-from typing import Optional
-
 import torch
 import torch.nn as nn
 
@@ -173,8 +171,9 @@ class DiffusionModule(nn.Module):
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -237,6 +236,7 @@ class DiffusionModule(nn.Module):
             mask=token_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             use_high_precision_attention=use_high_precision_attention,
             _mask_trans=_mask_trans,
@@ -311,8 +311,9 @@ class SampleDiffusion(nn.Module):
         zij_trunk: torch.Tensor,
         noise_schedule: torch.Tensor,
         no_rollout_samples: int,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -379,6 +380,7 @@ class SampleDiffusion(nn.Module):
                 zij_trunk=zij_trunk,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,

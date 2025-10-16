@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import importlib
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -94,10 +93,12 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         batch: dict,
         si_input: torch.Tensor,
         output: dict,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
+        offload_inference: bool = False,
         _mask_trans: bool = True,
     ):
         """
@@ -119,11 +120,16 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma.
+            use_cueq_triangle_kernels:
+                Whether to use cuEq triangle attention kernel.
+                Mutually exclusive with use_lma
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
+            offload_inference:
+                Whether to offload some computation to CPU
             _mask_trans:
                 Whether to mask the output of the transition layers
 
@@ -146,20 +152,21 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         """
         aux_out = {}
 
-        si_trunk = output["si_trunk"]
-        zij_trunk = output["zij_trunk"]
-        atom_positions_predicted = output["atom_positions_predicted"]
+        out_dtype = output["atom_positions_predicted"].dtype
+        si = output["si_trunk"]
+        zij = output["zij_trunk"]
+        atom_positions_predicted = output["atom_positions_predicted"].to(dtype=si.dtype)
 
         # Distogram head: Main loop (Algorithm 1), line 17
         # Not enabled in finetuning 3 stage
         if self.config["distogram"]["enabled"]:
-            distogram_logits = self.distogram(z=zij_trunk)
+            distogram_logits = self.distogram(z=zij)
             aux_out["distogram_logits"] = distogram_logits
 
         # Stop grad
         si_input = si_input.detach().clone()
-        si_trunk = si_trunk.detach().clone()
-        zij_trunk = zij_trunk.detach().clone()
+        si = si.detach().clone()
+        zij = zij.detach().clone()
         atom_positions_predicted = atom_positions_predicted.detach().clone()
 
         token_mask = batch["token_mask"]
@@ -179,23 +186,29 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             and self.per_sample_token_cutoff is not None
             and repr_x_pred.shape[-2] > self.per_sample_token_cutoff
         )
+        out_device = atom_positions_predicted.device
 
         # Embed trunk outputs
+        # If offload_inference is enabled, si and zij will be returned on the CPU
+        # TODO: Add inplace ops where possible to avoid offloading
         si, zij = self.pairformer_embedding(
             si_input=si_input,
-            si=si_trunk,
-            zij=zij_trunk,
+            si=si,
+            zij=zij,
             x_pred=repr_x_pred,
             single_mask=repr_x_mask,
             pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
+            offload_inference=offload_inference,
             _mask_trans=_mask_trans,
             apply_per_sample=apply_per_sample,
         )
 
+        # TODO: Refactor this to minimize memory usage
         # Get atom mask padded to MAX_ATOMS_PER_TOKEN
         # Required to extract pLDDT and experimentally resolved logits for
         # the flat atom representation
@@ -206,6 +219,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             max_num_atoms_per_token=self.max_atoms_per_token,
         )
 
+        si = si.to(device=out_device)
         aux_out["plddt_logits"] = self.plddt(
             s=si, max_atom_per_token_mask=max_atom_per_token_mask
         )
@@ -215,9 +229,23 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
-        aux_out["pde_logits"] = self.pde(zij)
+        # zij is moved back to GPU after the single rep confidence heads
+        # because building the max_atom_per_token_mask uses a lot of memory
+        zij = zij.to(device=out_device)
+
+        pde_logits = self.pde(zij, apply_per_sample=apply_per_sample)
 
         if self.config.pae.enabled:
-            aux_out["pae_logits"] = self.pae(zij)
+            # Offload pde logits to not keep all three pairwise tensors
+            # in GPU memory at once
+            offload_device = "cpu" if offload_inference else out_device
+            pde_logits = pde_logits.to(device=offload_device)
+            aux_out["pae_logits"] = self.pae(zij, apply_per_sample=apply_per_sample)
+
+        del zij
+
+        aux_out["pde_logits"] = pde_logits.to(device=out_device)
+
+        aux_out = {k: v.to(dtype=out_dtype) for k, v in aux_out.items()}
 
         return aux_out

@@ -69,7 +69,7 @@ def test_chain_connected_molecule_iter():
     expected_slices = [atom_array[0:5], atom_array[5:7]]
 
     for mol_array, expected_array in zip(
-        chain_connected_molecule_iter(atom_array), expected_slices
+        chain_connected_molecule_iter(atom_array), expected_slices, strict=False
     ):
         assert_atomarray_equal(mol_array, expected_array)
 

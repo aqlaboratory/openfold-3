@@ -1,8 +1,15 @@
+import logging
+import os
 import random
+from datetime import timedelta
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
-from pydantic import BaseModel, model_validator
+import boto3
+import botocore
+from botocore.config import Config as botocoreConfig
+from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
+from pydantic import BaseModel, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import FilePathOrNone
@@ -13,7 +20,45 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
 
+logger = logging.getLogger(__name__)
+
 ValidModeType = Literal["train", "predict", "eval", "test"]
+DEFAULT_CACHE_PATH = Path("~/.openfold3/").expanduser()
+CHECKPOINT_ROOT_FILENAME = "ckpt_root"
+CHECKPOINT_NAME = "of3_ft3_v1.pt"
+
+
+def _maybe_download_parameters(target_path: Path) -> None:
+    """Checks if OpenFold parameters are present, and downloads them if not."""
+    openfold_bucket = "openfold"
+    checkpoint_path = f"openfold3_params/{CHECKPOINT_NAME}"
+
+    if target_path.exists():
+        return
+
+    s3 = boto3.client("s3", config=botocoreConfig(signature_version=botocore.UNSIGNED))
+
+    try:
+        # Get file size
+        response = s3.head_object(Bucket=openfold_bucket, Key=checkpoint_path)
+        size_bytes = response["ContentLength"]
+        size_gb = size_bytes / (1024**3)
+
+        # Ask for confirmation with file size
+        confirm = input(
+            f"Download {checkpoint_path} ({size_gb:.2f} GB) "
+            f"from s3://{openfold_bucket} to {target_path}? (yes/no): "
+        )
+
+        if confirm.lower() in ["yes", "y"]:
+            logger.info(f"Downloading to {target_path}...")
+            s3.download_file(openfold_bucket, checkpoint_path, target_path)
+            logger.info("Download complete!")
+        else:
+            logger.warning("Download cancelled")
+
+    except Exception as e:
+        print(f"Error: {e}")
 
 
 class CheckpointConfig(BaseModel):
@@ -30,9 +75,9 @@ class WandbConfig(BaseModel):
 
     project: str = "my project"
     experiment_name: str = "expt_name"
-    entity: Optional[str] = None
-    group: Optional[str] = None
-    id: Optional[str] = None
+    entity: str | None = None
+    group: str | None = None
+    id: str | None = None
     offline: bool = False
 
 
@@ -61,16 +106,17 @@ class PlTrainerArgs(BaseModel):
     model_config = PydanticConfigDict(extra="allow")
     max_epochs: int = 1000  # pl_trainer default
     accelerator: str = "gpu"
-    precision: int | str = "bf16-mixed"
+    precision: int | str = "32-true"
     num_nodes: int = 1
     devices: int = 1  # number of GPUs per node
-    profiler: Optional[str] = None
+    profiler: str | None = None
     log_every_n_steps: int = 1
     enable_checkpointing: bool = True
     enable_model_summary: bool = False
 
     # Extra arguments that are not passed directly to pl.Trainer
     deepspeed_config_path: Path | None = None
+    distributed_timeout: timedelta | None = default_pg_timeout
     mpi_plugin: bool = False
 
 
@@ -82,6 +128,8 @@ class OutputWritingSettings(BaseModel):
 
     structure_format: Literal["pdb", "cif"] = "cif"
     full_confidence_output_format: Literal["json", "npz"] = "json"
+    write_features: bool = False
+    write_latent_outputs: bool = False
 
 
 class ExperimentSettings(BaseModel):
@@ -89,12 +137,13 @@ class ExperimentSettings(BaseModel):
 
     mode: ValidModeType
     output_dir: Path = Path("./")
+    log_dir: Path | None = None
 
-    @model_validator(mode="after")
-    def create_output_dir(cls, model):
-        if not model.output_dir.exists():
-            model.output_dir.mkdir(parents=True, exist_ok=True)
-        return model
+    @field_validator("output_dir", mode="after")
+    def create_output_dir(cls, value: Path):
+        if not value.exists():
+            value.mkdir(parents=True, exist_ok=True)
+        return value
 
 
 class TrainingExperimentSettings(ExperimentSettings):
@@ -121,20 +170,20 @@ class InferenceExperimentSettings(ExperimentSettings):
     use_templates: bool = False
 
     @model_validator(mode="after")
-    def generate_seeds(cls, model):
+    def generate_seeds(self):
         """Creates a list of seeds if a list of seeds is not provided."""
-        if isinstance(model.seeds, list):
+        if isinstance(self.seeds, list):
             pass
-        elif isinstance(model.seeds, int):
-            if model.num_seeds is None:
+        elif isinstance(self.seeds, int):
+            if self.num_seeds is None:
                 raise ValueError(
                     "num_seeds must be provided when seeds is a single int"
                 )
-            generate_seeds(model.seeds, model.num_seeds)
-        elif model.seeds is None:
+            generate_seeds(self.seeds, self.num_seeds)
+        elif self.seeds is None:
             raise ValueError("seeds must be provided (either int or list[int])")
 
-        return model
+        return self
 
 
 class ExperimentConfig(BaseModel):
@@ -167,11 +216,51 @@ class InferenceExperimentConfig(ExperimentConfig):
     # pydantic model setting to prevent extra fields in main experiment config
     model_config = PydanticConfigDict(extra="forbid")
     # Required inputs for performing inference
-    inference_ckpt_path: Path
+    inference_ckpt_path: Path | None = None
+    # default location to look for parameters if no ckpt_path is given
+    cache_path: Path | None = None
 
     experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()
-    model_update: ModelUpdate = ModelUpdate(presets=["predict"])
+    model_update: ModelUpdate = ModelUpdate(presets=["predict", "pae_enabled"])
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
     msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
+
+    @model_validator(mode="before")
+    @classmethod
+    def set_default_cache_path(cls, data):
+        """Set default cache_path if not provided"""
+        if data.get("cache_path") is None:
+            cache_path = os.environ.get("OPENFOLD_CACHE") or DEFAULT_CACHE_PATH
+            Path(cache_path).mkdir(parents=True, exist_ok=True)
+            data["cache_path"] = cache_path
+        return data
+
+    @model_validator(mode="after")
+    def _try_default_ckpt_path(self):
+        if (
+            isinstance(self.inference_ckpt_path, Path)
+            and self.inference_ckpt_path.exists()
+        ):
+            return self
+        elif self.inference_ckpt_path is None:
+            # Try using path set in cache
+            path_to_ckpt = self.cache_path / CHECKPOINT_ROOT_FILENAME
+            if path_to_ckpt.exists():
+                with open(path_to_ckpt) as f:
+                    param_dir = f.read().strip()
+                    self.inference_ckpt_path = Path(param_dir) / CHECKPOINT_NAME
+            # If not set, write pararms to default dictionary
+            else:
+                param_dir = self.cache_path
+                logger.info("Storing path to OpenFold parameters in %s", path_to_ckpt)
+                with open(path_to_ckpt, "w") as f:
+                    f.write(str(param_dir))
+                self.inference_ckpt_path = param_dir / CHECKPOINT_NAME
+            _maybe_download_parameters(self.inference_ckpt_path)
+        else:
+            raise ValueError(
+                f"Provided checkpoint path {self.inference_ckpt_path} does not exist"
+            )
+        return self

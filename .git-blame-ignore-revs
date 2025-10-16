@@ -3,3 +3,6 @@ eb07492e16108923348c7d79007e1562c23e00b0
 
 # Re-reformatting of entire codebase with line-length 88
 52a57edaf326d054722e82830b5c704f54940f32
+
+# Remove Union from from type hints
+88dbbee07f1839b81a8c45f2a7786da5b0fb14ea
