@@ -67,6 +67,7 @@ class PairformerEmbedding(nn.Module):
                 Linear layer initialization parameters
         """
         super().__init__()
+        self.pairformer_config = pairformer
         self.min_bin = min_bin
         self.max_bin = max_bin
         self.no_bin = no_bin
@@ -146,14 +147,13 @@ class PairformerEmbedding(nn.Module):
             zij.expand(*(batch_dims + zij.shape[-3:])), device=device
         )
 
-        # TODO: Refactor to support inplace ops
         for i in range(no_samples):
             zij_chunk = self.embed_zij(
                 si_input=si_input, zij=zij, x_pred=x_pred[:, i : i + 1]
             )
 
             si_chunk, zij_chunk = self.pairformer_stack(
-                si.clone(),  # Avoid inplace ops on si for now
+                si.clone(),  # Avoid inplace ops on si
                 zij_chunk,
                 single_mask,
                 pair_mask,
@@ -196,9 +196,7 @@ class PairformerEmbedding(nn.Module):
 
         batch_dims = x_pred.shape[:-2]
 
-        # Expand sample dimension and reshape for DS kernel
-        # TODO: Make this less awkward, DS kernel has strict shape asserts
-        #  and expects mask and pair terms to have specific shapes
+        # Expand sample dimension and reshape for DS and cuEq kernels
         def reshape_inputs(x: torch.Tensor, feat_dims: list):
             x = x.expand(*(batch_dims + feat_dims))
             x = x.reshape(-1, *feat_dims)
@@ -216,10 +214,14 @@ class PairformerEmbedding(nn.Module):
         # in the DS kernel. To avoid this, chunk tuning is disabled in this case.
         # Both DS and cuEq kernels can be enabled, where cuEq takes precedence, so
         # allow chunking if cuEq is set and will not fall back to DS.
+        # TODO: Find less clunky way to handle this
+        use_fall_back = should_fall_back(
+            n_token=zij.shape[-2],
+            hidden_dim=self.pairformer_config.c_hidden_pair_att,
+            dtype=zij.dtype,
+        )
         is_cueq_runnable = (
-            cueq_is_installed
-            and use_cueq_triangle_kernels
-            and not should_fall_back(zij)
+            cueq_is_installed and use_cueq_triangle_kernels and not use_fall_back
         )
         if use_deepspeed_evo_attention and not is_cueq_runnable and si.shape[0] > 1:
             chunk_size = None

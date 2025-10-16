@@ -57,13 +57,14 @@ if cueq_is_installed:
             CUEQ_TRIATTN_FALLBACK_THRESHOLD,
         )
 
-        def should_fall_back(q_x):
+        def should_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype):
             # for q_x, dimension -2 is the context length.
-            if q_x.shape[-2] <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
+            if n_token <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
                 return True
-            hidden_dim = q_x.shape[-1]
-            if q_x.dtype == torch.float32:
+
+            if dtype == torch.float32:
                 if hidden_dim > 32 or hidden_dim % 4 != 0:
+                    print(f"{hidden_dim} (fp32)")
                     return True
             else:
                 # float16, bfloat16
@@ -354,10 +355,6 @@ class Attention(nn.Module):
                 "lma_kv_chunk_size must be provided"
             )
 
-        if cueq_is_installed and use_cueq_triangle_kernels and should_fall_back(q_x):
-            # cuEquivariance -> Torch fallback for small sequence length and some shapes
-            use_cueq_triangle_kernels = False
-
         # TODO: Make this more explicit
         # The EvoformerAttention kernel can only be used for sequence lengths > 16
         if use_deepspeed_evo_attention and q_x.shape[-2] <= 16:
@@ -373,12 +370,22 @@ class Attention(nn.Module):
 
         if biases is None:
             biases = []
+
         # DeepSpeed attention kernel and cuequivariance kernel apply scaling internally
         q, k, v = self._prep_qkv(
             q_x,
             kv_x,
             apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels),
         )
+
+        if cueq_is_installed and use_cueq_triangle_kernels:
+            use_fall_back = should_fall_back(
+                n_token=q.shape[-2], hidden_dim=q.shape[-1], dtype=q.dtype
+            )
+            if use_fall_back:
+                # cuEquivariance -> Torch fallback for small sequence length and
+                # some shapes
+                use_cueq_triangle_kernels = False
 
         # cuequivariance kernel takes precedence over use_deepspeed_evo_attention
         if use_cueq_triangle_kernels:
