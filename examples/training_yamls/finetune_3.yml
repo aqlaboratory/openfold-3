@@ -11,7 +11,7 @@ data_module_args:
 
 logging:
   log_lr : true 
-  wandb:
+  wandb_config:
     project: <project_name>
     entity: <entity_name> 
     group: null

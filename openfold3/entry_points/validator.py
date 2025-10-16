@@ -76,8 +76,8 @@ class CheckpointConfig(BaseModel):
 class WandbConfig(BaseModel):
     """Configuration for Weights and Biases experiment result logging."""
 
-    project: str
-    experiment_name: str
+    project: str | None = None
+    experiment_name: str | None = None
     entity: str | None = None
     group: str | None = None
     id: str | None = None
@@ -170,6 +170,7 @@ class TrainingExperimentSettings(ExperimentSettings):
     mode: ValidModeType = "train"
     seed: int = 42
     restart_checkpoint_path: str | None = None
+    preemption_safe_resume: bool = False
     ckpt_load_settings: CheckpointLoadingSettings = CheckpointLoadingSettings()
 
     @field_validator("restart_checkpoint_path", mode="before")
@@ -291,6 +292,39 @@ class TrainingExperimentConfig(ExperimentConfig):
 
         if data_seed is None:
             self.data_module_args.data_seed = model_seed
+
+        return self
+
+    @model_validator(mode="after")
+    def check_preemption_safe(self):
+        """
+        Checks whether preemption_safe_resume settings are valid.
+        Currently, this only supports jobs that use wandb logging
+        with a set id.
+
+        It will have the following effects if set:
+        1. When restarted, the run will resume from the last locally
+           saved checkpoint for a given wandb id.
+        2. ckpt_load_settings will be disabled if the run
+           already exists and has existing checkpoints.
+        3. restart_checkpoint_path will be set to "last" if the run
+           already exists and has existing checkpoints.
+        """
+        if not self.experiment_settings.preemption_safe_resume:
+            return self
+
+        wandb_config = self.logging_config.wandb_config
+        if wandb_config is None:
+            raise ValueError(
+                "The `preemption_safe_resume` setting currently only supports jobs "
+                "run with wandb. Please provide a wandb_config."
+            )
+        if wandb_config.id is None:
+            raise ValueError(
+                "The `preemption_safe_resume` setting requires wandb_config.id to "
+                "be set. This ensures that if a job is preempted, the new job resumes "
+                "from the same id."
+            )
 
         return self
 

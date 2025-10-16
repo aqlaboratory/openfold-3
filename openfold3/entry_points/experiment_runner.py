@@ -269,7 +269,9 @@ class ExperimentRunner(ABC):
         elif self.mode == "test":
             target_method = self.trainer.test
         elif self.mode == "predict":
-	    raise NotImplementedError("To be implemented by `InferenceExperimentRunner`)
+            raise NotImplementedError(
+                "To be implemented by `InferenceExperimentRunner`"
+            )
         else:
             raise ValueError(
                 f"""Invalid mode argument: {self.mode}. Choose one of "
@@ -293,7 +295,10 @@ class TrainingExperimentRunner(ExperimentRunner):
         self.restart_checkpoint_path = (
             experiment_config.experiment_settings.restart_checkpoint_path
         )
-        self.ckpt_load_setings = (
+        self.preemption_safe_resume = (
+            experiment_config.experiment_settings.preemption_safe_resume
+        )
+        self.ckpt_load_settings = (
             experiment_config.experiment_settings.ckpt_load_settings
         )
         self.dataset_paths = experiment_config.dataset_paths
@@ -332,31 +337,37 @@ class TrainingExperimentRunner(ExperimentRunner):
         return DataModuleConfig(datasets=cfgs, **self.data_module_args.model_dump())
 
     @property
+    def resume_existing_run(self):
+        # Preemption-safe resume option is currently only valid if wandb is enabled.
+        return self.preemption_safe_resume and self.use_wandb and self.wandb.run_exists
+
+    @property
     def do_manual_ckpt_loading(self) -> bool:
-        return self.ckpt_load_setings.manual_checkpoint_loading
+        # If resuming from existing wandb run, do not manually load checkpoint
+        if self.resume_existing_run:
+            return False
+        return self.ckpt_load_settings.manual_checkpoint_loading
 
     def manual_load_checkpoint(self):
-        init_from_ema_weights = self.ckpt_load_setings.init_from_ema_weights
+        init_from_ema_weights = self.ckpt_load_settings.init_from_ema_weights
         ckpt = load_checkpoint(Path(self.restart_checkpoint_path))
         state_dict = get_state_dict_from_checkpoint(
             ckpt, init_from_ema_weights=init_from_ema_weights
         )
 
-        logger.info(
-            f"Restoring model and EMA weights from {self.restart_checkpoint_path}..."
-        )
+        print(f"Restoring model and EMA weights from {self.restart_checkpoint_path}...")
         self.lightning_module.load_state_dict(
-            state_dict, strict=self.ckpt_load_setings.strict_loading
+            state_dict, strict=self.ckpt_load_settings.strict_loading
         )
         self.lightning_module.ema.load_state_dict(ckpt["ema"])
 
-        if self.ckpt_load_setings.restore_lr_scheduler:
+        if self.ckpt_load_settings.restore_lr_scheduler:
             last_global_step = int(ckpt["global_step"])
 
             logger.info(f"Restoring last lr step {last_global_step}...")
             self.lightning_module.resume_last_lr_step(last_global_step)
 
-        if self.ckpt_load_setings.restore_time_step:
+        if self.ckpt_load_settings.restore_time_step:
             if "DataModule" in ckpt:
                 logger.info("Restoring datamodule states...")
                 self.lightning_data_module.load_state_dict(ckpt["DataModule"])
@@ -366,6 +377,12 @@ class TrainingExperimentRunner(ExperimentRunner):
 
     @cached_property
     def ckpt_path(self) -> str | None:
+        # With preemption safe resume, always resume from last checkpoint
+        # of the current wandb run
+        if self.resume_existing_run:
+            return "last"
+
+        # If manually loading checkpoint, do not pass a path to trainer
         if self.do_manual_ckpt_loading:
             return None
 
@@ -425,6 +442,11 @@ class TrainingExperimentRunner(ExperimentRunner):
             )
 
         logger.info(f"Running with seed: {seed}")
+
+        # The datamodule is reseeded with the data_seed, and the model will be
+        # reseeded per rank with the RankSpecificSeedCallback, so most of the
+        # seed_everything() initialization does not matter. This does still
+        # seed the distributed sampler, which will otherwise default to seed 0.
         pl.seed_everything(seed, workers=True)
 
         update_dict = {"architecture": {"shared": {"sync_seed": seed}}}
@@ -506,8 +528,6 @@ class InferenceExperimentRunner(ExperimentRunner):
     ):
         """Updates configuration given command line args."""
         if output_dir:
-            output_dir.mkdir(exist_ok=True, parents=True)
-            self.output_dir = output_dir
             self.experiment_config.experiment_settings.output_dir = output_dir
 
         if num_diffusion_samples:
@@ -551,7 +571,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.trainer.predict(
             model=self.lightning_module,
             datamodule=self.lightning_data_module,
-            return_predictions=False
+            return_predictions=False,
         )
         self._log_experiment_config()
         self._log_model_config()
@@ -702,6 +722,11 @@ class WandbHandler:
             self._init_logger()
         assert self._logger is not None
         return self._logger
+
+    @cached_property
+    def run_exists(self) -> bool:
+        wandb_ckpt_dir = Path(self.output_dir) / wandb.run.project / wandb.run.id
+        return wandb_ckpt_dir.is_dir() and any(wandb_ckpt_dir.iterdir())
 
     def store_configs(
         self,
