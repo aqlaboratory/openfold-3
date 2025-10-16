@@ -2,6 +2,7 @@
 import logging
 from collections import defaultdict
 from collections.abc import Generator, Iterable
+from functools import cached_property
 from typing import Literal, NamedTuple, TypeAlias
 
 import biotite.structure as struc
@@ -113,7 +114,7 @@ def set_atomwise_annotation(
         An RDKit molecule object with the atom-wise annotations set as properties under
         "annot_{property_name}".
     """
-    for atom, annotation in zip(mol.GetAtoms(), annotations):
+    for atom, annotation in zip(mol.GetAtoms(), annotations, strict=True):
         if isinstance(annotation, bool):
             atom.SetBoolProp(f"annot_{property_name}", annotation)
         elif isinstance(annotation, int):
@@ -303,7 +304,11 @@ def remove_hydrogen_values(values: Iterable, atom_elements: Iterable) -> list:
     Returns:
         List of values where the corresponding atom is not a hydrogen.
     """
-    return [x for x, element in zip(values, atom_elements) if element not in ("H", "D")]
+    return [
+        x
+        for x, element in zip(values, atom_elements, strict=True)
+        if element not in ("H", "D")
+    ]
 
 
 def safe_remove_all_hs(mol: Mol) -> Mol:
@@ -655,31 +660,46 @@ def find_cross_chain_bonds(atom_array: AtomArray) -> np.ndarray:
     return all_bonds[cross_chain_selector]
 
 
-class BiotiteCCDWrapper:
-    """
-    A stateless façade for Biotite's internal CCD.
+class _ImplementsGet:
+    """Convenience mixin to add a simple get() method."""
 
-    Provides dictionary-style access: `ccd[comp_id][category][column_name]`
-    by wrapping `biotite.structure.info.get_from_ccd()`.
+    def get(self, key: str, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+
+class BiotiteCCDWrapper(_ImplementsGet):
+    """Allows indexing into Biotite's internal CCD like a regular CCD CIFFile.
+
+    Provides dictionary-style access: `ccd[comp_id][category]` by wrapping
+    `biotite.structure.info.get_from_ccd()`.
     """
+
+    @cached_property
+    def _all_valid_ccds(self) -> set[str]:
+        """All CCD IDs existing in Biotite's internal CCD."""
+        return set(info.all_residues())
 
     def __getitem__(self, comp_id: str):
+        if comp_id not in self._all_valid_ccds:
+            raise KeyError(f"Component ID '{comp_id}' not found in CCD.")
+
         # Return an accessor that holds the component ID
         return self._CategoryAccessor(comp_id)
 
-    class _CategoryAccessor:
+    class _CategoryAccessor(_ImplementsGet):
         def __init__(self, comp_id: str):
             self._comp_id = comp_id
 
         def __getitem__(self, category: str):
-            # Return a final accessor holding both comp_id and category
-            return BiotiteCCDWrapper._ColumnAccessor(self._comp_id, category)
+            result = info.get_from_ccd(category_name=category, comp_id=self._comp_id)
 
-    class _ColumnAccessor:
-        def __init__(self, comp_id: str, category: str):
-            self._comp_id = comp_id
-            self._category = category
+            if result is None:
+                raise KeyError(
+                    f"Category '{category}' not found for "
+                    f"component ID '{self._comp_id}'"
+                )
 
-        def __getitem__(self, column_name: str):
-            # Perform the actual lookup using the stored information
-            return info.get_from_ccd(self._category, self._comp_id, column_name)
+            return result

@@ -734,7 +734,7 @@ def consolidate_training_set_data(
     for i, (
         training_cache_path,
         preprocessed_dir,
-    ) in enumerate(zip(training_cache_paths, preprocessed_dirs), start=1):
+    ) in enumerate(zip(training_cache_paths, preprocessed_dirs, strict=True), start=1):
         if i == 1:
             # Can avoid reading this twice
             training_cache = first_training_cache
@@ -1706,6 +1706,7 @@ def select_final_validation_data(
                 monomer_structure_data,
                 multimer_structure_data,
             ),
+            strict=True,
         ):
             if pdb_id not in set_structure_data:
                 continue

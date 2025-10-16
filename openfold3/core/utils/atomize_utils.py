@@ -272,7 +272,10 @@ def max_atom_per_token_masked_select(
         per_batch_mask = torch.unbind(max_atom_per_token_mask, dim=0)
 
         atom_feat = torch.stack(
-            [select_atoms(l, m) for l, m in zip(per_batch_logits, per_batch_mask)],
+            [
+                select_atoms(l, m)
+                for l, m in zip(per_batch_logits, per_batch_mask, strict=False)
+            ],
             dim=0,
         )
     else:

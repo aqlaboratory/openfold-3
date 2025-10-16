@@ -78,7 +78,7 @@ class OuterProductMean(nn.Module):
         a_reshape = a.reshape((-1,) + a.shape[-3:])
         b_reshape = b.reshape((-1,) + b.shape[-3:])
         out = []
-        for a_prime, b_prime in zip(a_reshape, b_reshape):
+        for a_prime, b_prime in zip(a_reshape, b_reshape, strict=True):
             outer = chunk_layer(
                 partial(self._opm, b=b_prime),
                 {"a": a_prime},

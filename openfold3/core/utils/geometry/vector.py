@@ -32,8 +32,12 @@ class Vec3Array:
         if hasattr(self.x, "dtype"):
             assert self.x.dtype == self.y.dtype
             assert self.x.dtype == self.z.dtype
-            assert all([x == y for x, y in zip(self.x.shape, self.y.shape)])
-            assert all([x == z for x, z in zip(self.x.shape, self.z.shape)])
+            assert all(
+                [x == y for x, y in zip(self.x.shape, self.y.shape, strict=True)]
+            )
+            assert all(
+                [x == z for x, z in zip(self.x.shape, self.z.shape, strict=True)]
+            )
 
     def __add__(self, other: Vec3Array) -> Vec3Array:
         return Vec3Array(

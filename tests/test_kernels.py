@@ -210,7 +210,11 @@ class TestKernels(unittest.TestCase):
         loss_gt.backward()
 
         # Compare the grads of attention inputs
-        pairs = zip([q_repro, kv_repro, biases_repro[1]], [q_gt, kv_gt, biases_gt[1]])
+        pairs = zip(
+            [q_repro, kv_repro, biases_repro[1]],
+            [q_gt, kv_gt, biases_gt[1]],
+            strict=False,
+        )
         for i, item in enumerate(pairs):
             t_repro, t_gt = item
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))

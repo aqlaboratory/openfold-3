@@ -96,7 +96,9 @@ def assert_ref_mols_equal(
     )
 
     # Check internal molecule properties
-    for atom_1, atom_2 in zip(ref_mol_1.mol.GetAtoms(), ref_mol_2.mol.GetAtoms()):
+    for atom_1, atom_2 in zip(
+        ref_mol_1.mol.GetAtoms(), ref_mol_2.mol.GetAtoms(), strict=False
+    ):
         if atom_1.HasProp("annot_atom_name") and atom_2.HasProp("annot_atom_name"):
             assert atom_1.GetProp("annot_atom_name") == atom_2.GetProp(
                 "annot_atom_name"
@@ -117,7 +119,9 @@ def assert_ref_mols_equal(
         "Reference molecules have different component_id."
     )
     if (ref_mol_1.permutations is not None) and (ref_mol_2.permutations is not None):
-        for perm_1, perm_2 in zip(ref_mol_1.permutations, ref_mol_2.permutations):
+        for perm_1, perm_2 in zip(
+            ref_mol_1.permutations, ref_mol_2.permutations, strict=False
+        ):
             assert np.array_equal(perm_1, perm_2), (
                 "Reference molecules have different permutations."
             )
