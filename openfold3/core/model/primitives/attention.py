@@ -355,7 +355,7 @@ class Attention(nn.Module):
             )
         # cuEquivariance -> Torch fallback for small sequence length and some shapes
         if use_cueq_triangle_kernels and should_fall_back(q_x):
-                use_cueq_triangle_kernels = False
+            use_cueq_triangle_kernels = False
 
         # TODO: Make this more explicit
         # The EvoformerAttention kernel can only be used for sequence lengths > 16
