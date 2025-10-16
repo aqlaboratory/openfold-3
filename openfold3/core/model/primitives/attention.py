@@ -64,7 +64,6 @@ if cueq_is_installed:
 
             if dtype == torch.float32:
                 if hidden_dim > 32 or hidden_dim % 4 != 0:
-                    print(f"{hidden_dim} (fp32)")
                     return True
             else:
                 # float16, bfloat16
