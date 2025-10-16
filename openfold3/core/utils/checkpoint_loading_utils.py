@@ -24,7 +24,7 @@ def load_model_state_dict_from_ds_checkpoint(checkpoint_dir: Path) -> dict:
     state_file = zero_to_fp32.get_model_state_file(
         str(ds_checkpoint_dir), _DS_CHECKPOINT_VERSION
     )
-    return torch.load(state_file)
+    return torch.load(state_file, weights_only=True)
 
 
 def load_checkpoint(ckpt_path: Path) -> dict:
@@ -39,7 +39,7 @@ def load_checkpoint(ckpt_path: Path) -> dict:
 
 def get_state_dict_from_checkpoint(ckpt: dict, init_from_ema_weights: bool) -> dict:
     """Retrieves state dict from various checkpoint formats."""
-    is_pretrained_model = "module" not in ckpt or "state_dict" not in ckpt
+    is_pretrained_model = "module" not in ckpt and "state_dict" not in ckpt
 
     # Loading from pre-trained model
     if is_pretrained_model:
