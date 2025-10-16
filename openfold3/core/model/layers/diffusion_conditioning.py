@@ -111,7 +111,7 @@ class DiffusionConditioning(nn.Module):
         self.tune_chunk_size = tune_chunk_size
         self.chunk_size_tuner = None
         if tune_chunk_size:
-            self.chunk_size_tuner = ChunkSizeTuner(max_chunk_size=2048)
+            self.chunk_size_tuner = ChunkSizeTuner()
 
     def _embed_trunk_inputs(
         self,
@@ -180,6 +180,7 @@ class DiffusionConditioning(nn.Module):
                     token_mask,
                 ),
                 min_chunk_size=chunk_size,
+                max_chunk_size=2048,
             )
 
         si, zij = self._forward(

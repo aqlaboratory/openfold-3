@@ -23,7 +23,6 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.utils.checkpointing import checkpoint_blocks
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
 
 from .attention_pair_bias import AttentionPairBias, CrossAttentionPairBias
 from .transition import ConditionedTransitionBlock
@@ -121,7 +120,6 @@ class DiffusionTransformerBlock(nn.Module):
         s: torch.Tensor,
         z: torch.Tensor,
         mask: torch.Tensor | None = None,
-        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
@@ -138,8 +136,6 @@ class DiffusionTransformerBlock(nn.Module):
                 [*, N, N, C_z] Pair embedding
             mask:
                 [*, N] Mask for token-level embedding
-            chunk_size:
-                Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
@@ -176,7 +172,9 @@ class DiffusionTransformerBlock(nn.Module):
         # Note: Differs from SI, updated a_i from AttentionPairBias is used
         # instead of previous a_i.
         a = a + self.conditioned_transition(
-            a=a, s=s, mask=trans_mask, chunk_size=chunk_size
+            a=a,
+            s=s,
+            mask=trans_mask,
         )
 
         return a
@@ -204,8 +202,6 @@ class DiffusionTransformer(nn.Module):
         blocks_per_ckpt: int | None = None,
         linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
         use_reentrant: bool | None = None,
-        clear_cache_between_blocks: bool = False,
-        tune_chunk_size: bool = False,
     ):
         """
         Args:
@@ -240,17 +236,11 @@ class DiffusionTransformer(nn.Module):
                 Whether to use reentrant variant of checkpointing. If set,
                 torch checkpointing will be used (DeepSpeed does not support
                 this feature)
-            clear_cache_between_blocks:
-                Whether to clear CUDA's GPU memory cache between blocks of the
-                stack. Slows down each block but can reduce fragmentation
-            tune_chunk_size:
-                Whether to dynamically tune the module's chunk size
         """
         super().__init__()
 
         self.blocks_per_ckpt = blocks_per_ckpt
         self.use_reentrant = use_reentrant
-        self.clear_cache_between_blocks = clear_cache_between_blocks
 
         self.blocks = nn.ModuleList(
             [
@@ -271,81 +261,12 @@ class DiffusionTransformer(nn.Module):
             ]
         )
 
-        self.tune_chunk_size = tune_chunk_size
-        self.chunk_size_tuner = None
-        if tune_chunk_size:
-            self.chunk_size_tuner = ChunkSizeTuner(max_chunk_size=2048)
-
-    def _prep_blocks(
-        self,
-        a: torch.Tensor,
-        s: torch.Tensor,
-        z: torch.Tensor,
-        mask: torch.Tensor | None = None,
-        chunk_size: int | None = None,
-        use_deepspeed_evo_attention: bool = False,
-        use_cueq_triangle_kernels: bool = False,
-        use_lma: bool = False,
-        use_high_precision_attention: bool = False,
-        _mask_trans: bool = True,
-    ):
-        """
-        Partially initialize the DiffusionTransformer blocks. Optionally add
-        cache clearing between blocks and chunk size tuning. Arguments are the
-        same as forward function.
-
-        Returns:
-            Partially initialized DiffusionTransformer blocks.
-        """
-        blocks = [
-            partial(
-                b,
-                s=s,
-                z=z,
-                mask=mask,
-                chunk_size=chunk_size,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                use_lma=use_lma,
-                use_high_precision_attention=use_high_precision_attention,
-                _mask_trans=_mask_trans,
-            )
-            for b in self.blocks
-        ]
-
-        if self.clear_cache_between_blocks:
-
-            def block_with_cache_clear(block, *args, **kwargs):
-                torch.cuda.empty_cache()
-                return block(*args, **kwargs)
-
-            blocks = [partial(block_with_cache_clear, b) for b in blocks]
-
-        if chunk_size is not None and self.chunk_size_tuner is not None:
-            assert not self.training
-            tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
-                representative_fn=blocks[0],
-                # We don't want to write in-place during chunk tuning runs
-                args=(a.clone(),),
-                min_chunk_size=chunk_size,
-            )
-            blocks = [
-                partial(
-                    b,
-                    chunk_size=tuned_chunk_size,
-                )
-                for b in blocks
-            ]
-
-        return blocks
-
     def forward(
         self,
         a: torch.Tensor,
         s: torch.Tensor,
         z: torch.Tensor,
         mask: torch.Tensor | None = None,
-        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
@@ -362,8 +283,6 @@ class DiffusionTransformer(nn.Module):
                 [*, N, N, C_z] Pair embedding
             mask:
                 [*, N] Mask for token-level embedding
-            chunk_size:
-                Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_cueq_triangle_kernels:
@@ -375,19 +294,20 @@ class DiffusionTransformer(nn.Module):
             _mask_trans:
                 Whether to mask the output of the transition layer
         """
-
-        blocks = self._prep_blocks(
-            a=a,
-            s=s,
-            z=z,
-            mask=mask,
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-            use_lma=use_lma,
-            use_high_precision_attention=use_high_precision_attention,
-            _mask_trans=_mask_trans,
-        )
+        blocks = [
+            partial(
+                b,
+                s=s,
+                z=z,
+                mask=mask,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_lma=use_lma,
+                use_high_precision_attention=use_high_precision_attention,
+                _mask_trans=_mask_trans,
+            )
+            for b in self.blocks
+        ]
 
         blocks_per_ckpt = self.blocks_per_ckpt
         if not torch.is_grad_enabled():

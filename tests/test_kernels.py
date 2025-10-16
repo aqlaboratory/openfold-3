@@ -552,7 +552,6 @@ class TestKernels(unittest.TestCase):
         self,
         use_deepspeed_evo_attention=False,
         dtype=torch.float32,
-        chunk_size=None,
         eps=2e-2,
     ):
         """
@@ -586,7 +585,6 @@ class TestKernels(unittest.TestCase):
                 n_query=None,
                 n_key=None,
                 inf=inf,
-                tune_chunk_size=chunk_size is not None,
             )
             .eval()
             .to(device="cuda", dtype=dtype)
@@ -611,7 +609,6 @@ class TestKernels(unittest.TestCase):
                 z=z,
                 mask=mask,
                 use_deepspeed_evo_attention=False,
-                chunk_size=None,  # Test against non-chunked version
             )
 
             # In practice, layer norms applied later in the network make any
@@ -624,7 +621,6 @@ class TestKernels(unittest.TestCase):
                 z=z,
                 mask=mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                chunk_size=chunk_size,
             )
             out_repro_a_ds = F.layer_norm(out_repro_a_ds, (c_a,)).cpu()
 
@@ -646,16 +642,6 @@ class TestKernels(unittest.TestCase):
             use_deepspeed_evo_attention=True,
             dtype=torch.float32,
             eps=2e-2,
-        )
-
-    @compare_utils.skip_unless_ds4s_installed()
-    def test_compare_diffusion_transformer_dsk_fp32_chunk(self):
-        """Run Diffusion Transformer comparison test with chunk tuning enabled."""
-        self._compare_diffusion_transformer(
-            use_deepspeed_evo_attention=True,
-            dtype=torch.float32,
-            chunk_size=4,
-            eps=4e-2,
         )
 
     def _compare_template_stack(

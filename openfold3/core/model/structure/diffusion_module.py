@@ -222,7 +222,8 @@ class DiffusionModule(nn.Module):
 
         rl_noisy = xl_noisy / torch.sqrt(t[..., None, None] ** 2 + self.sigma_data**2)
 
-        # Note: These modules are not memory-intensive so chunking is unnecessary.
+        # Note: These modules are not memory-intensive compared to other parts of the
+        # model (i.e. TemplateStack) so chunking is unnecessary for now.
         ai, ql, cl, plm = self.atom_attn_enc(
             batch=batch,
             atom_mask=atom_mask,

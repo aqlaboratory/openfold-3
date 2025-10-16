@@ -322,8 +322,6 @@ model_config = mlc.ConfigDict(
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "linear_init_params": lin_init.diffusion_transformer_init,
                     "use_reentrant": False,
-                    "clear_cache_between_blocks": False,
-                    "tune_chunk_size": tune_chunk_size,
                 },
                 "atom_attn_dec": {
                     "c_atom": c_atom,

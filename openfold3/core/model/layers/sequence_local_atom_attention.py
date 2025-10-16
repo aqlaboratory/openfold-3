@@ -476,7 +476,6 @@ class AtomAttentionEncoder(nn.Module):
         rl: torch.Tensor | None = None,
         si_trunk: torch.Tensor | None = None,
         zij_trunk: torch.Tensor | None = None,
-        chunk_size: int | None = None,
         use_high_precision_attention: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -504,8 +503,6 @@ class AtomAttentionEncoder(nn.Module):
                 [*, N_atom, c_s] Trunk single representation (optional)
             zij_trunk:
                 [*, N_atom, N_atom, c_z] Trunk pair representation (optional)
-            chunk_size:
-                Inference-time subbatch size
             use_high_precision_attention:
                 Whether to run attention in high precision
         Returns:
@@ -539,7 +536,6 @@ class AtomAttentionEncoder(nn.Module):
             s=cl,
             z=plm,
             mask=atom_mask,
-            chunk_size=chunk_size,
             use_high_precision_attention=use_high_precision_attention,
         )
 
@@ -653,7 +649,6 @@ class AtomAttentionDecoder(nn.Module):
         ql: torch.Tensor,
         cl: torch.Tensor,
         plm: torch.Tensor,
-        chunk_size: int | None = None,
         use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
         """
@@ -673,8 +668,6 @@ class AtomAttentionDecoder(nn.Module):
             plm:
                 [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair representation
                 Note: Converted to block format in AtomAttentionEncoder
-            chunk_size:
-                Inference-time subbatch size
             use_high_precision_attention:
                 Whether to run attention in high precision
         Returns:
@@ -697,7 +690,6 @@ class AtomAttentionDecoder(nn.Module):
             s=cl,
             z=plm,
             mask=atom_mask,
-            chunk_size=chunk_size,
             use_high_precision_attention=use_high_precision_attention,
         )
 
