@@ -609,17 +609,6 @@ class OpenFold3AllAtom(ModelRunner):
         if not valid_sample or is_repeated_sample:
             return
 
-        # At the start of inference, load the EMA weights
-        if self.cached_weights is None:
-            # model.state_dict() contains references to model weights rather
-            # than copies. Therefore, we need to clone them before calling
-            # load_state_dict().
-            def clone_param(t):
-                return t.detach().clone()
-
-            self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
-            self.model.load_state_dict(self.ema.state_dict()["params"])
-
         query_id = batch["query_id"]
 
         # Convert seeds back to list
