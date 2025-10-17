@@ -46,7 +46,7 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 class TrainingDatasetPaths(BaseModel):
     """Dataset paths used by each dataset."""
 
-    dataset_cache_file: FilePath
+    dataset_cache_file: FilePath | DirectoryPath
     alignments_directory: DirectoryPathOrNone = None
     alignment_db_directory: DirectoryPathOrNone = None
     alignment_array_directory: DirectoryPathOrNone = None

@@ -9,7 +9,7 @@ data_module_args:
   num_workers: 16
   epoch_len: 128000 # Ckpt every 500 steps
 
-logging:
+logging_config:
   log_lr : true 
   wandb_config:
     project: <project_name>
@@ -29,7 +29,7 @@ pl_trainer_args:
   deepspeed_config_path: ./deepspeed_configs/ds_stage2_default.json
 
 # Checkpoint settings
-checkpoint:
+checkpoint_config:
   every_n_epochs: 1
   auto_insert_metric_name: false
   save_last: true
@@ -60,7 +60,7 @@ model_update:
 dataset_configs:
   train:
     weighted-pdb:
-      class: WeightedPDBDataset 
+      dataset_class: WeightedPDBDataset
       weight: 1.0
       config:
         debug_mode: true
@@ -82,7 +82,7 @@ dataset_configs:
 
   validation:
     val-weighted-pdb:
-      class: ValidationPDBDataset
+      dataset_class: ValidationPDBDataset
       config:
         debug_mode: true
         template:
