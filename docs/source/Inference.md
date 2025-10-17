@@ -72,8 +72,8 @@ Coming soon:
 
 ## 2. Pre-requisites:
 
-- OpenFold3 Conda Environment. See [OpenFold3 Installation](installation.md) for instructions on how to build this environment.
-- OpenFold3 Model Parameters: please find the checkpoints [in this Google Drive](https://drive.google.com/drive/folders/1PD1B-FuLF9V9wxATGh7qaF0G-WaT4j3g?usp=drive_link).
+- OpenFold3 Conda Environment. See {doc}`OpenFold3 Installation <Installation>` for instructions on how to build this environment.
+- OpenFold3 Model Parameters. These can either be downloaded manually or will be downloaded on your first prediction run, details {doc}`here <Installation#downloading-the-model-parameters-manually>`  
 
 
 ## 3. Running OpenFold3 Inference
@@ -132,7 +132,7 @@ python run_openfold.py predict \
 - `--num_diffusion_samples` *(int, optional, default = 5)*
     - Number of diffusion samples per query.
 
-- `--num_model_seeds` *(int, optional, default = 42)*
+- `--num_model_seeds` *(int, optional, default = 1)*
     - Number of random seeds to use per query.
 
 - `--runner_yaml` *(Path, optional, default = null)*
@@ -141,7 +141,7 @@ python run_openfold.py predict \
 
 📝  *Notes*: 
 - Only protein sequences are submitted to the ColabFold server so this mode only uses MSAs for protein chains.
-- All arguments can also be set via `runner_yaml`, but command-line flags take precedence and will override values specified in the YAML file (see [Customized Inference Settings](#33-customized-inference-settings-using-runneryml) for details).
+- All arguments can also be set via `runner_yaml`, but command-line flags take precedence and will override values specified in the YAML file (see [Customized Inference Settings](customized-inference-settings-using-runneryml) for details).
 
 
 #### 3.2.2 📂 Inference with Precomputed MSAs
@@ -167,13 +167,13 @@ python run_openfold.py predict \
     --output_dir /path/to/output/
 ```
 
+(customized-inference-settings-using-runneryml)=
 ### 3.3 Customized Inference Settings Using `runner.yml`
 
 You can further customize inference behavior by providing a [`runner.yml`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml) file. This overrides the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/entry_points/validator.py).
 
 Below are some common use cases and how to configure them:
 
----
 
 #### 🖥️ Run on Multiple GPUs or Nodes
 Specify the hardware configuration under [`pl_trainer_args`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L141) in `runner.yml`:
@@ -183,6 +183,20 @@ Note: Using multiple GPUs in combination with the `--use_msa_server` option curr
 pl_trainer_args:
   devices: 4      # Default: 1
   num_nodes: 1    # Default: 1
+```
+
+---
+
+#### 🌱 Change the random seeds for the model 
+
+By default, only 1 random model seed is used. The custom list of random seeds can be provided to the `runner.yml` under [`experiment_settings`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L120) in the following format
+
+```
+experiment_settings:
+  seeds:
+    - 100
+    - 101
+    - ... 
 ```
 
 ---
@@ -209,11 +223,38 @@ model_update:
 
 ---
 
+#### 📊 Toggle PAE head model
+
+Predicted Aligned Error (PAE) is a predicted confidence metric from the OpenFold3 model that is used to compute predicted TM scores. You can find more information about confidence metrics [here](https://www.ebi.ac.uk/training/online/courses/alphafold/inputs-and-outputs/evaluating-alphafolds-predicted-structures-using-confidence-scores/confidence-scores-in-alphafold-multimer/).
+
+The PAE model head is enabled by default in inference by its selection in the model presets. To disable PAE model, provide a list of model presets that does not include the `pae_enabled` preset, e.g.
+
+```
+model_update:
+  presets:
+    - predict # required for inference 
+```
+
+Conversely, if you provide your own model_update and wish to use the PAE head, please ensure the `pae_enabled` preset is selected:
+
+```
+model_update:
+  presets:
+    - predict  # required for inference
+    - low_mem  # default low memory settings
+    - pae_enabled  # required to run PAE head
+  custom:
+    - ... custom model changes
+```
+
+---
+
 ### 3.4 Customized ColabFold MSA Server Settings Using `runner.yml` 
 
 All settings for the ColabFold server and outputs can be set at `msa_computation_settings`](https://github.com/aqlaboratory/openfold3/blob/9d3ff681560cdd65fa92f80f08a4ab5becaebf87/openfold3/core/data/tools/colabfold_msa_server.py#L833)
 
 
+(34-saving-msa-outputs)=
 #### Saving MSA outputs
 
 By default, MSA outputs are written to a temporary directory and are deleted after prediction is complete. 
@@ -312,20 +353,20 @@ Each seed produces one or more sampled structure predictions and their associate
 
   - `gpde` - Global Predicted Distance Error (see AF3 SI Section 5.7 Eq. 16)
 
-- `*_batch.pt` (optional): Feature dictionary used as input to the model. Can be enabled in the runner yaml by:
-```
-output_writer_settings:
-  write_features: True
-```
+  The following metrics are available only when `pae_enabled` is set. 
 
-- `*_latent_output.pt` (optional): Latent representations output by the model. Can be enabled in the runner yaml by:
-```
-output_writer_settings:
-  write_latent_outputs: True
-```
+  - `iptm` - Estimated accuracy of predicted inter-protein chain interactions 
+  
+  - `ptm` - Estimated accuracy of overall predicted structure
 
-- `timing.json`:
-  - `runtime_s`: Total runtime in seconds for the prediction
+  - `disorder` - Average RASA value for all unresolved residues across all chains. 0 for inference predictions.
+
+  - `sample_ranking_score` - Based on AlphaFold3 SI §5.9.3, item 1
+
+  - `has_clash` - Whether any pair of polymer chains has steric clashes (0.0 if no clashes)
+
+- `timing.json`: The runtime for the submitted query (s), not including the runtime for any MSA computations.
+
 
 ### 4.2 Processed MSAs (`main/` and `paired/`)
 Only created if `--use_msa_server=True`. <br/>
@@ -375,7 +416,7 @@ If a set of chains with a specific stoichiometry is reused across multiple queri
 
 In summary, we submit a total of 1 + n queries to the ColabFold MSA server per run - one query for the set of all unqiue protein sequences in the inference query json file (unpaired/main MSAs) and n additional queries for the sets of of proteins chains heteromeric complexes (paired MSAs).
 
-The MSA deduplication behavior is also present for precomputed MSAs. See the [chain deduplication utility](precomputed_msa_explanation.md#4-msa-reusing-utility) section for details.
+The MSA deduplication behavior is also present for precomputed MSAs. See the [chain deduplication utility]({doc}`precomputed_msa_explanation#4-msa-reusing-utility`) section for details.
 
 ### 4.3 Mapping outputs (`mapping/`)
 
@@ -397,21 +438,49 @@ This directory is then deleted upon completion of MSA processing by the OpenFold
 To manually keep the raw ColabFold outputs, remove this line here [here](https://github.com/aqlaboratory/openfold3/blob/9d3ff681560cdd65fa92f80f08a4ab5becaebf87/openfold3/core/data/tools/colabfold_msa_server.py#L933). <br/>
 
 
-### 4.4 Query Metadata (`inference_query_set.json`)
-This is a system-generated file representing the full input query in a validated internal format defined by [this Pydantic schema](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/inference_query_format.py).
+### 4.4 Query Metadata 
+There are several system-generated files that record the state of submitted inference job.
+
+- [Inference Query Set](441-inference-query-set-json) -- Input query and references to auxiliary files (e.g. MSA alignments and template files)
+- [Model Config](442-model-config-json) - Model settings, e.g. architecture and memory settings
+- [Experiemnt Config](443-experiment-config-json) -- Experiment settings for the inference run
+- 
+
+(441-inference-query-set-json)=
+#### 4.4.1 Inference Query Set (`inference_query_set.json`)
+This file representing the full input query in a validated internal format defined by [this Pydantic schema](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/inference_query_format.py).
+
 - Created automatically from the original `query.json`.
 
 - If `--use_msa_server=True`, includes:
 
-  - `main_msa_file_paths`: Paths to single-chain `.a3m` files
+  - `main_msa_file_paths`: Paths to single-chain `.a3m` or `.npz` files
 
-  - `paired_msa_file_paths`: Paths to paired `.a3m` files (if heteromer input)
+  - `paired_msa_file_paths`: Paths to paired `.a3m` or `.npz` files (if heteromer input)
 
 - If `--use_templates=True`, includes:
 
   - `template_alignment_file_path`: Path to the preprocessed template cache entry `.npz` file used for template featurization. By default, template cache entries are automatically created in a short preprocessing step using the raw template alignment files provided under this same field and the template structures identified in the alignment. For more details, see the [template explanatory document](template_explanation.md).
 
   - `template_entry_chain_ids`: List of template chains, identified by their entry (typically PDB) IDs and chain IDs, used for featurization. By default, up to the first 4 of these chains are used.
+
+  \```{note}
+If MSA and Template files are persisted between runs, the same `inference_query_set.json` file can be used to resubmit the query without needing to rerun the template and MSA pipelines. To do so:
+
+1. Turn off the [MSA cleanup option](34-saving-msa-outputs).
+2. pass in the generated `inference_query_set.json` as the `query.json` and use `--use_msa_server=False` and `--use_templates=True`.
+\```
+
+(442-model-config-json)=
+#### 4.4.2 Model Config (`model_config.json`)
+
+This file represents the model settings used to perform inference. The config follows the model configuration file defined [here](../../openfold3/projects/of3_all_atom/config/model_config.py#L71)
+
+(443-experiment-config-json)=
+#### 4.4.3 Experiment Config (`experiment_config.json`)
+
+This file records the entire state of the experiment, as defined by the [InferenceExperimentConfig pydantic model](../../openfold3/entry_points/validator.py#L166).
+
 
 **🔗 Example:**
 
