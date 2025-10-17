@@ -17,8 +17,9 @@ Using these kernels requires upgrading the torch and cuda version, and so a seco
 
 ```yaml
 model_update:
-  preset: "predict"
-  compile: false
+  preset: 
+    - "predict"
+    - "pae_enabled"  # if using PAE enabled model
   custom:
     settings:
       memory:
