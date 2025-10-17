@@ -175,8 +175,6 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             batch=batch, x=atom_positions_predicted, atom_mask=batch["atom_mask"]
         )
 
-        # TODO: Determine if this is the best way to handle PairFormer
-        #  memory limits depending on the number of samples
         num_samples = repr_x_pred.shape[-3]
         apply_per_sample = (
             not torch.is_grad_enabled()
@@ -188,7 +186,6 @@ class AuxiliaryHeadsAllAtom(nn.Module):
 
         # Embed trunk outputs
         # If offload_inference is enabled, si and zij will be returned on the CPU
-        # TODO: Add inplace ops where possible to avoid offloading
         si, zij = self.pairformer_embedding(
             si_input=si_input,
             si=si,
@@ -206,7 +203,6 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             apply_per_sample=apply_per_sample,
         )
 
-        # TODO: Refactor this to minimize memory usage
         # Get atom mask padded to MAX_ATOMS_PER_TOKEN
         # Required to extract pLDDT and experimentally resolved logits for
         # the flat atom representation
