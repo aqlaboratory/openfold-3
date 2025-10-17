@@ -26,7 +26,7 @@ pl_trainer_args:
   log_every_n_steps: 50
   
   mpi_plugin: false
-  deepspeed_config_path: ./deepspeed_configs/ds_stage2_default.json
+  deepspeed_config_path: null
 
 # Checkpoint settings
 checkpoint_config:

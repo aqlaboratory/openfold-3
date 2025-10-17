@@ -248,7 +248,9 @@ def processed_reference_molecule_from_mol(
     mol = set_atomwise_annotation(mol, "used_atom_mask", [True] * mol.GetNumAtoms())
 
     # Compute conformer
-    mol, conf_id, _ = multistrategy_compute_conformer(mol, remove_hs=True)
+    mol, conf_id, _ = multistrategy_compute_conformer(
+        mol, remove_hs=True, timeout_standard=120, timeout_rand_init=120
+    )
     assert conf_id == 0
 
     return ProcessedReferenceMolecule(
