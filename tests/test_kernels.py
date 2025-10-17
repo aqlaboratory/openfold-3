@@ -39,6 +39,9 @@ from tests.data_utils import (
     random_attention_inputs,
 )
 
+# Needed to do backward for cuEq kernels with FP32
+torch.backends.cuda.matmul.allow_tf32 = True
+
 
 @compare_utils.skip_unless_cuda_available()
 class TestKernels(unittest.TestCase):
@@ -51,7 +54,7 @@ class TestKernels(unittest.TestCase):
         """Compare attention with and without using DeepSpeed Evoformer kernel."""
         batch_size = consts.batch_size
         n_seq = 18
-        n_res = 20
+        n_res = 200  # Avoid cuEq seq len constraints
         c_hidden = 32
         no_heads = 4
         eps = 2e-2
@@ -135,7 +138,7 @@ class TestKernels(unittest.TestCase):
         """
         batch_size = consts.batch_size
         n_seq = 18
-        n_res = 20
+        n_res = 200  # Avoid cuEq seq len constraints
         c_hidden = 32
         no_heads = 4
         eps = consts.eps
@@ -401,11 +404,13 @@ class TestKernels(unittest.TestCase):
           instead of a newly initialized block.
         """
         batch_size = consts.batch_size
-        if chunk_size is not None and use_deepspeed_evo_attention:
+        if chunk_size is not None and (
+            use_deepspeed_evo_attention or use_cueq_triangle_kernels
+        ):
             # Chunk tuning is not supported with batch size > 1 for DeepSpeed kernel
             batch_size = 1
 
-        n_res = consts.n_res
+        n_res = 200  # Avoid cuEq seq len constraints
         c_s = consts.c_s
         c_z = consts.c_z
         c_hidden_pair_bias = 24
@@ -662,7 +667,7 @@ class TestKernels(unittest.TestCase):
             batch_size = 1
 
         n_templ = 3
-        n_token = 10
+        n_token = 200  # Avoid cuEq seq len constraints
 
         of3_proj_entry = OF3ProjectEntry()
         of3_config = of3_proj_entry.get_model_config_with_presets()

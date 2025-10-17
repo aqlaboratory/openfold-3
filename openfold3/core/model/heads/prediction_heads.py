@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import importlib
 import sys
 
 import torch
@@ -23,10 +22,6 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atomize_utils import max_atom_per_token_masked_select
-
-cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
-if cueq_is_installed:
-    from openfold3.core.model.primitives.attention import should_fall_back
 
 
 class PairformerEmbedding(nn.Module):
@@ -67,7 +62,6 @@ class PairformerEmbedding(nn.Module):
                 Linear layer initialization parameters
         """
         super().__init__()
-        self.pairformer_config = pairformer
         self.min_bin = min_bin
         self.max_bin = max_bin
         self.no_bin = no_bin
@@ -212,18 +206,10 @@ class PairformerEmbedding(nn.Module):
 
         # Using the DS kernel with chunk tuning and multiple samples causes shape issues
         # in the DS kernel. To avoid this, chunk tuning is disabled in this case.
-        # Both DS and cuEq kernels can be enabled, where cuEq takes precedence, so
-        # allow chunking if cuEq is set and will not fall back to DS.
-        # TODO: Find less clunky way to handle this
-        use_fall_back = should_fall_back(
-            n_token=zij.shape[-2],
-            hidden_dim=self.pairformer_config.c_hidden_pair_att,
-            dtype=zij.dtype,
-        )
-        is_cueq_runnable = (
-            cueq_is_installed and use_cueq_triangle_kernels and not use_fall_back
-        )
-        if use_deepspeed_evo_attention and not is_cueq_runnable and si.shape[0] > 1:
+        # TODO: cuEq seems to fail comparison unit tests with the same settings,
+        #  disable for now and verify behavior
+        use_kernels = use_deepspeed_evo_attention or use_cueq_triangle_kernels
+        if use_kernels and si.shape[0] > 1:
             chunk_size = None
 
         si, zij = self.pairformer_stack(

@@ -48,28 +48,23 @@ if ds4s_is_installed:
 
 cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
+    from cuequivariance_ops_torch.triangle_attention import (
+        CUEQ_TRIATTN_FALLBACK_THRESHOLD,
+    )
     from cuequivariance_torch.primitives.triangle import triangle_attention
 
-    try:
-        from cuequivariance_torch.primitives.triangle import should_fall_back
-    except ImportError:
-        from cuequivariance_ops_torch.triangle_attention import (
-            CUEQ_TRIATTN_FALLBACK_THRESHOLD,
-        )
-
-        def should_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype):
-            # for q_x, dimension -2 is the context length.
-            if n_token <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
+    def cueq_would_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype):
+        # for q_x, dimension -2 is the context length
+        if n_token <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
+            return True
+        if dtype == torch.float32:
+            if hidden_dim > 32 or hidden_dim % 4 != 0:
                 return True
-
-            if dtype == torch.float32:
-                if hidden_dim > 32 or hidden_dim % 4 != 0:
-                    return True
-            else:
-                # float16, bfloat16
-                if hidden_dim > 128 or hidden_dim % 8 != 0:
-                    return True
-            return False
+        else:
+            # float16, bfloat16
+            if hidden_dim > 128 or hidden_dim % 8 != 0:
+                return True
+        return False
 
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
@@ -354,7 +349,16 @@ class Attention(nn.Module):
                 "lma_kv_chunk_size must be provided"
             )
 
-        # TODO: Make this more explicit
+        if cueq_is_installed and use_cueq_triangle_kernels:
+            # cuEquivariance -> Torch fallback for small sequence length and some shapes
+            use_fall_back = cueq_would_fall_back(
+                n_token=q_x.shape[-2],
+                hidden_dim=q_x.shape[-1] // self.no_heads,
+                dtype=q_x.dtype,
+            )
+            if use_fall_back:
+                use_cueq_triangle_kernels = False
+
         # The EvoformerAttention kernel can only be used for sequence lengths > 16
         if use_deepspeed_evo_attention and q_x.shape[-2] <= 16:
             use_deepspeed_evo_attention = False
@@ -376,15 +380,6 @@ class Attention(nn.Module):
             kv_x,
             apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels),
         )
-
-        if cueq_is_installed and use_cueq_triangle_kernels:
-            use_fall_back = should_fall_back(
-                n_token=q.shape[-2], hidden_dim=q.shape[-1], dtype=q.dtype
-            )
-            if use_fall_back:
-                # cuEquivariance -> Torch fallback for small sequence length and
-                # some shapes
-                use_cueq_triangle_kernels = False
 
         # cuequivariance kernel takes precedence over use_deepspeed_evo_attention
         if use_cueq_triangle_kernels:
