@@ -17,7 +17,6 @@
 The main inference and training loops for AlphaFold3.
 """
 
-import warnings
 from enum import Enum
 
 import numpy as np
@@ -187,16 +186,6 @@ class OpenFold3(nn.Module):
                 [*, N_token, N_token, C_z] Pair representation
         """
         mode_mem_settings = self._get_mode_mem_settings()
-        if (
-            mode_mem_settings.use_deepspeed_evo_attention
-            and mode_mem_settings.use_cueq_triangle_kernels
-        ):
-            warnings.warn(
-                "Both DeepSpeed and cuEq  kernels are enabled."
-                "Defaulting to cuEq kernels",
-                stacklevel=2,
-            )
-            mode_mem_settings.use_deepspeed_evo_attention = False
 
         offload_msa_module = self._do_inference_offload(
             seq_len=batch["token_mask"].shape[-1],
@@ -346,16 +335,6 @@ class OpenFold3(nn.Module):
             all-atom positions, and confidence/distogram head logits
         """
         mode_mem_settings = self._get_mode_mem_settings()
-        if (
-            mode_mem_settings.use_deepspeed_evo_attention
-            and mode_mem_settings.use_cueq_triangle_kernels
-        ):
-            warnings.warn(
-                "Both DeepSpeed and cuEq  kernels are enabled."
-                "Defaulting to cuEq kernels",
-                stacklevel=2,
-            )
-            mode_mem_settings.use_deepspeed_evo_attention = False
 
         offload_confidence_heads = self._do_inference_offload(
             seq_len=batch["token_mask"].shape[-1],
@@ -394,6 +373,7 @@ class OpenFold3(nn.Module):
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
                 no_rollout_samples=no_rollout_samples,
+                chunk_size=mode_mem_settings.chunk_size,
                 use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                 use_lma=mode_mem_settings.use_lma,

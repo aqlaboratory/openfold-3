@@ -141,14 +141,13 @@ class PairformerEmbedding(nn.Module):
             zij.expand(*(batch_dims + zij.shape[-3:])), device=device
         )
 
-        # TODO: Refactor to support inplace ops
         for i in range(no_samples):
             zij_chunk = self.embed_zij(
                 si_input=si_input, zij=zij, x_pred=x_pred[:, i : i + 1]
             )
 
             si_chunk, zij_chunk = self.pairformer_stack(
-                si.clone(),  # Avoid inplace ops on si for now
+                si.clone(),  # Avoid inplace ops on si
                 zij_chunk,
                 single_mask,
                 pair_mask,
@@ -180,6 +179,7 @@ class PairformerEmbedding(nn.Module):
         x_pred: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
@@ -188,26 +188,36 @@ class PairformerEmbedding(nn.Module):
     ):
         zij = self.embed_zij(si_input=si_input, zij=zij, x_pred=x_pred)
 
-        # Expand sample dimension
         batch_dims = x_pred.shape[:-2]
-        si = si.expand(*(batch_dims + si.shape[-2:])).clone()
-        single_mask = single_mask.expand(*(batch_dims + single_mask.shape[-1:]))
-        pair_mask = pair_mask.expand(*(batch_dims + pair_mask.shape[-2:]))
 
-        # TODO: Make this less awkward, DS kernel has strict shape asserts
-        #  and expects batch and seq dims to exist, but no sample dim
-        if use_deepspeed_evo_attention:
-            si = si.reshape(-1, *si.shape[-2:])
-            zij = zij.reshape(-1, *zij.shape[-3:])
-            single_mask = single_mask.reshape(-1, single_mask.shape[-1])
-            pair_mask = pair_mask.reshape(-1, *pair_mask.shape[-2:])
+        # Expand sample dimension and reshape for DS and cuEq kernels
+        def reshape_inputs(x: torch.Tensor, feat_dims: list):
+            x = x.expand(*(batch_dims + feat_dims))
+            x = x.reshape(-1, *feat_dims)
+            return x
 
-        # PairFormer embedding
+        def reshape_outputs(x: torch.Tensor, feat_dims: list):
+            return x.reshape(*batch_dims, *feat_dims)
+
+        si = reshape_inputs(x=si, feat_dims=si.shape[-2:]).clone()
+        zij = reshape_inputs(x=zij, feat_dims=zij.shape[-3:])
+        single_mask = reshape_inputs(x=single_mask, feat_dims=single_mask.shape[-1:])
+        pair_mask = reshape_inputs(x=pair_mask, feat_dims=pair_mask.shape[-2:])
+
+        # Using the DS kernel with chunk tuning and multiple samples causes shape issues
+        # in the DS kernel. To avoid this, chunk tuning is disabled in this case.
+        # TODO: cuEq seems to fail comparison unit tests with the same settings,
+        #  disable for now and verify behavior
+        use_kernels = use_deepspeed_evo_attention or use_cueq_triangle_kernels
+        if use_kernels and si.shape[0] > 1:
+            chunk_size = None
+
         si, zij = self.pairformer_stack(
             si,
             zij,
             single_mask,
             pair_mask,
+            chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
@@ -215,9 +225,8 @@ class PairformerEmbedding(nn.Module):
             _mask_trans=_mask_trans,
         )
 
-        if use_deepspeed_evo_attention:
-            si = si.reshape(*batch_dims, *si.shape[-2:])
-            zij = zij.reshape(*batch_dims, *zij.shape[-3:])
+        si = reshape_outputs(x=si, feat_dims=si.shape[-2:])
+        zij = reshape_outputs(x=zij, feat_dims=zij.shape[-3:])
 
         return si, zij
 
@@ -258,7 +267,7 @@ class PairformerEmbedding(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma.
-            Use deepspeed_evo_attention:
+            use_cueq_triangle_kernels:
                 Whether to use CuEquivariance kernels.
             use_lma:
                 Whether to use low-memory attention during inference.
@@ -299,8 +308,6 @@ class PairformerEmbedding(nn.Module):
                 _mask_trans=_mask_trans,
             )
         else:
-            # TODO: Fix chunking issues with > 1 sample
-            #  Chunking disabled for now
             si, zij = self.pairformer_emb(
                 si_input=si_input,
                 si=si,
@@ -308,6 +315,7 @@ class PairformerEmbedding(nn.Module):
                 x_pred=x_pred,
                 single_mask=single_mask,
                 pair_mask=pair_mask,
+                chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,

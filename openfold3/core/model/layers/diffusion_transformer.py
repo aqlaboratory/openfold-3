@@ -120,7 +120,6 @@ class DiffusionTransformerBlock(nn.Module):
         s: torch.Tensor,
         z: torch.Tensor,
         mask: torch.Tensor | None = None,
-        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
@@ -137,8 +136,6 @@ class DiffusionTransformerBlock(nn.Module):
                 [*, N, N, C_z] Pair embedding
             mask:
                 [*, N] Mask for token-level embedding
-            chunk_size:
-                Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
@@ -175,7 +172,9 @@ class DiffusionTransformerBlock(nn.Module):
         # Note: Differs from SI, updated a_i from AttentionPairBias is used
         # instead of previous a_i.
         a = a + self.conditioned_transition(
-            a=a, s=s, mask=trans_mask, chunk_size=chunk_size
+            a=a,
+            s=s,
+            mask=trans_mask,
         )
 
         return a
@@ -268,7 +267,6 @@ class DiffusionTransformer(nn.Module):
         s: torch.Tensor,
         z: torch.Tensor,
         mask: torch.Tensor | None = None,
-        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
@@ -285,10 +283,10 @@ class DiffusionTransformer(nn.Module):
                 [*, N, N, C_z] Pair embedding
             mask:
                 [*, N] Mask for token-level embedding
-            chunk_size:
-                Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
+            use_cueq_triangle_kernels:
+                Whether to use cuEq triangle kernels
             use_lma:
                 Whether to use LMA
             use_high_precision_attention:
@@ -296,14 +294,12 @@ class DiffusionTransformer(nn.Module):
             _mask_trans:
                 Whether to mask the output of the transition layer
         """
-        # Do we need all the fancy checkpoint blocks from evoformer?
         blocks = [
             partial(
                 b,
                 s=s,
                 z=z,
                 mask=mask,
-                chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,

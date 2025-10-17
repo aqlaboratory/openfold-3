@@ -1,5 +1,6 @@
 # Copyright 2021 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
+# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,7 +27,11 @@ from openfold3.core.model.latent.base_blocks import PairBlock
 from openfold3.core.model.layers.attention_pair_bias import AttentionPairBias
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.utils.checkpointing import checkpoint_blocks
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.chunk_utils import (
+    CUEQ_MAX_CHUNK_SIZE,
+    DEFAULT_MAX_CHUNK_SIZE,
+    ChunkSizeTuner,
+)
 from openfold3.core.utils.tensor_utils import add
 
 
@@ -166,7 +171,7 @@ class PairFormerBlock(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair embedding
         """
-        assert not (use_cueq_triangle_kernels and use_deepspeed_evo_attention)
+
         single_trans_mask = single_mask if _mask_trans else None
 
         z = self.pair_stack(
@@ -357,6 +362,11 @@ class PairFormerStack(nn.Module):
 
         if chunk_size is not None and self.chunk_size_tuner is not None:
             assert not self.training
+            max_chunk_size = (
+                CUEQ_MAX_CHUNK_SIZE
+                if use_cueq_triangle_kernels
+                else DEFAULT_MAX_CHUNK_SIZE
+            )
             tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
                 representative_fn=blocks[0],
                 # We don't want to write in-place during chunk tuning runs
@@ -365,6 +375,12 @@ class PairFormerStack(nn.Module):
                     z.clone(),
                 ),
                 min_chunk_size=chunk_size,
+                max_chunk_size=max_chunk_size,
+            )
+            attn_chunk = (
+                tuned_chunk_size
+                if use_cueq_triangle_kernels
+                else (tuned_chunk_size // 4)
             )
             blocks = [
                 partial(
@@ -372,7 +388,7 @@ class PairFormerStack(nn.Module):
                     chunk_size=tuned_chunk_size,
                     # A temporary measure to address torch's occasional
                     # inability to allocate large tensors
-                    _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
+                    _attn_chunk_size=max(chunk_size, attn_chunk),
                 )
                 for b in blocks
             ]
