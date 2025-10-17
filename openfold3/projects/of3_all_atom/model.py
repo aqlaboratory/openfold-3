@@ -18,7 +18,6 @@ The main inference and training loops for AlphaFold3.
 """
 
 import random
-import warnings
 from enum import Enum
 
 import torch
@@ -368,6 +367,7 @@ class OpenFold3(nn.Module):
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
                 no_rollout_samples=no_rollout_samples,
+                chunk_size=mode_mem_settings.chunk_size,
                 use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                 use_lma=mode_mem_settings.use_lma,
