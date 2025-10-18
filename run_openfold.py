@@ -35,7 +35,6 @@ from openfold3.entry_points.validator import (
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
-    remove_completed_queries_from_query_json,
 )
 
 torch_versions = torch.__version__.split(".")
@@ -169,26 +168,8 @@ def predict(
     with open(expt_runner.output_dir / "experiment_config.json", "w") as f:
         json.dump(expt_config.model_dump_json(indent=2), f)
 
-    if expt_config.experiment_settings.skip_existing:
-        if num_model_seeds:
-            raise ValueError(
-                "Seed(s) must be specified in experiment config"
-                " to enable `skip_existing`"
-            )
-        updated_query_input_str = remove_completed_queries_from_query_json(
-            expt_runner.seeds,
-            num_diffusion_samples,
-            query_json,
-            output_dir,
-            expt_config.output_writer_settings.structure_format,
-        )
-        if updated_query_input_str:
-            query_set = InferenceQuerySet.from_string(updated_query_input_str)
-        else:
-            return
-    else:
-        # Load inference query set
-        query_set = InferenceQuerySet.from_json(query_json)
+    # Load inference query set
+    query_set = InferenceQuerySet.from_json(query_json)
 
     # Run the forward pass
     expt_runner.setup()

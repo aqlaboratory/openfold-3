@@ -13,7 +13,6 @@ from pytorch_lightning.loggers import WandbLogger
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModuleConfig
-from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
     TrainingExperimentRunner,
@@ -25,7 +24,6 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
     WandbConfig,
 )
-from openfold3.projects.of3_all_atom.config import inference_query_format
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )

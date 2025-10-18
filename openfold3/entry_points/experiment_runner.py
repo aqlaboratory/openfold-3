@@ -514,7 +514,8 @@ class InferenceExperimentRunner(ExperimentRunner):
 
         logger.info(
             "Skipping existing structures is enabled.Will skip "
-            f"the following {len(completed_structures)} structures: {completed_structures}"
+            f"the following {len(completed_structures)} structures:"
+            f" {completed_structures}"
         )
 
         deduplicated_queries = {
@@ -526,22 +527,22 @@ class InferenceExperimentRunner(ExperimentRunner):
             seeds=inference_query_set.seeds, queries=deduplicated_queries
         )
 
-        if len(deduplicated_queries) < 1:
-            logger.info("All structures have completed. Quitting")
-            return
-
         return deduplicated_inference_set
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
-        if self..experiment_settings.skip_existing:
+        self._log_experiment_config()
+        self._log_model_config()
+        if self.experiment_config.experiment_settings.skip_existing:
             inference_query_set = self.remove_completed_queries_from_query_set(
                 inference_query_set
             )
+            if len(inference_query_set.queries) < 1:
+                logger.warning("All structures have completed. Quitting")
+                return
+
         self.inference_query_set = inference_query_set
         super().run()
-        self._log_experiment_config()
-        self._log_model_config()
 
     @cached_property
     def callbacks(self):
@@ -601,6 +602,10 @@ class InferenceExperimentRunner(ExperimentRunner):
         with open(log_path, "w") as fp:
             fp.write(self.model_config.to_json_best_effort(indent=4))
 
+    def _maybe_remove_dir(self, path):
+        if path.exists():
+            shutil.rmtree(path)
+
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
         if self.is_rank_zero and self.log_dir.is_dir() and not os.listdir(self.log_dir):
@@ -617,16 +622,16 @@ class InferenceExperimentRunner(ExperimentRunner):
                 self.experiment_config.msa_computation_settings.msa_output_directory
                 / "raw"
             )
-            shutil.rmtree(raw_colabfold_msa_path)
+            self._maybe_remove_dir(raw_colabfold_msa_path)
             if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
-                output_dir = (
+                msa_output_dir = (
                     self.experiment_config.msa_computation_settings.msa_output_directory
                 )
-                logger.info(f"Removing MSA output directory: {output_dir}")
-                shutil.rmtree(output_dir)
+                logger.info(f"Removing MSA output directory: {msa_output_dir}")
+                self._maybe_remove_dir(msa_output_dir)
                 if self.use_templates:
                     template_dir = self.dataset_config_kwargs.template_preprocessor.structure_directory.parent  # noqa: E501
-                    shutil.rmtree(template_dir)
+                    self._maybe_remove_dir(template_dir)
 
 
 class WandbHandler:
