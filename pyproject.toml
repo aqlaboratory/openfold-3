@@ -1,3 +1,107 @@
+[build-system]
+# torch used at build needs to match the one at runtime
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openfold3"
+version = "0.1.0"
+dependencies = [
+  "torch",# ==2.5.1",
+  "pytorch-lightning",
+  "numpy",
+  "pandas",
+  "PyYAML",
+  "requests",
+  "scipy",
+  "tqdm",
+  "typing-extensions",
+  "wandb",
+  "ml-collections",
+  "mkl",
+  "aria2",
+  "biotite >=1.1.0, <1.3",
+  "rdkit",
+  "boto3",
+  "memory_profiler",
+  "func_timeout",
+  "lmdb",
+  "ijson",
+  # "deepspeed",
+  "pdbeccdutils",
+  # For cutlass >=4, import library is cutlass_cppgen, but deepspeed is
+  # currently using cutlass.
+  "nvidia-cutlass <4",
+
+  # additonal pins
+
+  # https://github.com/triton-lang/triton/issues/5919
+  # According to that issue, the pin may not be necessary in Python >3.13.
+  # Note that this pin has the effect of pinning torch <=2.5.1.
+
+  #"triton <3.2;python_version<\"3.13\"",
+  # Pinned cutlass <4 calls from cuda.__version__, which was removed when
+  # cuda-python went fully metapackage
+  "cuda-python <12.9.1",
+
+  # tests still require
+  #"biopython",
+  #"modelcif",
+  #"openmm",
+  #"pdbfixer @ https://github.com/openmm/pdbfixer/archive/refs/tags/v1.11.tar.gz"
+]
+description = "A PyTorch reimplementation of DeepMind's AlphaFold 2 & 3"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+]
+cuequivariance = [
+  "cuequivariance>=0.6.1",
+  "cuequivariance-ops-torch-cu12>=0.6.1",
+  "cuequivariance-torch>=0.6.1",
+  "torch>=2.7",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "scripts"]
+
+[tool.setuptools.package-data]
+openfold3 = [
+  "core/kernels/cuda/csrc/*",
+  "projects/*/config/*.yml",
+  "legacy/*/config/*.yml",
+]
+"*" = [
+  "resources/stereo_chemical_props.txt"
+]
+
+# much of the cibuildwheel config taken from benfred/implicit
+[tool.cibuildwheel]
+before-all = "devtools/install_cuda.sh"
+manylinux-x86_64-image = "manylinux2014"
+
+[tool.cibuildwheel.linux]
+repair-wheel-command = """
+AUDITWHEEL_PLAT=manylinux2014_$(uname -m) \
+auditwheel repair \
+    --exclude libc10.so \
+    --exclude libtorch.so \
+    --exclude libtorch_cpu.so \
+    --exclude libtorch_python.so \
+    -w {dest_dir} {wheel}
+"""
+
+[tool.cibuildwheel.linux.environment]
+CUDACXX = "/usr/local/cuda/bin/nvcc"
+
+
 [tool.ruff]
 line-length = 88
 exclude = [
