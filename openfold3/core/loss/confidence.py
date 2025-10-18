@@ -14,6 +14,7 @@
 
 """Confidence losses from predicted logits in the Confidence Module."""
 
+from collections.abc import Callable
 from functools import partial
 
 import torch
@@ -131,6 +132,7 @@ def all_atom_plddt_loss(
     bin_min: float,
     bin_max: float,
     eps: float,
+    **kwargs,
 ) -> torch.Tensor:
     """
     Compute loss on predicted local distance difference test (pLDDT).
@@ -268,60 +270,6 @@ def all_atom_plddt_loss(
     return l_plddt
 
 
-def per_sample_all_atom_plddt_loss(
-    batch: dict,
-    x: torch.Tensor,
-    logits: torch.Tensor,
-    no_bins: int,
-    bin_min: float,
-    bin_max: float,
-    eps: float,
-) -> torch.Tensor:
-    """
-    Compute loss per sample on predicted local distance difference test (pLDDT).
-
-    Args:
-        batch:
-            Feature dictionary
-        x:
-            [*, N_atom, 3] Predicted atom positions
-        logits:
-            [*, N_atom, no_bins] Predicted logits
-        no_bins:
-            Number of bins
-        bin_min:
-            Minimum bin value
-        bin_max:
-            Maximum bin value
-        eps:
-            Small float for numerical stability
-    Returns:
-        [*] Losses on pLDDT
-    """
-
-    all_atom_plddt_partial = partial(
-        all_atom_plddt_loss, no_bins=no_bins, bin_min=bin_min, bin_max=bin_max, eps=eps
-    )
-
-    # Chunk over the sample dimension
-    chunks = []
-    for i in range(0, x.shape[-3], 1):
-
-        def index_batch(t: torch.Tensor):
-            no_samples = t.shape[1]
-            if no_samples == 1:
-                return t
-            return t[:, i : i + 1]  # noqa: B023
-
-        batch_chunk = tensor_tree_map(index_batch, batch)
-        x_chunk = x[:, i : i + 1]
-        logits_chunk = logits[:, i : i + 1]
-        l_chunk = all_atom_plddt_partial(batch_chunk, x_chunk, logits_chunk)
-        chunks.append(l_chunk)
-
-    return torch.cat(chunks, dim=-1)
-
-
 def pae_loss(
     batch: dict,
     x: torch.Tensor,
@@ -332,6 +280,7 @@ def pae_loss(
     bin_max: float,
     eps: float,
     inf: float,
+    **kwargs,
 ):
     """
     Compute loss on predicted aligned error (PAE).
@@ -421,6 +370,7 @@ def pde_loss(
     bin_min: float,
     bin_max: float,
     eps: float,
+    **kwargs,
 ):
     """
     Implements AF3 Equation 12.
@@ -516,6 +466,47 @@ def all_atom_experimentally_resolved_loss(
     return l_resolved
 
 
+def per_sample_loss_fn(
+    loss_fn: Callable, batch: dict, x: torch.Tensor, logits: torch.Tensor, kwargs: dict
+) -> torch.Tensor:
+    """
+    Compute loss per sample for confidence losses.
+
+    Args:
+        loss_fn:
+            The loss function to run
+        batch:
+            Feature dictionary
+        x:
+            [*, N_atom, 3] Atom positions
+        logits:
+            [*, N_atom, no_bins] Predicted logits
+        kwargs:
+            Keyword arguments for the loss function
+    Returns:
+        [*] Confidence losses per sample
+    """
+    loss_fn_partial = partial(loss_fn, **kwargs)
+
+    # Chunk over the sample dimension
+    chunks = []
+    for i in range(0, x.shape[-3], 1):
+
+        def index_batch(t: torch.Tensor):
+            no_samples = t.shape[1]
+            if no_samples == 1:
+                return t
+            return t[:, i : i + 1]  # noqa: B023
+
+        batch_chunk = tensor_tree_map(index_batch, batch)
+        x_chunk = x[:, i : i + 1]
+        logits_chunk = logits[:, i : i + 1]
+        l_chunk = loss_fn_partial(batch_chunk, x_chunk, logits_chunk)
+        chunks.append(l_chunk)
+
+    return torch.cat(chunks, dim=-1)
+
+
 def confidence_loss(
     batch: dict,
     output: dict,
@@ -555,6 +546,7 @@ def confidence_loss(
                 "no_bins": Number of bins
                 "bin_min": Minimum bin value
                 "bin_max": Maximum bin value
+                "enabled": Whether the PAE head is enabled or not
         per_sample_atom_cutoff:
             Atom seq len for which to start chunking all atom plddt
         eps:
@@ -574,21 +566,19 @@ def confidence_loss(
     # for the rollout.
     num_samples = output["atom_positions_predicted"].shape[-3]
     num_atoms = output["atom_positions_predicted"].shape[-2]
-    chunk_plddt = (
+    chunk_loss = (
         num_samples > 1
         and per_sample_atom_cutoff is not None
         and num_atoms > per_sample_atom_cutoff
     )
 
-    if chunk_plddt:
-        l_plddt = per_sample_all_atom_plddt_loss(
+    if chunk_loss:
+        l_plddt = per_sample_loss_fn(
+            loss_fn=all_atom_plddt_loss,
             batch=batch,
             x=output["atom_positions_predicted"],
             logits=output["plddt_logits"],
-            no_bins=plddt["no_bins"],
-            bin_min=plddt["bin_min"],
-            bin_max=plddt["bin_max"],
-            eps=eps,
+            kwargs={**plddt, "eps": eps},
         )
     else:
         l_plddt = all_atom_plddt_loss(
@@ -624,19 +614,27 @@ def confidence_loss(
         "experimentally_resolved": l_resolved,
     }
 
-    pae_weight = loss_weights["pae"]
-    if pae_weight.any():
-        l_pae = pae_loss(
-            batch=batch,
-            x=output["atom_positions_predicted"],
-            logits=output["pae_logits"],
-            angle_threshold=pae["angle_threshold"],
-            no_bins=pae["no_bins"],
-            bin_min=pde["bin_min"],
-            bin_max=pde["bin_max"],
-            eps=eps,
-            inf=inf,
-        )
+    if pae["enabled"]:
+        if chunk_loss:
+            l_pae = per_sample_loss_fn(
+                loss_fn=pae_loss,
+                batch=batch,
+                x=output["atom_positions_predicted"],
+                logits=output["pae_logits"],
+                kwargs={**pae, "eps": eps, "inf": inf},
+            )
+        else:
+            l_pae = pae_loss(
+                batch=batch,
+                x=output["atom_positions_predicted"],
+                logits=output["pae_logits"],
+                angle_threshold=pae["angle_threshold"],
+                no_bins=pae["no_bins"],
+                bin_min=pae["bin_min"],
+                bin_max=pae["bin_max"],
+                eps=eps,
+                inf=inf,
+            )
 
         loss_breakdown["pae"] = l_pae
 

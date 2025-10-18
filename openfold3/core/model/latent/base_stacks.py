@@ -27,7 +27,11 @@ import torch
 from torch import nn
 
 from openfold3.core.utils.checkpointing import checkpoint_blocks
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.chunk_utils import (
+    CUEQ_MAX_CHUNK_SIZE,
+    DEFAULT_MAX_CHUNK_SIZE,
+    ChunkSizeTuner,
+)
 
 
 # TODO: Rename to CheckpointStack and generalize any kind of block (i.e. remove
@@ -119,6 +123,11 @@ class MSAStack(nn.Module, ABC):
 
         if chunk_size is not None and self.chunk_size_tuner is not None:
             assert not self.training
+            max_chunk_size = (
+                CUEQ_MAX_CHUNK_SIZE
+                if use_cueq_triangle_kernels
+                else DEFAULT_MAX_CHUNK_SIZE
+            )
             tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
                 representative_fn=blocks[0],
                 # Tensors cloned to avoid getting written to in-place
@@ -129,6 +138,7 @@ class MSAStack(nn.Module, ABC):
                     z.clone(),
                 ),
                 min_chunk_size=chunk_size,
+                max_chunk_size=max_chunk_size,
             )
             attn_chunk = (
                 tuned_chunk_size

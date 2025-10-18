@@ -100,7 +100,7 @@ class TestOF3DatasetConfigConstruction:
         test_yaml_str = textwrap.dedent(f"""\
             name: dataset1
             mode: train
-            dataset_class: ProteinMonomerDistillationDataset 
+            dataset_class: ProteinMonomerDataset 
             weight: 0.5
             config:
                 dataset_paths:
@@ -123,7 +123,7 @@ class TestOF3DatasetConfigConstruction:
         expected_fields = {
             "name": "dataset1",
             "mode": "train",
-            "dataset_class": "ProteinMonomerDistillationDataset",
+            "dataset_class": "ProteinMonomerDataset",
             "weight": 0.5,
             "config": {
                 # Verify that custom loss weights for protein monomer are supported
@@ -278,7 +278,7 @@ class TestInferenceConfigConstruction:
 
         inference_config = InferenceJobConfig(
             query_set=inference_set,
-            template_preprocessor=TemplatePreprocessorSettings(mode="predict"),
+            template_preprocessor_settings=TemplatePreprocessorSettings(mode="predict"),
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         dataset_specs = [inference_spec]
