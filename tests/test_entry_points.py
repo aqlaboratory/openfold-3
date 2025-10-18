@@ -13,6 +13,7 @@ from pytorch_lightning.loggers import WandbLogger
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModuleConfig
+from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
     TrainingExperimentRunner,
@@ -23,6 +24,10 @@ from openfold3.entry_points.validator import (
     InferenceExperimentConfig,
     TrainingExperimentConfig,
     WandbConfig,
+)
+from openfold3.projects.of3_all_atom.config import inference_query_format
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
 
@@ -392,3 +397,87 @@ class TestInferenceCommandLineSettings:
                 {"cache_path": tmp_path}
             )
         assert expt_config.inference_ckpt_path == tmp_path / CHECKPOINT_NAME
+
+
+class TestRemoveQuerySetDuplicates:
+    @pytest.fixture
+    def dummy_output_path(self, tmp_path):
+        # Creates the following directories:
+        # <output_directory>
+        #  ├── query_1
+        # 	 └── seed_42
+        #         ├── query_1_seed_42_sample_1_model.cif
+        #         ├── query_1_seed_42_sample_2_model.cif
+        # 	 └── seed_43
+        #         ├── query_1_seed_43_sample_1_model.cif
+        #         ├── query_1_seed_43_sample_2_model.cif
+        #  ├── query_2
+        # 	 └── seed_42
+        #         ├── query_1_seed_42_sample_1_model.cif
+        #         ├── query_1_seed_42_sample_2_model.cif
+        # 	 └── seed_43
+        #         ├── query_1_seed_43_sample_1_model.cif
+        #         ├── <Missing sample 2>
+
+        expected_fnames = [
+            "query_1/seed_42/query_1_seed_42_sample_1_model.cif",
+            "query_1/seed_42/query_1_seed_42_sample_2_model.cif",
+            "query_1/seed_43/query_1_seed_43_sample_1_model.cif",
+            "query_1/seed_43/query_1_seed_43_sample_2_model.cif",
+            "query_2/seed_42/query_2_seed_42_sample_1_model.cif",
+            "query_2/seed_42/query_2_seed_42_sample_2_model.cif",
+            "query_2/seed_43/query_2_seed_43_sample_1_model.cif",
+        ]
+
+        for fname in expected_fnames:
+            _create_fake_file(tmp_path / fname)
+
+        return tmp_path
+
+    def test_remove_duplicates(self, dummy_output_path):
+        input_query_set = InferenceQuerySet.model_validate(
+            {
+                "queries": {
+                    "query_1": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": ["A"],
+                                "sequence": "TEST",
+                            }
+                        ]
+                    },
+                    "query_2": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": ["A"],
+                                "sequence": "TESTING",
+                            }
+                        ]
+                    },
+                    "query_3": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": ["A"],
+                                "sequence": "TESTTEST",
+                            }
+                        ]
+                    },
+                }
+            }
+        )
+
+        experiment_config = InferenceExperimentConfig.model_validate(
+            {"experiment_settings": {"seeds": [42, 43]}}
+        )
+        expt_runner = InferenceExperimentRunner(
+            experiment_config, num_diffusion_samples=2, output_dir=dummy_output_path
+        )
+
+        deduplicated_set = expt_runner.remove_completed_queries_from_query_set(
+            input_query_set
+        )
+
+        assert set(deduplicated_set.queries.keys()) == set(["query_2", "query_3"])

@@ -39,6 +39,9 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceJobConfig,
     TrainingDatasetSpec,
 )
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
+)
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 logger = logging.getLogger(__name__)
@@ -443,6 +446,10 @@ class InferenceExperimentRunner(ExperimentRunner):
         model_config = self.model_config
         model_config.update(update_dict)
 
+    @cached_property
+    def num_diffusion_samples(self) -> int:
+        return self.model_config.architecture.shared.diffusion.no_full_rollout_samples
+
     def update_config_with_cli_args(
         self,
         num_diffusion_samples: int | None,
@@ -483,8 +490,54 @@ class InferenceExperimentRunner(ExperimentRunner):
     def pae_enabled(self) -> bool:
         return self.model_config.architecture.heads.pae.enabled
 
+    def remove_completed_queries_from_query_set(self, inference_query_set):
+        """Returns a new inference query set with previously completed runs removed."""
+
+        completed_structures = []
+        structure_format = self.output_writer_settings.structure_format
+
+        for query_id in inference_query_set.queries:
+            ## a structure must be present for all seeds and all diffusion samples
+            ## to count as completed
+            structure_exists = True
+            for seed in self.seeds:
+                output_subdir = self.output_dir / query_id / f"seed_{seed}"
+                for s in range(self.num_diffusion_samples):
+                    file_prefix = (
+                        output_subdir / f"{query_id}_seed_{seed}_sample_{s + 1}"
+                    )
+                    structure_file = Path(f"{file_prefix}_model.{structure_format}")
+                    structure_exists = structure_file.exists() and structure_exists
+
+            if structure_exists:
+                completed_structures.append(query_id)
+
+        logger.info(
+            "Skipping existing structures is enabled.Will skip "
+            f"the following {len(completed_structures)} structures: {completed_structures}"
+        )
+
+        deduplicated_queries = {
+            q_id: q
+            for q_id, q in inference_query_set.queries.items()
+            if q_id not in completed_structures
+        }
+        deduplicated_inference_set = InferenceQuerySet(
+            seeds=inference_query_set.seeds, queries=deduplicated_queries
+        )
+
+        if len(deduplicated_queries) < 1:
+            logger.info("All structures have completed. Quitting")
+            return
+
+        return deduplicated_inference_set
+
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
+        if self..experiment_settings.skip_existing:
+            inference_query_set = self.remove_completed_queries_from_query_set(
+                inference_query_set
+            )
         self.inference_query_set = inference_query_set
         super().run()
         self._log_experiment_config()
