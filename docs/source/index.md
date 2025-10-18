@@ -1,4 +1,4 @@
-## OpenFold3
+# OpenFold3
 
 :width: 900px
 :align: center
@@ -7,8 +7,6 @@
 Welcome to the Documentation for [OpenFold3](https://github.com/aqlaboratory/openfold3) TODO Update url, the fully open source, trainable, PyTorch-based reproduction of DeepMind's 
 [AlphaFold 3](https://github.com/deepmind/alphafold3).
 
-
-### Placeholder
 
 ```{toctree}
 :hidden:
@@ -32,4 +30,5 @@ template_how_to.md
 input_format.md
 precomputed_msa_explanation.md 
 template_explanation.md
+configuration_api.md
 ```
