@@ -28,7 +28,6 @@ dependencies = [
   "lmdb",
   "ijson",
   "deepspeed",
-  "dm-tree",
   "pdbeccdutils",
   # For cutlass >=4, import library is cutlass_cppgen, but deepspeed is
   # currently using cutlass.
