@@ -1,5 +1,6 @@
 import json
 import logging
+import operator
 import os
 import shutil
 import sys
@@ -10,6 +11,7 @@ from typing import Any
 
 import ml_collections as mlc
 import pytorch_lightning as pl
+import torch
 import wandb
 from lightning_fabric.utilities.rank_zero import _get_rank
 from pydantic import BaseModel
@@ -49,9 +51,24 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
+from openfold3.projects.of3_all_atom.model import OpenFold3
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 logger = logging.getLogger(__name__)
+
+# # Add OpenFold3 model to safe models to load
+torch.serialization.add_safe_globals(
+    [
+        OpenFold3,
+        mlc.ConfigDict,
+        mlc.FieldReference,
+        int,
+        bool,
+        float,
+        operator.add,
+        mlc.config_dict._Op,
+    ]
+)
 
 
 def rank_zero_only(fn):

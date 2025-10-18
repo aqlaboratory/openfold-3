@@ -24,7 +24,7 @@ def load_model_state_dict_from_ds_checkpoint(checkpoint_dir: Path) -> dict:
     state_file = zero_to_fp32.get_model_state_file(
         str(ds_checkpoint_dir), _DS_CHECKPOINT_VERSION
     )
-    return torch.load(state_file, weights_only=True)
+    return torch.load(state_file)
 
 
 def load_checkpoint(ckpt_path: Path) -> dict:
