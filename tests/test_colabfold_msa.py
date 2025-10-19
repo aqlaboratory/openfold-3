@@ -253,6 +253,7 @@ class TestColabFoldQueryRunner:
 
             expected_msa = 4  # based on _construct_dummy_a3m
             expected_shape = (1, expected_msa, len(sequence), 32)
+            # the implicit iter here is causing a segfault in Python 3.13
             for batch in dataloader:
                 assert batch["msa"].shape == expected_shape
 
