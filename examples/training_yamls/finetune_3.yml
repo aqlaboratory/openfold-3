@@ -50,12 +50,9 @@ model_update:
           - aux_heads.experimentally_resolved
           - aux_heads.pae
     architecture:
-      shared: 
-        diffusion:
-          no_samples: 32
-        heads:
-          pae:
-            enabled: true
+      heads:
+        pae:
+          enabled: true
 
 dataset_configs:
   train:
