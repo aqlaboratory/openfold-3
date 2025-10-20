@@ -23,7 +23,7 @@ def main(args):
     ## download jackhmmer databases
     databases = ["uniprot", "uniref90", "mgnify", "pdb_seqres"]
     if args.download_rna_dbs:
-        databases += ["rfam", "rnacentral", "nucleotide"]
+        databases += ["rfam", "rnacentral", "nucleotide_collection"]
     for db in databases:
         output_filename_zip = f"{base_outdir}/{db}/{db}.fasta.gz"
         if Path(output_filename_zip).with_suffix("").exists():
@@ -51,7 +51,10 @@ def main(args):
         outpath_db = Path(f"{base_outdir}/{db}/")
         outpath_db.mkdir()
         s3.download_file(bucket_name, f"{pfx}/{db}.tar.gz", output_filename_zip)
-        sp.run(["tar", "xzf", output_filename_zip], check=True)
+        sp.run(
+            ["tar", "xzf", output_filename_zip, "-C", str(outpath_db.parent)],
+            check=True,
+        )
         # tar does not clean up, so manually delete
         Path(output_filename_zip).unlink()
 
