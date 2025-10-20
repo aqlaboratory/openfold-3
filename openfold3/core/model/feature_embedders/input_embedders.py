@@ -536,6 +536,7 @@ class MSAModuleEmbedder(nn.Module):
                 low=self.min_subsampled_all_msa,
                 high=int(self.max_subsampled_all_msa + 1),
                 size=(1,),
+                device=msa_feat.device,
             ).item()
 
             if math.prod(batch_dims) > 1:

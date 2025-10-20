@@ -19,7 +19,6 @@ from biotite.structure.io.pdbx import CIFFile
 from pydantic import (
     BaseModel,
     BeforeValidator,
-    DirectoryPath,
     model_validator,
 )
 from pydantic import ConfigDict as PydanticConfigDict
@@ -1528,7 +1527,7 @@ class TemplatePreprocessorSettings(BaseModel):
     n_processes: int = 1
     chunksize: int = 1
 
-    structure_directory: DirectoryPath | None = None
+    structure_directory: Path | None = None
     structure_file_format: str = "cif"
     output_directory: Path | None = None
 
@@ -1550,10 +1549,10 @@ class TemplatePreprocessorSettings(BaseModel):
                 "pipeline."
             )
 
-        if self.output_directory is not None:
-            base = Path(self.output_directory)
-        else:
-            base = Path(tempfile.gettempdir()) / "of3_template_data"
+        self.output_directory = (
+            self.output_directory or Path(tempfile.gettempdir()) / "of3_template_data"
+        )
+        base = self.output_directory
 
         # only set these if the user did not give them explicitly
         self.structure_directory = self.structure_directory or (
@@ -1845,8 +1844,10 @@ class TemplatePreprocessor:
                     if not self.fetch_missing_structures:
                         if self.create_logs:
                             worker_logger.info(
-                                "Structure not available, and fetch_missing_structures"
-                                " set to False. No template features will be created."
+                                f"Template structure for {template.entry_id} is "
+                                "missing, but fetching is disabled. Please either "
+                                "provide the missing template structure or set "
+                                "`template_preprocessor_settings.fetch_missing_structures=True`.",
                             )
                         continue
                     else:

@@ -7,6 +7,7 @@ from openfold3.core.model.feature_embedders.input_embedders import FourierEmbedd
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.model.primitives.normalization import LayerNorm
+from openfold3.core.utils.chunk_utils import ChunkSizeTuner
 from openfold3.core.utils.relpos import relpos_complex
 
 
@@ -25,6 +26,7 @@ class DiffusionConditioning(nn.Module):
         max_relative_chain: int,
         sigma_data: float,
         linear_init_params: ConfigDict = lin_init.diffusion_cond_init,
+        tune_chunk_size: bool = False,
     ):
         """
         Args:
@@ -35,7 +37,7 @@ class DiffusionConditioning(nn.Module):
             c_z:
                 Pair representation channel dimension
             c_fourier_emb:
-                Fourier embedding channel diemnsion
+                Fourier embedding channel dimension
             max_relative_idx:
                 Maximum relative position and token indices clipped
             max_relative_chain:
@@ -44,6 +46,8 @@ class DiffusionConditioning(nn.Module):
                 Constant determined by data variance
             linear_init_params:
                 Linear layer initialization parameters
+            tune_chunk_size:
+                Whether to dynamically tune the module's chunk size
         """
         super().__init__()
 
@@ -104,6 +108,87 @@ class DiffusionConditioning(nn.Module):
             ]
         )
 
+        self.tune_chunk_size = tune_chunk_size
+        self.chunk_size_tuner = None
+        if tune_chunk_size:
+            self.chunk_size_tuner = ChunkSizeTuner()
+
+    def _embed_trunk_inputs(
+        self,
+        batch: dict,
+        t: torch.Tensor,
+        si_input: torch.Tensor,
+        si_trunk: torch.Tensor,
+        zij_trunk: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Pair conditioning
+        relpos_zij = relpos_complex(
+            batch=batch,
+            max_relative_idx=self.max_relative_idx,
+            max_relative_chain=self.max_relative_chain,
+        ).to(dtype=zij_trunk.dtype)
+
+        zij = torch.cat([zij_trunk, relpos_zij], dim=-1)
+        zij = self.linear_z(self.layer_norm_z(zij))
+
+        # Single conditioning
+        si = torch.cat([si_trunk, si_input], dim=-1)
+        si = self.linear_s(self.layer_norm_s(si))
+
+        n = 0.25 * torch.log(t / self.sigma_data)
+        n = self.fourier_emb(n.unsqueeze(-1))
+
+        si = si + self.linear_n(self.layer_norm_n(n)).unsqueeze(-2)
+
+        return si, zij
+
+    def _forward(
+        self,
+        si: torch.Tensor,
+        zij: torch.Tensor,
+        token_mask: torch.Tensor,
+        chunk_size: int | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        pair_token_mask = token_mask.unsqueeze(-1) * token_mask.unsqueeze(-2)
+
+        # Pair conditioning
+        for l in self.transition_z:
+            zij = zij + l(zij, mask=pair_token_mask, chunk_size=chunk_size)
+
+        # Single conditioning
+        for l in self.transition_s:
+            si = si + l(si, mask=token_mask, chunk_size=chunk_size)
+
+        return si, zij
+
+    def _chunk_forward(
+        self,
+        si: torch.Tensor,
+        zij: torch.Tensor,
+        token_mask: torch.Tensor,
+        chunk_size: int,
+    ):
+        assert not self.training
+
+        if self.chunk_size_tuner is not None:
+            chunk_size = self.chunk_size_tuner.tune_chunk_size(
+                representative_fn=self._forward,
+                # We don't want to write in-place during chunk tuning runs
+                args=(
+                    si.clone(),
+                    zij.clone(),
+                    token_mask,
+                ),
+                min_chunk_size=chunk_size,
+                max_chunk_size=2048,
+            )
+
+        si, zij = self._forward(
+            si=si, zij=zij, token_mask=token_mask, chunk_size=chunk_size
+        )
+
+        return si, zij
+
     def forward(
         self,
         batch: dict,
@@ -111,6 +196,7 @@ class DiffusionConditioning(nn.Module):
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
+        chunk_size: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -124,34 +210,25 @@ class DiffusionConditioning(nn.Module):
                 [*, N_token, c_s] Single representation
             zij_trunk:
                 [*, N_token, N_token, c_z] Pair representation
+            chunk_size:
+                Inference-time subbatch size. Acts as a minimum if
+                self.tune_chunk_size is True
         Returns:
             si:
                 [*, N_token, c_s] Conditioned single representation
             zij:
                 [*, N_token, N_token, c_z] Conditioned pair representation
         """
-        # Set up masks
         token_mask = batch["token_mask"]
-        pair_token_mask = token_mask.unsqueeze(-1) * token_mask.unsqueeze(-2)
+        si, zij = self._embed_trunk_inputs(
+            batch=batch, t=t, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+        )
 
-        # Pair conditioning
-        relpos_zij = relpos_complex(
-            batch=batch,
-            max_relative_idx=self.max_relative_idx,
-            max_relative_chain=self.max_relative_chain,
-        ).to(dtype=zij_trunk.dtype)
-        zij = torch.cat([zij_trunk, relpos_zij], dim=-1)
-        zij = self.linear_z(self.layer_norm_z(zij))
-        for l in self.transition_z:
-            zij = zij + l(zij, pair_token_mask)
-
-        # Single conditioning
-        si = torch.cat([si_trunk, si_input], dim=-1)
-        si = self.linear_s(self.layer_norm_s(si))
-        n = 0.25 * torch.log(t / self.sigma_data)
-        n = self.fourier_emb(n.unsqueeze(-1))
-        si = si + self.linear_n(self.layer_norm_n(n)).unsqueeze(-2)
-        for l in self.transition_s:
-            si = si + l(si, token_mask)
+        if chunk_size is not None:
+            si, zij = self._chunk_forward(
+                si=si, zij=zij, token_mask=token_mask, chunk_size=chunk_size
+            )
+        else:
+            si, zij = self._forward(si=si, zij=zij, token_mask=token_mask)
 
         return si, zij

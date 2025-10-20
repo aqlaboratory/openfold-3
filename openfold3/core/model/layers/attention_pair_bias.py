@@ -142,6 +142,11 @@ class AttentionPairBias(nn.Module):
                 a.shape[:-1],
             )
 
+        # DS kernel has strict shape asserts and expects the mask to be
+        # tiled to the correct shape for the batch dims
+        batch_dims = a.shape[:-2]
+        mask = mask.expand((*batch_dims, -1))
+
         # [*, 1, 1, N]
         mask_bias = (self.inf * (mask - 1))[..., None, None, :]
         biases = [mask_bias]
@@ -192,21 +197,17 @@ class AttentionPairBias(nn.Module):
         """
         a = self.layer_norm_a(a, s) if self.use_ada_layer_norm else self.layer_norm_a(a)
 
-        # TODO: Make this less awkward, DS kernel has strict shape asserts
-        #  and expects the mask to be tiled to the correct shape
-        if use_deepspeed_evo_attention and a.shape[1] != mask.shape[1]:
-            mask = mask.expand((-1, a.shape[1], -1))
-
         biases = self._prep_bias(a=a, z=z, mask=mask)
 
         # TODO: Make this less awkward, DS kernel has strict shape asserts
         #  and expects batch and seq dims to exist
         #  Current reshape function only expects missing batch dim
-        if use_deepspeed_evo_attention:
+        batch_dims = a.shape[:-2]
+        reshape_for_ds_kernel = use_deepspeed_evo_attention and len(batch_dims) == 1
+        if reshape_for_ds_kernel:
             a = a.unsqueeze(1)
             biases = [b.unsqueeze(1) for b in biases]
 
-        # Do we support all the memory efficient kernel types?
         a = self.mha(
             q_x=a,
             kv_x=a,
@@ -217,7 +218,7 @@ class AttentionPairBias(nn.Module):
             use_high_precision=use_high_precision_attention,
         )
 
-        if use_deepspeed_evo_attention:
+        if reshape_for_ds_kernel:
             a = a.squeeze(1)
 
         if self.use_ada_layer_norm:

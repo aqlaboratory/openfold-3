@@ -31,10 +31,6 @@ from openfold3.core.utils.permutation_alignment import (
 logger = logging.getLogger(__name__)
 
 
-DEBUG_PDB_BLACKLIST = ["6fg3", "6dra", "6dr2", "6dqj", "7lx0"]
-
-
-# TODO: Remove debug logic
 def is_invalid_feature_dict(features: dict) -> bool:
     """
     Validate the feature dictionary for a single datapoint.
@@ -325,7 +321,6 @@ class WeightedPDBDataset(BaseOF3Dataset):
         pdb_id = datapoint["pdb_id"]
         preferred_chain_or_interface = datapoint["preferred_chain_or_interface"]
 
-        # TODO: Remove debug logic
         if not self.debug_mode:
             sample_data = self.create_all_features(
                 pdb_id=pdb_id,
@@ -339,11 +334,6 @@ class WeightedPDBDataset(BaseOF3Dataset):
             return features
         else:
             try:
-                if pdb_id in DEBUG_PDB_BLACKLIST:
-                    logger.warning(f"Skipping blacklisted pdb id {pdb_id}")
-                    index = random.randint(0, len(self) - 1)
-                    return self.__getitem__(index)
-
                 sample_data = self.create_all_features(
                     pdb_id=pdb_id,
                     preferred_chain_or_interface=preferred_chain_or_interface,

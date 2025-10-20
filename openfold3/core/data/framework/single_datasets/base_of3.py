@@ -112,6 +112,10 @@ class BaseOF3Dataset(SingleDataset, ABC):
             dataset_config.dataset_paths.reference_molecule_directory
         )
 
+        self.use_roda_monomer_format = (
+            dataset_config.dataset_paths.use_roda_monomer_format
+        )
+
         # Dataset/datapoint cache
         # TODO: rename dataset_cache_file to dataset_cache_path to signal that it can be
         # a directory or a file
@@ -166,6 +170,7 @@ class BaseOF3Dataset(SingleDataset, ABC):
             preferred_chain_or_interface=preferred_chain_or_interface,
             structure_format=self.target_structure_file_format,
             per_chain_metadata=self.dataset_cache.structure_data[pdb_id].chains,
+            use_roda_monomer_format=self.use_roda_monomer_format,
         )
 
         # Processed reference conformers
@@ -241,6 +246,7 @@ class BaseOF3Dataset(SingleDataset, ABC):
             pairing_mask_keys=self.msa.pairing_mask_keys,
             moltypes=self.msa.moltypes,
             msas_to_pair=self.msa.msas_to_pair,
+            use_roda_monomer_format=self.use_roda_monomer_format,
         )
         msa_features = featurize_msa_of3(
             atom_array=atom_array,
@@ -271,6 +277,7 @@ class BaseOF3Dataset(SingleDataset, ABC):
             template_structure_array_directory=self.template_structure_array_directory,
             template_file_format=self.template_file_format,
             ccd=self.ccd,
+            use_roda_monomer_format=self.use_roda_monomer_format,
         )
 
         template_features = featurize_template_structures_of3(

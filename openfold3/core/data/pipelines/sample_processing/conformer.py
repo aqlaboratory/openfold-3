@@ -174,7 +174,9 @@ def get_processed_reference_conformer(
                 # Try with default, then use random init, then use fallback (technically
                 # default should not fail because we already tried the strategy in
                 # preprocessing)
-                mol, conf_id, _ = multistrategy_compute_conformer(mol)
+                mol, conf_id, _ = multistrategy_compute_conformer(
+                    mol, remove_hs=True, timeout_standard=30.0, timeout_rand_init=30.0
+                )
                 conf = mol.GetConformer(conf_id)
             elif preferred_confgen_strategy == "random_init":
                 # Try with random init, then use fallback (technically this also should
