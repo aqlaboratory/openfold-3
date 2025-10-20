@@ -9,9 +9,9 @@ data_module_args:
   num_workers: 16
   epoch_len: 128000 # Ckpt every 500 steps
 
-logging:
+logging_config:
   log_lr : true 
-  wandb:
+  wandb_config:
     project: <project_name>
     entity: <entity_name> 
     group: null
@@ -26,10 +26,10 @@ pl_trainer_args:
   log_every_n_steps: 50
   
   mpi_plugin: false
-  deepspeed_config_path: ./deepspeed_configs/ds_stage2_default.json
+  deepspeed_config_path: null
 
 # Checkpoint settings
-checkpoint:
+checkpoint_config:
   every_n_epochs: 1
   auto_insert_metric_name: false
   save_last: true
@@ -40,20 +40,24 @@ model_update:
     - train 
   custom:
     settings:
-      diffusion_training_enabled: false
+      train_confidence_only: true
       model_selection_weight_scheme: fine_tuning
+      ema:
+        submodules_to_update:
+          - aux_heads.pairformer_embedding
+          - aux_heads.pde
+          - aux_heads.plddt
+          - aux_heads.experimentally_resolved
+          - aux_heads.pae
     architecture:
-      shared: 
-        diffusion:
-          no_samples: 32
-        heads:
-          pae:
-            enabled: true
+      heads:
+        pae:
+          enabled: true
 
 dataset_configs:
   train:
     weighted-pdb:
-      class: WeightedPDBDataset 
+      dataset_class: WeightedPDBDataset
       weight: 1.0
       config:
         debug_mode: true
@@ -75,7 +79,7 @@ dataset_configs:
 
   validation:
     val-weighted-pdb:
-      class: ValidationPDBDataset
+      dataset_class: ValidationPDBDataset
       config:
         debug_mode: true
         template:

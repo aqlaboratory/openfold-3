@@ -95,7 +95,9 @@ class InferenceDataset(Dataset):
 
         # Templates
         self.template_settings = dataset_config.template
-        self.template_preprocessor_settings = dataset_config.template_preprocessor
+        self.template_preprocessor_settings = (
+            dataset_config.template_preprocessor_settings
+        )
         if self.template_preprocessor_settings.preparse_structures:
             self.template_preprocessor_settings.structure_file_format = "npz"
 

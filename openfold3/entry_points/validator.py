@@ -1,6 +1,7 @@
 import logging
 import os
 import random
+import warnings
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal
@@ -12,7 +13,9 @@ from lightning_fabric.plugins.collectives.torch_collective import default_pg_tim
 from pydantic import BaseModel, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
-from openfold3.core.config.config_utils import FilePathOrNone
+from openfold3.core.data.pipelines.preprocessing.template import (
+    TemplatePreprocessorSettings,
+)
 from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetConfigKwargs,
@@ -73,8 +76,8 @@ class CheckpointConfig(BaseModel):
 class WandbConfig(BaseModel):
     """Configuration for Weights and Biases experiment result logging."""
 
-    project: str = "my project"
-    experiment_name: str = "expt_name"
+    project: str | None = None
+    experiment_name: str | None = None
     entity: str | None = None
     group: str | None = None
     id: str | None = None
@@ -85,6 +88,7 @@ class LoggingConfig(BaseModel):
     """Settings for training logging."""
 
     log_lr: bool = True
+    log_grads: bool = False
     log_level: Literal["debug", "info", "warning", "error"] | None = None
     wandb_config: WandbConfig | None = None
 
@@ -94,10 +98,10 @@ class DataModuleArgs(BaseModel):
 
     model_config = PydanticConfigDict(extra="forbid")
     batch_size: int = 1
-    data_seed: int = 1234
+    data_seed: int | None = None
     num_workers: int = 10
+    num_workers_validation: int = 4
     epoch_len: int = 4
-    num_epochs: int = 1000
 
 
 class PlTrainerArgs(BaseModel):
@@ -146,12 +150,78 @@ class ExperimentSettings(BaseModel):
         return value
 
 
+class CheckpointLoadingSettings(BaseModel):
+    """
+    Provides more granular control over checkpoint loading.
+    While the standard PL process restores the entire training state,
+    these settings allow for selective loading of specific components.
+    """
+
+    manual_checkpoint_loading: bool = False
+    init_from_ema_weights: bool = False
+    restore_lr_scheduler: bool = False
+    restore_time_step: bool = False
+    strict_loading: bool = True
+
+
 class TrainingExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
     mode: ValidModeType = "train"
     seed: int = 42
-    restart_checkpoint_path: FilePathOrNone = None
+    restart_checkpoint_path: str | None = None
+    preemption_safe_resume: bool = False
+    ckpt_load_settings: CheckpointLoadingSettings = CheckpointLoadingSettings()
+
+    @field_validator("restart_checkpoint_path", mode="before")
+    def validate_checkpoint_path(cls, value: Any) -> str | None:
+        """
+        Validates the restart_checkpoint_path.
+
+        The path can be one of the following:
+        - None (if no checkpoint is provided).
+        - A special string: "last", "hpc", "registry" accepted by PL.
+        - A string representing a valid path to a file.
+        - A string representing a valid path to a directory (for deepspeed checkpoints).
+        """
+        # PL accepted strings
+        allowed_strings = ["last", "hpc", "registry"]
+        allowed_values = allowed_strings + [None]
+
+        if value not in allowed_values and not Path(value).exists():
+            raise ValueError(
+                f'"{value}" is not a valid file, directory, or accepted keyword '
+                f"({', '.join(allowed_strings)})"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def validate_ckpt_load_settings(self):
+        manual_settings_enabled = any(
+            [
+                self.ckpt_load_settings.init_from_ema_weights,
+                self.ckpt_load_settings.restore_lr_scheduler,
+                self.ckpt_load_settings.restore_time_step,
+            ]
+        )
+        if (
+            not self.ckpt_load_settings.manual_checkpoint_loading
+            and manual_settings_enabled
+        ):
+            raise ValueError(
+                "If any manual checkpoint loading settings are enabled, "
+                "manual_checkpoint_loading must be set to True."
+            )
+        if (
+            self.restart_checkpoint_path is None
+            and self.ckpt_load_settings.manual_checkpoint_loading
+        ):
+            raise ValueError(
+                "If manual_checkpoint_loading is set to True, "
+                "restart_checkpoint_path must be provided."
+            )
+
+        return self
 
 
 def generate_seeds(start_seed, num_seeds):
@@ -177,9 +247,11 @@ class InferenceExperimentSettings(ExperimentSettings):
         elif isinstance(self.seeds, int):
             if self.num_seeds is None:
                 raise ValueError(
-                    "num_seeds must be provided when seeds is a single int"
+                    "Attempted to generate seeds using starting"
+                    f" seed {self.seeds} but num_seeds was not provided."
+                    "Please either provide `num_seeds` or a list of seeds."
                 )
-            generate_seeds(self.seeds, self.num_seeds)
+            self.seeds = generate_seeds(self.seeds, self.num_seeds)
         elif self.seeds is None:
             raise ValueError("seeds must be provided (either int or list[int])")
 
@@ -209,6 +281,53 @@ class TrainingExperimentConfig(ExperimentConfig):
     model_update: ModelUpdate = ModelUpdate(presets=["train"])
     data_module_args: DataModuleArgs = DataModuleArgs()
 
+    @model_validator(mode="after")
+    def synchronize_seeds(self):
+        """
+        Ensures data_seed in DataModuleArgs is set. If it isn't, it will
+        default to the model seed.
+        """
+        model_seed = self.experiment_settings.seed
+        data_seed = self.data_module_args.data_seed
+
+        if data_seed is None:
+            self.data_module_args.data_seed = model_seed
+
+        return self
+
+    @model_validator(mode="after")
+    def check_preemption_safe(self):
+        """
+        Checks whether preemption_safe_resume settings are valid.
+        Currently, this only supports jobs that use wandb logging
+        with a set id.
+
+        It will have the following effects if set:
+        1. When restarted, the run will resume from the last locally
+           saved checkpoint for a given wandb id.
+        2. ckpt_load_settings will be disabled if the run
+           already exists and has existing checkpoints.
+        3. restart_checkpoint_path will be set to "last" if the run
+           already exists and has existing checkpoints.
+        """
+        if not self.experiment_settings.preemption_safe_resume:
+            return self
+
+        wandb_config = self.logging_config.wandb_config
+        if wandb_config is None:
+            raise ValueError(
+                "The `preemption_safe_resume` setting currently only supports jobs "
+                "run with wandb. Please provide a wandb_config."
+            )
+        if wandb_config.id is None:
+            raise ValueError(
+                "The `preemption_safe_resume` setting requires wandb_config.id to "
+                "be set. This ensures that if a job is preempted, the new job resumes "
+                "from the same id."
+            )
+
+        return self
+
 
 class InferenceExperimentConfig(ExperimentConfig):
     """Inference experiment config"""
@@ -226,6 +345,9 @@ class InferenceExperimentConfig(ExperimentConfig):
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
     msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
+    template_preprocessor_settings: TemplatePreprocessorSettings = (
+        TemplatePreprocessorSettings(mode="predict")
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -263,4 +385,35 @@ class InferenceExperimentConfig(ExperimentConfig):
             raise ValueError(
                 f"Provided checkpoint path {self.inference_ckpt_path} does not exist"
             )
+        return self
+
+    @model_validator(mode="after")
+    def synchronize_seeds(self):
+        """
+        Ensures data_seed in DataModuleArgs is set. If it isn't, it will
+        default to the first model seed in the provided list.
+        """
+        model_seeds = self.experiment_settings.seeds
+        data_seed = self.data_module_args.data_seed
+
+        if data_seed is None:
+            self.data_module_args.data_seed = model_seeds[0]
+
+        return self
+
+    @model_validator(mode="after")
+    def copy_ccd_file_path(self):
+        """Copies ccd_file_path dataset_config_kwargs>template_preprocessor_settings."""
+        if self.dataset_config_kwargs.ccd_file_path is not None:
+            if self.template_preprocessor_settings.ccd_file_path is not None:
+                warnings.warn(
+                    "Overwriting ccd_file_path in template_preprocessor_settings with "
+                    "dataset_config_kwargs.ccd_file_path. We recommend specifying"
+                    "ccd_file_path only in dataset_config_kwargs.",
+                    stacklevel=2,
+                )
+            self.template_preprocessor_settings.ccd_file_path = (
+                self.dataset_config_kwargs.ccd_file_path
+            )
+
         return self

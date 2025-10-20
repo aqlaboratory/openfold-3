@@ -8,7 +8,6 @@ from functools import cached_property, wraps
 from pathlib import Path
 from typing import Any
 
-# Used to disable nanobind leak warnings from gemmi project.
 import ml_collections as mlc
 import pytorch_lightning as pl
 import wandb
@@ -26,7 +25,15 @@ from openfold3.core.data.framework.data_module import (
     InferenceDataModule,
 )
 from openfold3.core.runners.writer import OF3OutputWriter
-from openfold3.core.utils.callbacks import LogInferenceQuerySet, PredictTimer
+from openfold3.core.utils.callbacks import (
+    LogInferenceQuerySet,
+    PredictTimer,
+    RankSpecificSeedCallback,
+)
+from openfold3.core.utils.checkpoint_loading_utils import (
+    get_state_dict_from_checkpoint,
+    load_checkpoint,
+)
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
@@ -262,12 +269,8 @@ class ExperimentRunner(ABC):
         elif self.mode == "test":
             target_method = self.trainer.test
         elif self.mode == "predict":
-            target_method = self.trainer.predict
-            return target_method(
-                model=self.lightning_module,
-                datamodule=self.lightning_data_module,
-                ckpt_path=self.ckpt_path,
-                return_predictions=False,
+            raise NotImplementedError(
+                "To be implemented by `InferenceExperimentRunner`"
             )
         else:
             raise ValueError(
@@ -292,6 +295,12 @@ class TrainingExperimentRunner(ExperimentRunner):
         self.restart_checkpoint_path = (
             experiment_config.experiment_settings.restart_checkpoint_path
         )
+        self.preemption_safe_resume = (
+            experiment_config.experiment_settings.preemption_safe_resume
+        )
+        self.ckpt_load_settings = (
+            experiment_config.experiment_settings.ckpt_load_settings
+        )
         self.dataset_paths = experiment_config.dataset_paths
         self.dataset_configs = experiment_config.dataset_configs
         self.data_module_args = experiment_config.data_module_args
@@ -310,6 +319,9 @@ class TrainingExperimentRunner(ExperimentRunner):
         if self.use_wandb:
             self._wandb_setup()
 
+        if self.do_manual_ckpt_loading:
+            self.manual_load_checkpoint()
+
     @cached_property
     def data_module_config(self) -> DataModuleConfig:
         """Make a DataModuleConfig from self.dataset_paths and self.dataset_configs."""
@@ -324,8 +336,56 @@ class TrainingExperimentRunner(ExperimentRunner):
 
         return DataModuleConfig(datasets=cfgs, **self.data_module_args.model_dump())
 
+    @property
+    def resume_existing_run(self):
+        # Preemption-safe resume option is currently only valid if wandb is enabled.
+        return self.preemption_safe_resume and self.use_wandb and self.wandb.run_exists
+
+    @property
+    def do_manual_ckpt_loading(self) -> bool:
+        # If resuming from existing wandb run, do not manually load checkpoint
+        if self.resume_existing_run:
+            return False
+        return self.ckpt_load_settings.manual_checkpoint_loading
+
+    def manual_load_checkpoint(self):
+        init_from_ema_weights = self.ckpt_load_settings.init_from_ema_weights
+        ckpt = load_checkpoint(Path(self.restart_checkpoint_path))
+        state_dict = get_state_dict_from_checkpoint(
+            ckpt, init_from_ema_weights=init_from_ema_weights
+        )
+
+        print(f"Restoring model and EMA weights from {self.restart_checkpoint_path}...")
+        self.lightning_module.load_state_dict(
+            state_dict, strict=self.ckpt_load_settings.strict_loading
+        )
+        self.lightning_module.ema.load_state_dict(ckpt["ema"])
+
+        if self.ckpt_load_settings.restore_lr_scheduler:
+            last_global_step = int(ckpt["global_step"])
+
+            logger.info(f"Restoring last lr step {last_global_step}...")
+            self.lightning_module.resume_last_lr_step(last_global_step)
+
+        if self.ckpt_load_settings.restore_time_step:
+            if "DataModule" in ckpt:
+                logger.info("Restoring datamodule states...")
+                self.lightning_data_module.load_state_dict(ckpt["DataModule"])
+
+            logger.info("Restoring fit loop counters...")
+            self.trainer.fit_loop.load_state_dict(ckpt["loops"]["fit_loop"])
+
     @cached_property
-    def ckpt_path(self) -> Path | None:
+    def ckpt_path(self) -> str | None:
+        # With preemption safe resume, always resume from last checkpoint
+        # of the current wandb run
+        if self.resume_existing_run:
+            return "last"
+
+        # If manually loading checkpoint, do not pass a path to trainer
+        if self.do_manual_ckpt_loading:
+            return None
+
         return self.restart_checkpoint_path
 
     @property
@@ -344,6 +404,12 @@ class TrainingExperimentRunner(ExperimentRunner):
             self.is_rank_zero,
             self.output_dir,
         )
+
+        if self.is_rank_zero and self.logging_config.log_grads:
+            self.wandb.logger.watch(
+                self.lightning_module, log="gradients", log_graph=False
+            )
+
         self.wandb.store_configs(
             self.experiment_config,
             self.data_module_config,
@@ -376,7 +442,16 @@ class TrainingExperimentRunner(ExperimentRunner):
             )
 
         logger.info(f"Running with seed: {seed}")
+
+        # The datamodule is reseeded with the data_seed, and the model will be
+        # reseeded per rank with the RankSpecificSeedCallback, so most of the
+        # seed_everything() initialization does not matter. This does still
+        # seed the distributed sampler, which will otherwise default to seed 0.
         pl.seed_everything(seed, workers=True)
+
+        update_dict = {"architecture": {"shared": {"sync_seed": seed}}}
+
+        self.model_config.update(update_dict)
 
     @cached_property
     def loggers(self):
@@ -389,7 +464,7 @@ class TrainingExperimentRunner(ExperimentRunner):
     @cached_property
     def callbacks(self):
         """Set up and return the list of training callbacks."""
-        _callbacks = []
+        _callbacks = [RankSpecificSeedCallback(base_seed=self.seed)]
 
         _checkpoint = self.checkpoint_config
         if _checkpoint is not None:
@@ -453,8 +528,6 @@ class InferenceExperimentRunner(ExperimentRunner):
     ):
         """Updates configuration given command line args."""
         if output_dir:
-            output_dir.mkdir(exist_ok=True, parents=True)
-            self.output_dir = output_dir
             self.experiment_config.experiment_settings.output_dir = output_dir
 
         if num_diffusion_samples:
@@ -483,10 +556,23 @@ class InferenceExperimentRunner(ExperimentRunner):
     def pae_enabled(self) -> bool:
         return self.model_config.architecture.heads.pae.enabled
 
+    def setup(self) -> None:
+        """Set up environment and load checkpoints."""
+        super().setup()
+        logger.info(f"Loading weights from {self.ckpt_path}")
+        ckpt = load_checkpoint(self.ckpt_path)
+        state_dict = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
+        self.lightning_module.load_state_dict(state_dict, strict=True)
+
     def run(self, inference_query_set) -> None:
-        """Set up the experiment environment."""
+        """Load the inference query set to run predictions."""
         self.inference_query_set = inference_query_set
-        super().run()
+        logger.info("Beginning inference prediction")
+        self.trainer.predict(
+            model=self.lightning_module,
+            datamodule=self.lightning_data_module,
+            return_predictions=False,
+        )
         self._log_experiment_config()
         self._log_model_config()
 
@@ -512,7 +598,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             ccd_file_path=self.dataset_config_kwargs.ccd_file_path,
             msa=self.dataset_config_kwargs.msa,
             template=self.dataset_config_kwargs.template,
-            template_preprocessor=self.dataset_config_kwargs.template_preprocessor,
+            template_preprocessor_settings=self.experiment_config.template_preprocessor_settings,
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(
@@ -572,7 +658,7 @@ class InferenceExperimentRunner(ExperimentRunner):
                 logger.info(f"Removing MSA output directory: {output_dir}")
                 shutil.rmtree(output_dir)
                 if self.use_templates:
-                    template_dir = self.dataset_config_kwargs.template_preprocessor.structure_directory.parent  # noqa: E501
+                    template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
                     shutil.rmtree(template_dir)
 
 
@@ -636,6 +722,11 @@ class WandbHandler:
             self._init_logger()
         assert self._logger is not None
         return self._logger
+
+    @cached_property
+    def run_exists(self) -> bool:
+        wandb_ckpt_dir = Path(self.output_dir) / wandb.run.project / wandb.run.id
+        return wandb_ckpt_dir.is_dir() and any(wandb_ckpt_dir.iterdir())
 
     def store_configs(
         self,
