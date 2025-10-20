@@ -25,6 +25,9 @@ from openfold3.entry_points.validator import (
     TrainingExperimentSettings,
     WandbConfig,
 )
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
+)
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
 
 
@@ -521,3 +524,87 @@ class TestTemplatePreprocessorSettings:
         assert expt_config.template_preprocessor_settings.output_directory == (
             tmp_path / "custom_dir"
         ), "Expected structure directory to match config file setting"
+
+
+class TestRemoveQuerySetDuplicates:
+    @pytest.fixture
+    def dummy_output_path(self, tmp_path):
+        # Creates the following directories:
+        # <output_directory>
+        #  ├── query_1
+        # 	 └── seed_42
+        #         ├── query_1_seed_42_sample_1_model.cif
+        #         ├── query_1_seed_42_sample_2_model.cif
+        # 	 └── seed_43
+        #         ├── query_1_seed_43_sample_1_model.cif
+        #         ├── query_1_seed_43_sample_2_model.cif
+        #  ├── query_2
+        # 	 └── seed_42
+        #         ├── query_1_seed_42_sample_1_model.cif
+        #         ├── query_1_seed_42_sample_2_model.cif
+        # 	 └── seed_43
+        #         ├── query_1_seed_43_sample_1_model.cif
+        #         ├── <Missing sample 2>
+
+        expected_fnames = [
+            "query_1/seed_42/query_1_seed_42_sample_1_model.cif",
+            "query_1/seed_42/query_1_seed_42_sample_2_model.cif",
+            "query_1/seed_43/query_1_seed_43_sample_1_model.cif",
+            "query_1/seed_43/query_1_seed_43_sample_2_model.cif",
+            "query_2/seed_42/query_2_seed_42_sample_1_model.cif",
+            "query_2/seed_42/query_2_seed_42_sample_2_model.cif",
+            "query_2/seed_43/query_2_seed_43_sample_1_model.cif",
+        ]
+
+        for fname in expected_fnames:
+            _create_fake_file(tmp_path / fname)
+
+        return tmp_path
+
+    def test_remove_duplicates(self, dummy_output_path):
+        input_query_set = InferenceQuerySet.model_validate(
+            {
+                "queries": {
+                    "query_1": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": ["A"],
+                                "sequence": "TEST",
+                            }
+                        ]
+                    },
+                    "query_2": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": ["A"],
+                                "sequence": "TESTING",
+                            }
+                        ]
+                    },
+                    "query_3": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": ["A"],
+                                "sequence": "TESTTEST",
+                            }
+                        ]
+                    },
+                }
+            }
+        )
+
+        experiment_config = InferenceExperimentConfig.model_validate(
+            {"experiment_settings": {"seeds": [42, 43]}}
+        )
+        expt_runner = InferenceExperimentRunner(
+            experiment_config, num_diffusion_samples=2, output_dir=dummy_output_path
+        )
+
+        deduplicated_set = expt_runner.remove_completed_queries_from_query_set(
+            input_query_set
+        )
+
+        assert set(deduplicated_set.queries.keys()) == set(["query_2", "query_3"])

@@ -1,5 +1,6 @@
 import json
 import logging
+import operator
 import os
 import shutil
 import sys
@@ -10,6 +11,7 @@ from typing import Any
 
 import ml_collections as mlc
 import pytorch_lightning as pl
+import torch
 import wandb
 from lightning_fabric.utilities.rank_zero import _get_rank
 from pydantic import BaseModel
@@ -46,9 +48,27 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceJobConfig,
     TrainingDatasetSpec,
 )
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
+)
+from openfold3.projects.of3_all_atom.model import OpenFold3
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 logger = logging.getLogger(__name__)
+
+# # Add OpenFold3 model to safe models to load
+torch.serialization.add_safe_globals(
+    [
+        OpenFold3,
+        mlc.ConfigDict,
+        mlc.FieldReference,
+        int,
+        bool,
+        float,
+        operator.add,
+        mlc.config_dict._Op,
+    ]
+)
 
 
 def rank_zero_only(fn):
@@ -518,6 +538,10 @@ class InferenceExperimentRunner(ExperimentRunner):
         model_config = self.model_config
         model_config.update(update_dict)
 
+    @cached_property
+    def num_diffusion_samples(self) -> int:
+        return self.model_config.architecture.shared.diffusion.no_full_rollout_samples
+
     def update_config_with_cli_args(
         self,
         num_diffusion_samples: int | None,
@@ -556,6 +580,45 @@ class InferenceExperimentRunner(ExperimentRunner):
     def pae_enabled(self) -> bool:
         return self.model_config.architecture.heads.pae.enabled
 
+    def remove_completed_queries_from_query_set(self, inference_query_set):
+        """Returns a new inference query set with previously completed runs removed."""
+
+        completed_structures = []
+        structure_format = self.output_writer_settings.structure_format
+
+        for query_id in inference_query_set.queries:
+            ## a structure must be present for all seeds and all diffusion samples
+            ## to count as completed
+            structure_exists = True
+            for seed in self.seeds:
+                output_subdir = self.output_dir / query_id / f"seed_{seed}"
+                for s in range(self.num_diffusion_samples):
+                    file_prefix = (
+                        output_subdir / f"{query_id}_seed_{seed}_sample_{s + 1}"
+                    )
+                    structure_file = Path(f"{file_prefix}_model.{structure_format}")
+                    structure_exists = structure_file.exists() and structure_exists
+
+            if structure_exists:
+                completed_structures.append(query_id)
+
+        logger.info(
+            "Skipping existing structures is enabled.Will skip "
+            f"the following {len(completed_structures)} structures:"
+            f" {completed_structures}"
+        )
+
+        deduplicated_queries = {
+            q_id: q
+            for q_id, q in inference_query_set.queries.items()
+            if q_id not in completed_structures
+        }
+        deduplicated_inference_set = InferenceQuerySet(
+            seeds=inference_query_set.seeds, queries=deduplicated_queries
+        )
+
+        return deduplicated_inference_set
+
     def setup(self) -> None:
         """Set up environment and load checkpoints."""
         super().setup()
@@ -565,7 +628,18 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.lightning_module.load_state_dict(state_dict, strict=True)
 
     def run(self, inference_query_set) -> None:
-        """Load the inference query set to run predictions."""
+        """Set up the experiment environment."""
+        self.inference_query_set = inference_query_set
+        self._log_experiment_config()
+        self._log_model_config()
+        if self.experiment_config.experiment_settings.skip_existing:
+            inference_query_set = self.remove_completed_queries_from_query_set(
+                inference_query_set
+            )
+            if len(inference_query_set.queries) < 1:
+                logger.warning("All structures have completed. Quitting")
+                return
+
         self.inference_query_set = inference_query_set
         logger.info("Beginning inference prediction")
         self.trainer.predict(
@@ -573,8 +647,6 @@ class InferenceExperimentRunner(ExperimentRunner):
             datamodule=self.lightning_data_module,
             return_predictions=False,
         )
-        self._log_experiment_config()
-        self._log_model_config()
 
     @cached_property
     def callbacks(self):
@@ -634,6 +706,10 @@ class InferenceExperimentRunner(ExperimentRunner):
         with open(log_path, "w") as fp:
             fp.write(self.model_config.to_json_best_effort(indent=4))
 
+    def _maybe_remove_dir(self, path):
+        if path.exists():
+            shutil.rmtree(path)
+
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
         if self.is_rank_zero and self.log_dir.is_dir() and not os.listdir(self.log_dir):
@@ -650,16 +726,16 @@ class InferenceExperimentRunner(ExperimentRunner):
                 self.experiment_config.msa_computation_settings.msa_output_directory
                 / "raw"
             )
-            shutil.rmtree(raw_colabfold_msa_path)
+            self._maybe_remove_dir(raw_colabfold_msa_path)
             if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
-                output_dir = (
+                msa_output_dir = (
                     self.experiment_config.msa_computation_settings.msa_output_directory
                 )
-                logger.info(f"Removing MSA output directory: {output_dir}")
-                shutil.rmtree(output_dir)
+                logger.info(f"Removing MSA output directory: {msa_output_dir}")
+                self._maybe_remove_dir(msa_output_dir)
                 if self.use_templates:
                     template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
-                    shutil.rmtree(template_dir)
+                    self._maybe_remove_dir(template_dir)
 
 
 class WandbHandler:
