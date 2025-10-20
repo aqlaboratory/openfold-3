@@ -12,7 +12,7 @@ from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
 from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
-from openfold3.core.data.io.structure.cif import parse_mmcif
+from openfold3.core.data.io.structure.cif import SkippedStructure, parse_mmcif
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
@@ -331,10 +331,12 @@ def parse_template_structure(
     # Parse and clean the raw template structure file
     elif template_structures_directory is not None:
         # Parse the full template assembly and subset assembly to template chain
-        cif_file, atom_array_template_assembly = parse_mmcif(
+        result = parse_mmcif(
             template_structures_directory / Path(f"{pdb_id}.{template_file_format}")
         )
-
+        if isinstance(result, SkippedStructure):
+            return None
+        cif_file, atom_array_template_assembly = result
         # Clean up the template atom array and subset to the chosen template chain
         atom_array_template_chain = clean_template_atom_array(
             atom_array_template_assembly, cif_file, chain_id, ccd
@@ -520,6 +522,8 @@ def align_template_to_query(
             template_file_format,
             ccd,
         )
+        if not atom_array_template_chain:
+            continue
 
         # Create query token position to template residue ID map
         map_token_pos_to_template_residues(
