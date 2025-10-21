@@ -542,7 +542,7 @@ class TestKernels(unittest.TestCase):
             eps=2e-2,
         )
 
-    @compare_utils.skip_unless_ds4s_installed()
+    @compare_utils.skip_unless_cueq_installed()
     def test_compare_pairformer_cueq_fp32_chunk(self):
         """Run Pairformer comparison test with chunk tuning enabled."""
         self._compare_pairformer(
