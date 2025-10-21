@@ -1,4 +1,5 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,13 +22,16 @@ MSAModule.
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from functools import partial
-from typing import Optional
 
 import torch
 from torch import nn
 
 from openfold3.core.utils.checkpointing import checkpoint_blocks
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.chunk_utils import (
+    CUEQ_MAX_CHUNK_SIZE,
+    DEFAULT_MAX_CHUNK_SIZE,
+    ChunkSizeTuner,
+)
 
 
 # TODO: Rename to CheckpointStack and generalize any kind of block (i.e. remove
@@ -38,8 +42,8 @@ class MSAStack(nn.Module, ABC):
     @abstractmethod
     def __init__(
         self,
-        blocks_per_ckpt: Optional[int],
-        use_reentrant: Optional[bool] = None,
+        blocks_per_ckpt: int | None,
+        use_reentrant: bool | None = None,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -76,13 +80,13 @@ class MSAStack(nn.Module, ABC):
         self,
         m: torch.Tensor,
         z: torch.Tensor,
-        chunk_size: Optional[int],
-        transition_ckpt_chunk_size: Optional[int],
+        chunk_size: int | None,
+        transition_ckpt_chunk_size: int | None,
         use_deepspeed_evo_attention: bool,
+        use_cueq_triangle_kernels: bool,
         use_lma: bool,
-        use_flash: bool,
-        msa_mask: Optional[torch.Tensor],
-        pair_mask: Optional[torch.Tensor],
+        msa_mask: torch.Tensor | None,
+        pair_mask: torch.Tensor | None,
         inplace_safe: bool,
         _mask_trans: bool,
     ):
@@ -101,8 +105,8 @@ class MSAStack(nn.Module, ABC):
                 chunk_size=chunk_size,
                 transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
-                use_flash=use_flash,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
             )
@@ -119,6 +123,11 @@ class MSAStack(nn.Module, ABC):
 
         if chunk_size is not None and self.chunk_size_tuner is not None:
             assert not self.training
+            max_chunk_size = (
+                CUEQ_MAX_CHUNK_SIZE
+                if use_cueq_triangle_kernels
+                else DEFAULT_MAX_CHUNK_SIZE
+            )
             tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
                 representative_fn=blocks[0],
                 # Tensors cloned to avoid getting written to in-place
@@ -129,15 +138,20 @@ class MSAStack(nn.Module, ABC):
                     z.clone(),
                 ),
                 min_chunk_size=chunk_size,
+                max_chunk_size=max_chunk_size,
             )
-
+            attn_chunk = (
+                tuned_chunk_size
+                if use_cueq_triangle_kernels
+                else (tuned_chunk_size // 4)
+            )
             blocks = [
                 partial(
                     b,
                     chunk_size=tuned_chunk_size,
                     # A temporary measure to address torch's occasional
                     # inability to allocate large tensors
-                    _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
+                    _attn_chunk_size=max(chunk_size, attn_chunk),
                 )
                 for b in blocks
             ]
@@ -163,11 +177,11 @@ class MSAStack(nn.Module, ABC):
         input_tensors: Sequence[torch.Tensor],
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
-        transition_ckpt_chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
+        transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
-        use_flash: bool = False,
         _mask_trans: bool = True,
     ):
         assert not (self.training or torch.is_grad_enabled())
@@ -180,8 +194,8 @@ class MSAStack(nn.Module, ABC):
             chunk_size=chunk_size,
             transition_ckpt_chunk_size=transition_ckpt_chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
-            use_flash=use_flash,
             msa_mask=msa_mask,
             pair_mask=pair_mask,
             inplace_safe=True,
@@ -209,11 +223,11 @@ class MSAStack(nn.Module, ABC):
         z: torch.Tensor,
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
-        transition_ckpt_chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
+        transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
-        use_flash: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
     ):
@@ -234,13 +248,10 @@ class MSAStack(nn.Module, ABC):
                 Chunk size for activation checkpointing in the transition layer
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma and use_flash.
+                Mutually exclusive with use_lma.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_flash and use_deepspeed_evo_attention.
-            use_flash:
-                Whether to use FlashAttention where possible. Mutually
-                exclusive with use_lma and use_deepspeed_evo_attention.
+                Mutually exclusive with and use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
             _mask_trans:
@@ -257,8 +268,8 @@ class MSAStack(nn.Module, ABC):
             chunk_size=chunk_size,
             transition_ckpt_chunk_size=transition_ckpt_chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
-            use_flash=use_flash,
             msa_mask=msa_mask,
             pair_mask=pair_mask,
             inplace_safe=inplace_safe,

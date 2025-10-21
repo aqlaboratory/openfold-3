@@ -1,14 +1,80 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from collections.abc import Sequence
-from typing import Optional
 
 import torch
 
 from openfold3.core.metrics.confidence import compute_plddt
 from openfold3.core.metrics.rasa import compute_rasa_batch
-from openfold3.core.metrics.validation import gdt_ha, gdt_ts, rmsd
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.geometry.kabsch_alignment import kabsch_align
 from openfold3.core.utils.tensor_utils import tensor_tree_map
+
+
+def gdt(p1, p2, mask, cutoffs):
+    n = torch.sum(mask, dim=-1)
+
+    p1 = p1.float()
+    p2 = p2.float()
+
+    distances = torch.sqrt(torch.sum((p1 - p2) ** 2, dim=-1))
+    scores = [torch.sum((distances <= c) * mask, dim=-1) / n for c in cutoffs]
+
+    return torch.sum(torch.stack(scores, dim=-1), dim=-1) / len(scores)
+
+
+def gdt_ts(p1, p2, mask):
+    return gdt(p1, p2, mask, [1.0, 2.0, 4.0, 8.0])
+
+
+def gdt_ha(p1, p2, mask):
+    return gdt(p1, p2, mask, [0.5, 1.0, 2.0, 4.0])
+
+
+def rmsd(
+    pred_positions: torch.Tensor,
+    target_positions: torch.Tensor,
+    positions_mask: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Computes the Root Mean Square Deviation of Atomic Positions (RMSD) between a
+    set of predicted and ground-truth coordinates.
+
+    Args:
+        pred_positions:
+            [*, N, 3] the predicted coordinates
+        target_positions:
+            [*, N, 3] the ground-truth coordinates
+        positions_mask:
+            [*, N] mask for coordinates that should not be considered
+
+    Returns:
+        [*] the RMSDs of the predicted coordinates for each "batch" dimension
+        (e.g. actual batch dimension and/or structure module layers)
+    """
+    squared_error_dists = torch.sum((pred_positions - target_positions) ** 2, dim=-1)
+
+    # mask unobserved atoms
+    squared_error_dists = squared_error_dists * positions_mask
+    n_observed_atoms = torch.sum(positions_mask, dim=-1)
+
+    # compute RMSD
+    msd = torch.sum(squared_error_dists, dim=-1) / n_observed_atoms
+    rmsd = torch.sqrt(msd)
+
+    return rmsd
 
 
 def select_inter_filter_mask(
@@ -49,9 +115,9 @@ def lddt(
     intra_mask_filter: torch.Tensor,
     inter_mask_filter: torch.Tensor,
     asym_id: torch.Tensor,
-    threshold: Optional[Sequence] = (0.5, 1.0, 2.0, 4.0),
-    cutoff: Optional[float] = 15.0,
-    eps: Optional[float] = 1e-10,
+    threshold: Sequence | None = (0.5, 1.0, 2.0, 4.0),
+    cutoff: float | None = 15.0,
+    eps: float | None = 1e-10,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Calculates lddt scores from pair distances
@@ -131,8 +197,8 @@ def interface_lddt(
     all_atom_mask1: torch.Tensor,
     all_atom_mask2: torch.Tensor,
     filter_mask: torch.Tensor,
-    cutoff: Optional[float] = 15.0,
-    eps: Optional[float] = 1e-10,
+    cutoff: float | None = 15.0,
+    eps: float | None = 1e-10,
 ) -> torch.Tensor:
     """
     Calculates interface_lddt (ilddt) score between two different molecules
@@ -200,7 +266,7 @@ def drmsd(
     pair_dist_gt_pos: torch.Tensor,
     all_atom_mask: torch.Tensor,
     asym_id: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Computes drmsds from pair distances
@@ -259,7 +325,7 @@ def get_protein_metrics(
     pred_coords: torch.Tensor,
     gt_coords: torch.Tensor,
     all_atom_mask: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of protein
@@ -363,7 +429,7 @@ def get_nucleic_acid_metrics(
     all_atom_mask: torch.Tensor,
     is_protein_atomized: torch.Tensor,
     substrate: str,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of nucleic acids (dna/rna)
@@ -540,7 +606,7 @@ def get_ligand_metrics(
     gt_coords: torch.Tensor,
     all_atom_mask: torch.Tensor,
     is_protein_atomized: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute validation metrics of a ligand
@@ -706,8 +772,8 @@ def steric_clash(
     pred_pair: torch.Tensor,
     all_atom_mask: torch.Tensor,
     asym_id: torch.Tensor,
-    threshold: Optional[float] = 1.1,
-    eps: Optional[float] = 1e-10,
+    threshold: float | None = 1.1,
+    eps: float | None = 1e-10,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Computes steric clash score
@@ -765,8 +831,8 @@ def interface_steric_clash(
     pred_substrate: torch.Tensor,
     all_atom_mask_protein: torch.Tensor,
     all_atom_mask_substrate: torch.Tensor,
-    threshold: Optional[float] = 1.1,
-    eps: Optional[float] = 1e-10,
+    threshold: float | None = 1.1,
+    eps: float | None = 1e-10,
 ) -> torch.Tensor:
     """
     Computes steric clash score across protein and substrate
@@ -860,7 +926,7 @@ def get_full_complex_lddt(
     pred_coords: torch.Tensor,
     gt_coords: torch.Tensor,
     all_atom_mask: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Computes lddt for the full complex, subject to intra chain filters
@@ -917,7 +983,7 @@ def get_plddt_metrics(
     is_dna_atomized: torch.Tensor,
     intra_filter_atomized: torch.Tensor,
     plddt_logits: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ) -> dict[str, torch.Tensor]:
     """
     Compute plddt metric and report for different atom types.
@@ -939,7 +1005,7 @@ def get_plddt_metrics(
     out = {}
 
     # Report plddt scaled to 0-1
-    plddt_complex = compute_plddt(plddt_logits) / 100
+    plddt_complex = compute_plddt(plddt_logits)
 
     out["plddt_complex"] = torch.sum(plddt_complex * intra_filter_atomized, dim=-1) / (
         torch.sum(intra_filter_atomized, dim=-1) + eps
@@ -988,7 +1054,7 @@ def get_validation_lddt_metrics(
     asym_id_atomized: torch.Tensor,
     intra_filter_atomized: torch.Tensor,
     inter_filter_atomized: torch.Tensor,
-    eps: Optional[float] = 1e-10,
+    eps: float | None = 1e-10,
 ):
     """Compute lddt metrics for ligand-RNA, ligand-DNA and modified residues.
     These extra metrics are required for model selection metric.
@@ -1317,9 +1383,8 @@ def get_metrics(
         )
         metrics = metrics | ligand_validation_metrics
 
-        if compute_lig_diffusion_metrics:
-            pred_coords_diffusion = outputs["atom_positions_diffusion"]
-
+        pred_coords_diffusion = outputs.get("atom_positions_diffusion")
+        if compute_lig_diffusion_metrics and pred_coords_diffusion is not None:
             # Take only first sample for computational efficiency
             pred_coords_diffusion = pred_coords_diffusion[:, 0, ...].unsqueeze(1)
 

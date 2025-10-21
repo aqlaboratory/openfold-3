@@ -1,5 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
-# Copyright 2021 DeepMind Technologies Limited
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,104 +12,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""A Python wrapper for Kalign."""
-
-import os
+import shutil
 import subprocess
-from collections.abc import Sequence
-
-from absl import logging
-
-from openfold3.core.data.tools import utils
+from functools import lru_cache
 
 
-def _to_a3m(sequences: Sequence[str]) -> str:
-    """Converts sequences to an a3m file."""
-    names = [f"sequence {i}" for i in range(1, len(sequences) + 1)]
-    a3m = []
-    for sequence, name in zip(sequences, names):
-        a3m.append(">" + name + "\n")
-        a3m.append(sequence + "\n")
-    return "".join(a3m)
+@lru_cache(maxsize=512)
+def run_kalign(
+    a3m_string: str,
+) -> str:
+    """Runs Kalign on the provided A3M string and returns the aligned sequences.
 
+    Args:
+        a3m_string (str):
+            A3M formatted string containing the sequences to be aligned. In the template
+            pipeline, the first sequence is the query, and the rest are templates
+            sequences to be realigned to it from hmmsearch.
 
-class Kalign:
-    """Python wrapper of the Kalign binary."""
+    Raises:
+        RuntimeError:
+            If Kalign is not available.
+        subprocess.CalledProcessError:
+            If the Kalign command fails.
 
-    def __init__(self, *, binary_path: str):
-        """Initializes the Python Kalign wrapper.
+    Returns:
+        str:
+            The aligned sequences in A3M format as a string.
+    """
+    kalign_available = shutil.which("kalign") is not None
 
-        Args:
-          binary_path: The path to the Kalign binary.
+    if not kalign_available:
+        raise RuntimeError(
+            "Kalign is not available. Please install it and ensure it is in your PATH."
+        )
 
-        Raises:
-          RuntimeError: If Kalign binary not found within the path.
-        """
-        self.binary_path = binary_path
+    try:
+        result = subprocess.run(
+            ["kalign"], input=a3m_string, capture_output=True, text=True, check=True
+        )
 
-    def align(self, sequences: Sequence[str]) -> str:
-        """Aligns the sequences and returns the alignment in A3M string.
+        # The resulting MSA is stored in the variable
+        alignment_result = result.stdout
 
-        Args:
-          sequences: A list of query sequence strings. The sequences have to be at
-            least 6 residues long (Kalign requires this). Note that the order in
-            which you give the sequences might alter the output slightly as
-            different alignment tree might get constructed.
+    except subprocess.CalledProcessError as e:
+        print(f"Kalign command failed:\n{e.stderr}")
 
-        Returns:
-          A string with the alignment in a3m format.
-
-        Raises:
-          RuntimeError: If Kalign fails.
-          ValueError: If any of the sequences is less than 6 residues long.
-        """
-        logging.info("Aligning %d sequences", len(sequences))
-
-        for s in sequences:
-            if len(s) < 6:
-                raise ValueError(
-                    "Kalign requires all sequences to be at least 6 "
-                    f"residues long. Got {s} ({len(s)} residues)."
-                )
-
-        with utils.tmpdir_manager() as query_tmp_dir:
-            input_fasta_path = os.path.join(query_tmp_dir, "input.fasta")
-            output_a3m_path = os.path.join(query_tmp_dir, "output.a3m")
-
-            with open(input_fasta_path, "w") as f:
-                f.write(_to_a3m(sequences))
-
-            cmd = [
-                self.binary_path,
-                "-i",
-                input_fasta_path,
-                "-o",
-                output_a3m_path,
-                "-format",
-                "fasta",
-            ]
-
-            logging.info('Launching subprocess "%s"', " ".join(cmd))
-            process = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-
-            with utils.timing("Kalign query"):
-                stdout, stderr = process.communicate()
-                retcode = process.wait()
-                logging.info(
-                    "Kalign stdout:\n%s\n\nstderr:\n%s\n",
-                    stdout.decode("utf-8"),
-                    stderr.decode("utf-8"),
-                )
-
-            if retcode:
-                raise RuntimeError(
-                    f"Kalign failed\nstdout:\n{stdout.decode('utf-8')}\n\n"
-                    f"stderr:\n{stderr.decode('utf-8')}\n"
-                )
-
-            with open(output_a3m_path) as f:
-                a3m = f.read()
-
-            return a3m
+    return alignment_result

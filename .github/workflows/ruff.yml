@@ -1,4 +1,4 @@
-name: Ruff
+name: Linting code
 
 on: [push, pull_request]
 

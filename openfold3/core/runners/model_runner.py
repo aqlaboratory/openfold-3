@@ -1,5 +1,16 @@
-# TODO add license
-
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import pytorch_lightning as pl
 import torch
@@ -18,7 +29,9 @@ class ModelRunner(pl.LightningModule):
     https://lightning.ai/docs/pytorch/stable/common/lightning_module.html#hooks"""
 
     def __init__(
-        self, model_class: torch.nn.Module, config: ConfigDict, _compile: bool = True
+        self,
+        model_class: torch.nn.Module,
+        config: ConfigDict,
     ) -> None:
         """Assign general attributes and initialize the model.
 
@@ -28,8 +41,6 @@ class ModelRunner(pl.LightningModule):
             config (ConfigDict):
                 <Here, need a description of general config structure and
                 arguments.>
-            _compile (bool):
-                Whether to compile the model using torch.compile. Defaults to True.
         """
         super().__init__()
         # Save hyperparameters before defining model as recommended here:
@@ -37,13 +48,9 @@ class ModelRunner(pl.LightningModule):
         self.save_hyperparameters()
         self.config = config
 
-        self.model = (
-            torch.compile(model_class(config)) if _compile else model_class(config)
-        )
+        self.model = model_class(self.config)
 
-        self.ema = ExponentialMovingAverage(
-            model=self.model, decay=config.settings.ema.decay
-        )
+        self.ema = ExponentialMovingAverage(model=self.model, **config.settings.ema)
         self.cached_weights = None
         self.last_lr_step = -1
 

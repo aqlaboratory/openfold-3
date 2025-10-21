@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,11 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import logging
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import partial
-from typing import Any, Callable, Optional
+from typing import Any
 
 import torch
 
@@ -23,6 +24,9 @@ from openfold3.core.utils.tensor_utils import (
     tensor_tree_map,
     tree_map,
 )
+
+DEFAULT_MAX_CHUNK_SIZE = 512
+CUEQ_MAX_CHUNK_SIZE = 2048
 
 
 def _fetch_dims(tree):
@@ -60,8 +64,8 @@ def _get_minimal_slice_set(
     start: Sequence[int],
     end: Sequence[int],
     dims: int,
-    start_edges: Optional[Sequence[bool]] = None,
-    end_edges: Optional[Sequence[bool]] = None,
+    start_edges: Sequence[bool] | None = None,
+    end_edges: Sequence[bool] | None = None,
 ) -> Sequence[tuple[int]]:
     """
     Produces an ordered sequence of tensor slices that, when used in
@@ -87,7 +91,7 @@ def _get_minimal_slice_set(
         start_edges = [s == 0 for s in start]
         reduce_edge_list(start_edges)
     if end_edges is None:
-        end_edges = [e == (d - 1) for e, d in zip(end, dims)]
+        end_edges = [e == (d - 1) for e, d in zip(end, dims, strict=True)]
         reduce_edge_list(end_edges)
 
     # Base cases. Either start/end are empty and we're done, or the final,
@@ -101,7 +105,7 @@ def _get_minimal_slice_set(
     path = []
 
     # Dimensions common to start and end can be selected directly
-    for s, e in zip(start, end):
+    for s, e in zip(start, end, strict=True):
         if s == e:
             path.append(slice(s, s + 1))
         else:
@@ -246,7 +250,7 @@ def chunk_layer(
         raise ValueError("Must provide at least one input")
 
     initial_dims = [shape[:no_batch_dims] for shape in _fetch_dims(inputs)]
-    orig_batch_dims = tuple([max(s) for s in zip(*initial_dims)])
+    orig_batch_dims = tuple([max(s) for s in zip(*initial_dims, strict=True)])
 
     def _prep_inputs(t):
         if not low_mem:
@@ -321,7 +325,7 @@ def chunk_layer(
 
             assign(out, output_chunk)
         elif out_type is tuple:
-            for x1, x2 in zip(out, output_chunk):
+            for x1, x2 in zip(out, output_chunk, strict=True):
                 if _add_into_out:
                     x1[i : i + chunk_size] += x2
                 else:
@@ -345,23 +349,18 @@ def chunk_layer(
 
 
 class ChunkSizeTuner:
-    def __init__(
-        self,
-        # Heuristically, runtimes for most of the modules in the network
-        # plateau earlier than this on all GPUs I've run the model on.
-        max_chunk_size=512,
-    ):
-        self.max_chunk_size = max_chunk_size
+    def __init__(self):
         self.cached_chunk_size = None
         self.cached_arg_data = None
 
-    def _determine_favorable_chunk_size(self, fn, args, min_chunk_size):
+    @staticmethod
+    def _determine_favorable_chunk_size(fn, args, min_chunk_size, max_chunk_size):
         logging.info("Tuning chunk size...")
 
-        if min_chunk_size >= self.max_chunk_size:
+        if min_chunk_size >= max_chunk_size:
             return min_chunk_size
 
-        candidates = [2**l for l in range(int(math.log(self.max_chunk_size, 2)) + 1)]
+        candidates = [2**l for l in range(int(math.log(max_chunk_size, 2)) + 1)]
         candidates = [c for c in candidates if c > min_chunk_size]
         candidates = [min_chunk_size] + candidates
         candidates[-1] += 4
@@ -388,7 +387,7 @@ class ChunkSizeTuner:
 
     def _compare_arg_caches(self, ac1, ac2):
         consistent = True
-        for a1, a2 in zip(ac1, ac2):
+        for a1, a2 in zip(ac1, ac2, strict=True):
             assert type(a1) is type(a2)
             if isinstance(a1, (list, tuple)):
                 consistent &= self._compare_arg_caches(a1, a2)
@@ -406,9 +405,10 @@ class ChunkSizeTuner:
         representative_fn: Callable,
         args: tuple[Any],
         min_chunk_size: int,
+        # Heuristically, runtimes for most of the modules in the network
+        # plateau earlier than this on all GPUs I've run the model on.
+        max_chunk_size=DEFAULT_MAX_CHUNK_SIZE,
     ) -> int:
-        consistent = True
-
         def remove_tensors(a):
             return a.shape if type(a) is torch.Tensor else a
 
@@ -423,9 +423,10 @@ class ChunkSizeTuner:
 
         if not consistent:
             self.cached_chunk_size = self._determine_favorable_chunk_size(
-                representative_fn,
-                args,
-                min_chunk_size,
+                fn=representative_fn,
+                args=args,
+                min_chunk_size=min_chunk_size,
+                max_chunk_size=max_chunk_size,
             )
             self.cached_arg_data = arg_data
 

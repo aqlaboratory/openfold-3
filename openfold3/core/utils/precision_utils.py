@@ -1,4 +1,4 @@
-# Copyright 2022 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,16 +19,6 @@ from lightning_fabric.plugins.precision.deepspeed import _PRECISION_INPUT
 from lightning_fabric.plugins.precision.utils import _convert_fp_tensor
 from lightning_utilities import apply_to_collection
 from pytorch_lightning.plugins.precision.deepspeed import DeepSpeedPrecision
-
-
-def is_fp16_enabled():
-    # Autocast world
-    fp16_enabled = (
-        torch.cuda.is_available() and torch.get_autocast_dtype("cuda") == torch.float16
-    )
-    fp16_enabled = fp16_enabled and torch.is_autocast_enabled()
-
-    return fp16_enabled
 
 
 class OF3DeepSpeedPrecision(DeepSpeedPrecision):

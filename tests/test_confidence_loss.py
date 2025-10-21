@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import unittest
 
 import torch
@@ -10,7 +24,7 @@ from openfold3.core.loss.confidence import (
     pae_loss,
     pde_loss,
 )
-from openfold3.projects import registry
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 
 class TestConfidenceLoss(unittest.TestCase):
@@ -161,9 +175,8 @@ class TestConfidenceLoss(unittest.TestCase):
         batch_size, n_token = batch["token_mask"].shape
         n_atom = batch["ground_truth"]["atom_resolved_mask"].shape[1]
 
-        proj_entry = registry.get_project_entry("of3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         no_bins_plddt = config.architecture.loss_module.confidence.plddt.no_bins
         no_bins_pae = config.architecture.loss_module.confidence.pae.no_bins

@@ -1,21 +1,24 @@
-from ml_collections import ConfigDict
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from openfold3.core.data.framework.data_module import DataModuleConfig
+from openfold3.projects.of3_all_atom.config.dataset_configs import TrainingDatasetSpec
 
 
-def _check_file_path_group(dataset_path_config, dataset_path_names):
-    paths = [dataset_path_config[k] for k in dataset_path_names]
-    if not (any(paths)):
-        raise ValueError(f"No paths set amongst {dataset_path_names}")
-
-    for path in paths:
-        if path and not path.exists():
-            raise ValueError(f"{path} does not exist")
-
-
-def _check_protein_monomer_sampled_in_order(dataset_config: ConfigDict):
+def _check_protein_monomer_sampled_in_order(dataset_config: TrainingDatasetSpec):
     """Check that monomer datasets are configured to be sampled in order"""
-    if dataset_config["class"] == "ProteinMonomerDataset" and (
+    if dataset_config.dataset_class == "ProteinMonomerDataset" and (
         not dataset_config.config.custom.sample_in_order
     ):
         raise ValueError(
@@ -28,23 +31,5 @@ def _check_data_module_config(data_module_config: DataModuleConfig):
     """Sanity checks for the data module config."""
     # Check dataset paths are valid for  key groups
     for dataset_cfg in data_module_config.datasets:
-        dataset_paths = dataset_cfg.config.dataset_paths
-
-        alignment_path_names = [
-            "alignments_directory",
-            "alignment_db_directory",
-            "alignment_array_directory",
-        ]
-        _check_file_path_group(dataset_paths, alignment_path_names)
-
-        template_path_names = [
-            "template_structures_directory",
-            "template_structure_array_directory",
-        ]
-        _check_file_path_group(dataset_paths, template_path_names)
-
-        structure_path_names = ["target_structures_directory"]
-        _check_file_path_group(dataset_paths, structure_path_names)
-
         # Check that deterministic sampling has been selected
         _check_protein_monomer_sampled_in_order(dataset_cfg)

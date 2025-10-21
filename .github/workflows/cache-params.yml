@@ -1,0 +1,28 @@
+name: Cache Openfold parameters 
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  download-params:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Create cache directory
+      run: mkdir -p ~/.openfold3
+
+    - name: Cache download of parameters 
+      id: cache-openfold_parameters
+      uses: actions/cache@v4
+      with:
+        path: ~/.openfold3/
+        key: shared-params_of3
+        restore-keys: |
+          shared-params_of3
+    
+    - name: Install AWS CLI and Download OpenFold parameters
+      if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
+      run: |
+        echo "Cache miss: Downloading OpenFold parameters..."
+        aws s3 cp s3://openfold/openfold3_params/of3_ft3_v1.pt ~/.openfold3/ --no-sign-request

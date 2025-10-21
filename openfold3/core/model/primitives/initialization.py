@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -87,9 +87,3 @@ def kaiming_normal_init_(weights):
 
 def normal_init_(weights):
     torch.nn.init.normal_(weights)
-
-
-def ipa_point_weights_init_(weights):
-    with torch.no_grad():
-        softplus_inverse_1 = 0.541324854612918
-        weights.fill_(softplus_inverse_1)

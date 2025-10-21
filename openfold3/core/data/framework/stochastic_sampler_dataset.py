@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """This module contains the SamplerDataset class.
 
 The amplerDataset class is a pytorch Dataset class that wraps one or
@@ -35,7 +49,7 @@ from typing import Any
 import torch
 from torch.utils.data import Dataset
 
-from openfold3.core.data.framework.single_datasets.base_af3 import BaseAF3Dataset
+from openfold3.core.data.framework.single_datasets.base_of3 import BaseOF3Dataset
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +63,6 @@ class SamplerDataset(Dataset):
         datasets: Sequence[Dataset],
         dataset_probabilities: Sequence[float],
         epoch_len: int,
-        num_epochs: int,
         generator: torch.Generator,
         next_dataset_indices: dict[str, Any],
     ) -> None:
@@ -62,8 +75,6 @@ class SamplerDataset(Dataset):
                 Probabilities of sampling each dataset.
             epoch_len (int):
                 Number of datapoints to sample in total for each virtual epoch.
-            num_epochs (int):
-                Total number of virtual epochs. Used for calculating coverage.
             generator (torch.Generator):
                 torch.Generator instance for reproducibility.
             next_dataset_indices:
@@ -74,7 +85,6 @@ class SamplerDataset(Dataset):
         self.datasets = datasets
         self.dataset_probabilities = torch.tensor(dataset_probabilities)
         self.epoch_len = epoch_len
-        self.num_epochs = num_epochs
         self.generator = generator
         self.next_dataset_indices = next_dataset_indices
         self.indices = None
@@ -105,7 +115,7 @@ class SamplerDataset(Dataset):
         return self.datasets[dataset_idx][datapoint_idx]
 
     def get_random_subset(
-        self, dataset: BaseAF3Dataset, num_examples: int, generator: torch.Generator
+        self, dataset: BaseOF3Dataset, num_examples: int, generator: torch.Generator
     ) -> torch.Tensor:
         """Selects random indices from dataset based on dataset probabilities."""
         # Retrieve datapoint probabilities for given dataset
@@ -123,7 +133,7 @@ class SamplerDataset(Dataset):
         return datapoint_indices_i
 
     def get_ordered_subset(
-        self, dataset: BaseAF3Dataset, num_examples: int
+        self, dataset: BaseOF3Dataset, num_examples: int
     ) -> torch.Tensor:
         """Selects indices based on sliced examples from the dataset."""
 
@@ -171,6 +181,7 @@ class SamplerDataset(Dataset):
         for dataset_idx, num_datapoints_per_dataset in zip(
             torch.arange(n_datasets),
             torch.bincount(dataset_indices, minlength=n_datasets),
+            strict=True,
         ):
             if num_datapoints_per_dataset == 0:
                 continue
@@ -214,7 +225,3 @@ class SamplerDataset(Dataset):
         dataset_path = self.datasets[0].get_worker_path(subdirs=subdirs, fname=fname)
 
         return dataset_path
-
-    def calculate_coverage(self):
-        """Calculate dataset coverage - low priority functionality."""
-        pass

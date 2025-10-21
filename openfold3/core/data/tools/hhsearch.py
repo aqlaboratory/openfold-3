@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +20,6 @@ import logging
 import os
 import subprocess
 from collections.abc import Sequence
-from typing import Optional
 
 from openfold3.core.data.legacy import parsers
 from openfold3.core.data.tools import utils
@@ -69,7 +68,7 @@ class HHSearch:
     def input_format(self) -> str:
         return "a3m"
 
-    def query(self, a3m: str, output_dir: Optional[str] = None) -> str:
+    def query(self, a3m: str, output_dir: str | None = None) -> str:
         """Queries the database using HHsearch using a given a3m."""
         with utils.tmpdir_manager() as query_tmp_dir:
             input_path = os.path.join(query_tmp_dir, "query.a3m")

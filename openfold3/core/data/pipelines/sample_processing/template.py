@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Sample processing pipelines for templates."""
 
 from pathlib import Path
@@ -19,16 +33,17 @@ from openfold3.core.data.resources.residues import MoleculeType
 
 
 @log_runtime_memory(runtime_dict_key="runtime-template-proc")
-def process_template_structures_af3(
+def process_template_structures_of3(
     atom_array: AtomArray,
     n_templates: int,
     take_top_k: bool,
-    template_cache_directory: Path,
+    template_cache_directory: Path | None,
     assembly_data: dict[str, dict[str, Any]],
     template_structures_directory: Path | None,
     template_structure_array_directory: Path | None,
     template_file_format: str,
     ccd: CIFFile | None,
+    use_roda_monomer_format: bool = False,
 ) -> TemplateSliceCollection:
     """Processes template structures for all chains of a given target structure.
 
@@ -45,8 +60,11 @@ def process_template_structures_af3(
             e-value) n_templates are taken.
         take_top_k (bool):
             Whether to take the top K templates (True) or sample randomly (False).
-        template_cache_directory (Path):
-            The directory where the template cache is stored.
+        template_cache_directory (Path | None):
+            The directory where the template cache is stored during training. For
+            inference, full paths to template cache entries are provided in the
+            `template_alignment_file_path` field of the `Chain` class following template
+            preprocessing.
         assembly_data (dict[str, dict[str, Any]]):
             Dict containing the alignment representatives and template IDs for each
             chain.
@@ -60,7 +78,9 @@ def process_template_structures_af3(
         ccd (CIFFile | None):
             The parsed CCD file. Not used if template_structure_array_directory is
             provided.
-
+        use_roda_monomer_format (bool):
+            Whether template cache filepath is expected to be in the s3 RODA monomer
+            format: <aln_dir>/<mgy_id>/template.npz
     Returns:
         TemplateSliceCollection:
             The sliced template atomarrays for each chain in the crop.
@@ -69,10 +89,15 @@ def process_template_structures_af3(
     protein_chain_ids = np.unique(
         atom_array[atom_array.molecule_type_id == MoleculeType.PROTEIN].chain_id
     )
-    if len(protein_chain_ids) == 0:
+    if (len(protein_chain_ids) == 0) | (
+        template_structure_array_directory is None
+        and template_structures_directory is None
+    ):
         return TemplateSliceCollection(template_slices={})
 
     # Iterate over protein chains in the atom array
+    # TODO: currently, this re-processes templates identical chains, add redundancy
+    # logic if becomes a bottleneck
     template_slices = {}
     for chain_id in protein_chain_ids:
         # Sample templates and fetch their data from the cache
@@ -84,6 +109,7 @@ def process_template_structures_af3(
             chain_id=chain_id,
             template_structure_array_directory=template_structure_array_directory,
             template_file_format=template_file_format,
+            use_roda_monomer_format=use_roda_monomer_format,
         )
 
         # Map token positions to template atom arrays

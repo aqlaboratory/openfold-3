@@ -1,10 +1,24 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import unittest
 
 import torch
 import torch.nn.functional as F
 
 from openfold3.core.loss.distogram import all_atom_distogram_loss
-from openfold3.projects import registry
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 
 class TestDistogramLoss(unittest.TestCase):
@@ -50,9 +64,8 @@ class TestDistogramLoss(unittest.TestCase):
         batch = self.setup_features()
         batch_size, n_token = batch["token_mask"].shape
 
-        proj_entry = registry.get_project_entry("of3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         no_bins = config.architecture.loss_module.distogram.no_bins
 

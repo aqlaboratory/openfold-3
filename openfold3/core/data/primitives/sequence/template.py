@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Primitives for processing templates alignments."""
 
 import dataclasses
@@ -10,7 +24,7 @@ import numpy as np
 from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
-from openfold3.core.data.io.sequence.fasta import read_multichain_fasta
+from openfold3.core.data.io.sequence.fasta import get_chain_id_to_seq_from_fasta
 from openfold3.core.data.io.sequence.template import TemplateHit
 from openfold3.core.data.io.structure.cif import (
     parse_mmcif,
@@ -254,7 +268,7 @@ def match_query_chain_and_sequence(
     # TODO: rework this logic, currently only 2 options are supported
     # Get the query sequence from the structure
     if query_seq_load_logic == "fasta":
-        chain_id_seq_map = read_multichain_fasta(
+        chain_id_seq_map = get_chain_id_to_seq_from_fasta(
             query_structures_directory / Path(f"{query_pdb_id}.fasta")
         )
         query_seq_structure = chain_id_seq_map.get(query_chain_id)
@@ -413,7 +427,7 @@ def create_residue_idx_map(query: TemplateHit, hit: TemplateHit) -> np.ndarray[i
     return np.asarray(
         [
             (q_i, h_i)
-            for q_i, h_i in zip(query.indices_hit, hit.indices_hit)
+            for q_i, h_i in zip(query.indices_hit, hit.indices_hit, strict=True)
             if h_i != -1
         ],
         dtype=int,

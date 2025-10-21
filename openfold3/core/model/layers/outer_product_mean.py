@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,6 @@
 """Outer product mean layer."""
 
 from functools import partial
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -24,7 +23,6 @@ import torch.nn as nn
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.chunk_utils import chunk_layer
-from openfold3.core.utils.precision_utils import is_fp16_enabled
 
 
 class OuterProductMean(nn.Module):
@@ -80,7 +78,7 @@ class OuterProductMean(nn.Module):
         a_reshape = a.reshape((-1,) + a.shape[-3:])
         b_reshape = b.reshape((-1,) + b.shape[-3:])
         out = []
-        for a_prime, b_prime in zip(a_reshape, b_reshape):
+        for a_prime, b_prime in zip(a_reshape, b_reshape, strict=True):
             outer = chunk_layer(
                 partial(self._opm, b=b_prime),
                 {"a": a_prime},
@@ -102,8 +100,8 @@ class OuterProductMean(nn.Module):
     def _forward(
         self,
         m: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
         """
@@ -154,12 +152,8 @@ class OuterProductMean(nn.Module):
     def forward(
         self,
         m: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
-        if is_fp16_enabled():
-            with torch.amp.autocast("cuda", enabled=False):
-                return self._forward(m.float(), mask, chunk_size, inplace_safe)
-        else:
-            return self._forward(m, mask, chunk_size, inplace_safe)
+        return self._forward(m, mask, chunk_size, inplace_safe)

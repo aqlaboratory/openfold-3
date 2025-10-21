@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """This module contains building blocks for template feature generation."""
 
 import dataclasses
@@ -17,8 +31,8 @@ from openfold3.core.utils.geometry.vector import Vec3Array
 
 
 @dataclasses.dataclass(frozen=False)
-class AF3TemplateFeaturePrecursor:
-    """Dataclass for storing information for AF3 template feature generation.
+class OF3TemplateFeaturePrecursor:
+    """Dataclass for storing information for OF3 template feature generation.
 
     Attributes:
         res_names (np.ndarray[str]):
@@ -37,12 +51,12 @@ class AF3TemplateFeaturePrecursor:
     frame_atom_coords: np.ndarray[float]
 
 
-def create_template_feature_precursor_af3(
+def create_template_feature_precursor_of3(
     template_slice_collection: TemplateSliceCollection,
     n_templates: int,
     n_tokens: int,
-) -> AF3TemplateFeaturePrecursor:
-    """Generates set of precursor features for AF3 template feature generation.
+) -> OF3TemplateFeaturePrecursor:
+    """Generates set of precursor features for OF3 template feature generation.
 
     Args:
         template_slice_collection (TemplateSliceCollection):
@@ -53,8 +67,8 @@ def create_template_feature_precursor_af3(
             Number of tokens in the target structure.
 
     Returns:
-        AF3TemplateFeaturePrecursor:
-            The precursor features for AF3 template feature generation. Includes
+        OF3TemplateFeaturePrecursor:
+            The precursor features for OF3 template feature generation. Includes
             residue names, pseudo beta atom coordinates, and N, CA, C atom coordinates.
     """
     res_names = np.full((n_templates, n_tokens), "GAP", dtype=np.dtype("U3"))
@@ -133,7 +147,7 @@ def create_template_feature_precursor_af3(
             except Exception as _:
                 continue
 
-    return AF3TemplateFeaturePrecursor(
+    return OF3TemplateFeaturePrecursor(
         res_names=res_names,
         pseudo_beta_atom_coords=pseudo_beta_atom_coords,
         frame_atom_coords=frame_atom_coords,
@@ -144,11 +158,11 @@ def create_template_restype(
     res_names: np.ndarray[str],
     template_pseudo_beta_mask: np.ndarray[float],
 ) -> torch.Tensor:
-    """Creates the restype template feature for AF3.
+    """Creates the restype template feature for OF3.
 
     Args:
         res_names (np.ndarray[str]):
-            The precursor features for AF3 template feature generation.
+            The precursor features for OF3 template feature generation.
         template_pseudo_beta_mask (np.ndarray[float]):
             The mask for pseudo beta atoms. Has shape [n_templates, n_tokens].
 
@@ -171,7 +185,7 @@ def create_template_distogram(
     n_bins: int = 39,
     inf_value: float = 1e8,
 ) -> torch.Tensor:
-    """Creates the distogram template feature for AF3.
+    """Creates the distogram template feature for OF3.
 
     Note: the pseudo_beta_mask is applied to the distogram to zero out masked
     tokens.
@@ -225,7 +239,7 @@ def create_template_unit_vector(
     frame_atom_coords: np.ndarray[float],
     backbone_frame_mask: np.ndarray[float],
 ) -> torch.Tensor:
-    """Creates the unit vector template feature for AF3.
+    """Creates the unit vector template feature for OF3.
 
     Args:
         frame_atom_coords (np.ndarray[float]):

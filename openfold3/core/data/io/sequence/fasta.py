@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """This module contains IO functions for reading and writing fasta files."""
 
 import contextlib
@@ -11,7 +25,7 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
-def read_multichain_fasta(input_path: Path) -> dict[str, str]:
+def get_chain_id_to_seq_from_fasta(input_path: Path) -> dict[str, str]:
     """Reads a FASTA file into a dictionary of chain IDs to sequences.
 
     The input FASTA should follow the format:
@@ -86,7 +100,7 @@ def consolidate_preprocessed_fastas(preprocessed_dir: Path) -> dict[str, str]:
             logger.warning(f"FASTA file not found for {pdb_id}")
             return {}
 
-        chain_id_to_seq = read_multichain_fasta(fasta_path)
+        chain_id_to_seq = get_chain_id_to_seq_from_fasta(fasta_path)
         return {
             f"{pdb_id}_{chain_id}": seq for chain_id, seq in chain_id_to_seq.items()
         }

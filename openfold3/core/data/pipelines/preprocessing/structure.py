@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 Centralized module for pre-assembled workflows corresponding to structure cleanup
 procedures of different models.
@@ -126,7 +140,7 @@ class SkippedStructureError(Exception):
     pass
 
 
-def cleanup_structure_af3(
+def cleanup_structure_of3(
     atom_array: AtomArray,
     cif_data: CIFBlock,
     ccd: CIFFile,
@@ -220,7 +234,7 @@ def cleanup_structure_af3(
 
 
 # TODO: extend docstring
-def extract_chain_and_interface_metadata_af3(
+def extract_chain_and_interface_metadata_of3(
     atom_array: AtomArray, cif_data: CIFBlock
 ) -> dict:
     """Extracts basic, chain and interface metadata from a structure.
@@ -277,7 +291,7 @@ def extract_chain_and_interface_metadata_af3(
     return metadata_dict
 
 
-def extract_component_data_af3(
+def extract_component_data_of3(
     atom_array: AtomArray,
     ccd: CIFFile,
     pdb_id: str,
@@ -396,7 +410,7 @@ def extract_component_data_af3(
     return chain_to_component_id, reference_mol_metadata
 
 
-def preprocess_structure_and_write_outputs_af3(
+def preprocess_structure_and_write_outputs_of3(
     input_cif: Path,
     ccd: CIFFile,
     out_dir: Path,
@@ -508,14 +522,16 @@ def preprocess_structure_and_write_outputs_af3(
     chain_to_pdb_chain = {
         pdb_chain_id: new_chain_id
         for pdb_chain_id, new_chain_id in zip(
-            atom_array.label_asym_id[chain_starts], atom_array.chain_id[chain_starts]
+            atom_array.label_asym_id[chain_starts],
+            atom_array.chain_id[chain_starts],
+            strict=True,
         )
     }
     logger.info(f"label_asym_id to new chain_id mapping: {chain_to_pdb_chain}")
 
     # Cleanup structure and extract metadata
     try:
-        atom_array = cleanup_structure_af3(
+        atom_array = cleanup_structure_of3(
             atom_array=atom_array,
             cif_data=cif_data,
             ccd=ccd,
@@ -537,11 +553,11 @@ def preprocess_structure_and_write_outputs_af3(
             }
         }, {}
 
-    chain_int_metadata_dict = extract_chain_and_interface_metadata_af3(
+    chain_int_metadata_dict = extract_chain_and_interface_metadata_of3(
         atom_array, cif_data
     )
 
-    chain_to_ligand_ids, ref_mol_metadata_dict = extract_component_data_af3(
+    chain_to_ligand_ids, ref_mol_metadata_dict = extract_component_data_of3(
         atom_array,
         ccd,
         pdb_id,
@@ -583,10 +599,10 @@ def preprocess_structure_and_write_outputs_af3(
     return structure_metadata_dict, ref_mol_metadata_dict
 
 
-class _AF3PreprocessingWrapper:
+class _OF3PreprocessingWrapper:
     """Wrapper class that fills in all the constant arguments and adds logging.
 
-    This wrapper around `preprocess_structure_and_write_outputs_af3` is needed for
+    This wrapper around `preprocess_structure_and_write_outputs_of3` is needed for
     multiprocessing, so that we can pass the constant arguments in a convenient way,
     catch any errors that would crash the workers, and change the function call to
     accept a single Iterable. In addition, the wrapper updates the SharedSet that is
@@ -656,7 +672,7 @@ class _AF3PreprocessingWrapper:
 
             try:
                 structure_metadata_dict, ref_mol_metadata_dict = (
-                    preprocess_structure_and_write_outputs_af3(
+                    preprocess_structure_and_write_outputs_of3(
                         input_cif=cif_file,
                         out_dir=out_dir,
                         ccd=self.ccd,
@@ -695,7 +711,7 @@ class _AF3PreprocessingWrapper:
                 return output_dict, empty_conformer_dict
 
 
-def preprocess_cif_dir_af3(
+def preprocess_cif_dir_of3(
     cif_dir: Path,
     ccd_path: Path,
     biotite_ccd_path: Path | None,
@@ -795,7 +811,7 @@ def preprocess_cif_dir_af3(
     processed_mol_ids = SharedSet() if num_workers != 0 else set()
 
     # Load the preprocessing function with the constant arguments
-    wrapped_preprocessing_func = _AF3PreprocessingWrapper(
+    wrapped_preprocessing_func = _OF3PreprocessingWrapper(
         ccd=ccd,
         reference_mol_out_dir=reference_mol_out_dir,
         max_polymer_chains=max_polymer_chains,
@@ -826,7 +842,10 @@ def preprocess_cif_dir_af3(
     logger.debug("Starting processing.")
     if num_workers == 0:
         for structure_metadata_dict, ref_mol_metadata_dict in tqdm(
-            map(wrapped_preprocessing_func, zip(cif_files, cif_output_dirs)),
+            map(
+                wrapped_preprocessing_func,
+                zip(cif_files, cif_output_dirs, strict=True),
+            ),
             total=len(cif_files),
         ):
             update_output_dicts(structure_metadata_dict, ref_mol_metadata_dict)
@@ -848,7 +867,7 @@ def preprocess_cif_dir_af3(
                 tqdm(
                     pool.imap_unordered(
                         wrapped_preprocessing_func,
-                        zip(cif_files, cif_output_dirs),
+                        zip(cif_files, cif_output_dirs, strict=True),
                         chunksize=chunksize,
                     ),
                     total=len(cif_files),
@@ -1266,7 +1285,7 @@ def build_provisional_disordered_metadata_cache(
     )
 
 
-def preprocess_disordered_structure_and_write_outputs_af3(
+def preprocess_disordered_structure_and_write_outputs_of3(
     pdb_id: str,
     structure_data_entry: DisorderedPreprocessingStructureData,
     gt_structures_directory: Path,
@@ -1389,7 +1408,7 @@ class _AF3PreprocessingDisorderedWrapper:
         self.transfer_annot_dict = transfer_annot_dict
         self.delete_annot_list = delete_annot_list
 
-    @wraps(preprocess_disordered_structure_and_write_outputs_af3)
+    @wraps(preprocess_disordered_structure_and_write_outputs_of3)
     def __call__(
         self, input_data: tuple[str, DisorderedPreprocessingStructureData]
     ) -> tuple[str, dict[str, str] | None, dict[float, bool] | None]:
@@ -1408,7 +1427,7 @@ class _AF3PreprocessingDisorderedWrapper:
             worker_logger.info(f"Processing {pdb_id}.")
 
             chain_map, distance_clash_map = (
-                preprocess_disordered_structure_and_write_outputs_af3(
+                preprocess_disordered_structure_and_write_outputs_of3(
                     pdb_id=pdb_id,
                     structure_data_entry=structure_data_entry,
                     gt_structures_directory=self.gt_structures_directory,
@@ -1536,7 +1555,7 @@ def preprocess_disordered_structures(
     return metadata_cache
 
 
-def preprocess_pdb_disordered_af3(
+def preprocess_pdb_disordered_of3(
     metadata_cache_file: Path,
     gt_structures_directory: Path,
     pred_structures_directory: Path,

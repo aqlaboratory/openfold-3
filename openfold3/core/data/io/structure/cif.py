@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """This module contains IO functions for reading and writing mmCIF files."""
 
 import logging
@@ -6,7 +20,7 @@ from pathlib import Path
 from typing import Literal, NamedTuple
 
 from biotite.structure import AtomArray, get_chain_count
-from biotite.structure.io import pdb, pdbx
+from biotite.structure.io import pdb, pdbx, save_structure
 
 from openfold3.core.data.io.structure.atom_array import (
     read_atomarray_from_npz,
@@ -28,6 +42,11 @@ from openfold3.core.data.primitives.structure.labels import (
 from openfold3.core.data.primitives.structure.metadata import (
     get_cif_block,
     get_first_bioassembly_polymer_count,
+    writer_add_chem_comp,
+    writer_add_entity,
+    writer_add_pdbx_nonpoly_scheme,
+    writer_add_struct_asym,
+    writer_update_atom_site,
 )
 
 logger = logging.getLogger(__name__)
@@ -172,15 +191,35 @@ def parse_mmcif(
         )
         expand_bioassembly = False
 
-    if expand_bioassembly:
-        atom_array = pdbx.get_assembly(
-            **parser_args,
-            assembly_id="1",
+    try:
+        if expand_bioassembly:
+            atom_array = pdbx.get_assembly(
+                **parser_args,
+                assembly_id="1",
+            )
+        else:
+            atom_array = pdbx.get_structure(
+                **parser_args,
+            )
+    except ValueError as _:
+        logger.warning(
+            f"Failed to get structure/bioassembly at {file_path} with"
+            " 'altloc': 'occupancy' "
+            "retrying with 'altloc': 'first'."
         )
-    else:
-        atom_array = pdbx.get_structure(
-            **parser_args,
-        )
+        parser_args["altloc"] = "first"
+        try:
+            if expand_bioassembly:
+                atom_array = pdbx.get_assembly(
+                    **parser_args,
+                    assembly_id="1",
+                )
+            else:
+                atom_array = pdbx.get_structure(
+                    **parser_args,
+                )
+        except Exception as e:
+            raise ValueError(f"Failed to parse {file_path}: ") from e
 
     # Skip structures where all atoms have zero occupancy
     if skip_all_zero_occ and atom_array.occupancy.sum() == 0:
@@ -214,11 +253,56 @@ def parse_mmcif(
     return ParsedStructure(cif_file, atom_array)
 
 
+def _create_cif_file(
+    suffix: str,
+    atom_array: AtomArray,
+    data_block: str,
+    include_bonds: bool,
+    make_ost_compatible: bool = True,
+):
+    """Helper function to create and populate CIF or BCIF files."""
+    if suffix == ".cif":
+        cif_file = pdbx.CIFFile()
+    elif suffix == ".bcif":
+        cif_file = pdbx.BinaryCIFFile()
+    else:
+        raise ValueError("Suffix must be either .cif or .bcif")
+
+    try:
+        # copy entity_id to label_entity_id so biotite uses it for the atom_site table
+        atom_array.set_annotation("label_entity_id", atom_array.entity_id)
+        pdbx.set_structure(
+            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+        )
+    # This error sometimes happens in the PDB preprocessing
+    except KeyError:
+        logger.warning(
+            "KeyError while writing structure to CIF file. Retrying with "
+            "intra-residue COORDINATION bonds set to SINGLE."
+        )
+        atom_array = convert_intra_residue_dative_to_single(atom_array)
+        pdbx.set_structure(
+            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+        )
+
+    # Update and add additional metadata tables
+    if make_ost_compatible:
+        cif_block = get_cif_block(cif_file)
+        writer_update_atom_site(atom_array, cif_block)
+        writer_add_chem_comp(atom_array, cif_block)
+        writer_add_entity(atom_array, cif_block)
+        writer_add_struct_asym(atom_array, cif_block)
+        writer_add_pdbx_nonpoly_scheme(atom_array, cif_block)
+
+    return cif_file
+
+
 def write_structure(
     atom_array: AtomArray,
-    output_path: Path,
+    output_path: Path | str,
     data_block: str = None,
     include_bonds: bool = True,
+    make_ost_compatible: bool = True,
 ) -> None:
     """Write a structure file from an AtomArray
 
@@ -233,41 +317,47 @@ def write_structure(
             file suffix. Allowed values are .npz, .cif, .bcif, and .pkl.
         data_block:
             Name of the data block in the CIF/BCIF file. Defaults to None. Ignored if
-            the format is pkl.
+            the format is not cif or bcif.
         include_bonds:
             Whether to include bond information. Defaults to True. Ignored if the format
             is pkl in which the entire BondList is written to the file.
     """
+    if isinstance(output_path, str):
+        output_path = Path(output_path)
+
     suffix = output_path.suffix
-    if suffix == ".npz":
-        write_atomarray_to_npz(atom_array, output_path)
-        return
-    elif suffix == ".pkl":
-        with open(output_path, "wb") as f:
-            pickle.dump(atom_array, f)
-        return
-    elif suffix == ".cif":
-        cif_file = pdbx.CIFFile()
-    elif suffix == ".bcif":
-        cif_file = pdbx.BinaryCIFFile()
-    else:
-        raise NotImplementedError("Only .cif, .bcif, and .pkl formats are supported")
 
-    try:
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
-    except KeyError:
-        logger.warning(
-            "KeyError while writing structure to CIF file. Retrying with intra-residue "
-            "COORDINATION bonds set to SINGLE."
-        )
-        atom_array = convert_intra_residue_dative_to_single(atom_array)
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
+    match suffix:
+        case ".npz":
+            write_atomarray_to_npz(atom_array, output_path)
 
-    cif_file.write(output_path)
+        case ".pkl":
+            with open(output_path, "wb") as f:
+                pickle.dump(atom_array, f)
+
+        case ".cif" | ".bcif":
+            file_obj = _create_cif_file(
+                suffix=suffix,
+                atom_array=atom_array,
+                data_block=data_block,
+                include_bonds=include_bonds,
+                make_ost_compatible=make_ost_compatible,
+            )
+
+            file_obj.write(output_path)
+
+        case ".pdb":
+            # Ensure that residue names are 3 letters max
+            if any(len(name) > 3 for name in atom_array.res_name):
+                atom_array = atom_array.copy()
+                atom_array.res_name = atom_array.res_name.astype("<U3")
+
+            save_structure(output_path, atom_array)
+
+        case _:
+            raise NotImplementedError(
+                "Only .cif, .bcif, and .pkl formats are supported"
+            )
 
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-parse")
@@ -275,6 +365,7 @@ def parse_target_structure(
     target_structures_directory: Path,
     pdb_id: str,
     structure_format: Literal["pkl", "npz"],
+    use_roda_monomer_format: bool = False,
 ) -> AtomArray:
     """Parses a preprocessed structure from a pickle or numpy array.
 
@@ -286,7 +377,9 @@ def parse_target_structure(
         structure_format (str):
             File extension of the target structure. Only "pkl" and "npz" are currently
             supported.
-
+        use_roda_monomer_format (bool):
+            Whether input filepath is expected to be in the s3 RODA monomer
+            format: <struc_dir>/<mgy_id>/structure.npz
     Raises:
         ValueError:
             If the structure format is not "pkl" or "npz".
@@ -295,7 +388,14 @@ def parse_target_structure(
         AtomArray:
             AtomArray of the target structure.
     """
-    target_file = target_structures_directory / pdb_id / f"{pdb_id}.{structure_format}"
+    if use_roda_monomer_format:
+        target_file = (
+            target_structures_directory / pdb_id / f"structure.{structure_format}"
+        )
+    else:
+        target_file = (
+            target_structures_directory / pdb_id / f"{pdb_id}.{structure_format}"
+        )
 
     if structure_format == "pkl":
         with open(target_file, "rb") as f:

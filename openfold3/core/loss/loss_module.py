@@ -1,5 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
-# Copyright 2021 DeepMind Technologies Limited
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,139 +15,17 @@
 """Main loss modules."""
 
 import logging
+import math
 
 import torch
 import torch.nn as nn
 
-from openfold3.core.loss.confidence import (
-    atom37_experimentally_resolved_loss,
-    ca_plddt_loss,
-    confidence_loss,
-    masked_msa_loss,
-    tm_loss,
-)
+from openfold3.core.loss.confidence import confidence_loss
 from openfold3.core.loss.diffusion import diffusion_loss
-from openfold3.core.loss.distogram import all_atom_distogram_loss, cbeta_distogram_loss
-from openfold3.core.loss.loss_utils import compute_renamed_ground_truth
-from openfold3.core.loss.structure import (
-    chain_center_of_mass_loss,
-    fape_loss,
-    supervised_chi_loss,
-)
-from openfold3.core.loss.violation import find_structural_violations, violation_loss
+from openfold3.core.loss.distogram import all_atom_distogram_loss
+from openfold3.core.utils.tensor_utils import dict_multimap, tensor_tree_map
 
 logger = logging.getLogger(__name__)
-
-
-class AlphaFoldLoss(nn.Module):
-    """Aggregation of the various losses described in the supplement"""
-
-    def __init__(self, config):
-        super().__init__()
-        self.config = config
-
-    def loss(self, batch, out, _return_breakdown=False):
-        """
-        Rename previous forward() as loss()
-        so that can be reused in the subclass
-        """
-        if "violation" not in out:
-            out["violation"] = find_structural_violations(
-                batch,
-                out["sm"]["positions"][-1],
-                **self.config.violation,
-            )
-
-        if "renamed_atom14_gt_positions" not in out:
-            batch.update(
-                compute_renamed_ground_truth(
-                    batch,
-                    out["sm"]["positions"][-1],
-                )
-            )
-
-        loss_fns = {
-            "distogram": lambda: cbeta_distogram_loss(
-                logits=out["distogram_logits"],
-                **{**batch, **self.config.distogram},
-            ),
-            "experimentally_resolved": lambda: atom37_experimentally_resolved_loss(
-                logits=out["experimentally_resolved_logits"],
-                **{**batch, **self.config.experimentally_resolved},
-            ),
-            "fape": lambda: fape_loss(
-                out,
-                batch,
-                self.config.fape,
-            ),
-            "plddt_loss": lambda: ca_plddt_loss(
-                logits=out["lddt_logits"],
-                all_atom_pred_pos=out["final_atom_positions"],
-                **{**batch, **self.config.plddt_loss},
-            ),
-            "masked_msa": lambda: masked_msa_loss(
-                logits=out["masked_msa_logits"],
-                **{**batch, **self.config.masked_msa},
-            ),
-            "supervised_chi": lambda: supervised_chi_loss(
-                out["sm"]["angles"],
-                out["sm"]["unnormalized_angles"],
-                **{**batch, **self.config.supervised_chi},
-            ),
-            "violation": lambda: violation_loss(
-                out["violation"],
-                **{**batch, **self.config.violation},
-            ),
-        }
-
-        if self.config.tm.enabled:
-            loss_fns["tm"] = lambda: tm_loss(
-                logits=out["tm_logits"],
-                **{**batch, **out, **self.config.tm},
-            )
-
-        if self.config.chain_center_of_mass.enabled:
-            loss_fns["chain_center_of_mass"] = lambda: chain_center_of_mass_loss(
-                all_atom_pred_pos=out["final_atom_positions"],
-                **{**batch, **self.config.chain_center_of_mass},
-            )
-
-        cum_loss = 0.0
-        losses = {}
-        for loss_name, loss_fn in loss_fns.items():
-            weight = self.config[loss_name].weight
-            loss = loss_fn()
-            if torch.isnan(loss) or torch.isinf(loss):
-                # for k,v in batch.items():
-                #    if torch.any(torch.isnan(v)) or torch.any(torch.isinf(v)):
-                #        logging.warning(f"{k}: is nan")
-                # logging.warning(f"{loss_name}: {loss}")
-                logging.warning(f"{loss_name} loss is NaN. Skipping...")
-                loss = loss.new_tensor(0.0, requires_grad=True)
-            cum_loss = cum_loss + weight * loss
-            losses[loss_name] = loss.detach().clone()
-        losses["unscaled_loss"] = cum_loss.detach().clone()
-
-        # Scale the loss by the square root of the minimum of the crop size and
-        # the (average) sequence length. See subsection 1.9.
-        seq_len = torch.mean(batch["seq_length"].float())
-        crop_len = batch["aatype"].shape[-1]
-        cum_loss = cum_loss * torch.sqrt(min(seq_len, crop_len))
-
-        losses["loss"] = cum_loss.detach().clone()
-
-        if not _return_breakdown:
-            return cum_loss
-
-        return cum_loss, losses
-
-    def forward(self, out, batch, _return_breakdown=False):
-        if not _return_breakdown:
-            cum_loss = self.loss(out, batch, _return_breakdown)
-            return cum_loss
-
-        cum_loss, losses = self.loss(out, batch, _return_breakdown)
-        return cum_loss, losses
 
 
 class OpenFold3Loss(nn.Module):
@@ -175,35 +52,72 @@ class OpenFold3Loss(nn.Module):
         # Weighted in confidence_loss()
         cum_loss = cum_loss + l_confidence
 
-        # Run diffusion loss only if diffusion training and losses are enabled
-        atom_positions_diffusion = output.get("atom_positions_diffusion")
-        if atom_positions_diffusion is not None:
-            l_diffusion, l_diffusion_breakdown = diffusion_loss(
-                batch=batch,
-                x=atom_positions_diffusion,
-                t=output["noise_level"],
-                **self.config.diffusion,
+        # Do not compute diffusion/distogram losses if only training confidence heads
+        if not self.config.train_confidence_only:
+            atom_positions_diffusion = output.get("atom_positions_diffusion")
+            if atom_positions_diffusion is not None:
+                # Compute diffusion losses
+                l_diffusion, l_diffusion_breakdown = diffusion_loss(
+                    batch=batch,
+                    x=atom_positions_diffusion,
+                    t=output["noise_level"],
+                    **self.config.diffusion,
+                )
+                losses.update(l_diffusion_breakdown)
+
+                if l_diffusion_breakdown:
+                    losses["diffusion_loss"] = l_diffusion.detach().clone()
+
+                # Weighted in diffusion_loss()
+                cum_loss = cum_loss + l_diffusion
+
+            # Compute distogram loss
+            l_distogram, l_distogram_breakdown = all_atom_distogram_loss(
+                batch=batch, logits=output["distogram_logits"], **self.config.distogram
             )
-            losses.update(l_diffusion_breakdown)
+            losses.update(l_distogram_breakdown)
 
-            if l_diffusion_breakdown:
-                losses["diffusion_loss"] = l_diffusion.detach().clone()
+            if l_distogram_breakdown:
+                losses["scaled_distogram_loss"] = l_distogram.detach().clone()
 
-            # Weighted in diffusion_loss()
-            cum_loss = cum_loss + l_diffusion
-
-        l_distogram, l_distogram_breakdown = all_atom_distogram_loss(
-            batch=batch, logits=output["distogram_logits"], **self.config.distogram
-        )
-        losses.update(l_distogram_breakdown)
-
-        if l_distogram_breakdown:
-            losses["scaled_distogram_loss"] = l_distogram.detach().clone()
-
-        # Weighted in all_atom_distogram_loss()
-        cum_loss = cum_loss + l_distogram
+            # Weighted in all_atom_distogram_loss()
+            cum_loss = cum_loss + l_distogram
 
         losses["loss"] = cum_loss.detach().clone()
+
+        return cum_loss, losses
+
+    def loss_chunked(self, batch, output, eps=1e-9):
+        atom_positions_predicted = output["atom_positions_predicted"]
+        batch_dims = atom_positions_predicted.shape[:-2]
+        num_samples = batch_dims[-1]
+
+        loss_per_sample_list = []
+        loss_breakdown_per_sample_list = []
+        for idx in range(math.prod(batch_dims)):
+
+            def fetch_cur_sample(t):
+                feat_dims = t.shape[2:]
+                t = t.expand(-1, num_samples, *((-1,) * len(feat_dims)))
+                t = t.reshape(-1, *feat_dims)
+                return t[idx : idx + 1]  # noqa: B023
+
+            cur_batch = tensor_tree_map(fetch_cur_sample, batch, strict_type=False)
+            cur_output = tensor_tree_map(fetch_cur_sample, output, strict_type=False)
+
+            loss_sample, loss_breakdown_sample = self.loss(
+                batch=cur_batch,
+                output=cur_output,
+            )
+            loss_per_sample_list.append(loss_sample)
+            loss_breakdown_per_sample_list.append(loss_breakdown_sample)
+
+        def accum_loss(l: list):
+            l = torch.stack(l)
+            return l.sum() / (l.shape[0] + eps)
+
+        cum_loss = accum_loss(loss_per_sample_list)
+        losses = dict_multimap(accum_loss, loss_breakdown_per_sample_list)
 
         return cum_loss, losses
 
@@ -223,7 +137,20 @@ class OpenFold3Loss(nn.Module):
             cum_loss: Scalar tensor representing the total loss
             losses: Dict containing individual loss components
         """
-        loss, loss_breakdown = self.loss(batch, output)
+
+        # Having to chunk validation losses per sample is really only
+        # needed when training on 40gb GPUs
+        num_atoms = output["atom_positions_predicted"].shape[-2]
+        apply_per_sample = (
+            not torch.is_grad_enabled()
+            and self.config.low_mem_validation
+            and self.config.per_sample_atom_cutoff is not None
+            and num_atoms > self.config.per_sample_atom_cutoff
+        )
+        if not torch.is_grad_enabled() and apply_per_sample:
+            loss, loss_breakdown = self.loss_chunked(batch, output)
+        else:
+            loss, loss_breakdown = self.loss(batch, output)
 
         if not _return_breakdown:
             return loss

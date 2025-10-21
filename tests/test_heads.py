@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import unittest
 
 import numpy as np
@@ -12,10 +26,10 @@ from openfold3.core.model.heads.prediction_heads import (
     PredictedDistanceErrorHead,
 )
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
-from openfold3.projects import registry
-from openfold3.projects.of3_all_atom.config.base_config import (
+from openfold3.projects.of3_all_atom.config.model_config import (
     max_atoms_per_token,
 )
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from tests.config import consts
 from tests.data_utils import random_of3_features
 
@@ -119,9 +133,8 @@ class TestPairformerEmbedding(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = registry.get_project_entry("of3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
@@ -169,9 +182,8 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         n_msa = 10
         n_templ = 3
 
-        proj_entry = registry.get_project_entry("of3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s

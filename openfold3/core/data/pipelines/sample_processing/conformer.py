@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import contextlib
 from dataclasses import dataclass
 from functools import lru_cache
@@ -40,9 +54,6 @@ class ProcessedReferenceMolecule:
     """Processed reference molecule instance with the reference conformer.
 
     Attributes:
-        mol_id (str):
-            Identifier like CCD ID or custom ID labeling each unique molecule. Used in
-            featurization to infer which conformers originate from the same molecule.
         mol (Mol):
             RDKit Mol object of the reference conformer instance with either a generated
             conformer, or if conformer generation is not possible, the fallback
@@ -52,26 +63,26 @@ class ProcessedReferenceMolecule:
                     Atom names
                 - "annot_used_atom_mask":
                     Mask for atoms that are not NaN in the conformer.
-        component_id (int):
-            Original component ID in the cropped AtomArray.
         in_crop_mask (np.ndarray[np.bool]):
             Mask for atoms that are within the current cropped crop's AtomArray.
+        component_id (int):
+            Original component ID in the cropped AtomArray.
         permutations (list[np.ndarray[np.int]]):
             List of symmetry-equivalent atom permutations for the reference conformer,
             adjusted to only map to in-crop atoms, and only draw from the pool of atoms
             present in the GT.
     """
 
-    mol_id: str
     mol: Mol
-    component_id: int
     in_crop_mask: np.ndarray[bool]
-    permutations: list[np.ndarray[int]]
+
+    # TODO: make optional in inference
+    component_id: int | None = None
+    permutations: list[np.ndarray[int]] | None = None
 
 
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-proc-fetch", multicall=True)
 def get_processed_reference_conformer(
-    mol_id: str,
     mol: Mol,
     mol_atom_array: AtomArrayView | AtomArray,
     preferred_confgen_strategy: Literal["default", "random_init", "use_fallback"],
@@ -87,8 +98,6 @@ def get_processed_reference_conformer(
     conformers which may contain NaN values.
 
     Args:
-        mol_id (str):
-            Identifier like CCD ID or custom ID labeling each unique molecule.
         mol (Mol):
             RDKit Mol object of the reference conformer instance.
         mol_atom_array (AtomArray | AtomArrayView):
@@ -179,7 +188,9 @@ def get_processed_reference_conformer(
                 # Try with default, then use random init, then use fallback (technically
                 # default should not fail because we already tried the strategy in
                 # preprocessing)
-                mol, conf_id, _ = multistrategy_compute_conformer(mol)
+                mol, conf_id, _ = multistrategy_compute_conformer(
+                    mol, remove_hs=True, timeout_standard=30.0, timeout_rand_init=30.0
+                )
                 conf = mol.GetConformer(conf_id)
             elif preferred_confgen_strategy == "random_init":
                 # Try with random init, then use fallback (technically this also should
@@ -203,7 +214,6 @@ def get_processed_reference_conformer(
 
     return ProcessedReferenceMolecule(
         mol=mol,
-        mol_id=mol_id,
         component_id=component_id,
         in_crop_mask=in_crop_mask,
         permutations=cropped_permutations,
@@ -213,7 +223,7 @@ def get_processed_reference_conformer(
 # TODO: update the docstring here to make clearer how this is operating on the full atom
 # array but only returning in-crop conformer data
 @log_runtime_memory(runtime_dict_key="runtime-ref-conf-proc")
-def get_reference_conformer_data_af3(
+def get_reference_conformer_data_of3(
     atom_array: AtomArray,
     per_chain_metadata: DatasetChainData,
     reference_mol_metadata: DatasetReferenceMoleculeData,
@@ -261,10 +271,11 @@ def get_reference_conformer_data_af3(
 
         processed_conformers.append(
             get_processed_reference_conformer(
-                ref_mol_id,
-                mol,
-                component_array_view,
-                reference_mol_metadata[ref_mol_id].conformer_gen_strategy,
+                mol=mol,
+                mol_atom_array=component_array_view,
+                preferred_confgen_strategy=reference_mol_metadata[
+                    ref_mol_id
+                ].conformer_gen_strategy,
                 set_fallback_to_nan=reference_mol_metadata[
                     ref_mol_id
                 ].set_fallback_to_nan,

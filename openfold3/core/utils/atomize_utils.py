@@ -1,10 +1,24 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import math
-from typing import Literal, Optional
+from typing import Literal
 
 import torch
 
-from openfold3.core.np.residue_constants import restype_order
-from openfold3.core.np.token_atom_constants import (
+from openfold3.core.data.resources.residues import STANDARD_PROTEIN_RESIDUES_ORDER
+from openfold3.core.data.resources.token_atom_constants import (
     TOKEN_TYPES_WITH_GAP,
     atom_name_to_index_by_restype,
 )
@@ -14,8 +28,8 @@ def broadcast_token_feat_to_atoms(
     token_mask: torch.Tensor,
     num_atoms_per_token: torch.Tensor,
     token_feat: torch.Tensor,
-    token_dim: Optional[int] = -1,
-    max_num_atoms_per_token: Optional[int] = None,
+    token_dim: int | None = -1,
+    max_num_atoms_per_token: int | None = None,
 ):
     """
     Broadcast token-level features to atom-level features.
@@ -103,7 +117,7 @@ def aggregate_atom_feat_to_tokens(
     atom_to_token_index: torch.Tensor,
     atom_mask: torch.Tensor,
     atom_feat: torch.Tensor,
-    atom_dim: Optional[int] = -1,
+    atom_dim: int | None = -1,
     aggregate_fn: Literal["mean", "sum"] = "mean",
     eps: float = 1e-9,
 ):
@@ -272,7 +286,10 @@ def max_atom_per_token_masked_select(
         per_batch_mask = torch.unbind(max_atom_per_token_mask, dim=0)
 
         atom_feat = torch.stack(
-            [select_atoms(l, m) for l, m in zip(per_batch_logits, per_batch_mask)],
+            [
+                select_atoms(l, m)
+                for l, m in zip(per_batch_logits, per_batch_mask, strict=False)
+            ],
             dim=0,
         )
     else:
@@ -418,7 +435,8 @@ def get_token_representative_atoms(
     # Create masks for standard amino acid residues
     is_standard_protein = batch["is_protein"] * (1 - batch["is_atomized"])
     is_standard_glycine = (
-        is_standard_protein * batch["restype"][..., restype_order["G"]]
+        is_standard_protein
+        * batch["restype"][..., STANDARD_PROTEIN_RESIDUES_ORDER["G"]]
     )
 
     # Create masks for purines and pyrimadines
@@ -555,6 +573,9 @@ def get_token_frame_atoms(
     # Find indices of two closest atoms for start atoms
     # [*, N_token]
     start_atom_index = batch["start_atom_index"].long()
+    start_atom_index = start_atom_index.expand(
+        *x.shape[:-2], start_atom_index.shape[-1]
+    )
     _, closest_atom_index = torch.topk(d, k=3, dim=-1, largest=False)
     a_index = torch.gather(closest_atom_index[..., 1], dim=-1, index=start_atom_index)
     c_index = torch.gather(closest_atom_index[..., 2], dim=-1, index=start_atom_index)
@@ -637,25 +658,14 @@ def get_token_frame_atoms(
                     .long(),
                 ),
                 "asym_id": torch.gather(
-                    atom_asym_id,
+                    atom_asym_id.expand(*x.shape[:-2], atom_asym_id.shape[-1]),
                     dim=-1,
-                    index=frame_atoms[key]["index"]
-                    .expand(
-                        *(
-                            atom_asym_id.shape[:-1]
-                            + (frame_atoms[key]["index"].shape[-1],)
-                        )
-                    )
-                    .long(),
+                    index=frame_atoms[key]["index"].long(),
                 ),
                 "atom_mask": torch.gather(
-                    atom_mask,
+                    atom_mask.expand(*x.shape[:-2], atom_mask.shape[-1]),
                     dim=-1,
-                    index=frame_atoms[key]["index"]
-                    .expand(
-                        *(atom_mask.shape[:-1] + (frame_atoms[key]["index"].shape[-1],))
-                    )
-                    .long(),
+                    index=frame_atoms[key]["index"].long(),
                 )
                 * batch["token_mask"]
                 * frame_atoms[key]["token_atom_mask"],

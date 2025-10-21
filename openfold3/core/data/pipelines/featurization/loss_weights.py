@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 Pipelines for setting the loss weights in the FeatureDict.
 """
@@ -42,7 +56,7 @@ def set_loss_weights(
 def set_loss_weights_for_disordered_set(
     loss_settings: dict,
     resolution: float,
-    custom_settings: dict,
+    disable_non_protein_diffusion_weights: bool,
 ) -> dict[str, torch.Tensor]:
     """Updates and tensorizes loss weights in the FeatureDict based on the resolution.
     Includes settings specific to the disordered PDB dataset.
@@ -57,18 +71,15 @@ def set_loss_weights_for_disordered_set(
                 - max_resolution
         resolution (float):
             The resolution of the input data.
-        custom_settings (dict):
-            Dictionary parsed from the dataset_config containing dataset-specific
-            ("custom") settings:
-                - disable_diffusion_weights (bool)
+        disable_non_protein_diffusion_weights (bool):
+            Whether loss mode should disable diffusion weights for non-proteins
 
     Returns:
         dict[str, Any]:
             Dictionary containing the loss settings for the disordered PDB dataset.
     """
     loss_settings_dict = set_loss_weights(loss_settings, resolution)
-    disable_diffusion_weights = custom_settings["disable_non_protein_diffusion_weights"]
     loss_settings_dict["disable_non_protein_diffusion_weights"] = torch.tensor(
-        [disable_diffusion_weights], dtype=torch.bool
+        [disable_non_protein_diffusion_weights], dtype=torch.bool
     )
     return loss_settings_dict

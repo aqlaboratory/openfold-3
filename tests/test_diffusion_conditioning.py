@@ -1,9 +1,23 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import unittest
 
 import torch
 
 from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
-from openfold3.projects import registry
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from tests.config import consts
 
 
@@ -15,9 +29,8 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_s = consts.c_s
         c_z = consts.c_z
 
-        proj_entry = registry.get_project_entry("of3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         diff_cond_config = config.architecture.diffusion_module.diffusion_conditioning
         diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})
@@ -60,9 +73,8 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_z = consts.c_z
         n_sample = 3
 
-        proj_entry = registry.get_project_entry("of3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         diff_cond_config = config.architecture.diffusion_module.diffusion_conditioning
         diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})
@@ -108,9 +120,8 @@ class TestDiffusionConditioning(unittest.TestCase):
         c_s = consts.c_s
         c_z = consts.c_z
 
-        proj_entry = registry.get_project_entry("of3_all_atom")
-        proj_config = proj_entry.get_config_with_preset()
-        config = proj_config.model
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
 
         diff_cond_config = config.architecture.diffusion_module.diffusion_conditioning
         diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})

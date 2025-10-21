@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """This module contains pipelines for processing structural features on-the-fly."""
 
 import logging
@@ -34,7 +48,7 @@ class ProcessedTargetStructure(NamedTuple):
 
 # TODO: Update docstring
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-proc")
-def process_target_structure_af3(
+def process_target_structure_of3(
     target_structures_directory: Path,
     pdb_id: str,
     apply_crop: bool,
@@ -42,6 +56,7 @@ def process_target_structure_af3(
     preferred_chain_or_interface: str | list[str, str] | None,
     structure_format: Literal["pkl", "npz"],
     per_chain_metadata: dict[str, PreprocessingChainData],
+    use_roda_monomer_format: bool = False,
 ) -> ProcessedTargetStructure:
     """AF3 pipeline for processing target structure into AtomArrays.
 
@@ -64,6 +79,9 @@ def process_target_structure_af3(
         per_chain_metadata (dict[str, PreprocessingChainData]):
             Metadata for each chain in the target structure, obtained from the dataset
             cache.
+        use_roda_monomer_format (bool):
+            Whether input filepath is expected to be in the s3 RODA monomer
+            format: <struc_dir>/<mgy_id>/structure.npz
 
     Returns:
         ProcessedTargetStructure:
@@ -73,7 +91,10 @@ def process_target_structure_af3(
     """
     # Parse target structure
     atom_array = parse_target_structure(
-        target_structures_directory, pdb_id, structure_format
+        target_structures_directory,
+        pdb_id,
+        structure_format,
+        use_roda_monomer_format=use_roda_monomer_format,
     )
 
     # Mark individual components (which get unique conformers)

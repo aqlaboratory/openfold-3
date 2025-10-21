@@ -1,34 +1,40 @@
-#!/bin/bash
-#
-# Copyright 2021 DeepMind Technologies Limited
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
-# Downloads OpenFold parameters.
-#
-# Usage: bash download_openfold_params_huggingface.sh /path/to/download/directory
+# Usage: bash download_openfold_params.sh /path/to/download/directory
+if ! command -v aws &> /dev/null; then
+    echo $'Error: AWS CLI is not installed. Please check that your OpenFold environment is properly installed or see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html for AWS CLI installation instructions' >&2
+    exit 1
+fi
+
 set -e
 
-if [[ $# -eq 0 ]]; then
-    echo "Error: download directory must be provided as an input argument."
-    exit 1
+# Parse arguments
+DOWNLOAD_DIR=""
+for arg in "$@"; do
+    case $arg in
+        --download_dir=*)
+            DOWNLOAD_DIR="${arg#*=}"
+            shift
+            ;;
+        *)
+            echo "Error: Unknown argument: $arg" >&2
+            echo "Usage: bash download_openfold_params.sh [--download_dir=/path/to/download/directory]" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# Use provided directory or default
+if [[ -z "${DOWNLOAD_DIR}" ]]; then
+    if [[ -z "${OPENFOLD_CACHE}" ]]; then
+        DOWNLOAD_DIR="${HOME}/openfold3/"
+    else
+        DOWNLOAD_DIR="${OPENFOLD_CACHE}/"
+    fi
+    echo "No download directory provided. Using default: ${DOWNLOAD_DIR}"
 fi
 
-if ! command -v aws &> /dev/null ; then
-    echo "Error: aws could not be found. Please install aws."
-    exit 1
-fi
+OPENFOLD_BUCKET="s3://openfold"
+CHECKPOINT_PATH="openfold3_params/of3_ft3_v1.pt"
+BASENAME=$(basename "${SOURCE_URL}")
 
-DOWNLOAD_DIR="${1}/openfold_params"
 mkdir -p "${DOWNLOAD_DIR}"
-aws s3 cp --no-sign-request --region us-east-1 s3://openfold/openfold_params/ "${DOWNLOAD_DIR}" --recursive
+aws s3 cp "${OPENFOLD_BUCKET}/${CHECKPOINT_PATH}" ${DOWNLOAD_DIR} --no-sign-request

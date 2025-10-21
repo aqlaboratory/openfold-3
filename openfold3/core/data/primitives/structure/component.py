@@ -1,14 +1,29 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # TODO: note in module level docstrings that nothing here supports hydrogens
 import logging
 from collections import defaultdict
 from collections.abc import Generator, Iterable
+from functools import cached_property
 from typing import Literal, NamedTuple, TypeAlias
 
 import biotite.structure as struc
 import gemmi
 import numpy as np
 import requests
-from biotite.structure import AtomArray, BondType
+from biotite.structure import AtomArray, BondType, info
 from biotite.structure.io.pdbx import CIFFile
 from pdbeccdutils.core import ccd_reader
 from pdbeccdutils.core.ccd_reader import Component
@@ -29,11 +44,18 @@ from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
+# TODO: Make this a proper class
 AnnotatedMol: TypeAlias = Mol
 """An RDKit mol object containing additional atom-wise annotations.
 
 The custom atom-wise annotations are stored as atom properties in the Mol object,
-following the schema "{property_name}_annot"
+following the schema "{property_name}_annot":
+
+- atom_annot_atom_name:
+    Canonical atom names
+- atom_annot_used_atom_mask:
+    Indicating which conformer atoms are set properly. When using CCD-derived fallback
+    conformers some coordinates might be missing, which are then set to 0 in this mask.
 """
 
 PERIODIC_TABLE = Chem.GetPeriodicTable()
@@ -106,7 +128,7 @@ def set_atomwise_annotation(
         An RDKit molecule object with the atom-wise annotations set as properties under
         "annot_{property_name}".
     """
-    for atom, annotation in zip(mol.GetAtoms(), annotations):
+    for atom, annotation in zip(mol.GetAtoms(), annotations, strict=True):
         if isinstance(annotation, bool):
             atom.SetBoolProp(f"annot_{property_name}", annotation)
         elif isinstance(annotation, int):
@@ -296,7 +318,11 @@ def remove_hydrogen_values(values: Iterable, atom_elements: Iterable) -> list:
     Returns:
         List of values where the corresponding atom is not a hydrogen.
     """
-    return [x for x, element in zip(values, atom_elements) if element not in ("H", "D")]
+    return [
+        x
+        for x, element in zip(values, atom_elements, strict=True)
+        if element not in ("H", "D")
+    ]
 
 
 def safe_remove_all_hs(mol: Mol) -> Mol:
@@ -646,3 +672,48 @@ def find_cross_chain_bonds(atom_array: AtomArray) -> np.ndarray:
     cross_chain_selector = chain_ids_atom_1 != chain_ids_atom_2
 
     return all_bonds[cross_chain_selector]
+
+
+class _ImplementsGet:
+    """Convenience mixin to add a simple get() method."""
+
+    def get(self, key: str, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+
+class BiotiteCCDWrapper(_ImplementsGet):
+    """Allows indexing into Biotite's internal CCD like a regular CCD CIFFile.
+
+    Provides dictionary-style access: `ccd[comp_id][category]` by wrapping
+    `biotite.structure.info.get_from_ccd()`.
+    """
+
+    @cached_property
+    def _all_valid_ccds(self) -> set[str]:
+        """All CCD IDs existing in Biotite's internal CCD."""
+        return set(info.all_residues())
+
+    def __getitem__(self, comp_id: str):
+        if comp_id not in self._all_valid_ccds:
+            raise KeyError(f"Component ID '{comp_id}' not found in CCD.")
+
+        # Return an accessor that holds the component ID
+        return self._CategoryAccessor(comp_id)
+
+    class _CategoryAccessor(_ImplementsGet):
+        def __init__(self, comp_id: str):
+            self._comp_id = comp_id
+
+        def __getitem__(self, category: str):
+            result = info.get_from_ccd(category_name=category, comp_id=self._comp_id)
+
+            if result is None:
+                raise KeyError(
+                    f"Category '{category}' not found for "
+                    f"component ID '{self._comp_id}'"
+                )
+
+            return result

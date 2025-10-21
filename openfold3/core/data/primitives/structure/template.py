@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Primitives for processing templates structures."""
 
 import dataclasses
@@ -12,7 +26,7 @@ from biotite.structure import AtomArray
 from biotite.structure.io.pdbx import CIFFile
 
 from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
-from openfold3.core.data.io.structure.cif import parse_mmcif
+from openfold3.core.data.io.structure.cif import SkippedStructure, parse_mmcif
 from openfold3.core.data.primitives.featurization.structure import get_token_starts
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
@@ -107,12 +121,13 @@ def get_query_structure_res_ids(atom_array_cropped_chain: AtomArray) -> np.ndarr
 @log_runtime_memory(runtime_dict_key="runtime-template-proc-sample", multicall=True)
 def sample_templates(
     assembly_data: dict[str, dict[str, Any]],
-    template_cache_directory: Path,
+    template_cache_directory: Path | None,
     n_templates: int,
     take_top_k: bool,
     chain_id: str,
     template_structure_array_directory: Path | None,
     template_file_format: str,
+    use_roda_monomer_format: bool = False,
 ) -> dict[str, TemplateCacheEntry] | dict[None]:
     """Samples templates to featurize for a given chain.
 
@@ -122,8 +137,11 @@ def sample_templates(
         assembly_data (dict[str, dict[str, Any]]):
             Dict containing the alignment representatives and template IDs for each
             chain.
-        template_cache_directory (Path):
-            The directory where the template cache is stored.
+        template_cache_directory (Path | None):
+            The directory where the template cache is stored during training. For
+            inference, full paths to template cache entries are provided in the
+            `template_alignment_file_path` field of the `Chain` class following template
+            preprocessing.
         n_templates (int):
             The max number of templates to sample for each chain.
         take_top_k (bool):
@@ -135,6 +153,10 @@ def sample_templates(
             arrays are stored.
         template_file_format (str):
             The format of the template structures.
+        use_roda_monomer_format (bool):
+            Whether template cache filepath is expected to be in the s3 RODA monomer
+            format: <aln_dir>/<mgy_id>/template.npz
+
 
     Returns:
         dict[str, TemplateCacheEntry] | dict[None]:
@@ -179,14 +201,32 @@ def sample_templates(
         k = np.min([np.random.randint(0, l), n_templates])
 
     if k > 0:
-        # Load template cache numpy file
-        template_file_name = chain_data["alignment_representative_id"] + ".npz"
-        template_cache = np.load(
-            template_cache_directory / Path(template_file_name), allow_pickle=True
-        )
+        # Load template cache entry numpy file
+        # From the representative ID during training
+        if "alignment_representative_id" in chain_data:
+            if use_roda_monomer_format:
+                template_file_name = (
+                    Path(chain_data["alignment_representative_id"]) / "template.npz"
+                )
+            else:
+                template_file_name = Path(
+                    chain_data["alignment_representative_id"] + ".npz"
+                )
+
+            template_cache_entry = np.load(
+                template_cache_directory / template_file_name, allow_pickle=True
+            )
+
+        # From the file path during inference
+        else:
+            template_cache_entry = np.load(
+                chain_data["cache_entry_file_path"], allow_pickle=True
+            )
 
         # Unpack into dict
-        template_cache = {key: value.item() for key, value in template_cache.items()}
+        template_cache_entry = {
+            key: value.item() for key, value in template_cache_entry.items()
+        }
 
         # Randomly sample k templates (core PDB training sets) or take top k templates
         # (distillation, inference sets)
@@ -198,9 +238,9 @@ def sample_templates(
         # Wrap each subdict in a TemplateCacheEntry
         return {
             template_id: TemplateCacheEntry(
-                index=template_cache[template_id]["index"],
-                release_date=template_cache[template_id]["release_date"],
-                idx_map=template_cache[template_id]["idx_map"],
+                index=template_cache_entry[template_id]["index"],
+                release_date=template_cache_entry[template_id]["release_date"],
+                idx_map=template_cache_entry[template_id]["idx_map"],
             )
             for template_id in sampled_template_ids
         }
@@ -305,10 +345,12 @@ def parse_template_structure(
     # Parse and clean the raw template structure file
     elif template_structures_directory is not None:
         # Parse the full template assembly and subset assembly to template chain
-        cif_file, atom_array_template_assembly = parse_mmcif(
+        result = parse_mmcif(
             template_structures_directory / Path(f"{pdb_id}.{template_file_format}")
         )
-
+        if isinstance(result, SkippedStructure):
+            return None
+        cif_file, atom_array_template_assembly = result
         # Clean up the template atom array and subset to the chosen template chain
         atom_array_template_chain = clean_template_atom_array(
             atom_array_template_assembly, cif_file, chain_id, ccd
@@ -494,6 +536,8 @@ def align_template_to_query(
             template_file_format,
             ccd,
         )
+        if not atom_array_template_chain:
+            continue
 
         # Create query token position to template residue ID map
         map_token_pos_to_template_residues(

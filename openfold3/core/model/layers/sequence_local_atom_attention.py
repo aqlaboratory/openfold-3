@@ -1,5 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
-# Copyright 2021 DeepMind Technologies Limited
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,14 +15,7 @@
 """
 Sequence-local atom attention modules. Includes AtomAttentionEncoder,
 AtomAttentionDecoder, and AtomTransformer.
-
-Note: The DeepSpeed EvoAttention kernel is not enabled for the atom attention
-encoder/decoder currently as this does not pass the shape asserts. Ignoring asserts
-results in NaNs. The option is still available here in case of future improvements,
-but it is not recommended to use it at the moment.
 """
-
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -288,13 +280,13 @@ class AtomAttentionEncoder(nn.Module):
         n_query: int,
         n_key: int,
         use_ada_layer_norm: bool,
-        c_s: Optional[int] = None,
-        c_z: Optional[int] = None,
-        blocks_per_ckpt: Optional[int] = None,
+        c_s: int | None = None,
+        c_z: int | None = None,
+        blocks_per_ckpt: int | None = None,
         ckpt_intermediate_steps: bool = False,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_enc_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
     ):
         """
         Args:
@@ -404,9 +396,9 @@ class AtomAttentionEncoder(nn.Module):
     def get_atom_reps(
         self,
         batch: TensorDict,
-        rl: Optional[torch.Tensor] = None,
-        si_trunk: Optional[torch.Tensor] = None,
-        zij_trunk: Optional[torch.Tensor] = None,
+        rl: torch.Tensor | None = None,
+        si_trunk: torch.Tensor | None = None,
+        zij_trunk: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -480,11 +472,9 @@ class AtomAttentionEncoder(nn.Module):
         self,
         batch: TensorDict,
         atom_mask: torch.Tensor,
-        rl: Optional[torch.Tensor] = None,
-        si_trunk: Optional[torch.Tensor] = None,
-        zij_trunk: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
-        use_deepspeed_evo_attention: bool = False,
+        rl: torch.Tensor | None = None,
+        si_trunk: torch.Tensor | None = None,
+        zij_trunk: torch.Tensor | None = None,
         use_high_precision_attention: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
@@ -512,10 +502,6 @@ class AtomAttentionEncoder(nn.Module):
                 [*, N_atom, c_s] Trunk single representation (optional)
             zij_trunk:
                 [*, N_atom, N_atom, c_z] Trunk pair representation (optional)
-            chunk_size:
-                Inference-time subbatch size
-            use_deepspeed_evo_attention:
-                Whether to use DeepSpeed Evo Attention kernel
             use_high_precision_attention:
                 Whether to run attention in high precision
         Returns:
@@ -549,8 +535,6 @@ class AtomAttentionEncoder(nn.Module):
             s=cl,
             z=plm,
             mask=atom_mask,
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_high_precision_attention=use_high_precision_attention,
         )
 
@@ -591,10 +575,10 @@ class AtomAttentionDecoder(nn.Module):
         n_query: int,
         n_key: int,
         use_ada_layer_norm: bool,
-        blocks_per_ckpt: Optional[int] = None,
+        blocks_per_ckpt: int | None = None,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_dec_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
     ):
         """
         Args:
@@ -664,8 +648,6 @@ class AtomAttentionDecoder(nn.Module):
         ql: torch.Tensor,
         cl: torch.Tensor,
         plm: torch.Tensor,
-        chunk_size: Optional[int] = None,
-        use_deepspeed_evo_attention: bool = False,
         use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
         """
@@ -685,10 +667,6 @@ class AtomAttentionDecoder(nn.Module):
             plm:
                 [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair representation
                 Note: Converted to block format in AtomAttentionEncoder
-            chunk_size:
-                Inference-time subbatch size
-            use_deepspeed_evo_attention:
-                Whether to use DeepSpeed Evo Attention kernel
             use_high_precision_attention:
                 Whether to run attention in high precision
         Returns:
@@ -711,8 +689,6 @@ class AtomAttentionDecoder(nn.Module):
             s=cl,
             z=plm,
             mask=atom_mask,
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_high_precision_attention=use_high_precision_attention,
         )
 

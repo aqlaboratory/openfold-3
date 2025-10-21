@@ -2,7 +2,7 @@
 
 Output used for preprocessing datapoints for the disordered dataset.
 
-This script is currently separate from preprocess_pdb_disordered_af3.py as it requires
+This script is currently separate from preprocess_pdb_disordered_of3.py as it requires
 OpenStructure, but will be combined with it in a future release."""
 
 import logging
@@ -14,7 +14,7 @@ import subprocess
 import warnings
 from functools import wraps
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 import click
 import pandas as pd
@@ -136,9 +136,9 @@ def main(
     pred_structures_directory: Path,
     gt_structure_file_format: Literal["cif", "pdb"],
     output_directory: Path,
-    gt_biounit_id: Optional[str],
-    pred_biounit_id: Optional[str],
-    subset_file: Optional[Path],
+    gt_biounit_id: str | None,
+    pred_biounit_id: str | None,
+    subset_file: Path | None,
     log_file: Path,
     num_workers: int,
     chunksize: int,
@@ -270,8 +270,8 @@ def compare_pred_to_gt(
     pred_structures_directory: Path,
     gt_structure_file_format: Literal["cif", "pdb"],
     alignment_output_directory: Path,
-    gt_biounit_id: Optional[str],
-    pred_biounit_id: Optional[str],
+    gt_biounit_id: str | None,
+    pred_biounit_id: str | None,
     logger: logging.Logger,
 ) -> None:
     """Runs OpenStructure structure alignment for a single GT-pred pair.
@@ -338,8 +338,8 @@ class _OSTCompareStructuresWrapper:
         pred_structures_directory: Path,
         gt_structure_file_format: Literal["cif", "pdb"],
         alignment_output_directory: Path,
-        gt_biounit_id: Optional[str],
-        pred_biounit_id: Optional[str],
+        gt_biounit_id: str | None,
+        pred_biounit_id: str | None,
     ) -> None:
         """Wrapper class for aligning PDB structures to AF2-predicted models.
 

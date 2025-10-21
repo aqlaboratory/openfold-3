@@ -1,0 +1,41 @@
+name: openfold3-env
+channels:
+  - conda-forge
+  - bioconda
+  - pytorch
+  - nvidia
+dependencies:
+  - python
+  - awscli
+  - setuptools
+  - pip
+  - pytorch-lightning
+  - biopython
+  - numpy
+  - pandas
+  - PyYAML
+  - requests
+  - scipy
+  - tqdm
+  - typing-extensions
+  - wandb
+  - modelcif
+  - ml-collections
+  - mkl
+  - rdkit
+  - biotite==1.2.0
+  - mmseqs2
+  - bioconda::hmmer
+  - bioconda::hhsuite
+  - bioconda::kalign2
+  - bioconda::snakemake
+  - pytorch::pytorch
+  - pytorch::pytorch-cuda
+  - memory_profiler
+  - func_timeout
+  - boto3
+  - conda-forge::python-lmdb=1.6
+  - conda-forge::ijson
+  - pip:
+      - deepspeed
+      - pdbeccdutils

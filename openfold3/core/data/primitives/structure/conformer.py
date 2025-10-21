@@ -1,7 +1,21 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import logging
 import random
 from collections.abc import Iterable
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 from func_timeout import FunctionTimedOut, func_timeout
@@ -27,7 +41,7 @@ def compute_conformer(
     mol: Mol,
     use_random_coord_init: bool = False,
     remove_hs: bool = True,
-    timeout: Optional[float] = 30.0,
+    timeout: float | None = 30.0,
 ) -> tuple[Mol, int]:
     """Computes a conformer with the ETKDGv3 strategy.
 
@@ -75,7 +89,7 @@ def compute_conformer(
     strategy.clearConfs = False
     # RDKit always seems to start from some internal seed instead of a truly random seed
     # initialization if no seed is given, so we set a random seed here
-    strategy.randomSeed = random.randint(0, 1e9)
+    strategy.randomSeed = random.randint(0, 10**9)
 
     # Disable overly verbose conformer generation warnings
     blocker = rdBase.BlockLogs()
@@ -102,8 +116,8 @@ def compute_conformer(
 def multistrategy_compute_conformer(
     mol: Mol,
     remove_hs: bool = True,
-    timeout_standard: Optional[float] = 30.0,
-    timeout_rand_init: Optional[float] = 30.0,
+    timeout_standard: float | None = None,
+    timeout_rand_init: float | None = None,
 ) -> tuple[Mol, int, Literal["default", "random_init"]]:
     """Computes 3D coordinates for a molecule trying different initializations.
 
@@ -119,10 +133,10 @@ def multistrategy_compute_conformer(
             Whether to remove hydrogens from the molecule after conformer generation.
         timeout_standard:
             The maximum time in seconds to allow for conformer generation with the
-            standard strategy. Default value is 30 seconds. If None, no timeout is set.
+            standard strategy. The default is None, where no timeout is set.
         timeout_rand_init:
             The maximum time in seconds to allow for conformer generation with random
-            initialization. Default value is 30 seconds. If None, no timeout is set.
+            initialization. The default is None, where no timeout is set.
     Returns:
         mol:
             The molecule for which the 3D coordinates should be computed.
@@ -427,7 +441,7 @@ def renumber_permutations(
     # IDs
     required_gt_atoms = np.array(sorted(required_gt_atoms))
     required_gt_atoms_remapped = np.arange(len(required_gt_atoms))
-    atom_idx_map = dict(zip(required_gt_atoms, required_gt_atoms_remapped))
+    atom_idx_map = dict(zip(required_gt_atoms, required_gt_atoms_remapped, strict=True))
     atom_idx_mapper = np.vectorize(lambda x: atom_idx_map[x])
 
     # Update the set of atoms in the permutations to reflect the new indices

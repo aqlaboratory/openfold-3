@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,7 +20,6 @@ MSAColumnGlobalAttention, and MSAPairWeightedAveraging.
 
 import importlib
 from functools import partial
-from typing import Optional
 
 import torch
 from torch import nn
@@ -106,25 +105,21 @@ class MSAAttention(nn.Module):
     def _chunk(
         self,
         m: torch.Tensor,
-        biases: Optional[list[torch.Tensor]],
+        biases: list[torch.Tensor] | None,
         chunk_size: int,
-        use_memory_efficient_kernel: bool,
         use_deepspeed_evo_attention: bool,
+        use_cueq_triangle_kernels: bool,
         use_lma: bool,
-        use_flash: bool,
-        flash_mask: Optional[torch.Tensor],
     ) -> torch.Tensor:
-        def fn(m, biases, flash_mask):
+        def fn(m, biases):
             m = self.layer_norm_m(m)
             return self.mha(
                 q_x=m,
                 kv_x=m,
                 biases=biases,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
-                use_flash=use_flash,
-                flash_mask=flash_mask,
             )
 
         inputs = {"m": m}
@@ -132,10 +127,6 @@ class MSAAttention(nn.Module):
             inputs["biases"] = biases
         else:
             fn = partial(fn, biases=None)
-        if use_flash and flash_mask is not None:
-            inputs["flash_mask"] = flash_mask
-        else:
-            fn = partial(fn, flash_mask=None)
 
         return chunk_layer(
             fn, inputs, chunk_size=chunk_size, no_batch_dims=len(m.shape[:-2])
@@ -144,8 +135,8 @@ class MSAAttention(nn.Module):
     def _prep_inputs(
         self,
         m: torch.Tensor,
-        z: Optional[torch.Tensor],
-        mask: Optional[torch.Tensor],
+        z: torch.Tensor | None,
+        mask: torch.Tensor | None,
         inplace_safe: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         n_seq, n_res = m.shape[-3:-1]
@@ -188,8 +179,8 @@ class MSAAttention(nn.Module):
     def _chunked_msa_attn(
         self,
         m: torch.Tensor,
-        z: Optional[torch.Tensor],
-        mask: Optional[torch.Tensor],
+        z: torch.Tensor | None,
+        mask: torch.Tensor | None,
         chunk_logits: int,
         checkpoint: bool,
         inplace_safe: bool = False,
@@ -235,16 +226,15 @@ class MSAAttention(nn.Module):
     def forward(
         self,
         m: torch.Tensor,
-        z: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
-        use_memory_efficient_kernel: bool = False,
+        z: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
-        use_flash: bool = False,
         inplace_safe: bool = False,
-        _chunk_logits: Optional[int] = None,
-        _checkpoint_chunks: Optional[bool] = None,
+        _chunk_logits: int | None = None,
+        _checkpoint_chunks: bool | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -271,26 +261,20 @@ class MSAAttention(nn.Module):
                 inplace_safe=inplace_safe,
             )
 
-        if use_flash:
-            assert z is None
-            biases = None
-        else:
-            m, mask_bias, z = self._prep_inputs(m, z, mask, inplace_safe=inplace_safe)
+        m, mask_bias, z = self._prep_inputs(m, z, mask, inplace_safe=inplace_safe)
 
-            biases = [mask_bias]
-            if z is not None:
-                biases.append(z)
+        biases = [mask_bias]
+        if z is not None:
+            biases.append(z)
 
         if chunk_size is not None:
             m = self._chunk(
                 m,
                 biases,
                 chunk_size,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
-                use_flash=use_flash,
-                flash_mask=mask,
             )
         else:
             m = self.layer_norm_m(m)
@@ -298,11 +282,9 @@ class MSAAttention(nn.Module):
                 q_x=m,
                 kv_x=m,
                 biases=biases,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
-                use_flash=use_flash,
-                flash_mask=mask,
             )
 
         return m
@@ -397,11 +379,11 @@ class MSAColumnAttention(nn.Module):
     def forward(
         self,
         m: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
-        use_flash: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -424,8 +406,8 @@ class MSAColumnAttention(nn.Module):
             mask=mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
-            use_flash=use_flash,
         )
 
         # [*, N_seq, N_res, C_in]
@@ -492,8 +474,8 @@ class MSAColumnGlobalAttention(nn.Module):
     def forward(
         self,
         m: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         use_lma: bool = False,
     ) -> torch.Tensor:
         if mask is None:
@@ -578,7 +560,7 @@ class MSAPairWeightedAveraging(nn.Module):
     def _prep_inputs(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
     ) -> [torch.Tensor, torch.Tensor]:
         if mask is None:
             # [*, N_token, N_token]
@@ -666,9 +648,9 @@ class MSAPairWeightedAveraging(nn.Module):
     def forward(
         self,
         m: torch.Tensor,
-        z: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        z: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
         **kwargs,
     ) -> torch.Tensor:
         """

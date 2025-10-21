@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """This module contains the SingleDataset class and its subclasses.
 
 A SingleDataset class is a pytorch Dataset class which specified the way datapoints
@@ -28,7 +42,6 @@ and highlight where you currently are in the process:
 """
 
 from abc import ABC, abstractmethod
-from typing import Union
 
 import torch
 from torch.utils.data import Dataset
@@ -102,7 +115,7 @@ class SingleDataset(ABC, Dataset):
         self.datapoint_index = index
 
     @abstractmethod
-    def __getitem__(self, index: int) -> dict[str, Union[torch.Tensor]]:
+    def __getitem__(self, index: int) -> dict[str, torch.Tensor]:
         """Getitem of a specific SingleDataset class.
 
         Called by the DataLoader directly or indirectly via the SamplerDataset

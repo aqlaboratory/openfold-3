@@ -1,26 +1,27 @@
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#      http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """Vec3Array Class."""
 
 from __future__ import annotations
 
 import dataclasses
-from typing import Union
 
 import torch
 
-Float = Union[float, torch.Tensor]
+Float = float | torch.Tensor
 
 
 @dataclasses.dataclass(frozen=True)
@@ -33,8 +34,12 @@ class Vec3Array:
         if hasattr(self.x, "dtype"):
             assert self.x.dtype == self.y.dtype
             assert self.x.dtype == self.z.dtype
-            assert all([x == y for x, y in zip(self.x.shape, self.y.shape)])
-            assert all([x == z for x, z in zip(self.x.shape, self.z.shape)])
+            assert all(
+                [x == y for x, y in zip(self.x.shape, self.y.shape, strict=True)]
+            )
+            assert all(
+                [x == z for x, z in zip(self.x.shape, self.z.shape, strict=True)]
+            )
 
     def __add__(self, other: Vec3Array) -> Vec3Array:
         return Vec3Array(

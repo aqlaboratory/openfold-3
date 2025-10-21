@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,17 +18,24 @@ Triangle multiplicative update layers. Includes TriangleMultiplicativeUpdate fro
 and FusedTriangleMultiplicativeUpdate from AF2-Multimer.
 """
 
+import importlib
+import warnings
 from abc import ABC, abstractmethod
 from functools import partialmethod
-from typing import Optional
 
 import torch
 import torch.nn as nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import LayerNorm, Linear
-from openfold3.core.utils.precision_utils import is_fp16_enabled
 from openfold3.core.utils.tensor_utils import permute_final_dims
+
+cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
+if cueq_is_installed:
+    from cuequivariance_torch import triangle_multiplicative_update
+
+
+warnings.filterwarnings("once")
 
 
 class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
@@ -65,7 +72,7 @@ class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
         self,
         a: torch.Tensor,
         b: torch.Tensor,
-        _inplace_chunk_size: Optional[int] = None,
+        _inplace_chunk_size: int | None = None,
     ) -> torch.Tensor:
         if self._outgoing:
             a = permute_final_dims(a, (2, 0, 1))
@@ -93,7 +100,7 @@ class BaseTriangleMultiplicativeUpdate(nn.Module, ABC):
     def forward(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
         inplace_safe: bool = False,
         _add_with_inplace: bool = False,
     ) -> torch.Tensor:
@@ -147,8 +154,8 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     def _inference_forward(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        inplace_chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        inplace_chunk_size: int | None = None,
         with_add: bool = True,
     ):
         """
@@ -279,7 +286,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 # Slices start:end from the dim dimension of t
                 s = empty_slicer(t)
                 s[dim] = slice(start, end)
-                return t[s]
+                return t[tuple(s)]
 
             def flip_z_cache_(z_cache, z):
                 # "Reorient" the z_cache (see below), filling it with quadrants
@@ -294,7 +301,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 # Move the 3rd quadrant of z into the
                 first_half_slicer = empty_slicer(z_cache)
                 first_half_slicer[col_dim] = slice(0, half_n)
-                z_cache[first_half_slicer] = quadrant_3
+                z_cache[tuple(first_half_slicer)] = quadrant_3
 
                 # Get the fourth quadrant of z
                 quadrant_4 = slice_tensor(z, half_n, None, row_dim)
@@ -304,7 +311,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 quadrant_3_slicer = empty_slicer(z_cache)
                 quadrant_3_slicer[col_dim] = slice(half_n, None)
 
-                z_cache[quadrant_3_slicer] = quadrant_4
+                z_cache[tuple(quadrant_3_slicer)] = quadrant_4
 
                 return z_cache
 
@@ -314,7 +321,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             z_cache = z.new_zeros(z_cache_shape)
             z_cache_slicer = empty_slicer(z_cache)
             z_cache_slicer[col_dim] = slice(0, half_n)
-            z_cache.copy_(z[z_cache_slicer])
+            z_cache.copy_(z[tuple(z_cache_slicer)])
             z_cache_rotated = False
 
             # We need to reorient the z-cache at the halfway point, and we
@@ -322,12 +329,13 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             # of the chunks in the middle to address that problem.
             i_range = list(range(0, half_n, inplace_chunk_size))
             initial_offsets = [
-                i_2 - i_1 for i_1, i_2 in zip(i_range, i_range[1:] + [half_n])
+                i_2 - i_1
+                for i_1, i_2 in zip(i_range, i_range[1:] + [half_n], strict=True)
             ]
             after_half = list(range(half_n, n, inplace_chunk_size))
             after_half_offsets = [inplace_chunk_size for _ in after_half]
             combined_range_with_offsets = zip(
-                i_range + after_half, initial_offsets + after_half_offsets
+                i_range + after_half, initial_offsets + after_half_offsets, strict=False
             )
             for i, offset in combined_range_with_offsets:
                 if not z_cache_rotated and i >= half_n:
@@ -357,7 +365,7 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                     if not z_cache_rotated:
                         z_chunk_slicer = empty_slicer(z_chunk_b)
                         z_chunk_slicer[col_dim] = slice(0, half_n)
-                        z_chunk_b[z_chunk_slicer] = slice_tensor(
+                        z_chunk_b[tuple(z_chunk_slicer)] = slice_tensor(
                             z_cache,
                             i,
                             i + offset,
@@ -392,9 +400,9 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
                 z_slicer = empty_slicer(z)
                 z_slicer[col_dim] = slice(i, i + offset)
                 if with_add:
-                    z[z_slicer] += x_chunk
+                    z[tuple(z_slicer)] += x_chunk
                 else:
-                    z[z_slicer] = x_chunk
+                    z[tuple(z_slicer)] = x_chunk
         else:
             b = compute_projection(z, mask, False, False)
             x = torch.einsum("...ij,...jk->...ik", a, b)
@@ -413,10 +421,11 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     def forward(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
         inplace_safe: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         _add_with_inplace: bool = False,
-        _inplace_chunk_size: Optional[int] = 256,
+        _inplace_chunk_size: int | None = 256,
     ) -> torch.Tensor:
         """
         Args:
@@ -427,6 +436,40 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
+        ## NOTE: valid for inplace safe and use_cueq_triangle_kernels to be enabled
+        ## inplace safe is used across the codebase and so should not
+        ## be disabled. So if use_cueq_triangle_kernels is True, it will always
+        ## supersede inplace_safe
+        if use_cueq_triangle_kernels:
+            ## VS: The cuequivariance kernel is based on the boltz implementation
+            ## of triangle multiplicative update, which fuses the linear_*_p
+            ## projections into a single layer (similarly for linear_*_g).
+            ## this why we need to concat the projection layers here
+            x = _cueq_triangle_mult(
+                z=z,
+                g_in_weight=torch.cat(
+                    [
+                        self.linear_a_g.weight,
+                        self.linear_b_g.weight,
+                    ]
+                ),
+                p_in_weight=torch.cat(
+                    [
+                        self.linear_a_p.weight,
+                        self.linear_b_p.weight,
+                    ]
+                ),
+                _outgoing=self._outgoing,
+                mask=mask,
+                norm_in_weight=self.layer_norm_in.weight,
+                norm_in_bias=self.layer_norm_in.bias,
+                norm_out_weight=self.layer_norm_out.weight,
+                norm_out_bias=self.layer_norm_out.bias,
+                p_out_weight=self.linear_z.weight,
+                g_out_weight=self.linear_g.weight,
+            )
+            return x
+
         if inplace_safe:
             x = self._inference_forward(
                 z,
@@ -442,26 +485,14 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         mask = mask.unsqueeze(-1)
 
         z = self.layer_norm_in(z)
-        a = mask
+        a = mask  # (1,s, s, 1)
         a = a * self.sigmoid(self.linear_a_g(z))
         a = a * self.linear_a_p(z)
         b = mask
         b = b * self.sigmoid(self.linear_b_g(z))
         b = b * self.linear_b_p(z)
 
-        # Prevents overflow of torch.matmul in combine projections in
-        # reduced-precision modes
-        a_std = a.std()
-        b_std = b.std()
-        if is_fp16_enabled() and a_std != 0.0 and b_std != 0.0:
-            a = a / a.std()
-            b = b / b.std()
-
-        if is_fp16_enabled():
-            with torch.amp.autocast("cuda", enabled=False):
-                x = self._combine_projections(a.float(), b.float())
-        else:
-            x = self._combine_projections(a, b)
+        x = self._combine_projections(a, b)
 
         del a, b
         x = self.layer_norm_out(x)
@@ -491,6 +522,8 @@ class TriangleMultiplicationIncoming(TriangleMultiplicativeUpdate):
 class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     """
     Implements AF2-Multimer version of AF2 Algorithm 11 and 12.
+    Not compatible with AF3 - Linear layers here are instantiated with
+    biases, compared to AF3 version which uses LinearNoBias
     """
 
     def __init__(
@@ -524,8 +557,8 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     def _inference_forward(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        _inplace_chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        _inplace_chunk_size: int | None = None,
         with_add: bool = True,
     ):
         """
@@ -578,10 +611,11 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     def forward(
         self,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
+        mask: torch.Tensor | None = None,
         inplace_safe: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         _add_with_inplace: bool = False,
-        _inplace_chunk_size: Optional[int] = 256,
+        _inplace_chunk_size: int | None = 256,
     ) -> torch.Tensor:
         """
         Args:
@@ -592,6 +626,13 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
+        if use_cueq_triangle_kernels:
+            raise NotImplementedError(
+                "CUEQ triangle multiplicative update kernel not"
+                "supported for FusedTriangleMultiplicativeUpdate."
+                "\nPlease change config"
+            )
+
         if inplace_safe:
             x = self._inference_forward(
                 z,
@@ -614,19 +655,7 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         a = ab[..., : self.c_hidden]
         b = ab[..., self.c_hidden :]
 
-        # Prevents overflow of torch.matmul in combine projections in
-        # reduced-precision modes
-        a_std = a.std()
-        b_std = b.std()
-        if is_fp16_enabled() and a_std != 0.0 and b_std != 0.0:
-            a = a / a.std()
-            b = b / b.std()
-
-        if is_fp16_enabled():
-            with torch.amp.autocast("cuda", enabled=False):
-                x = self._combine_projections(a.float(), b.float())
-        else:
-            x = self._combine_projections(a, b)
+        x = self._combine_projections(a, b)
 
         del a, b
         x = self.layer_norm_out(x)
@@ -640,6 +669,7 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
 class FusedTriangleMultiplicationOutgoing(FusedTriangleMultiplicativeUpdate):
     """
     Implements AF2-Multimer version of AF2 Algorithm 11.
+    Not compatible with AF3
     """
 
     __init__ = partialmethod(FusedTriangleMultiplicativeUpdate.__init__, _outgoing=True)
@@ -648,8 +678,64 @@ class FusedTriangleMultiplicationOutgoing(FusedTriangleMultiplicativeUpdate):
 class FusedTriangleMultiplicationIncoming(FusedTriangleMultiplicativeUpdate):
     """
     Implements AF2-Multimer version of AF2 Algorithm 12.
+    Not compatible with AF3
     """
 
     __init__ = partialmethod(
         FusedTriangleMultiplicativeUpdate.__init__, _outgoing=False
     )
+
+
+def _cueq_triangle_mult(
+    z: torch.Tensor,
+    g_in_weight: torch.Tensor,
+    p_in_weight: torch.Tensor,
+    _outgoing: bool,
+    mask: torch.Tensor | None,
+    norm_in_weight: torch.Tensor,
+    norm_in_bias: torch.Tensor,
+    norm_out_weight: torch.Tensor,
+    norm_out_bias: torch.Tensor,
+    p_out_weight: torch.Tensor,
+    g_out_weight: torch.Tensor,
+) -> torch.Tensor:
+    ##VS: similar issue here as to the cueq triangle attention
+    ## kernel, we need to reshape the input so that batch and
+    ## n_tmpl are combined into a single dimension.
+
+    ## only hidden dimension multiple of 32 is supported for now
+    if z.shape[-1] % 32 != 0:
+        raise ValueError(
+            "CUEQ triangle multiplicative update only supports "
+            "channel dimension multiple of 32, got: "
+            f"{z.shape[-1]}"
+        )
+
+    is_batched_input = False
+    if len(z.shape) > 4:
+        assert len(z.shape) == 5, (
+            "CUEQ triangle multiplicative update only supports "
+            f"max 5 input dimensions, got: {len(z.shape)}"
+        )
+        is_batched_input = True
+        batch, n_tmpl, n_res, _, c_in = z.shape
+        z = z.view(batch * n_tmpl, *z.shape[2:])
+        mask = mask.view(batch * n_tmpl, *mask.shape[2:]) if mask is not None else None
+
+    x = triangle_multiplicative_update(
+        z,
+        direction="outgoing" if _outgoing else "incoming",
+        mask=mask,
+        norm_in_weight=norm_in_weight,
+        norm_in_bias=norm_in_bias,
+        g_in_weight=g_in_weight,
+        p_in_weight=p_in_weight,
+        norm_out_weight=norm_out_weight,
+        norm_out_bias=norm_out_bias,
+        p_out_weight=p_out_weight,
+        g_out_weight=g_out_weight,
+        eps=1e-5,
+    )
+    if is_batched_input:
+        x = x.view(batch, n_tmpl, *x.shape[1:])
+    return x

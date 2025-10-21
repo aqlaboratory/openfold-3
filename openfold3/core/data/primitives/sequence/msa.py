@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """This module contains building blocks for MSA processing."""
 
 from __future__ import annotations
@@ -5,6 +19,8 @@ from __future__ import annotations
 import dataclasses
 import logging
 from collections import defaultdict, deque
+from collections.abc import Sequence
+from functools import partial
 
 import numpy as np
 import pandas as pd
@@ -12,6 +28,7 @@ import pandas as pd
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +45,15 @@ class MsaArray:
         deletion_matrix (np.array):
             A 2D numpy array containing the cumulative deletion counts up to each
             position for each row in the MSA.
-        metadata (pd.DataFrame):
+        metadata (pd.DataFrame | list | np.ndarray):
             A list of metadata parsed from sequence headers of the MSA. If not provided,
             an empty DataFrame is assigned."""
 
     msa: np.ndarray[str]
     deletion_matrix: np.ndarray[int]
-    metadata: pd.DataFrame | list = dataclasses.field(default_factory=pd.DataFrame)
+    metadata: pd.DataFrame | list | np.ndarray = dataclasses.field(
+        default_factory=pd.DataFrame
+    )
 
     def __len__(self):
         return self.msa.shape[0]
@@ -86,11 +105,12 @@ class MsaArray:
 
     def concatenate(
         self, msa_array: MsaArray, axis: int, inplace: bool = False
-    ) -> MsaArray:
-        """Concatenate the MsaArray with other MsaArrays.
+    ) -> MsaArray | None:
+        """Concatenate the MsaArray with another MsaArray.
 
-        Note: concatenation does not keep metadata and replaces it with
-        an empty DataFrame.
+        Note: only keeps metadata if 1) concatenation is done vertically i.e. along axis
+        0 and 2) if both metadata fields has type list or np.ndarray. Otherwise, does
+        not keep metadata and replaces it with an empty DataFrame.
 
         Args:
             msa_array (MsaArray):
@@ -101,43 +121,137 @@ class MsaArray:
                 Whether to perform the operation in place. Defaults to False.
 
         Returns:
-            MsaArray:
-                A new MsaArray object containing the concatenated MSA arrays.
+            MsaArray | None:
+                A new MsaArray object containing the concatenated MSA arrays or None if
+                `inplace=True`.
         """
+        if axis not in (0, 1):
+            raise ValueError(f"Axis must be 0 (rows) or 1 (columns), got {axis}.")
+
+        # Extract arrays and metadata
+        a1, a2 = self.msa, msa_array.msa
+        d1, d2 = self.deletion_matrix, msa_array.deletion_matrix
+
+        # Validate shapes and determine metadata concatenation function
+        if axis == 0:
+            if a1.shape[1] != a2.shape[1] or d1.shape[1] != d2.shape[1]:
+                raise ValueError(
+                    "Cannot concatenate along axis=0: number of columns must match "
+                    f"(msa {a1.shape[1]} vs {a2.shape[1]}, "
+                    f"deletion {d1.shape[1]} vs {d2.shape[1]})."
+                )
+            # Preserve metadata if both are list/ndarray
+            if isinstance(self.metadata, (list, np.ndarray)) and isinstance(
+                msa_array.metadata, (list, np.ndarray)
+            ):
+                metadata_concat_fn = partial(np.concatenate, axis=0)
+            else:
+                metadata_concat_fn = None
+        else:
+            if a1.shape[0] != a2.shape[0] or d1.shape[0] != d2.shape[0]:
+                raise ValueError(
+                    "Cannot concatenate along axis=1: number of rows must match "
+                    f"(msa {a1.shape[0]} vs {a2.shape[0]}, "
+                    f"deletion {d1.shape[0]} vs {d2.shape[0]})."
+                )
+            metadata_concat_fn = None
+        array_concat_fn = partial(np.concatenate, axis=axis)
+
+        # Perform concatenation
+        msa_cat = array_concat_fn([a1, a2])
+        del_cat = array_concat_fn([d1, d2])
+        metadata_cat = (
+            metadata_concat_fn(
+                [np.asarray(self.metadata), np.asarray(msa_array.metadata)]
+            )
+            if metadata_concat_fn
+            else pd.DataFrame()
+        )
+
+        if inplace:
+            self.msa = msa_cat
+            self.deletion_matrix = del_cat
+            self.metadata = metadata_cat
+            return None
+
+        return MsaArray(msa=msa_cat, deletion_matrix=del_cat, metadata=metadata_cat)
+
+    @classmethod
+    def multi_concatenate(
+        cls,
+        msa_arrays: Sequence[MsaArray],
+        axis: int = 0,
+    ) -> MsaArray:
+        """
+        Concatenate a sequence of MsaArray objects.
+
+        Args:
+            msa_arrays (Sequence[MsaArray]):
+                A sequence of MsaArray objects to concatenate.
+            axis (int):
+                The axis along which to concatenate the MSA arrays. 0 for rows, 1 for
+                columns.
+
+        Returns:
+            A new MsaArray (unless `inplace=True`, then None).
+        """
+        if not msa_arrays:
+            raise ValueError("Need at least one MsaArray to concatenate.")
+
         if axis not in (0, 1):
             raise ValueError("Axis must be 0 (rows) or 1 (columns).")
 
-        if axis == 0:
-            if self.msa.shape[1] != msa_array.msa.shape[1]:
-                raise ValueError(
-                    "Cannot concatenate along axis 0: number of columns in msa do "
-                    "not match."
-                    f"({self.msa.shape[1]} != {msa_array.msa.shape[1]})"
-                )
-            concat_fn = np.vstack
-        else:
-            if self.msa.shape[0] != msa_array.msa.shape[0]:
-                raise ValueError(
-                    "Cannot concatenate along axis 0: number of columns in msa do "
-                    "not match."
-                    f"({self.msa.shape[0]} != {msa_array.msa.shape[0]})"
-                )
-            concat_fn = np.hstack
+        # Pull out the raw arrays
+        msas = [i.msa for i in msa_arrays]
+        del_matrices = [i.deletion_matrix for i in msa_arrays]
+        metas = [i.metadata for i in msa_arrays]
 
-        if inplace:
-            self.msa = concat_fn([self.msa, msa_array.msa])
-            self.deletion_matrix = concat_fn(
-                [self.deletion_matrix, msa_array.deletion_matrix]
-            )
-            self.metadata = pd.DataFrame()
+        # Validate shapes
+        if axis == 0:
+            # all must have same number of columns
+            ncols_msa = msas[0].shape[1]
+            ncols_del = del_matrices[0].shape[1]
+            if any(m.shape[1] != ncols_msa for m in msas):
+                raise ValueError(
+                    "All msas must have the same number of columns to concat on axis=0."
+                )
+            if any(d.shape[1] != ncols_del for d in del_matrices):
+                raise ValueError(
+                    "All deletion_matrices must have the same number of columns to "
+                    "concat on axis=0."
+                )
+            # metadata: can only stitch if all are array-like
+            if all(isinstance(md, pd.DataFrame) for md in metas):
+                meta_concat = pd.DataFrame()  # pd.concat(metas, ignore_index=True)
+            elif all(isinstance(md, (list, np.ndarray)) for md in metas):
+                meta_concat = np.concatenate([np.asarray(md) for md in metas], axis=0)
+            else:
+                meta_concat = pd.DataFrame()
         else:
-            return MsaArray(
-                msa=concat_fn([self.msa, msa_array.msa]),
-                deletion_matrix=concat_fn(
-                    [self.deletion_matrix, msa_array.deletion_matrix]
-                ),
-                metadata=pd.DataFrame(),
-            )
+            # axis == 1: all must have same number of rows
+            nrows_msa = msas[0].shape[0]
+            nrows_del = del_matrices[0].shape[0]
+            if any(m.shape[0] != nrows_msa for m in msas):
+                raise ValueError(
+                    "All msas must have the same number of rows to concat on axis=1."
+                )
+            if any(d.shape[0] != nrows_del for d in del_matrices):
+                raise ValueError(
+                    "All deletion_matrices must have the same number of rows to "
+                    "concat on axis=1."
+                )
+            # never preserve metadata when concatenating columns
+            meta_concat = pd.DataFrame()
+
+        # Perform the concatenations
+        msa_cat = np.concatenate(msas, axis=axis)
+        del_cat = np.concatenate(del_matrices, axis=axis)
+
+        return cls(
+            msa=msa_cat,
+            deletion_matrix=del_cat,
+            metadata=meta_concat,
+        )
 
     def pad(
         self,
@@ -291,6 +405,29 @@ class MsaArray:
             "metadata": np.array(self.metadata),
         }
 
+    def subset(self, row_mask: np.ndarray[bool]) -> MsaArray:
+        """Subsets the MsaArray based on a boolean mask.
+
+        Args:
+            row_mask (np.ndarray[bool]):
+                Boolean mask to subset the MSA array.
+
+        Returns:
+            MsaArray:
+                A new MsaArray object containing the subsetted MSA arrays.
+        """
+        msa = self.msa[row_mask, :]
+        deletion_matrix = self.deletion_matrix[row_mask, :]
+        if isinstance(self.metadata, pd.DataFrame):
+            metadata = self.metadata[row_mask]
+        else:
+            ## is python list
+            metadata = [
+                self.metadata[i] for i in range(len(self.metadata)) if row_mask[i]
+            ]
+
+        return MsaArray(msa=msa, deletion_matrix=deletion_matrix, metadata=metadata)
+
 
 @dataclasses.dataclass(frozen=False)
 class MsaArrayCollection:
@@ -298,13 +435,13 @@ class MsaArrayCollection:
 
     This class can be in one of three states:
         1.) parsed state:
-            attributes rep_id_to_msa and rep_id_to_query_seq populated after parsing and
-            chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa
-            unpopulated.
+            attributes rep_id_to_query_seq, rep_id_to_paired_msa and rep_id_to_main_msa
+            populated after parsing and chain_id_to_query_seq, chain_id_to_paired_msa,
+            chain_id_to_main_msa unpopulated.
         2.) processed state:
-            attributes rep_id_to_msa and rep_id_to_query_seq unpopulated and
-            chain_id_to_query_seq, chain_id_to_paired_msa, chain_id_to_main_msa
-            populated after processing.
+            attributes rep_id_to_query_seq, rep_id_to_paired_msa and rep_id_to_main_msa
+            unpopulated and chain_id_to_query_seq, chain_id_to_paired_msa,
+            chain_id_to_main_msa populated after processing.
         3.) prefeaturized state:
             Processed state with the attribute row_counts also populated.
 
@@ -315,11 +452,14 @@ class MsaArrayCollection:
         _state (str):
             The state of the MsaArrayCollection object. Can be one of "init", "parsed",
             "processed", or "prefeaturized".
-        rep_id_to_msa (dict[str, dict[str, MsaArray]]):
-            Dictionary mapping representative chain IDs to dictionaries of Msa objects.
         rep_id_to_query_seq (dict[str, np.ndarray[str]]):
             Dictionary mapping representative chain IDs to numpy arrays of their
             corresponding query sequences.
+        rep_id_to_paired_msa (dict[str, MsaArray] | None):
+            Dictionary mapping representative chain IDs to Msa objects containing paired
+            MSA data. Only used if precomputed paired MSAs are provided.
+        rep_id_to_main_msa (dict[str, dict[str, MsaArray]]):
+            Dictionary mapping representative chain IDs to dictionaries of Msa objects.
         chain_id_to_query_seq (dict[str, MsaArray]):
             Dictionary mapping chain IDs to Msa objects containing query sequence data.
         chain_id_to_paired_msa (dict[str, MsaArray]):
@@ -338,17 +478,17 @@ class MsaArrayCollection:
 
     # Core attributes
     chain_id_to_rep_id: dict[str, str]
-    chain_id_to_mol_type: dict[str, str]
-    row_counts: dict[str, int | dict[str, int]] = dataclasses.field(
-        default_factory=dict
-    )
+    chain_id_to_mol_type: dict[str, str]  # TODO convert to dict[str, MoleculeType]
     _state: str = "init"
 
     # State parsed attributes
-    rep_id_to_msa: dict[str, dict[str, MsaArray]] = dataclasses.field(
+    rep_id_to_query_seq: dict[str, np.ndarray[str]] = dataclasses.field(
         default_factory=dict
     )
-    rep_id_to_query_seq: dict[str, np.ndarray[str]] = dataclasses.field(
+    rep_id_to_paired_msa: dict[str, MsaArray] | None = dataclasses.field(
+        default_factory=dict
+    )
+    rep_id_to_main_msa: dict[str, dict[str, MsaArray]] = dataclasses.field(
         default_factory=dict
     )
 
@@ -359,11 +499,19 @@ class MsaArrayCollection:
     )
     chain_id_to_main_msa: dict[str, MsaArray] = dataclasses.field(default_factory=dict)
 
-    def set_state_parsed(self, rep_id_to_msa, rep_id_to_query_seq):
+    # Prefeaturized attributes
+    row_counts: dict[str, int | dict[str, int]] = dataclasses.field(
+        default_factory=dict
+    )
+
+    def set_state_parsed(
+        self, rep_id_to_query_seq, rep_id_to_paired_msa=None, rep_id_to_main_msa=None
+    ):
         """Set the state to parsed."""
         self._state = "parsed"
-        self.rep_id_to_msa = rep_id_to_msa
         self.rep_id_to_query_seq = rep_id_to_query_seq
+        self.rep_id_to_paired_msa = rep_id_to_paired_msa if rep_id_to_paired_msa else {}
+        self.rep_id_to_main_msa = rep_id_to_main_msa if rep_id_to_main_msa else {}
         self.chain_id_to_query_seq = {}
         self.chain_id_to_paired_msa = {}
         self.chain_id_to_main_msa = {}
@@ -376,8 +524,9 @@ class MsaArrayCollection:
         self.chain_id_to_query_seq = chain_id_to_query_seq
         self.chain_id_to_paired_msa = chain_id_to_paired_msa
         self.chain_id_to_main_msa = chain_id_to_main_msa
-        self.rep_id_to_msa = {}
         self.rep_id_to_query_seq = {}
+        self.rep_id_to_paired_msa = {}
+        self.rep_id_to_main_msa = {}
 
     def set_state_prefeaturized(self, n_rows, n_rows_paired_cropped, n_rows_main):
         """Set the state to prefeaturized."""
@@ -394,7 +543,7 @@ def find_monomer_homomer(msa_array_collection: MsaArrayCollection) -> bool:
     """Determines if the sample is a monomer or homomer.
 
     Args:
-        msa_collection (MsaCollection):
+        msa_array_collection (MsaCollection):
             A collection of Msa objects and chain IDs for a single sample.
 
     Returns:
@@ -404,7 +553,7 @@ def find_monomer_homomer(msa_array_collection: MsaArrayCollection) -> bool:
     chain_id_to_rep_id = {
         chain_id: rep_id
         for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items()
-        if msa_array_collection.chain_id_to_mol_type[chain_id] == "PROTEIN"
+        if msa_array_collection.chain_id_to_mol_type[chain_id] == MoleculeType.PROTEIN
     }
     chain_ids, representative_chain_ids = (
         list(chain_id_to_rep_id.keys()),
@@ -417,11 +566,11 @@ def find_monomer_homomer(msa_array_collection: MsaArrayCollection) -> bool:
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-query")
-def create_query_seqs(msa_collection: MsaArrayCollection) -> dict[int, MsaArray]:
+def create_query_seqs(msa_array_collection: MsaArrayCollection) -> dict[int, MsaArray]:
     """Extracts and expands the query sequences and deletion matrices.
 
     Args:
-        msa_collection (MsaArrayCollection):
+        msa_array_collection (MsaArrayCollection):
             A collection of Msa objects and chain IDs for a single sample.
 
     Returns:
@@ -431,87 +580,100 @@ def create_query_seqs(msa_collection: MsaArrayCollection) -> dict[int, MsaArray]
     """
     return {
         k: MsaArray(
-            msa=msa_collection.rep_id_to_query_seq[v],
+            msa=msa_array_collection.rep_id_to_query_seq[v],
             deletion_matrix=np.zeros(
-                msa_collection.rep_id_to_query_seq[v].shape, dtype=int
+                msa_array_collection.rep_id_to_query_seq[v].shape, dtype=int
             ),
             metadata=pd.DataFrame(),
         )
-        for (k, v) in msa_collection.chain_id_to_rep_id.items()
+        for (k, v) in msa_array_collection.chain_id_to_rep_id.items()
     }
 
 
-def extract_uniprot_hits(
-    msa_array_collection: MsaArrayCollection,
+def extract_alignments_to_pair(
+    msa_array_collection: MsaArrayCollection, msas_to_pair: Sequence[str] | None = None
 ) -> dict[str, MsaArray]:
-    """Parses out UniProt MsaArrays for protein chains from the MsaCollection.
+    """Fetches the MsaArrays to be used for pairing from the MsaCollection.
 
-    This function does not return UniProt MSAs for chains that only contain the query
-    i.e. single sequence MSAs.
+    This function does not return MsaArrays for chains that only contain the query i.e.
+    single sequence MSAs.
 
     Args:
         msa_array_collection (MsaCollection):
             A collection of MsaArray objects and chain IDs for a single sample.
+        msas_to_pair (Sequence[str] | None):
+            Sequence of strings indicating which MSAs files have species information
+            that can be used for online pairing.
 
     Returns:
         dict[str, MsaArray]:
             Dict mapping chain IDs to MsaArray objects containing UniProt MSAs.
     """
+    # No paired MSAs if no MSAs to pair
+    msa_arrays_to_pair = {}
+    if msas_to_pair is None:
+        return msa_arrays_to_pair
+
+    # Only pair across protein MSAs
     protein_rep_ids = set(
         rep_id
         for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items()
-        if msa_array_collection.chain_id_to_mol_type[chain_id] == "PROTEIN"
+        if msa_array_collection.chain_id_to_mol_type[chain_id] == MoleculeType.PROTEIN
     )
-    rep_ids = msa_array_collection.rep_id_to_msa.keys()
+    rep_ids = msa_array_collection.rep_id_to_main_msa.keys()
 
-    # Get uniprot hits, exclude MSAs only with query
-    uniprot_hits = {}
+    # Get pairable MSAs, exclude MSAs only with query
     for rep_id in rep_ids:
+        # Skip non-proteins
         if rep_id not in protein_rep_ids:
             continue
 
-        rep_msa_map_per_chain = msa_array_collection.rep_id_to_msa[rep_id]
-        uniprot_msa = (
-            rep_msa_map_per_chain.get("uniprot_hits")
-            if "uniprot_hits" in rep_msa_map_per_chain
-            else rep_msa_map_per_chain.get("uniprot")
+        rep_msa_map_per_chain = msa_array_collection.rep_id_to_main_msa[rep_id]
+
+        # Find all MSA arrays that can be paired and concatenate vertically
+        msa_arrays_to_pair_i = []
+        for msa_name in msas_to_pair:
+            m = rep_msa_map_per_chain.get(msa_name)
+            if m is not None:
+                msa_arrays_to_pair_i.append(m)
+
+        msa_arrays_to_pair_cat = MsaArray.multi_concatenate(
+            msa_arrays=msa_arrays_to_pair_i,
+            axis=0,
         )
-        if uniprot_msa is not None and len(uniprot_msa) > 1:
-            uniprot_hits[rep_id] = uniprot_msa
 
-    return uniprot_hits
+        if msa_arrays_to_pair_cat is not None and len(msa_arrays_to_pair_cat) > 1:
+            msa_arrays_to_pair[rep_id] = msa_arrays_to_pair_cat
+
+    return msa_arrays_to_pair
 
 
-def process_uniprot_metadata(msa_array: MsaArray) -> None:
-    """Reformats the metadata of an Msa object parsed from a UniProt MSA.
+def process_msa_pairing_metadata(metadata_raw: list[str]) -> pd.DataFrame:
+    """Parses the species info from a list of fasta headers.
 
-    This function expects
-    1) the 1st row to contain the query header - it is excluded from the
-    metadata DataFrame.
-    2) the rest of the rows to be of the format
-        tr|<UniProt ID>|<UniProt ID>_<species ID>/<start idx>-end idx;
-    for example:
-        tr|A0A1W9RZR3|A0A1W9RZR3_9BACT/19-121
-
-    The list of headers are converted into a DataFrame containing the uniprot_id,
-    species_id, chain_start and chain_end columns. If the Msa only contains the
-    query sequence, an empty DataFrame is assigned to the metadata attribute.
+    The list of headers are converted into a DataFrame containing the species IDs in the
+    same order as the sequences in the alignment for all but the query sequence. If the
+    MsaArray only contains the query sequence, an empty DataFrame is returned.
 
     Args:
-        msa_array (MsaArray):
-            The parsed MsaArray.
+        metadata_raw (list[str]):
+            The raw list of metadata strings from the MSA file. Should contain the query
+            header in the first position and all subsequent positions should have the
+            format tr|<UniProt ID>|<UniProt ID>_<species ID>/<start idx>-end idx, for
+            example: tr|A0A1W9RZR3|A0A1W9RZR3_9BACT/19-121
 
     Returns:
-        None
+        pd.DataFrame:
+            A DataFrame containing the sorted species IDs for the aligned sequences,
+            with column name species_id.
     """
 
     # Embed into DataFrame
-    if len(msa_array.metadata) == 1:
+    if len(metadata_raw) == 1:
         # Empty DataFrame for UniProt MSAs that only contain the query sequence
-        metadata = pd.DataFrame({"raw": msa_array.metadata})
         metadata = pd.DataFrame()
     else:
-        metadata = pd.DataFrame({"raw": msa_array.metadata[1:]})
+        metadata = pd.DataFrame({"raw": metadata_raw[1:]})
         metadata = metadata["raw"].str.split(r"[|_/:-]", expand=True)
         metadata.columns = [
             "tr",
@@ -521,12 +683,12 @@ def process_uniprot_metadata(msa_array: MsaArray) -> None:
             "chain_start",
             "chain_end",
         ]
-        metadata = metadata[["uniprot_id", "species_id"]]
+        metadata = metadata[["species_id"]]
 
-    msa_array.metadata = metadata
+    return metadata
 
 
-def sort_msa_by_distance_to_query(msa: MsaArray) -> None:
+def sort_msa_by_distance_to_query(msa_array: MsaArray) -> None:
     """Reorders the MSA array based on the distance to the query sequence.
 
     Reorders all class attributes of the MSA object.
@@ -538,24 +700,25 @@ def sort_msa_by_distance_to_query(msa: MsaArray) -> None:
     Returns:
         None
     """
-    msa_array = msa.msa
-    distance_to_query = np.sum(msa_array == msa_array[0, :], axis=-1) / float(
-        sum(msa_array[0, :] != "-")
+    _msa_array = msa_array.msa
+    distance_to_query = np.sum(_msa_array == _msa_array[0, :], axis=-1) / float(
+        sum(_msa_array[0, :] != "-")
     )
     sorting_indices = np.argsort(distance_to_query)[::-1]
-    msa.msa = msa_array[sorting_indices, :]
-    msa.metadata = msa.metadata.iloc[sorting_indices[1:] - 1]
-    msa.deletion_matrix = msa.deletion_matrix[sorting_indices, :]
+    msa_array.msa = _msa_array[sorting_indices, :]
+    msa_array.metadata = msa_array.metadata.iloc[sorting_indices[1:] - 1]
+    msa_array.deletion_matrix = msa_array.deletion_matrix[sorting_indices, :]
 
 
 def count_species_per_chain(
-    uniprot_hits: dict[str, MsaArray],
+    msa_arrays_to_pair: dict[str, MsaArray],
 ) -> tuple[np.ndarray[np.int], list[str]]:
     """Counts the occurrences of sequences from species in each chain's UniProt MSA.
 
     Args:
-        uniprot_hits (dict[str, MsaArray]):
-            Dict mapping chain IDs to Msa objects containing UniProt MSAs.
+        msa_arrays_to_pair (dict[str, MsaArray]):
+            Dict mapping chain IDs to Msa objects containing MSA arrays to pair with
+            their species information.
 
     Returns:
         tuple[np.ndarray[np.int32], list[str]]:
@@ -563,8 +726,8 @@ def count_species_per_chain(
             and the list species with at least one sequence among MSAs of all chains.
     """
     species = []
-    for chain_id in uniprot_hits:
-        species.extend(set(uniprot_hits[chain_id].metadata["species_id"]))
+    for chain_id in msa_arrays_to_pair:
+        species.extend(set(msa_arrays_to_pair[chain_id].metadata["species_id"]))
     species = np.array(sorted(set(species)))
     species_index = np.arange(len(species))
     species_index_map = {species[i]: i for i in species_index}
@@ -572,11 +735,11 @@ def count_species_per_chain(
     # Get lists of species per chain
     species_index_per_chain = [
         np.array(
-            uniprot_hits[chain_id]
+            msa_arrays_to_pair[chain_id]
             .metadata["species_id"]
             .apply(lambda x: species_index_map[x])
         )
-        for chain_id in uniprot_hits
+        for chain_id in msa_arrays_to_pair
     ]
 
     # Combine all lists into one array
@@ -591,7 +754,7 @@ def count_species_per_chain(
     unique_integers, inverse_indices = np.unique(all_lists, return_inverse=True)
 
     # Initialize the 2D array to count occurrences
-    count_array = np.zeros((len(uniprot_hits), len(unique_integers)), dtype=int)
+    count_array = np.zeros((len(msa_arrays_to_pair), len(unique_integers)), dtype=int)
 
     # Use np.add.at for unbuffered in-place addition
     np.add.at(count_array, (list_indices, inverse_indices), 1)
@@ -767,7 +930,7 @@ def _num_encode_species(
 
 def map_to_paired_msa_per_chain(
     msa_array_collection: MsaArrayCollection,
-    uniprot_hits: dict[str, MsaArray],
+    msa_arrays_to_pair: dict[str, MsaArray],
     paired_rows_index: np.ndarray[int],
     species: np.ndarray[str],
     mode: str = "deque",
@@ -775,10 +938,11 @@ def map_to_paired_msa_per_chain(
     """Maps paired species indices to MSA rows i.e. seqences.
 
     Args:
-        msa_collection (MsaArrayCollection):
+        msa_array_collection (MsaArrayCollection):
             A collection of Msa objects and chain IDs for a single sample.
-        uniprot_hits (dict[str, MsaArray]):
-            Dict mapping chain IDs to Msa objects containing UniProt MSAs.
+        msa_arrays_to_pair (dict[str, MsaArray]):
+            Dict mapping chain IDs to Msa objects containing MSA arrays to pair with
+            their species information.
         paired_rows_index (np.ndarray[int]):
             Array containing the indices that pair rows in MSAs of a crop/assembly
             across chains.
@@ -798,7 +962,7 @@ def map_to_paired_msa_per_chain(
     """
 
     # Map species indices back to MSA row indices
-    # Pre-allocate MSA objects, including those without UniProt hits
+    # Pre-allocate MSA objects, including those without pairable MSAs
     paired_msa_per_chain = {
         rep_id: MsaArray(
             msa=np.full((paired_rows_index.shape[0], seq.shape[-1]), "-"),
@@ -812,7 +976,7 @@ def map_to_paired_msa_per_chain(
     }
 
     # For each chain, sort MSA rows by the paired species indices
-    for chain_idx, (chain_id, msa_array) in enumerate(uniprot_hits.items()):
+    for chain_idx, (chain_id, msa_array) in enumerate(msa_arrays_to_pair.items()):
         # Get the array of species for each aligned sequences to the query chain
         species_array = np.array(msa_array.metadata["species_id"].to_numpy())
 
@@ -876,12 +1040,31 @@ def map_to_paired_msa_per_chain(
     return paired_msa_per_chain
 
 
+def expand_paired_msas(msa_array_collection: MsaArrayCollection) -> dict[int, MsaArray]:
+    """Expands the paired msas and deletion matrices from representatives to chains.
+
+    Args:
+        msa_array_collection (MsaArrayCollection):
+            A collection of Msa objects and chain IDs for a single sample.
+
+    Returns:
+        dict[int, MsaArray]:
+            Dict of MsaArray objects containing the paired msas and deletion matrix
+            for each chain, indexed by chain id.
+    """
+    return {
+        k: msa_array_collection.rep_id_to_paired_msa[v]
+        for (k, v) in msa_array_collection.chain_id_to_rep_id.items()
+    }
+
+
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-paired")
 def create_paired(
     msa_array_collection: MsaArrayCollection,
     max_rows_paired: int,
     min_chains_paired_partial: int,
     pairing_mask_keys: list[str],
+    msas_to_pair: Sequence[str] | None,
 ) -> dict[str, MsaArray]:
     """Creates paired MSA arrays from UniProt MSAs.
 
@@ -890,10 +1073,10 @@ def create_paired(
     exclude all partially paired rows with less than a certain number of chains
     as suggested by the AF3 SI.
 
-    Also crops the paired MSA.
+    Also crops the paired MSA along its rows to max_rows_paired.
 
     Args:
-        msa_collection (MsaArrayCollection):
+        msa_array_collection (MsaArrayCollection):
             A collection of Msa objects and chain IDs for a single sample.
         max_rows_paired (int):
             The maximum number of rows to keep from the paired rows.
@@ -902,25 +1085,29 @@ def create_paired(
             the number of unique chains in the crop or assembly.
         pairing_mask_keys (list[str]):
             List of strings indicating which mask to add.
+        msas_to_pair (list[str]):
+            Msas to to pair for online pairing
 
     Returns:
         dict[str, Msa]:
             Paired MSAs and deletion matrices for each chain.
     """
     # Get parsed uniprot hits
-    uniprot_hits = extract_uniprot_hits(msa_array_collection)
+    msa_arrays_to_pair = extract_alignments_to_pair(msa_array_collection, msas_to_pair)
 
     # Ensure there are at least two chains with UniProt hits after filtering
-    if len(uniprot_hits) <= 1:
+    if len(msa_arrays_to_pair) <= 1:
         return {}
 
-    # Process uniprot headers and calculate distance to query
-    for chain_id in uniprot_hits:
-        process_uniprot_metadata(uniprot_hits[chain_id])
-        sort_msa_by_distance_to_query(uniprot_hits[chain_id])
+    # Process uniprot headers and sort by distance to query
+    for chain_id in msa_arrays_to_pair:
+        msa_arrays_to_pair[chain_id].metadata = process_msa_pairing_metadata(
+            msa_arrays_to_pair[chain_id].metadata
+        )
+        sort_msa_by_distance_to_query(msa_arrays_to_pair[chain_id])
 
     # Count species occurrences per chain
-    count_array, species = count_species_per_chain(uniprot_hits)
+    count_array, species = count_species_per_chain(msa_arrays_to_pair)
 
     # Get pairing masks
     pairing_masks = get_pairing_masks(count_array, pairing_mask_keys)
@@ -940,22 +1127,59 @@ def create_paired(
     # Map species indices back to MSA row indices
     paired_msa_per_chain = map_to_paired_msa_per_chain(
         msa_array_collection,
-        uniprot_hits,
+        msa_arrays_to_pair,
         paired_rows_index,
         species,
     )
 
     # Expand paired MSAs across all chains
-    chain_id_to_paired_msa = {}
-    for chain_id, rep_id in msa_array_collection.chain_id_to_rep_id.items():
-        rep_paired_msa = paired_msa_per_chain[rep_id]
-        chain_id_to_paired_msa[chain_id] = MsaArray(
-            msa=rep_paired_msa.msa,
-            deletion_matrix=rep_paired_msa.deletion_matrix,
-            metadata=pd.DataFrame(),
-        )
+    msa_array_collection.rep_id_to_paired_msa = paired_msa_per_chain
+    chain_id_to_paired_msa = expand_paired_msas(msa_array_collection)
 
     return chain_id_to_paired_msa
+
+
+# TODO improve integration with existing create paired function
+def create_paired_from_preprocessed(
+    msa_array_collection: MsaArrayCollection,
+    max_rows_paired: int,
+    paired_msa_order: list[str],
+) -> dict[str, MsaArray]:
+    """Creates per-chain paired MSA arrays in the expected format from precomputed
+    paired MSAs.
+
+    Args:
+        msa_array_collection (MsaArrayCollection):
+            A collection of Msa objects and chain IDs for a single sample.
+        max_rows_paired (int):
+            The maximum number of rows to keep from the paired rows.
+        paired_msa_order (list[str]):
+            The order in which to concatenate the paired MSA arrays vertically if
+            multiple are provided. Alignments not in this list are not added to the
+            paired MSA stack.
+
+    Returns:
+        dict[str, MsaArray]: _description_
+    """
+
+    # Process precomputed paired MSAs
+    processed_prepaired_msas = {}
+    for rep_id, paired_msa_dict in msa_array_collection.rep_id_to_paired_msa.items():
+        # Flatten
+        prepaired_msa = MsaArray.multi_concatenate(
+            [
+                paired_msa_dict[paired_msa_key]
+                for paired_msa_key in paired_msa_order
+                if paired_msa_key in paired_msa_dict
+            ]
+        )
+        # Crop
+        processed_prepaired_msas[rep_id] = prepaired_msa.truncate(max_rows_paired)
+
+    msa_array_collection.rep_id_to_paired_msa = processed_prepaired_msas
+
+    # Map to per-chain
+    return expand_paired_msas(msa_array_collection=msa_array_collection)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-main")
@@ -970,7 +1194,7 @@ def create_main(
     present in the cropped paired MSA of the corresponding chain.
 
     Args:
-        msa_collection (MsaArrayCollection):
+        msa_array_collection (MsaArrayCollection):
             A collection of MsaArrays and chain IDs for a single sample.
         chain_id_to_paired_msa (dict[str, MsaArray]):
             Dict of paired Msa objects per chain.
@@ -985,8 +1209,8 @@ def create_main(
     """
     # Iterate over representatives
     rep_main_msas = {}
-    for rep_id, chain_data in msa_array_collection.rep_id_to_msa.items():
-        chain_data = msa_array_collection.rep_id_to_msa[rep_id]
+    for rep_id, chain_data in msa_array_collection.rep_id_to_main_msa.items():
+        chain_data = msa_array_collection.rep_id_to_main_msa[rep_id]
 
         # Get MSAs forming the main MSA and deletion matrices from all non-UniProt MSAs
         main_msa_redundant = np.concatenate(
@@ -1013,14 +1237,14 @@ def create_main(
             arr = main_msa_redundant
 
             # 1) Convert each 2D array into a 1D "structured" view of type void This
-            #    way, each row is treated as one item.
+            # way, each row is treated as one item.
             arr_view = arr.view(np.dtype((np.void, arr.dtype.itemsize * arr.shape[1])))
             paired_view = paired_arr.view(
                 np.dtype((np.void, paired_arr.dtype.itemsize * paired_arr.shape[1]))
             )
 
             # 2) Vectorized membership check: is row in paired_msa? ~np.isin(...)
-            #    inverts the boolean array, so True => "unique" row
+            # inverts the boolean array, so True -> "unique" row
             is_unique = np.squeeze(~np.isin(arr_view, paired_view), axis=-1)
 
             # Apply filtering with the boolean mask

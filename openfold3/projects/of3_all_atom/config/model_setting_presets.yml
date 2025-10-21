@@ -1,0 +1,48 @@
+train:
+  settings:
+    blocks_per_ckpt: 1
+    ckpt_intermediate_steps: true
+    memory:
+      train:
+        msa_module:
+          swiglu_seq_chunk_size: 4000
+      eval:
+        msa_module:
+          swiglu_seq_chunk_size: 4000
+  architecture:
+    loss_module:
+      diffusion:
+        chunk_size: 4
+
+predict:
+  settings:
+    memory:
+      eval:
+        # This chunk size is the minimum value, it will be auto-tuned by default
+        chunk_size: 4
+        offload_inference:
+          confidence_heads: true
+          token_cutoff: 2800
+  architecture:
+    msa:
+      msa_module_embedder:
+        subsample_main_msa: False
+        subsample_all_msa: True 
+
+pae_enabled:
+  architecture:
+    heads:
+      pae: 
+        enabled: True
+
+low_mem:
+  settings:
+    clear_cache_between_steps: True
+    memory:
+      eval:
+        per_sample_token_cutoff: 0
+        per_sample_atom_cutoff: 0
+        offload_inference:
+          msa_module: true
+          confidence_heads: true
+          token_cutoff: 0

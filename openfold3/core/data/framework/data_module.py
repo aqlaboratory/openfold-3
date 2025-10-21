@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """This module contains the DataModule class.
 
 The DataModule is a LightningDataModule class that organizes the
@@ -29,18 +43,18 @@ import dataclasses
 import enum
 import random
 import warnings
-from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import pytorch_lightning as pl
 import torch
+import torch.distributed as dist
 import torch.utils
 import torch.utils.data
 from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
 from lightning_utilities.core.imports import RequirementCache
-from ml_collections import ConfigDict
+from pydantic import BaseModel, SerializeAsAny
 from torch.utils.data import DataLoader
 
 from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
@@ -51,6 +65,11 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
 from openfold3.core.data.framework.stochastic_sampler_dataset import (
     SamplerDataset,
 )
+from openfold3.core.data.pipelines.preprocessing.template import TemplatePreprocessor
+from openfold3.core.data.tools.colabfold_msa_server import (
+    MsaComputationSettings,
+    preprocess_colabfold_msas,
+)
 from openfold3.core.utils.tensor_utils import dict_multimap
 
 _NUMPY_AVAILABLE = RequirementCache("numpy")
@@ -59,10 +78,24 @@ _NUMPY_AVAILABLE = RequirementCache("numpy")
 class DatasetMode(enum.Enum):
     """Enum for dataset modes."""
 
-    train = enum.auto()
-    validation = enum.auto()
-    test = enum.auto()
-    prediction = enum.auto()
+    train = "train"
+    validation = "validation"
+    test = "test"
+    prediction = "prediction"
+
+
+class DatasetSpec(BaseModel):
+    """Dataset specification provided to initialize datasets in the DataModule.
+
+    The DataModule accepts list of these configurations to create
+    `torch.Datasets` for pl.Trainer.
+    """
+
+    name: str
+    dataset_class: str
+    mode: DatasetMode
+    weight: float | None = None
+    config: SerializeAsAny[BaseModel] = SerializeAsAny()
 
 
 @dataclasses.dataclass
@@ -83,7 +116,7 @@ class MultiDatasetConfig:
 
     classes: list[str]
     modes: list[str]
-    configs: list[Union[dict[str, Any], None]]
+    configs: list[dict[str, Any] | None]
     weights: list[float]
 
     def __len__(self):
@@ -102,7 +135,7 @@ class MultiDatasetConfig:
         """
 
         def apply_bool(value, idx):
-            return [v for v, i in zip(value, idx) if i]
+            return [v for v, i in zip(value, idx, strict=True) if i]
 
         return MultiDatasetConfig(
             classes=apply_bool(self.classes, index),
@@ -116,61 +149,46 @@ class MultiDatasetConfig:
         return self.get_subset(datasets_stage_mask)
 
 
-@dataclasses.dataclass
-class DataModuleConfig:
-    batch_size: int
-    num_workers: int
-    data_seed: int
-    epoch_len: int
-    num_epochs: int
-    datasets: list[ConfigDict]
-
-    def to_dict(self):
-        _dict = self.__dict__.copy()
-        datasets = []
-        for d in _dict["datasets"]:
-            new_d = d.copy_and_resolve_references()
-            new_d.config.dataset_paths = {
-                k: (str(v) if isinstance(v, Path) else v)
-                for k, v in new_d.config.dataset_paths.items()
-            }
-            datasets.append(new_d.to_dict())
-        _dict["datasets"] = datasets
-        return _dict
+class DataModuleConfig(BaseModel):
+    datasets: list[SerializeAsAny[BaseModel]]
+    batch_size: int = 1
+    num_workers: int = 0
+    num_workers_validation: int = 0
+    data_seed: int = 42
+    epoch_len: int = 1
 
 
 class DataModule(pl.LightningDataModule):
     """A LightningDataModule class for organizing Datasets and DataLoaders."""
 
     def __init__(
-        self, data_config: DataModuleConfig, world_size: Optional[int] = None
+        self, data_module_config: DataModuleConfig, world_size: int | None = None
     ) -> None:
         super().__init__()
 
         # Possibly initialize directly from DataModuleConfig
-        self.batch_size = data_config.batch_size
-        self.num_workers = data_config.num_workers
-        self.data_seed = data_config.data_seed
-        self.epoch_len = data_config.epoch_len
-        self.num_epochs = data_config.num_epochs
+        self.batch_size = data_module_config.batch_size
+        self.num_workers = data_module_config.num_workers
+        self.num_workers_validation = data_module_config.num_workers_validation
+        self.data_seed = data_module_config.data_seed
+        self.epoch_len = data_module_config.epoch_len
+        self.world_size = world_size
 
         # Parse datasets
-        self.multi_dataset_config = self.parse_data_config(
-            data_config.datasets, world_size=world_size
-        )
+        self.multi_dataset_config = self.parse_data_config(data_module_config.datasets)
         self._initialize_next_dataset_indices()
 
     def _initialize_next_dataset_indices(self):
         train_configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.train)
         self.next_dataset_indices = dict()
         for cfg in train_configs.configs:
-            if cfg.custom.sample_in_order:
+            if cfg.sample_in_order:
                 self.next_dataset_indices[cfg.name] = 0
 
     def setup(self, stage=None):
         # Custom worker init function with manual data seed
         def worker_init_function_with_data_seed(
-            worker_id: int, rank: Optional[int] = None
+            worker_id: int, rank: int | None = None
         ) -> None:
             """Modified default Lightning worker_init_fn with manual data seed.
 
@@ -220,7 +238,6 @@ class DataModule(pl.LightningDataModule):
                 datasets=all_train_datasets,
                 dataset_probabilities=multi_dataset_config_train.weights,
                 epoch_len=self.epoch_len,
-                num_epochs=self.num_epochs,
                 generator=self.generator,
                 next_dataset_indices=self.next_dataset_indices,
             )
@@ -234,7 +251,9 @@ class DataModule(pl.LightningDataModule):
             multi_dataset_config_mode = self.multi_dataset_config.get_config_for_mode(
                 dataset_mode
             )
-            mode_datasets = self.init_datasets(multi_dataset_config_mode)
+            mode_datasets = self.init_datasets(
+                multi_dataset_config_mode, set_world_size=True
+            )
 
             if len(mode_datasets) > 1:
                 warnings.warn(
@@ -249,16 +268,12 @@ class DataModule(pl.LightningDataModule):
             )
 
     @classmethod
-    def parse_data_config(
-        cls, data_config: list[ConfigDict], world_size: Optional[int] = None
-    ) -> MultiDatasetConfig:
+    def parse_data_config(cls, data_config: list[dict]) -> MultiDatasetConfig:
         """Parses input data_config into separate lists.
 
         Args:
             data_config (list[dict]):
                 Input data configuration list of dataset dictionaries.
-            world_size (int, optional):
-                Number of GPUs being used. Defaults to None.
 
         Returns:
             MultiDatasetConfig:
@@ -266,48 +281,12 @@ class DataModule(pl.LightningDataModule):
                 modes.
         """
 
-        def get_cast(
-            dictionary: Union[dict, ConfigDict],
-            key: Union[str, int],
-            cast_type: type,
-            default: Any = None,
-        ) -> Any:
-            """Simultaneously try to get and try to cast a value from a dictionary.
-
-            Args:
-                dictionary (dict):
-                    Dictionary to get the value from.
-                key (Union[str, int]):
-                    Key to get the value from.
-                cast_type (type):
-                    Type to cast the value to.
-                default (Any, optional):
-                    Default value to return if key not available. Defaults to None.
-
-            Raises:
-                ValueError:
-                    If the value cannot be cast to the specified type.
-
-            Returns:
-                Any:
-                    Cast value or default.
-            """
-            value = dictionary.get(key, default)
-            try:
-                return cast_type(value) if value is not None else default
-            except ValueError as exc:
-                raise ValueError(f"Could not cast {key} to {cast_type}.") from exc
-
         classes, modes, configs, weights = [], [], [], []
         for dataset_entry in data_config:
-            classes.append(get_cast(dataset_entry, "class", str))
-            modes.append(DatasetMode[get_cast(dataset_entry, "mode", str)])
-            weights.append(get_cast(dataset_entry, "weight", float))
-
-            config = dataset_entry.get("config", dict())
-            config["name"] = dataset_entry["name"]
-            config["world_size"] = world_size
-            configs.append(config)
+            classes.append(dataset_entry.dataset_class)
+            modes.append(dataset_entry.mode)
+            weights.append(dataset_entry.weight)
+            configs.append(dataset_entry.config)
 
         multi_dataset_config = MultiDatasetConfig(
             classes=classes,
@@ -321,8 +300,39 @@ class DataModule(pl.LightningDataModule):
 
         return multi_dataset_config
 
-    @staticmethod
-    def run_checks(multi_dataset_config: MultiDatasetConfig) -> None:
+    @classmethod
+    def run_training_dataset_checks(
+        cls,
+        train_dataset_config: MultiDatasetConfig,
+    ) -> None:
+        """Check that dataset weights and crop weights are normalized"""
+        if sum(train_dataset_config.weights) != 1:
+            warnings.warn(
+                "Dataset weights do not sum to 1. Normalizing weights.",
+                stacklevel=2,
+            )
+            train_dataset_config.weights = [
+                weight / sum(train_dataset_config.weights)
+                for weight in train_dataset_config.weights
+            ]
+
+        # Check if provided crop weights sum to 1
+        for idx, config_i in enumerate(train_dataset_config.configs):
+            config_i_crop_weights = config_i.crop.crop_weights.model_dump()
+            if sum(config_i_crop_weights.values()) != 1:
+                warnings.warn(
+                    f"Dataset {train_dataset_config.classes[idx]} crop weights do not "
+                    "sum to 1. Normalizing weights.",
+                    stacklevel=2,
+                )
+                train_dataset_config.configs[idx].crop.crop_weights = {
+                    key: value / sum(config_i_crop_weights.values())
+                    for key, value in config_i_crop_weights.items()
+                }
+                print(f"{train_dataset_config.configs[idx].crop.crop_weights=}")
+
+    @classmethod
+    def run_checks(cls, multi_dataset_config: MultiDatasetConfig) -> None:
         """Runs checks on the provided crop weights and modes.
 
         Checks for valid combinations of SingleDataset modes and normalizes weights and
@@ -341,29 +351,8 @@ class DataModule(pl.LightningDataModule):
         train_dataset_config = multi_dataset_config.get_subset(
             [mode == DatasetMode.train for mode in multi_dataset_config.modes]
         )
-        if sum(train_dataset_config.weights) != 1:
-            warnings.warn(
-                "Dataset weights do not sum to 1. Normalizing weights.",
-                stacklevel=2,
-            )
-            train_dataset_config.weights = [
-                weight / sum(train_dataset_config.weights)
-                for weight in train_dataset_config.weights
-            ]
-
-        # Check if provided crop weights sum to 1
-        for idx, config_i in enumerate(train_dataset_config.configs):
-            config_i_crop_weights = config_i["custom"]["crop"]["crop_weights"]
-            if sum(config_i_crop_weights.values()) != 1:
-                warnings.warn(
-                    f"Dataset {train_dataset_config.classes[idx]} crop weights do not "
-                    "sum to 1. Normalizing weights.",
-                    stacklevel=2,
-                )
-                train_dataset_config.configs[idx]["custom"]["crop"]["crop_weights"] = {
-                    key: value / sum(config_i_crop_weights.values())
-                    for key, value in config_i_crop_weights.items()
-                }
+        if len(train_dataset_config.classes):
+            cls.run_training_dataset_checks(train_dataset_config)
 
         # Check if provided dataset mode combination is valid
         modes = multi_dataset_config.modes
@@ -394,25 +383,33 @@ class DataModule(pl.LightningDataModule):
                 " Supported modes are: train, validation, test, prediction."
             )
 
-    @staticmethod
-    def init_datasets(multi_dataset_config: MultiDatasetConfig) -> list[SingleDataset]:
+    def init_datasets(
+        self, multi_dataset_config: MultiDatasetConfig, set_world_size: bool = False
+    ) -> list[SingleDataset]:
         """Initializes datasets.
 
         Args:
             multi_dataset_config (MultiDatasetConfig):
                 Parsed config of all input datasets.
+            set_world_size: Whether to set the world size in the dataset initialization
 
         Returns:
             list[Sequence[SingleDataset]]: List of initialized SingleDataset objects.
         """
         # Note that the dataset config already contains the paths!
-        datasets = [
-            DATASET_REGISTRY[dataset_class](dataset_config)
-            for dataset_class, dataset_config in zip(
-                multi_dataset_config.classes,
-                multi_dataset_config.configs,
-            )
-        ]
+        datasets = []
+        for dataset_class, dataset_config in zip(
+            multi_dataset_config.classes,
+            multi_dataset_config.configs,
+            strict=True,
+        ):
+            if set_world_size:
+                dataset = DATASET_REGISTRY[dataset_class](
+                    dataset_config, self.world_size
+                )
+            else:
+                dataset = DATASET_REGISTRY[dataset_class](dataset_config)
+            datasets.append(dataset)
         return datasets
 
     def generate_dataloader(self, mode: DatasetMode):
@@ -425,10 +422,22 @@ class DataModule(pl.LightningDataModule):
         Returns:
             DataLoader: DataLoader object.
         """
+
+        # TODO: Val does not need this many workers. Due to memory leak issue,
+        #  reduce workers here to run with more workers overall in training
+        #  as temporary quick fix.
+        if (
+            mode == DatasetMode.validation
+            and DatasetMode.train in self.multi_dataset_config.modes
+        ):
+            num_workers = self.num_workers_validation
+        else:
+            num_workers = self.num_workers
+
         return DataLoader(
             dataset=self.datasets_by_mode[mode],
             batch_size=self.batch_size,
-            num_workers=self.num_workers,
+            num_workers=num_workers,
             collate_fn=openfold_batch_collator,
             generator=self.generator,
             worker_init_fn=self.worker_init_function_with_data_seed,
@@ -485,11 +494,61 @@ class DataModule(pl.LightningDataModule):
         self.next_dataset_indices = state_dict["next_dataset_indices"]
 
 
-# TODO: Remove debug logic
+class InferenceDataModule(DataModule):
+    """LightnigngDataModule that contains a prepare_data hook for inference."""
+
+    def __init__(
+        self,
+        data_module_config: DataModuleConfig,
+        world_size: int | None = None,
+        use_msa_server: bool = False,
+        use_templates: bool = False,
+        msa_computation_settings: MsaComputationSettings | None = None,
+    ):
+        # get information about msas from the experiment runner
+        # probably should add to the config
+        super().__init__(data_module_config, world_size)
+        self.use_msa_server = use_msa_server
+        self.use_templates = use_templates
+        self.msa_computation_settings = msa_computation_settings
+        _configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.prediction)
+        self.inference_config = _configs.configs[0]
+
+    def prepare_data(self) -> None:
+        # Colabfold msa preparation
+        if self.use_msa_server:
+            self.inference_config.query_set = preprocess_colabfold_msas(
+                inference_query_set=self.inference_config.query_set,
+                compute_settings=self.msa_computation_settings,
+            )
+
+        if self.use_templates:
+            template_preprocessor = TemplatePreprocessor(
+                input_set=self.inference_config.query_set,
+                config=self.inference_config.template_preprocessor_settings,
+            )
+            template_preprocessor()
+
+    def setup(self, stage=None):
+        """Broadcast updated query set to all ranks if multiple GPUs are used."""
+        if self.world_size and self.world_size > 1:
+            if dist.get_rank() == 0:
+                placeholder = [self.inference_config.query_set]
+            else:
+                placeholder = [None]
+            dist.broadcast_object_list(placeholder, src=0)
+            self.inference_config.query_set = placeholder[0]
+        super().setup()
+
+
+# TODO: Remove debug logic and improve handlingi of training only features
 def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):
     """Collates a list of samples into a batch."""
 
-    pdb_ids = [s.pop("pdb_id") for s in samples]
+    has_pdb_id = "pdb_id" in samples[0]
+
+    if has_pdb_id:
+        pdb_ids = [s.pop("pdb_id") for s in samples]
 
     def pad_feat_fn(values: list[torch.Tensor]) -> torch.Tensor:
         """
@@ -503,15 +562,20 @@ def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):
 
     # The ligand permutation mappings are a special feature and need to be handled
     # separately
-    ref_space_uid_to_perm_dicts = []
-    for sample in samples:
-        ref_space_uid_to_perm_dicts.append(sample.pop("ref_space_uid_to_perm"))
+    has_ref_space_uid_to_perm = "ref_space_uid_to_perm" in samples[0]
+
+    if has_ref_space_uid_to_perm:
+        ref_space_uid_to_perm_dicts = []
+        for sample in samples:
+            ref_space_uid_to_perm_dicts.append(sample.pop("ref_space_uid_to_perm"))
 
     samples = dict_multimap(pad_feat_fn, samples)
 
     # Add the ref_space_uid_to_perm back to the samples
-    samples["ref_space_uid_to_perm"] = ref_space_uid_to_perm_dicts
+    if has_ref_space_uid_to_perm:
+        samples["ref_space_uid_to_perm"] = ref_space_uid_to_perm_dicts
 
-    samples["pdb_id"] = pdb_ids
+    if has_pdb_id:
+        samples["pdb_id"] = pdb_ids
 
     return samples

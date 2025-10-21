@@ -1,6 +1,20 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """This module contains featurization pipelines for structural data."""
 
-from typing import Union
+import logging
 
 import numpy as np
 import torch
@@ -23,12 +37,38 @@ from openfold3.core.data.resources.residues import (
     get_with_unknown_3_to_idx,
 )
 
+logger = logging.getLogger(__name__)
 
-def featurize_structure_af3(
+
+TOKEN_DIM_INDEX_MAP = {
+    "residue_index": [-1],
+    "token_index": [-1],
+    "asym_id": [-1],
+    "entity_id": [-1],
+    "sym_id": [-1],
+    "restype": [-2],
+    "is_protein": [-1],
+    "is_rna": [-1],
+    "is_dna": [-1],
+    "is_ligand": [-1],
+    "token_bonds": [-1, -2],
+    "num_atoms_per_token": [-1],
+    "is_atomized": [-1],
+    "start_atom_index": [-1],
+    "token_mask": [-1],
+    "mol_entity_id": [-1],
+    "mol_sym_id": [-1],
+    "mol_sym_token_index": [-1],
+    "mol_sym_component_id": [-1],
+}
+
+
+def featurize_structure_of3(
     atom_array: AtomArray,
     n_tokens: int,
     token_dim_index_map: dict[str, int],
     is_gt: bool,
+    add_perm_features: bool = True,
 ) -> dict[str, torch.Tensor]:
     """Creates target OR gt structure features following the AF3 strategy.
 
@@ -45,6 +85,14 @@ def featurize_structure_af3(
         is_gt (bool):
             Whether the input AtomArray is from the duplicate-expanded ground truth
             structure.
+        add_perm_features (bool):
+            Whether to add features related to the permutation alignment (only required
+            in training). The features added are:
+                - mol_entity_id
+                - mol_sym_id
+                - mol_sym_token_index
+                - mol_sym_component_id
+            See (`assign_mol_permutation_ids`) for more details on these features.
 
     Returns:
         dict[str, torch.Tensor]:
@@ -107,27 +155,38 @@ def featurize_structure_af3(
     )
 
     # Permutation alignment helper labels
-    features["mol_entity_id"] = torch.tensor(
-        atom_array.mol_entity_id[token_starts], dtype=torch.int32
-    )
-    features["mol_sym_id"] = torch.tensor(
-        atom_array.mol_sym_id[token_starts], dtype=torch.int32
-    )
-    features["mol_sym_token_index"] = torch.tensor(
-        atom_array.mol_sym_token_index[token_starts], dtype=torch.int32
-    )
-    features["mol_sym_component_id"] = torch.tensor(
-        atom_array.mol_sym_component_id[token_starts], dtype=torch.int32
-    )
+    if add_perm_features:
+        features["mol_entity_id"] = torch.tensor(
+            atom_array.mol_entity_id[token_starts], dtype=torch.int32
+        )
+        features["mol_sym_id"] = torch.tensor(
+            atom_array.mol_sym_id[token_starts], dtype=torch.int32
+        )
+        features["mol_sym_token_index"] = torch.tensor(
+            atom_array.mol_sym_token_index[token_starts], dtype=torch.int32
+        )
+        features["mol_sym_component_id"] = torch.tensor(
+            atom_array.mol_sym_component_id[token_starts], dtype=torch.int32
+        )
 
     if not is_gt:
         # Indexing
         features["residue_index"] = torch.tensor(
             atom_array.res_id[token_starts], dtype=torch.int32
         )
-        features["asym_id"] = torch.tensor(
-            atom_array.chain_id[token_starts].astype(int), dtype=torch.int32
-        )
+
+        # Chain IDs are int-like in our training code, but not necessarily in inference
+        chain_ids_token = atom_array.chain_id[token_starts]
+
+        # Renumber these as numerical IDs (starting from 1)
+        unique_ids, renum_ids = np.unique(chain_ids_token, return_inverse=True)
+        asym_id = torch.tensor(renum_ids + 1, dtype=torch.int32)
+
+        if len(unique_ids) != len(torch.unique_consecutive(asym_id)):
+            logger.warning("Chain IDs are not unique within complex.")
+
+        features["asym_id"] = asym_id
+
         features["entity_id"] = torch.tensor(
             atom_array.entity_id[token_starts], dtype=torch.int32
         )
@@ -163,11 +222,11 @@ def featurize_structure_af3(
 
 
 @log_runtime_memory(runtime_dict_key="runtime-target-structure-feat")
-def featurize_target_gt_structure_af3(
+def featurize_target_gt_structure_of3(
     atom_array: AtomArray,
     atom_array_gt: AtomArray,
     n_tokens: int,
-) -> dict[str, Union[torch.Tensor, dict[str, torch.Tensor]]]:
+) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
     """Wraps featurize_structure_af3 for creating target AND gt structure features.
 
     Expects the cropped and duplicate-expanded AtomArray as input. The target structure
@@ -187,39 +246,20 @@ def featurize_target_gt_structure_af3(
             Target and ground truth features. Ground truth features are nested
             in a subdictionary under the 'ground_truth' key.
     """
-    token_dim_index_map = {
-        "residue_index": [-1],
-        "token_index": [-1],
-        "asym_id": [-1],
-        "entity_id": [-1],
-        "sym_id": [-1],
-        "restype": [-2],
-        "is_protein": [-1],
-        "is_rna": [-1],
-        "is_dna": [-1],
-        "is_ligand": [-1],
-        "token_bonds": [-1, -2],
-        "num_atoms_per_token": [-1],
-        "is_atomized": [-1],
-        "start_atom_index": [-1],
-        "token_mask": [-1],
-        "mol_entity_id": [-1],
-        "mol_sym_id": [-1],
-        "mol_sym_token_index": [-1],
-        "mol_sym_component_id": [-1],
-    }
-    features_target = featurize_structure_af3(
+    # TODO: Can probably get rid of TOKEN_DIM_INDEX_MAP because padding is already
+    # handled in the BatchCollator
+    features_target = featurize_structure_of3(
         atom_array=atom_array,
         n_tokens=n_tokens,
-        token_dim_index_map=token_dim_index_map,
+        token_dim_index_map=TOKEN_DIM_INDEX_MAP,
         is_gt=False,
     )
 
     # TODO: Make token budget adjustment automatic for is_gt=True
-    features_gt = featurize_structure_af3(
+    features_gt = featurize_structure_of3(
         atom_array=atom_array_gt,
         n_tokens=len(np.unique(atom_array_gt.token_id)),
-        token_dim_index_map=token_dim_index_map,
+        token_dim_index_map=TOKEN_DIM_INDEX_MAP,
         is_gt=True,
     )
     features_target["ground_truth"] = features_gt

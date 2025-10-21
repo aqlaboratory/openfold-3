@@ -6,7 +6,7 @@ from typing import Literal
 import click
 
 from openfold3.core.data.pipelines.preprocessing.caches.pdb_weighted import (
-    create_pdb_training_dataset_cache_af3,
+    create_pdb_training_dataset_cache_of3,
 )
 
 
@@ -175,15 +175,16 @@ def main(
         logger.addHandler(file_handler)
 
     filter_dict = {
-        "max_release_date": max_release_date,
+        "max_release_date": parsed_max_release_date,
         "max_resolution": max_resolution,
         "max_polymer_chains": max_polymer_chains,
+        "max_conformer_release_date": parsed_max_conformer_release_date,
     }
     for filter_name, filter_value in filter_dict.items():
         if filter_value is None:
             logger.warning(f"Skipping filter for {filter_name} as it is None.")
 
-    create_pdb_training_dataset_cache_af3(
+    create_pdb_training_dataset_cache_of3(
         metadata_cache_path=metadata_cache_path,
         preprocessed_dir=preprocessed_dir,
         alignment_representatives_fasta=alignment_representatives_fasta,

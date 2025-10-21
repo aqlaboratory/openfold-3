@@ -1,170 +1,467 @@
-# OpenFold Inference 
+# OpenFold Inference
 
-In this guide, we will cover how to use OpenFold to make structure predictions.
+Welcome to the Documentation for running inference with OpenFold3, our fully open source, trainable, PyTorch-based reproduction of DeepMind’s AlphaFold 3. OpenFold3 carefully implements the features described in [AlphaFold 3 *Nature* paper](https://www.nature.com/articles/s41586-024-07487-w).
 
-## Background
+This guide covers how to use OpenFold3 to make structure predictions.
 
-We currently offer three modes of inference prediction:
 
-- Monomer
-- Multimer
-- Single Sequence (Soloseq) 
+## 1. Inference features
 
-This guide will focus on monomer prediction, the next sections will describe [Multimer](Multimer_Inference.md) and [Single Sequence](Single_Sequence_Inference.md) prediction. 
-`
-### Pre-requisites: 
+OpenFold3 replicates the full set of input features described in the *AlphaFold 3* publication. All of these features are **fully implemented and supported in training mode**. We are actively working on integrating these functionalities into the inference pipeline. 
+ 
+Below is the current status of inference feature support by molecule type:
 
-- OpenFold Conda Environment. See [OpenFold Installation](Installation.md) for instructions on how to build this environment. 
-- Downloading sequence databases for performing multiple sequence alignments. We provide a script to download the AlphaFold databases [here](https://github.com/aqlaboratory/openfold/blob/main/scripts/download_alphafold_dbs.sh).
-   
 
-## Running AlphaFold Model Inference 
+### 1.1 Protein
 
-The script [`run_pretrained_openfold.py`](https://github.com/aqlaboratory/openfold/blob/main/run_pretrained_openfold.py) performs model inference. We will go through the steps of how to use this script.
+Supported:
 
-An example directory for performing infernce on [PDB:6KWC](https://www.rcsb.org/structure/6KWC) is provided [here](https://github.com/aqlaboratory/openfold/tree/main/examples/monomer). We refer to this example directory for the below examples.
+- Prediction with MSA
+    - using ColabFold MSA pipeline
+    - using pre-computed MSAs
+- Prediction without MSA
+- OpenFold3's own MSA generation pipeline
+- Template-based prediction
+    - using ColabFold template alignments
+    - using pre-computed template alignments
+- Non-canonical residues
 
-### Download Model Parameters 
+Coming soon:
 
-For monomer inference, you may either use the model parameters provided by Deepmind, or you may use the OpenFold trained parameters. Both models should give similar performance, please see [our main paper](https://www.biorxiv.org/content/10.1101/2022.11.20.517210v3) for further reference.
+- Covalently modified residues and other cross-chain covalent bonds
 
-The model parameters provided by Deepmind can be downloaded with the following script located in this repository's `scripts/` directory:
+### 1.2 DNA
+
+Supported:
+
+- Prediction without MSA (per AF3 default)
+- Non-canonical residues
+
+Coming soon:
+
+- Covalently modified residues and other cross-chain covalent bonds
+
+
+### 1.3 RNA
+
+Supported:
+
+- Prediction without MSA
+- OpenFold3's own MSA generation pipeline
+- Support for OpenFold3-style precomputed MSAs
+- Non-canonical residues
+
+Coming soon:
+
+- Template-based prediction
+- Covalently modified residues and other cross-chain covalent bonds
+- Protein-RNA MSA pairing
+
+
+### 1.4 Ligand
+
+Supported:
+
+- Non-covalent ligands
+
+Coming soon:
+
+- Covalently bound ligands
+- Polymeric ligands such as glycans
+
+
+## 2. Pre-requisites:
+
+- OpenFold3 Conda Environment. See [OpenFold3 Installation](installation) for instructions on how to build this environment.
+- OpenFold3 Model Parameters: please find the checkpoints [in this Google Drive](https://drive.google.com/drive/folders/1PD1B-FuLF9V9wxATGh7qaF0G-WaT4j3g?usp=drive_link).
+
+
+## 3. Running OpenFold3 Inference
+
+A directory containing containing multiple inference examples is provided [in this Google Drive](https://drive.google.com/drive/folders/1b4OXHxXUdSd-XYrqtblIF-64rt9Mda4Q?usp=drive_link). These include:
+- [Single-chain protein (monomer)](https://drive.google.com/drive/folders/15S0Z_EIj5JJ4eWUaMi3uhCIhl4TzIWgN?usp=drive_link): Ubiquitin (PDB: 1UBQ)
+- [Multi-chain protein with identical chains (homomer)](https://drive.google.com/drive/folders/1mxuhRij04bZu6D5UtxlEjl8n6LU5hwrA?usp=drive_link): GCN4 leucine zipper (PDB: 2ZTA)
+- [Multi-chain protein with different chains (multimer)](https://drive.google.com/drive/folders/1d0S6ueEyrUEMVeXiebDhEeTp6s-Hm_Pu?usp=drive_link): Deoxy human hemoglobin (PDB: 1A3N)
+- [Protein-ligand complex](https://drive.google.com/drive/folders/1MUYcp-EN1JizM1-xgz94qx5pcVS1A_Ap?usp=drive_link): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
+
+
+### 3.1 Input Data
+
+Queries can include any combination of single- or multi-chain proteins, with or without ligands, and may contain multiple such complexes. <br/>
+Input is provided via a `query.json` file — a structured JSON document that defines each query, its constituent chains, chain types (e.g., protein, DNA, ligand) and sequences or molecular graphs. Optionally, the query can include paths to precomputed protein or RNA MSAs. <br/>
+See [OpenFold3 input format](input_format.md) for instructions on how to specify your input data.
+
+
+### 3.2 Inference Modes
+OpenFold3 currently supports three inference modes:
+
+- 🚀 With ColabFold MSA Server (default)
+- 📂 With Precomputed MSAs
+- 🚫 Without MSAs (MSA-free)
+
+Each mode shares the same command structure but differs in how MSAs are provided or generated.
+
+#### 3.2.1 🚀 Inference with ColabFold MSA Server (Default)
+
+This mode automatically generates MSAs using the ColabFold server. Only protein sequences are sent to the server. We recommend this mode if you only have a couple of structures to predict.
 
 ```
-$ bash scripts/download_alphafold_params.sh $PARAMS_DIR
+python run_openfold.py predict \
+    --query_json /path/to/query.json \
+    --inference_ckpt_path /path/to/inference.ckpt \
+    --use_msa_server \
+    --output_dir /path/to/output/
 ```
 
-To use the OpenFold trained parameters, you can use the following script
+**Required arguments**
+
+- `--query_json` *(Path)*
+    - Path to the input query JSON file.
+
+- `--inference_ckpt_path` *(Path)*
+    - Path to the model checkpoint file (`.pt` file).
+
+
+**Optional arguments**
+
+- `--use_msa_server` *(bool, optional, default = True)*
+    - Whether to use the ColabFold server for MSA generation.
+
+- `--output_dir` *(Path, optional, default = `test_train_output/`)*
+    - Directory where outputs will be written.
+
+- `--num_diffusion_samples` *(int, optional, default = 5)*
+    - Number of diffusion samples per query.
+
+- `--num_model_seeds` *(int, optional, default = 1)*
+    - Number of random seeds to use per query.
+
+- `--runner_yaml` *(Path, optional, default = null)*
+    - YAML config for full control over model and data parameters.
+    - Example: [runner.yml](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml)
+
+📝  *Notes*: 
+- Only protein sequences are submitted to the ColabFold server so this mode only uses MSAs for protein chains.
+- All arguments can also be set via `runner_yaml`, but command-line flags take precedence and will override values specified in the YAML file (see [Customized Inference Settings](customized-inference-settings-using-runneryml) for details).
+
+
+#### 3.2.2 📂 Inference with Precomputed MSAs
+This mode allows inference using MSA files prepared manually or by external tools. We recommend this mode for high-throughput screeing applications where you want to run hundreds or thousands of predictions. See the [precomputed MSA documentation](precomputed_msa_how_to.md) for a step-by-step tutorial, the [MSA generation guide](precomputed_msa_generation_how_to.md) for using our MSA generation pipeline and the [precomputed MSA explanatory document](precomputed_msa_explanation.md) for a more in-depth explanation on how precomputed MSA handling works.
 
 ```
-$ bash scripts/download_openfold_params.sh $PARAMS_DIR
+python run_openfold.py predict \
+    --query_json /path/to/query_precomputed.json \
+    --inference_ckpt_path /path/to/of3_checkpoint.pt \
+    --use_msa_server=False \
+    --output_dir /path/to/output/ \
+    --runner_yaml /path/to/inference_precomputed.yml
 ```
 
-We recommend selecting `openfold/resources` as the params directory as this is the default directory used by the `run_pretrained_openfold.py` to locate parameters. 
-
-If you choose to use a different directory, you may make a symlink to the `openfold/resources` directory, or specify an alternate parameter path with the command line argument `--jax_param_path` for AlphaFold parameters or `--openfold_checkpoint_path` for OpenFold parameters. 
-
-
-### Model Inference 
-
-The input to [`run_pretrained_openfold.py`](https://github.com/aqlaboratory/openfold/blob/main/run_pretrained_openfold.py) is a directory of FASTA files. AlphaFold-style models also require a sequence alignment to perform inference.
-
-If you do not have sequence alignments for your input sequences, you can compute them using the inference script directly by following the instructions for the following section [inference without pre-computed alignments](#model-inference-without-pre-computed-alignments).
-
-Otherwise, if you already have alignments for your input FASTA sequences, skip ahead to the [inference with pre-computed alignments](#model-inference-with-pre-computed-alignments) section. 
-
-#### Model inference without pre-computed alignments 
-The following command performs a sequence alignment against the OpenProteinSet databases and performs model inference. 
+#### 3.2.3 🚫 Inference Without MSAs
+This mode skips MSA generation entirely. OpenFold3 will perform inference using only the input sequences. Prediction quality will be reduced compared to MSA-based modes. This inference mode is currently discouraged if the goal is to obtain the highest-accuracy structures.
 
 ```
-python3 run_pretrained_openfold.py \
-    $INPUT_FASTA_DIR \
-    $TEMPLATE_MMCIF_DIR 
-    --output_dir $OUTPUT_DIR \
-    --config_preset model_1_ptm \
-    --uniref90_database_path $BASE_DATA_DIR/uniref90 \
-    --mgnify_database_path $BASE_DATA_DIR/mgnify/mgy_clusters_2018_12.fa \
-    --pdb70_database_path $BASE_DATA_DIR/pdb70 \
-    --uniclust30_database_path $BASE_DATA_DIR/uniclust30/uniclust30_2018_08/uniclust30_2018_08 \
-    --bfd_database_path $BASE_DATA_DIR/bfd/bfd_metaclust_clu_complete_id30_c90_final_seq.sorted_opt \
-    --model_device "cuda:0" 
+python run_openfold.py predict \
+    --query_json /path/to/query.json \
+    --inference_ckpt_path /path/to/inference.ckpt \
+    --use_msa_server=False \
+    --output_dir /path/to/output/
 ```
 
-**Required arguments:**
-- `--output_dir`: specify the output directory
-- `$INPUT_FASTA_DIR`: Directory of query fasta files, one sequence per file,e.g. `examples/monomer/fasta_dir`
-- `$TEMPLATE_MMCIF_DIR`: MMCIF files to use for template matching. This directory is required even if using template free inference. 
-- `*_database_path`: Paths to sequence databases for sequence alignment.
-- `--model_device`: Specify to use a GPU is one is available.
+(customized-inference-settings-using-runneryml)=
+### 3.3 Customized Inference Settings Using `runner.yml`
 
-#### Model inference with pre-computed alignments 
-To perform model inference with pre-computed alignments, use the following command
+You can further customize inference behavior by providing a [`runner.yml`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml) file. This overrides the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/entry_points/validator.py).
 
+Below are some common use cases and how to configure them:
+
+
+#### 🖥️ Run on Multiple GPUs or Nodes
+Specify the hardware configuration under [`pl_trainer_args`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L141) in `runner.yml`:
+
+Note: Using multiple GPUs in combination with the `--use_msa_server` option currently launches the same ColabFold MSA server query and template preprocessing code per GPU. It may be more efficient to pre-compute the MSAs and preprocess templates in advance and then running distributed predictions with the [pre-computed MSA option](precomputed_msa_how_to.md). We will introduce a fix to this in an upcoming release.
 ```
-python3 run_pretrained_openfold.py ${INPUT_FASTA_DIR} \
-  $TEMPLATE_MMCIF_DIR \
-  --output_dir $OUTPUT_DIR \
-  --use_precomputed_alignments $PRECOMPUTED_ALIGNMENTS \
-  --config_preset model_1_ptm \
-  --model_device "cuda:0" \
-```
-
-where `$PRECOMPUTED_ALIGNMENTS` is a directory that contains alignments. A sample alignments directory structure for a single query is:
-
-```
-alignments
-└── 6KWC_1 
-    ├── bfd_uniclust_hits.a3m
-    ├── hhsearch_output.hhr
-    ├── mgnify_hits.sto
-    └── uniref90_hits.sto
+pl_trainer_args:
+  devices: 4      # Default: 1
+  num_nodes: 1    # Default: 1
 ```
 
-`bfd_uniclust_hits.a3m`, `mgnify_hits.sto`, and `uniref90_hits.sto` are all alignments of the query structure against the BFD, Mgnify, and Uniref90 datasets respsectively. `hhsearch_output.hhr` contains hits against the PDB70 database used for template matching. The example directory `examples/monomer/alignments` shows examples of expected directories.
+---
+
+#### 🌱 Change the random seeds for the model 
+
+By default, only 1 random model seed is used. The custom list of random seeds can be provided to the `runner.yml` under [`experiment_settings`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L120) in the following format
+
+```
+experiment_settings:
+  seeds:
+    - 100
+    - 101
+    - ... 
+```
+
+---
+
+#### 📦 Output in PDB Format
+Change the structure output format from `cif` to `pdb` using [`output_writer_settings`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L170):
+```
+output_writer_settings:
+  structure_format: pdb    # Default: cif
+```
+
+---
+
+#### 🧠 Low Memory Mode
+To run inference on larger queries to run on limited memory, add the following to apply the [model presets](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/model_setting_presets.yml) to run in low memory mode.
+
+Note: These settings cause the pairformer embedding output from the diffusion samples to be computed sequentially. Significant slowdowns may occur, especially for large number of diffusion samples.
+```
+model_update:
+  presets:
+    - predict  # required for inference
+    - low_mem
+```
+
+---
+
+#### 📊 Toggle PAE head model
+
+Predicted Aligned Error (PAE) is a predicted confidence metric from the OpenFold3 model that is used to compute predicted TM scores. You can find more information about confidence metrics [here](https://www.ebi.ac.uk/training/online/courses/alphafold/inputs-and-outputs/evaluating-alphafolds-predicted-structures-using-confidence-scores/confidence-scores-in-alphafold-multimer/).
+
+The PAE model head is enabled by default in inference by its selection in the model presets. To disable PAE model, provide a list of model presets that does not include the `pae_enabled` preset, e.g.
+
+```
+model_update:
+  presets:
+    - predict # required for inference 
+```
+
+Conversely, if you provide your own model_update and wish to use the PAE head, please ensure the `pae_enabled` preset is selected:
+
+```
+model_update:
+  presets:
+    - predict  # required for inference
+    - low_mem  # default low memory settings
+    - pae_enabled  # required to run PAE head
+  custom:
+    - ... custom model changes
+```
+
+---
+
+### 3.4 Customized ColabFold MSA Server Settings Using `runner.yml` 
+
+All settings for the ColabFold server and outputs can be set at `msa_computation_settings`](https://github.com/aqlaboratory/openfold3/blob/9d3ff681560cdd65fa92f80f08a4ab5becaebf87/openfold3/core/data/tools/colabfold_msa_server.py#L833)
 
 
-#### Configuration settings for template modeling / pTM scoring 
-There are a few configuration settings available for template based and template-free modeling, and for the option to estimate a predicted template modeling score (pTM). 
+(34-saving-msa-outputs)=
+#### Saving MSA outputs
 
-This table provides guidance on which setting to use for each set of predictions, as well as the parameters to select for each preset.  
+By default, MSA outputs are written to a temporary directory and are deleted after prediction is complete. 
 
-|                    Setting |                           `config_preset` | AlphaFold params (match config name)                                              | OpenFold params (any are allowed)  |
-| -------------------------: | ----------------------------------------: | :-------------------------------------------------------------------------------- | :--------------------------------- |
-|      With template, no ptm |                        model_1<br>model_2 | `parms_model_1.npz`<br>`parms_model_2.npz`                                        | `finetuning_[2-5].pt`              |
-|    With template, with ptm |                model_1_ptm<br>model_2_ptm | `params_model_1_ptm.npz`<br>`params_model_2_ptm.npz`                              | `finetuning_ptm_[1-2].pt`          |
-|   Without template, no ptm |             model_3<br>model_4<br>model_5 | `parms_model_3.npz`<br>`parms_model_4.npz`<br>`parms_model_5.npz`                 | `finetuning_no_templ_[1-2].pt`     |
-| Without template, with ptm | model_3_ptm<br>model_4_ptm<br>model_5_ptm | `parms_model_3_ptm.npz`<br>`parms_model_4_ptm.npz`<br>`parms_model_5_ptm.npz`<br> | `finetuning_no_templ_ptm_1.pt` |
+These settings can be saved by changing the following fields:
 
-If you use AlphaFold parameters, and the AlphaFold parameters are located in the default parameter directory (e.g. `openfold/resources`) the parameters that match the `--config_preset` will be selected.
+```
+msa_computation_settings:
+  msa_output_directory: <custom path>
+  cleanup_msa_dir: False  # If False, msa paths will not be deleted between runs 
+  save_mappings: True 
+```
 
-The full set of configurations available for all 5 AlphaFold model presets can be viewed in [`config.py`](https://github.com/aqlaboratory/openfold/blob/main/openfold/config.py#L105). The [OpenFold Parameters](OpenFold_Parameters.md) page contains more information about the individual OpenFold parameter files.
+MSAs per chain are saved using a file / directory name that is the hash of the sequence. Mappings between the chain name, sequence, and representative ids can be saved via the `save_mappings` field. 
+
+---
+
+#### Use a Privately Hosted ColabFold MSA Server
+Specify the URL of your private MSA server with the `server_url` field:
+```
+msa_computation_settings:
+  server_url: https://my.private.colabfold.server
+```
+
+---
+
+#### Save MSAs in A3M Format
+Choose the file format for saving MSAs retrieved from ColabFold:
+```
+msa_computation_settings:
+  msa_file_format: a3m     # Options: a3m, npz (default: npz)
+```
+
+## 4. Model Outputs
+
+OpenFold3 produces a structured set of outputs modeled after the ColabFold server. Each query in the input json file (e.g., `query_1`) generates a dedicated output directory containing prediction results, MSAs, and intermediate files, for instance for template processing.
+
+During processing, chain IDs are mapped to internal standardized names, then re-mapped back to the original query IDs (`chain_ids`) in the final output files.
+
+Each query produces a structured output directory with the following components:
+
+### 4.1 Prediction Outputs (`query/seed/`)
+
+Each seed produces one or more sampled structure predictions and their associated confidence scores, stored in subdirectories named after the query and seed, e.g.:
+```
+<output_directory>
+ ├── query_1
+	 └── seed_42
+        ├── query_1_seed_42_sample_1_model.cif
+        ├── query_1_seed_42_sample_1_confidences.json
+        ├── query_1_seed_42_sample_1_confidences_aggregated.json
+        └── timing.json 
+```
+
+- `*_model.cif` (or `.pdb`): Final predicted 3D structure (with per-atom pLDDT in B-factor if `.pdb`).
+  
+- `*_confidences.json`: Per-atom confidence scores:
+
+  - `plddt`: Predicted Local Distance Difference Test
+
+  - `pde`: Predicted Distance Error
+
+- `*_confidences_aggregated.json`: Aggregated metric:
+
+  - `avg_plddt` - Average pLDDT over structure
+
+  - `gpde` - Global Predicted Distance Error (see AF3 SI Section 5.7 Eq. 16)
+
+  - `iptm` - Estimated accuracy of predicted inter-protein chain interactions 
+  
+  - `ptm` - Estimated accuracy of overall predicted structure
+
+  - `disorder` - Average RASA value for all unresolved residues across all chains. 0 for inference predictions.
+
+  - `sample_ranking_score` - Based on AlphaFold3 SI §5.9.3, item 1
+
+  - `has_clash` - Whether any pair of polymer chains has steric clashes (0.0 if no clashes)
+
+- `timing.json`: The runtime for the submitted query (s), not including the runtime for any MSA computations.
 
 
-#### Model outputs 
-
-The expected output contents are as follows: 
-- `alignments`: Directory of alignments. One directory is made per query sequence, and each directory contains alignments against each of the databases used.
-- `predictions`: PDB files for predicted structures
-- `timings.json`: Json with timings for inference and relaxation, if specified 
+### 4.2 Processed MSAs (`main/` and `paired/`)
+Only created if `--use_msa_server=True`. <br/>
+Processed MSAs for each unique chain are saved as `.npz` files used to create input features for OpenFold3. 
+If a chain is reused across multiple queries, its MSA is only computed once and named after the first occurrence. This reduces the number of queries to the ColabFold server.
 
 
-### Optional Flags 
+For a sequence with two representative chains, the final output directory would have this format:
 
-Some commonly used command line flags are here. A full list of flags can be viewed from the `--help` menu
+```
+<msa_output_directory>
+├── main
+│   ├── <hash of sequence A>.npz
+│   └── <hash of sequence B>.npz
+├── mappings
+│   ├── chain_id_to_rep_id.json
+│   ├── query_name_to_complex_id.json
+│   ├── README.md
+│   ├── rep_id_to_seq.json  # hash to sequence mapping
+│   └── seq_to_rep_id.json
+└── paired
+    └── <hash of concatenation of sequences A and B>
+        ├── <hash of sequence A>.npz
+        └── <hash of sequence B>.npz
+```
 
-- `--config_preset`: Specify a different model configuration. There are 5 available model preset settings, some of which support template modeling, others support template-free modeling. The default is `model_1`. More details can be below in the [[Inference#Template-free modeling]] section 
-- `--hmmsearch_binary_path`, `--hmmbuild_binary_path`, etc.  Hmmer, HHsuite, kalign are required to run alignments. `run_pretrained_openfold.py` will search for these packages in the `bin/` directory of your conda environment. If needed, you can specify a different binary directory with these arguments.
-- `--openfold_checkpoint_path` : Uses an checkpoint or parameter file. Expected types are Deepspeed checkpoint files or `.pt` files. Make sure your selected checkpoint file matches the configuration setting chosen in `--config_preset`.
-- `--data_random_seed`: Specifies a random seed to use.
-- `--save_outputs`: Saves a copy of all outputs from the model, e.g. the output of the msa track, ptm heads.
-- `--experiment_config_json`: Specify configuration settings using a json file. For example, passing a json with `{globals.relax.max_iterations = 10}` specifies 10 as the maximum number of relaxation iterations. See for  [`openfold/config.py`](https://github.com/aqlaboratory/openfold/blob/main/openfold/config.py#L283) the full dictionary of configuration settings. Any parameters that are not manually set in these configuration settings will refer to the defaults specified by your `config_preset`.
 
 
-### Advanced Options for Increasing Efficiency
 
-#### Speeding up inference 
+```
+<msa_output_directory>
+ ├── main
+    ├── <hash of query 1, sequence A>.npz
+    └── <hash of query 1, sequence B>.npz
+```
 
-The **DeepSpeed DS4Sci_EvoformerAttention kernel** is a memory-efficient attention kernel developed as part of a collaboration between OpenFold and the DeepSpeed4Science initiative. 
+If a query is a heteromeric protein complex (has at least two different protein chains) and `--use_msa_server` is enabled, **paired MSAs** are also generated. 
+If a set of chains with a specific stoichiometry is reused across multiple queries, for example if the same heterodimer is screened against multiple small molecule ligands, its set of paired MSAs is only computed once and named after the first occurrence. This reduces the number of queries to the ColabFold server. 
 
-If your system supports deepseed, using deepspeed generally leads an inference speedup of 2 - 3x without significant additional memory use. You may specify this option by selecting the `--use_deepspeed_inference` argument. 
+```
+<msa_output_directory>
+ ├── paired
+    └── <hash of concatenation of sequences A and B> 
+        ├── <hash of sequence A>.npz
+        └── <hash of sequence B>.npz
+```
 
-If DeepSpeed is unavailable for your system, you may also try using [FlashAttention](https://github.com/HazyResearch/flash-attention) by adding `globals.use_flash = True` to the `--experiment_config_json`. Note that FlashAttention appears to work best for sequences with < 1000 residues.
+In summary, we submit a total of 1 + n queries to the ColabFold MSA server per run - one query for the set of all unqiue protein sequences in the inference query json file (unpaired/main MSAs) and n additional queries for the sets of of proteins chains heteromeric complexes (paired MSAs).
 
-#### Large-scale batch inference 
-For large-scale batch inference, we offer an optional tracing mode, which massively improves runtimes at the cost of a lengthy model compilation process. To enable it, add `--trace_model` to the inference command.
+The MSA deduplication behavior is also present for precomputed MSAs. See the [chain deduplication utility](4-msa-reusing-utility) section for details.
 
-#### Configuring the chunk size for sequence alignments
-Note that chunking (as defined in section 1.11.8 of the AlphaFold 2 supplement) is enabled by default in inference mode. To disable it, set `globals.chunk_size` to `None` in the config. If a value is specified, OpenFold will attempt to dynamically tune it, considering the chunk size specified in the config as a minimum. This tuning process automatically ensures consistently fast runtimes regardless of input sequence length, but it also introduces some runtime variability, which may be undesirable for certain users. It is also recommended to disable this feature for very long chains (see below). To do so, set the `tune_chunk_size` option in the config to `False`.
+### 4.3 Mapping outputs (`mapping/`)
 
-#### Long sequence inference 
-To minimize memory usage during inference on long sequences, consider the following changes:
+If the same `msa_output_directory` is used between runs, the `rep_id_to_seq.json` and `seq_to_rep_id.json` mappings are updated with the new sequences, while the other mappings are overwritten.
 
-- As noted in the AlphaFold-Multimer paper, the AlphaFold/OpenFold template stack is a major memory bottleneck for inference on long sequences. OpenFold supports two mutually exclusive inference modes to address this issue. One, `average_templates` in the `template` section of the config, is similar to the solution offered by AlphaFold-Multimer, which is simply to average individual template representations. Our version is modified slightly to accommodate weights trained using the standard template algorithm. Using said weights, we notice no significant difference in performance between our averaged template embeddings and the standard ones. The second, `offload_templates`, temporarily offloads individual template embeddings into CPU memory. The former is an approximation while the latter is slightly slower; both are memory-efficient and allow the model to utilize arbitrarily many templates across sequence lengths. Both are disabled by default, and it is up to the user to determine which best suits their needs, if either.
-- Inference-time low-memory attention (LMA) can be enabled in the model config. This setting trades off speed for vastly improved memory usage. By default, LMA is run with query and key chunk sizes of 1024 and 4096, respectively. These represent a favorable tradeoff in most memory-constrained cases. Powerusers can choose to tweak these settings in `openfold/model/primitives.py`. For more information on the LMA algorithm, see the aforementioned Staats & Rabe preprint.
-- Disable `tune_chunk_size` for long sequences. Past a certain point, it only wastes time.
-- As a last resort, consider enabling `offload_inference`. This enables more extensive CPU offloading at various bottlenecks throughout the model.
-- Disable FlashAttention, which seems unstable on long sequences.
+```
+<msa_output_directory>
+ ├── paired
+    └── <hash of concatenation of sequences A and B> 
+        ├── <hash of sequence A>.npz
+        └── <hash of sequence B>.npz
+```
 
-Using the most conservative settings, we were able to run inference on a 4600-residue complex with a single A100. Compared to AlphaFold's own memory offloading mode, ours is considerably faster; the same complex takes the more efficent AlphaFold-Multimer more than double the time. Use the `long_sequence_inference` config option to enable all of these interventions at once. The `run_pretrained_openfold.py` script can enable this config option with the `--long_sequence_inference` command line option
 
-Input FASTA files containing multiple sequences are treated as complexes. In this case, the inference script runs AlphaFold-Gap, a hack proposed [here](https://twitter.com/minkbaek/status/1417538291709071362?lang=en), using the specified stock AlphaFold/OpenFold parameters (NOT AlphaFold-Multimer).
+#### Note: Raw ColabFold MSA Outputs
+The raw ColabFold MSA `.a3m` alignment files and scripts are saved to `<msa_output_directory>/raw/`. <br/> 
+This directory is then deleted upon completion of MSA processing by the OpenFold3 workflow to avoid disruption to future inference submissions. <br/>
+
+To manually keep the raw ColabFold outputs, remove this line here [here](https://github.com/aqlaboratory/openfold3/blob/9d3ff681560cdd65fa92f80f08a4ab5becaebf87/openfold3/core/data/tools/colabfold_msa_server.py#L933). <br/>
+
+
+### 4.4 Query Metadata 
+There are several system-generated files that record the state of submitted inference job.
+
+- [Inference Query Set](441-inference-query-set-json) -- Input query and references to auxiliary files (e.g. MSA alignments and template files)
+- [Model Config](442-model-config-json) - Model settings, e.g. architecture and memory settings
+- [Experiemnt Config](443-experiment-config-json) -- Experiment settings for the inference run
+- 
+
+(441-inference-query-set-json)=
+#### 4.4.1 Inference Query Set (`inference_query_set.json`)
+This file representing the full input query in a validated internal format defined by [this Pydantic schema](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/inference_query_format.py).
+
+- Created automatically from the original `query.json`.
+
+- If `--use_msa_server=True`, includes:
+
+  - `main_msa_file_paths`: Paths to single-chain `.a3m` or `.npz` files
+
+  - `paired_msa_file_paths`: Paths to paired `.a3m` or `.npz` files (if heteromer input)
+
+- If `--use_templates=True`, includes:
+
+  - `template_alignment_file_path`: Path to the preprocessed template cache entry `.npz` file used for template featurization. By default, template cache entries are automatically created in a short preprocessing step using the raw template alignment files provided under this same field and the template structures identified in the alignment. For more details, see the [template explanatory document](template_explanation.md).
+
+  - `template_entry_chain_ids`: List of template chains, identified by their entry (typically PDB) IDs and chain IDs, used for featurization. By default, up to the first 4 of these chains are used.
+
+  \```{note}
+If MSA and Template files are persisted between runs, the same `inference_query_set.json` file can be used to resubmit the query without needing to rerun the template and MSA pipelines. To do so:
+
+1. Turn off the [MSA cleanup option](34-saving-msa-outputs).
+2. pass in the generated `inference_query_set.json` as the `query.json` and use `--use_msa_server=False` and `--use_templates=True`.
+\```
+
+(442-model-config-json)=
+#### 4.4.2 Model Config (`model_config.json`)
+
+This file represents the model settings used to perform inference. The config follows the model configuration file defined [here](../../openfold3/projects/of3_all_atom/config/model_config.py#L71)
+
+(443-experiment-config-json)=
+#### 4.4.3 Experiment Config (`experiment_config.json`)
+
+This file records the entire state of the experiment, as defined by the [InferenceExperimentConfig pydantic model](../../openfold3/entry_points/validator.py#L166).
+
+
+**🔗 Example:**
+
+See the full multimer output for [Deoxy human hemoglobin](https://drive.google.com/drive/folders/1d0S6ueEyrUEMVeXiebDhEeTp6s-Hm_Pu?usp=drive_link).
+
+
+When processing multimer inputs (e.g., hemoglobin α + β chains), OpenFold3 automatically:
+
+- Requests paired MSAs from the ColabFold server
+- Stores raw alignments in [`raw/paired/](https://drive.google.com/drive/folders/19CN9S3T060KahXj0wbJXMlfth8MFlyPf?usp=drive_link)
+- Converts them into per-chain `.npz` alignments in [`paired/`](https://drive.google.com/drive/folders/1VAlJ6XCtt3Y434_t_vomTeMzt7S2pQdy?usp=drive_link)
+
+
+
+

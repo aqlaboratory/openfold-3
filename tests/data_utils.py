@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ from scipy.spatial.transform import Rotation
 from openfold3.core.data.primitives.featurization.structure import (
     create_atom_to_token_index,
 )
-from openfold3.core.np.token_atom_constants import (
+from openfold3.core.data.resources.token_atom_constants import (
     DNA_NUCLEOTIDE_TYPES,
     PROTEIN_RESTYPES,
     RNA_NUCLEOTIDE_TYPES,

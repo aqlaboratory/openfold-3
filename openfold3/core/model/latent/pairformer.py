@@ -1,4 +1,5 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +17,6 @@
 """PairFormer block and stack."""
 
 from functools import partial
-from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -27,7 +27,11 @@ from openfold3.core.model.latent.base_blocks import PairBlock
 from openfold3.core.model.layers.attention_pair_bias import AttentionPairBias
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.utils.checkpointing import checkpoint_blocks
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.chunk_utils import (
+    CUEQ_MAX_CHUNK_SIZE,
+    DEFAULT_MAX_CHUNK_SIZE,
+    ChunkSizeTuner,
+)
 from openfold3.core.utils.tensor_utils import add
 
 
@@ -119,16 +123,17 @@ class PairFormerBlock(nn.Module):
 
     def forward(
         self,
-        s: Optional[torch.Tensor],
-        z: Optional[torch.Tensor],
+        s: torch.Tensor | None,
+        z: torch.Tensor | None,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
-        _attn_chunk_size: Optional[int] = None,
+        _attn_chunk_size: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -146,6 +151,11 @@ class PairFormerBlock(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma.
+            use_cueq_triangle_kernels:
+                Whether to use cuEquivariance triangle multiplicative
+                update kernel and attention kernel. When both this and
+                use_deepspeed_evo_attention are True, the cuEquivariance
+                kernel is only used for triangle attention
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
@@ -169,6 +179,7 @@ class PairFormerBlock(nn.Module):
             pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
@@ -182,8 +193,8 @@ class PairFormerBlock(nn.Module):
                 z=z,
                 s=None,
                 mask=single_mask,
-                use_memory_efficient_kernel=False,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
             ),
             inplace=inplace_safe,
@@ -220,10 +231,10 @@ class PairFormerStack(nn.Module):
         transition_n: int,
         pair_dropout: float,
         fuse_projection_weights: bool,
-        blocks_per_ckpt: Optional[int],
+        blocks_per_ckpt: int | None,
         inf: float,
         linear_init_params: ConfigDict = lin_init.pairformer_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,
@@ -309,10 +320,11 @@ class PairFormerStack(nn.Module):
         self,
         s: torch.Tensor,
         z: torch.Tensor,
-        single_mask: Optional[torch.Tensor],
-        pair_mask: Optional[torch.Tensor],
-        chunk_size: Optional[int],
+        single_mask: torch.Tensor | None,
+        pair_mask: torch.Tensor | None,
+        chunk_size: int | None,
         use_deepspeed_evo_attention: bool,
+        use_cueq_triangle_kernels: bool,
         use_lma: bool,
         inplace_safe: bool,
         _mask_trans: bool,
@@ -332,6 +344,7 @@ class PairFormerStack(nn.Module):
                 pair_mask=pair_mask,
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -349,6 +362,11 @@ class PairFormerStack(nn.Module):
 
         if chunk_size is not None and self.chunk_size_tuner is not None:
             assert not self.training
+            max_chunk_size = (
+                CUEQ_MAX_CHUNK_SIZE
+                if use_cueq_triangle_kernels
+                else DEFAULT_MAX_CHUNK_SIZE
+            )
             tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
                 representative_fn=blocks[0],
                 # We don't want to write in-place during chunk tuning runs
@@ -357,6 +375,12 @@ class PairFormerStack(nn.Module):
                     z.clone(),
                 ),
                 min_chunk_size=chunk_size,
+                max_chunk_size=max_chunk_size,
+            )
+            attn_chunk = (
+                tuned_chunk_size
+                if use_cueq_triangle_kernels
+                else (tuned_chunk_size // 4)
             )
             blocks = [
                 partial(
@@ -364,7 +388,7 @@ class PairFormerStack(nn.Module):
                     chunk_size=tuned_chunk_size,
                     # A temporary measure to address torch's occasional
                     # inability to allocate large tensors
-                    _attn_chunk_size=max(chunk_size, tuned_chunk_size // 4),
+                    _attn_chunk_size=max(chunk_size, attn_chunk),
                 )
                 for b in blocks
             ]
@@ -377,8 +401,9 @@ class PairFormerStack(nn.Module):
         z: torch.Tensor,
         single_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -419,6 +444,7 @@ class PairFormerStack(nn.Module):
             pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,

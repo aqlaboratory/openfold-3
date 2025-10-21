@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import copy
 import dataclasses
 import logging
@@ -13,8 +27,8 @@ from openfold3.core.data.framework.data_module import openfold_batch_collator
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.base_af3 import (
-    BaseAF3Dataset,
+from openfold3.core.data.framework.single_datasets.base_of3 import (
+    BaseOF3Dataset,
 )
 from openfold3.core.data.pipelines.featurization.loss_weights import (
     set_loss_weights_for_disordered_set,
@@ -31,10 +45,6 @@ from openfold3.core.utils.permutation_alignment import (
 logger = logging.getLogger(__name__)
 
 
-DEBUG_PDB_BLACKLIST = ["6fg3", "6dra", "6dr2", "6dqj", "7lx0"]
-
-
-# TODO: Remove debug logic
 def is_invalid_feature_dict(features: dict) -> bool:
     """
     Validate the feature dictionary for a single datapoint.
@@ -251,7 +261,7 @@ class DatapointCollection:
 
 
 @register_dataset
-class WeightedPDBDataset(BaseAF3Dataset):
+class WeightedPDBDataset(BaseOF3Dataset):
     """Implements a Dataset class for the Weighted PDB training dataset for AF3."""
 
     def __init__(self, dataset_config: dict) -> None:
@@ -266,8 +276,8 @@ class WeightedPDBDataset(BaseAF3Dataset):
 
         # Dataset configuration
         self.apply_crop = True
-        self.crop = dataset_config["custom"]["crop"]
-        self.sample_weights = dataset_config["custom"]["sample_weights"]
+        self.crop = dataset_config.crop.model_dump()
+        self.sample_weights = dataset_config.sample_weights
 
         # Datapoint cache
         self.create_datapoint_cache()
@@ -325,7 +335,6 @@ class WeightedPDBDataset(BaseAF3Dataset):
         pdb_id = datapoint["pdb_id"]
         preferred_chain_or_interface = datapoint["preferred_chain_or_interface"]
 
-        # TODO: Remove debug logic
         if not self.debug_mode:
             sample_data = self.create_all_features(
                 pdb_id=pdb_id,
@@ -339,11 +348,6 @@ class WeightedPDBDataset(BaseAF3Dataset):
             return features
         else:
             try:
-                if pdb_id in DEBUG_PDB_BLACKLIST:
-                    logger.warning(f"Skipping blacklisted pdb id {pdb_id}")
-                    index = random.randint(0, len(self) - 1)
-                    return self.__getitem__(index)
-
                 sample_data = self.create_all_features(
                     pdb_id=pdb_id,
                     preferred_chain_or_interface=preferred_chain_or_interface,
@@ -391,7 +395,9 @@ class DisorderedPDBDataset(WeightedPDBDataset):
                 an example.
         """
         super().__init__(dataset_config)
-        self.custom_settings = dataset_config["custom"]
+        self.disable_non_protein_diffusion_weights = (
+            dataset_config.disable_non_protein_diffusion_weights
+        )
 
     def create_loss_features(self, pdb_id: str) -> dict:
         """Creates the loss features for the disordered PDB set."""
@@ -400,6 +406,6 @@ class DisorderedPDBDataset(WeightedPDBDataset):
         loss_features["loss_weights"] = set_loss_weights_for_disordered_set(
             self.loss,
             self.dataset_cache.structure_data[pdb_id].resolution,
-            self.custom_settings,
+            self.disable_non_protein_diffusion_weights,
         )
         return loss_features

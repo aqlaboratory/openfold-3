@@ -6,7 +6,7 @@ import click
 
 from openfold3.core.data.io.s3 import parse_s3_config
 from openfold3.core.data.pipelines.preprocessing.caches.protein_monomer import (
-    create_protein_monomer_dataset_cache_af3,
+    create_protein_monomer_dataset_cache_of3,
 )
 from openfold3.core.data.pipelines.preprocessing.structure import (
     preparse_protein_monomer_structures,
@@ -153,7 +153,7 @@ def main(
 
     # Create cache
     logger.info("Creating dataset cache...")
-    dataset_cache = create_protein_monomer_dataset_cache_af3(
+    dataset_cache = create_protein_monomer_dataset_cache_of3(
         data_directory=data_directory,
         protein_reference_molecule_data_file=protein_reference_molecule_data_file,
         dataset_name=dataset_name,

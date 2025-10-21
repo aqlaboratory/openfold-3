@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import subprocess as sp
 import tempfile
 from collections import defaultdict
@@ -88,7 +102,7 @@ def get_mol_id_to_tanimoto_ligands(
     val_fps = precompute_fingerprints(val_smiles, mfpgen)
 
     assert len(val_refids) == len(val_fps)
-    val_refid_to_fp = dict(zip(val_refids, val_fps))
+    val_refid_to_fp = dict(zip(val_refids, val_fps, strict=True))
 
     # Precompute fingerprints for training SMILES
     train_refids = list(train_refid_to_smiles.keys())

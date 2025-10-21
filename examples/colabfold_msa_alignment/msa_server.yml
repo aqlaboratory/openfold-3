@@ -1,0 +1,16 @@
+# This yaml is an example configuration for using the `align_msa_server` cli option in `run_openfold.py`
+
+# This uses the model defined by core.data.tools.colabfold_msa_server.MsaComputationSettings
+
+# To run with this server yaml:
+#   ```
+#   python run_openfold.py align-msa-server \
+#       --query_json query_example.json \
+#       --output_dir output/msa_server_test \
+#       --msa_computation_settings_yaml examples/msa_server.yml 
+#   ```
+  
+
+msa_file_format: a3m
+server_user_agent: example-agent
+server_url: https://example-private.url

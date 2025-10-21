@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import logging
 from collections.abc import Iterable
 from typing import Literal
@@ -281,7 +295,9 @@ def build_unresolved_polymer_segment(
         atom_elements = atom_elements[atom_mask]
 
         # Add atoms for all unresolved residues
-        for atom, element, charge in zip(atom_names, atom_elements, atom_charges):
+        for atom, element, charge in zip(
+            atom_names, atom_elements, atom_charges, strict=False
+        ):
             atom_annotations = default_annotations.copy()
             atom_annotations["atom_name"] = atom
             atom_annotations["element"] = element
@@ -480,7 +496,9 @@ def add_unresolved_polymer_residues(
     # necessary because inserting the segments by slicing and concatenating atom_arrays
     # would cut bonds in the bond list.
     chain_starts = struc.get_chain_starts(original_atom_array, add_exclusive_stop=True)
-    for chain_start, chain_end in zip(chain_starts[:-1], chain_starts[1:] - 1):
+    for chain_start, chain_end in zip(
+        chain_starts[:-1], chain_starts[1:] - 1, strict=False
+    ):
         # Infer some chain-wise properties from first atom (could use any atom)
         first_atom = extended_atom_array[chain_start]
         chain_type = first_atom.molecule_type_id
@@ -744,7 +762,7 @@ def add_unresolved_atoms_within_residue(
 
                             # Search for patterns of bonded oxygens
                             for atom_oxygen, atom_other in zip(
-                                (atom_1, atom_2), (atom_2, atom_1)
+                                (atom_1, atom_2), (atom_2, atom_1), strict=False
                             ):
                                 # Skip if not an oxygen
                                 if atom_ids_to_elements[atom_oxygen] != "O":

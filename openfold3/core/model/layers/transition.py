@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +19,6 @@ ConditionedTransitionBlock, and StructureModuleTransition.
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -92,9 +91,9 @@ class Transition(nn.Module, ABC):
     def forward(
         self,
         x: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
-        ckpt_chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
+        ckpt_chunk_size: int | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -351,8 +350,8 @@ class ConditionedTransitionBlock(nn.Module):
         self,
         a: torch.Tensor,
         s: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
+        mask: torch.Tensor | None = None,
+        chunk_size: int | None = None,
     ) -> torch.Tensor:
         """
         Args:

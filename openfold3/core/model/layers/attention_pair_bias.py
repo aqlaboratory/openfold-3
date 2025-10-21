@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,8 +14,6 @@
 # limitations under the License.
 
 """Attention layer with pair bias."""
-
-from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -33,9 +31,10 @@ from openfold3.core.utils.tensor_utils import permute_final_dims
 
 
 class AttentionPairBias(nn.Module):
-    """Attention layer with pair bias and neighborhood mask.
+    """Attention layer with pair bias.
 
-    Implements AF3 Algorithm 24.
+    Implements AF3 Algorithm 24 for the trunk, where no sequence local
+    or adaptive layernorm are needed by default.
     """
 
     def __init__(
@@ -50,7 +49,7 @@ class AttentionPairBias(nn.Module):
         use_ada_layer_norm: bool = False,
         gating: bool = True,
         inf=1e9,
-        linear_init_params: Optional[ConfigDict] = None,
+        linear_init_params: ConfigDict | None = None,
     ):
         """
         Args:
@@ -122,8 +121,8 @@ class AttentionPairBias(nn.Module):
     def _prep_bias(
         self,
         a: torch.Tensor,
-        z: Optional[torch.Tensor],
-        mask: Optional[torch.Tensor],
+        z: torch.Tensor | None,
+        mask: torch.Tensor | None,
     ) -> list[torch.Tensor]:
         """
         Args:
@@ -142,6 +141,11 @@ class AttentionPairBias(nn.Module):
             mask = a.new_ones(
                 a.shape[:-1],
             )
+
+        # DS kernel has strict shape asserts and expects the mask to be
+        # tiled to the correct shape for the batch dims
+        batch_dims = a.shape[:-2]
+        mask = mask.expand((*batch_dims, -1))
 
         # [*, 1, 1, N]
         mask_bias = (self.inf * (mask - 1))[..., None, None, :]
@@ -164,10 +168,10 @@ class AttentionPairBias(nn.Module):
         self,
         a: torch.Tensor,
         z: torch.Tensor,
-        s: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
-        use_memory_efficient_kernel: bool = False,
+        s: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
@@ -182,8 +186,6 @@ class AttentionPairBias(nn.Module):
                 True
             mask:
                 [*, N] Mask for token or atom-level embedding
-            use_memory_efficient_kernel:
-                Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
@@ -195,32 +197,28 @@ class AttentionPairBias(nn.Module):
         """
         a = self.layer_norm_a(a, s) if self.use_ada_layer_norm else self.layer_norm_a(a)
 
-        # TODO: Make this less awkward, DS kernel has strict shape asserts
-        #  and expects the mask to be tiled to the correct shape
-        if use_deepspeed_evo_attention and a.shape[1] != mask.shape[1]:
-            mask = mask.expand((-1, a.shape[1], -1))
-
         biases = self._prep_bias(a=a, z=z, mask=mask)
 
         # TODO: Make this less awkward, DS kernel has strict shape asserts
         #  and expects batch and seq dims to exist
         #  Current reshape function only expects missing batch dim
-        if use_deepspeed_evo_attention:
+        batch_dims = a.shape[:-2]
+        reshape_for_ds_kernel = use_deepspeed_evo_attention and len(batch_dims) == 1
+        if reshape_for_ds_kernel:
             a = a.unsqueeze(1)
             biases = [b.unsqueeze(1) for b in biases]
 
-        # Do we support all the memory efficient kernel types?
         a = self.mha(
             q_x=a,
             kv_x=a,
             biases=biases,
-            use_memory_efficient_kernel=use_memory_efficient_kernel,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             use_high_precision=use_high_precision_attention,
         )
 
-        if use_deepspeed_evo_attention:
+        if reshape_for_ds_kernel:
             a = a.squeeze(1)
 
         if self.use_ada_layer_norm:
@@ -231,6 +229,8 @@ class AttentionPairBias(nn.Module):
 
 class CrossAttentionPairBias(nn.Module):
     """Attention layer with pair bias and neighborhood mask.
+    Unlike AttentionPairBias, inputs are blocked for sequence-local attention
+    and AdaLN is applied by default.
 
     Implements AF3 Algorithm 24.
     """
@@ -245,11 +245,11 @@ class CrossAttentionPairBias(nn.Module):
         c_hidden: int,
         no_heads: int,
         use_ada_layer_norm: bool = False,
-        n_query: Optional[int] = None,
-        n_key: Optional[int] = None,
+        n_query: int | None = None,
+        n_key: int | None = None,
         gating: bool = True,
         inf=1e9,
-        linear_init_params: Optional[ConfigDict] = None,
+        linear_init_params: ConfigDict | None = None,
     ):
         """
         Args:
@@ -333,8 +333,8 @@ class CrossAttentionPairBias(nn.Module):
     def _prep_block_inputs(
         self,
         a: torch.Tensor,
-        z: Optional[torch.Tensor],
-        mask: Optional[torch.Tensor],
+        z: torch.Tensor | None,
+        mask: torch.Tensor | None,
     ) -> tuple:
         """
         Args:
@@ -379,9 +379,10 @@ class CrossAttentionPairBias(nn.Module):
         self,
         a: torch.Tensor,
         z: torch.Tensor,
-        s: Optional[torch.Tensor] = None,
-        mask: Optional[torch.Tensor] = None,
+        s: torch.Tensor | None = None,
+        mask: torch.Tensor | None = None,
         use_high_precision_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -419,6 +420,7 @@ class CrossAttentionPairBias(nn.Module):
             kv_x=a_k,
             biases=biases,
             use_high_precision=use_high_precision_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
         )
 
         # Convert back to unpadded and flattened atom representation

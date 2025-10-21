@@ -1,5 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
-# Copyright 2021 DeepMind Technologies Limited
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +15,6 @@
 """Diffusion transformer block and stack."""
 
 from functools import partial
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -44,8 +42,8 @@ class DiffusionTransformerBlock(nn.Module):
         no_heads: int,
         n_transition: int,
         use_ada_layer_norm: bool,
-        n_query: Optional[int],
-        n_key: Optional[int],
+        n_query: int | None,
+        n_key: int | None,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
     ):
@@ -120,10 +118,9 @@ class DiffusionTransformerBlock(nn.Module):
         a: torch.Tensor,
         s: torch.Tensor,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
-        use_memory_efficient_kernel: bool = False,
+        mask: torch.Tensor | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -138,10 +135,6 @@ class DiffusionTransformerBlock(nn.Module):
                 [*, N, N, C_z] Pair embedding
             mask:
                 [*, N] Mask for token-level embedding
-            chunk_size:
-                Inference-time subbatch size
-            use_memory_efficient_kernel:
-                Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_lma:
@@ -159,8 +152,8 @@ class DiffusionTransformerBlock(nn.Module):
                 z=z,
                 s=s,
                 mask=mask,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
             )
@@ -178,7 +171,9 @@ class DiffusionTransformerBlock(nn.Module):
         # Note: Differs from SI, updated a_i from AttentionPairBias is used
         # instead of previous a_i.
         a = a + self.conditioned_transition(
-            a=a, s=s, mask=trans_mask, chunk_size=chunk_size
+            a=a,
+            s=s,
+            mask=trans_mask,
         )
 
         return a
@@ -200,12 +195,12 @@ class DiffusionTransformer(nn.Module):
         no_blocks: int,
         n_transition: int,
         use_ada_layer_norm: bool,
-        n_query: Optional[int],
-        n_key: Optional[int],
+        n_query: int | None,
+        n_key: int | None,
         inf: float,
-        blocks_per_ckpt: Optional[int] = None,
+        blocks_per_ckpt: int | None = None,
         linear_init_params: ConfigDict = lin_init.diffusion_transformer_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
     ):
         """
         Args:
@@ -270,10 +265,9 @@ class DiffusionTransformer(nn.Module):
         a: torch.Tensor,
         s: torch.Tensor,
         z: torch.Tensor,
-        mask: Optional[torch.Tensor] = None,
-        chunk_size: Optional[int] = None,
-        use_memory_efficient_kernel: bool = False,
+        mask: torch.Tensor | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -288,12 +282,10 @@ class DiffusionTransformer(nn.Module):
                 [*, N, N, C_z] Pair embedding
             mask:
                 [*, N] Mask for token-level embedding
-            chunk_size:
-                Inference-time subbatch size
-            use_memory_efficient_kernel:
-                Whether to use memory efficient kernel
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
+            use_cueq_triangle_kernels:
+                Whether to use cuEq triangle kernels
             use_lma:
                 Whether to use LMA
             use_high_precision_attention:
@@ -301,16 +293,14 @@ class DiffusionTransformer(nn.Module):
             _mask_trans:
                 Whether to mask the output of the transition layer
         """
-        # Do we need all the fancy checkpoint blocks from evoformer?
         blocks = [
             partial(
                 b,
                 s=s,
                 z=z,
                 mask=mask,
-                chunk_size=chunk_size,
-                use_memory_efficient_kernel=use_memory_efficient_kernel,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,

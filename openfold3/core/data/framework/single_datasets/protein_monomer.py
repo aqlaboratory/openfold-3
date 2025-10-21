@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # %%
 import logging
 import random
@@ -9,18 +23,16 @@ import torch
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.base_af3 import (
-    BaseAF3Dataset,
+from openfold3.core.data.framework.single_datasets.base_of3 import (
+    BaseOF3Dataset,
 )
 from openfold3.core.data.framework.single_datasets.pdb import is_invalid_feature_dict
 
 logger = logging.getLogger(__name__)
 
-DEBUG_PROTEIN_MONOMER_BLACKLIST = ["MGYP000285232442"]
-
 
 @register_dataset
-class ProteinMonomerDataset(BaseAF3Dataset):
+class ProteinMonomerDataset(BaseOF3Dataset):
     def __init__(self, dataset_config: dict) -> None:
         """Initializes a ProteinMonomerDataset.
 
@@ -36,7 +48,7 @@ class ProteinMonomerDataset(BaseAF3Dataset):
 
         # Dataset configuration
         self.apply_crop = True
-        self.crop = dataset_config["custom"]["crop"]
+        self.crop = dataset_config.crop.model_dump()
 
         # All samples are protein
         self.single_moltype = "PROTEIN"
@@ -96,11 +108,6 @@ class ProteinMonomerDataset(BaseAF3Dataset):
             return features
         else:
             try:
-                if pdb_id in DEBUG_PROTEIN_MONOMER_BLACKLIST:
-                    logger.warning(f"Skipping blacklisted pdb id {pdb_id}")
-                    index = random.randint(0, len(self) - 1)
-                    return self.__getitem__(index)
-
                 sample_data = self.create_all_features(
                     pdb_id=datapoint["pdb_id"],
                     preferred_chain_or_interface=None,

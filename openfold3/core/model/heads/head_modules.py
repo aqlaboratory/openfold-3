@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,22 +14,17 @@
 # limitations under the License.
 
 import importlib
-from typing import Optional
 
 import torch
 import torch.nn as nn
 
 from openfold3.core.model.heads.prediction_heads import (
     DistogramHead,
-    ExperimentallyResolvedHead,
     ExperimentallyResolvedHeadAllAtom,
-    MaskedMSAHead,
     PairformerEmbedding,
     PerResidueLDDTAllAtom,
-    PerResidueLDDTCaPredictor,
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
-    TMScoreHead,
 )
 from openfold3.core.utils.atomize_utils import (
     broadcast_token_feat_to_atoms,
@@ -39,81 +34,6 @@ from openfold3.core.utils.atomize_utils import (
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
     import deepspeed
-
-
-class AuxiliaryHeadsAF2(nn.Module):
-    """
-    Auxiliary head for OF2
-    Implements section 1.9 (AF2)
-
-    Source: OpenFold
-    """
-
-    def __init__(self, config):
-        super().__init__()
-
-        self.plddt = PerResidueLDDTCaPredictor(
-            **config["lddt"],
-        )
-
-        self.distogram = DistogramHead(
-            **config["distogram"],
-        )
-
-        self.masked_msa = MaskedMSAHead(
-            **config["masked_msa"],
-        )
-
-        self.experimentally_resolved = ExperimentallyResolvedHead(
-            **config["experimentally_resolved"],
-        )
-
-        if config.tm.enabled:
-            self.tm = TMScoreHead(
-                **config.tm,
-            )
-
-        self.config = config
-
-    def forward(self, outputs):
-        """
-        Args:
-            outputs: Dict containing following keys and tensors:
-                "sm":
-                    "single": Single embedding
-                "pair": Pair embedding
-                "msa": MSA embedding
-        Returns:
-            aux_out: Dict containing:
-                "lddt_logits" ([*, N_res, bins_plddt]):
-                    pLDDT head out
-                "distogram_logits" ([*, N_res, N_res, bins_distogram]):
-                    Distogram head out
-                "masked_msa_logits" ([*, N_seq, N_res, bins_masked_msa]):
-                    Masked msa head out
-                "experimentally_resolved_logits" ([*, N_res, bins_resolved]):
-                    Resolved head out
-                "tm_logits" ([*, N_res, N_res, bins_pae]):
-                    Values identical to pae_logits
-        """
-        aux_out = {}
-        lddt_logits = self.plddt(outputs["sm"]["single"])
-        aux_out["lddt_logits"] = lddt_logits
-
-        distogram_logits = self.distogram(outputs["pair"])
-        aux_out["distogram_logits"] = distogram_logits
-
-        masked_msa_logits = self.masked_msa(outputs["msa"])
-        aux_out["masked_msa_logits"] = masked_msa_logits
-
-        experimentally_resolved_logits = self.experimentally_resolved(outputs["single"])
-        aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
-
-        if self.config.tm.enabled:
-            tm_logits = self.tm(outputs["pair"])
-            aux_out["tm_logits"] = tm_logits
-
-        return aux_out
 
 
 class AuxiliaryHeadsAllAtom(nn.Module):
@@ -173,10 +93,12 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         batch: dict,
         si_input: torch.Tensor,
         output: dict,
-        chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
+        offload_inference: bool = False,
         _mask_trans: bool = True,
     ):
         """
@@ -198,11 +120,16 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma.
+            use_cueq_triangle_kernels:
+                Whether to use cuEq triangle attention kernel.
+                Mutually exclusive with use_lma
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
+            offload_inference:
+                Whether to offload some computation to CPU
             _mask_trans:
                 Whether to mask the output of the transition layers
 
@@ -225,20 +152,19 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         """
         aux_out = {}
 
-        si_trunk = output["si_trunk"]
-        zij_trunk = output["zij_trunk"]
-        atom_positions_predicted = output["atom_positions_predicted"]
+        out_dtype = output["atom_positions_predicted"].dtype
+        si = output["si_trunk"]
+        zij = output["zij_trunk"]
+        atom_positions_predicted = output["atom_positions_predicted"].to(dtype=si.dtype)
 
         # Distogram head: Main loop (Algorithm 1), line 17
-        # Not enabled in finetuning 3 stage
-        if self.config["distogram"]["enabled"]:
-            distogram_logits = self.distogram(z=zij_trunk)
-            aux_out["distogram_logits"] = distogram_logits
+        distogram_logits = self.distogram(z=zij)
+        aux_out["distogram_logits"] = distogram_logits
 
         # Stop grad
         si_input = si_input.detach().clone()
-        si_trunk = si_trunk.detach().clone()
-        zij_trunk = zij_trunk.detach().clone()
+        si = si.detach().clone()
+        zij = zij.detach().clone()
         atom_positions_predicted = atom_positions_predicted.detach().clone()
 
         token_mask = batch["token_mask"]
@@ -249,8 +175,6 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             batch=batch, x=atom_positions_predicted, atom_mask=batch["atom_mask"]
         )
 
-        # TODO: Determine if this is the best way to handle PairFormer
-        #  memory limits depending on the number of samples
         num_samples = repr_x_pred.shape[-3]
         apply_per_sample = (
             not torch.is_grad_enabled()
@@ -258,19 +182,23 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             and self.per_sample_token_cutoff is not None
             and repr_x_pred.shape[-2] > self.per_sample_token_cutoff
         )
+        out_device = atom_positions_predicted.device
 
         # Embed trunk outputs
+        # If offload_inference is enabled, si and zij will be returned on the CPU
         si, zij = self.pairformer_embedding(
             si_input=si_input,
-            si=si_trunk,
-            zij=zij_trunk,
+            si=si,
+            zij=zij,
             x_pred=repr_x_pred,
             single_mask=repr_x_mask,
             pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
+            offload_inference=offload_inference,
             _mask_trans=_mask_trans,
             apply_per_sample=apply_per_sample,
         )
@@ -285,6 +213,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             max_num_atoms_per_token=self.max_atoms_per_token,
         )
 
+        si = si.to(device=out_device)
         aux_out["plddt_logits"] = self.plddt(
             s=si, max_atom_per_token_mask=max_atom_per_token_mask
         )
@@ -294,9 +223,23 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
-        aux_out["pde_logits"] = self.pde(zij)
+        # zij is moved back to GPU after the single rep confidence heads
+        # because building the max_atom_per_token_mask uses a lot of memory
+        zij = zij.to(device=out_device)
+
+        pde_logits = self.pde(zij, apply_per_sample=apply_per_sample)
 
         if self.config.pae.enabled:
-            aux_out["pae_logits"] = self.pae(zij)
+            # Offload pde logits to not keep all three pairwise tensors
+            # in GPU memory at once
+            offload_device = "cpu" if offload_inference else out_device
+            pde_logits = pde_logits.to(device=offload_device)
+            aux_out["pae_logits"] = self.pae(zij, apply_per_sample=apply_per_sample)
+
+        del zij
+
+        aux_out["pde_logits"] = pde_logits.to(device=out_device)
+
+        aux_out = {k: v.to(dtype=out_dtype) for k, v in aux_out.items()}
 
         return aux_out

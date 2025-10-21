@@ -1,5 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
-# Copyright 2021 DeepMind Technologies Limited
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,8 +16,9 @@
 The main inference and training loops for AlphaFold3.
 """
 
-import random
+from enum import Enum
 
+import numpy as np
 import torch
 from ml_collections import ConfigDict
 from torch import nn
@@ -44,6 +44,11 @@ from openfold3.core.utils.permutation_alignment import (
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 
 
+class OffloadModules(Enum):
+    MSA_MODULE = "msa_module"
+    CONFIDENCE_HEADS = "confidence_heads"
+
+
 class OpenFold3(nn.Module):
     """
     Alphafold 3.
@@ -61,6 +66,8 @@ class OpenFold3(nn.Module):
         self.config = config
         self.settings = self.config.settings
         self.shared = self.config.architecture.shared
+
+        self.synced_generator = np.random.default_rng(seed=self.shared.sync_seed)
 
         self.input_embedder = InputEmbedderAllAtom(
             **self.config.architecture.input_embedder
@@ -135,17 +142,17 @@ class OpenFold3(nn.Module):
         )
         return mode_mem_settings
 
-    def _do_inference_offload(self, seq_len: int) -> bool:
+    def _do_inference_offload(self, seq_len: int, module_name: str) -> bool:
         if self.training:
             return False
 
         offload_settings = self.settings.memory.eval.offload_inference
 
-        is_within_cutoff = (
+        is_above_cutoff = (
             offload_settings.token_cutoff is None
-            or offload_settings.token_cutoff > seq_len
+            or seq_len > offload_settings.token_cutoff
         )
-        offload_inference = offload_settings.enabled and is_within_cutoff
+        offload_inference = offload_settings[module_name] and is_above_cutoff
 
         return offload_inference
 
@@ -179,8 +186,9 @@ class OpenFold3(nn.Module):
         """
         mode_mem_settings = self._get_mode_mem_settings()
 
-        offload_inference = self._do_inference_offload(
-            seq_len=batch["token_mask"].shape[-1]
+        offload_msa_module = self._do_inference_offload(
+            seq_len=batch["token_mask"].shape[-1],
+            module_name=OffloadModules.MSA_MODULE.value,
         )
 
         s_input, s_init, z_init = self.input_embedder(
@@ -205,7 +213,11 @@ class OpenFold3(nn.Module):
             is_final_iter = cycle_no == (num_cycles - 1)
 
             # Enable grad when we're training, only enable grad on the last cycle
-            enable_grad = is_grad_enabled and is_final_iter
+            enable_grad = (
+                is_grad_enabled
+                and is_final_iter
+                and not self.settings.train_confidence_only
+            )
             with torch.set_grad_enabled(enable_grad):
                 if is_final_iter:
                     self.clear_autocast_cache()
@@ -222,6 +234,7 @@ class OpenFold3(nn.Module):
                         chunk_size=mode_mem_settings.chunk_size,
                         _mask_trans=True,
                         use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                         use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
                     ),
@@ -241,7 +254,7 @@ class OpenFold3(nn.Module):
                     if swiglu_token_cutoff is None or swiglu_token_cutoff > m.shape[-2]
                     else None
                 )
-                if offload_inference:
+                if offload_msa_module:
                     input_tensors = [m, z]
                     del m, z
                     z = self.msa_module.forward_offload(
@@ -251,6 +264,7 @@ class OpenFold3(nn.Module):
                         chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                         use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                         use_lma=mode_mem_settings.use_lma,
                         _mask_trans=True,
                     )
@@ -265,6 +279,7 @@ class OpenFold3(nn.Module):
                         chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                         use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                         use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
                         _mask_trans=True,
@@ -280,6 +295,7 @@ class OpenFold3(nn.Module):
                     pair_mask=pair_mask.to(dtype=s.dtype),
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                     use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
@@ -319,6 +335,11 @@ class OpenFold3(nn.Module):
         """
         mode_mem_settings = self._get_mode_mem_settings()
 
+        offload_confidence_heads = self._do_inference_offload(
+            seq_len=batch["token_mask"].shape[-1],
+            module_name=OffloadModules.CONFIDENCE_HEADS.value,
+        )
+
         # Determine number of rollout steps and samples depending on training/eval mode
         no_rollout_steps = (
             self.shared.diffusion.no_mini_rollout_steps
@@ -351,12 +372,14 @@ class OpenFold3(nn.Module):
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
                 no_rollout_samples=no_rollout_samples,
+                chunk_size=mode_mem_settings.chunk_size,
                 use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                 use_lma=mode_mem_settings.use_lma,
                 _mask_trans=True,
             )
 
-        self.clear_autocast_cache()
+            self.clear_autocast_cache()
 
         output = {
             "si_trunk": si_trunk,
@@ -364,7 +387,8 @@ class OpenFold3(nn.Module):
             "atom_positions_predicted": atom_positions_predicted,
         }
 
-        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+        cast_dtype = torch.float32 if self.training else si_trunk.dtype
+        with torch.amp.autocast(device_type="cuda", dtype=cast_dtype):
             # Compute confidence logits
             output.update(
                 self.aux_heads(
@@ -373,8 +397,10 @@ class OpenFold3(nn.Module):
                     output=output,
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                     use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,
+                    offload_inference=offload_confidence_heads,
                     _mask_trans=True,
                 )
             )
@@ -583,13 +609,18 @@ class OpenFold3(nn.Module):
         # The dual condition accounts for activation checkpoints
         inplace_safe = not (self.training or torch.is_grad_enabled())
 
-        num_cycles = (
-            random.randint(1, self.shared.max_cycles)
+        # If training, we sample the number of recycles
+        # This is the additional number of iterations through the trunk
+        num_recycles = (
+            int(
+                self.synced_generator.integers(low=0, high=self.shared.num_recycles + 1)
+            )
             if self.training
-            else self.shared.max_cycles
+            else self.shared.num_recycles
         )
+        num_cycles = num_recycles + 1
 
-        output = {"recycles": num_cycles}
+        output = {"recycles": num_recycles}
 
         # Compute representations
         si_input, si_trunk, zij_trunk = self.run_trunk(
@@ -633,19 +664,24 @@ class OpenFold3(nn.Module):
                     atom_positions_predicted=output["atom_positions_predicted"],
                 )
 
-            self.clear_autocast_cache()
+                self.clear_autocast_cache()
 
-            if self.training:  # noqa: SIM102
+            if self.training and not self.settings.train_confidence_only:
                 # Run training step (if necessary)
-                if self.settings.diffusion_training_enabled:
-                    with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
-                        diffusion_output = self._train_diffusion(
-                            batch=batch,
-                            si_input=si_input,
-                            si_trunk=si_trunk,
-                            zij_trunk=zij_trunk,
-                        )
+                with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+                    diffusion_output = self._train_diffusion(
+                        batch=batch,
+                        si_input=si_input,
+                        si_trunk=si_trunk,
+                        zij_trunk=zij_trunk,
+                    )
 
-                        output.update(diffusion_output)
+                    output.update(diffusion_output)
+
+        # Memory fragmentation can become a big problem at larger crop sizes
+        # due to different sizes of msa/all-atom tensors used between steps
+        # Clear the cache between steps if unallocated reserved mem is high
+        if self.settings.clear_cache_between_steps:
+            torch.cuda.empty_cache()
 
         return batch, output

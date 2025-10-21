@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import torch
 from Bio.SVDSuperimposer import SVDSuperimposer
 
@@ -67,7 +68,7 @@ def superimpose(reference, coords, mask):
     flat_mask = mask.reshape((-1,) + mask.shape[-1:])
     superimposed_list = []
     rmsds = []
-    for r, c, m in zip(flat_reference, flat_coords, flat_mask):
+    for r, c, m in zip(flat_reference, flat_coords, flat_mask, strict=True):
         r_unmasked_coords = select_unmasked_coords(r, m)
         c_unmasked_coords = select_unmasked_coords(c, m)
         superimposed, rmsd = _superimpose_single(r_unmasked_coords, c_unmasked_coords)

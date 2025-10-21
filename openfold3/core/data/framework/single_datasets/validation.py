@@ -1,8 +1,20 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import logging
-import math
 import random
 import traceback
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -11,7 +23,10 @@ import torch
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.base_af3 import BaseAF3Dataset
+from openfold3.core.data.framework.single_datasets.base_of3 import BaseOF3Dataset
+from openfold3.core.data.framework.single_datasets.dataset_utils import (
+    pad_to_world_size,
+)
 from openfold3.core.data.framework.single_datasets.pdb import is_invalid_feature_dict
 from openfold3.core.data.primitives.featurization.structure import (
     extract_starts_entities,
@@ -46,10 +61,10 @@ def make_chain_pair_mask_padded(
 
 
 @register_dataset
-class ValidationPDBDataset(BaseAF3Dataset):
+class ValidationPDBDataset(BaseOF3Dataset):
     """Validation Dataset class."""
 
-    def __init__(self, dataset_config: dict) -> None:
+    def __init__(self, dataset_config: dict, world_size: int | None = None) -> None:
         """Initializes a ValidationDataset.
 
         Args:
@@ -59,7 +74,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         """
         super().__init__(dataset_config)
 
-        self.world_size = dataset_config.get("world_size")
+        self.world_size = world_size
 
         # Dataset/datapoint cache
         self.create_datapoint_cache()
@@ -85,31 +100,8 @@ class ValidationPDBDataset(BaseAF3Dataset):
             pdb_ids,
             key=null_safe_token_count,
         )
-
-        # To avoid the default DistributedSampler behavior of repeating samples
-        # to match the world size, artificially inflate the dataset and flag the
-        # repeated samples so that they are ignored in the metrics.
-        num_samples = len(pdb_ids)
-        repeated_samples = [False] * num_samples
-        if self.world_size is not None:
-            extra_samples = (
-                math.ceil(num_samples / self.world_size) * self.world_size
-            ) - num_samples
-            if num_samples < self.world_size:
-                num_repeats = math.ceil(self.world_size / num_samples)
-                pdb_ids *= num_repeats
-                pdb_ids = pdb_ids[: self.world_size]
-            else:
-                pdb_ids += pdb_ids[:extra_samples]
-
-            repeated_samples += [True] * extra_samples
-
-        self.datapoint_cache = pd.DataFrame(
-            {
-                "pdb_id": pdb_ids,
-                "repeated_sample": repeated_samples,
-            }
-        )
+        _datapoint_cache = pd.DataFrame({"pdb_id": pdb_ids})
+        self.datapoint_cache = pad_to_world_size(_datapoint_cache, self.world_size)
 
     def __getitem__(
         self, index: int
@@ -123,7 +115,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
         # Get PDB ID from the datapoint cache and the preferred chain/interface
         datapoint = self.datapoint_cache.iloc[index]
         pdb_id = datapoint["pdb_id"]
-        is_repeated_sample = datapoint["repeated_sample"]
+        is_repeated_sample = bool(datapoint["repeated_sample"])
 
         if not self.debug_mode:
             sample_data = self.create_all_features(
@@ -258,7 +250,7 @@ class ValidationPDBDataset(BaseAF3Dataset):
     def create_all_features(
         self,
         pdb_id: str,
-        preferred_chain_or_interface: Optional[str],
+        preferred_chain_or_interface: str | None,
         return_atom_arrays: bool,
         return_crop_strategy: bool,
     ) -> dict:

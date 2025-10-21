@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from .activations import SwiGLU
 from .attention import (
     DEFAULT_LMA_KV_CHUNK_SIZE,
@@ -11,7 +25,6 @@ from .initialization import (
     gating_init_,
     glorot_uniform_init_,
     he_normal_init_,
-    ipa_point_weights_init_,
     kaiming_normal_init_,
     lecun_normal_init_,
     normal_init_,
@@ -38,7 +51,6 @@ __all__ = [
     "gating_init_",
     "kaiming_normal_init_",
     "normal_init_",
-    "ipa_point_weights_init_",
     "AdaLN",
     "LayerNorm",
 ]

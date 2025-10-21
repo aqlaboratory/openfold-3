@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Asserts for checking the correctness of FeatureDict entries."""
 
 import torch
@@ -108,7 +122,7 @@ def assert_resid_asym_refuid_match(features):
     result_ids = []
 
     # Iterate over elements of both tensors
-    for a, b in zip(atom_resids, atom_asymids):
+    for a, b in zip(atom_resids, atom_asymids, strict=True):
         tup = (a.item(), b.item())
 
         if tup not in unique_tuples:
@@ -142,7 +156,7 @@ def assert_one_entityid_per_asymid(features):
     """Asserts that there is only one entity_id per asym_id."""
 
     tups = set()
-    for a, b in zip(features["asym_id"], features["entity_id"]):
+    for a, b in zip(features["asym_id"], features["entity_id"], strict=True):
         t = (a.item(), b.item())
         if ((t[0] != 0) & (t[1] != 0)) & (t not in tups):
             tups.add(t)

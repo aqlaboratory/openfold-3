@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,7 +21,6 @@ MSAModuleEmbedder.
 
 import sys
 from collections.abc import Sequence
-from typing import Optional
 
 import torch
 from ml_collections import ConfigDict
@@ -141,20 +140,20 @@ class MSAModuleBlock(MSABlock):
 
     def forward(
         self,
-        m: Optional[torch.Tensor],
-        z: Optional[torch.Tensor],
+        m: torch.Tensor | None,
+        z: torch.Tensor | None,
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
-        chunk_size: Optional[int] = None,
-        transition_ckpt_chunk_size: Optional[int] = None,
+        chunk_size: int | None = None,
+        transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
         use_lma: bool = False,
-        use_flash: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
-        _attn_chunk_size: Optional[int] = None,
+        _attn_chunk_size: int | None = None,
         _offload_inference: bool = False,
-        _offloadable_inputs: Optional[Sequence[torch.Tensor]] = None,
+        _offloadable_inputs: Sequence[torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         msa_trans_mask = msa_mask if _mask_trans else None
 
@@ -246,6 +245,7 @@ class MSAModuleBlock(MSABlock):
             pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
@@ -286,11 +286,11 @@ class MSAModuleStack(MSAStack):
         pair_dropout: float,
         opm_first: bool,
         fuse_projection_weights: bool,
-        blocks_per_ckpt: Optional[int],
+        blocks_per_ckpt: int | None,
         inf: float,
         eps: float,
         linear_init_params: ConfigDict = lin_init.msa_module_init,
-        use_reentrant: Optional[bool] = None,
+        use_reentrant: bool | None = None,
         clear_cache_between_blocks: bool = False,
         tune_chunk_size: bool = False,
         **kwargs,

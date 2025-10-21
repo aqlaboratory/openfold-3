@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,9 +19,9 @@ import glob
 import logging
 import os
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from concurrent import futures
-from typing import Any, Callable, Optional
+from typing import Any
 from urllib import request
 
 from openfold3.core.data.legacy import parsers
@@ -39,15 +39,15 @@ class Jackhmmer:
         n_cpu: int = 8,
         n_iter: int = 1,
         e_value: float = 0.0001,
-        z_value: Optional[int] = None,
+        z_value: int | None = None,
         get_tblout: bool = False,
         filter_f1: float = 0.0005,
         filter_f2: float = 0.00005,
         filter_f3: float = 0.0000005,
-        incdom_e: Optional[float] = None,
-        dom_e: Optional[float] = None,
-        num_streamed_chunks: Optional[int] = None,
-        streaming_callback: Optional[Callable[[int], None]] = None,
+        incdom_e: float | None = None,
+        dom_e: float | None = None,
+        num_streamed_chunks: int | None = None,
+        streaming_callback: Callable[[int], None] | None = None,
     ):
         """Initializes the Python Jackhmmer wrapper.
 
@@ -93,7 +93,7 @@ class Jackhmmer:
         self,
         input_fasta_path: str,
         database_path: str,
-        max_sequences: Optional[int] = None,
+        max_sequences: int | None = None,
     ) -> Mapping[str, Any]:
         """Queries the database chunk using Jackhmmer."""
         with utils.tmpdir_manager() as query_tmp_dir:
@@ -178,12 +178,12 @@ class Jackhmmer:
         return raw_output
 
     def query(
-        self, input_fasta_path: str, max_sequences: Optional[int] = None
+        self, input_fasta_path: str, max_sequences: int | None = None
     ) -> Sequence[Sequence[Mapping[str, Any]]]:
         return self.query_multiple([input_fasta_path], max_sequences)
 
     def query_multiple(
-        self, input_fasta_paths: Sequence[str], max_sequences: Optional[int] = None
+        self, input_fasta_paths: Sequence[str], max_sequences: int | None = None
     ) -> Sequence[Sequence[Mapping[str, Any]]]:
         """Queries the database using Jackhmmer."""
         if self.num_streamed_chunks is None:
