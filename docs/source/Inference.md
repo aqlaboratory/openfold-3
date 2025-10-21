@@ -387,7 +387,7 @@ If a set of chains with a specific stoichiometry is reused across multiple queri
 
 In summary, we submit a total of 1 + n queries to the ColabFold MSA server per run - one query for the set of all unqiue protein sequences in the inference query json file (unpaired/main MSAs) and n additional queries for the sets of of proteins chains heteromeric complexes (paired MSAs).
 
-The MSA deduplication behavior is also present for precomputed MSAs. See the [chain deduplication utility](4-msa-reusing-utility) section for details.
+The MSA deduplication behavior is also present for precomputed MSAs. See the {ref}`chain deduplication utility <4-msa-reusing-utility>` section for details.
 
 ### 4.3 Mapping outputs (`mapping/`)
 
