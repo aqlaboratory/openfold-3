@@ -1,7 +1,22 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # TODO: note in module level docstrings that nothing here supports hydrogens
 import logging
 from collections import defaultdict
 from collections.abc import Generator, Iterable
+from functools import cached_property
 from typing import Literal, NamedTuple, TypeAlias
 
 import biotite.structure as struc
@@ -659,31 +674,46 @@ def find_cross_chain_bonds(atom_array: AtomArray) -> np.ndarray:
     return all_bonds[cross_chain_selector]
 
 
-class BiotiteCCDWrapper:
-    """
-    A stateless façade for Biotite's internal CCD.
+class _ImplementsGet:
+    """Convenience mixin to add a simple get() method."""
 
-    Provides dictionary-style access: `ccd[comp_id][category][column_name]`
-    by wrapping `biotite.structure.info.get_from_ccd()`.
+    def get(self, key: str, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+
+class BiotiteCCDWrapper(_ImplementsGet):
+    """Allows indexing into Biotite's internal CCD like a regular CCD CIFFile.
+
+    Provides dictionary-style access: `ccd[comp_id][category]` by wrapping
+    `biotite.structure.info.get_from_ccd()`.
     """
+
+    @cached_property
+    def _all_valid_ccds(self) -> set[str]:
+        """All CCD IDs existing in Biotite's internal CCD."""
+        return set(info.all_residues())
 
     def __getitem__(self, comp_id: str):
+        if comp_id not in self._all_valid_ccds:
+            raise KeyError(f"Component ID '{comp_id}' not found in CCD.")
+
         # Return an accessor that holds the component ID
         return self._CategoryAccessor(comp_id)
 
-    class _CategoryAccessor:
+    class _CategoryAccessor(_ImplementsGet):
         def __init__(self, comp_id: str):
             self._comp_id = comp_id
 
         def __getitem__(self, category: str):
-            # Return a final accessor holding both comp_id and category
-            return BiotiteCCDWrapper._ColumnAccessor(self._comp_id, category)
+            result = info.get_from_ccd(category_name=category, comp_id=self._comp_id)
 
-    class _ColumnAccessor:
-        def __init__(self, comp_id: str, category: str):
-            self._comp_id = comp_id
-            self._category = category
+            if result is None:
+                raise KeyError(
+                    f"Category '{category}' not found for "
+                    f"component ID '{self._comp_id}'"
+                )
 
-        def __getitem__(self, column_name: str):
-            # Perform the actual lookup using the stored information
-            return info.get_from_ccd(self._category, self._comp_id, column_name)
+            return result

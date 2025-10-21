@@ -3,13 +3,7 @@
 # args TODO add license
 r"""
 
-# training
-python run_openfold.py train --runner_yaml=examples/training_new.yml \
-    --seed=42 \
-    --data_seed=1234
-
-# inference
-python run_openfold.py predict --runner_yaml=examples/inference_new.yml
+Main run script for OpenFold3. Please see the README for usage details.
 
 """
 
@@ -175,8 +169,6 @@ def predict(
     expt_runner.setup()
     expt_runner.run(query_set)
     expt_runner.cleanup()
-
-    # TODO add post-process relaxation with openmm
 
 
 @cli.command()

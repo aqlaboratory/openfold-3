@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """
 Dataset configuration for all atom project.
 
@@ -14,7 +28,6 @@ These fields are parsed by the DataModule to create the appropriate Dataset clas
 
 """
 
-import warnings
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +60,7 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 class TrainingDatasetPaths(BaseModel):
     """Dataset paths used by each dataset."""
 
-    dataset_cache_file: FilePath
+    dataset_cache_file: FilePath | DirectoryPath
     alignments_directory: DirectoryPathOrNone = None
     alignment_db_directory: DirectoryPathOrNone = None
     alignment_array_directory: DirectoryPathOrNone = None
@@ -59,6 +72,7 @@ class TrainingDatasetPaths(BaseModel):
     template_structure_array_directory: DirectoryPathOrNone = None
     template_file_format: str | None = None
     ccd_file: FilePathOrNone = None
+    use_roda_monomer_format: bool = False
 
     @model_validator(mode="after")
     def _validate_paths(self):
@@ -166,8 +180,8 @@ class WeightedPDBConfig(DefaultDatasetConfigSection):
     }
 
 
-@register_dataset_config("ProteinMonomerDistillationDataset")
-class ProteinMonomerDistillationConfig(DefaultDatasetConfigSection):
+@register_dataset_config("ProteinMonomerDataset")
+class ProteinMonomerConfig(DefaultDatasetConfigSection):
     sample_in_order: bool = True
     crop: CropSettings = CropSettings(
         crop_weights={
@@ -259,24 +273,6 @@ class InferenceDatasetConfigKwargs(BaseModel):
     ccd_file_path: FilePathOrNone = None
     msa: MSASettings = MSASettings()
     template: TemplateSettings = TemplateSettings(take_top_k=True)
-    template_preprocessor: TemplatePreprocessorSettings = TemplatePreprocessorSettings(
-        mode="predict"
-    )
-
-    @model_validator(mode="after")
-    def copy_ccd_file_path(self):
-        """Copies ccd_file_path dataset_config_kwargs>template_preprocessor_settings."""
-        if self.ccd_file_path is not None:
-            if self.template_preprocessor_settings.ccd_file_path is not None:
-                warnings.warn(
-                    "Overwriting ccd_file_path in template_preprocessor_settings with "
-                    "dataset_config_kwargs.ccd_file_path. We recommend specifying"
-                    "ccd_file_path only in dataset_config_kwargs.",
-                    stacklevel=2,
-                )
-            self.template_preprocessor_settings.ccd_file_path = self.ccd_file_path
-
-        return self
 
 
 class InferenceJobConfig(BaseModel):
@@ -287,7 +283,7 @@ class InferenceJobConfig(BaseModel):
     ccd_file_path: FilePathOrNone = None
     msa: MSASettings = MSASettings()
     template: TemplateSettings = TemplateSettings()
-    template_preprocessor: TemplatePreprocessorSettings
+    template_preprocessor_settings: TemplatePreprocessorSettings
 
 
 class InferenceDatasetSpec(DatasetSpec):

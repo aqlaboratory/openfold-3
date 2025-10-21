@@ -1,3 +1,4 @@
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -210,20 +211,26 @@ class DiffusionModule(nn.Module):
             [*, N_atom, 3] Denoised atom positions
         """
         si, zij = self.diffusion_conditioning(
-            batch=batch, t=t, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+            batch=batch,
+            t=t,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            chunk_size=chunk_size,
         )
 
         xl_noisy = xl_noisy * atom_mask[..., None]
 
         rl_noisy = xl_noisy / torch.sqrt(t[..., None, None] ** 2 + self.sigma_data**2)
 
+        # Note: These modules are not memory-intensive compared to other parts of the
+        # model (i.e. TemplateStack) so chunking is unnecessary for now.
         ai, ql, cl, plm = self.atom_attn_enc(
             batch=batch,
             atom_mask=atom_mask,
             rl=rl_noisy,
             si_trunk=si_trunk,
             zij_trunk=zij,  # Use conditioned trunk representation
-            chunk_size=chunk_size,
             use_high_precision_attention=use_high_precision_attention,
         )
 
@@ -234,7 +241,6 @@ class DiffusionModule(nn.Module):
             s=si,
             z=zij,
             mask=token_mask,
-            chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_lma=use_lma,
@@ -251,7 +257,6 @@ class DiffusionModule(nn.Module):
             ql=ql,
             cl=cl,
             plm=plm,
-            chunk_size=chunk_size,
             use_high_precision_attention=use_high_precision_attention,
         )
 

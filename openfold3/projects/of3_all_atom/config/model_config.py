@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import ml_collections as mlc
 
 from openfold3.projects.of3_all_atom.config import (
@@ -19,11 +33,13 @@ c_s_input = mlc.FieldReference(c_token_embedder + 65, field_type=int)
 sigma_data = mlc.FieldReference(16, field_type=int)
 max_relative_idx = mlc.FieldReference(32, field_type=int)
 max_relative_chain = mlc.FieldReference(2, field_type=int)
-diffusion_training_enabled = mlc.FieldReference(True, field_type=bool)
 n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
 
-# templates_enabled = mlc.FieldReference(True, field_type=bool)
+# Model components
+train_confidence_only = mlc.FieldReference(False, field_type=bool)
+pae_head_enabled = mlc.FieldReference(False, field_type=bool)
+
 eps = mlc.FieldReference(1e-8, field_type=float)
 inf = mlc.FieldReference(1e9, field_type=float)
 blocks_per_ckpt = mlc.FieldReference(None, field_type=int)
@@ -110,7 +126,7 @@ model_config = mlc.ConfigDict(
             "blocks_per_ckpt": blocks_per_ckpt,
             "ckpt_intermediate_steps": ckpt_intermediate_steps,
             "clear_cache_between_steps": False,
-            "diffusion_training_enabled": diffusion_training_enabled,
+            "train_confidence_only": train_confidence_only,
             "optimizer": {
                 "use_deepspeed_adam": False,
                 "learning_rate": 1.8e-3,
@@ -125,12 +141,17 @@ model_config = mlc.ConfigDict(
                 "decay_every_n_steps": 50000,
                 "decay_factor": 0.95,
             },
-            "ema": {"decay": 0.999},
+            "ema": {"decay": 0.999, "submodules_to_update": None},
             "gradient_clipping": 10.0,
             "model_selection_weight_scheme": "initial_training",
+            "debug": {
+                "log_extra_grad_metrics": False,
+                "profile_grad_logging": False,
+            },
         },
         "architecture": {
             "shared": {
+                "sync_seed": 0,
                 "c_s_input": c_s_input,
                 "c_s": c_s,
                 "c_z": c_z,
@@ -280,6 +301,7 @@ model_config = mlc.ConfigDict(
                     "max_relative_idx": max_relative_idx,
                     "max_relative_chain": max_relative_chain,
                     "linear_init_params": lin_init.diffusion_cond_init,
+                    "tune_chunk_size": tune_chunk_size,
                 },
                 "atom_attn_enc": {
                     "c_s": c_s,
@@ -387,7 +409,7 @@ model_config = mlc.ConfigDict(
                     "c_z": c_z,
                     "c_out": 64,
                     "linear_init_params": lin_init.pae_init,
-                    "enabled": False,
+                    "enabled": pae_head_enabled,
                 },
                 "pde": {
                     "c_z": c_z,
@@ -414,6 +436,7 @@ model_config = mlc.ConfigDict(
                 },
             },
             "loss_module": {
+                "train_confidence_only": train_confidence_only,
                 "per_sample_atom_cutoff": per_sample_atom_cutoff,
                 "low_mem_validation": low_mem_validation,
                 "confidence_loss_names": [
@@ -443,6 +466,7 @@ model_config = mlc.ConfigDict(
                         "no_bins": 64,
                         "bin_min": 0.0,
                         "bin_max": 32.0,
+                        "enabled": pae_head_enabled,
                     },
                     "per_sample_atom_cutoff": per_sample_atom_cutoff,
                     "eps": eps,

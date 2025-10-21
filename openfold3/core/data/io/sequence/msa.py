@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """This module contains IO functions for reading and writing MSA files."""
 
 import os
@@ -385,6 +399,7 @@ def parse_msas_sample(
     alignment_index: dict | None,
     alignment_array_directory: Path | None,
     max_seq_counts: dict[str, int] | None,
+    use_roda_monomer_format: bool = False,
 ) -> MsaArrayCollection:
     """Parses MSA(s) for a training sample.
 
@@ -420,7 +435,9 @@ def parse_msas_sample(
             Dictionary mapping filename strings (without extension) to the max number of
             sequences to parse from the corresponding MSA file. Only alignment files
             whose names are keys in this dict will be parsed.
-
+        use_roda_monomer_format (bool):
+            Whether input data is expected to be in the s3 RODA monomer
+            format: <aln_dir>/<mgy_id>/alignment.npz
     Returns:
         MsaArrayCollection:
             A collection of Msa objects and chain IDs for a single sample.
@@ -456,9 +473,14 @@ def parse_msas_sample(
         representative_msas = {}
         for rep_id in representative_chain_ids:
             if alignment_array_directory is not None:
-                file_list = standardize_filepaths(
-                    alignment_array_directory / f"{rep_id}.npz"
-                )
+                if use_roda_monomer_format:
+                    pre_parsed_msas = (
+                        alignment_array_directory / rep_id / "alignment.npz"
+                    )
+                else:
+                    pre_parsed_msas = alignment_array_directory / f"{rep_id}.npz"
+
+                file_list = standardize_filepaths(pre_parsed_msas)
                 representative_msas[rep_id] = parse_msas_preparsed(
                     file_list=file_list,
                 )

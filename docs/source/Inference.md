@@ -72,8 +72,8 @@ Coming soon:
 
 ## 2. Pre-requisites:
 
-- OpenFold3 Conda Environment. See {doc}`OpenFold3 Installation <Installation>` for instructions on how to build this environment.
-- OpenFold3 Model Parameters. These can either be downloaded manually or will be downloaded on your first prediction run, details {doc}`here <Installation#downloading-the-model-parameters-manually>`  
+- OpenFold3 Conda Environment. See [OpenFold3 Installation](Installation.md) for instructions on how to build this environment.
+- OpenFold3 Model Parameters: please find the checkpoints [in this Google Drive](https://drive.google.com/drive/folders/1PD1B-FuLF9V9wxATGh7qaF0G-WaT4j3g?usp=drive_link).
 
 
 ## 3. Running OpenFold3 Inference
@@ -118,10 +118,11 @@ python run_openfold.py predict \
 - `--query_json` *(Path)*
     - Path to the input query JSON file.
 
-**Optional arguments**
-
 - `--inference_ckpt_path` *(Path)*
-    - Path to the model checkpoint file (`.pt` file). If not specified, will attempt to use or download parameters in `$OPENFOLD_CACHE`
+    - Path to the model checkpoint file (`.pt` file).
+
+
+**Optional arguments**
 
 - `--use_msa_server` *(bool, optional, default = True)*
     - Whether to use the ColabFold server for MSA generation.
@@ -296,35 +297,7 @@ During processing, chain IDs are mapped to internal standardized names, then re-
 
 Each query produces a structured output directory with the following components:
 
-### 4.1 Output Directory Structure
-#### 4.1.1 Top-Level Outputs
-```
-<output_directory>
- ├── query_1
- ├── query_2
- ...
- ├── experiment_config.json
- ├── inference_query_set.json
- ├── model_config.json
- ├── summary.txt
- └── <logs_directory>
-```
-
-- `<query_id>`: Subdirectories with prediction output for each query.
-  
-- `experiment_config.json`: Copy of full experiment configuration used for the run, including all applied 
-command-line arguments and settings from the input `runner_yaml`.
-
-- `inference_query_set.json`: Inference query set with updated filepaths for MSAs and templates.
-
-- `model_config.json`: Model configuration used for the run.
-
-- `summary.txt`: Summary of successful and failed samples for a run.
-
-- `<logs_directory>`: Contains logs from the inference run. This includes errors and tracebacks for failed samples per 
-rank, and optionally console logs if enabled.
-
-#### 4.1.2 Prediction Outputs (`query/seed/`)
+### 4.1 Prediction Outputs (`query/seed/`)
 
 Each seed produces one or more sampled structure predictions and their associated confidence scores, stored in subdirectories named after the query and seed, e.g.:
 ```
@@ -334,9 +307,7 @@ Each seed produces one or more sampled structure predictions and their associate
         ├── query_1_seed_42_sample_1_model.cif
         ├── query_1_seed_42_sample_1_confidences.json
         ├── query_1_seed_42_sample_1_confidences_aggregated.json
-        ├── query_1_seed_42_sample_1_batch.pt (optional)
-        ├── query_1_seed_42_sample_1_latent_output.pt (optional)
-        └── timing.json
+        └── timing.json 
 ```
 
 - `*_model.cif` (or `.pdb`): Final predicted 3D structure (with per-atom pLDDT in B-factor if `.pdb`).
@@ -416,7 +387,7 @@ If a set of chains with a specific stoichiometry is reused across multiple queri
 
 In summary, we submit a total of 1 + n queries to the ColabFold MSA server per run - one query for the set of all unqiue protein sequences in the inference query json file (unpaired/main MSAs) and n additional queries for the sets of of proteins chains heteromeric complexes (paired MSAs).
 
-The MSA deduplication behavior is also present for precomputed MSAs. See the [chain deduplication utility]({doc}`precomputed_msa_explanation#4-msa-reusing-utility`) section for details.
+The MSA deduplication behavior is also present for precomputed MSAs. See the [chain deduplication utility](4-msa-reusing-utility) section for details.
 
 ### 4.3 Mapping outputs (`mapping/`)
 

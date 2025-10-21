@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -536,6 +536,7 @@ class MSAModuleEmbedder(nn.Module):
                 low=self.min_subsampled_all_msa,
                 high=int(self.max_subsampled_all_msa + 1),
                 size=(1,),
+                device=msa_feat.device,
             ).item()
 
             if math.prod(batch_dims) > 1:

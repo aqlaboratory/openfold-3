@@ -1,5 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
-# Copyright 2021 DeepMind Technologies Limited
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,33 +52,36 @@ class OpenFold3Loss(nn.Module):
         # Weighted in confidence_loss()
         cum_loss = cum_loss + l_confidence
 
-        # Run diffusion loss only if diffusion training and losses are enabled
-        atom_positions_diffusion = output.get("atom_positions_diffusion")
-        if atom_positions_diffusion is not None:
-            l_diffusion, l_diffusion_breakdown = diffusion_loss(
-                batch=batch,
-                x=atom_positions_diffusion,
-                t=output["noise_level"],
-                **self.config.diffusion,
+        # Do not compute diffusion/distogram losses if only training confidence heads
+        if not self.config.train_confidence_only:
+            atom_positions_diffusion = output.get("atom_positions_diffusion")
+            if atom_positions_diffusion is not None:
+                # Compute diffusion losses
+                l_diffusion, l_diffusion_breakdown = diffusion_loss(
+                    batch=batch,
+                    x=atom_positions_diffusion,
+                    t=output["noise_level"],
+                    **self.config.diffusion,
+                )
+                losses.update(l_diffusion_breakdown)
+
+                if l_diffusion_breakdown:
+                    losses["diffusion_loss"] = l_diffusion.detach().clone()
+
+                # Weighted in diffusion_loss()
+                cum_loss = cum_loss + l_diffusion
+
+            # Compute distogram loss
+            l_distogram, l_distogram_breakdown = all_atom_distogram_loss(
+                batch=batch, logits=output["distogram_logits"], **self.config.distogram
             )
-            losses.update(l_diffusion_breakdown)
+            losses.update(l_distogram_breakdown)
 
-            if l_diffusion_breakdown:
-                losses["diffusion_loss"] = l_diffusion.detach().clone()
+            if l_distogram_breakdown:
+                losses["scaled_distogram_loss"] = l_distogram.detach().clone()
 
-            # Weighted in diffusion_loss()
-            cum_loss = cum_loss + l_diffusion
-
-        l_distogram, l_distogram_breakdown = all_atom_distogram_loss(
-            batch=batch, logits=output["distogram_logits"], **self.config.distogram
-        )
-        losses.update(l_distogram_breakdown)
-
-        if l_distogram_breakdown:
-            losses["scaled_distogram_loss"] = l_distogram.detach().clone()
-
-        # Weighted in all_atom_distogram_loss()
-        cum_loss = cum_loss + l_distogram
+            # Weighted in all_atom_distogram_loss()
+            cum_loss = cum_loss + l_distogram
 
         losses["loss"] = cum_loss.detach().clone()
 

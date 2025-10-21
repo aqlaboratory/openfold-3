@@ -1,4 +1,5 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -47,7 +48,24 @@ if ds4s_is_installed:
 
 cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
+    from cuequivariance_ops_torch.triangle_attention import (
+        CUEQ_TRIATTN_FALLBACK_THRESHOLD,
+    )
     from cuequivariance_torch.primitives.triangle import triangle_attention
+
+    def cueq_would_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype):
+        # for q_x, dimension -2 is the context length
+        if n_token <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
+            return True
+        if dtype == torch.float32:
+            if hidden_dim > 32 or hidden_dim % 4 != 0:
+                return True
+        else:
+            # float16, bfloat16
+            if hidden_dim > 128 or hidden_dim % 8 != 0:
+                return True
+        return False
+
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
@@ -309,7 +327,7 @@ class Attention(nn.Module):
                 implementation is used instead
             use_cueq_triangle_kernels:
                 whether to use cuequivariance triangle kernels. Mutually
-                exclusive with other use_<...> flags
+                exclusive with use_lma
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
                 none of the "use_<...>" flags are True, a stock PyTorch
@@ -331,30 +349,48 @@ class Attention(nn.Module):
                 "lma_kv_chunk_size must be provided"
             )
 
-        # TODO: Make this more explicit
+        if cueq_is_installed and use_cueq_triangle_kernels:
+            # cuEquivariance -> Torch fallback for small sequence length and some shapes
+            use_fall_back = cueq_would_fall_back(
+                n_token=q_x.shape[-2],
+                hidden_dim=q_x.shape[-1] // self.no_heads,
+                dtype=q_x.dtype,
+            )
+            if use_fall_back:
+                use_cueq_triangle_kernels = False
+
         # The EvoformerAttention kernel can only be used for sequence lengths > 16
         if use_deepspeed_evo_attention and q_x.shape[-2] <= 16:
             use_deepspeed_evo_attention = False
 
         attn_options = [
-            use_deepspeed_evo_attention,
+            use_deepspeed_evo_attention or use_cueq_triangle_kernels,
             use_lma,
             use_high_precision,
-            use_cueq_triangle_kernels,
         ]
         if sum(attn_options) > 1:
             raise ValueError("Choose at most one alternative attention algorithm")
 
         if biases is None:
             biases = []
-        # DeepSpeed attention kernel and cueqivarince kernel applies scaling internally
+
+        # DeepSpeed attention kernel and cuequivariance kernel apply scaling internally
         q, k, v = self._prep_qkv(
             q_x,
             kv_x,
             apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels),
         )
 
-        if use_deepspeed_evo_attention:
+        # cuequivariance kernel takes precedence over use_deepspeed_evo_attention
+        if use_cueq_triangle_kernels:
+            if not cueq_is_installed:
+                raise ValueError(
+                    "Running with `use_cueq_triangle_kernels` but package is not "
+                    "installed. See documentation for installation instructions."
+                )
+            scale = 1.0 / math.sqrt(self.c_hidden)
+            o = _cueq_triangle_attn(q, k, v, biases, scale=scale)
+        elif use_deepspeed_evo_attention:
             if len(biases) > 2:
                 raise ValueError(
                     "If use_deepspeed_evo_attention is True, you may only "
@@ -368,9 +404,6 @@ class Attention(nn.Module):
             ]
             o = _lma(q, k, v, biases, lma_q_chunk_size, lma_kv_chunk_size)
             o = o.transpose(-2, -3)
-        elif use_cueq_triangle_kernels:
-            scale = 1.0 / math.sqrt(self.c_hidden)
-            o = _cueq_triangle_attn(q, k, v, biases, scale=scale)
         else:
             o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
             o = o.transpose(-2, -3)
