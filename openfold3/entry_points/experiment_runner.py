@@ -710,8 +710,7 @@ class InferenceExperimentRunner(ExperimentRunner):
     def _log_experiment_config(self):
         """Record the experiment config used for this run."""
         log_path = self.output_dir / "experiment_config.json"
-        with open(log_path, "w") as fp:
-            fp.write(self.experiment_config.model_dump_json(indent=4))
+        log_path.write_text(self.experiment_config.model_dump_json(indent=4))
 
     @rank_zero_only
     def _log_model_config(self):
