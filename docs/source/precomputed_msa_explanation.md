@@ -1,14 +1,15 @@
 # Understanding Precomputed MSA Handling
 
-Here, we aim to provide additional explanations for the inner workings of the MSA components of the OF3 inference pipeline. If you need step-by-step instructions on how to generate MSAs using our OF3-style pipeline, refer to our [MSA Generation](precomputed_msa_generation_how_to.md) document. If you need a guide on how to interface MSAs with the inference pipeline, go to the [Precomputed MSA How-To Guide](precomputed_msa_how_to.md).
+Here, we aim to provide additional explanations for the inner workings of the MSA components of the OF3 inference pipeline. If you need step-by-step instructions on how to generate MSAs using our OF3-style pipeline, refer to our {doc}`MSA Generation <precomputed_msa_generation_how_to>` document. If you need a guide on how to interface MSAs with the inference pipeline, go to the {doc}`Precomputed MSA How-To Guide <precomputed_msa_how_to>`.
 
 Specifically, we detail:
-1. [MSA Input Feature Components](precomputed_msa_explanation.md#1-msa-input-feature-components)
-2. [MSASettings](precomputed_msa_explanation.md#2-msasettings-reference)
-3. [Online Cross-Chain Pairing in OF3](precomputed_msa_explanation.md#3-online-msa-pairing)
-4. [Chain Deduplication Utility](precomputed_msa_explanation.md#4-msa-reusing-utility)
-5. [Preparsing MSAs into NPZ](precomputed_msa_explanation.md#5-preparsing-raw-msas-into-npz-format)
+1. {ref}`MSA Input Feature Components <1-msa-input-feature-components>` 
+2. {ref}`MSASettings <2-msasettings-reference>`
+3. {ref}`Online Cross-Chain Pairing in OF3 <3-online-msa-pairing>` 
+4. {ref}`Chain Deduplication Utility <4-msa-reusing-utility>` 
+5. {ref}`Preparsing MSAs into NPZ <5-preparsing-raw-msas-into-npz-format>` 
 
+(1-msa-input-feature-components)=
 ## 1. MSA Input Feature Components
 
 Based on the AF3 and AF2-Multimer Supplementary Materials, MSA input features for a single chain are composed of up to 3 components:
@@ -25,6 +26,7 @@ For multimeric queries, the MSA features for all chains are concatenated horizon
 
 As shown in the figure above, paired MSAs are only provided for protein chains that are part of complexes with at least **two unique protein chains**. Besides the query sequences, protein chains in monomeric and homomeric assemblies and RNA chains only get main MSA features, which are treated as implicitly paired for homomers. MSA feature columns for DNA and ligand tokens are empty and masked to prevent their contributions to model activations.
 
+(2-msasettings-reference)=
 ## 2. MSASettings Reference
 
 Users can alter the way MSAs are processed in the OF3 inference pipeline by modifying the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class via the `runner.yml` as outlined in the [Precomputed MSA How-To Guide](precomputed_msa_how_to.md#5-modifying-msa-settings-for-custom-precomputed-msas).
@@ -57,6 +59,7 @@ dataset_config_kwargs:
 
 For details on the rest of the settings, see the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class docstring.
 
+(3-online-msa-pairing)=
 ## 3. Online MSA Pairing
 
 Pairing rows of MSAs for heteromeric complexes based on species information is expected to improve the quality of predicted protein-protein interfaces (see [this](https://www.biorxiv.org/content/10.1101/2021.10.04.463034v2) and [this](https://www.biorxiv.org/content/10.1101/240754v3.abstract) publication). When running training or inference on a diverse set of protein complexes like the PDB, protein chains in different complex contexts require different paired MSAs. To avoid having to precompute paired MSAs for a large number of chain combinations, we developed a fast online pairing algorithm, which pairs sequences across MSAs of different chains in the same complex by placing sequences originating from the same species in the same row - the OF3 inference pipeline also accepts precomputed paired MSAs.) See the AF2-Multimer and AF3 Supplementary information for a description of the algorithm or [this](../../openfold3/core/data/primitives/sequence/msa.py#L1048) section in our source code for the exact implementation.
@@ -100,7 +103,7 @@ The OF3 pairing code prioritizes sequences that can be paired with as many chain
 
 *PDB entry 5k36 (A) and comparison of its (B) Colabfold and (C) OpenFold3 paired MSAs. 5k36 is a nuclear exosome complex with 11 protein and 2 RNA chains. The main, wide panels in B) and C) show a simplified representation of the paired MSA, where each row corresponds to a row in the paired MSA, each column corresponds to a chain and each tile indicates which chains in the associated row receive paired sequences (white in CF as no species information is available, colored by species in OF3). Black tiles indicate gapped segments meaning the associated chain does not have a sequence assigned from the species that has sequences for other chains in the same row. The narrow panels indicate how many chains have paired sequences in the corresponding row in the main panels.*
 
-
+(4-msa-reusing-utility)=
 ## 4. MSA Reusing Utility
 
 Large-scale prediction jobs using OF3 are often done on highly redundant datasets. For example, you may be interested in co-folding a target protein of interest with a library of candidate small molecule drugs, or an antigen of interest with thousands of different antibodies. In these scenarios, the sequence of the target protein does not change across samples and hence, the main MSA for the corresponding chain also remains the same.
@@ -162,6 +165,7 @@ In order to reduce the disk space necessary when running predictions, we support
 </code></pre>
 </details>
 
+(5-preparsing-raw-msas-into-npz-format)=
 ## 5. Preparsing Raw MSAs into NPZ Format
 
 Two of the main challenges we faced with MSAs were 

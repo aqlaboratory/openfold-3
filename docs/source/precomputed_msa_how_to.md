@@ -1,13 +1,13 @@
 # A How-To Guide for Precomputed MSAs in the OF3 Inference Pipeline
 
-In this document, we intend to provide a guide on how to format and organize precomputed multiple sequence alignments (MSAs) and how to provide settings for the Openfold3 inference pipeline to use these MSAs correctly for creating MSA features for Openfold3. Use this guide if you already generated MSAs using your own or our internal OF3-style pipeline. If you have yet to generate MSAs and would like to use our workflow, refer to our [MSA Generation Guide](precomputed_msa_generation_how_to.md). If you need further clarifications on how some of the MSA components of our inference pipeline work, refer to [this explanatory document](precomputed_msa_explanation.md).
+In this document, we intend to provide a guide on how to format and organize precomputed multiple sequence alignments (MSAs) and how to provide settings for the Openfold3 inference pipeline to use these MSAs correctly for creating MSA features for Openfold3. Use this guide if you already generated MSAs using your own or our internal OF3-style pipeline. If you have yet to generate MSAs and would like to use our workflow, refer to our {doc}`MSA Generation Guide <precomputed_msa_generation_how_to>`. If you need further clarifications on how some of the MSA components of our inference pipeline work, refer to {doc}`this explanatory document <precomputed_msa_explanation>`.
 
 The main steps detailed in this guide are:
-1. [Providing the MSAs in the expected format](precomputed_msa_how_to.md#1-precomputed-msa-files)
-2. [Organizing the MSAs in the expected directory structure](precomputed_msa_how_to.md#2-precomputed-msa-directory-structure-and-file-name-conventions)
-3. [Preparsing MSAs into NPZ format](precomputed_msa_how_to.md#3-preparsing-raw-msas-into-npz-format)
-4. [Adding the MSA file/directory paths to the inference query json](precomputed_msa_how_to.md#4-specifying-paths-in-the-inference-query-file)
-5. [Updating the MSA pipeline settings](precomputed_msa_how_to.md#5-modifying-msa-settings-for-custom-precomputed-msas)
+1. {ref}`Providing the MSAs in the expected format <1-precomputed-msa-files>`
+2. {ref}`Organizing the MSAs in the expected directory structure <2-precomputed-msa-directory-structure-and-file-name-conventions>` 
+3. {ref}`Preparsing MSAs into NPZ format <3-preparsing-raw-msas-into-npz-format>`
+4. {ref}`Adding the MSA file/directory paths to the inference query json <4-specifying-paths-in-the-inference-query-file>`
+5. {ref}`Updating the MSA pipeline settings <5-modifying-msa-settings-for-custom-precomputed-msas>`
 
 IMPORTANT: 
 
@@ -18,6 +18,7 @@ IMPORTANT:
 *Using our OF3-style MSA generation pipeline*:
 - Only step 4 is required, step 3 is optional, but recommended if your dataset is large or redundant in the number of unique sequences.
 
+(1-precomputed-msa-files)=
 ## 1. Precomputed MSA Files
 
 In the OF3 inference pipeline, we differentiate between two types of MSAs:
@@ -127,6 +128,7 @@ GDPHMACNFQFPEIAYPGKLICP...
 
 is parsed to associate the first two aligned sequences with the species identified by `HUMAN` and the last two with `7227`. See the [Online Pairing](precomputed_msa_explanation.md#3-online-msa-pairing) section in the precomputed MSA explanatory document for more information on how pairing is done in the inference pipeline on-the-fly.
 
+(2-precomputed-msa-directory-structure-and-file-name-conventions)=
 ## 2. Precomputed MSA Directory Structure and File Name Conventions
 
 The MSA inference pipeline expects
@@ -150,6 +152,7 @@ alignments/
     └── custom_database_hits.a3m
 ```
 
+(3-preparsing-raw-msas-into-npz-format)=
 ## 3. Preparsing Raw MSAs into NPZ Format
 
 For main MSAs, we provide support for preparsing MSA files from `a3m` and `sto` into `npz` numpy array format. This optional step reduces overall MSA parsing and processing times in the inference pipeline for large batch jobs with redundant sets of sequences as well as the disk space required to store these MSAs (see [this](precomputed_msa_explanation.md#5-preparsing-raw-msas-into-npz-format) section for details). The preparsed, compressed MSA files can be generated from raw MSA data with the directory and file structure specified above using [this preparsing script](../../scripts/data_preprocessing/preparse_alignments_af3.py). 
@@ -162,6 +165,7 @@ preparsed_alignments/
 └── example_chain_C.npz
 ```
 
+(4-specifying-paths-in-the-inference-query-file)=
 ## 4. Specifying Paths in the Inference Query File
 
 The data pipeline needs to know which MSA to use for which chain. This information is provided by specifying the [paths to the MSAs](input_format.md#31-protein-chains) for each chain in the inference query json file. There are 3 equivalent ways of specifying these paths.
@@ -290,6 +294,7 @@ If you opted to preparse the raw alignment files into NPZ files, you should spec
 
 If you want to use your own pre-paired MSAs, perhaps pre-paired using a custom pairing algorithm, you can specify paths using any of the previous three methods to the per-chain paired MSAs using the `paired_msa_file_paths` field in your input query json file.
 
+(5-modifying-msa-settings-for-custom-precomputed-msas)=
 ## 5. Modifying MSA Settings for Custom Precomputed MSAs
 
 In the inference pipeline, we use the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class to control MSA processing and featurization. You can update it using the dataset_config_kwargs section in the `runner.yml`. Updates to `MSASettings` via the `runner.yml` **overwrite the corresponding default fields**. The MSASettings do **not** need to be updated when using OF3-style protein MSAs.

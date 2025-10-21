@@ -72,7 +72,7 @@ Coming soon:
 
 ## 2. Pre-requisites:
 
-- OpenFold3 Conda Environment. See [OpenFold3 Installation](Installation.md) for instructions on how to build this environment.
+- OpenFold3 Conda Environment. See {doc}`OpenFold3 Installation <Installation>` for instructions on how to build this environment.
 - OpenFold3 Model Parameters: please find the checkpoints [in this Google Drive](https://drive.google.com/drive/folders/1PD1B-FuLF9V9wxATGh7qaF0G-WaT4j3g?usp=drive_link).
 
 
@@ -157,6 +157,7 @@ python run_openfold.py predict \
     --runner_yaml /path/to/inference_precomputed.yml
 ```
 
+(323-inference-without-msas)=
 #### 3.2.3 🚫 Inference Without MSAs
 This mode skips MSA generation entirely. OpenFold3 will perform inference using only the input sequences. Prediction quality will be reduced compared to MSA-based modes. This inference mode is currently discouraged if the goal is to obtain the highest-accuracy structures.
 

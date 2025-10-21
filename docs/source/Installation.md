@@ -46,7 +46,7 @@ $ mamba env create -n openfold_env -f environments/production.yml
 
 ### Easiest: Use `./scripts/setup_openfold3.sh` to download and setup default parameter paths
 
-The [`setup_openfold3.sh`](../scripts/setup_openfold3.sh) script sets up quick defaults for parameter paths and saves selected paths as default variables. 
+The [`setup_openfold3.sh`](../../scripts/setup_openfold3.sh) script sets up quick defaults for parameter paths and saves selected paths as default variables. 
 
 In detail, this script will:
 - Setup an `$OPENFOLD_CACHE` environment [Optional, default: `~/.openfold3`]

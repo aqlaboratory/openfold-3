@@ -54,9 +54,9 @@ Each query entry is a dictionary with the following structure:
 
 In the current inference release, the only required field is:
   - `chains` *(list of dict, required)*
-    - A list of chain definitions, where each sub-dictionary specifies one chain in the assembly. See [Section 3](#3-chains) for a full breakdown of chain-level fields.
+    - A list of chain definitions, where each sub-dictionary specifies one chain in the assembly. See {ref}`Section 3 <3-chains>` for a full breakdown of chain-level fields.
 
-
+(3-chains)=
 ## 3. Chains
 
 Each entry in the ```chains``` list defines one or more instances of a molecular chain in the bioassembly. The required and optional fields vary depending on the type of molecule (```protein```, ```rna```, ```dna```, or ```ligand```).
@@ -93,7 +93,7 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - Example: `{"1": "MHO", "5": "SEP"}`
 
   - `use_msas` *(bool, optional, default = true)*
-    - Enables MSA usage. If false, empty MSA features are provided to the model. MSA-free inference mode is [discouraged](Inference.md#323--inference-without-msas) if the goal is to obtain the highest-accuracy structures.
+    - Enables MSA usage. If false, empty MSA features are provided to the model. MSA-free inference mode is {ref}`discouraged <323-inference-without-msas>` if the goal is to obtain the highest-accuracy structures.
 
   - `use_main_msas` *(bool, optional, default = true)*
     - Controls whether to use unpaired MSAs. 
@@ -107,13 +107,13 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
 
   - `main_msa_file_paths` *(str | list[str], optional, default = null)*
     - Path or list of paths to the MSA files for this chain.
-    - Use this field only when running inference with **precomputed MSAs**. See the [Precomputed MSA documentation](precomputed_msas.md) for details.
+    - Use this field only when running inference with **precomputed MSAs**. See the {doc}`Precomputed MSA documentation <precomputed_msa_how_to>` for details.
     - If using the ColabFold MSA server (`--use_msa_server=True`), this field will be automatically populated and will **override any user-provided path**.
 
   - `paired_msa_file_paths` *(str | list[str], optional, default = null)*
     - Path or list of paths to paired MSA files for this chain, pre-paired in the context of the full complex.
-    - Use this field only when running inference with **precomputed MSAs** and the corresponding query has at least two unique polymer chains. See the [Precomputed MSA documentation](precomputed_msas.md) for details.
-    - If not provided, online MSA pairing can still be performed for protein chains if species information is available in one or more main MSA files per chain. See [Online MSA Pairing](precomputed_msas.md#6-online-msa-pairing-from-precomputed-msas) for details.
+    - Use this field only when running inference with **precomputed MSAs** and the corresponding query has at least two unique polymer chains. See the {doc}`Precomputed MSA documentation <precomputed_msa_how_to>` for details.
+    - If not provided, online MSA pairing can still be performed for protein chains if species information is available in one or more main MSA files per chain. See {ref}`Online Cross-Chain Pairing in OF3 <3-online-msa-pairing>` for details.
     - If using the ColabFold MSA server, this field is automatically populated and will **override any user-provided path**.
 
 
@@ -147,7 +147,7 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
 
   - `main_msa_file_paths` *(str | list[str], optional, default = null)*
     - Path or list of paths to the MSA files for this chain.
-    - Use this field only when running inference with **precomputed MSAs**. See the [Precomputed MSA documentation](precomputed_msas.md) for details.
+    - Use this field only when running inference with **precomputed MSAs**. See the {doc}`Precomputed MSA documentation <precomputed_msa_how_to>` for details.
 
 
   ### 3.3. DNA Chains
