@@ -2,7 +2,7 @@
 name: Feature request
 about: Suggest an idea for this project
 title: ''
-labels: ''
+labels: 'enhancement'
 assignees: ''
 
 ---
@@ -18,3 +18,7 @@ A clear and concise description of any alternative solutions or features you've 
 
 **Additional context**
 Add any other context or screenshots about the feature request here.
+
+**Feature Assistance**
+Let us know if you are interested in working on this idea yourself with expert guidance/assistance, or in working together with us on this feature idea.
+
