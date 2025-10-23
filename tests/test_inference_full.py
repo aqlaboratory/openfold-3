@@ -17,6 +17,7 @@
 Runs two small inference queries without msa or templates.
 """
 
+import os
 import logging
 
 import pytest
@@ -29,7 +30,8 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 from tests.compare_utils import skip_unless_cuda_available
-from openfold3 import hacks
+from unittest.mock import patch
+
 
 pytestmark = pytest.mark.inference_verification
 
@@ -79,24 +81,30 @@ protein_and_ligand_query = InferenceQuerySet.model_validate(
 @pytest.mark.parametrize("query_set", [protein_only_query, protein_and_ligand_query])
 def test_inference_run(tmp_path, query_set):
     # Trigger validation logic to replace the cache path
-    experiment_config = InferenceExperimentConfig.model_validate({})
+    with patch('builtins.input', return_value='no'):
+        # your test code that calls _maybe_download_parameters
+        experiment_config = InferenceExperimentConfig.model_validate({})
     expt_runner = InferenceExperimentRunner(
         experiment_config, num_diffusion_samples=1, output_dir=tmp_path
     )
-    expt_runner.setup()
-    if not expt_runner.ckpt_path.exists():
+    try:
+        expt_runner.setup()
+    except ValueError as e:
         # If called from setup script, fail the test
-        if os.environ.get('OPENFOLD_SETUP_SCRIPT') == '1':
-            pytest.fail(
-                "No checkpoint files found after running setup script. "
-                "Please check that the download completed successfully."
-            )
+        if "is not a valid file or directory" in str(e):
+            if os.environ.get('OPENFOLD_SETUP_SCRIPT') == '1':
+                pytest.fail(
+                    "No checkpoint files found after running setup script. "
+                    "Please check that the download completed successfully."
+                )
+            else:
+                logger.warning(
+                    "No checkpoint files found, skipping for now. "
+                    "Please use scripts/setup_openfold3.sh to download the weights."
+                )
+                pytest.skip("No checkpoint files available")
         else:
-            logger.warning(
-                "No checkpoint files found, skipping for now. "
-                "Please use scripts/setup_openfold3.sh to download the weights."
-            )
-            pytest.skip("No checkpoint files available")
+            raise
 
     expt_runner.run(query_set)
     expt_runner.cleanup()
