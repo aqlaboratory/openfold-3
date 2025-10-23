@@ -14,6 +14,8 @@
 
 import importlib
 
+from openfold3 import hacks  # noqa: F401
+
 if importlib.util.find_spec("deepspeed") is not None:
     import deepspeed
 

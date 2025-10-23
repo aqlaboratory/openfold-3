@@ -742,7 +742,7 @@ class TestKernels(unittest.TestCase):
             dtype=torch.bfloat16,
         )
 
-    @compare_utils.skip_unless_cueq_installed()
+    @compare_utils.skip_unless_ds4s_installed()
     def test_compare_template_stack_dsk_fp32_chunk(self):
         self._compare_template_stack(
             use_deepspeed_evo_attention=True,
