@@ -4,6 +4,8 @@ name: "Publish on PyPI"
 # builds the package and uploads it to PyPI.
 
 on:
+  workflow_dispatch:
+  push:
   release:
     types: [published]
 
