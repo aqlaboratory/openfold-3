@@ -1,6 +1,8 @@
 # Usage: ./scripts/setup_openfold3.sh
 
 #!/bin/bash
+# env variable to be used in integration tests 
+export OPENFOLD_SETUP_SCRIPT=1
 
 # Configuration variables: DO NOT SET HERE, to be set when running `setup_openfold3.sh`
 OPENFOLD_CACHE=""
@@ -158,6 +160,6 @@ if [ "$SETUP_STATUS" -eq 0 ]; then
 fi
 
 # Run tests
-pytest -v tests/test_inference_full.py -m inference_verification
+pytest -v --log-cli-level=WARNING tests/test_inference_full.py -m inference_verification
 
 echo "Integration tests passed!"

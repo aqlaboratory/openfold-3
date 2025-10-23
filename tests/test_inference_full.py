@@ -29,10 +29,13 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 from tests.compare_utils import skip_unless_cuda_available
+from openfold3 import hacks
 
 pytestmark = pytest.mark.inference_verification
 
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
+
 
 protein_only_query = InferenceQuerySet.model_validate(
     {
@@ -81,6 +84,20 @@ def test_inference_run(tmp_path, query_set):
         experiment_config, num_diffusion_samples=1, output_dir=tmp_path
     )
     expt_runner.setup()
+    if not expt_runner.ckpt_path.exists():
+        # If called from setup script, fail the test
+        if os.environ.get('OPENFOLD_SETUP_SCRIPT') == '1':
+            pytest.fail(
+                "No checkpoint files found after running setup script. "
+                "Please check that the download completed successfully."
+            )
+        else:
+            logger.warning(
+                "No checkpoint files found, skipping for now. "
+                "Please use scripts/setup_openfold3.sh to download the weights."
+            )
+            pytest.skip("No checkpoint files available")
+
     expt_runner.run(query_set)
     expt_runner.cleanup()
 
