@@ -81,7 +81,7 @@ protein_and_ligand_query = InferenceQuerySet.model_validate(
 @pytest.mark.parametrize("query_set", [protein_only_query, protein_and_ligand_query])
 def test_inference_run(tmp_path, query_set):
     # Trigger validation logic to replace the cache path
-    with patch('builtins.input', return_value='no'):
+    with patch("builtins.input", return_value="no"):
         # your test code that calls _maybe_download_parameters
         experiment_config = InferenceExperimentConfig.model_validate({})
     expt_runner = InferenceExperimentRunner(
@@ -92,7 +92,7 @@ def test_inference_run(tmp_path, query_set):
     except ValueError as e:
         # If called from setup script, fail the test
         if "is not a valid file or directory" in str(e):
-            if os.environ.get('OPENFOLD_SETUP_SCRIPT') == '1':
+            if os.environ.get("OPENFOLD_SETUP_SCRIPT") == "1":
                 pytest.fail(
                     "No checkpoint files found after running setup script. "
                     "Please check that the download completed successfully."
