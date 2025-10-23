@@ -319,4 +319,4 @@ class TestInferenceConfigConstruction:
         # Would require a real msa file
         assert len(dataloader) == 1
         it = iter(dataloader)
-        next(it)
+        next(it)  # this is currently causing a segfault in Py3.13

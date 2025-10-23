@@ -15,6 +15,7 @@
 __all__ = ["core", "projects"]
 
 import importlib.util
+from . import hacks
 
 import gemmi
 from packaging import version

@@ -15,9 +15,6 @@
 from setuptools import find_packages, setup
 
 setup(
-    name="openfold3",
-    version="0.1.0",
-    description="A PyTorch reimplementation of DeepMind's AlphaFold 2 & 3",
     author="OpenFold Team",
     author_email="jennifer.wei@omsf.io",
     license="Apache License, Version 2.0",
@@ -28,14 +25,6 @@ setup(
         "openfold3": [
             "projects/*/config/*.yml",
         ],
-    },
-    extras_require={
-        "cuequivariance": [
-            "cuequivariance>=0.6.1",
-            "cuequivariance-ops-torch-cu12>=0.6.1",
-            "cuequivariance-torch>=0.6.1",
-            "torch>=2.7",
-        ]
     },
     classifiers=[
         "License :: OSI Approved :: Apache Software License",
