@@ -43,14 +43,8 @@ dependencies = [
   # Pinned cutlass <4 calls from cuda.__version__, which was removed when
   # cuda-python went fully metapackage
   "cuda-python <12.9.1",
-
-  # tests still require
-  #"biopython",
-  #"modelcif",
-  #"openmm",
-  #"pdbfixer @ https://github.com/openmm/pdbfixer/archive/refs/tags/v1.11.tar.gz"
 ]
-description = "A PyTorch reimplementation of DeepMind's AlphaFold 2 & 3"
+description = "A PyTorch reimplementation of DeepMind's AlphaFold 3"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 
@@ -70,16 +64,12 @@ cuequivariance = [
 include-package-data = true
 
 [tool.setuptools.packages.find]
-exclude = ["tests", "scripts"]
+exclude = ["scripts"]
 
 [tool.setuptools.package-data]
 openfold3 = [
   "core/kernels/cuda/csrc/*",
   "projects/*/config/*.yml",
-  "legacy/*/config/*.yml",
-]
-"*" = [
-  "resources/stereo_chemical_props.txt"
 ]
 
 # much of the cibuildwheel config taken from benfred/implicit
@@ -103,9 +93,6 @@ CUDACXX = "/usr/local/cuda/bin/nvcc"
 
 [tool.ruff]
 line-length = 88
-exclude = [
-    "notebooks/OpenFold.ipynb",
-]
 
 [tool.ruff.lint]
 select = [

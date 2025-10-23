@@ -16,10 +16,10 @@ from setuptools import find_packages, setup
 
 setup(
     author="OpenFold Team",
-    author_email="jennifer.wei@omsf.io",
+    author_email="support@openfold.io",
     license="Apache License, Version 2.0",
-    url="https://github.com/aqlaboratory/openfold3",
-    packages=find_packages(exclude=["tests", "scripts"]),
+    url="https://github.com/aqlaboratory/openfold-3",
+    packages=find_packages(exclude=["scripts"]),
     include_package_data=True,
     package_data={
         "openfold3": [
