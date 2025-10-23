@@ -1,0 +1,32 @@
+name: "Publish on PyPI"
+
+# This workflow is triggered when a new release is published on GitHub. It
+# builds the package and uploads it to PyPI.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy_pypi:
+    if: ${{ github.repository == 'jnwei/openfold-3' }}
+    runs-on: ubuntu-latest
+    name: "Publish on PyPI"
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: "Install release tools"
+        run: |
+          python -m pip install twine build
+      - name: "Build and check package"
+        run: |
+          python -m build --sdist --wheel
+          twine check dist/*
+      - name: "Publish on pypi"
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/
