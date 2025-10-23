@@ -7,8 +7,8 @@ This guide covers how to use OpenFold3 to make structure predictions.
 
 ## 1. Inference features
 
-OpenFold3 replicates the full set of input features described in the *AlphaFold 3* publication. All of these features are **fully implemented and supported in training mode**. We are actively working on integrating these functionalities into the inference pipeline. 
- 
+OpenFold3 replicates the full set of input features described in the *AlphaFold 3* publication. All of these features are **fully implemented and supported in training and inference**. We are actively working on integrating these functionalities into the inference pipeline. 
+
 Below is the current status of inference feature support by molecule type:
 
 
