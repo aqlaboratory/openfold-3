@@ -5,7 +5,6 @@ name: "Publish on PyPI"
 
 on:
   workflow_dispatch:
-  push:
   release:
     types: [published]
 
@@ -30,5 +29,3 @@ jobs:
           twine check dist/*
       - name: "Publish on pypi"
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          repository-url: https://test.pypi.org/
