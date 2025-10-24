@@ -11,8 +11,9 @@ def prep_cutlass():
 
     headers_dir = Path(cutlass_library.__file__).parent / "source/include"
     cpath = os.environ.get("CPATH", "")
-    # TODO: make this idempotent: see if this is already in CPATH
-    if cpath:
-        cpath += ":"
+    # TODO: technically, this test should be a little fancier
+    if str(headers_dir.resolve()) not in cpath:
+        if cpath:
+            cpath += ":"
 
-    os.environ["CPATH"] = cpath + str(headers_dir.resolve())
+        os.environ["CPATH"] = cpath + str(headers_dir.resolve())
