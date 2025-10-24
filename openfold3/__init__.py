@@ -3,6 +3,9 @@ __all__ = ["core", "projects"]
 import importlib.util
 from . import hacks
 
+hacks.prep_deepspeed()
+hacks.prep_cutlass()
+
 import gemmi
 from packaging import version
 

@@ -496,6 +496,9 @@ def _deepspeed_evo_attn(
         biases:
             List of biases that broadcast to [*, H, Q, K]
     """
+    from openfold3 import hacks
+    hacks.prep_deepspeed()
+    hacks.prep_cutlass()
 
     if not ds4s_is_installed:
         raise ValueError(
