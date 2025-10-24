@@ -12,25 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from setuptools import find_packages, setup
+from setuptools import setup
 
-setup(
-    author="OpenFold Team",
-    author_email="support@openfold.io",
-    license="Apache License, Version 2.0",
-    url="https://github.com/aqlaboratory/openfold-3",
-    packages=find_packages(exclude=["scripts"]),
-    include_package_data=True,
-    package_data={
-        "openfold3": [
-            "projects/*/config/*.yml",
-        ],
-    },
-    classifiers=[
-        "License :: OSI Approved :: Apache Software License",
-        "Operating System :: POSIX :: Linux",
-        "Programming Language :: Python :: 3.10,"
-        "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    ],
-    entry_points={"console_scripts": ["run_openfold=run_openfold:cli"]},
-)
+setup()

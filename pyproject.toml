@@ -35,19 +35,26 @@ dependencies = [
 
   # additonal pins
 
-  # https://github.com/triton-lang/triton/issues/5919
-  # According to that issue, the pin may not be necessary in Python >3.13.
-  # Note that this pin has the effect of pinning torch <=2.5.1.
-
-  #"triton <3.2;python_version<\"3.13\"",
   # Pinned cutlass <4 calls from cuda.__version__, which was removed when
   # cuda-python went fully metapackage
   "cuda-python <12.9.1",
 ]
+authors = [
+  {name = "OpenFold Team", email = "support@openfold.io" }
+]
 description = "OpenFold's Biological Structure Prediction Model based on DeepMind's AlphaFold 3"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "Apache-2.0"
+license = { text = "Apache-2.0" }
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Repository = "https://github.com/aqlaboratory/openfold-3"
 
 [project.scripts]
 run_openfold="openfold3.run_openfold:cli"
@@ -72,7 +79,6 @@ exclude = ["scripts"]
 
 [tool.setuptools.package-data]
 openfold3 = [
-  "core/kernels/cuda/csrc/*",
   "projects/*/config/*.yml",
 ]
 
