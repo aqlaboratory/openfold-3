@@ -8,7 +8,7 @@ name = "openfold3"
 version = "0.1.0"
 dependencies = [
   "torch",# ==2.5.1",
-  "pytorch-lightning",
+  "pytorch-lightning >=2.1",
   "numpy",
   "pandas",
   "PyYAML",
@@ -44,9 +44,13 @@ dependencies = [
   # cuda-python went fully metapackage
   "cuda-python <12.9.1",
 ]
-description = "A PyTorch reimplementation of DeepMind's AlphaFold 3"
+description = "OpenFold's Biological Structure Prediction Model based on DeepMind's AlphaFold 3"
+readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
+
+[project.scripts]
+run_openfold="openfold3.run_openfold:cli"
 
 [project.optional-dependencies]
 dev = [
