@@ -17,9 +17,6 @@ __all__ = ["core", "projects", "entry_points", "run_openfold"]
 import importlib.util
 from . import hacks
 
-hacks.prep_deepspeed()
-hacks.prep_cutlass()
-
 import gemmi
 from packaging import version
 
