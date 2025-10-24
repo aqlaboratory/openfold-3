@@ -1,9 +1,25 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import gc
 import importlib
 import itertools
 import logging
 import traceback
+from contextlib import nullcontext
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 import pytorch_lightning as pl
@@ -23,6 +39,7 @@ from openfold3.core.metrics.validation_all_atom import (
 from openfold3.core.runners.model_runner import ModelRunner
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.core.utils.timing import PerformanceTimer
 from openfold3.projects.of3_all_atom.config.model_config import (
     model_selection_metric_weights_config,
 )
@@ -37,6 +54,7 @@ from openfold3.projects.of3_all_atom.model import OpenFold3
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
+    import deepspeed
     from deepspeed.ops.adam import DeepSpeedCPUAdam
 
 logger = logging.getLogger(__name__)
@@ -56,9 +74,32 @@ class OpenFold3AllAtom(ModelRunner):
             self.config.settings.model_selection_weight_scheme
         ]
 
+    def setup(self, stage: str):
+        # Setup metrics
         self._setup_train_metrics()
         self._setup_val_metrics()
         self._init_metric_enabled_tracker()
+
+        # Keep grads enabled for confidence head parameters only
+        if stage == "fit" and self.config.settings.train_confidence_only:
+            exempt_submodule = [
+                self.model.aux_heads.pairformer_embedding,
+                self.model.aux_heads.pde,
+                self.model.aux_heads.plddt,
+                self.model.aux_heads.experimentally_resolved,
+                self.model.aux_heads.pae,
+            ]
+            self._freeze_model_params(exempt_submodule=exempt_submodule)
+
+    def _freeze_model_params(self, exempt_submodule: list[torch.nn.Module]):
+        """Freeze all model parameters excluding those specified in exempt_submodule."""
+        for param in self.model.parameters():
+            param.requires_grad = False
+
+        # Unfreeze only the exempt parameters
+        for layer in exempt_submodule:
+            for param in layer.parameters():
+                param.requires_grad = True
 
     def reseed(self, seed):
         pl.seed_everything(seed)
@@ -367,6 +408,73 @@ class OpenFold3AllAtom(ModelRunner):
                 f"{self.trainer.train_dataloader.dataset.indices=}"
             )
 
+    @property
+    def deepspeed_is_initialized(self):
+        return deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+
+    def on_before_optimizer_step(self, *args, **kwargs):
+        """Logs the single-transition layer linear_out gradients.
+
+        These gradients can be associated with instabilities, so we're logging them on
+        every single step (bypassing log_every_n_steps) for more accurate monitoring.
+        """
+        debug_settings = self.config.settings.debug
+        should_log_extra_metrics = debug_settings.log_extra_grad_metrics
+        is_logging_disabled = self.logger is None
+        has_frozen_params = self.config.settings.train_confidence_only
+
+        if is_logging_disabled or has_frozen_params or not should_log_extra_metrics:
+            return
+
+        single_transition_grads = {}
+
+        # Only rank zero will actually log the gradients
+        log_grad_metrics = self.trainer.is_global_zero
+
+        # Only log 4 representative blocks to reduce overhead
+        block_idxs = [0, 16, 32, 47]
+
+        # To see if this slows down training, we additionally log runtimes from the
+        # global_zero process
+        # TODO: Set this to log-level INFO and configure per-module log-levels in a more
+        # principled way
+        timing_context = partial(PerformanceTimer, logger=logger, level=logging.WARNING)
+
+        context = (
+            timing_context("Extra-gradient fetching and calculation")
+            if log_grad_metrics and debug_settings.profile_grad_logging
+            else nullcontext()
+        )
+
+        with context:
+            for idx in block_idxs:
+                block = self.model.pairformer_stack.blocks[idx]
+                param = block.single_transition.linear_out.weight
+
+                if self.deepspeed_is_initialized:
+                    # Needs to be called on every rank to avoid hanging
+                    # https://github.com/deepspeedai/DeepSpeed/issues/7117#issuecomment-2717974187
+                    grad = deepspeed.utils.safe_get_full_grad(param)
+                else:
+                    grad = param.grad
+
+                assert not grad.requires_grad
+
+                if log_grad_metrics:
+                    tag = (
+                        f"extra_gradients/model.pairformer_stack.blocks.{idx}."
+                        "single_transition.linear_out.weight"
+                    )
+
+                    single_transition_grads[f"{tag}_norm"] = grad.norm().item()
+                    single_transition_grads[f"{tag}_max"] = grad.abs().max().item()
+
+        if log_grad_metrics:
+            with timing_context("Extra-gradient logging"):
+                # NOTE: This out-of-schedule logging might interact a bit weirdly with
+                # the WandB Step, so always plot against trainer/global_step
+                self.logger.log_metrics(single_transition_grads, step=self.global_step)
+
     def _log_epoch_metrics(
         self, metrics: MetricCollection, compute_model_selection: bool = False
     ):
@@ -514,17 +622,6 @@ class OpenFold3AllAtom(ModelRunner):
         valid_sample = batch.get("valid_sample")
         if not valid_sample or is_repeated_sample:
             return
-
-        # At the start of inference, load the EMA weights
-        if self.cached_weights is None:
-            # model.state_dict() contains references to model weights rather
-            # than copies. Therefore, we need to clone them before calling
-            # load_state_dict().
-            def clone_param(t):
-                return t.detach().clone()
-
-            self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
-            self.model.load_state_dict(self.ema.state_dict()["params"])
 
         query_id = batch["query_id"]
 

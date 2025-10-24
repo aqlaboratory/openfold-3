@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Sample processing pipelines for templates."""
 
 from pathlib import Path
@@ -29,6 +43,7 @@ def process_template_structures_of3(
     template_structure_array_directory: Path | None,
     template_file_format: str,
     ccd: CIFFile | None,
+    use_roda_monomer_format: bool = False,
 ) -> TemplateSliceCollection:
     """Processes template structures for all chains of a given target structure.
 
@@ -63,7 +78,9 @@ def process_template_structures_of3(
         ccd (CIFFile | None):
             The parsed CCD file. Not used if template_structure_array_directory is
             provided.
-
+        use_roda_monomer_format (bool):
+            Whether template cache filepath is expected to be in the s3 RODA monomer
+            format: <aln_dir>/<mgy_id>/template.npz
     Returns:
         TemplateSliceCollection:
             The sliced template atomarrays for each chain in the crop.
@@ -92,6 +109,7 @@ def process_template_structures_of3(
             chain_id=chain_id,
             template_structure_array_directory=template_structure_array_directory,
             template_file_format=template_file_format,
+            use_roda_monomer_format=use_roda_monomer_format,
         )
 
         # Map token positions to template atom arrays

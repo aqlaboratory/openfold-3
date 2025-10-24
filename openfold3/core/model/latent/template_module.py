@@ -1,6 +1,6 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,7 +34,11 @@ from openfold3.core.model.feature_embedders.template_embedders import (
 )
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.checkpointing import checkpoint_blocks
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.chunk_utils import (
+    CUEQ_MAX_CHUNK_SIZE,
+    DEFAULT_MAX_CHUNK_SIZE,
+    ChunkSizeTuner,
+)
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 
 from .base_blocks import PairBlock
@@ -337,12 +341,22 @@ class TemplatePairStack(nn.Module):
 
         if chunk_size is not None and self.chunk_size_tuner is not None:
             assert not self.training
+            max_chunk_size = (
+                CUEQ_MAX_CHUNK_SIZE
+                if use_cueq_triangle_kernels
+                else DEFAULT_MAX_CHUNK_SIZE
+            )
             tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
                 representative_fn=blocks[0],
                 args=(t.clone(),),
                 min_chunk_size=chunk_size,
+                max_chunk_size=max_chunk_size,
             )
-            attn_chunk = tuned_chunk_size if use_cueq_triangle_kernels else (tuned_chunk_size // 4)
+            attn_chunk = (
+                tuned_chunk_size
+                if use_cueq_triangle_kernels
+                else (tuned_chunk_size // 4)
+            )
             blocks = [
                 partial(
                     b,

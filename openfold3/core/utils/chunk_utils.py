@@ -1,4 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import logging
 import math
 from collections.abc import Callable, Sequence
@@ -23,6 +24,9 @@ from openfold3.core.utils.tensor_utils import (
     tensor_tree_map,
     tree_map,
 )
+
+DEFAULT_MAX_CHUNK_SIZE = 512
+CUEQ_MAX_CHUNK_SIZE = 2048
 
 
 def _fetch_dims(tree):
@@ -345,23 +349,18 @@ def chunk_layer(
 
 
 class ChunkSizeTuner:
-    def __init__(
-        self,
-        # Heuristically, runtimes for most of the modules in the network
-        # plateau earlier than this on all GPUs I've run the model on.
-        max_chunk_size=512,
-    ):
-        self.max_chunk_size = max_chunk_size
+    def __init__(self):
         self.cached_chunk_size = None
         self.cached_arg_data = None
 
-    def _determine_favorable_chunk_size(self, fn, args, min_chunk_size):
+    @staticmethod
+    def _determine_favorable_chunk_size(fn, args, min_chunk_size, max_chunk_size):
         logging.info("Tuning chunk size...")
 
-        if min_chunk_size >= self.max_chunk_size:
+        if min_chunk_size >= max_chunk_size:
             return min_chunk_size
 
-        candidates = [2**l for l in range(int(math.log(self.max_chunk_size, 2)) + 1)]
+        candidates = [2**l for l in range(int(math.log(max_chunk_size, 2)) + 1)]
         candidates = [c for c in candidates if c > min_chunk_size]
         candidates = [min_chunk_size] + candidates
         candidates[-1] += 4
@@ -406,9 +405,10 @@ class ChunkSizeTuner:
         representative_fn: Callable,
         args: tuple[Any],
         min_chunk_size: int,
+        # Heuristically, runtimes for most of the modules in the network
+        # plateau earlier than this on all GPUs I've run the model on.
+        max_chunk_size=DEFAULT_MAX_CHUNK_SIZE,
     ) -> int:
-        consistent = True
-
         def remove_tensors(a):
             return a.shape if type(a) is torch.Tensor else a
 
@@ -423,9 +423,10 @@ class ChunkSizeTuner:
 
         if not consistent:
             self.cached_chunk_size = self._determine_favorable_chunk_size(
-                representative_fn,
-                args,
-                min_chunk_size,
+                fn=representative_fn,
+                args=args,
+                min_chunk_size=min_chunk_size,
+                max_chunk_size=max_chunk_size,
             )
             self.cached_arg_data = arg_data
 

@@ -1,5 +1,4 @@
-# Copyright 2021 AlQuraishi Laboratory
-# Copyright 2021 DeepMind Technologies Limited
+# Copyright 2025 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,10 +16,9 @@
 The main inference and training loops for AlphaFold3.
 """
 
-import random
-import warnings
 from enum import Enum
 
+import numpy as np
 import torch
 from ml_collections import ConfigDict
 from torch import nn
@@ -68,6 +66,8 @@ class OpenFold3(nn.Module):
         self.config = config
         self.settings = self.config.settings
         self.shared = self.config.architecture.shared
+
+        self.synced_generator = np.random.default_rng(seed=self.shared.sync_seed)
 
         self.input_embedder = InputEmbedderAllAtom(
             **self.config.architecture.input_embedder
@@ -213,7 +213,11 @@ class OpenFold3(nn.Module):
             is_final_iter = cycle_no == (num_cycles - 1)
 
             # Enable grad when we're training, only enable grad on the last cycle
-            enable_grad = is_grad_enabled and is_final_iter
+            enable_grad = (
+                is_grad_enabled
+                and is_final_iter
+                and not self.settings.train_confidence_only
+            )
             with torch.set_grad_enabled(enable_grad):
                 if is_final_iter:
                     self.clear_autocast_cache()
@@ -368,6 +372,7 @@ class OpenFold3(nn.Module):
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
                 no_rollout_samples=no_rollout_samples,
+                chunk_size=mode_mem_settings.chunk_size,
                 use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                 use_lma=mode_mem_settings.use_lma,
@@ -606,13 +611,10 @@ class OpenFold3(nn.Module):
 
         # If training, we sample the number of recycles
         # This is the additional number of iterations through the trunk
-        # TODO: Because the process seeds are set to the same initial value for all
-        #  GPUs and because the standard random library is only used here, the number
-        #  of recycles will be the same per batch.
-        #  Change to get num recycles from the process initial seed + global step
-        #  so that it's more robust.
         num_recycles = (
-            random.randint(0, self.shared.num_recycles)
+            int(
+                self.synced_generator.integers(low=0, high=self.shared.num_recycles + 1)
+            )
             if self.training
             else self.shared.num_recycles
         )
@@ -664,18 +666,17 @@ class OpenFold3(nn.Module):
 
                 self.clear_autocast_cache()
 
-            if self.training:  # noqa: SIM102
+            if self.training and not self.settings.train_confidence_only:
                 # Run training step (if necessary)
-                if self.settings.diffusion_training_enabled:
-                    with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
-                        diffusion_output = self._train_diffusion(
-                            batch=batch,
-                            si_input=si_input,
-                            si_trunk=si_trunk,
-                            zij_trunk=zij_trunk,
-                        )
+                with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+                    diffusion_output = self._train_diffusion(
+                        batch=batch,
+                        si_input=si_input,
+                        si_trunk=si_trunk,
+                        zij_trunk=zij_trunk,
+                    )
 
-                        output.update(diffusion_output)
+                    output.update(diffusion_output)
 
         # Memory fragmentation can become a big problem at larger crop sizes
         # due to different sizes of msa/all-atom tensors used between steps

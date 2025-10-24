@@ -9,9 +9,9 @@ data_module_args:
   num_workers: 16
   epoch_len: 128000 # Ckpt every 500 steps
 
-logging:
+logging_config:
   log_lr : true 
-  wandb:
+  wandb_config:
     project: <project_name>
     entity: <entity_name> 
     group: null
@@ -26,10 +26,10 @@ pl_trainer_args:
   log_every_n_steps: 50
   
   mpi_plugin: false
-  deepspeed_config_path: ./deepspeed_configs/ds_stage2_default.json
+  deepspeed_config_path: null
 
 # Checkpoint settings
-checkpoint:
+checkpoint_config:
   every_n_epochs: 1
   auto_insert_metric_name: false
   save_last: true
@@ -52,7 +52,7 @@ model_update:
 dataset_configs:
   train:
     weighted-pdb:
-      class: WeightedPDBDataset 
+      dataset_class: WeightedPDBDataset
       weight: 0.5
       config:
         debug_mode: true
@@ -71,7 +71,7 @@ dataset_configs:
             smooth_lddt: 0.0
 
     long-monomer-distillation:
-      class: ProteinMonomerDataset
+      dataset_class: ProteinMonomerDataset
       weight: 0.495
       config:
         debug_mode: true
@@ -95,7 +95,7 @@ dataset_configs:
 
 
     short-monomer-distillation:
-      class: ProteinMonomerDataset
+      dataset_class: ProteinMonomerDataset
       weight: 0.005
       config:
         debug_mode: true
@@ -119,7 +119,7 @@ dataset_configs:
 
 
     disordered-pdb:
-      class: DisorderedPDBDataset
+      dataset_class: DisorderedPDBDataset
       weight: 0.01
       config:
         debug_mode: true
@@ -143,7 +143,7 @@ dataset_configs:
 
   validation:
     val-weighted-pdb:
-      class: ValidationPDBDataset
+      dataset_class: ValidationPDBDataset
       config:
         debug_mode: true
         template:
@@ -178,6 +178,7 @@ dataset_paths:
     template_structures_directory: none
     template_file_format: pkl
     ccd_file: /path 
+    use_roda_monomer_format: True
 
   short-monomer-distillation:
     alignments_directory: none 
@@ -192,6 +193,7 @@ dataset_paths:
     template_structures_directory: none
     template_file_format: pkl
     ccd_file: /path 
+    use_roda_monomer_format: True
 
   disordered-pdb:
     alignments_directory: none 

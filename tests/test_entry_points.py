@@ -1,3 +1,17 @@
+# Copyright 2025 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import json
 import os
 import shutil
@@ -22,7 +36,11 @@ from openfold3.entry_points.validator import (
     CHECKPOINT_NAME,
     InferenceExperimentConfig,
     TrainingExperimentConfig,
+    TrainingExperimentSettings,
     WandbConfig,
+)
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
 
@@ -156,6 +174,57 @@ class TestTrainingExperiment:
         assert weighted_pdb_spec.weight == 1
         assert weighted_pdb_spec.config.crop.token_budget == 640
 
+    @pytest.mark.parametrize("pl_checkpoint_option", [None, "last", "hpc", "registry"])
+    def test_pl_checkpoint_load_options(self, pl_checkpoint_option):
+        expt_config = TrainingExperimentSettings.model_validate(
+            {"restart_checkpoint_path": pl_checkpoint_option}
+        )
+        print(expt_config.restart_checkpoint_path)
+        assert expt_config.restart_checkpoint_path == pl_checkpoint_option
+
+    def test_pl_checkpoint_load_from_path(self, tmp_path):
+        dummy_ckpt = tmp_path / "dummy.ckpt"
+        dummy_ckpt.write_text("test")
+        expt_config = TrainingExperimentSettings.model_validate(
+            {"restart_checkpoint_path": str(dummy_ckpt)}
+        )
+        assert expt_config.restart_checkpoint_path == str(dummy_ckpt)
+
+        # check that loading fails when given an invalid string / path
+        non_existant_path = "nonexistant.ckpt"
+        with pytest.raises(ValueError):
+            TrainingExperimentSettings.model_validate(
+                {"restart_checkpoint_path": non_existant_path}
+            )
+
+    @pytest.mark.parametrize(
+        "data_seed, model_seed, expected_data_seed", [(114, 42, 114), (None, 123, 123)]
+    )
+    def test_synchronize_seeds_respects_data_seed(
+        self, data_seed, model_seed, expected_data_seed, tmp_path
+    ):
+        test_yaml_str = textwrap.dedent(f"""\
+            experiment_settings:
+                seed: {model_seed}
+            """)
+
+        if data_seed:
+            test_yaml_str += textwrap.dedent(f"""\
+                    data_module_args:
+                        data_seed: {data_seed}
+            """)
+
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+
+        expt_config = TrainingExperimentConfig(
+            dataset_paths={},
+            dataset_configs={},
+            **config_utils.load_yaml(test_yaml_file),
+        )
+        assert expt_config.experiment_settings.seed == model_seed
+        assert expt_config.data_module_args.data_seed == expected_data_seed
+
 
 class TestModelUpdate:
     def test_bad_model_update_fails(self):
@@ -251,7 +320,8 @@ class TestModelUpdate:
         model_cfg = expt_runner.model_config
 
         # check that inference mode set correctly
-        assert not model_cfg.settings.diffusion_training_enabled
+        assert not model_cfg.architecture.msa.msa_module_embedder.subsample_main_msa
+        assert model_cfg.architecture.msa.msa_module_embedder.subsample_all_msa
 
         # check low memory settings set correctly
         assert model_cfg.settings.memory.eval.chunk_size == 4
@@ -377,6 +447,64 @@ class TestInferenceCommandLineSettings:
         )
         assert expt_runner.use_templates == use_templates_cli_arg
 
+    def test_seeding_from_num_seeds(self, dummy_ckpt_file):
+        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
+        num_seeds = 7
+        expt_runner = InferenceExperimentRunner(expt_config, num_model_seeds=num_seeds)
+        assert len(expt_runner.seeds) == num_seeds
+
+    def test_seeding_from_list(self, tmp_path, dummy_ckpt_file):
+        test_yaml_str = textwrap.dedent("""\
+            experiment_settings:
+                seeds:
+                  - 17 
+                  - 101
+            """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            **config_utils.load_yaml(test_yaml_file),
+        )
+        assert expt_config.experiment_settings.seeds == [17, 101]
+
+    @pytest.mark.parametrize(
+        "data_seed, model_seed, expected_data_seed", [(114, 42, 114), (None, 123, 123)]
+    )
+    def test_synchronize_seeds_respects_data_seed(
+        self,
+        data_seed,
+        model_seed,
+        expected_data_seed,
+        tmp_path,
+        dummy_ckpt_file,
+    ):
+        test_yaml_str = textwrap.dedent(f"""\
+            experiment_settings:
+                seeds:
+                  - {model_seed} 
+                  - 101
+            """)
+
+        if data_seed:
+            test_yaml_str += textwrap.dedent(f"""\
+                    data_module_args:
+                        data_seed: {data_seed}
+            """)
+
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            **config_utils.load_yaml(test_yaml_file),
+        )
+        assert expt_config.experiment_settings.seeds == [model_seed, 101]
+        assert expt_config.data_module_args.data_seed == expected_data_seed
+
+
+class TestInferenceCheckpointLoading:
     def test_inference_ckpt_path_user_defined(self, dummy_ckpt_file):
         expt_config = InferenceExperimentConfig.model_validate(
             {"inference_ckpt_path": dummy_ckpt_file}
@@ -392,3 +520,105 @@ class TestInferenceCommandLineSettings:
                 {"cache_path": tmp_path}
             )
         assert expt_config.inference_ckpt_path == tmp_path / CHECKPOINT_NAME
+
+
+class TestTemplatePreprocessorSettings:
+    def test_overwrite_output_dir(self, tmp_path, dummy_ckpt_file):
+        test_yaml_str = textwrap.dedent(f"""\
+        template_preprocessor_settings:
+            output_directory: {tmp_path / "custom_dir"}
+        """)
+        test_yaml_file = tmp_path / "runner.yml"
+        test_yaml_file.write_text(test_yaml_str)
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            **config_utils.load_yaml(test_yaml_file),
+        )
+
+        assert expt_config.template_preprocessor_settings.output_directory == (
+            tmp_path / "custom_dir"
+        ), "Expected structure directory to match config file setting"
+
+
+class TestRemoveQuerySetDuplicates:
+    @pytest.fixture
+    def dummy_output_path(self, tmp_path):
+        # Creates the following directories:
+        # <output_directory>
+        #  ├── query_1
+        # 	 └── seed_42
+        #         ├── query_1_seed_42_sample_1_model.cif
+        #         ├── query_1_seed_42_sample_2_model.cif
+        # 	 └── seed_43
+        #         ├── query_1_seed_43_sample_1_model.cif
+        #         ├── query_1_seed_43_sample_2_model.cif
+        #  ├── query_2
+        # 	 └── seed_42
+        #         ├── query_1_seed_42_sample_1_model.cif
+        #         ├── query_1_seed_42_sample_2_model.cif
+        # 	 └── seed_43
+        #         ├── query_1_seed_43_sample_1_model.cif
+        #         ├── <Missing sample 2>
+
+        expected_fnames = [
+            "query_1/seed_42/query_1_seed_42_sample_1_model.cif",
+            "query_1/seed_42/query_1_seed_42_sample_2_model.cif",
+            "query_1/seed_43/query_1_seed_43_sample_1_model.cif",
+            "query_1/seed_43/query_1_seed_43_sample_2_model.cif",
+            "query_2/seed_42/query_2_seed_42_sample_1_model.cif",
+            "query_2/seed_42/query_2_seed_42_sample_2_model.cif",
+            "query_2/seed_43/query_2_seed_43_sample_1_model.cif",
+        ]
+
+        for fname in expected_fnames:
+            _create_fake_file(tmp_path / fname)
+
+        return tmp_path
+
+    def test_remove_duplicates(self, dummy_output_path):
+        input_query_set = InferenceQuerySet.model_validate(
+            {
+                "queries": {
+                    "query_1": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": ["A"],
+                                "sequence": "TEST",
+                            }
+                        ]
+                    },
+                    "query_2": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": ["A"],
+                                "sequence": "TESTING",
+                            }
+                        ]
+                    },
+                    "query_3": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": ["A"],
+                                "sequence": "TESTTEST",
+                            }
+                        ]
+                    },
+                }
+            }
+        )
+
+        experiment_config = InferenceExperimentConfig.model_validate(
+            {"experiment_settings": {"seeds": [42, 43]}}
+        )
+        expt_runner = InferenceExperimentRunner(
+            experiment_config, num_diffusion_samples=2, output_dir=dummy_output_path
+        )
+
+        deduplicated_set = expt_runner.remove_completed_queries_from_query_set(
+            input_query_set
+        )
+
+        assert set(deduplicated_set.queries.keys()) == set(["query_2", "query_3"])

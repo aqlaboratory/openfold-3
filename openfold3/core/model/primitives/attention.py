@@ -1,6 +1,6 @@
-# Copyright 2021 AlQuraishi Laboratory
+# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
-# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,25 +48,25 @@ if ds4s_is_installed:
 
 cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
+    from cuequivariance_ops_torch.triangle_attention import (
+        CUEQ_TRIATTN_FALLBACK_THRESHOLD,
+    )
     from cuequivariance_torch.primitives.triangle import triangle_attention
-    try:
-        from cuequivariance_torch.primitives.triangle import should_fall_back
-    except ImportError:
-        from cuequivariance_ops_torch.triangle_attention import CUEQ_TRIATTN_FALLBACK_THRESHOLD
-        def should_fall_back(q_x):
-            # for q_x, dimension -2 is the context length.
-            if q_x.shape[-2] <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
+
+    def cueq_would_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype):
+        # for q_x, dimension -2 is the context length
+        if n_token <= CUEQ_TRIATTN_FALLBACK_THRESHOLD:
+            return True
+        if dtype == torch.float32:
+            if hidden_dim > 32 or hidden_dim % 4 != 0:
                 return True
-            hidden_dim = q_x.shape[-1]
-            if q_x.dtype == torch.float32:
-                if hidden_dim > 32 or hidden_dim % 4 != 0:
-                    return True
-            else:
-                # float16, bfloat16
-                if hidden_dim > 128 or hidden_dim % 8 != 0:
-                    return True
-            return False
-    
+        else:
+            # float16, bfloat16
+            if hidden_dim > 128 or hidden_dim % 8 != 0:
+                return True
+        return False
+
+
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
 
@@ -349,12 +349,16 @@ class Attention(nn.Module):
                 "lma_kv_chunk_size must be provided"
             )
 
-        if use_cueq_triangle_kernels:
+        if cueq_is_installed and use_cueq_triangle_kernels:
             # cuEquivariance -> Torch fallback for small sequence length and some shapes
-            if should_fall_back(q_x):
+            use_fall_back = cueq_would_fall_back(
+                n_token=q_x.shape[-2],
+                hidden_dim=q_x.shape[-1] // self.no_heads,
+                dtype=q_x.dtype,
+            )
+            if use_fall_back:
                 use_cueq_triangle_kernels = False
-        
-        # TODO: Make this more explicit
+
         # The EvoformerAttention kernel can only be used for sequence lengths > 16
         if use_deepspeed_evo_attention and q_x.shape[-2] <= 16:
             use_deepspeed_evo_attention = False
@@ -369,15 +373,21 @@ class Attention(nn.Module):
 
         if biases is None:
             biases = []
-        # DeepSpeed attention kernel and cueqivarince kernel applies scaling internally
+
+        # DeepSpeed attention kernel and cuequivariance kernel apply scaling internally
         q, k, v = self._prep_qkv(
             q_x,
             kv_x,
             apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels),
         )
 
-        # cueqivarince kernel takes precedence over use_deepspeed_evo_attention
+        # cuequivariance kernel takes precedence over use_deepspeed_evo_attention
         if use_cueq_triangle_kernels:
+            if not cueq_is_installed:
+                raise ValueError(
+                    "Running with `use_cueq_triangle_kernels` but package is not "
+                    "installed. See documentation for installation instructions."
+                )
             scale = 1.0 / math.sqrt(self.c_hidden)
             o = _cueq_triangle_attn(q, k, v, biases, scale=scale)
         elif use_deepspeed_evo_attention:

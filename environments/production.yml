@@ -38,5 +38,4 @@ dependencies:
   - conda-forge::ijson
   - pip:
       - deepspeed
-      - dm-tree
       - pdbeccdutils
