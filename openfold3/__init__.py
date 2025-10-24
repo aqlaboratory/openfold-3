@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ["core", "projects"]
+__all__ = ["core", "projects", "entry_points", "run_openfold"]
 
 import importlib.util
 from . import hacks
