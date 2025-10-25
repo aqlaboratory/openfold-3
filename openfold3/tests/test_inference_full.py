@@ -29,7 +29,7 @@ from openfold3.entry_points.validator import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
-from tests.compare_utils import skip_unless_cuda_available
+from openfold3.tests.compare_utils import skip_unless_cuda_available
 from unittest.mock import patch
 
 

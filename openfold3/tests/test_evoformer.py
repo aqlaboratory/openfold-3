@@ -19,7 +19,7 @@ import torch
 
 from openfold3.core.model.latent.evoformer import EvoformerStack
 from openfold3.core.model.layers.transition import ReLUTransition
-from tests.config import consts
+from openfold3.tests.config import consts
 
 
 class TestEvoformerStack(unittest.TestCase):

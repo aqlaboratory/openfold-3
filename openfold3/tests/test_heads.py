@@ -30,8 +30,8 @@ from openfold3.projects.of3_all_atom.config.model_config import (
     max_atoms_per_token,
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
-from tests.config import consts
-from tests.data_utils import random_of3_features
+from openfold3.tests.config import consts
+from openfold3.tests.data_utils import random_of3_features
 
 
 class TestPredictedAlignedErrorHead(unittest.TestCase):

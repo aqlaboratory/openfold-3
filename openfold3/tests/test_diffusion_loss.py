@@ -25,7 +25,7 @@ from openfold3.core.loss.diffusion import (
     weighted_rigid_align,
 )
 from openfold3.core.model.structure.diffusion_module import centre_random_augmentation
-from tests.config import consts
+from openfold3.tests.config import consts
 
 
 class TestDiffusionLoss(unittest.TestCase):

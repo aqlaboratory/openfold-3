@@ -80,6 +80,7 @@ exclude = ["scripts"]
 [tool.setuptools.package-data]
 openfold3 = [
   "projects/*/config/*.yml",
+  "tests/test_data/**/*"
 ]
 
 # much of the cibuildwheel config taken from benfred/implicit
@@ -131,7 +132,7 @@ log_cli = true
 log_cli_level = "WARNING"
 log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
-testpaths = ["tests"]
+testpaths = ["openfold3/tests"]
 python_files = ["test_*.py"]
 markers = [
     "inference_verification: Tests to verify installation on inference example",

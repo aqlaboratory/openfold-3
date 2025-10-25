@@ -35,8 +35,8 @@ from openfold3.core.utils.geometry.kabsch_alignment import (
     kabsch_align,
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from tests.config import consts
-from tests.data_utils import random_of3_features
+from openfold3.tests.config import consts
+from openfold3.tests.data_utils import random_of3_features
 
 
 def random_rotation_translation(structure, factor=100.0):

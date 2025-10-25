@@ -160,6 +160,6 @@ if [ "$SETUP_STATUS" -eq 0 ]; then
 fi
 
 # Run tests
-pytest -v --log-cli-level=WARNING tests/test_inference_full.py -m inference_verification
+pytest -v --log-cli-level=WARNING openfold3/tests/test_inference_full.py -m inference_verification
 
 echo "Integration tests passed!"

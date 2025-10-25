@@ -25,8 +25,8 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
     RefAtomFeatureEmbedder,
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from tests.config import consts
-from tests.data_utils import random_of3_features
+from openfold3.tests.config import consts
+from openfold3.tests.data_utils import random_of3_features
 
 C_ATOM_REF = mlc.ConfigDict(
     {

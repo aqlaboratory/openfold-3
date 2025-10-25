@@ -12,42 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import re
 import unittest
 
 import torch
 
-from openfold3.core.model.layers.triangular_multiplicative_update import (
-    FusedTriangleMultiplicationOutgoing,
-    TriangleMultiplicationOutgoing,
-)
-from tests.config import consts
+from openfold3.core.model.layers.transition import ReLUTransition
+from openfold3.tests.config import consts
 
 
-class TestTriangularMultiplicativeUpdate(unittest.TestCase):
+class TestPairTransition(unittest.TestCase):
     def test_shape(self):
         c_z = consts.c_z
-        c = 11
+        n = 4
 
-        if re.fullmatch("^model_[1-5]_multimer_v3$", consts.model_preset):
-            tm = FusedTriangleMultiplicationOutgoing(
-                c_z,
-                c,
-            )
-        else:
-            tm = TriangleMultiplicationOutgoing(
-                c_z,
-                c,
-            )
+        pt = ReLUTransition(c_in=c_z, n=n)
 
-        n_res = consts.c_z
         batch_size = consts.batch_size
+        n_res = consts.n_res
 
-        x = torch.rand((batch_size, n_res, n_res, c_z))
+        z = torch.rand((batch_size, n_res, n_res, c_z))
         mask = torch.randint(0, 2, size=(batch_size, n_res, n_res))
-        shape_before = x.shape
-        x = tm(x, mask)
-        shape_after = x.shape
+        shape_before = z.shape
+        z = pt(z, mask=mask, chunk_size=None)
+        shape_after = z.shape
 
         self.assertTrue(shape_before == shape_after)
 

@@ -16,25 +16,31 @@ import unittest
 
 import torch
 
-from openfold3.core.model.layers.transition import ReLUTransition
-from tests.config import consts
+from openfold3.core.model.layers.triangular_attention import TriangleAttention
+from openfold3.tests.config import consts
 
 
-class TestPairTransition(unittest.TestCase):
+class TestTriangularAttention(unittest.TestCase):
     def test_shape(self):
         c_z = consts.c_z
-        n = 4
+        c = 12
+        no_heads = 4
+        starting = True
 
-        pt = ReLUTransition(c_in=c_z, n=n)
+        tan = TriangleAttention(
+            c_z,
+            c,
+            no_heads,
+            starting=starting,
+        )
 
         batch_size = consts.batch_size
         n_res = consts.n_res
 
-        z = torch.rand((batch_size, n_res, n_res, c_z))
-        mask = torch.randint(0, 2, size=(batch_size, n_res, n_res))
-        shape_before = z.shape
-        z = pt(z, mask=mask, chunk_size=None)
-        shape_after = z.shape
+        x = torch.rand((batch_size, n_res, n_res, c_z))
+        shape_before = x.shape
+        x = tan(x, chunk_size=None)
+        shape_after = x.shape
 
         self.assertTrue(shape_before == shape_after)
 

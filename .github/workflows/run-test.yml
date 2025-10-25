@@ -22,4 +22,4 @@ jobs:
            docker build -f tests/Dockerfile -t openfold-test .
 
     - name: Run unit tests
-      run: docker run -v ${{ github.workspace }}/resources:/opt/openfold3/openfold3/resources openfold-test:latest pytest tests
+      run: docker run -v ${{ github.workspace }}/resources:/opt/openfold3/openfold3/resources openfold-test:latest pytest openfold3/tests

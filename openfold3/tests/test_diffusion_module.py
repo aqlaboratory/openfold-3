@@ -23,8 +23,8 @@ from openfold3.core.model.structure.diffusion_module import (
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
-from tests.config import consts
-from tests.data_utils import random_of3_features
+from openfold3.tests.config import consts
+from openfold3.tests.data_utils import random_of3_features
 
 
 class TestDiffusionModule(unittest.TestCase):

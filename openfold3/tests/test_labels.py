@@ -17,7 +17,7 @@ import pytest
 from biotite.structure import Atom, AtomArray, array
 
 from openfold3.core.data.primitives.structure.labels import AtomArrayView
-from tests.custom_assert_utils import assert_atomarray_equal
+from openfold3.tests.custom_assert_utils import assert_atomarray_equal
 
 
 @pytest.fixture

@@ -22,8 +22,8 @@ from openfold3.core.data.primitives.structure.cleanup import (
     prefilter_bonds,
 )
 from openfold3.core.data.resources.residues import MoleculeType
-from tests.custom_assert_utils import assert_atomarray_equal
-from tests.data_utils import create_atomarray_with_bondlist
+from openfold3.tests.custom_assert_utils import assert_atomarray_equal
+from openfold3.tests.data_utils import create_atomarray_with_bondlist
 
 # This helps conciseness to avoid Ruff line-break
 PROTEIN = MoleculeType.PROTEIN

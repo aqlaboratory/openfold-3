@@ -31,7 +31,7 @@ from openfold3.core.data.resources.token_atom_constants import (
     TOKEN_TYPES_WITH_GAP,
 )
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
-from tests.config import consts
+from openfold3.tests.config import consts
 
 
 def random_asym_ids(n_res, split_chains=True, min_chain_len=4):

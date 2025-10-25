@@ -18,7 +18,7 @@ import pytest
 
 from openfold3.core.data.io.structure.atom_array import read_atomarray_from_npz
 from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
-from tests.custom_assert_utils import assert_atomarray_equal
+from openfold3.tests.custom_assert_utils import assert_atomarray_equal
 
 TEST_DIR = Path(__file__).parent / "test_data/tokenization"
 

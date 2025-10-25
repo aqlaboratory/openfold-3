@@ -22,7 +22,7 @@ from openfold3.core.data.primitives.permutation.mol_labels import (
     assign_mol_permutation_ids,
     chain_connected_molecule_iter,
 )
-from tests.custom_assert_utils import assert_atomarray_equal
+from openfold3.tests.custom_assert_utils import assert_atomarray_equal
 
 TEST_DIR = Path(__file__).parent / "test_data/permutation_alignment"
 

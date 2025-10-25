@@ -22,7 +22,7 @@ from openfold3.core.model.layers.msa import (
     MSAPairWeightedAveraging,
     MSARowAttentionWithPairBias,
 )
-from tests.config import consts
+from openfold3.tests.config import consts
 
 
 class TestMSARowAttentionWithPairBias(unittest.TestCase):

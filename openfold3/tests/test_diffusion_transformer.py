@@ -19,7 +19,7 @@ import torch
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
-from tests.config import consts
+from openfold3.tests.config import consts
 
 
 class TestDiffusionTransformer(unittest.TestCase):
