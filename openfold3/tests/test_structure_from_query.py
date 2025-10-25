@@ -24,7 +24,10 @@ from openfold3.core.data.primitives.structure.query import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Query,
 )
-from openfold3.tests.custom_assert_utils import assert_atomarray_equal, assert_ref_mols_equal
+from openfold3.tests.custom_assert_utils import (
+    assert_atomarray_equal,
+    assert_ref_mols_equal,
+)
 
 reference_data_path = Path(__file__).parent / "test_data" / "structure_from_query"
 

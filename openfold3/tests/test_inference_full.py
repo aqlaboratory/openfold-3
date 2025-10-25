@@ -17,8 +17,9 @@
 Runs two small inference queries without msa or templates.
 """
 
-import os
 import logging
+import os
+from unittest.mock import patch
 
 import pytest
 
@@ -30,8 +31,6 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 from openfold3.tests.compare_utils import skip_unless_cuda_available
-from unittest.mock import patch
-
 
 pytestmark = pytest.mark.inference_verification
 
