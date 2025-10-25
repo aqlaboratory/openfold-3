@@ -142,7 +142,7 @@ python run_openfold.py predict \
 
 📝  *Notes*: 
 - Only protein sequences are submitted to the ColabFold server so this mode only uses MSAs for protein chains.
-- All arguments can also be set via `runner_yaml`, but command-line flags take precedence and will override values specified in the YAML file (see [Customized Inference Settings](customized-inference-settings-using-runneryml) for details).
+- All arguments can also be set via `runner_yaml`, but command-line flags take precedence and will override values specified in the YAML file (see [Customized Inference Settings](33-customized-inference-settings-using-runneryml) for details).
 
 
 #### 3.2.2 📂 Inference with Precomputed MSAs
@@ -169,7 +169,7 @@ python run_openfold.py predict \
     --output_dir /path/to/output/
 ```
 
-(customized-inference-settings-using-runneryml)=
+(33-customized-inference-settings-using-runneryml)=
 ### 3.3 Customized Inference Settings Using `runner.yml`
 
 You can further customize inference behavior by providing a [`runner.yml`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml) file. This overrides the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/entry_points/validator.py).

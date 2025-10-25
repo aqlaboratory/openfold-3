@@ -29,7 +29,7 @@ As shown in the figure above, paired MSAs are only provided for protein chains t
 (2-msasettings-reference)=
 ## 2. MSASettings Reference
 
-Users can alter the way MSAs are processed in the OF3 inference pipeline by modifying the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class via the `runner.yml` as outlined in the [Precomputed MSA How-To Guide](precomputed_msa_how_to.md#5-modifying-msa-settings-for-custom-precomputed-msas).
+Users can alter the way MSAs are processed in the OF3 inference pipeline by modifying the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class via the `runner.yml` as outlined in the {ref}`Precomputed MSA How-To Guide <5-modifying-msa-settings-for-custom-precomputed-msas>`.
 
 The 3 main settings to update when using custom precomputed MSAs are:
 1. *max_seq_counts*: A dictionary specifying how many sequences to read from each MSA file with the associated name. MSA files whose names are not provided in this dictionary *will not be parsed*. For example, if one wants `uniparc_hits.a3m` MSA files to be parsed, the following field should be specified:
@@ -45,7 +45,7 @@ dataset_config_kwargs:
 
 where up to the first 10000 sequences will be read from each `uniparc_hits.a3m` file.
 
-2. *msas_to_pair*: The list of MSA filenames that contain species information that can be used for online pairing. See the [Online MSA Pairing](precomputed_msa_explanation.md#3-online-msa-pairing) section for details.
+2. *msas_to_pair*: The list of MSA filenames that contain species information that can be used for online pairing. See the {ref}`Online MSA Pairing <3-online-msa-pairing>`section for details.
 
 3. *aln_order*: The order in which to vertically concatenate MSA files for each chain for main MSA features. MSA files whose names are not provided in this list *will not be used*. For example, if one has MSA files named `mgnify_hits`, `uniprot_hits` and `uniparc_hits` and want to vertically concatenate them for each chain in this order, they should update the `runner.yml` as follows:
 
@@ -108,7 +108,7 @@ The OF3 pairing code prioritizes sequences that can be paired with as many chain
 
 Large-scale prediction jobs using OF3 are often done on highly redundant datasets. For example, you may be interested in co-folding a target protein of interest with a library of candidate small molecule drugs, or an antigen of interest with thousands of different antibodies. In these scenarios, the sequence of the target protein does not change across samples and hence, the main MSA for the corresponding chain also remains the same.
 
-In order to reduce the disk space necessary when running predictions, we support reusing the same MSA files for identical chains across different samples. During inference, you can just specify the path to the same MSA files for identical chains in different queries (see the [How-To Guide](precomputed_msa_how_to.md#2-precomputed-msa-directory-structure-and-file-name-conventions) for details on how to do this). For example, given a protein target and 3 different small molecule binders to screen:
+In order to reduce the disk space necessary when running predictions, we support reusing the same MSA files for identical chains across different samples. During inference, you can just specify the path to the same MSA files for identical chains in different queries (see the {ref}`How-To Guide <2-precomputed-msa-directory-structure-and-file-name-conventions>` for details on how to do this). For example, given a protein target and 3 different small molecule binders to screen:
 
 <details>
 <summary>Same MSA paths example ...</summary>
@@ -184,7 +184,7 @@ We found this step to be necessary during training to avoid the online data proc
 
 For inference, preparsing MSAs into `npz` files can be useful when running large batch jobs on highly redundant datasets, for example when screening one or a few target protein against a library of small molecule ligands or antibodies.
 
-MSAs can be preparsed using the [preparse_alignments_af3.py](../../scripts/data_preprocessing/preparse_alignments_af3.py) script given that they are provided in the format outlined in the [Precomputed MSA How-To Guide](precomputed_msa_how_to.md#11-general-msa-file-format). The resulting `npz` files will contain a dictionary mapping file names to pre-parsed [`MsaArray`](../../openfold3/core/data/primitives/sequence/msa.py#L23) objects, which store the MSAs in a numpy array format, alongside its deletion matrix and metadata required for online pairing and can be used directly by the inference data pipeline.
+MSAs can be preparsed using the [preparse_alignments_of3.py](../../scripts/data_preprocessing/preparse_alignments_of3.py) script given that they are provided in the format outlined in the {ref}`Precomputed MSA How-To Guide <5-modifying-msa-settings-for-custom-precomputed-msas>`. The resulting `npz` files will contain a dictionary mapping file names to pre-parsed [`MsaArray`](../../openfold3/core/data/primitives/sequence/msa.py#L23) objects, which store the MSAs in a numpy array format, alongside its deletion matrix and metadata required for online pairing and can be used directly by the inference data pipeline.
 
 ```
 {

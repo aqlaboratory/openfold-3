@@ -63,6 +63,7 @@ Each entry in the ```chains``` list defines one or more instances of a molecular
 
 All chains must define a unique ```chain_ids``` field and appropriate sequence or structure information. Below are the supported molecule types and their associated schema:
 
+(31-protein-chains)=
   ### 3.1. Protein chains
 
   ```

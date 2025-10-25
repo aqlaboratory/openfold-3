@@ -2,6 +2,7 @@
 
 We use the workflow manager [snakemake](https://snakemake.readthedocs.io/en/stable/) to help orchestrate large scale MSA generation. Snakemake distributes jobs efficiently across single node or across a whole cluster. We used this approach to generate MSAs at scale for the PDB and monomer distillation sets. Our pipeline supports both protein alignments and RNA alignments.
 
+(1-msa-generation-usage)=
 # 1. Usage
 
 1. Create a [mamba](https://mamba.readthedocs.io/en/latest/user_guide/mamba.html) environment using the `aln_env.yml` file
@@ -54,6 +55,7 @@ snakemake -s MSA_Snakefile \
     --latency-wait 120
 ```
 
+(2-msa-generation-output)=
 ## 2. Output
 
 For each unique sequence, the pipeline generates a directory of MSAs, with filenames indicating which MSA comes from which database. For instance, for three unique protein chains queried against BFD, PDB SEQRES (for template alignments), MGnify, UniProt and UniRef90, you should see:
@@ -90,13 +92,15 @@ alignments
     └── rnacentral_hits.a3m
 ```
 
+(3-msa-generation-preparsing-msas)=
 ## 3. Preparsing MSAs into NPZ format
 
-Optionally, you can preparse the raw alignment files generated using our snakemake pipeline into NPZ format, which we recommend for large datasets with a redundant set of sequences to increase MSA parsing speed in the OF3 data pipeline and reduce the storage costs of the MSAs. See the main How-To document [NPZ section](precomputed_msa_how_to.md#3-preparsing-raw-msas-into-npz-format) for details.
+Optionally, you can preparse the raw alignment files generated using our snakemake pipeline into NPZ format, which we recommend for large datasets with a redundant set of sequences to increase MSA parsing speed in the OF3 data pipeline and reduce the storage costs of the MSAs. See the main How-To document {ref}`NPZ section <3-preparsing-raw-msas-into-npz-format>` for details.
 
+(4-msa-generation-adding-msa-paths)=
 ## 4. Adding MSA Paths to the Inference Query Json
 
-The [inference query json](input_format.md) specifies the input into the model. You can tell the data pipeline which MSAs to use for which chain by adding the paths to the MSAs of the corresponding chain's field in the json file. For example, for a complex with one of each of the above three protein chains and one of the RNA chains, you can do the following:
+The {doc}`inference query json <input_format>` specifies the input into the model. You can tell the data pipeline which MSAs to use for which chain by adding the paths to the MSAs of the corresponding chain's field in the json file. For example, for a complex with one of each of the above three protein chains and one of the RNA chains, you can do the following:
 
 <details>
 <summary>Query json with MSA paths example ...</summary>
@@ -136,8 +140,9 @@ The [inference query json](input_format.md) specifies the input into the model. 
 </code></pre>
 </details>
 
-For additional notes on adding MSA paths to the inference query json, see the main How-To document [MSA Paths](precomputed_msa_how_to.md#4-specifying-paths-in-the-inference-query-file) section.
+For additional notes on adding MSA paths to the inference query json, see the main {ref}`How-To document MSA Paths <4-specifying-paths-in-the-inference-query-file>` section.
 
+(5-msa-generation-best-practices)=
 ## 5. Best Practices and Additional Notes
 
 1. *Run proteins and RNA separately*: If you need to align both proteins and RNA, you have to make two separate configs and have two separate calls to the pipeline, one for each modality.

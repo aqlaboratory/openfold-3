@@ -1,4 +1,4 @@
-## CuEquivarince Kernels 
+# CuEquivarince Kernels 
 
 OF3 supports CuEquivariance [triangle_multiplicative_update](https://docs.nvidia.com/cuda/cuequivariance/api/generated/cuequivariance_torch.triangle_multiplicative_update.html) and [triangle_attention](https://docs.nvidia.com/cuda/cuequivariance/api/generated/cuequivariance_torch.triangle_attention.html) kernels which can speed up inference/training of the model.
 Note: CuEquivariance acceleration can be used while DeepSpeed acceleration is enabled. 
