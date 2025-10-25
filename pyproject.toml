@@ -7,6 +7,7 @@ build-backend = "setuptools.build_meta"
 name = "openfold3"
 version = "0.1.0"
 dependencies = [
+  "awscli",
   "torch",# ==2.5.1",
   "pytorch-lightning >=2.1",
   "numpy",
@@ -58,11 +59,16 @@ Repository = "https://github.com/aqlaboratory/openfold-3"
 
 [project.scripts]
 run_openfold="openfold3.run_openfold:cli"
+setup_openfold="openfold3.setup_openfold:main"
 
 [project.optional-dependencies]
 dev = [
   "pytest",
   "ruff",
+
+  # used for documentation
+  "sphinx",
+  "myst-parser",
 ]
 cuequivariance = [
   "cuequivariance>=0.6.1",
@@ -75,12 +81,14 @@ cuequivariance = [
 include-package-data = true
 
 [tool.setuptools.packages.find]
-exclude = ["scripts"]
+where = ["."]
+include = ["openfold3*"] 
 
 [tool.setuptools.package-data]
 openfold3 = [
   "projects/*/config/*.yml",
-  "tests/test_data/**/*"
+  "tests/test_data/**/*",
+  "scripts/*.sh"
 ]
 
 # much of the cibuildwheel config taken from benfred/implicit
