@@ -177,6 +177,7 @@ You can further customize inference behavior by providing a [`runner.yml`](https
 Below are some common use cases and how to configure them:
 
 
+(inference-run-on-multiple-gpus)=
 #### 🖥️ Run on Multiple GPUs or Nodes
 Specify the hardware configuration under [`pl_trainer_args`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L141) in `runner.yml`:
 
@@ -212,6 +213,7 @@ output_writer_settings:
 
 ---
 
+(inference-low-memory-mode)=
 #### 🧠 Low Memory Mode
 To run inference on larger queries to run on limited memory, add the following to apply the [model presets](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/model_setting_presets.yml) to run in low memory mode.
 
