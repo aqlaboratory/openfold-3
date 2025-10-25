@@ -507,6 +507,7 @@ def _deepspeed_evo_attn(
             List of biases that broadcast to [*, H, Q, K]
     """
     from openfold3 import hacks
+
     hacks.prep_deepspeed()
     hacks.prep_cutlass()
 

@@ -15,10 +15,11 @@
 __all__ = ["core", "projects", "entry_points", "run_openfold"]
 
 import importlib.util
-from . import hacks
 
 import gemmi
 from packaging import version
+
+from . import hacks
 
 if version.parse(gemmi.__version__) >= version.parse("0.7.3"):
     gemmi.set_leak_warnings(False)
