@@ -18,12 +18,13 @@ Setup script for OpenFold3 parameters.
 Downloads model parameters and runs verification tests.
 """
 
-import os
-import sys
-import subprocess
-import pytest
 import logging
+import os
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -80,7 +81,8 @@ def setup_openfold_cache() -> tuple[Path, Path]:
         )
         logger.info(f"OPENFOLD_CACHE set to: {openfold_cache}")
         logger.info(
-            f"Variable will persist when you reactivate: conda activate {os.path.basename(os.environ['CONDA_PREFIX'])}"
+            "Variable will persist when you reactivate: "
+            f"conda activate {os.path.basename(os.environ['CONDA_PREFIX'])}"
         )
     except subprocess.CalledProcessError:
         logger.warning(
