@@ -26,10 +26,7 @@ from pathlib import Path
 import click
 
 from openfold3.core.config import config_utils
-from openfold3.entry_points.import_utils import (
-    import_modules_for_inference,
-    import_modules_for_training,
-)
+from openfold3.entry_points.import_utils import _torch_gpu_setup
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +52,14 @@ def cli():
 )
 def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = None):
     """Perform a training experiment with a preprepared dataset cache."""
-    import_modules_for_training()
+    _torch_gpu_setup()
+    from openfold3.entry_points.experiment_runner import (
+        TrainingExperimentRunner,
+    )
+    from openfold3.entry_points.validator import (
+        TrainingExperimentConfig,
+    )
+
     expt_config = TrainingExperimentConfig.model_validate(
         config_utils.load_yaml(runner_yaml)
     )
@@ -137,7 +141,18 @@ def predict(
     output_dir: Path | None = None,
 ):
     """Perform inference on a set of queries defined in the query_json."""
-    import_modules_for_inference()
+    _torch_gpu_setup()
+
+    from openfold3.entry_points.experiment_runner import (
+        InferenceExperimentRunner,
+    )
+    from openfold3.entry_points.validator import (
+        InferenceExperimentConfig,
+    )
+    from openfold3.projects.of3_all_atom.config.inference_query_format import (
+        InferenceQuerySet,
+    )
+
     logging.basicConfig(level=logging.INFO)
     runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
 
@@ -201,7 +216,15 @@ def align_msa_server(
     More settings can be specified using the `msa_computation_settings_yaml` flag
     An example yaml file is provided in `examples/msa_server.yml`
     """
-    import_modules_for_inference()
+    _torch_gpu_setup()
+    from openfold3.core.data.tools.colabfold_msa_server import (
+        MsaComputationSettings,
+        preprocess_colabfold_msas,
+    )
+    from openfold3.projects.of3_all_atom.config.inference_query_format import (
+        InferenceQuerySet,
+    )
+
     query_set = InferenceQuerySet.from_json(query_json)
 
     msa_settings = MsaComputationSettings.from_config_with_cli_override(

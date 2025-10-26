@@ -16,9 +16,12 @@
 Manage imports run_openfold.py
 """
 # ruff: noqa: F821
+# ruff: noqa: F401
 
 
 def _torch_gpu_setup():
+    import torch
+
     torch_versions = torch.__version__.split(".")
     torch_major_version = int(torch_versions[0])
     torch_minor_version = int(torch_versions[1])
@@ -27,11 +30,3 @@ def _torch_gpu_setup():
     ):
         # Gives a large speedup on Ampere-class GPUs
         torch.set_float32_matmul_precision("high")
-
-
-def import_modules_for_inference():
-    _torch_gpu_setup()
-
-
-def import_modules_for_training():
-    _torch_gpu_setup()
