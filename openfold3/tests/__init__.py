@@ -12,23 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__all__ = ["core", "projects", "entry_points", "run_openfold"]
+import importlib
 
-import importlib.util
-
-import gemmi
-from packaging import version
-
-from . import hacks  # noqa: F401
-
-if version.parse(gemmi.__version__) >= version.parse("0.7.3"):
-    gemmi.set_leak_warnings(False)
+from openfold3 import hacks  # noqa: F401
 
 if importlib.util.find_spec("deepspeed") is not None:
     import deepspeed
 
-    # TODO: Resolve this later
+    # TODO: Resolve this
     # This is a hack to prevent deepspeed from doing the triton matmul autotuning
-    # This has weird effects with hanging if libaio is not installed and can
-    # cause restart errors if run is preempted in the middle of autotuning
+    # I'm not sure why it's doing this by default, but it's causing the tests to hang
     deepspeed.HAS_TRITON = False

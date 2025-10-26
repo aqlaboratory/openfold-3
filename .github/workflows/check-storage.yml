@@ -1,0 +1,28 @@
+name: Check Cache and Disk Space
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check overall disk usage
+        run: |
+          echo "Disk usage before cleanup:"
+          df -h /
+
+      - name: List top 20 largest directories
+        run: |
+          echo "Top 20 largest directories under /home/runner:"
+          sudo du -ah /home/runner | sort -rh | head -n 20
+
+      - name: Check cache diagnostic files
+        run: |
+          echo "Checking _diag folder (diagnostic logs)..."
+          ls -lh /home/runner/actions-runner/cached/_diag || echo "No _diag directory found"
+
+      - name: Show size of cache folder
+        run: |
+          echo "Cache directory size:"
+          sudo du -sh /home/runner/actions-runner/cached || echo "Cache folder not found"

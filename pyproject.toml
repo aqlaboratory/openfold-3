@@ -7,8 +7,9 @@ build-backend = "setuptools.build_meta"
 name = "openfold3"
 version = "0.1.0"
 dependencies = [
+  "awscli",
   "torch",# ==2.5.1",
-  "pytorch-lightning",
+  "pytorch-lightning >=2.1",
   "numpy",
   "pandas",
   "PyYAML",
@@ -27,7 +28,7 @@ dependencies = [
   "func_timeout",
   "lmdb",
   "ijson",
-  # "deepspeed",
+  "deepspeed",
   "pdbeccdutils",
   # For cutlass >=4, import library is cutlass_cppgen, but deepspeed is
   # currently using cutlass.
@@ -35,29 +36,39 @@ dependencies = [
 
   # additonal pins
 
-  # https://github.com/triton-lang/triton/issues/5919
-  # According to that issue, the pin may not be necessary in Python >3.13.
-  # Note that this pin has the effect of pinning torch <=2.5.1.
-
-  #"triton <3.2;python_version<\"3.13\"",
   # Pinned cutlass <4 calls from cuda.__version__, which was removed when
   # cuda-python went fully metapackage
   "cuda-python <12.9.1",
-
-  # tests still require
-  #"biopython",
-  #"modelcif",
-  #"openmm",
-  #"pdbfixer @ https://github.com/openmm/pdbfixer/archive/refs/tags/v1.11.tar.gz"
 ]
-description = "A PyTorch reimplementation of DeepMind's AlphaFold 2 & 3"
+authors = [
+  {name = "OpenFold Team", email = "support@openfold.io" }
+]
+description = "OpenFold's Biological Structure Prediction Model based on DeepMind's AlphaFold 3"
+readme = "README.md"
 requires-python = ">=3.10"
-license = "Apache-2.0"
+license = { text = "Apache-2.0" }
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Repository = "https://github.com/aqlaboratory/openfold-3"
+
+[project.scripts]
+run_openfold="openfold3.run_openfold:cli"
+setup_openfold="openfold3.setup_openfold:main"
 
 [project.optional-dependencies]
 dev = [
   "pytest",
   "ruff",
+
+  # used for documentation
+  "sphinx",
+  "myst-parser",
 ]
 cuequivariance = [
   "cuequivariance>=0.6.1",
@@ -70,16 +81,14 @@ cuequivariance = [
 include-package-data = true
 
 [tool.setuptools.packages.find]
-exclude = ["tests", "scripts"]
+where = ["."]
+include = ["openfold3*"] 
 
 [tool.setuptools.package-data]
 openfold3 = [
-  "core/kernels/cuda/csrc/*",
   "projects/*/config/*.yml",
-  "legacy/*/config/*.yml",
-]
-"*" = [
-  "resources/stereo_chemical_props.txt"
+  "tests/test_data/**/*",
+  "scripts/*.sh"
 ]
 
 # much of the cibuildwheel config taken from benfred/implicit
@@ -101,12 +110,8 @@ auditwheel repair \
 [tool.cibuildwheel.linux.environment]
 CUDACXX = "/usr/local/cuda/bin/nvcc"
 
-
 [tool.ruff]
 line-length = 88
-exclude = [
-    "notebooks/OpenFold.ipynb",
-]
 
 [tool.ruff.lint]
 select = [
@@ -135,7 +140,7 @@ log_cli = true
 log_cli_level = "WARNING"
 log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
-testpaths = ["tests"]
+testpaths = ["openfold3/tests"]
 python_files = ["test_*.py"]
 markers = [
     "inference_verification: Tests to verify installation on inference example",
