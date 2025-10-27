@@ -1,0 +1,4 @@
+# change number of devices to 1 node, 4 gpus (default: 1 gpu)
+pl_trainer_args:
+  devices: 4
+  num_nodes: 1

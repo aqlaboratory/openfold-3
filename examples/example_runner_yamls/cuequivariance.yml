@@ -1,0 +1,11 @@
+model_update:
+  preset: 
+    - predict
+    - pae_enabled  # to use the PAE enabled model
+    - low_mem  # to use low memory settings
+  custom:
+    settings:
+      memory:
+        eval:
+          use_cueq_triangle_kernels: true
+          use_deepspeed_evo_attention: true
