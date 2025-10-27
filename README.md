@@ -59,7 +59,6 @@ The final OpenFold3 model is still in development, and we are actively working o
 - Improved performance on par with AlphaFold3
 - Training documentation & dataset release
 - Workflows for training on custom non-PDB data
-- Binding affinity prediction
 
 ## Contributing
 
