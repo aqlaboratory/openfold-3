@@ -12,7 +12,7 @@ For our reproduction of AlphaFold2, please refer to the original [OpenFold repos
 
 ## Features
 
-OpenFold3 replicates the input features described in the [*AlphaFold3*](https://www.nature.com/articles/s41586-024-07487-w) publication, as well as batch job support and efficient kernel-accelerated inference.
+OpenFold3 replicates the input features described in the [AlphaFold3](https://www.nature.com/articles/s41586-024-07487-w) publication, as well as batch job support and efficient kernel-accelerated inference.
 
 A summary of our supported features includes:
 - Structure prediction of standard and non-canonical protein, small molecule, RNA, and DNA chains
