@@ -42,7 +42,7 @@ pl_trainer_args:
 model_update:  
   presets:   # [train | predict | low_mem | pae_enabled]
     - predict
-    - pae_enabled
+    - low_mem
     - pae_enabled
   custom: {}
 

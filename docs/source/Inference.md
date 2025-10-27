@@ -149,7 +149,7 @@ This command uses the `run_openfold` binary, for which the source code is availa
     - To manually select specific seeds, please use the `runner.yml` and refer to the {ref}`Custom Random Seeds section <custom-random-seeds-inference>` below.
 
 - `--runner_yaml` *(Path, optional, default = null)*
-    - YAML config for full control over model and data parameters.
+    - YAML config for full control over model and data parameters. See the {doc}`configuration reference <configuration_reference>` and {ref}`full configuration file <full-config-file>` for all available options.
     - See the {ref}`runner yaml section below for more information <33-customized-inference-settings-using-runneryml>` 
 
 📝  *Notes*: 
@@ -177,11 +177,22 @@ To run OpenFold3 without MSA features, you need to provide a "dummy" MSA file th
 (33-customized-inference-settings-using-runneryml)=
 ### 3.3 Customized Inference Settings Using `runner.yml`
 
-You can further customize inference behavior by providing a `runner.yml`file. This overrides the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py).
+OpenFold3 provides extensive customization options through a `runner.yml` configuration file. This file allows you to override the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py) and customize the inference behavior to your needs.
 
-Below are some common use cases and how to configure them, some examples are also provided as individual `runner.yml` files in our [examples directory](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_runner_yamls):
+We provide several example runner files in our [examples directory](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_runner_yamls) that demonstrate common use cases like:
 
-A full reference of all of the configuration settings is available [here](https://github.com/aqlaboratory/openfold-3/tree/main/examples/reference_full_config/full_config.yml)
+- Running on multiple GPUs
+- Using low memory settings
+- Customizing output formats
+- Enabling PAE (predicted aligned error) calculations
+- And more
+
+For a complete reference of all available configuration options:
+
+- See our [full configuration example](https://github.com/aqlaboratory/openfold-3/tree/main/examples/reference_full_config/full_config.yml) with all possible settings
+- Read the detailed [configuration reference documentation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/configuration_reference.md) that explains each setting
+
+Below we'll walk through some of the most common configuration scenarios and how to implement them:
 
 
 (inference-run-on-multiple-gpus)=
