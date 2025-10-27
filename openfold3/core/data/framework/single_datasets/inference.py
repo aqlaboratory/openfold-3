@@ -80,7 +80,7 @@ class InferenceDataset(Dataset):
     # TODO: Can accept a dataset_config here if we want
     def __init__(
         self,
-        dataset_config,
+        dataset_config,  # type : DefaultDatasetConfigSection
         world_size: int | None = None,
     ) -> None:
         """Initializes the InferenceDataset."""

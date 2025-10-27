@@ -40,9 +40,9 @@ RUN python3 setup.py install
 # Set CUDA architecture for compilation (adjust based on your GPU)
 ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
 
-# Pre-compile DeepSpeed operations with full performance
-RUN python3 -c "import deepspeed; deepspeed.ops.op_builder.EvoformerAttnBuilder().load()" || \
-    python3 -c "import deepspeed; print('DeepSpeed ops loaded successfully')"
+# # Pre-compile DeepSpeed operations with full performance - run on GPU machines only
+# RUN python3 -c "import deepspeed; deepspeed.ops.op_builder.EvoformerAttnBuilder().load()" || \
+#     python3 -c "import deepspeed; print('DeepSpeed ops loaded successfully')"
 
 # Runtime stage - use devel image for full CUDA support
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04 AS runtime
