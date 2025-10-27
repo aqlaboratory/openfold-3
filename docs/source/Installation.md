@@ -1,5 +1,6 @@
 # OpenFold3 Setup 
 
+(openfold3-installation)=
 ## Installation
 
 ### Pre-requisites
@@ -61,8 +62,10 @@ If you would like to build an OpenFold docker image locally, we provide a docker
 docker build -f Dockerfile -t openfold-docker .
 ```
 
-
+(openfold3-parameters)=
 ## Downloading OpenFold3 model parameters
+
+On the first inference run, default model parameters will be downloaded to the `$HOME/.openfold3`. To customize your checkpoint download path, you use one of the following options:
 
 ### Using `setup_openfold` 
 
@@ -82,7 +85,7 @@ This script will:
 
 ### Downloading the model parameters manually
 
-The model parameters (~5GB) for the trained OpenFold3 model can be downloaded from [our AWS RODA bucket](https://registry.opendata.aws/openfold/) with the following script:
+The model parameters (~3GB) for the trained OpenFold3 model can be downloaded from [our AWS RODA bucket](https://registry.opendata.aws/openfold/) with the following script:
 
 ```bash
 ./openfold3/scripts/download_openfold_params.sh

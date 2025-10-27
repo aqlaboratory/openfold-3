@@ -1,44 +1,29 @@
 # OpenFold3 Input Format
 
 ## 1. High-level Structure
-The OpenFold3 inference pipeline takes a single JSON file as input, specifying the data and options required for structure prediction. This file can define multiple prediction targets (`queries`), which can be proteins, including individual protein chains and complexes, nucleic acids, and ligands. An example of the top-level structure of this input file is shown below:
+The OpenFold3 inference pipeline takes a single JSON file as input, specifying the data and options required for structure prediction. This file can define multiple prediction targets (`queries`), which can be proteins, including individual protein chains and complexes, nucleic acids, and ligands. Multiple queries can be combined as follows: 
 
-```
+```json
 {
   "queries": {
     "query_1": { ... },
     "query_2": { ... }
   },
-  "ccd_file_path": "/path/to/CCD/file.cif",
-  "seeds": [42, 123, 456]
 }
 ```
 
-**Required and Optional Fields**
+**Required Input Fields**
 
 - `queries` *(dict, required)* 
   - A dictionary containing one or more prediction targets. Each entry defines a single query (e.g., a protein or protein complex).
     - The keys (e.g., `query_1`, `query_2`, ...) uniquely identify each query and are used to name the corresponding output files.
-    - If `n` queries are specified and `m` seeds are provided (see below), the model will perform `n × m` independent inference runs.
 
-- `ccd_file_path` *(str, optional, default = None)*
-  - Path to a [Chemical Component Dictionary (CCD)](https://www.wwpdb.org/data/ccd) mmCIF file containing definitions all ligands referenced across queries.
-    - Standard ligands should be sourced from the official PDB CCD file linked above.
-    - Custom ligands must be provided in MMCIF format, appended to the end of the CCD file. Identifiers of ligand definitions must exactly match the three-letter chemical component IDs used in the input queries.
+**Reference Fields**
+- `seeds` *(list, reference)*
+  - This section is present in the logged `inference_query_set.json` that is part of the model run output as a reference of the seeds used.
+  - However, this field should not be included as part of the input of an input `query.json`. Instead, the user should use either the `--num_model_seeds` command line argument or specify seeds in the `runner.yml`. See {ref}`Custom Model Seeds for more details <custom-random-seeds-inference>` 
 
-- `seeds` *(list of int, optional, default = None)*
-  - Specifies the exact random seeds to use for stochastic components of the inference process (e.g., dropout, sampling).
-    - If provided, the model will run once per seed for each query.
-    - Mutually exclusive with `num_seeds`.
-
-- `num_seeds` *(int, optional, default = None)*
-  - Specifies the number of random seeds to automatically generate.
-    - Internally, seeds are sampled deterministically from a fixed global seed to ensure reproducibility.
-    - Mutually exclusive with `seeds.`
-
-If neither ```seeds``` nor ```num_seeds``` is provided, a single deterministic run will be performed per query using a default seed.
-
-
+(2-queries)=
 ## 2. Queries
 Each entry in the ```queries``` dictionary specifies a single bioassembly, which will be predicted in one forward pass of OpenFold3. To run **batch inference**, include multiple such query entries (e.g., ```query_1```, ```query_2```, ...) in the top-level ```queries``` field of the input JSON.
 
@@ -221,10 +206,8 @@ Below is a complete example of an input JSON file specifying a single bioassembl
 
   - A single-residue glycan-like ligand (`I`), specified CCD code `NAG`
 
-```
+```json
 {
-    "seeds": [10, 42],
-    "num_seeds": 2,
     "queries": {
         "query_1": {
             "chains": [
@@ -273,7 +256,8 @@ Below is a complete example of an input JSON file specifying a single bioassembl
 ```
 
 Additional example input JSON files can be found here:
-- [Single-chain protein (monomer)](https://drive.google.com/file/d/1DtZN5jKIROVc_wd19wPWP7-lkYamInsV/view?usp=drive_link): Ubiquitin (PDB: 1UBQ)
-- [Multi-chain protein with identical chains (homomer)](https://drive.google.com/file/d/15zxPTsRYTrt_3rYfmjyC93QZUo2-M_YM/view?usp=drive_link): GCN4 leucine zipper (PDB: 2ZTA)
-- [Multi-chain protein with different chains (multimer)](https://drive.google.com/file/d/1tEakjCwaNbDAEzhnZgxToNFC1m-WmznL/view?usp=drive_link): Deoxy human hemoglobin (PDB: 1A3N)
-- [Protein-ligand complex](https://drive.google.com/file/d/1HZHuyjBOJ9gMU99kbLG_W9aUJo4IGJ0g/view?usp=drive_link): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
+- [Single-chain protein (monomer)](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs/query_ubiquitin.json): Ubiquitin (PDB: 1UBQ)
+- [Multi-chain protein with identical chains (homomer)](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs/query_homomer.json): GCN4 leucine zipper (PDB: 2ZTA)
+- [Multi-chain protein with different chains (multimer)](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs/query_multimer.json): Deoxy human hemoglobin (PDB: 1A3N)
+- [Protein-ligand complex](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
+- [Multiple Protein-ligand complexes](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs/query_protein_ligand_multiple.json): Two queries with Mcl-1 and different small molecule inhibitors (PDB: 5FDR)

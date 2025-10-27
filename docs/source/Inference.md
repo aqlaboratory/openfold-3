@@ -72,24 +72,32 @@ Coming soon:
 
 ## 2. Pre-requisites:
 
-- OpenFold3 Conda Environment. See {doc}`OpenFold3 Installation <Installation>` for instructions on how to build this environment.
-- OpenFold3 Model Parameters: please find the checkpoints [in this Google Drive](https://drive.google.com/drive/folders/1PD1B-FuLF9V9wxATGh7qaF0G-WaT4j3g?usp=drive_link).
+- OpenFold3 Conda Environment. See {ref}`OpenFold3 Installation <openfold3-installation>` for instructions on how to build this environment.
+- OpenFold3 Model Parameters. See {ref}`Openfold3 Parameters <openfold3-parameters>` for how to download these parameters.
 
 
 ## 3. Running OpenFold3 Inference
 
-A directory containing containing multiple inference examples is provided [in this Google Drive](https://drive.google.com/drive/folders/1b4OXHxXUdSd-XYrqtblIF-64rt9Mda4Q?usp=drive_link). These include:
-- [Single-chain protein (monomer)](https://drive.google.com/drive/folders/15S0Z_EIj5JJ4eWUaMi3uhCIhl4TzIWgN?usp=drive_link): Ubiquitin (PDB: 1UBQ)
-- [Multi-chain protein with identical chains (homomer)](https://drive.google.com/drive/folders/1mxuhRij04bZu6D5UtxlEjl8n6LU5hwrA?usp=drive_link): GCN4 leucine zipper (PDB: 2ZTA)
-- [Multi-chain protein with different chains (multimer)](https://drive.google.com/drive/folders/1d0S6ueEyrUEMVeXiebDhEeTp6s-Hm_Pu?usp=drive_link): Deoxy human hemoglobin (PDB: 1A3N)
-- [Protein-ligand complex](https://drive.google.com/drive/folders/1MUYcp-EN1JizM1-xgz94qx5pcVS1A_Ap?usp=drive_link): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
+A prediction job can be submitted with the following command:
+
+```bash
+run_openfold --query_json=<query_json>
+```
+
+Sample input query jsons can be found in the [examples/example_inference_inputs](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs) directory.
+
+Full output directories are provided on the [OpenFold HuggingFace repo](https://huggingface.co/OpenFold/OpenFold3/tree/main/OpenFold3_Examples/documentation%20examples/examples). These include:
+- Single-chain protein (monomer) -- Ubiquitin (PDB: 1UBQ)
+- Multi-chain protein with identical chains (homomer) -- GCN4 leucine zipper (PDB: 2ZTA)
+- Multi-chain protein with different chains (multimer) -- Deoxy human hemoglobin (PDB: 1A3N)
+- Protein-ligand complex -- Mcl-1 with small molecule inhibitor (PDB: 5FDR)
 
 
-### 3.1 Input Data
+### 3.1 Input Data: Query JSON
 
 Queries can include any combination of single- or multi-chain proteins, with or without ligands, and may contain multiple such complexes. <br/>
 Input is provided via a `query.json` file — a structured JSON document that defines each query, its constituent chains, chain types (e.g., protein, DNA, ligand) and sequences or molecular graphs. Optionally, the query can include paths to precomputed protein or RNA MSAs. <br/>
-See [OpenFold3 input format](input_format.md) for instructions on how to specify your input data.
+See {doc}`OpenFold3 input format <input_format>` for instructions on how to specify your input data.
 
 
 ### 3.2 Inference Modes
@@ -105,24 +113,26 @@ Each mode shares the same command structure but differs in how MSAs are provided
 
 This mode automatically generates MSAs using the ColabFold server. Only protein sequences are sent to the server. We recommend this mode if you only have a couple of structures to predict.
 
-```
-python run_openfold.py predict \
+```bash
+run_openfold predict \
     --query_json /path/to/query.json \
     --inference_ckpt_path /path/to/inference.ckpt \
     --use_msa_server \
     --output_dir /path/to/output/
 ```
 
+This command uses the `run_openfold` binary, for which the source code is available [here](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/run_openfold.py).
+
 **Required arguments**
 
 - `--query_json` *(Path)*
     - Path to the input query JSON file.
 
-- `--inference_ckpt_path` *(Path)*
-    - Path to the model checkpoint file (`.pt` file).
-
-
 **Optional arguments**
+
+- `--inference_ckpt_path` *(Path)*
+    - Path to a model checkpoint file (`.pt` file)
+    - Will use a default checkpoint if not specified, which will be downloaded on the first inference run. See {ref}`OpenFold Parameters <openfold3-parameters>` for information
 
 - `--use_msa_server` *(bool, optional, default = True)*
     - Whether to use the ColabFold server for MSA generation.
@@ -135,10 +145,11 @@ python run_openfold.py predict \
 
 - `--num_model_seeds` *(int, optional, default = 1)*
     - Number of random seeds to use per query.
+    - To manually select specific seeds, please use the `runner.yml` and refer to the {ref}`Custom Random Seeds section <custom-random-seeds-inference>` below.
 
 - `--runner_yaml` *(Path, optional, default = null)*
     - YAML config for full control over model and data parameters.
-    - Example: [runner.yml](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml)
+    - See the {ref}`runner yaml section below for more information <33-customized-inference-settings-using-runneryml>` 
 
 📝  *Notes*: 
 - Only protein sequences are submitted to the ColabFold server so this mode only uses MSAs for protein chains.
@@ -146,12 +157,13 @@ python run_openfold.py predict \
 
 
 #### 3.2.2 📂 Inference with Precomputed MSAs
-This mode allows inference using MSA files prepared manually or by external tools. We recommend this mode for high-throughput screeing applications where you want to run hundreds or thousands of predictions. See the [precomputed MSA documentation](precomputed_msa_how_to.md) for a step-by-step tutorial, the [MSA generation guide](precomputed_msa_generation_how_to.md) for using our MSA generation pipeline and the [precomputed MSA explanatory document](precomputed_msa_explanation.md) for a more in-depth explanation on how precomputed MSA handling works.
+This mode allows inference using MSA files prepared manually or by external tools. We recommend this mode for high-throughput screeing applications where you want to run hundreds or thousands of predictions. See the {doc}`precomputed MSA documentation <precomputed_msa_how_to>` for a step-by-step tutorial, the {doc}`MSA generation guide <precomputed_msa_generation_how_to>` for using our MSA generation pipeline and the `precomputed MSA explanatory document <precomputed_msa_explanation>` for a more in-depth explanation on how precomputed MSA handling works. 
 
-```
-python run_openfold.py predict \
+An example query json with a sample of how the alignment directories can be formatted is available [here](https://huggingface.co/OpenFold/OpenFold3/tree/main/OpenFold3_Examples/documentation%20examples/multimer_precomputed_msa) 
+
+```bash
+run_openfold predict \
     --query_json /path/to/query_precomputed.json \
-    --inference_ckpt_path /path/to/of3_checkpoint.pt \
     --use_msa_server=False \
     --output_dir /path/to/output/ \
     --runner_yaml /path/to/inference_precomputed.yml
@@ -161,10 +173,9 @@ python run_openfold.py predict \
 #### 3.2.3 🚫 Inference Without MSAs
 This mode skips MSA generation entirely. OpenFold3 will perform inference using only the input sequences. Prediction quality will be reduced compared to MSA-based modes. This inference mode is currently discouraged if the goal is to obtain the highest-accuracy structures.
 
-```
-python run_openfold.py predict \
+```bash
+run_openfold predict \
     --query_json /path/to/query.json \
-    --inference_ckpt_path /path/to/inference.ckpt \
     --use_msa_server=False \
     --output_dir /path/to/output/
 ```
@@ -172,17 +183,20 @@ python run_openfold.py predict \
 (33-customized-inference-settings-using-runneryml)=
 ### 3.3 Customized Inference Settings Using `runner.yml`
 
-You can further customize inference behavior by providing a [`runner.yml`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/examples/runner_inference.yml) file. This overrides the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/entry_points/validator.py).
+You can further customize inference behavior by providing a `runner.yml`file. This overrides the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold-3/blob/inference-dev/openfold3/entry_points/validator.py).
 
-Below are some common use cases and how to configure them:
+Below are some common use cases and how to configure them, some examples are also provided as individual `runner.yml` files in our [examples directory](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_runner_yamls):
+
+A full reference of all of the configuration settings is available [here](https://github.com/aqlaboratory/openfold-3/tree/main/examples/reference_full_config/full_config.yml)
 
 
 (inference-run-on-multiple-gpus)=
 #### 🖥️ Run on Multiple GPUs or Nodes
-Specify the hardware configuration under [`pl_trainer_args`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L141) in `runner.yml`:
+Specify the hardware configuration under [`pl_trainer_args`](https://github.com/aqlaboratory/openfold-3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L141) in `runner.yml`:
 
 Note: Using multiple GPUs in combination with the `--use_msa_server` option currently launches the same ColabFold MSA server query and template preprocessing code per GPU. It may be more efficient to pre-compute the MSAs and preprocess templates in advance and then running distributed predictions with the [pre-computed MSA option](precomputed_msa_how_to.md). We will introduce a fix to this in an upcoming release.
-```
+
+```yaml
 pl_trainer_args:
   devices: 4      # Default: 1
   num_nodes: 1    # Default: 1
@@ -190,11 +204,16 @@ pl_trainer_args:
 
 ---
 
+(custom-random-seeds-inference)=
 #### 🌱 Change the random seeds for the model 
 
-By default, only 1 random model seed is used. The custom list of random seeds can be provided to the `runner.yml` under [`experiment_settings`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L120) in the following format
+By default, only 1 random model seed is used, in which case, one inference run will be performed.
 
-```
+If `n` queries are specified and `m` seeds are provided, the model will perform `n × m` independent inference runs.
+
+A custom list of random seeds can be provided to the `runner.yml` under [`experiment_settings`](https://github.com/aqlaboratory/openfold-3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L120) in the following format
+
+```yaml
 experiment_settings:
   seeds:
     - 100
@@ -202,11 +221,15 @@ experiment_settings:
     - ... 
 ```
 
+Seeding behavior is controlled in the following priority:
+- Command line argument `--num_model_seeds`
+- `runner.yml` via the `experiment_settings.seeds` field.
+
 ---
 
 #### 📦 Output in PDB Format
-Change the structure output format from `cif` to `pdb` using [`output_writer_settings`](https://github.com/aqlaboratory/openfold3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L170):
-```
+Change the structure output format from `cif` to `pdb` using [`output_writer_settings`](https://github.com/aqlaboratory/openfold-3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L170):
+```yaml
 output_writer_settings:
   structure_format: pdb    # Default: cif
 ```
@@ -215,14 +238,15 @@ output_writer_settings:
 
 (inference-low-memory-mode)=
 #### 🧠 Low Memory Mode
-To run inference on larger queries to run on limited memory, add the following to apply the [model presets](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/model_setting_presets.yml) to run in low memory mode.
+To run inference on larger queries to run on limited memory, add the following to apply the [model presets](https://github.com/aqlaboratory/openfold-3/blob/inference-dev/openfold3/projects/of3_all_atom/config/model_setting_presets.yml) to run in low memory mode.
 
 Note: These settings cause the pairformer embedding output from the diffusion samples to be computed sequentially. Significant slowdowns may occur, especially for large number of diffusion samples.
-```
+```yaml
 model_update:
   presets:
     - predict  # required for inference
     - low_mem
+    - pae_enabled
 ```
 
 ---
@@ -231,9 +255,11 @@ model_update:
 
 Predicted Aligned Error (PAE) is a predicted confidence metric from the OpenFold3 model that is used to compute predicted TM scores. You can find more information about confidence metrics [here](https://www.ebi.ac.uk/training/online/courses/alphafold/inputs-and-outputs/evaluating-alphafolds-predicted-structures-using-confidence-scores/confidence-scores-in-alphafold-multimer/).
 
-The PAE model head is enabled by default in inference by its selection in the model presets. To disable PAE model, provide a list of model presets that does not include the `pae_enabled` preset, e.g.
+The PAE model head is enabled by default in inference by its selection in the model presets. The current models available from OpenFold all require `pae_enabled` as a setting.
 
-```
+To disable PAE model, provide a list of model presets that does not include the `pae_enabled` preset, e.g.
+
+```yaml
 model_update:
   presets:
     - predict # required for inference 
@@ -241,7 +267,7 @@ model_update:
 
 Conversely, if you provide your own model_update and wish to use the PAE head, please ensure the `pae_enabled` preset is selected:
 
-```
+```yaml
 model_update:
   presets:
     - predict  # required for inference
@@ -255,7 +281,7 @@ model_update:
 
 ### 3.4 Customized ColabFold MSA Server Settings Using `runner.yml` 
 
-All settings for the ColabFold server and outputs can be set at `msa_computation_settings`](https://github.com/aqlaboratory/openfold3/blob/9d3ff681560cdd65fa92f80f08a4ab5becaebf87/openfold3/core/data/tools/colabfold_msa_server.py#L833)
+All settings for the ColabFold server and outputs can be set under [`msa_computation_settings`](https://github.com/aqlaboratory/openfold-3/blob/9d3ff681560cdd65fa92f80f08a4ab5becaebf87/openfold3/core/data/tools/colabfold_msa_server.py#L833)
 
 
 (34-saving-msa-outputs)=
@@ -265,7 +291,7 @@ By default, MSA outputs are written to a temporary directory and are deleted aft
 
 These settings can be saved by changing the following fields:
 
-```
+```yaml
 msa_computation_settings:
   msa_output_directory: <custom path>
   cleanup_msa_dir: False  # If False, msa paths will not be deleted between runs 
@@ -278,7 +304,7 @@ MSAs per chain are saved using a file / directory name that is the hash of the s
 
 #### Use a Privately Hosted ColabFold MSA Server
 Specify the URL of your private MSA server with the `server_url` field:
-```
+```yaml
 msa_computation_settings:
   server_url: https://my.private.colabfold.server
 ```
@@ -287,7 +313,7 @@ msa_computation_settings:
 
 #### Save MSAs in A3M Format
 Choose the file format for saving MSAs retrieved from ColabFold:
-```
+```yaml
 msa_computation_settings:
   msa_file_format: a3m     # Options: a3m, npz (default: npz)
 ```
@@ -303,7 +329,7 @@ Each query produces a structured output directory with the following components:
 ### 4.1 Prediction Outputs (`query/seed/`)
 
 Each seed produces one or more sampled structure predictions and their associated confidence scores, stored in subdirectories named after the query and seed, e.g.:
-```
+```bash
 <output_directory>
  ├── query_1
 	 └── seed_42
@@ -350,7 +376,7 @@ If a chain is reused across multiple queries, its MSA is only computed once and 
 
 For a sequence with two representative chains, the final output directory would have this format:
 
-```
+```bash
 <msa_output_directory>
 ├── main
 │   ├── <hash of sequence A>.npz
@@ -368,19 +394,10 @@ For a sequence with two representative chains, the final output directory would 
 ```
 
 
-
-
-```
-<msa_output_directory>
- ├── main
-    ├── <hash of query 1, sequence A>.npz
-    └── <hash of query 1, sequence B>.npz
-```
-
 If a query is a heteromeric protein complex (has at least two different protein chains) and `--use_msa_server` is enabled, **paired MSAs** are also generated. 
 If a set of chains with a specific stoichiometry is reused across multiple queries, for example if the same heterodimer is screened against multiple small molecule ligands, its set of paired MSAs is only computed once and named after the first occurrence. This reduces the number of queries to the ColabFold server. 
 
-```
+```bash
 <msa_output_directory>
  ├── paired
     └── <hash of concatenation of sequences A and B> 
@@ -396,7 +413,7 @@ The MSA deduplication behavior is also present for precomputed MSAs. See the {re
 
 If the same `msa_output_directory` is used between runs, the `rep_id_to_seq.json` and `seq_to_rep_id.json` mappings are updated with the new sequences, while the other mappings are overwritten.
 
-```
+```bash
 <msa_output_directory>
  ├── paired
     └── <hash of concatenation of sequences A and B> 
@@ -409,7 +426,7 @@ If the same `msa_output_directory` is used between runs, the `rep_id_to_seq.json
 The raw ColabFold MSA `.a3m` alignment files and scripts are saved to `<msa_output_directory>/raw/`. <br/> 
 This directory is then deleted upon completion of MSA processing by the OpenFold3 workflow to avoid disruption to future inference submissions. <br/>
 
-To manually keep the raw ColabFold outputs, remove this line here [here](https://github.com/aqlaboratory/openfold3/blob/9d3ff681560cdd65fa92f80f08a4ab5becaebf87/openfold3/core/data/tools/colabfold_msa_server.py#L933). <br/>
+To manually keep the raw ColabFold outputs, remove this line here [here](https://github.com/aqlaboratory/openfold-3/blob/9d3ff681560cdd65fa92f80f08a4ab5becaebf87/openfold3/core/data/tools/colabfold_msa_server.py#L933). <br/>
 
 
 ### 4.4 Query Metadata 
@@ -418,11 +435,10 @@ There are several system-generated files that record the state of submitted infe
 - [Inference Query Set](441-inference-query-set-json) -- Input query and references to auxiliary files (e.g. MSA alignments and template files)
 - [Model Config](442-model-config-json) - Model settings, e.g. architecture and memory settings
 - [Experiemnt Config](443-experiment-config-json) -- Experiment settings for the inference run
-- 
 
 (441-inference-query-set-json)=
 #### 4.4.1 Inference Query Set (`inference_query_set.json`)
-This file representing the full input query in a validated internal format defined by [this Pydantic schema](https://github.com/aqlaboratory/openfold3/blob/inference-dev/openfold3/projects/of3_all_atom/config/inference_query_format.py).
+This file representing the full input query in a validated internal format defined by [this Pydantic schema](https://github.com/aqlaboratory/openfold-3/blob/inference-dev/openfold3/projects/of3_all_atom/config/inference_query_format.py).
 
 - Created automatically from the original `query.json`.
 
@@ -443,6 +459,8 @@ If MSA and Template files are persisted between runs, the same `inference_query_
 
 1. Turn off the [MSA cleanup option](34-saving-msa-outputs).
 2. pass in the generated `inference_query_set.json` as the `query.json` and use `--use_msa_server=False` and `--use_templates=True`.
+
+Model seeds should still be set either from the command line or using the `seeds` field under `experiment_settings` in the `runner.yml`.
 \```
 
 (442-model-config-json)=
@@ -458,10 +476,12 @@ This file records the entire state of the experiment, as defined by the [Inferen
 
 **🔗 Example:**
 
-See the full multimer output for [Deoxy human hemoglobin](https://drive.google.com/drive/folders/1d0S6ueEyrUEMVeXiebDhEeTp6s-Hm_Pu?usp=drive_link).
+See the full multimer output for [Deoxy human hemoglobin](https://huggingface.co/OpenFold/OpenFold3/tree/main/OpenFold3_Examples/documentation%20examples/examples/multimer)
 
 
 When processing multimer inputs (e.g., hemoglobin α + β chains), OpenFold3 automatically:
+
+TODO Update this section
 
 - Requests paired MSAs from the ColabFold server
 - Stores raw alignments in [`raw/paired/](https://drive.google.com/drive/folders/19CN9S3T060KahXj0wbJXMlfth8MFlyPf?usp=drive_link)
