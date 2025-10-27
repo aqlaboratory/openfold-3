@@ -1,10 +1,10 @@
+# OpenFold3-preview
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="imgs/predictions_combined_dark.png">
   <source media="(prefers-color-scheme: light)" srcset="imgs/predictions_combined_light.png">
   <img alt="Comparison of OpenFold and experimental structures" src="imgs/predictions_combined_light.png">
 </picture>
 
-# OpenFold3-preview
 OpenFold3 is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's 
 [AlphaFold3](https://github.com/deepmind/alphafold3), developed by AQLab and the OpenFold consortium. This research preview is intended to gather community feedback and allow developers to start building on top of the OpenFold ecosystem. The OpenFold project is committed to long-term maintenance and open source support, and our repository is freely available for academic and commercial use under the Apache 2.0 license.
 
@@ -25,15 +25,16 @@ A summary of our supported features includes:
 
 Make your first predictions with OpenFold3-preview in a few easy steps:
 
-1. Install OpenFold3
+
+1. Install OpenFold3 using our pip package
 ```bash
-pip install openfold3
+pip install openfold3 
+mamba install kalign2 -c bioconda
 ```
 
-2. Install `kalign2`, either [from source](https://msa.sbc.su.se/cgi-bin/msa.cgi) or through `mamba`:
-
+2. Setup your installation of OpenFold3 and download model parameters:
 ```bash
-mamba install bioconda::kalign2
+setup_openfold
 ```
 
 3. Run your first prediction using the ColabFold MSA server
