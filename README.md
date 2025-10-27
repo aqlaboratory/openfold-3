@@ -18,7 +18,7 @@ A summary of our supported features includes:
 - Structure prediction of standard and non-canonical protein, small molecule, RNA, and DNA chains
 - A pipeline for generating MSAs using the [ColabFold server](https://github.com/sokrypton/ColabFold) or using JackHMMER / hhblits following the AlphaFold3 protocol
 - Structure templates
-- Kernel acceleration through [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) and [DeepSpeed4Science](https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/) - more details here (TODO: Link to kernels page on documentation)
+- Kernel acceleration through [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) and [DeepSpeed4Science](https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/) kernels - more details here (TODO: Link to kernels page on documentation)
 - Support for multi-query jobs with automatic device parallelization (TODO: Add refs)
 
 ## Quick-Start for Inference
