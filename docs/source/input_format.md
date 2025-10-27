@@ -59,8 +59,10 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     "use_msas": true,
     "use_main_msas": true,
     "use_paired_msas": true,
-    "main_msa_file_paths": "/absolute/path/to/main_msa.sto/a3m",
-    "paired_msa_file_paths": "/absolute/path/to/paired_msa.sto/a3m",
+    "main_msa_file_paths": "/absolute/path/to/main_msas",
+    "paired_msa_file_paths": "/absolute/path/to/paired_msas",
+    "template_alignment_file_path": "/absolute/path/to/template_msa",
+    "template_entry_chain_ids": ["entry1_A", "entry2_B", "entry3_A"],
   }
   ```
 
@@ -79,7 +81,7 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - Example: `{"1": "MHO", "5": "SEP"}`
 
   - `use_msas` *(bool, optional, default = true)*
-    - Enables MSA usage. If false, empty MSA features are provided to the model. MSA-free inference mode is {ref}`discouraged <323-inference-without-msas>` if the goal is to obtain the highest-accuracy structures.
+    - Enables MSA usage. If false, empty MSA features are provided to the model. We suggest running MSA-free inference mode via a dummy MSA with only the query sequence and completely omitting MSA inputs is {ref}`discouraged <323-inference-without-msas>` if the goal is to obtain the highest-accuracy structures.
 
   - `use_main_msas` *(bool, optional, default = true)*
     - Controls whether to use unpaired MSAs. 
@@ -102,6 +104,16 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - If not provided, online MSA pairing can still be performed for protein chains if species information is available in one or more main MSA files per chain. See {ref}`Online Cross-Chain Pairing in OF3 <3-online-msa-pairing>` for details.
     - If using the ColabFold MSA server, this field is automatically populated and will **override any user-provided path**.
 
+  - `template_alignment_file_path` *(str, optional, default = null)*
+    - Path to template alignment file for this chain.
+    - Use this field only when running inference with **precomputed alignments**. See the {doc}`Running with Templates Documentation <template_how_to>` for details.
+    - If using the ColabFold MSA server, this field is automatically populated and will **override any user-provided path**.
+
+  - `template_entry_chain_ids` *(str, optional, default = null)*
+    - !!! Currently, only populated automatically !!!
+    - A list of template PDB entry + chain IDs to use for this chain.
+    - Use this field only when running inference with **precomputed alignments**. See the {doc}`Running with Templates Documentation <template_how_to>` for details.
+    - If using the ColabFold MSA server, this field is automatically populated and will **override any user-provided path**.
 
   ### 3.2. RNA Chains
 
@@ -126,7 +138,7 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - Nucleic acid sequence (1-letter codes).
 
   - `use_msas` *(bool, optional, default = true)*
-    - Enables MSA usage. If false, a single-row MSA is constructed from the query sequence only.
+    - Enables MSA usage. If false, empty MSA features are provided to the model. We suggest running MSA-free inference mode via a dummy MSA with only the query sequence and completely omitting MSA inputs is {ref}`discouraged <323-inference-without-msas>` if the goal is to obtain the highest-accuracy structures.
 
   - `use_main_msas` *(bool, optional, default = true)*
     - Controls whether to use unpaired MSAs. For monomers or homomers, disabling this results in using only the single sequence.

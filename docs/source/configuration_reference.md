@@ -1,20 +1,20 @@
 # OpenFold3 Configuration Reference
 
-The [`full_config.yml` file](https://github.com/aqlaboratory/openfold-3/blob/feature/update-docs/examples/reference_full_config/full_config.yml) is a comprehensive reference configuration file that demonstrates all available configuration options for OpenFold3 inference and training experiments. This file is located at `examples/reference_full_config/full_config.yml` and serves as a complete example of all configurable settings.
+The [`full_config.yml` file](https://github.com/aqlaboratory/openfold-3/blob/main/examples/reference_full_config/full_config.yml) is a comprehensive reference configuration file that demonstrates all available configuration options for OpenFold3 inference and training experiments. This file is located at `examples/reference_full_config/full_config.yml` and serves as a complete example of all configurable settings.
 
-## Overview
+## 1. Overview
 
 The configuration file is organized into several main sections. Each section corresponds to a specific Pydantic model class defined in the OpenFold3 codebase. When you provide a `runner.yml` file, it **overrides** the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py).
 
-## Important Notes
+## 2. Important Notes
 
 - **Selective Configuration**: Only specify the settings you want to override in your runner YAML file. All unspecified options will use their default values.
 - **Command-line Priority**: Command-line arguments take precedence and will override any values specified in the YAML file.
 - **Reference Implementation**: The full configuration file serves as a reference - create your own simplified runner YAML based on your specific needs. See `examples/example_runner_yamls/` for common usage examples.
 
-## Configuration Sections
+## 3. Configuration Sections
 
-### 1. Experiment Settings (`experiment_settings`)
+### 3.1. Experiment Settings (`experiment_settings`)
 
 Defines overall experiment parameters, including execution mode and seed configuration.
 
@@ -41,7 +41,7 @@ experiment_settings:
 
 ---
 
-### 2. PyTorch Lightning Trainer Args (`pl_trainer_args`)
+### 3.2. PyTorch Lightning Trainer Args (`pl_trainer_args`)
 
 Configures the PyTorch Lightning trainer for distributed training and multi-GPU inference.
 
@@ -71,7 +71,7 @@ pl_trainer_args:
 
 ---
 
-### 3. Model Update (`model_update`)
+### 3.3. Model Update (`model_update`)
 
 Specifies model presets and custom architecture modifications.
 
@@ -96,7 +96,7 @@ model_update:
 
 ---
 
-### 4. Checkpoint and Cache Paths
+### 3.4. Checkpoint and Cache Paths
 
 **Pydantic Model**: Fields on [`InferenceExperimentConfig`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L347)
 
@@ -109,7 +109,7 @@ model_update:
 
 ---
 
-### 5. Data Module Args (`data_module_args`)
+### 3.5. Data Module Args (`data_module_args`)
 
 Configures data loading and processing.
 
@@ -131,7 +131,7 @@ data_module_args:
 
 ---
 
-### 6. Dataset Config Kwargs (`dataset_config_kwargs`)
+### 3.6. Dataset Config Kwargs (`dataset_config_kwargs`)
 
 Configures MSA and template feature generation.
 
@@ -142,7 +142,7 @@ Configures MSA and template feature generation.
 - `msa` *(MSASettings)*: MSA processing settings (see below)
 - `template` *(TemplateSettings)*: Template processing settings (see below)
 
-#### MSA Settings (`msa`)
+#### 3.6.1. MSA Settings (`msa`)
 
 Controls how MSAs are parsed and processed into features.
 
@@ -169,7 +169,7 @@ dataset_config_kwargs:
     moltypes: [0, 1]  # protein and RNA
 ```
 
-#### Template Settings (`template`)
+#### 3.6.2. Template Settings (`template`)
 
 Controls template structure processing.
 
@@ -193,7 +193,7 @@ dataset_config_kwargs:
 
 ---
 
-### 7. Output Writer Settings (`output_writer_settings`)
+### 3.7. Output Writer Settings (`output_writer_settings`)
 
 Configures the format of output files.
 
@@ -214,7 +214,7 @@ output_writer_settings:
 
 ---
 
-### 8. MSA Computation Settings (`msa_computation_settings`)
+### 3.8. MSA Computation Settings (`msa_computation_settings`)
 
 Configures the ColabFold MSA server integration.
 
@@ -238,7 +238,7 @@ msa_computation_settings:
 
 ---
 
-### 9. Template Preprocessor Settings (`template_preprocessor_settings`)
+### 3.9. Template Preprocessor Settings (`template_preprocessor_settings`)
 
 Configures template structure preprocessing and filtering.
 
@@ -279,15 +279,7 @@ template_preprocessor_settings:
 
 ---
 
-## Related Documentation
-
-- [`Inference Guide`](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Inference.md) - How to run inference
-- [`Input Format`](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/input_format.md) - Query JSON format
-- [`Precomputed MSA Guide`](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/precomputed_msa_how_to.md) - Using precomputed MSAs
-- [`Precomputed MSA Generation Guide`](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/precomputed_msa_generation_how_to.md) - Generating precomputed MSAs
-- [`Template Guide`](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/template_how_to.md) - Template processing guide
-
-## Default Values Reference
+## 4. Default Values Reference
 
 For the complete list of default values, see the Pydantic model classes in:
 - [`openfold3/entry_points/validator.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py) - Main configuration classes

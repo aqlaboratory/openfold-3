@@ -1,4 +1,4 @@
-# A How-To Guide for Running OF3 Inference with Templates
+# Running OpenFold3 Inference with Templates
 
 This document contains instructions on how to use template information for OF3 predictions. Here, we assume that you already generated all of your template alignments or intend to fetch them from Colabfold on-the-fly. If you do not have any precomputed template alignments and do not want to use Colabfold, refer to our {doc}`MSA Generation Guide <precomputed_msa_generation_how_to>` before consulting this document. If you need further clarifications on how some of the template components of our inference pipeline work, refer to {doc}`this explanatory document <template_explanation>`.
 
@@ -120,7 +120,7 @@ Note that when fetching alignments from the Colabfold server, `template_alignmen
 
 ### 2.2. Using Specific Templates
 
-By default, the template pipeline automatically populates the `template_entry_chain_ids` field with [n templates](../../openfold3/core/data/pipelines/preprocessing/template.py#L1519) from the alignment, which is then further subset to the [top k templates](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L112) during featurization for inference.
+By default, the template pipeline automatically populates the `template_entry_chain_ids` field with [n templates](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py#L1535) from the alignment, which is then further subset to the [top k templates](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py#L116) during featurization for inference.
 
 In an **upcoming release**, we will add support for specifying *specific templates* for the data pipeline to use for featurization. This will be possible through the `template_entry_chain_ids` field:
 
@@ -165,7 +165,7 @@ For high-throughput use cases, where a large number of structures are to be pred
 
 A recommended workflow for providing template data for very large datasets is the following:
 1. Compute {ref}`template alignments <311-precomputed-template-alignments>`.
-2. [Download the PDB](../../scripts/snakemake_msa/download_of3_databases.py) or other template structure dataset locally.
+2. [Download the PDB](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/snakemake_msa/download_of3_databases.py) or other template structure dataset locally.
 3. Precompute the {ref}`template precache <312-template-precache>` from template structures to speed up template cache precomputation.
 4. Precompute the {ref}`template cache <313-template-cache>` from template alignments and the template precache.
 5. Preparse the {ref}`template structures <32-template-structure-preprocessing>` into template structure arrays.
@@ -180,7 +180,7 @@ Our template processing pipeline accepts MSAs generated from our {doc}`OF3-style
 (312-template-precache)=
 #### 3.1.2. Template Precache
 
-We found that preprocessing template alignments for large datasets can take a long time, partly due to the requirement to parse template structures so we can correspond them to the template alignment sequences. We provide a [preprocessing script](../../scripts/data_preprocessing/preprocess_template_alignments_precache_of3.py) that compresses template structure files into metadata files which we call *template precache entries*, containing the release date and a mapping from chain `asym_id` identifiers to their canonical sequences denoted in the structure file:
+We found that preprocessing template alignments for large datasets can take a long time, partly due to the requirement to parse template structures so we can correspond them to the template alignment sequences. We provide a [preprocessing script](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/preprocess_template_alignments_precache_of3.py) that compresses template structure files into metadata files which we call *template precache entries*, containing the release date and a mapping from chain `asym_id` identifiers to their canonical sequences denoted in the structure file:
 
 ```python
 {
@@ -235,7 +235,7 @@ Under the hood, the OF3 inference pipeline uses a preprocessed version of the te
 
 You can read more about what template cache entry files contain, how they are generated and why we do this preprocesing in the {doc}`template explanatory document <template_explanation>`. 
 
-By default, the inference pipeline automatically generates the template cache entries. However, for larger datasets, we provide a [template alignment preprocesing script](../../scripts/data_preprocessing/preprocess_template_alignments_new_of3.py), which preprocesses the template alignments (and optionally the template structures). Below is an example run script:
+By default, the inference pipeline automatically generates the template cache entries. However, for larger datasets, we provide a [template alignment preprocesing script](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/preprocess_template_alignments_new_of3.py), which preprocesses the template alignments (and optionally the template structures). Below is an example run script:
 
 ```
 python preprocess_template_alignments_new_of3.py \
@@ -260,7 +260,7 @@ This script runs 4 parallel processes to preprocesse the template alignments spe
 (32-template-structure-preprocessing)=
 ### 3.2. Template Structure Preprocessing
 
-One of the main bottlenecks we found in template featurization is the parsing of the template cif files. More on this in the {doc}`template explanatory document <template_explanation>`. You can preprocess template structures into biotite [AtomArrays](https://www.biotite-python.org/latest/apidoc/biotite.structure.AtomArray.html) using our [template structure preprocessing script](../../scripts/data_preprocessing/preprocess_template_structures_of3.py):
+One of the main bottlenecks we found in template featurization is the parsing of the template cif files. More on this in the {doc}`template explanatory document <template_explanation>`. You can preprocess template structures into biotite [AtomArrays](https://www.biotite-python.org/latest/apidoc/biotite.structure.AtomArray.html) using our [template structure preprocessing script](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/preprocess_template_structures_of3.py):
 
 ```
 python preprocess_template_structures_of3.py \

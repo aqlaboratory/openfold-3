@@ -44,16 +44,18 @@ and more features to come...
 
 
 ```{toctree}
-:hidden:
 :caption: Getting Started
+:hidden:
 :maxdepth: 2
+
 Installation.md
 kernels.md
 ```
 
 ```{toctree}
-:hidden: 
 :caption: How To Guides
+:hidden: 
+
 Inference
 precomputed_msa_generation_how_to
 precomputed_msa_how_to
@@ -61,9 +63,17 @@ template_how_to
 ```
 
 ```{toctree}
-:hidden: 
 :caption: Reference 
+:hidden: 
+
 input_format
+configuration_reference
+```
+
+```{toctree}
+:caption: Deep Dives 
+:hidden: 
+
 precomputed_msa_explanation
 template_explanation
 ```

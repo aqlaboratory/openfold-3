@@ -1,4 +1,4 @@
-# OpenFold Inference
+# OpenFold3 Inference
 
 Welcome to the Documentation for running inference with OpenFold3, our fully open source, trainable, PyTorch-based reproduction of DeepMind’s AlphaFold 3. OpenFold3 implements the features described in [AlphaFold 3 *Nature* paper](https://www.nature.com/articles/s41586-024-07487-w).
 
@@ -214,7 +214,7 @@ pl_trainer_args:
 
 By default, only 1 random model seed is used with 5 diffusion samples, in which case, one inference run will be performed, yielding 5 output structures using the same seed.
 
-Given `n` queries, `m` seeds and `l` diffusion sample, the model will perform `n × m` independent forward passes and produce `n × m × l` predicted structures.
+Given `n` queries, `m` seeds and `l` diffusion samples, the model will perform `n × m` independent forward passes and produce `n × m × l` predicted structures.
 
 A custom list of random seeds can be provided to the `runner.yml` under [`experiment_settings`](https://github.com/aqlaboratory/openfold-3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L120) in the following format
 
