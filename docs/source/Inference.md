@@ -185,6 +185,7 @@ We provide several example runner files in our [examples directory](https://gith
 - Using low memory settings
 - Customizing output formats
 - Enabling PAE (predicted aligned error) calculations
+- Saving MSA and Template processing outputs
 - And more
 
 For a complete reference of all available configuration options:
