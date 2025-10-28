@@ -355,22 +355,22 @@ Each seed produces `l` (number of diffusion samples) structure predictions, and 
   - `gpde` - Global Predicted Distance Error (see AF3 SI Section 5.7 Eq. 16)
 
   The following metrics are available only when `pae_enabled` is set. 
-
-  - `iptm` - Estimated accuracy of predicted inter-protein chain interactions 
   
-  - `ptm` - Estimated accuracy of overall predicted structure
+  - `ptm` - Predicted TM score of a full complex (SI §5.9.1)
 
-  - `disorder` - Average RASA value for all unresolved residues across all chains. 0 for inference predictions.
+  - `iptm` - Interface variant of a predicted TM score of a full complex (SI §5.9.1)
 
-  - `sample_ranking_score` - Based on AlphaFold3 SI §5.9.3, item 1
+  - `disorder` - Average relative solvent accessible surface area (RASA) over all protein atoms (§5.9.3, item 1)
 
-  - `has_clash` - Whether any pair of polymer chains has steric clashes (0.0 if no clashes)
+  - `has_clash` - Whether any pair of polymer chains has steric clashes (0.0 if no clashes, 1.0 otherwise)
 
-  - `chain_ptm` - 
+  - `sample_ranking_score` - Weighted sum of `ptm`, `iptm`, `disorder`, `has_clash`. Used to rank predictions (SI §5.9.3, item 1)
+
+  - `chain_ptm` - Per-chain predicted TM score (SI §5.9.1)
   
-  - `chain_pair_iptm` - 
+  - `chain_pair_iptm` - Interface variant of predicted TM score of each chain pairs (SI §5.9.1, §5.9.3, item 3)
   
-  - `bespoke_iptm` - 
+  - `bespoke_iptm` - Average `chain_pair_iptm` between each chain of a pair and all other chains. Used to rank interface predictions (SI § 5.9.3, item 3)
 
 - `timing.json`: The runtime for the submitted query (s), not including the runtime for any MSA computations.
 
