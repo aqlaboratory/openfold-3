@@ -44,11 +44,11 @@ setup_openfold
 run_openfold predict --query_json=examples/example_inference_inputs/ubiquitin_query.json
 ```
 
-More information on how to customize your inference prediction can be found at our documentation home at https://openfold-3.readthedocs.io/en/latest/. More examples for inputs and outputs can be found at (TODO: Add hugging face examples directory here)
+More information on how to customize your inference prediction can be found at our documentation home at https://openfold-3.readthedocs.io/en/latest/. More examples for inputs and outputs can be found on [huggingface](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/common_examples)
 
 ## Benchmarking
 
-OpenFold3-preview performs competitively with the state of the art in open source protein structure prediction, while being the only model to match AlphaFold3 on monomeric RNA structures.
+OpenFold3-preview performs competitively with the state of the art in open source biomolecular structure prediction, while being the only model to match AlphaFold3's performance on monomeric RNA structures.
 
 **Preliminary results:**
 
@@ -58,9 +58,9 @@ OpenFold3-preview performs competitively with the state of the art in open sourc
 </picture>
 
 Performance of OF3p and other models on a diverse set of benchmarks:
-- Protein and RNA monomers from the CASP16
-- Proein-protein complexes from CASP16 and [FoldBench] dataset
-- Protein-ligand complexes from the [Runs and Poses] dataset
+- Protein and RNA monomers from [CASP16](https://www.biorxiv.org/content/10.1101/2025.05.06.652459v2) and [Ludaic et al](https://www.biorxiv.org/content/10.1101/2025.04.30.651414v2)
+- Proein-protein complexes from [CASP16](https://www.biorxiv.org/content/10.1101/2025.05.29.656875v1) and [FoldBench](https://www.biorxiv.org/content/10.1101/2025.05.22.655600v1) 
+- Protein-ligand complexes from the [Runs and Poses](https://www.biorxiv.org/content/10.1101/2025.02.03.636309v3) 
 
 For more details on inferences procedures and benchmarking methods, please refer to our [whitepaper](assets/whitepaper.pdf) . 
 
