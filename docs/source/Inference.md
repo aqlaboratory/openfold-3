@@ -199,8 +199,6 @@ Below we'll walk through some of the most common configuration scenarios and how
 #### 🖥️ Run on Multiple GPUs or Nodes
 The inference pipeline (as well as training) is backed by[ `Pytorch Lightning`](https://lightning.ai/docs/pytorch/stable/), which allows us to automatically distribute large batch jobs of multiple predictions across all available GPUs and nodes. To enable distributed inference, specify the hardware configuration under [`pl_trainer_args`](https://github.com/aqlaboratory/openfold-3/blob/aadafc70bcb9e609954161660314fcf133d5f7c4/openfold3/entry_points/validator.py#L141) in your `runner.yml`:
 
-Note: Using multiple GPUs in combination with the `--use_msa_server` option currently launches the same ColabFold MSA server query and template preprocessing code per GPU. It may be more efficient to pre-compute the MSAs and preprocess templates in advance and then running distributed predictions with the [pre-computed MSA option](precomputed_msa_how_to.md). We will introduce a fix to this in an upcoming release.
-
 ```yaml
 pl_trainer_args:
   devices: 4      # Default: 1
