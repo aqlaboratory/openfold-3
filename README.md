@@ -6,33 +6,34 @@
 </picture>
 
 OpenFold3 is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's 
-[AlphaFold3](https://github.com/deepmind/alphafold3), developed by AQLab and the OpenFold consortium. This research preview is intended to gather community feedback and allow developers to start building on top of the OpenFold ecosystem. The OpenFold project is committed to long-term maintenance and open source support, and our repository is freely available for academic and commercial use under the Apache 2.0 license.
+[AlphaFold3](https://github.com/deepmind/alphafold3), developed by the AlQuraishi Lab at Columbia University and the OpenFold consortium. This research preview is intended to gather community feedback and allow developers to start building on top of the OpenFold ecosystem. The OpenFold project is committed to long-term maintenance and open source support, and our repository is freely available for academic and commercial use under the Apache 2.0 license.
 
 For our reproduction of AlphaFold2, please refer to the original [OpenFold repository](https://github.com/aqlaboratory/openfold).
 
 ## Features
 
-OpenFold3 replicates the input features described in the [AlphaFold3](https://www.nature.com/articles/s41586-024-07487-w) publication, as well as batch job support and efficient kernel-accelerated inference.
+OpenFold3-preview replicates the input features described in the [AlphaFold3](https://www.nature.com/articles/s41586-024-07487-w) publication, as well as batch job support and efficient kernel-accelerated inference.
 
 A summary of our supported features includes:
 - Structure prediction of standard and non-canonical protein, RNA, and DNA chains, and small molecules
 - Pipelines for generating MSAs using the [ColabFold server](https://github.com/sokrypton/ColabFold) or using JackHMMER / hhblits following the AlphaFold3 protocol
-- Structure templates for protein monomers
-- Kernel acceleration through [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) and [DeepSpeed4Science](https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/) kernels - more details [here](https://openfold3.readthedocs.io/en/latest/kernels.html)
-- [Support for multi-query jobs](https://openfold3.readthedocs.io/en/latest/input_format.html) with automatic device parallelization 
+- [Structure templates](https://openfold-3.readthedocs.io/en/latest/template_how_to.html) for protein monomers
+- Kernel acceleration through [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) and [DeepSpeed4Science](https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/) kernels - more details [here](https://openfold-3.readthedocs.io/en/latest/kernels.html)
+- Support for [multi-query jobs](https://openfold-3.readthedocs.io/en/latest/input_format.html) with [distributed predictions across multiple GPUs](https://openfold-3.readthedocs.io/en/latest/inference.html#inference-run-on-multiple-gpus)
+- Custom settings for [memory constrained GPU resources](https://openfold-3.readthedocs.io/en/latest/inference.html#inference-low-memory-mode)
 
 ## Quick-Start for Inference
 
 Make your first predictions with OpenFold3-preview in a few easy steps:
 
 
-1. Install OpenFold3 using our pip package
+1. Install OpenFold3-preview using our pip package
 ```bash
 pip install openfold3 
 mamba install kalign2 -c bioconda
 ```
 
-2. Setup your installation of OpenFold3 and download model parameters:
+2. Setup your installation of OpenFold3-preview and download model parameters:
 ```bash
 setup_openfold
 ```
@@ -43,7 +44,7 @@ setup_openfold
 run_openfold predict --query_json=examples/example_inference_inputs/ubiquitin_query.json
 ```
 
-More information on how to customize your inference prediction can be found at our documentation home at https://openfold3.readthedocs.io/en/latest/. More examples for inputs and outputs can be found at (TODO: Add hugging face examples directory here)
+More information on how to customize your inference prediction can be found at our documentation home at https://openfold-3.readthedocs.io/en/latest/. More examples for inputs and outputs can be found at (TODO: Add hugging face examples directory here)
 
 ## Benchmarking
 
@@ -74,12 +75,11 @@ Figure 3. Performance of OF3p and other models on [Runs N’ Poses](https://www.
 
 
 ## Documentation
-
-Please visit our full documentation at https://openfold3.readthedocs.io/en/latest/
+Please visit our full documentation at https://openfold-3.readthedocs.io/en/latest/
 
 ## Upcoming
 The final OpenFold3 model is still in development, and we are actively working on the following features:
-- Improved performance on par with AlphaFold3
+- Full parity on all modalities with AlphaFold3
 - Training documentation & dataset release
 - Workflows for training on custom non-PDB data
 
