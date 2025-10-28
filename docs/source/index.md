@@ -1,8 +1,15 @@
 # OpenFold3-preview
 
-```{figure} ../../imgs/predictions_combined.png
+```{figure} ../../imgs/predictions_combined_dark.png
 :width: 900px
 :align: center
+:class: only-dark
+:alt: Comparison of OpenFold and experimental structures on 5sgz (left), 3hfm (bottom right), 7ogs (top right)
+```
+```{figure} ../../imgs/predictions_combined_light.png
+:width: 900px
+:align: center
+:class: only-light
 :alt: Comparison of OpenFold and experimental structures on 5sgz (left), 3hfm (bottom right), 7ogs (top right)
 ```
 
