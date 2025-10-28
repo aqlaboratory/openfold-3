@@ -1,4 +1,4 @@
-# OF3-Style Precomputed MSA Generation
+# OpenFold3-Style Precomputed MSA Generation
 
 We use the workflow manager [snakemake](https://snakemake.readthedocs.io/en/stable/) to help orchestrate large scale MSA generation. Snakemake distributes jobs efficiently across single node or across a whole cluster. We used this approach to generate MSAs at scale for the PDB and monomer distillation sets. Our pipeline supports both protein alignments and RNA alignments.
 
@@ -6,13 +6,13 @@ We use the workflow manager [snakemake](https://snakemake.readthedocs.io/en/stab
 ## 1. Usage
 
 1. Create a [mamba](https://mamba.readthedocs.io/en/latest/user_guide/mamba.html) environment using the `aln_env.yml` file
-2. Download our alignment databases using the [`download_of3_databases.py`](../../scripts/snakemake_msa/download_of3_databases.py) script 
+2. Download our alignment databases using the [`download_of3_databases.py`](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/snakemake_msa/download_of3_databases.py) script 
     - By default, running `python download_of3_databases.py` will download the UniRef90, UniProt, MGnify, and PDB SEQRES databases for proteins - requires *330GB* of disk space
     - Additional databases can be downloaded by appending one of the download database flags to the script execution command:
         - `--download-bfd` downloads **BFD** (Deepmind) - requires an additional *2.3TB* of disk space
         - `--download-cfdb` downloads **ColabFold** database (OF3 and the Steinneger lab, intended to replace BFD)  - requires an additional *1.5TB* of disk space
         - `--download-rna-dbs` downloads **Rfam, RNACentral, Nucleotide Collection** (RNA alignments) - requires an additional *27GB* disk space
-3. Modify the example [protein](../../scripts/snakemake_msa/example_msa_config_protein.json) or [RNA](../../scripts/snakemake_msa/example_msa_config_RNA.json) configs so that the paths to databases and environments match the downloaded databases on your system. A detailed description of the config fields is listed below: 
+3. Modify the example [protein](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/snakemake_msa/example_msa_config_protein.json) or [RNA](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/snakemake_msa/example_msa_config_RNA.json) configs so that the paths to databases and environments match the downloaded databases on your system. A detailed description of the config fields is listed below: 
 
 - `input_fasta` *(Path)*
     - Absolute or relative path to input fasta.

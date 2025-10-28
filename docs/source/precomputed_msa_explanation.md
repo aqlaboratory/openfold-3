@@ -3,6 +3,7 @@
 Here, we aim to provide additional explanations for the inner workings of the MSA components of the OF3 inference pipeline. If you need step-by-step instructions on how to generate MSAs using our OF3-style pipeline, refer to our {doc}`MSA Generation <precomputed_msa_generation_how_to>` document. If you need a guide on how to interface MSAs with the inference pipeline, go to the {doc}`Precomputed MSA How-To Guide <precomputed_msa_how_to>`.
 
 Specifically, we detail:
+
 1. {ref}`MSA Input Feature Components <1-msa-input-feature-components>` 
 2. {ref}`MSASettings <2-msasettings-reference>`
 3. {ref}`Online Cross-Chain Pairing in OF3 <3-online-msa-pairing>` 
@@ -29,7 +30,7 @@ As shown in the figure above, paired MSAs are only provided for protein chains t
 (2-msasettings-reference)=
 ## 2. MSASettings Reference
 
-Users can alter the way MSAs are processed in the OF3 inference pipeline by modifying the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class via the `runner.yml` as outlined in the {ref}`Precomputed MSA How-To Guide <5-modifying-msa-settings-for-custom-precomputed-msas>`.
+Users can alter the way MSAs are processed in the OF3 inference pipeline by modifying the [`MSASettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py#L32) class via the `runner.yml` as outlined in the {ref}`Precomputed MSA How-To Guide <5-modifying-msa-settings-for-custom-precomputed-msas>`.
 
 The 3 main settings to update when using custom precomputed MSAs are:
 1. *max_seq_counts*: A dictionary specifying how many sequences to read from each MSA file with the associated name. MSA files whose names are not provided in this dictionary *will not be parsed*. For example, if one wants `uniparc_hits.a3m` MSA files to be parsed, the following field should be specified:
@@ -45,7 +46,7 @@ dataset_config_kwargs:
 
 where up to the first 10000 sequences will be read from each `uniparc_hits.a3m` file.
 
-2. *msas_to_pair*: The list of MSA filenames that contain species information that can be used for online pairing. See the {ref}`Online MSA Pairing <3-online-msa-pairing>`section for details.
+2. *msas_to_pair*: The list of MSA filenames that contain species information that can be used for online pairing. See the {ref}`Online MSA Pairing <3-online-msa-pairing>` section for details.
 
 3. *aln_order*: The order in which to vertically concatenate MSA files for each chain for main MSA features. MSA files whose names are not provided in this list *will not be used*. For example, if one has MSA files named `mgnify_hits`, `uniprot_hits` and `uniparc_hits` and want to vertically concatenate them for each chain in this order, they should update the `runner.yml` as follows:
 
@@ -57,12 +58,12 @@ dataset_config_kwargs:
       - custom_database_hits
 ```
 
-For details on the rest of the settings, see the [`MSASettings`](../../openfold3/projects/of3_all_atom/config/dataset_config_components.py#L18) class docstring.
+For details on the rest of the settings, see the [`MSASettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py#L32) class docstring.
 
 (3-online-msa-pairing)=
 ## 3. Online MSA Pairing
 
-Pairing rows of MSAs for heteromeric complexes based on species information is expected to improve the quality of predicted protein-protein interfaces (see [this](https://www.biorxiv.org/content/10.1101/2021.10.04.463034v2) and [this](https://www.biorxiv.org/content/10.1101/240754v3.abstract) publication). When running training or inference on a diverse set of protein complexes like the PDB, protein chains in different complex contexts require different paired MSAs. To avoid having to precompute paired MSAs for a large number of chain combinations, we developed a fast online pairing algorithm, which pairs sequences across MSAs of different chains in the same complex by placing sequences originating from the same species in the same row - the OF3 inference pipeline also accepts precomputed paired MSAs.) See the AF2-Multimer and AF3 Supplementary information for a description of the algorithm or [this](../../openfold3/core/data/primitives/sequence/msa.py#L1048) section in our source code for the exact implementation.
+Pairing rows of MSAs for heteromeric complexes based on species information is expected to improve the quality of predicted protein-protein interfaces (see [this](https://www.biorxiv.org/content/10.1101/2021.10.04.463034v2) and [this](https://www.biorxiv.org/content/10.1101/240754v3.abstract) publication). When running training or inference on a diverse set of protein complexes like the PDB, protein chains in different complex contexts require different paired MSAs. To avoid having to precompute paired MSAs for a large number of chain combinations, we developed a fast online pairing algorithm, which pairs sequences across MSAs of different chains in the same complex by placing sequences originating from the same species in the same row - the OF3 inference pipeline also accepts precomputed paired MSAs if you want to pair MSAs using your own custom algorithm). See the AF2-Multimer and AF3 Supplementary information for a description of the algorithm or [this](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/primitives/sequence/msa.py#L1062) section in our source code for the exact implementation.
 
 By default, our MSA pipeline uses the UniProt MSAs to generate paired MSAs and so, species information is parsed from UniProt sequence headers. An example `sto` format is:
 
@@ -184,7 +185,7 @@ We found this step to be necessary during training to avoid the online data proc
 
 For inference, preparsing MSAs into `npz` files can be useful when running large batch jobs on highly redundant datasets, for example when screening one or a few target protein against a library of small molecule ligands or antibodies.
 
-MSAs can be preparsed using the [preparse_alignments_of3.py](../../scripts/data_preprocessing/preparse_alignments_of3.py) script given that they are provided in the format outlined in the {ref}`Precomputed MSA How-To Guide <5-modifying-msa-settings-for-custom-precomputed-msas>`. The resulting `npz` files will contain a dictionary mapping file names to pre-parsed [`MsaArray`](../../openfold3/core/data/primitives/sequence/msa.py#L23) objects, which store the MSAs in a numpy array format, alongside its deletion matrix and metadata required for online pairing and can be used directly by the inference data pipeline.
+MSAs can be preparsed using the [preparse_alignments_of3.py](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/preparse_alignments_of3.py) script given that they are provided in the format outlined in the {ref}`Precomputed MSA How-To Guide <5-modifying-msa-settings-for-custom-precomputed-msas>`. The resulting `npz` files will contain a dictionary mapping file names to pre-parsed [`MsaArray`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/primitives/sequence/msa.py#L37) objects, which store the MSAs in a numpy array format, alongside its deletion matrix and metadata required for online pairing and can be used directly by the inference data pipeline.
 
 ```
 {

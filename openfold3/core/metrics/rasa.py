@@ -460,7 +460,7 @@ def compute_disorder(
     residue_sasa_scale: str = None,
 ) -> torch.Tensor:
     """
-    Compute the average RASA value for unresolved residues across all protein chains
+    Compute the average RASA value for all protein atoms
     in a batch of Biotite structure arrays.
 
     Args:
@@ -482,9 +482,8 @@ def compute_disorder(
             The residue SASA scale to use (default is "Sander").
 
     Returns:
-        The mean RASA value for unresolved residues across all processed protein chains
-        in each structure array. Returns 0.0 if no unresolved residues are found
-        or if an error occurs.
+        The mean RASA value for all processed protein chains in each structure array.
+        Returns 0.0 if an error occurs.
 
     Notes:
         If any chain in the structure fails during RASA computation, a warning is logged
@@ -499,6 +498,9 @@ def compute_disorder(
         device=atom_positions_predicted.device,
         dtype=atom_positions_predicted.dtype,
     )
+
+    # Set all atoms to unresolved
+    # `process_disorder` computes RASA only over unresolved atoms
     atom_array.set_annotation("atom_resolved_mask", np.zeros(num_atoms, dtype=bool))
     for sample in range(num_samples):
         atom_positions = atom_positions_predicted[sample]
