@@ -24,4 +24,6 @@ exclude_patterns = []
 
 html_theme = "furo"
 html_static_path = ["_static"]
+html_logo = "../imgs/of-logo.png"
+html_favicon = "../imgs/of-logo-small.png"
 myst_enable_extensions = ["colon_fence", "dollarmath", "amsmath"]
