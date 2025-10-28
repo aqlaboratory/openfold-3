@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openfold3"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
   "awscli",
   "torch",# ==2.5.1",
@@ -69,6 +69,7 @@ dev = [
   # used for documentation
   "sphinx",
   "myst-parser",
+  "furo"
 ]
 cuequivariance = [
   "cuequivariance>=0.6.1",
