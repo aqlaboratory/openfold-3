@@ -13,7 +13,7 @@ author = "OpenFold Team"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["myst_parser", "sphinx.ext.autodoc", "sphinxcontrib.autodoc_pydantic"]
+extensions = ["myst_parser"]
 
 templates_path = ["_templates"]
 exclude_patterns = []
