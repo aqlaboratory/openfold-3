@@ -177,7 +177,9 @@ To run OpenFold3 without MSA features, you need to provide a "dummy" MSA file th
 (33-customized-inference-settings-using-runneryml)=
 ### 3.3 Customized Inference Settings Using `runner.yml`
 
-OpenFold3 provides extensive customization options through a `runner.yml` configuration file. This file allows you to override the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py) and customize the inference behavior to your needs.
+OpenFold3 provides extensive customization options through a `runner.yml` configuration file. This file allows you to override the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold-3/blob/inference-dev/openfold3/entry_points/validator.py) and customize the inference behavior to your needs.
+
+Note that the only settings that cannot be overridden in `runner.yml` are the model parameters, which are defined in [`config.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/model_config.py#L87) (see below).
 
 We provide several example runner files in our [examples directory](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_runner_yamls) that demonstrate common use cases like:
 
@@ -192,6 +194,14 @@ For a complete reference of all available configuration options:
 
 - See our [full configuration example](https://github.com/aqlaboratory/openfold-3/tree/main/examples/reference_full_config/full_config.yml) with all possible settings
 - Read the detailed [configuration reference documentation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/configuration_reference.md) that explains each setting
+
+**Important Note on Model Parameter Customization:**
+
+The model parameters section of the configuration can only be customized in two ways:
+1. **Direct editing**: Modify the [`config.py` file](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/model_config.py#L87) in `openfold3/projects/of3_all_atom/config/`
+2. **Command-line arguments**: Pass specific model parameters via CLI arguments (for parameters that are exposed)
+
+Note that CLI arguments take precedence over configuration file settings.
 
 Below we'll walk through some of the most common configuration scenarios and how to implement them:
 
@@ -472,6 +482,7 @@ Model seeds should still be set either from the command line or using the `seeds
 #### 4.4.2 Model Config (`model_config.json`)
 
 This file represents the model settings used to perform inference. The config follows the model configuration file defined [here](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/model_config.py)
+This file represents the model settings used to perform inference. The config follows the model configuration file defined [here](../../openfold3/projects/of3_all_atom/config/model_config.py#L71).
 
 (443-experiment-config-json)=
 #### 4.4.3 Experiment Config (`experiment_config.json`)
