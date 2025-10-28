@@ -1,4 +1,4 @@
-# A How-To Guide for Running OF3 Inference with Templates
+# Running OF3 Inference with Templates
 
 This document contains instructions on how to use template information for OF3 predictions. Here, we assume that you already generated all of your template alignments or intend to fetch them from Colabfold on-the-fly. If you do not have any precomputed template alignments and do not want to use Colabfold, refer to our {doc}`MSA Generation Guide <precomputed_msa_generation_how_to>` before consulting this document. If you need further clarifications on how some of the template components of our inference pipeline work, refer to {doc}`this explanatory document <template_explanation>`.
 

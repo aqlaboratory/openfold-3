@@ -1,4 +1,4 @@
-# A How-To Guide for OF3-Style Precomputed MSA Generation
+# OF3-Style Precomputed MSA Generation
 
 We use the workflow manager [snakemake](https://snakemake.readthedocs.io/en/stable/) to help orchestrate large scale MSA generation. Snakemake distributes jobs efficiently across single node or across a whole cluster. We used this approach to generate MSAs at scale for the PDB and monomer distillation sets. Our pipeline supports both protein alignments and RNA alignments.
 

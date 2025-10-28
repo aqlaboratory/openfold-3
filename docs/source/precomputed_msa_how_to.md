@@ -1,4 +1,4 @@
-# A How-To Guide for Precomputed MSAs in the OF3 Inference Pipeline
+# Precomputed MSAs in the OF3 Inference Pipeline
 
 In this document, we intend to provide a guide on how to format and organize precomputed multiple sequence alignments (MSAs) and how to provide settings for the Openfold3 inference pipeline to use these MSAs correctly for creating MSA features for Openfold3. Use this guide if you already generated MSAs using your own or our internal OF3-style pipeline. If you have yet to generate MSAs and would like to use our workflow, refer to our {doc}`MSA Generation Guide <precomputed_msa_generation_how_to>`. If you need further clarifications on how some of the MSA components of our inference pipeline work, refer to {doc}`this explanatory document <precomputed_msa_explanation>`.
 
