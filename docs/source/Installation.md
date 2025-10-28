@@ -80,7 +80,8 @@ This script will:
 - Setup a directory for OpenFold3 model parameters [default: `~/.openfold3`]
     - Writes the path to `$OPENFOLD_CACHE/ckpt_path` 
 - Download the model parameters, if the parameter file does not already exist 
-- Runs an inference integration test on two samples, without MSA alignments (~5 min on A100)
+- Optionally runs an inference integration test on two samples, without MSA alignments (~5 min on A100)
+    - N.B. To run the integration tests, `pytest` must be installed. 
 
 
 ### Downloading the model parameters manually
