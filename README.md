@@ -15,9 +15,9 @@ For our reproduction of AlphaFold2, please refer to the original [OpenFold repos
 OpenFold3 replicates the input features described in the [AlphaFold3](https://www.nature.com/articles/s41586-024-07487-w) publication, as well as batch job support and efficient kernel-accelerated inference.
 
 A summary of our supported features includes:
-- Structure prediction of standard and non-canonical protein, small molecule, RNA, and DNA chains
-- A pipeline for generating MSAs using the [ColabFold server](https://github.com/sokrypton/ColabFold) or using JackHMMER / hhblits following the AlphaFold3 protocol
-- Structure templates
+- Structure prediction of standard and non-canonical protein, RNA, and DNA chains, and small molecules
+- Pipelines for generating MSAs using the [ColabFold server](https://github.com/sokrypton/ColabFold) or using JackHMMER / hhblits following the AlphaFold3 protocol
+- Structure templates for protein monomers
 - Kernel acceleration through [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) and [DeepSpeed4Science](https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/) kernels - more details here (TODO: Link to kernels page on documentation)
 - Support for multi-query jobs with automatic device parallelization (TODO: Add refs)
 
