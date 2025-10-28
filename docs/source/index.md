@@ -14,7 +14,7 @@
 ```
 
 Welcome to the Documentation for [OpenFold3-preview](https://github.com/aqlaboratory/openfold-3), a biological structure prediction model based on DeepMind's 
-[AlphaFold 3](https://github.com/deepmind/alphafold3). Developed under a fully open source (Apache 2) license.
+[AlphaFold3](https://github.com/deepmind/alphafold3). Developed under a fully open source (Apache 2) license.
 
 ## Quick-Start Guide
 
