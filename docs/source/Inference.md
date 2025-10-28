@@ -87,7 +87,7 @@ run_openfold --query_json=<query_json>
 
 Sample input query jsons can be found in the [examples/example_inference_inputs](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs) directory.
 
-Full output directories are provided on the [OpenFold HuggingFace repo](https://huggingface.co/OpenFold/OpenFold3/tree/main/OpenFold3_Examples/documentation%20examples/examples). These include:
+Full output directories are provided on the [OpenFold HuggingFace repo](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples). These include:
 - Single-chain protein (monomer) -- Ubiquitin (PDB: 1UBQ)
 - Multi-chain protein with identical chains (homomer) -- GCN4 leucine zipper (PDB: 2ZTA)
 - Multi-chain protein with different chains (multimer) -- Deoxy human hemoglobin (PDB: 1A3N)
@@ -160,7 +160,7 @@ This command uses the `run_openfold` binary, for which the source code is availa
 #### 3.2.2 📂 Inference with Precomputed MSAs
 This mode allows inference using MSA files prepared manually or by external tools. We recommend this mode for high-throughput screeing applications where you want to run hundreds or thousands of predictions. See the {doc}`precomputed MSA documentation <precomputed_msa_how_to>` for a step-by-step tutorial, the {doc}`MSA generation guide <precomputed_msa_generation_how_to>` for using our MSA generation pipeline and the {doc}`precomputed MSA explanatory document <precomputed_msa_explanation>` for a more in-depth explanation on how precomputed MSA handling works. 
 
-An example query json with a sample of how the alignment directories can be formatted is available [here](https://huggingface.co/OpenFold/OpenFold3/tree/main/OpenFold3_Examples/documentation%20examples/multimer_precomputed_msa) 
+An example query json with a sample of how the alignment directories can be formatted is available [here](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/multimer_precomputed_msa) 
 
 ```bash
 run_openfold predict \
@@ -492,16 +492,14 @@ This file records the entire state of the experiment, as defined by the [Inferen
 
 **🔗 Example:**
 
-See the full multimer output for [Deoxy human hemoglobin](https://huggingface.co/OpenFold/OpenFold3/tree/main/OpenFold3_Examples/documentation%20examples/examples/multimer)
+See the full multimer output for [Deoxy human hemoglobin](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/output_multimer_with_colabfold_msas), which were generated with `run_multimer.sh`. For this example, the colabfold_msas and colabfold_template directories are stored in the same outbut directory. 
 
 
 When processing multimer inputs (e.g., hemoglobin α + β chains), OpenFold3 automatically:
 
-TODO Update this section
-
 - Requests paired MSAs from the ColabFold server
-- Stores raw alignments in [`raw/paired/](https://drive.google.com/drive/folders/19CN9S3T060KahXj0wbJXMlfth8MFlyPf?usp=drive_link)
-- Converts them into per-chain `.npz` alignments in [`paired/`](https://drive.google.com/drive/folders/1VAlJ6XCtt3Y434_t_vomTeMzt7S2pQdy?usp=drive_link)
+- Stores raw alignments in `raw/paired/` temporarily
+- Converts them into per-chain `.npz` alignments in [`paired/`](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/output_multimer_with_colabfold_msas/colabfold_msas/paired)
 
 
 

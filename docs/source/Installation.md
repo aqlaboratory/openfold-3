@@ -38,7 +38,7 @@ mamba install kalign2 -c bioconda
 
 ### OpenFold3 Docker Image
 
-A compressed version of the OpenFold3 image is available on HuggingFace at this [link](TODO UPDATE LINK) The size of the compressed image is ~14GB.
+A compressed version of the OpenFold3 image is available on HuggingFace at this [link](https://huggingface.co/OpenFold/OpenFold3/tree/main/docker_image) The size of the compressed image is ~14GB.
 
 To verify the compressed file is not unintentionally corrupted, you can check against the md5 checksum file provided with the following command and expected output.
 
@@ -85,7 +85,7 @@ This script will:
 
 ### Downloading the model parameters manually
 
-The model parameters (~3GB) for the trained OpenFold3 model can be downloaded from [our AWS RODA bucket](https://registry.opendata.aws/openfold/) with the following script:
+The model parameters (~2GB) for the trained OpenFold3 model can be downloaded from [our AWS RODA bucket](https://registry.opendata.aws/openfold/) with the following script:
 
 ```bash
 ./openfold3/scripts/download_openfold_params.sh

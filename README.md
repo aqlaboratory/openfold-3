@@ -18,8 +18,8 @@ A summary of our supported features includes:
 - Structure prediction of standard and non-canonical protein, RNA, and DNA chains, and small molecules
 - Pipelines for generating MSAs using the [ColabFold server](https://github.com/sokrypton/ColabFold) or using JackHMMER / hhblits following the AlphaFold3 protocol
 - Structure templates for protein monomers
-- Kernel acceleration through [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) and [DeepSpeed4Science](https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/) kernels - more details here (TODO: Link to kernels page on documentation)
-- Support for multi-query jobs with automatic device parallelization (TODO: Add refs)
+- Kernel acceleration through [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) and [DeepSpeed4Science](https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/) kernels - more details [here](https://openfold3.readthedocs.io/en/latest/kernels.html)
+- [Support for multi-query jobs](https://openfold3.readthedocs.io/en/latest/input_format.html) with automatic device parallelization 
 
 ## Quick-Start for Inference
 
@@ -37,10 +37,10 @@ mamba install kalign2 -c bioconda
 setup_openfold
 ```
 
-3. Run your first prediction using the ColabFold MSA server
+3. Run your first prediction using the ColabFold MSA server with the `run_openfold` binary
 
-```
-python run_openfold.py predict --query_json=examples/example_inference_inputs/ubiquitin_query.json
+```bash
+run_openfold predict --query_json=examples/example_inference_inputs/ubiquitin_query.json
 ```
 
 More information on how to customize your inference prediction can be found at our documentation home at https://openfold3.readthedocs.io/en/latest/. More examples for inputs and outputs can be found at (TODO: Add hugging face examples directory here)
@@ -48,7 +48,7 @@ More information on how to customize your inference prediction can be found at o
 ## Benchmarking
 OpenFold3-preview performs competitively with the state of the art in open source protein structure prediction, while being the only model to match AlphaFold3 on monomeric RNA structures.
 
-TODO: Add benchmarking results here
+Additional Benchmark results coming soon.
 
 ## Documentation
 
@@ -66,9 +66,5 @@ If you encounter problems using OpenFold3, feel free to create an issue! We also
 welcome pull requests from the community.
 
 ## Citing this Work
-
-Please cite our technical report:
-
-TODO: Include citation to whitepaper
 
 Any work that cites OpenFold should also cite [AlphaFold3](https://www.nature.com/articles/s41586-024-07487-w).
