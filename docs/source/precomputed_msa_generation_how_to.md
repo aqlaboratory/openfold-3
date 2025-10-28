@@ -3,7 +3,7 @@
 We use the workflow manager [snakemake](https://snakemake.readthedocs.io/en/stable/) to help orchestrate large scale MSA generation. Snakemake distributes jobs efficiently across single node or across a whole cluster. We used this approach to generate MSAs at scale for the PDB and monomer distillation sets. Our pipeline supports both protein alignments and RNA alignments.
 
 (1-msa-generation-usage)=
-# 1. Usage
+## 1. Usage
 
 1. Create a [mamba](https://mamba.readthedocs.io/en/latest/user_guide/mamba.html) environment using the `aln_env.yml` file
 2. Download our alignment databases using the [`download_of3_databases.py`](../../scripts/snakemake_msa/download_of3_databases.py) script 
