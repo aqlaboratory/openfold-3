@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openfold3"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
   "awscli",
   "torch",# ==2.5.1",
@@ -26,7 +26,7 @@ dependencies = [
   "boto3",
   "memory_profiler",
   "func_timeout",
-  "lmdb",
+  "lmdb", # == 1.6  # This verison might be required to avoid Error during training
   "ijson",
   "deepspeed",
   "pdbeccdutils",
@@ -34,7 +34,7 @@ dependencies = [
   # currently using cutlass.
   "nvidia-cutlass <4",
 
-  # additonal pins
+  # additional pins
 
   # Pinned cutlass <4 calls from cuda.__version__, which was removed when
   # cuda-python went fully metapackage

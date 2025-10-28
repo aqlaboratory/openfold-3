@@ -1,0 +1,5 @@
+output_writer_settings:
+  # change output format to pdb (default: mmcif):
+  structure_format: pdb
+  # Save features (default: False) 
+  write_features: True 

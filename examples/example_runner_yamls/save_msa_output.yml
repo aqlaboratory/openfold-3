@@ -1,0 +1,7 @@
+msa_computation_settings:
+  msa_output_directory: ./colabfold_msas
+  cleanup_msa_dir: False
+  save_mappings: True 
+
+template_preprocessor_settings:
+  output_directory: ./colabfold_templates

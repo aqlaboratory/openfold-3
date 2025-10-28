@@ -1,0 +1,17 @@
+{
+        "queries":{
+                "ptm-DNA": {
+                        "chains": [
+                                {
+                                        "molecule_type": "dna",
+                                        "chain_ids": "A",
+                                        "sequence": "ATUCGTATTCGAT",
+                                        "non_canonical_residues": {
+                                                "3": "PSU",
+                                                "4": "5MC"
+                                        }
+                                }
+                        ]
+                }
+        }
+}

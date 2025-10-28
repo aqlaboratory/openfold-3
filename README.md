@@ -1,52 +1,93 @@
-# OpenFold3
+# OpenFold3-preview
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="imgs/predictions_combined_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="imgs/predictions_combined_light.png">
+  <img alt="Comparison of OpenFold and experimental structures" src="imgs/predictions_combined_light.png">
+</picture>
 
-OpenFold Consortium's reproduction of DeepMind's 
-[AlphaFold 3](https://github.com/deepmind/alphafold3).
+OpenFold3 is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's 
+[AlphaFold3](https://github.com/deepmind/alphafold3), developed by AQLab and the OpenFold consortium. This research preview is intended to gather community feedback and allow developers to start building on top of the OpenFold ecosystem. The OpenFold project is committed to long-term maintenance and open source support, and our repository is freely available for academic and commercial use under the Apache 2.0 license.
 
-# Documentation
+For our reproduction of AlphaFold2, please refer to the original [OpenFold repository](https://github.com/aqlaboratory/openfold).
 
-Raw documentation files for OpenFold3 installation and usage for inference can be found under [`docs/source`](https://github.com/aqlaboratory/openfold3/tree/dev/docs/source)
+## Features
 
-## Copyright Notice
+OpenFold3 replicates the input features described in the [AlphaFold3](https://www.nature.com/articles/s41586-024-07487-w) publication, as well as batch job support and efficient kernel-accelerated inference.
 
-While AlphaFold's and, by extension, OpenFold's source code is licensed under
-the permissive Apache Licence, Version 2.0, DeepMind's pretrained parameters 
-fall under the CC BY 4.0 license, a copy of which is downloaded to 
-`openfold/resources/params` by the installation script. Note that the latter
-replaces the original, more restrictive CC BY-NC 4.0 license as of January 2022.
+A summary of our supported features includes:
+- Structure prediction of standard and non-canonical protein, RNA, and DNA chains, and small molecules
+- Pipelines for generating MSAs using the [ColabFold server](https://github.com/sokrypton/ColabFold) or using JackHMMER / hhblits following the AlphaFold3 protocol
+- Structure templates for protein monomers
+- Kernel acceleration through [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) and [DeepSpeed4Science](https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/) kernels - more details [here](https://openfold3.readthedocs.io/en/latest/kernels.html)
+- [Support for multi-query jobs](https://openfold3.readthedocs.io/en/latest/input_format.html) with automatic device parallelization 
+
+## Quick-Start for Inference
+
+Make your first predictions with OpenFold3-preview in a few easy steps:
+
+
+1. Install OpenFold3 using our pip package
+```bash
+pip install openfold3 
+mamba install kalign2 -c bioconda
+```
+
+2. Setup your installation of OpenFold3 and download model parameters:
+```bash
+setup_openfold
+```
+
+3. Run your first prediction using the ColabFold MSA server with the `run_openfold` binary
+
+```bash
+run_openfold predict --query_json=examples/example_inference_inputs/ubiquitin_query.json
+```
+
+More information on how to customize your inference prediction can be found at our documentation home at https://openfold3.readthedocs.io/en/latest/. More examples for inputs and outputs can be found at (TODO: Add hugging face examples directory here)
+
+## Benchmarking
+
+OpenFold3-preview performs competitively with the state of the art in open source protein structure prediction, while being the only model to match AlphaFold3 on monomeric RNA structures.
+
+**Preliminary results:**
+
+<picture>
+  <source srcset="imgs/protein_plot.png">
+  <img alt="Benchmark performance of OpenFold3-preview on Protein Datasets">
+</picture>
+Figure 1. Performance of OF3p and other models on protein monomers and complexes. A) Predictions on the CASP16 protein monomer set. B) Predictions on protein-protein complexes sourced from CASP16, [FoldBench](https://www.biorxiv.org/content/10.1101/2025.05.22.655600v1), and the original antibody-antigen test set of AF3. For FoldBench and AbAg set, report performance at the interface level, whereas for CASP16, we aggregate results over all interfaces in a given structure. For AbAg complexes, we predicted more than 5 seeds for each structure and so to emulate the 5 seed performance we randomly sampled a set of 5 seeds and used those structures for oracle and ranked performance.
+<br><br><br>
+
+<picture>
+  <source srcset="imgs/rna_large.png">
+  <img alt="Benchmark performance of OpenFold3-preview on RNA Datasets">
+</picture>
+Figure 2. Performance of OF3p and other models on RNA benchmarks. A) Performance on CASP16  RNA monomers (left) and the [Ludaic & Elofsson  RNA monomer set](https://www.biorxiv.org/content/10.1101/2025.04.30.651414v1) (right). B) and C) Example predicted structures aligned to the ground truth (grey) for entry R1241 (group II intron). D) RNA MSAs improve the performance of certain predictions compared to baselines without RNA MSAs on the Ludaic & Elofsson RNA set. E) 8TJU with MSA features. F) 8TJU without MSA features.
+
+<br><br><br>
+
+<picture>
+  <source srcset="imgs/protein_ligand_plot.png">
+  <img alt="Benchmark performance of OpenFold3-preview on Runs N' Poses dataset">
+</picture>
+Figure 3. Performance of OF3p and other models on [Runs N’ Poses](https://www.biorxiv.org/content/10.1101/2025.02.03.636309v1), a diverse set of protein-ligand complexes. In this comparison, we report AF3 performance with the use of structural templates.
+
+
+## Documentation
+
+Please visit our full documentation at https://openfold3.readthedocs.io/en/latest/
+
+## Upcoming
+The final OpenFold3 model is still in development, and we are actively working on the following features:
+- Improved performance on par with AlphaFold3
+- Training documentation & dataset release
+- Workflows for training on custom non-PDB data
 
 ## Contributing
 
-If you encounter problems using OpenFold, feel free to create an issue! We also
+If you encounter problems using OpenFold3, feel free to create an issue! We also
 welcome pull requests from the community.
 
 ## Citing this Work
 
-Please cite our paper:
-
-```bibtex
-@article {Ahdritz2022.11.20.517210,
-	author = {Ahdritz, Gustaf and Bouatta, Nazim and Floristean, Christina and Kadyan, Sachin and Xia, Qinghui and Gerecke, William and O{\textquoteright}Donnell, Timothy J and Berenberg, Daniel and Fisk, Ian and Zanichelli, Niccolò and Zhang, Bo and Nowaczynski, Arkadiusz and Wang, Bei and Stepniewska-Dziubinska, Marta M and Zhang, Shang and Ojewole, Adegoke and Guney, Murat Efe and Biderman, Stella and Watkins, Andrew M and Ra, Stephen and Lorenzo, Pablo Ribalta and Nivon, Lucas and Weitzner, Brian and Ban, Yih-En Andrew and Sorger, Peter K and Mostaque, Emad and Zhang, Zhao and Bonneau, Richard and AlQuraishi, Mohammed},
-	title = {{O}pen{F}old: {R}etraining {A}lpha{F}old2 yields new insights into its learning mechanisms and capacity for generalization},
-	elocation-id = {2022.11.20.517210},
-	year = {2022},
-	doi = {10.1101/2022.11.20.517210},
-	publisher = {Cold Spring Harbor Laboratory},
-	URL = {https://www.biorxiv.org/content/10.1101/2022.11.20.517210},
-	eprint = {https://www.biorxiv.org/content/early/2022/11/22/2022.11.20.517210.full.pdf},
-	journal = {bioRxiv}
-}
-```
-If you use OpenProteinSet, please also cite:
-
-```bibtex
-@misc{ahdritz2023openproteinset,
-      title={{O}pen{P}rotein{S}et: {T}raining data for structural biology at scale}, 
-      author={Gustaf Ahdritz and Nazim Bouatta and Sachin Kadyan and Lukas Jarosch and Daniel Berenberg and Ian Fisk and Andrew M. Watkins and Stephen Ra and Richard Bonneau and Mohammed AlQuraishi},
-      year={2023},
-      eprint={2308.05326},
-      archivePrefix={arXiv},
-      primaryClass={q-bio.BM}
-}
-```
-Any work that cites OpenFold should also cite [AlphaFold](https://www.nature.com/articles/s41586-021-03819-2) and [AlphaFold-Multimer](https://www.biorxiv.org/content/10.1101/2021.10.04.463034v1) if applicable.
+Any work that cites OpenFold should also cite [AlphaFold3](https://www.nature.com/articles/s41586-024-07487-w).
