@@ -195,7 +195,8 @@ def run_integration_tests() -> None:
     exit_code = pytest.main(
         [
             "-v",
-            "--rootdir", str(Path(__file__).parent),
+            "--rootdir",
+            str(Path(__file__).parent),
             "--log-cli-level=WARNING",
             Path(__file__).parent / "tests/test_inference_full.py",
             "-m",
