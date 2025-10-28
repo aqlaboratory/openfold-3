@@ -37,7 +37,7 @@ run_openfold --query_json=examples/example_inference_inputs/ubiquitin_query.json
 
 ## Features
 
-OpenFold3 replicates the full set of input features described in the [*AlphaFold3*](https://www.nature.com/articles/s41586-024-07487-w) publication. 
+OpenFold3-preview replicates the input features described in the [AlphaFold3](https://www.nature.com/articles/s41586-024-07487-w) publication, as well as batch job support and efficient kernel-accelerated inference.
 
 A summary of the features supported include:
 - Structure prediction of standard and non-canonical protein, RNA, and DNA chains, and small molecules
