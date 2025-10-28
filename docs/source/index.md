@@ -31,21 +31,21 @@ setup_openfold
 ``` 
 3. Make your first prediction with:
 ```bash
-run_openfold --query_json=examples/
+run_openfold --query_json=examples/example_inference_inputs/ubiquitin_query.json
 ```
 
 
 ## Features
 
-OpenFold3 replicates the full set of input features described in the [*AlphaFold 3*](https://www.nature.com/articles/s41586-024-07487-w) publication. 
+OpenFold3-preview replicates the input features described in the [AlphaFold3](https://www.nature.com/articles/s41586-024-07487-w) publication, as well as batch job support and efficient kernel-accelerated inference.
 
 A summary of the features supported include:
-- Structure prediction of protein, small molecule, RNA, and DNA. Includes support for non-canonical residues.
-- A pipeline for generating MSAs using the [ColabFold server](https://github.com/sokrypton/ColabFold) or using JackHMMER / hhblits following the AlphaFold3 protocol.
-- Use {doc}`templates for structure predictions <template_how_to>`
-- Support for using GPU accelerated [CuEquivariance kernels](https://docs.nvidia.com/cuda/cuequivariance)
-- Support for {ref}`distributed predictions across multiple GPUs <inference-run-on-multiple-gpus>`
-- Custom setting for {ref}`memory constrained GPU resources <inference-low-memory-mode>`
+- Structure prediction of standard and non-canonical protein, RNA, and DNA chains, and small molecules
+- Pipelines for generating MSAs using the [ColabFold server](https://github.com/sokrypton/ColabFold) or using JackHMMER / hhblits following the AlphaFold3 protocol
+- {doc}`Structure templates <template_how_to>` for protein monomers
+- Kernel acceleration through [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) and [DeepSpeed4Science](https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/) kernels - more details {doc}`here <kernels>`
+- Support for {doc}`multi-query jobs <input_format>` with {ref}`distributed predictions across multiple GPUs <inference-run-on-multiple-gpus>`
+- Custom settings for {ref}`memory constrained GPU resources <inference-low-memory-mode>`
 
 and more features to come...
 

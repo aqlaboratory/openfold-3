@@ -10,7 +10,7 @@ assignees: ''
 -----------------------------------------
 Thank you for taking the time to file a bug report. Please help us help you. Providing as much information as possible regarding the system information, the queries submitted and the configuration settings will allow us to more easily debug the issue.
 
-OpenFold3 has documentation available at https://openfold3.readthedocs.io/en/latest/ with several how-to guides. Check there to see if your question might already be answered.
+OpenFold3 has documentation available at https://openfold-3.readthedocs.io/en/latest/ with several how-to guides. Check there to see if your question might already be answered.
 
 PLEASE DELETE THIS SECTION AFTER YOU HAVE READ IT
 -----------------------------------------
