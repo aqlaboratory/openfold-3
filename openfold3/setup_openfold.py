@@ -18,13 +18,13 @@ Setup script for OpenFold3 parameters.
 Downloads model parameters and runs verification tests.
 """
 
+import importlib.util
 import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -175,10 +175,23 @@ def download_parameters(param_dir) -> None:
 
 def run_integration_tests() -> None:
     """Run integration tests."""
+    confirm = input(
+            f"Run integration tests? (yes/no)"
+    )
+    if not confirm.lower() in ["yes", "y"]:
+        logger.info(f"Skipping integration tests, exiting setup.")
+        return 
+
     logger.info("Running integration tests...")
+    pytest_is_installed = importlib.util.find_spec("pytest") 
+    if not pytest_is_installed:
+        logger.error("Pytest is required to run integration tests.")
+        logger.error("Please install pytest e.g. `pip install pytest` and rerun the script.")
+        return
 
     # Set environment variables for tests
     os.environ["OPENFOLD_SETUP_SCRIPT"] = "1"
+    import pytest
 
     exit_code = pytest.main(
         [
