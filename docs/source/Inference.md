@@ -179,13 +179,12 @@ To run OpenFold3 without MSA features, you need to provide a "dummy" MSA file th
 
 OpenFold3 provides extensive customization options through a `runner.yml` configuration file. This file allows you to override the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold-3/blob/inference-dev/openfold3/entry_points/validator.py) and customize the inference behavior to your needs.
 
-Note that the only settings that cannot be overridden in `runner.yml` are the model parameters, which are defined in [`config.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/model_config.py#L87) (see below).
-
 We provide several example runner files in our [examples directory](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_runner_yamls) that demonstrate common use cases like:
 
 - Running on multiple GPUs
 - Using low memory settings
 - Customizing output formats
+- Enabling cuEquivariance kernels
 - Enabling PAE (predicted aligned error) calculations
 - Saving MSA and Template processing outputs
 - And more
@@ -197,9 +196,10 @@ For a complete reference of all available configuration options:
 
 **Important Note on Model Parameter Customization:**
 
-The model parameters section of the configuration can only be customized in two ways:
-1. **Direct editing**: Modify the [`config.py` file](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/model_config.py#L87) in `openfold3/projects/of3_all_atom/config/`
-2. **Command-line arguments**: Pass specific model parameters via CLI arguments (for parameters that are exposed)
+The default settings of the model are defined in [`openfold3/projects/of3_all_atom/config/model_config.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/model_config.py#L87)
+
+The model parameters section of the configuration may by passing an update in the `runner.yml` under the `custom` field in `model_update`. See the [`cuequivariance.yml` example](https://github.com/aqlaboratory/openfold-3/blob/main/examples/example_runner_yamls/cuequivariance.yml) for one such update. 
+
 
 Note that CLI arguments take precedence over configuration file settings.
 
