@@ -10,7 +10,7 @@ on:
 
 jobs:
   deploy_pypi:
-    if: ${{ github.repository == 'jnwei/openfold-3' }}
+    if: ${{ github.repository == 'aqlaboratory/openfold-3' }}
     runs-on: ubuntu-latest
     name: "Publish on PyPI"
     permissions:
