@@ -1,13 +1,13 @@
 # OpenFold3 Inference
 
-Welcome to the Documentation for running inference with OpenFold3, our fully open source, trainable, PyTorch-based reproduction of DeepMind’s AlphaFold 3. OpenFold3 implements the features described in [AlphaFold 3 *Nature* paper](https://www.nature.com/articles/s41586-024-07487-w).
+Welcome to the Documentation for running inference with OpenFold3, our fully open source, trainable, PyTorch-based reproduction of DeepMind’s AlphaFold3. OpenFold3 implements the features described in [AlphaFold3 *Nature* paper](https://www.nature.com/articles/s41586-024-07487-w).
 
 This guide covers how to use OpenFold3 to make structure predictions.
 
 
 ## 1. Inference features
 
-OpenFold3 replicates the full set of input features described in the *AlphaFold 3* publication. All features of AlphaFold 3 are **fully implemented and supported in training**. We are actively working on integrating the same functionalities into the inference pipeline. 
+OpenFold3 replicates the full set of input features described in the *AlphaFold3* publication. All features of AlphaFold3 are **fully implemented and supported in training**. We are actively working on integrating the same functionalities into the inference pipeline. 
 
 Below is the current status of inference feature support by molecule type:
 
@@ -74,7 +74,7 @@ Coming soon:
 ## 2. Pre-requisites:
 
 - OpenFold3 Conda Environment. See {ref}`OpenFold3 Installation <openfold3-installation>` for instructions on how to build this environment.
-- OpenFold3 Model Parameters. See {ref}`Openfold3 Parameters <openfold3-parameters>` for how to download these parameters.
+- OpenFold3 Model Parameters. See {ref}`OpenFold3 Parameters <openfold3-parameters>` for how to download these parameters.
 
 
 ## 3. Running OpenFold3 Inference

@@ -41,10 +41,10 @@ setup_openfold
 3. Run your first prediction using the ColabFold MSA server with the `run_openfold` binary
 
 ```bash
-run_openfold predict --query_json=examples/example_inference_inputs/ubiquitin_query.json
+run_openfold predict --query_json=examples/example_inference_inputs/query_ubiquitin.json
 ```
 
-More information on how to customize your inference prediction can be found at our documentation home at https://openfold-3.readthedocs.io/en/latest/. More examples for inputs and outputs can be found on [huggingface](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/common_examples)
+More information on how to customize your inference prediction can be found at our documentation home at https://openfold-3.readthedocs.io/en/latest/. More examples for inputs and outputs can be found in our [HuggingFace examples](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/common_examples).
 
 ## Benchmarking
 
