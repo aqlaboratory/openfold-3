@@ -482,7 +482,7 @@ def compute_disorder(
             The residue SASA scale to use (default is "Sander").
 
     Returns:
-        The mean RASA value for all processed protein chains in each structure array. 
+        The mean RASA value for all processed protein chains in each structure array.
         Returns 0.0 if an error occurs.
 
     Notes:
@@ -498,7 +498,7 @@ def compute_disorder(
         device=atom_positions_predicted.device,
         dtype=atom_positions_predicted.dtype,
     )
-    
+
     # Set all atoms to unresolved
     # `process_disorder` computes RASA only over unresolved atoms
     atom_array.set_annotation("atom_resolved_mask", np.zeros(num_atoms, dtype=bool))
