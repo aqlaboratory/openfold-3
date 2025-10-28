@@ -34,7 +34,7 @@ dependencies = [
   # currently using cutlass.
   "nvidia-cutlass <4",
 
-  # additonal pins
+  # additional pins
 
   # Pinned cutlass <4 calls from cuda.__version__, which was removed when
   # cuda-python went fully metapackage
