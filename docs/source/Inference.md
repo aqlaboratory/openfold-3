@@ -149,7 +149,7 @@ This command uses the `run_openfold` binary, for which the source code is availa
     - To manually select specific seeds, please use the `runner.yml` and refer to the {ref}`Custom Random Seeds section <custom-random-seeds-inference>` below.
 
 - `--runner_yaml` *(Path, optional, default = null)*
-    - YAML config for full control over model and data parameters. See the {doc}`configuration reference <configuration_reference>` and {ref}`full configuration file <full-config-file>` for all available options.
+    - YAML config for full control over model and data parameters. See the {doc}`configuration reference <configuration_reference>` and [full configuration reference file](https://github.com/aqlaboratory/openfold-3/blob/main/examples/reference_full_config/full_config.yml) for all available options.
     - See the {ref}`runner yaml section below for more information <33-customized-inference-settings-using-runneryml>` 
 
 📝  *Notes*: 
@@ -177,7 +177,7 @@ To run OpenFold3 without MSA features, you need to provide a "dummy" MSA file th
 (33-customized-inference-settings-using-runneryml)=
 ### 3.3 Customized Inference Settings Using `runner.yml`
 
-OpenFold3 provides extensive customization options through a `runner.yml` configuration file. This file allows you to override the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold-3/blob/inference-dev/openfold3/entry_points/validator.py) and customize the inference behavior to your needs.
+OpenFold3 provides extensive customization options through a `runner.yml` configuration file. This file allows you to override the default settings defined in [`validator.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py) and customize the inference behavior to your needs.
 
 We provide several example runner files in our [examples directory](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_runner_yamls) that demonstrate common use cases like:
 
@@ -252,7 +252,7 @@ output_writer_settings:
 
 (inference-low-memory-mode)=
 #### 🧠 Low Memory Mode
-To run inference on larger queries to run on limited memory, add the following to apply the [model presets](https://github.com/aqlaboratory/openfold-3/blob/inference-dev/openfold3/projects/of3_all_atom/config/model_setting_presets.yml) to run in low memory mode.
+To run inference on larger queries to run on limited memory, add the following to apply the [model presets](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/model_setting_presets.yml) to run in low memory mode.
 
 Note: These settings cause the pairformer embedding output from the diffusion samples to be computed sequentially. Significant slowdowns may occur, especially for large number of diffusion samples.
 ```yaml
