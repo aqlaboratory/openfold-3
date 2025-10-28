@@ -1,8 +1,8 @@
 # OpenFold3-preview
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="imgs/predictions_combined_dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="imgs/predictions_combined_light.png">
-  <img alt="Comparison of OpenFold and experimental structures" src="imgs/predictions_combined_light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/predictions_combined_dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/predictions_combined_light.png">
+  <img alt="Comparison of OpenFold and experimental structures" src="assets/predictions_combined_light.png">
 </picture>
 
 OpenFold3-preview is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's 
@@ -53,10 +53,16 @@ OpenFold3-preview performs competitively with the state of the art in open sourc
 **Preliminary results:**
 
 <picture>
-  <source srcset="imgs/protein_plot.png">
-  <img alt="Benchmark performance of OpenFold3-preview on Protein Datasets">
+  <source srcset="assets/combined_benchmarks.png">
+  <img alt="Benchmark performance of OpenFold3-preview and other models">
 </picture>
-Figure 1. Performance of OF3p and other models on protein monomers and complexes. A) Predictions on the CASP16 protein monomer set. B) Predictions on protein-protein complexes sourced from CASP16, [FoldBench](https://www.biorxiv.org/content/10.1101/2025.05.22.655600v1), and the original antibody-antigen test set of AF3. For FoldBench and AbAg set, report performance at the interface level, whereas for CASP16, we aggregate results over all interfaces in a given structure. For AbAg complexes, we predicted more than 5 seeds for each structure and so to emulate the 5 seed performance we randomly sampled a set of 5 seeds and used those structures for oracle and ranked performance.
+
+Performance of OF3p and other models on a diverse set of benchmarks:
+- Protein and RNA monomers from the CASP16
+- Proein-protein complexes from CASP16 and [FoldBench] dataset
+- Protein-ligand complexes from the [Runs and Poses] dataset
+
+For more details on inferences procedures and benchmarking methods, please refer to our [whitepaper](assets/whitepaper.pdf) . 
 
 ## Documentation
 Please visit our full documentation at https://openfold-3.readthedocs.io/en/latest/
