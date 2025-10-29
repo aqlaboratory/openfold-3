@@ -10,6 +10,9 @@ OpenFold3-preview is a biomolecular structure prediction model aiming to be a bi
 
 For our reproduction of AlphaFold2, please refer to the original [OpenFold repository](https://github.com/aqlaboratory/openfold).
 
+## Documentation
+Please visit our full documentation at https://openfold-3.readthedocs.io/en/latest/
+
 ## Features
 
 OpenFold3-preview replicates the input features described in the [AlphaFold3](https://www.nature.com/articles/s41586-024-07487-w) publication, as well as batch job support and efficient kernel-accelerated inference.
@@ -62,10 +65,7 @@ Performance of OF3p and other models on a diverse set of benchmarks:
 - Proein-protein complexes from [CASP16](https://www.biorxiv.org/content/10.1101/2025.05.29.656875v1) and [FoldBench](https://www.biorxiv.org/content/10.1101/2025.05.22.655600v1) 
 - Protein-ligand complexes from the [Runs and Poses](https://www.biorxiv.org/content/10.1101/2025.02.03.636309v3) 
 
-For more details on inferences procedures and benchmarking methods, please refer to our [whitepaper](assets/whitepaper.pdf) . 
-
-## Documentation
-Please visit our full documentation at https://openfold-3.readthedocs.io/en/latest/
+For more details on inferences procedures and benchmarking methods, please refer to our [whitepaper](assets/whitepaper.pdf).
 
 ## Upcoming
 The final OpenFold3 model is still in development, and we are actively working on the following features:
