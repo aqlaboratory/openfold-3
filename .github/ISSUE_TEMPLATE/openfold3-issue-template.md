@@ -38,3 +38,5 @@ If applicable, please add the stack trace / log of your run
 
 **Additional context**
 Add any other context about the problem here.
+
+_OpenFold Consortium Members⭐️:_ Please make use of the `OpenFold Consortium Member` label on your issue report for expedited support!
