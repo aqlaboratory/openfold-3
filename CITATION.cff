@@ -8,4 +8,6 @@ date-released: 2025-10-28
 identifiers:
   - type: "URL"
     value: "https://github.com/aqlaboratory/openfold-3"
+  - type: "DOI"
+    value: "10.5281/zenodo.17485510"  
 abstract: "OpenFold3-preview is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's AlphaFold3, developed by the AlQuraishi Lab at Columbia University and the OpenFold consortium."
