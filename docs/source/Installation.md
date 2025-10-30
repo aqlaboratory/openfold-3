@@ -5,7 +5,7 @@
 
 ### Pre-requisites
 
-OpenFold3 inference requires a system with a GPU with a minimum of CUDA 12.1. Most of our testing has been performed on A100s with 40GB of memory. 
+OpenFold3 inference requires a system with a GPU with a minimum of CUDA 12.1 and 32GB of memory. Most of our testing has been performed on A100s with 40GB of memory. 
 
 It is also recommended to use [Mamba](https://mamba.readthedocs.io/en/latest/) to install some of the packages.
 
