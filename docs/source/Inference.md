@@ -310,6 +310,9 @@ msa_computation_settings:
   msa_output_directory: <custom path>
   cleanup_msa_dir: False  # If False, msa paths will not be deleted between runs 
   save_mappings: True 
+
+template_preprocessor_settings:
+  output_directory: <custom path> 
 ```
 
 MSAs per chain are saved using a file / directory name that is the hash of the sequence. Mappings between the chain name, sequence, and representative ids can be saved via the `save_mappings` field. 
