@@ -11,19 +11,20 @@ To enable, first install OpenFold3 with cuEquivariance:
 pip install openfold3[cuequivariance]
 ```
 
-Using these kernels requires upgrading the torch and cuda versions, and so a second install is required to re-compile CUDA extensions. Then, to enable these kernels via the runner yaml, add the following:
+Then, to enable these kernels via the runner.yaml, add the following:
 
 ```yaml
 model_update:
   preset: 
     - "predict"
     - "pae_enabled"  # if using PAE enabled model
+    - "low_mem"  # for lower memory systems
   custom:
     settings:
       memory:
         eval:
           use_cueq_triangle_kernels: true
-          use_deepspeed_evo_attention: true
+          use_deepspeed_evo_attention: true  # set this to False to use cueq only
 ```
 
 This is specifically for inference, but similar settings can be used for training. 
