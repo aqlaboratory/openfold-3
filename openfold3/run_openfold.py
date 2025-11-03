@@ -168,10 +168,6 @@ def predict(
         output_dir,
     )
 
-    # Dump experiment runner
-    with open(expt_runner.output_dir / "experiment_config.json", "w") as f:
-        json.dump(expt_config.model_dump_json(indent=2), f)
-
     # Load inference query set
     query_set = InferenceQuerySet.from_json(query_json)
 
