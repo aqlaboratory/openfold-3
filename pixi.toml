@@ -51,6 +51,10 @@ mkl = "*"
 cuda-version = "<13"
 pytorch-gpu = "*"
 
+# --- More ML
+ml-collections = "*"
+pytorch-lightning = "*"
+
 # --- DeepSpeed
 deepspeed = "*"
 ninja = "*"
@@ -81,21 +85,24 @@ hhsuite = "*"
 kalign2 = "*"
 snakemake = "*"
 
-# --- More ML
-ml-collections = "*"
-pytorch-lightning = "*"
-
 # --- Misc
+pyyaml = "*"
 ijson = "*"
 memory_profiler = "*"
-python-lmdb = "*"
 wandb = "*"
 func_timeout = "*"
-pyyaml = "*"
-requests = "*"
 tqdm = "*"
 typing-extensions = "*"
-lmdb = "*"
+python-lmdb = "*"
+
+# --- Downloading stuff
+requests = "*"
+awscli = "*"
+boto3 = "*"
+aria2 = "*"
+
+# --- Testing
+pytest = "*"
 
 # --- Dev and documentation optionals
 # TODO: put in a pixi feature
@@ -116,14 +123,6 @@ furo = "*"
 #   https://developer.nvidia.com/cuequivariance#section-get-started
 cuequivariance = "*"
 cuequivariance-torch = "*"
-
-# --- Downloading stuff
-awscli = "*"
-boto3 = "*"
-aria2 = "*"
-
-# --- Testing
-pytest = "*"
 
 [pypi-dependencies]
 
