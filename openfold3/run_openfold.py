@@ -19,7 +19,6 @@ Main run script for OpenFold3. Please see the README for usage details.
 """
 # ruff: noqa: F821
 
-import json
 import logging
 from pathlib import Path
 
