@@ -1,0 +1,140 @@
+#
+# This is a pixi (https://pixi.sh) manifest to manage environment for OpenFold-3.
+#
+# The current environment passes all tests in a linux machine.
+# Change to the openfold-3 directory and run:
+#   pixi run pytest -v .
+#
+# If you have not pixi installed, please follow the instructions here:
+#   https://pixi.sh/latest/installation/
+# Which in linux boils down to run:
+#   curl -fsSL https://pixi.sh/install.sh | sh
+# And restart your shell.
+#
+
+[workspace]
+name = "openfold3"
+authors = []
+channels = ["conda-forge", "bioconda"]
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[activation]
+
+# Trick deepspeed - we could also point to $CONDA_PREFIX
+env.CUTLASS_PATH = "FAKE"
+
+# --- Isolating completely the environment, including built extensions
+# Note that this might not play well with advanced users or people who do not want to recompile everytime
+# So we likely do not want to enforce it or document it well
+
+# Change triton cache to be local
+env.TRITON_CACHE_DIR = "$CONDA_PREFIX/caches/triton"
+# Change torch caches
+env.TORCH_HOME = "$CONDA_PREFIX/caches/pytorch"
+env.TORCH_EXTENSIONS_DIR = "$CONDA_PREFIX/caches/torch_extensions"
+env.DS_BUILD_CACHE_DIR = "$CONDA_PREFIX/caches/deepspeed"
+
+[system-requirements]
+cuda = "12.0"
+
+[dependencies]
+
+# These are not really needed and get anyway installed
+python = "*"
+numpy = "*"
+pandas = "*"
+
+# --- Pytorch & its accelerators
+# We could use pixi features to easily create CPU and GPU only envs
+mkl = "*"
+cuda-version = "<13"
+pytorch-gpu = "*"
+
+# --- DeepSpeed
+deepspeed = "*"
+ninja = "*"
+cutlass = "*"
+
+# These are only needed to build local extensions the first time
+# Think on whether we want to delete them afterwards and how it would play with the user
+cuda-minimal-build = "*"
+libcusparse-dev = "*"
+libcublas-dev = "*"
+libcusolver-dev = "*"
+libcurand-dev = "*"
+
+# These are installed by pypi nvidia-cutlass
+# But we want them to be conda-aware so they are compatible with our env
+cuda-python = "*"
+treelib = "*"
+pydot = "*"
+
+# --- Handling molecules
+rdkit = "*"
+biotite = "<1.3"
+pdbeccdutils = "*"
+
+# --- Bioinformatics & Workflows
+hmmer = "*"
+hhsuite = "*"
+kalign2 = "*"
+snakemake = "*"
+
+# --- More ML
+ml-collections = "*"
+pytorch-lightning = "*"
+
+# --- Misc
+ijson = "*"
+memory_profiler = "*"
+python-lmdb = "*"
+wandb = "*"
+func_timeout = "*"
+pyyaml = "*"
+requests = "*"
+tqdm = "*"
+typing-extensions = "*"
+lmdb = "*"
+
+# --- Dev and documentation optionals
+# TODO: put in a pixi feature
+ruff = "*"
+sphinx = "*"
+myst-parser = "*"
+furo = "*"
+
+# --- CuEquivariance optionals
+# TODO: put in a pixi feature
+# At the moment we also would need this that is only in pypi
+#   * cuequivariance-ops-torch-cu12
+# Which also pulls
+#   * cuequivarance-ops-cu12
+#   * nvidia-cublas-cu12
+# I need to dig deeper, cuEquivariance documentation seems to indicate
+# the conda-forge package should be enough
+#   https://developer.nvidia.com/cuequivariance#section-get-started
+cuequivariance = "*"
+cuequivariance-torch = "*"
+
+# --- Downloading stuff
+awscli = "*"
+boto3 = "*"
+aria2 = "*"
+
+# --- Testing
+pytest = "*"
+
+[pypi-dependencies]
+
+# --- Poor native library detection from DeepSpeed
+nvidia-cutlass = "==3.8"
+# In theory this is not needed if we use conda package >= 0.18?
+# But it still is
+# See https://github.com/conda-forge/deepspeed-feedstock/issues/1
+ninja = "*"
+
+# --- Missing package for cuequivariance, probably I am missing something as cuequivariance docs state no pypi is needed
+# Warning, this install some other python libs
+cuequivariance-ops-torch-cu12 = "*"  # we need to coordinate this with the conda packages, or install all from pypi
+
