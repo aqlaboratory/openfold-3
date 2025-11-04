@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from ml_collections import ConfigDict
 from pydantic import BaseModel
-from pydantic import ConfigDict as PydanticConfigDict 
+from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import load_yaml
 from openfold3.projects.of3_all_atom.config.model_config import model_config
