@@ -135,7 +135,7 @@ ninja = "*"
 
 # --- Missing package for cuequivariance, probably I am missing something as cuequivariance docs state no pypi is needed
 # Warning, this install some other python libs
-cuequivariance-ops-torch-cu12 = "*"  # we need to coordinate this with the conda packages, or install all from pypi
+# cuequivariance-ops-torch-cu12 = "*"  # we need to coordinate this with the conda packages, or install all from pypi
 
 # --- OpenFold3 in editable mode
 openfold3 = { path = ".", editable = true }
