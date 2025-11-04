@@ -70,7 +70,7 @@ libcurand-dev = "*"
 
 # These are installed by pypi nvidia-cutlass
 # But we want them to be conda-aware so they are compatible with our env
-cuda-python = "*"
+cuda-python = "<12.9.1"
 treelib = "*"
 pydot = "*"
 
