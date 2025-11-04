@@ -48,9 +48,18 @@ if ds4s_is_installed:
 
 cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
-    from cuequivariance_ops_torch.triangle_attention import (
-        CUEQ_TRIATTN_FALLBACK_THRESHOLD,
-    )
+    try:
+        from cuequivariance_ops_torch.triangle_attention import (
+            CUEQ_TRIATTN_FALLBACK_THRESHOLD,
+         )
+    except ImportError:
+        # Definition from upstream, to remove the cuequivariance_ops_torch dependency
+        # This allows to use conda-forge packages for cuequivariance
+        # Risks becoming unsynchronized with upstream
+        import os
+        CUEQ_TRIATTN_FALLBACK_THRESHOLD: int = int(
+            os.getenv("CUEQ_TRIATTN_FALLBACK_THRESHOLD", "100")
+        )
     from cuequivariance_torch.primitives.triangle import triangle_attention
 
     def cueq_would_fall_back(n_token: int, hidden_dim: int, dtype: torch.dtype):
