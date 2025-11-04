@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 from ml_collections import ConfigDict
 from pydantic import BaseModel
+from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import load_yaml
 from openfold3.projects.of3_all_atom.config.model_config import model_config
@@ -26,6 +27,7 @@ from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
 
 
 class ModelUpdate(BaseModel):
+    model_config = PydanticConfigDict(extra="forbid")
     presets: list[str] = []
     custom: dict = {}
 

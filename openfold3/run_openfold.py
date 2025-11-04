@@ -19,7 +19,6 @@ Main run script for OpenFold3. Please see the README for usage details.
 """
 # ruff: noqa: F821
 
-import json
 import logging
 from pathlib import Path
 
@@ -167,10 +166,6 @@ def predict(
         use_templates,
         output_dir,
     )
-
-    # Dump experiment runner
-    with open(expt_runner.output_dir / "experiment_config.json", "w") as f:
-        json.dump(expt_config.model_dump_json(indent=2), f)
 
     # Load inference query set
     query_set = InferenceQuerySet.from_json(query_json)

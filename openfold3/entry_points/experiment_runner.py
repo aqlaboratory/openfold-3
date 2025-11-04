@@ -636,6 +636,8 @@ class InferenceExperimentRunner(ExperimentRunner):
     def setup(self) -> None:
         """Set up environment and load checkpoints."""
         super().setup()
+        self._log_experiment_config()
+        self._log_model_config()
         logger.info(f"Loading weights from {self.ckpt_path}")
         ckpt = load_checkpoint(self.ckpt_path)
         state_dict = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
@@ -644,8 +646,6 @@ class InferenceExperimentRunner(ExperimentRunner):
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
         self.inference_query_set = inference_query_set
-        self._log_experiment_config()
-        self._log_model_config()
         if self.experiment_config.experiment_settings.skip_existing:
             inference_query_set = self.remove_completed_queries_from_query_set(
                 inference_query_set
