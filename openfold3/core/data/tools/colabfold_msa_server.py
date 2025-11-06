@@ -1044,3 +1044,39 @@ def preprocess_colabfold_msas(
     )
 
     return inference_query_set
+
+
+def augment_main_msa_with_query_sequence(
+    inference_query_set: InferenceQuerySet,
+    compute_settings: MsaComputationSettings,
+) -> InferenceQuerySet:
+    output_directory = compute_settings.msa_output_directory
+    for query_name, query in inference_query_set.queries.items():
+        for chain in query.chains:
+            if (
+                chain.molecule_type == MoleculeType.PROTEIN
+                or chain.molecule_type == MoleculeType.RNA
+            ) and chain.main_msa_file_paths is None:
+                dummy_msa_file_path = (
+                    output_directory
+                    / "dummy"
+                    / f"{get_sequence_hash(chain.sequence)}.npz"
+                )
+                dummy_msa_file_path.parent.mkdir(exist_ok=True, parents=True)
+                dummy_msa = ">query\n" + chain.sequence
+                msas_preparsed = {"dummy": parse_a3m(dummy_msa).to_dict()}
+                np.savez_compressed(dummy_msa_file_path, **msas_preparsed)
+                chain.main_msa_file_paths = [dummy_msa_file_path]
+
+                chain_ids = ",".join(chain.chain_ids)
+                warnings.warn(
+                    (
+                        f"Expected MSA file for chain {chain_ids} of "
+                        f"type {chain.molecule_type.name} in query "
+                        f"{query_name}, but no MSA files found. Query sequence "
+                        "will be used as dummy MSA for this chain."
+                    ),
+                    stacklevel=2,
+                )
+
+    return inference_query_set

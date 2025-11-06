@@ -100,6 +100,7 @@ class MSASettings(BaseModel):
         "nt_hits",
         "concat_cfdb_uniref100_filtered",
         "colabfold_main",
+        "dummy",
     ]
     paired_msa_order: list = ["colabfold_paired"]
 
