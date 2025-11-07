@@ -5,6 +5,10 @@
 # Change to the openfold-3 directory and run:
 #   pixi run pytest -v .
 #
+# The environment can be exported to a regular conda yaml:
+#  pixi workspace export conda-environment -n openfold3
+# (note that at the moment this does not export environment variable definitios which we use here)
+#
 # If you have not pixi installed, please follow the instructions here:
 #   https://pixi.sh/latest/installation/
 # Which in linux boils down to run:
@@ -18,6 +22,7 @@ authors = []
 channels = ["conda-forge", "bioconda"]
 platforms = ["linux-64"]
 version = "0.1.0"
+# conda-pypi-map = {}
 
 [activation]
 
@@ -25,7 +30,7 @@ version = "0.1.0"
 env.CUTLASS_PATH = "FAKE"
 
 # --- Isolating completely the environment, including built extensions
-# Note that this might not play well with advanced users or people who do not want to recompile everytime
+# Note that this might not play well with advanced users or people who do not want to recompile
 # So we likely do not want to enforce it or document it well
 
 # Change triton cache to be local
@@ -70,9 +75,11 @@ libcurand-dev = "*"
 
 # These are installed by pypi nvidia-cutlass
 # But we want them to be conda-aware so they are compatible with our env
-cuda-python = "<12.9.1"
 treelib = "*"
 pydot = "*"
+# This is needed to agree with the pin in openfold-3 dependencies
+# This actually pins down other conda deps, and it is not needed in conda-world
+cuda-python = "<12.9.1"
 
 # --- Handling molecules
 rdkit = "*"
@@ -112,30 +119,56 @@ myst-parser = "*"
 furo = "*"
 
 # --- CuEquivariance optionals
+# https://developer.nvidia.com/cuequivariance#section-get-started
 # TODO: put in a pixi feature
 # At the moment we also would need this that is only in pypi
 #   * cuequivariance-ops-torch-cu12
 # Which also pulls
 #   * cuequivarance-ops-cu12
 #   * nvidia-cublas-cu12
-# I need to dig deeper, cuEquivariance documentation seems to indicate
-# the conda-forge package should be enough
-#   https://developer.nvidia.com/cuequivariance#section-get-started
+# We would need to also package this in conda-forge
 cuequivariance = "*"
 cuequivariance-torch = "*"
 
 [pypi-dependencies]
 
 # --- Poor native library detection from DeepSpeed
+
+# DeepSpeed relies on python's cutlass interface only for checking that CUTLASS is installed.
+# Here where this check was added:
+#   https://github.com/deepspeedai/DeepSpeed/commit/51da191eb54b69224edfb7cb4ce69db9a88956f7
+# Note that this interface is DEPRECATED and not shipped anymore after cutlass 3.8.0
+#   https://github.com/NVIDIA/cutlass/discussions/2119
+#   https://github.com/NVIDIA/cutlass/issues/2549
+# In conda environments, CUTLASS is well configured and works perfectly when building the extension
+# No python bindings are at the moment included in the conda package (arguably we should also include them)
+#   https://github.com/conda-forge/cutlass-feedstock/blob/main/recipe/meta.yaml
+# The best solution would be to patch deepspeed upstream to have a python independent way to assess the availability of cutlass.
+# These chores are of course well known:
+#   https://github.com/aqlaboratory/openfold-3/blob/3ba7b3589798eb2c60e78fa2c0ec25bd18decc92/openfold3/hacks.py#L1-L21
+#   https://github.com/aqlaboratory/openfold-3/blob/3ba7b3589798eb2c60e78fa2c0ec25bd18decc92/pyproject.toml#L33-L41
+# Note that this pins down some other cuda dependencies and add other dependencies, which is a bad side effect
 nvidia-cutlass = "==3.8"
-# In theory this is not needed if we use conda package >= 0.18?
-# But it still is
-# See https://github.com/conda-forge/deepspeed-feedstock/issues/1
+
+# While this is closed (as they can now use pip check to test) we still need to install ninja-python
+#   https://github.com/conda-forge/deepspeed-feedstock/issues/1
+#   https://github.com/conda-forge/deepspeed-feedstock/pull/100
+#   https://github.com/conda-forge/deepspeed-feedstock/commit/87cec8c4344b8eaefa3d17bffb69e2c83c28a82a
+# DeepSpeed still cannot find conda-forge ninja, owing to this issue
+#   https://github.com/conda-forge/ninja-feedstock/issues/26
 ninja = "*"
 
-# --- Missing package for cuequivariance, probably I am missing something as cuequivariance docs state no pypi is needed
+# --- Missing package for cuequivariance
+# At the moment the optimized kernels are not distributed in conda-forge
 # Warning, this install some other python libs
 cuequivariance-ops-torch-cu12 = "*"  # we need to coordinate this with the conda packages, or install all from pypi
 
 # --- OpenFold3 in editable mode
+# TODO: This brings a more modern version of MKL in python world which installs in parallel with the conda version
+#   - pixi even reinstalls MKL itself clobbering the conda files, which is likely a bug
+#   - mamba installs only the extra missing dependencies not in conda-forge (or without a proper mapping)
+# Figure out why this happens and how to avoid it (only important for environment, for conda package solution is trivial)
+# References:
+#   - Conda-Forge recipe: https://github.com/conda-forge/intel_repack-feedstock
+#   - Pypi and conda mkl packages
 openfold3 = { path = ".", editable = true }
