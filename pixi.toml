@@ -27,7 +27,7 @@ version = "0.1.0"
 [activation]
 
 # Trick deepspeed - we could also point to $CONDA_PREFIX
-env.CUTLASS_PATH = "$PIXI_PROJECT_ROOT/.pixi/cutlass-hack"
+env.CUTLASS_PATH = "FAKE"
 
 # --- Isolating completely the environment, including built extensions
 # Note that this might not play well with advanced users or people who do not want to recompile
@@ -75,11 +75,11 @@ libcurand-dev = "*"
 
 # These are installed by pypi nvidia-cutlass
 # But we want them to be conda-aware so they are compatible with our env
-# treelib = "*"
-# pydot = "*"
+treelib = "*"
+pydot = "*"
 # This is needed to agree with the pin in openfold-3 dependencies
 # This actually pins down other conda deps, and it is not needed in conda-world
-# cuda-python = "<12.9.1"
+cuda-python = "<12.9.1"
 
 # --- Handling molecules
 rdkit = "*"
@@ -148,7 +148,7 @@ cuequivariance-torch = "*"
 #   https://github.com/aqlaboratory/openfold-3/blob/3ba7b3589798eb2c60e78fa2c0ec25bd18decc92/openfold3/hacks.py#L1-L21
 #   https://github.com/aqlaboratory/openfold-3/blob/3ba7b3589798eb2c60e78fa2c0ec25bd18decc92/pyproject.toml#L33-L41
 # Note that this pins down some other cuda dependencies and add other dependencies, which is a bad side effect
-# nvidia-cutlass = "==3.8"
+nvidia-cutlass = "==3.8"
 
 # While this is closed (as they can now use pip check to test) we still need to install ninja-python
 #   https://github.com/conda-forge/deepspeed-feedstock/issues/1
