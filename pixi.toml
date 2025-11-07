@@ -5,6 +5,10 @@
 # Change to the openfold-3 directory and run:
 #   pixi run pytest -v .
 #
+# The environment can be exported to a regular conda yaml:
+#  pixi workspace export conda-environment -n openfold3
+# (note that at the moment this does not export environment variable definitios which we use here)
+#
 # If you have not pixi installed, please follow the instructions here:
 #   https://pixi.sh/latest/installation/
 # Which in linux boils down to run:
@@ -25,7 +29,7 @@ version = "0.1.0"
 env.CUTLASS_PATH = "FAKE"
 
 # --- Isolating completely the environment, including built extensions
-# Note that this might not play well with advanced users or people who do not want to recompile everytime
+# Note that this might not play well with advanced users or people who do not want to recompile
 # So we likely do not want to enforce it or document it well
 
 # Change triton cache to be local
