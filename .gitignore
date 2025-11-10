@@ -1,4 +1,5 @@
 .vscode/
+.claude/
 .idea/
 __pycache__/
 *.egg-info
@@ -10,3 +11,6 @@ dist
 openfold3/resources/
 tests/test_data/sample_feats.pickle
 cutlass/
+
+# misc source code refs
+.acquired_source/

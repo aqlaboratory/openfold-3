@@ -46,6 +46,13 @@ if deepspeed_is_installed:
 if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
+# MLX integration for Apple Silicon optimization
+try:
+    from .attention_mlx import mlx_evo_attention, mlx_triangle_attention, is_mlx_available
+    mlx_is_available = is_mlx_available()
+except ImportError:
+    mlx_is_available = False
+
 cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
 if cueq_is_installed:
     from cuequivariance_ops_torch.triangle_attention import (
@@ -82,7 +89,9 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
         deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
     )
     if d is torch.bfloat16 and not deepspeed_is_initialized:
-        with torch.amp.autocast("cuda", enabled=False):
+        # Use appropriate device for autocast - CUDA if available, otherwise CPU
+        device_type = "cuda" if torch.cuda.is_available() else "cpu"
+        with torch.amp.autocast(device_type, enabled=False):
             s = torch.nn.functional.softmax(t, dim=dim)
     else:
         s = torch.nn.functional.softmax(t, dim=dim)
@@ -118,7 +127,9 @@ def _attention(
         shape [*, H, V, C_hidden]: attention output
     """
     attn_dtype = torch.float32 if use_high_precision else query.dtype
-    with torch.amp.autocast("cuda", dtype=attn_dtype):
+    # Use appropriate device for autocast - CUDA if available, otherwise CPU
+    device_type = "cuda" if torch.cuda.is_available() else "cpu"
+    with torch.amp.autocast(device_type, dtype=attn_dtype):
         # Generate attention scores
         scores = torch.einsum("...qc, ...kc->...qk", query, key)
 
@@ -308,6 +319,7 @@ class Attention(nn.Module):
         biases: list[torch.Tensor] | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_mlx_attention: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
@@ -328,6 +340,10 @@ class Attention(nn.Module):
             use_cueq_triangle_kernels:
                 whether to use cuequivariance triangle kernels. Mutually
                 exclusive with use_lma
+            use_mlx_attention:
+                Whether to use MLX-optimized attention for Apple Silicon.
+                Provides equivalent performance to DeepSpeed on Apple hardware.
+                Mutually exclusive with other kernel options.
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
                 none of the "use_<...>" flags are True, a stock PyTorch
@@ -363,8 +379,13 @@ class Attention(nn.Module):
         if use_deepspeed_evo_attention and q_x.shape[-2] <= 16:
             use_deepspeed_evo_attention = False
 
+        # MLX attention availability check
+        if use_mlx_attention and not mlx_is_available:
+            use_mlx_attention = False
+
         attn_options = [
             use_deepspeed_evo_attention or use_cueq_triangle_kernels,
+            use_mlx_attention,
             use_lma,
             use_high_precision,
         ]
@@ -374,11 +395,11 @@ class Attention(nn.Module):
         if biases is None:
             biases = []
 
-        # DeepSpeed attention kernel and cuequivariance kernel apply scaling internally
+        # DeepSpeed, cuequivariance, and MLX kernels apply scaling internally
         q, k, v = self._prep_qkv(
             q_x,
             kv_x,
-            apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels),
+            apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels or use_mlx_attention),
         )
 
         # cuequivariance kernel takes precedence over use_deepspeed_evo_attention
@@ -397,6 +418,19 @@ class Attention(nn.Module):
                     "provide up to two bias terms"
                 )
             o = _deepspeed_evo_attn(q, k, v, biases)
+        elif use_mlx_attention:
+            if len(biases) > 2:
+                raise ValueError(
+                    "If use_mlx_attention is True, you may only "
+                    "provide up to two bias terms"
+                )
+            # Expand biases to correct shape like LMA does
+            expanded_biases = [
+                b.expand(b.shape[:-2] + (q_x.shape[-2],) + (kv_x.shape[-2],))
+                for b in biases
+            ]
+            o = mlx_evo_attention(q, k, v, expanded_biases)
+            o = o.transpose(-2, -3)
         elif use_lma:
             biases = [
                 b.expand(b.shape[:-2] + (q_x.shape[-2],) + (kv_x.shape[-2],))
@@ -620,6 +654,17 @@ def _lma(
         o[..., q_s : q_s + q_chunk_size, :] = q_chunk_out
 
     return o
+
+
+@torch.compiler.disable
+def _mlx_triangle_attn(q, k, v, biases, scale):
+    """
+    MLX triangle attention implementation for Apple Silicon.
+
+    This provides equivalent functionality to cuEquivariance triangle attention
+    but uses MLX for computation on Apple Silicon hardware.
+    """
+    return mlx_triangle_attention(q, k, v, biases, scale)
 
 
 @torch.compiler.disable

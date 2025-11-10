@@ -1,0 +1,61 @@
+# Configuration for Apple Silicon optimization
+# This config enables MLX-based attention and other optimizations for Apple hardware
+
+model:
+  attention:
+    # Enable MLX attention by default on Apple Silicon
+    use_mlx_attention: true
+    use_deepspeed_evo_attention: false  # Disable CUDA-based attention
+    use_cueq_triangle_kernels: false   # Disable cuEquivariance (CUDA-based)
+
+    # Memory optimization settings
+    use_chunked_attention_threshold: 1000  # Use chunked attention for seq_len > 1000
+    mlx_chunk_size: 512  # Default chunk size for memory efficiency
+
+    # Precision settings
+    use_high_precision: false  # MLX handles numerical stability automatically
+
+# Training optimizations for Apple Silicon
+training:
+  # Mixed precision training with MLX
+  use_mixed_precision: true
+  precision: "float16"  # MLX supports efficient float16 on Apple hardware
+
+  # Memory management
+  gradient_checkpointing: true
+  max_sequence_length: 2048  # MLX can handle longer sequences efficiently
+
+# Inference optimizations
+inference:
+  # Batch processing
+  max_batch_size: 4  # Conservative for memory efficiency
+
+  # Model compilation (if using MLX model compilation)
+  compile_model: false  # Set to true for repeated inference
+
+  # CPU offloading for very large models
+  enable_cpu_offload: true
+  offload_threshold_gb: 8  # Offload if model > 8GB
+
+# Hardware detection
+hardware:
+  # Auto-detect Apple Silicon and enable optimizations
+  auto_detect_apple_silicon: true
+
+  # Fallback options if MLX is not available
+  fallback_to_pytorch: true
+  fallback_to_cpu: true
+
+  # Memory monitoring
+  enable_memory_monitoring: true
+  memory_warning_threshold: 0.8  # Warn if using > 80% of available memory
+
+# Experimental features
+experimental:
+  # MLX-specific optimizations
+  use_mlx_graph_compilation: false  # Experimental graph compilation
+  enable_mlx_memory_pool: true      # Use MLX memory pooling
+
+  # Apple Silicon specific optimizations
+  use_apple_neural_engine: false   # Experimental ANE integration
+  optimize_for_m_series: true      # M-series specific optimizations

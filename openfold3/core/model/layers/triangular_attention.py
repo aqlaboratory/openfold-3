@@ -76,6 +76,7 @@ class TriangleAttention(nn.Module):
         chunk_size: int,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_mlx_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -91,6 +92,7 @@ class TriangleAttention(nn.Module):
                 self.mha,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_mlx_attention=use_mlx_triangle_kernels,
                 use_lma=use_lma,
             ),
             mha_inputs,
@@ -106,6 +108,7 @@ class TriangleAttention(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_mlx_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -131,7 +134,9 @@ class TriangleAttention(nn.Module):
         x = self.layer_norm(x)
 
         # [*, I, 1, 1, J]
-        mask_bias = (self.inf * (mask - 1))[..., :, None, None, :]
+        # Convert boolean mask to float and create additive bias
+        mask_float = mask.to(dtype=x.dtype)  # Convert bool to float
+        mask_bias = (self.inf * (mask_float - 1))[..., :, None, None, :]
 
         # [*, H, I, J]
         triangle_bias = permute_final_dims(self.linear_z(x), (2, 0, 1))
@@ -149,6 +154,7 @@ class TriangleAttention(nn.Module):
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_mlx_triangle_kernels=use_mlx_triangle_kernels,
                 inplace_safe=inplace_safe,
             )
         else:
@@ -159,6 +165,7 @@ class TriangleAttention(nn.Module):
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_lma=use_lma,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_mlx_attention=use_mlx_triangle_kernels,
             )
 
         if not self.starting:
