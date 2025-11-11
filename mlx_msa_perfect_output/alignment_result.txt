@@ -1,0 +1,18 @@
+>Sequence: ubiquitin from rabbit
+MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG
+
+Alignment of 5 Openfold3-MLX chains to alphafold_db_v6 'ground truth':
+Matchmaker AF-P62975-F1-model_v6_ubiquitin.cif, chain A (#6) with ubiquitin_seed_1181241943_sample_1_model.cif, chain A (#1), sequence alignment score = 381.3
+RMSD between 76 pruned atom pairs is 0.305 angstroms; (across all 76 pairs: 0.305)
+
+Matchmaker AF-P62975-F1-model_v6_ubiquitin.cif, chain A (#6) with ubiquitin_seed_1181241943_sample_2_model.cif, chain A (#2), sequence alignment score = 381.3
+RMSD between 75 pruned atom pairs is 0.243 angstroms; (across all 76 pairs: 0.919)
+
+Matchmaker AF-P62975-F1-model_v6_ubiquitin.cif, chain A (#6) with ubiquitin_seed_1181241943_sample_3_model.cif, chain A (#3), sequence alignment score = 377.7
+RMSD between 73 pruned atom pairs is 0.287 angstroms; (across all 76 pairs: 1.993)
+
+Matchmaker AF-P62975-F1-model_v6_ubiquitin.cif, chain A (#6) with ubiquitin_seed_1181241943_sample_4_model.cif, chain A (#4), sequence alignment score = 381.3
+RMSD between 73 pruned atom pairs is 0.255 angstroms; (across all 76 pairs: 1.229)
+
+Matchmaker AF-P62975-F1-model_v6_ubiquitin.cif, chain A (#6) with ubiquitin_seed_1181241943_sample_5_model.cif, chain A (#5), sequence alignment score = 381.3
+RMSD between 76 pruned atom pairs is 0.302 angstroms; (across all 76 pairs: 0.302)
