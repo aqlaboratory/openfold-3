@@ -14,3 +14,8 @@ cutlass/
 
 # misc source code refs
 .acquired_source/
+
+# debug
+inference/
+research/
+reports/

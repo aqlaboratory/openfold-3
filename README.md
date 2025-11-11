@@ -1,8 +1,8 @@
-# OpenFold3-preview
+# OpenFold3-preview: MLX Edition
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/predictions_combined_dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="assets/predictions_combined_light.png">
-  <img alt="Comparison of OpenFold and experimental structures" src="assets/predictions_combined_light.png">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/mlx_generated_casp16.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/mlx_generated_casp16.png">
+  <img alt="Comparison of OpenFold and experimental structures" src="assets/mlx_generated_casp16.png">
 </picture>
 
 OpenFold3-preview is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's 
