@@ -97,6 +97,10 @@ model_config = mlc.ConfigDict(
                     # Use Staats & Rabe's low-memory attention algorithm. Mutually
                     # exclusive with use_deepspeed_evo_attention.
                     "use_lma": False,
+                    # 🍎 Apple Silicon MLX optimizations
+                    "use_mlx_attention": False,
+                    "use_mlx_triangle_kernels": False,
+                    "use_mlx_activation_functions": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
                         "swiglu_seq_chunk_size": None,
@@ -107,6 +111,10 @@ model_config = mlc.ConfigDict(
                     "use_deepspeed_evo_attention": True,
                     "use_cueq_triangle_kernels": False,
                     "use_lma": False,
+                    # 🍎 Apple Silicon MLX optimizations
+                    "use_mlx_attention": False,
+                    "use_mlx_triangle_kernels": False,
+                    "use_mlx_activation_functions": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
                         "swiglu_seq_chunk_size": None,

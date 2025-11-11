@@ -1,0 +1,15 @@
+{
+	"queries": {
+		"test_peptide_mlx": {
+			"chains": [
+				{
+					"molecule_type": "protein",
+					"chain_ids": [
+						"A"
+					],
+					"sequence": "MDVFMKGLSKAKEGVVAAAEKTKQGVAEAAGKTKEGVLYVGSKTKEGVVHGVATVAEKTKEQVTNVGGAVVTGVTAVAQKTVEGAGSIAAATGFVKKDQLGKNEEGAPQEGILEDMPVDPDNEAYEMPSEEGYQDYEPEA"
+				}
+			]
+		}
+	}
+}
