@@ -546,10 +546,9 @@ class OpBuilder(ABC):
             raise RuntimeError(
                 f"Unable to JIT load the {self.name} op due to it not being compatible due to hardware/software issue. {self.error_log}"
             )
-        try:
-            import ninja  # noqa: F401 # type: ignore
-        except ImportError:
-            raise RuntimeError(f"Unable to JIT load the {self.name} op due to ninja not being installed.")
+
+        # Verify ninja availability here to get more informative stacktraces
+        torch.utils.cpp_extension.verify_ninja_availability()
 
         if isinstance(self, CUDAOpBuilder) and not self.is_rocm_pytorch():
             self.build_for_cpu = not torch.cuda.is_available()
