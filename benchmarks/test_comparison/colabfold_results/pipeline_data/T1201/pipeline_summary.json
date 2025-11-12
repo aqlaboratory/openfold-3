@@ -1,0 +1,18 @@
+{
+  "sequence_id": "T1201",
+  "total_time": 2.0281848907470703,
+  "msa": {
+    "success": true,
+    "depth": 101,
+    "time": 2.027435064315796,
+    "file": "/Users/gtaghon/LocalCompute/GitHubSandbox/openfold-3-mlx/benchmarks/test_comparison/colabfold_results/pipeline_data/T1201/T1201.a3m",
+    "error": null
+  },
+  "templates": {
+    "success": true,
+    "count": 0,
+    "time": 0.00010704994201660156,
+    "file": "/Users/gtaghon/LocalCompute/GitHubSandbox/openfold-3-mlx/benchmarks/test_comparison/colabfold_results/pipeline_data/T1201/templates.m8",
+    "error": null
+  }
+}

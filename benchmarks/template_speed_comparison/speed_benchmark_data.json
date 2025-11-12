@@ -1,0 +1,102 @@
+[
+  {
+    "sequence_id": "T1201",
+    "sequence_length": 210,
+    "foldseek_time": 17.714838981628418,
+    "foldseek_templates": 10,
+    "foldseek_success": true,
+    "colabfold_time": 123.0,
+    "colabfold_templates": 5,
+    "colabfold_success": true
+  },
+  {
+    "sequence_id": "T1206",
+    "sequence_length": 237,
+    "foldseek_time": 16.447943925857544,
+    "foldseek_templates": 0,
+    "foldseek_success": true,
+    "colabfold_time": 131.1,
+    "colabfold_templates": 0,
+    "colabfold_success": true
+  },
+  {
+    "sequence_id": "T1207",
+    "sequence_length": 144,
+    "foldseek_time": 17.28587508201599,
+    "foldseek_templates": 4,
+    "foldseek_success": true,
+    "colabfold_time": 103.19999999999999,
+    "colabfold_templates": 2,
+    "colabfold_success": true
+  },
+  {
+    "sequence_id": "T1208s1",
+    "sequence_length": 328,
+    "foldseek_time": 33.06023287773132,
+    "foldseek_templates": 12,
+    "foldseek_success": true,
+    "colabfold_time": 158.39999999999998,
+    "colabfold_templates": 6,
+    "colabfold_success": true
+  },
+  {
+    "sequence_id": "T1208s2",
+    "sequence_length": 318,
+    "foldseek_time": 21.82740092277527,
+    "foldseek_templates": 3,
+    "foldseek_success": true,
+    "colabfold_time": 155.39999999999998,
+    "colabfold_templates": 1,
+    "colabfold_success": true
+  },
+  {
+    "sequence_id": "T1212",
+    "sequence_length": 466,
+    "foldseek_time": 18.488205194473267,
+    "foldseek_templates": 5,
+    "foldseek_success": true,
+    "colabfold_time": 199.79999999999998,
+    "colabfold_templates": 2,
+    "colabfold_success": true
+  },
+  {
+    "sequence_id": "T1214",
+    "sequence_length": 677,
+    "foldseek_time": 36.93450880050659,
+    "foldseek_templates": 20,
+    "foldseek_success": true,
+    "colabfold_time": 263.1,
+    "colabfold_templates": 10,
+    "colabfold_success": true
+  },
+  {
+    "sequence_id": "T1219",
+    "sequence_length": 32,
+    "foldseek_time": 20.447450160980225,
+    "foldseek_templates": 2,
+    "foldseek_success": true,
+    "colabfold_time": 69.6,
+    "colabfold_templates": 1,
+    "colabfold_success": true
+  },
+  {
+    "sequence_id": "T1226",
+    "sequence_length": 123,
+    "foldseek_time": 25.75995898246765,
+    "foldseek_templates": 0,
+    "foldseek_success": true,
+    "colabfold_time": 96.9,
+    "colabfold_templates": 0,
+    "colabfold_success": true
+  },
+  {
+    "sequence_id": "T1227s1",
+    "sequence_length": 427,
+    "foldseek_time": 20.73422384262085,
+    "foldseek_templates": 7,
+    "foldseek_success": true,
+    "colabfold_time": 188.1,
+    "colabfold_templates": 3,
+    "colabfold_success": true
+  }
+]

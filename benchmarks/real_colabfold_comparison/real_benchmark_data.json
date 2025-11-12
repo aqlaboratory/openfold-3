@@ -1,0 +1,26 @@
+[
+  {
+    "sequence_id": "T1201",
+    "sequence_length": 210,
+    "foldseek_time": 20.47349786758423,
+    "foldseek_templates": 10,
+    "foldseek_success": true,
+    "foldseek_top_identity": 1.0,
+    "colabfold_time": 1.340306043624878,
+    "colabfold_templates": 0,
+    "colabfold_success": true,
+    "colabfold_msa_depth": 459
+  },
+  {
+    "sequence_id": "T1206",
+    "sequence_length": 237,
+    "foldseek_time": 18.20065999031067,
+    "foldseek_templates": 0,
+    "foldseek_success": true,
+    "foldseek_top_identity": 0.0,
+    "colabfold_time": 0.96681809425354,
+    "colabfold_templates": 0,
+    "colabfold_success": true,
+    "colabfold_msa_depth": 11
+  }
+]

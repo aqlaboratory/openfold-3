@@ -767,7 +767,7 @@ def main():
 
     try:
         retriever = FoldSeekTemplateRetriever()
-        templates = retriever.get_templates_parallel(test_sequence, "T1201")
+        templates = retriever.get_templates_parallel(test_sequence, "P11972")
 
         print(f"\n🎯 Retrieved {len(templates)} templates:")
         for i, template in enumerate(templates[:5]):

@@ -461,7 +461,7 @@ def main():
 
     # Load sequences
     fasta_parser = FASTAParser()
-    sequences = fasta_parser.parse_fasta_file(args.fasta)
+    sequences = fasta_parser.parse_fasta(args.fasta)
 
     # Limit sequences for testing
     if args.max_sequences:

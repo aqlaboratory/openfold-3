@@ -1,0 +1,19 @@
+{
+  "queries": {
+    "T1201": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": [
+            "A"
+          ],
+          "sequence": "",
+          "main_msa_file_paths": [
+            "/Users/gtaghon/LocalCompute/GitHubSandbox/openfold-3-mlx/benchmarks/test_comparison/colabfold_results/pipeline_data/T1201/T1201.a3m"
+          ],
+          "template_alignment_file_path": "/Users/gtaghon/LocalCompute/GitHubSandbox/openfold-3-mlx/benchmarks/test_comparison/colabfold_results/pipeline_data/T1201/templates.m8"
+        }
+      ]
+    }
+  }
+}

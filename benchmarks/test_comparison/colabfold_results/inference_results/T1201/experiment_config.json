@@ -1,0 +1,144 @@
+{
+    "experiment_settings": {
+        "mode": "predict",
+        "output_dir": "/Users/gtaghon/LocalCompute/GitHubSandbox/openfold-3-mlx/benchmarks/test_comparison/colabfold_results/inference_results/T1201",
+        "log_dir": null,
+        "seeds": [
+            42
+        ],
+        "num_seeds": null,
+        "use_msa_server": true,
+        "use_templates": false,
+        "skip_existing": false
+    },
+    "pl_trainer_args": {
+        "max_epochs": 1000,
+        "accelerator": "gpu",
+        "precision": "32-true",
+        "num_nodes": 1,
+        "devices": 1,
+        "profiler": null,
+        "log_every_n_steps": 1,
+        "enable_checkpointing": true,
+        "enable_model_summary": false,
+        "deepspeed_config_path": null,
+        "distributed_timeout": "PT30M",
+        "mpi_plugin": false
+    },
+    "model_update": {
+        "presets": [
+            "predict",
+            "pae_enabled"
+        ],
+        "custom": {}
+    },
+    "inference_ckpt_path": "/Users/gtaghon/.openfold3/of3_ft3_v1.pt",
+    "cache_path": "/Users/gtaghon/.openfold3",
+    "data_module_args": {
+        "batch_size": 1,
+        "data_seed": 42,
+        "num_workers": 10,
+        "num_workers_validation": 4,
+        "epoch_len": 4
+    },
+    "dataset_config_kwargs": {
+        "ccd_file_path": null,
+        "msa": {
+            "max_rows_paired": 8191,
+            "max_rows": 16384,
+            "subsample_with_bands": false,
+            "min_chains_paired_partial": 2,
+            "pairing_mask_keys": [
+                "shared_by_two",
+                "less_than_600"
+            ],
+            "moltypes": [
+                0,
+                1
+            ],
+            "max_seq_counts": {
+                "uniref90_hits": 10000,
+                "uniprot_hits": 50000,
+                "bfd_uniclust_hits": 10000000,
+                "bfd_uniref_hits": 10000000,
+                "cfdb_uniref30": 10000000,
+                "mgnify_hits": 5000,
+                "rfam_hits": 10000,
+                "rnacentral_hits": 10000,
+                "nt_hits": 10000,
+                "concat_cfdb_uniref100_filtered": 10000000,
+                "colabfold_main": 16384,
+                "colabfold_paired": 8192
+            },
+            "msas_to_pair": [
+                "uniprot_hits",
+                "uniprot"
+            ],
+            "aln_order": [
+                "uniref90_hits",
+                "bfd_uniclust_hits",
+                "bfd_uniref_hits",
+                "cfdb_uniref30",
+                "mgnify_hits",
+                "rfam_hits",
+                "rnacentral_hits",
+                "nt_hits",
+                "concat_cfdb_uniref100_filtered",
+                "colabfold_main"
+            ],
+            "paired_msa_order": [
+                "colabfold_paired"
+            ]
+        },
+        "template": {
+            "n_templates": 4,
+            "take_top_k": true,
+            "distogram": {
+                "min_bin": 3.25,
+                "max_bin": 50.75,
+                "n_bins": 39
+            }
+        }
+    },
+    "output_writer_settings": {
+        "structure_format": "cif",
+        "full_confidence_output_format": "json",
+        "write_features": false,
+        "write_latent_outputs": false
+    },
+    "msa_computation_settings": {
+        "msa_file_format": "npz",
+        "server_user_agent": "openfold",
+        "server_url": "https://api.colabfold.com/",
+        "save_mappings": true,
+        "msa_output_directory": "/var/folders/6m/lhyww3r917x_hrtwnhg20jy40000gn/T/of3_colabfold_msas",
+        "cleanup_msa_dir": true
+    },
+    "template_preprocessor_settings": {
+        "mode": "predict",
+        "moltypes": [
+            0
+        ],
+        "max_sequences_parse": 200,
+        "max_seq_id": null,
+        "min_align": null,
+        "min_len": null,
+        "max_release_date": null,
+        "min_release_date_diff": null,
+        "max_templates": 20,
+        "fetch_missing_structures": true,
+        "create_precache": false,
+        "preparse_structures": false,
+        "create_logs": false,
+        "n_processes": 1,
+        "chunksize": 1,
+        "structure_directory": "/var/folders/6m/lhyww3r917x_hrtwnhg20jy40000gn/T/of3_template_data/template_structures",
+        "structure_file_format": "cif",
+        "output_directory": "/var/folders/6m/lhyww3r917x_hrtwnhg20jy40000gn/T/of3_template_data",
+        "precache_directory": null,
+        "structure_array_directory": null,
+        "cache_directory": "/var/folders/6m/lhyww3r917x_hrtwnhg20jy40000gn/T/of3_template_data/template_cache",
+        "log_directory": null,
+        "ccd_file_path": null
+    }
+}
