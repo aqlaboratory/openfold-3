@@ -1,0 +1,86 @@
+# Custom Benchmark Configuration
+# This file shows how to create custom benchmark configurations
+
+# Benchmark metadata
+benchmark_name: "custom_mlx_comparison"
+description: "Compare MLX performance with different attention settings"
+
+# Input settings
+input:
+  fasta_file: "casp16_monomers.fasta"
+  sequence_limit: 10  # Limit for testing, set to null for all sequences
+  timeout_minutes: 45  # Per-inference timeout
+
+# Output settings
+output:
+  base_dir: "results/custom_benchmark"
+  save_intermediate_files: true
+  generate_plots: true
+
+# Benchmark configurations to run
+configurations:
+  - name: "mlx_optimized"
+    description: "MLX with all optimizations enabled"
+    settings:
+      use_msa_server: true
+      use_templates: false
+      use_mlx_attention: true
+      batch_size: 1
+      num_seeds: 1
+      custom_overrides:
+        model_update:
+          custom:
+            settings:
+              memory:
+                eval:
+                  use_mlx_attention: true
+                  mlx_chunk_size: 512
+                  use_high_precision: false
+
+  - name: "mlx_minimal"
+    description: "MLX without MSA for speed comparison"
+    settings:
+      use_msa_server: false
+      use_templates: false
+      use_mlx_attention: true
+      batch_size: 1
+      num_seeds: 1
+
+  - name: "baseline_no_mlx"
+    description: "Baseline without MLX optimizations"
+    settings:
+      use_msa_server: true
+      use_templates: false
+      use_mlx_attention: false
+      batch_size: 1
+      num_seeds: 1
+
+# System monitoring settings
+monitoring:
+  enable_detailed_profiling: true
+  sample_interval_seconds: 1.0
+  monitor_gpu: true
+  monitor_disk_io: false
+
+# Reporting settings
+reporting:
+  generate_csv: true
+  generate_json: true
+  generate_html_report: false
+  include_plots: true
+  plot_formats: ["png", "svg"]
+
+# Hardware-specific settings
+hardware:
+  # Auto-detect or specify
+  platform: "auto"  # auto, macos_m1, macos_m2, linux_cuda, etc.
+
+  # Apple Silicon specific
+  apple_silicon:
+    enable_unified_memory_optimization: true
+    use_neural_engine: false
+
+  # CUDA specific
+  cuda:
+    enable_mixed_precision: true
+    use_tensor_cores: true

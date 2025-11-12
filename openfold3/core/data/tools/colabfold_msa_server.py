@@ -664,6 +664,7 @@ class ColabFoldQueryRunner:
         msa_file_format: str | list[str],
         user_agent: str,
         host_url: Url = "https://api.colabfold.com",
+        use_templates: bool = False,
     ):
         self.colabfold_mapper = colabfold_mapper
         self.output_directory = output_directory
@@ -673,6 +674,7 @@ class ColabFoldQueryRunner:
         self.user_agent = user_agent
         self.output_directory.mkdir(parents=True, exist_ok=True)
         self.host_url = host_url
+        self.use_templates = use_templates
         for subdir in ["raw", "main", "paired"]:
             (self.output_directory / subdir).mkdir(parents=True, exist_ok=True)
             if subdir == "raw":
@@ -698,7 +700,7 @@ class ColabFoldQueryRunner:
         a3m_lines_main = query_colabfold_msa_server(
             self.colabfold_mapper.seqs,
             prefix=self.output_directory / "raw/main",
-            use_templates=False,
+            use_templates=self.use_templates,
             use_pairing=False,
             user_agent=self.user_agent,
             host_url=self.host_url,
@@ -709,10 +711,18 @@ class ColabFoldQueryRunner:
         template_alignments_path = self.output_directory / "template"
         template_alignments_path.mkdir(parents=True, exist_ok=True)
 
-        template_alignments = pd.read_csv(
-            self.output_directory / "raw/main/pdb70.m8", sep="\t", header=None
-        )
-        m_with_templates = set(template_alignments[0])
+        # Only read template alignments if templates are enabled and file exists
+        m_with_templates = set()
+        pdb70_file = self.output_directory / "raw/main/pdb70.m8"
+
+        if self.use_templates and pdb70_file.exists() and pdb70_file.stat().st_size > 0:
+            try:
+                template_alignments = pd.read_csv(pdb70_file, sep="\t", header=None)
+                if not template_alignments.empty:
+                    m_with_templates = set(template_alignments[0])
+            except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+                # Log warning but continue without templates
+                print(f"Warning: Could not parse template file {pdb70_file}: {e}")
 
         for rep_id, aln in zip(
             self.colabfold_mapper.rep_ids, a3m_lines_main, strict=False
@@ -961,6 +971,7 @@ class MsaComputationSettings(BaseModel):
 def preprocess_colabfold_msas(
     inference_query_set: InferenceQuerySet,
     compute_settings: MsaComputationSettings,
+    use_templates: bool = False,
 ) -> InferenceQuerySet:
     """Gathers sequences, runs the ColabFold MSA server queries, updates MSA paths.
 
@@ -1032,6 +1043,7 @@ def preprocess_colabfold_msas(
         msa_file_format=compute_settings.msa_file_format,
         user_agent=compute_settings.server_user_agent,
         host_url=compute_settings.server_url,
+        use_templates=use_templates,
     )
     colabfold_query_runner.query_format_main()
     colabfold_query_runner.query_format_paired()

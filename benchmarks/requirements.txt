@@ -1,0 +1,19 @@
+# Requirements for OpenFold3-MLX Benchmarker
+# Install with: pip install -r requirements.txt
+
+# Core dependencies
+pandas>=2.0.0
+psutil>=5.9.0
+pyyaml>=6.0
+
+# Optional GPU monitoring (install based on your hardware)
+# For NVIDIA GPUs:
+# gputil>=1.4.0
+# nvidia-ml-py>=11.0.0
+
+# For comprehensive system monitoring (optional)
+# py-cpuinfo>=9.0.0
+
+# For plotting results (optional)
+# matplotlib>=3.5.0
+# seaborn>=0.12.0

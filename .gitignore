@@ -1,5 +1,6 @@
 .vscode/
 .claude/
+CLAUDE.md
 .idea/
 __pycache__/
 *.egg-info

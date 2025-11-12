@@ -1,0 +1,49 @@
+{
+  "metadata": {
+    "timestamp": "2025-11-11T20:28:40.621096",
+    "platform": "macOS-26.1-arm64-arm-64bit-Mach-O",
+    "python_version": "3.13.5 | packaged by Anaconda, Inc. | (main, Jun 12 2025, 11:23:37) [Clang 14.0.6 ]",
+    "total_runs": 2,
+    "successful_runs": 2,
+    "failed_runs": 0,
+    "msa_fallback_runs": 0,
+    "success_rate": 1.0
+  },
+  "summary_stats": {
+    "total_wall_time_hours": 0.09367178029484219,
+    "avg_wall_time_seconds": 168.60920453071594,
+    "median_wall_time_seconds": 168.60920453071594,
+    "min_wall_time_seconds": 166.571063041687,
+    "max_wall_time_seconds": 170.64734601974487,
+    "avg_peak_memory_gb": 17.89208984375,
+    "max_peak_memory_gb": 18.192291259765625
+  },
+  "per_config_stats": {
+    "mlx_with_msa": {
+      "count": 1,
+      "avg_wall_time_seconds": 166.571063041687,
+      "median_wall_time_seconds": 166.571063041687,
+      "avg_peak_memory_gb": 18.192291259765625
+    },
+    "mlx_no_msa": {
+      "count": 1,
+      "avg_wall_time_seconds": 170.64734601974487,
+      "median_wall_time_seconds": 170.64734601974487,
+      "avg_peak_memory_gb": 17.591888427734375
+    }
+  },
+  "per_sequence_stats": {},
+  "failures": [],
+  "warnings": [
+    {
+      "sequence_id": "T1201",
+      "config_name": "mlx_with_msa",
+      "warning": "DEBUG: ColabFold MSA temp dir: MSAs."
+    },
+    {
+      "sequence_id": "T1201",
+      "config_name": "mlx_with_msa",
+      "warning": "DEBUG: 22 output files generated"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+experiment_settings:
+  mode: predict
+  use_msa_server: true
+  use_templates: false
+
+data_module_args:
+  batch_size: 1
+  num_workers: 0
+  num_workers_validation: 0
+
+pl_trainer_args:
+  devices: 1
+  accelerator: gpu
+
+model_update:
+  presets: ["predict", "pae_enabled"]
+  custom:
+    settings:
+      memory:
+        eval:
+          # Use MLX attention for Apple Silicon optimization
+          use_deepspeed_evo_attention: false
+          use_lma: false
+          use_mlx_attention: true
