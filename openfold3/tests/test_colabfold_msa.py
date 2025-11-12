@@ -136,6 +136,14 @@ class TestColabFoldQueryRunner:
             {0: [101, 101, 102], 1: ["test_A", "test_B", "test_C"], 2: [0, 1, 2]}
         ).to_csv(raw_main_dir / "pdb70.m8", header=False, index=False, sep="\t")
 
+    @staticmethod
+    def _make_empty_template_file(path: Path):
+        """Create an empty pdb70.m8 file to simulate ColabFold returning empty template file."""
+        raw_main_dir = path / "raw" / "main"
+        raw_main_dir.mkdir(parents=True, exist_ok=True)
+        # Create an empty file (0 bytes)
+        (raw_main_dir / "pdb70.m8").touch()
+
     @patch("openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server")
     def test_runner_on_multimer_example(
         self,
@@ -275,6 +283,52 @@ class TestColabFoldQueryRunner:
         with open(tmp_path / "mappings/seq_to_rep_id.json") as f:
             assert set(json.load(f).keys()) == set(test_sequences), (
                 "Expected all test sequences to be present in the mapping file"
+            )
+
+    @patch(
+        "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server",
+        side_effect=_construct_dummy_a3m,
+    )
+    def test_empty_m8_file_handling(
+        self,
+        mock_query,
+        tmp_path,
+    ):
+        """Test that empty pdb70.m8 file is handled gracefully without crashing."""
+        test_sequence = "TESTSEQUENCE"
+        query = self._construct_monomer_query(test_sequence)
+        
+        # Create an empty pdb70.m8 file (0 bytes) to simulate ColabFold returning empty template file
+        self._make_empty_template_file(tmp_path)
+        
+        mapper = collect_colabfold_msa_data(query)
+        runner = ColabFoldQueryRunner(
+            colabfold_mapper=mapper,
+            output_directory=tmp_path,
+            msa_file_format="npz",
+            user_agent="test-agent",
+            host_url="https://dummy.url",
+        )
+        
+        # Should not raise EmptyDataError or any other exception
+        runner.query_format_main()
+        
+        # Verify MSA processing still works
+        expected_unpaired_dir = tmp_path / "main"
+        assert expected_unpaired_dir.exists(), "Expected main MSA directory to exist"
+        
+        expected_file = f"{get_sequence_hash(test_sequence)}.npz"
+        assert (expected_unpaired_dir / expected_file).exists(), (
+            f"Expected MSA file {expected_file} to exist"
+        )
+        
+        # Verify no template files are created (since m8 file is empty)
+        template_alignments_dir = tmp_path / "template"
+        if template_alignments_dir.exists():
+            # If directory exists, it should be empty (no template files created)
+            template_files = list(template_alignments_dir.rglob("*.m8"))
+            assert len(template_files) == 0, (
+                "Expected no template files to be created when m8 file is empty"
             )
 
 
