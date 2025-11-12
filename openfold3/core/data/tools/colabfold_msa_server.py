@@ -709,10 +709,21 @@ class ColabFoldQueryRunner:
         template_alignments_path = self.output_directory / "template"
         template_alignments_path.mkdir(parents=True, exist_ok=True)
 
-        template_alignments = pd.read_csv(
-            self.output_directory / "raw/main/pdb70.m8", sep="\t", header=None
-        )
-        m_with_templates = set(template_alignments[0])
+        # Read template alignments if the file exists and has content
+        template_alignments_file = self.output_directory / "raw/main/pdb70.m8"
+        if template_alignments_file.exists() and template_alignments_file.stat().st_size > 0:
+            template_alignments = pd.read_csv(
+                template_alignments_file, sep="\t", header=None
+            )
+            m_with_templates = set(template_alignments[0])
+        else:
+            # pdb70.m8 downloaded by Colabfold returned empty - No template alignments available 
+            # Create empty DataFrame with expected column structure (at least column 0)
+            # to match the structure when file is read with header=None.
+            logger.warning(f"Colabfold returned no templates for at least one of the sequences in the batch \
+             Proceeding without template alignments for this batch.")
+            template_alignments = pd.DataFrame()
+            m_with_templates = set()
 
         for rep_id, aln in zip(
             self.colabfold_mapper.rep_ids, a3m_lines_main, strict=False
@@ -739,7 +750,7 @@ class ColabFoldQueryRunner:
 
             # Format template alignments
             m_i = self.colabfold_mapper.rep_id_to_m[rep_id]
-            if m_i in m_with_templates:
+            if m_i in m_with_templates and len(template_alignments) > 0:
                 template_rep_dir.mkdir(parents=True, exist_ok=True)
                 template_alignment_file = template_rep_dir / "colabfold_template.m8"
                 template_alignment = template_alignments[template_alignments[0] == m_i]
