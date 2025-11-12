@@ -155,7 +155,7 @@ nvidia-cutlass = "==3.8"
 #   https://github.com/conda-forge/deepspeed-feedstock/commit/87cec8c4344b8eaefa3d17bffb69e2c83c28a82a
 # DeepSpeed still cannot find conda-forge ninja, owing to this issue
 #   https://github.com/conda-forge/ninja-feedstock/issues/26
-ninja = "*"
+# ninja = "*"
 
 # --- Missing package for cuequivariance
 # At the moment the optimized kernels are not distributed in conda-forge
