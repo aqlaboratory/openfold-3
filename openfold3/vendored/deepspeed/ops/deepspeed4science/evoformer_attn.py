@@ -5,7 +5,7 @@
 
 import torch
 import numpy as np
-from openfold3.vendored.deepspeed.ops.op_builder import EvoformerAttnBuilder
+from openfold3.vendored.deepspeed.op_builder.evoformer_attn import EvoformerAttnBuilder
 from deepspeed.accelerator import get_accelerator
 
 kernel_ = None
