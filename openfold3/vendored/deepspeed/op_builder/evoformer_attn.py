@@ -48,30 +48,31 @@ class EvoformerAttnBuilder(CUDAOpBuilder):
             if verbose:
                 self.warning("Please install torch if trying to pre-compile kernels")
             return False
-        if self.cutlass_path is None:
-            if verbose:
-                self.warning("Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH")
-            return False
-        if os.path.exists(f'{self.cutlass_path}/CHANGELOG.md'):
-            with open(f'{self.cutlass_path}/CHANGELOG.md', 'r') as f:
-                if '3.1.0' not in f.read():
+        if self.cutlass_path != "DS_IGNORE_CUTLASS_DETECTION":
+            if self.cutlass_path is None:
+                if verbose:
+                    self.warning("Please specify the CUTLASS repo directory as environment variable $CUTLASS_PATH")
+                return False
+            if os.path.exists(f'{self.cutlass_path}/CHANGELOG.md'):
+                with open(f'{self.cutlass_path}/CHANGELOG.md', 'r') as f:
+                    if '3.1.0' not in f.read():
+                        if verbose:
+                            self.warning("Please use CUTLASS version >= 3.1.0")
+                            return False
+            else:
+                # pip install nvidia-cutlass package
+                try:
+                    import cutlass
+                except ImportError:
+                    if verbose:
+                        self.warning("Please pip install nvidia-cutlass if trying to pre-compile kernels")
+                        return False
+                cutlass_major, cutlass_minor = cutlass.__version__.split('.')[:2]
+                cutlass_compatible = (int(cutlass_major) >= 3 and int(cutlass_minor) >= 1)
+                if not cutlass_compatible:
                     if verbose:
                         self.warning("Please use CUTLASS version >= 3.1.0")
                     return False
-        else:
-            # pip install nvidia-cutlass package
-            try:
-                import cutlass
-            except ImportError:
-                if verbose:
-                    self.warning("Please pip install nvidia-cutlass if trying to pre-compile kernels")
-                return False
-            cutlass_major, cutlass_minor = cutlass.__version__.split('.')[:2]
-            cutlass_compatible = (int(cutlass_major) >= 3 and int(cutlass_minor) >= 1)
-            if not cutlass_compatible:
-                if verbose:
-                    self.warning("Please use CUTLASS version >= 3.1.0")
-                return False
 
         cuda_okay = True
         if not self.is_rocm_pytorch() and torch.cuda.is_available():  #ignore-cuda
