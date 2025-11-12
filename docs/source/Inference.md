@@ -24,12 +24,12 @@ Supported:
 - Template-based prediction
     - using ColabFold template alignments
     - using pre-computed template alignments
+    - using direct CIF template files (no alignments required)
 - Non-canonical residues
 
 Coming soon:
 
 - Covalently modified residues and other cross-chain covalent bonds
-- User-specified template structures (as opposed to top 4)
 
 ### 1.2 DNA
 
@@ -85,7 +85,10 @@ A prediction job can be submitted with the following command:
 run_openfold --query_json=<query_json>
 ```
 
-Sample input query jsons can be found in the [examples/example_inference_inputs](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs) directory.
+Sample input query jsons can be found in the [examples/example_inference_inputs](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs) directory, including examples with:
+- ColabFold MSA and template inputs
+- Precomputed MSA inputs
+- {ref}`Direct CIF template inputs <inference-cif-direct-templates>` (no alignments required)
 
 Full output directories are provided on the [OpenFold HuggingFace repo](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples). These include:
 - Single-chain protein (monomer) -- Ubiquitin (PDB: 1UBQ)
@@ -293,6 +296,62 @@ model_update:
 
 ---
 
+(inference-cif-direct-templates)=
+#### 🧬 CIF Direct Template Mode
+
+OpenFold3 supports providing template structures directly as CIF files without requiring pre-computed template alignments. In this mode, the system automatically:
+1. Parses each provided CIF file
+2. Extracts all chains and their sequences
+3. Aligns each chain to your query sequence
+4. Selects the best matching chain based on sequence identity × coverage score
+
+This is particularly useful for stateless inference environments or when you have specific template structures but no alignment files.
+
+**Usage:**
+
+In your query JSON, specify `template_cif_paths` instead of `template_alignment_file_path`:
+
+```json
+{
+    "queries": {
+        "my_query": {
+            "chains": [
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": ["A"],
+                    "sequence": "MKLLVVDDAGQKFT...",
+                    "template_cif_paths": [
+                        "path/to/template1.cif",
+                        "path/to/template2.cif",
+                        "path/to/template3.cif"
+                    ]
+                }
+            ]
+        }
+    }
+}
+```
+
+**Example queries:**
+- [Homomer with direct CIF templates](https://github.com/aqlaboratory/openfold-3/blob/main/examples/example_inference_inputs/query_homomer_with_direct_cif_templates.json)
+- [Multimer with direct CIF templates](https://github.com/aqlaboratory/openfold-3/blob/main/examples/example_inference_inputs/query_multimer_with_direct_cif_templates.json)
+
+**Configuration:**
+
+You can adjust the minimum score threshold for chain selection in your `runner.yml`:
+
+```yaml
+template_preprocessor_settings:
+  cif_direct_min_score: 0.1  # Default: 0.1 (seq_identity × coverage)
+```
+
+**Notes:**
+- For multi-chain CIF files, only the best matching chain per file is used as a template
+- The `template_cif_paths` field cannot be used together with `template_alignment_file_path`
+- This mode is currently supported for protein chains only
+
+---
+
 ### 3.4 Customized ColabFold MSA Server Settings Using `runner.yml` 
 
 All settings for the ColabFold server and outputs can be set under [`msa_computation_settings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py#L904)
@@ -470,9 +529,11 @@ This file representing the full input query in a validated internal format defin
 
   - `template_alignment_file_path`: Path to the preprocessed template cache entry `.npz` file used for template featurization. By default, template cache entries are automatically created in a short preprocessing step using the raw template alignment files provided under this same field and the template structures identified in the alignment. 
 
+  - `template_cif_paths`: List of paths to CIF template files when using {ref}`CIF direct template mode <inference-cif-direct-templates>`. This field is mutually exclusive with `template_alignment_file_path`.
+
   - `template_entry_chain_ids`: List of template chains, identified by their entry (typically PDB) IDs and chain IDs, used for featurization. By default, up to the first 4 of these chains are used.
 
-  Note: Refer to the {doc}`Template How-To Documentation <template_how_to>` for how to specify these fields if you want to use precomputed template alignments instead of Colabfold alignments for template inputs.
+  Note: Refer to the {doc}`Template How-To Documentation <template_how_to>` for how to specify these fields if you want to use precomputed template alignments instead of Colabfold alignments for template inputs, or see {ref}`CIF Direct Template Mode <inference-cif-direct-templates>` for using template structures directly without alignments.
 
 Note: If MSA and template files are persisted between runs, the same `inference_query_set.json` file can be used to resubmit the query without needing to rerun the template and MSA pipelines. To do so:
 

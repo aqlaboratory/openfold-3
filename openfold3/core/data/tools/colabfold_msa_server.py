@@ -879,7 +879,15 @@ def add_msa_paths_to_iqs(
                             stacklevel=2,
                         )
                     chain.paired_msa_file_paths = [paired_msa_file_paths]
-
+                    
+                if chain.template_cif_paths is not None:
+                    warnings.warn(
+                        f"Query {query_name} chain {chain} already has "
+                        "template_cif_paths set. These are not overwritten with "
+                        "path(s) to the template CIF files from the ColabFold MSA server.",
+                        stacklevel=2,
+                    )
+                    continue
                 # Add template alignment file paths
                 template_alignment_file_path = (
                     output_directory

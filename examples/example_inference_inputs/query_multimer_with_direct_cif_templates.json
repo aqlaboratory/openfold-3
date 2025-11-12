@@ -1,0 +1,31 @@
+{
+	"queries": {
+		"7cnx": {
+			"chains": [
+				{
+					"molecule_type": "protein",
+					"chain_ids": ["A", "C"],
+					"sequence": "MLNSFKLSLQYILPKLWLTRLAGWGASKRAGWLTKLVIDLFVKYYKVDMKEAQKPDTASYRTFNEFFVRPLRDEVRPIDTDPNVLVMPADGVISQLGKIEEDKILQAKGHNYSLEALLAGNYLMADLFRNGTFVTTYLSPRDYHRVHMPCNGILREMIYVPGDLFSVNHLTAQNVPNLFARNERVICLFDTEFGPMAQILVGATIVGSIETVWAGTITPPREGIIKRWTWPAGENDGSVALLKGQEMGRFKLG",
+					"template_cif_paths": [
+						"examples/example_inference_inputs/templates/multimer/chain_a_c/7cnz.cif"
+					]
+				},
+				{
+					"molecule_type": "protein",
+					"chain_ids": ["B", "D"],
+					"sequence": "XTVINLFAPGKVNLVEQLESLSVTKIGQPLAVSTGHHHHHHG",
+					"template_cif_paths": [
+						"examples/example_inference_inputs/templates/multimer/chain_b_d/6l06.cif",
+						"examples/example_inference_inputs/templates/multimer/chain_b_d/6l07.cif",
+						"examples/example_inference_inputs/templates/multimer/chain_b_d/7cnw.cif",
+						"examples/example_inference_inputs/templates/multimer/chain_b_d/7cnx.cif",
+						"examples/example_inference_inputs/templates/multimer/chain_b_d/7cnz.cif"
+					]
+				}
+			]
+		}
+	}
+}
+
+
+

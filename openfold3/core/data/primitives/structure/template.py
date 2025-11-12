@@ -164,10 +164,16 @@ def sample_templates(
     """
     chain_data = assembly_data[chain_id]
     template_ids = chain_data["template_ids"]
+    cache_file = chain_data.get("cache_entry_file_path")
+    
+    logger.debug(f"Chain {chain_id}: cache_file={cache_file}, n_templates_requested={n_templates}")
+    
     if not template_ids:
+        logger.debug(f"No template_ids provided for chain {chain_id}")
         return {}
 
     template_ids = np.array(template_ids)
+    logger.info(f"Template IDs for chain {chain_id}: {template_ids[:5] if len(template_ids) > 5 else template_ids}")
 
     # Subset the template IDs to only those that have a pre-parsed structure array
     # Some arrays may be missing due to preprocessing errors
@@ -219,14 +225,19 @@ def sample_templates(
 
         # From the file path during inference
         else:
+            cache_path = chain_data["cache_entry_file_path"]
+            logger.debug(f"Loading template cache from: {cache_path}")
             template_cache_entry = np.load(
-                chain_data["cache_entry_file_path"], allow_pickle=True
+                cache_path, allow_pickle=True
             )
 
         # Unpack into dict
         template_cache_entry = {
             key: value.item() for key, value in template_cache_entry.items()
         }
+        
+        n_templates_in_cache = len(template_cache_entry)
+        logger.info(f"Cache loaded: {n_templates_in_cache} templates available, keys: {list(template_cache_entry.keys())[:3]}")
 
         # Randomly sample k templates (core PDB training sets) or take top k templates
         # (distillation, inference sets)
@@ -234,9 +245,11 @@ def sample_templates(
             sampled_template_ids = template_ids[:k]
         else:
             sampled_template_ids = np.random.choice(template_ids, k, replace=False)
+        
+        logger.info(f"Sampled {k} templates: {sampled_template_ids}")
 
         # Wrap each subdict in a TemplateCacheEntry
-        return {
+        result = {
             template_id: TemplateCacheEntry(
                 index=template_cache_entry[template_id]["index"],
                 release_date=template_cache_entry[template_id]["release_date"],
@@ -244,6 +257,9 @@ def sample_templates(
             )
             for template_id in sampled_template_ids
         }
+        
+        logger.debug(f"Returning {len(result)} template entries for chain {chain_id}")
+        return result
 
     else:
         return {}

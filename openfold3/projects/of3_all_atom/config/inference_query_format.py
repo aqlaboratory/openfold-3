@@ -20,6 +20,7 @@ from pydantic import (
     DirectoryPath,
     FilePath,
     field_serializer,
+    model_validator,
 )
 
 from openfold3.core.config.config_utils import (
@@ -65,11 +66,26 @@ class Chain(BaseModel):
     template_entry_chain_ids: (
         Annotated[list[str], BeforeValidator(_ensure_list)] | None
     ) = None
+    template_cif_paths: (
+        Annotated[list[FilePath], BeforeValidator(_ensure_list)] | None
+    ) = None
     sdf_file_path: FilePath | None = None
 
     @field_serializer("molecule_type", return_type=str)
     def serialize_enum_name(self, v: MoleculeType, _info):
         return v.name
+
+    @model_validator(mode='after')
+    def validate_template_inputs(self) -> 'Chain':
+        """Validate template input consistency."""
+        if (self.template_alignment_file_path is not None and 
+            self.template_cif_paths is not None):
+            raise ValueError(
+                f"Chain {self.chain_ids}: Cannot specify both "
+                "'template_alignment_file_path' and 'template_cif_paths'"
+            )
+        
+        return self
 
     # TODO(jennifer): Add validations to this class
     # - if molecule type is protein / dna / rna - must specify sequence
