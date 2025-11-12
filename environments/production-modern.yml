@@ -23,9 +23,6 @@ dependencies:
 - libcublas-dev *
 - libcusolver-dev *
 - libcurand-dev *
-- treelib *
-- pydot *
-- cuda-python <12.9.1
 - rdkit *
 - biotite <1.3
 - pdbeccdutils *
@@ -54,10 +51,7 @@ dependencies:
 - cuequivariance-torch *
 - pip
 - pip:
-  - nvidia-cutlass==3.8
-  - ninja
   - cuequivariance-ops-torch-cu12
-  - -e ..
+  - -e .
 variables:
-  CUTLASS_PATH: TRICK_DEEPSPEED
-
+  CUTLASS_PATH: DS_IGNORE_CUTLASS_DETECTION
