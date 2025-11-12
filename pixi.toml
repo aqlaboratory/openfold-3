@@ -1,5 +1,5 @@
 #
-# This is a pixi (https://pixi.sh) manifest to manage environment for OpenFold-3.
+# This is a pixi (https://pixi.sh) manifest to manage environments for OpenFold-3.
 #
 # The current environment passes all tests in a linux machine.
 # Change to the openfold-3 directory and run:
@@ -22,7 +22,6 @@ authors = []
 channels = ["conda-forge", "bioconda"]
 platforms = ["linux-64"]
 version = "0.1.0"
-# conda-pypi-map = {}
 
 [activation]
 
@@ -134,13 +133,13 @@ cuequivariance-torch = "*"
 
 # --- Poor native library detection from DeepSpeed
 
-# DeepSpeed relies on python's cutlass interface only for checking that CUTLASS is installed.
+# DeepSpeed relies on cutlass python interface only for checking that cutlass is installed.
 # Here where this check was added:
 #   https://github.com/deepspeedai/DeepSpeed/commit/51da191eb54b69224edfb7cb4ce69db9a88956f7
 # Note that this interface is DEPRECATED and not shipped anymore after cutlass 3.8.0
 #   https://github.com/NVIDIA/cutlass/discussions/2119
 #   https://github.com/NVIDIA/cutlass/issues/2549
-# In conda environments, CUTLASS is well configured and works perfectly when building the extension
+# In conda environments, cutlass is well configured and works perfectly when building the extension
 # No python bindings are at the moment included in the conda package (arguably we should also include them)
 #   https://github.com/conda-forge/cutlass-feedstock/blob/main/recipe/meta.yaml
 # The best solution would be to patch deepspeed upstream to have a python independent way to assess the availability of cutlass.
@@ -164,6 +163,7 @@ ninja = "*"
 cuequivariance-ops-torch-cu12 = "*"  # we need to coordinate this with the conda packages, or install all from pypi
 
 # --- OpenFold3 in editable mode
+# The goal here would be to avoid getting anything installed from pypi in this step.
 # TODO: This brings a more modern version of MKL in python world which installs in parallel with the conda version
 #   - pixi even reinstalls MKL itself clobbering the conda files, which is likely a bug
 #   - mamba installs only the extra missing dependencies not in conda-forge (or without a proper mapping)
