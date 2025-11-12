@@ -32,13 +32,13 @@ dependencies = [
   "pdbeccdutils",
   # For cutlass >=4, import library is cutlass_cppgen, but deepspeed is
   # currently using cutlass.
-  "nvidia-cutlass <4",
+  # "nvidia-cutlass <4",
 
   # additional pins
 
   # Pinned cutlass <4 calls from cuda.__version__, which was removed when
   # cuda-python went fully metapackage
-  "cuda-python <12.9.1",
+  # "cuda-python <12.9.1",
 ]
 authors = [
   {name = "OpenFold Team", email = "support@openfold.io" }
