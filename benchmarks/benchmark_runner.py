@@ -98,12 +98,17 @@ class BenchmarkResult:
     output_files: List[str] = None
     msa_fallback_detected: bool = False
     warnings: List[str] = None
+    mean_plddt: Optional[float] = None
+    num_samples: int = 0
+    structure_files: List[str] = None
 
     def __post_init__(self):
         if self.output_files is None:
             self.output_files = []
         if self.warnings is None:
             self.warnings = []
+        if self.structure_files is None:
+            self.structure_files = []
 
 class FASTAParser:
     """Parser for FASTA files"""
@@ -178,6 +183,55 @@ class QueryGenerator:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, 'w') as f:
             json.dump(query_data, f, indent=2)
+
+class AccuracyCalculator:
+    """Calculates accuracy metrics from OpenFold3 output files"""
+
+    @staticmethod
+    def calculate_plddt_from_output(output_dir: Path, sequence_id: str) -> Tuple[Optional[float], int, List[str]]:
+        """
+        Calculate mean pLDDT from OpenFold3 output directory
+
+        Returns:
+            tuple: (mean_plddt, num_samples, structure_files)
+        """
+        try:
+            # Find all confidence files in the output directory
+            confidence_files = list(output_dir.glob("**/*confidences.json"))
+            structure_files = list(output_dir.glob("**/*model.cif")) + list(output_dir.glob("**/*model.pdb"))
+
+            if not confidence_files:
+                logger.warning(f"No confidence files found in {output_dir}")
+                return None, 0, [str(f) for f in structure_files]
+
+            all_plddts = []
+
+            for conf_file in confidence_files:
+                try:
+                    with open(conf_file, 'r') as f:
+                        conf_data = json.load(f)
+
+                    if 'plddt' in conf_data:
+                        plddt_scores = conf_data['plddt']
+                        # Calculate mean pLDDT for this sample
+                        sample_mean_plddt = sum(plddt_scores) / len(plddt_scores)
+                        all_plddts.append(sample_mean_plddt)
+
+                except (json.JSONDecodeError, KeyError, TypeError) as e:
+                    logger.warning(f"Could not parse confidence file {conf_file}: {e}")
+                    continue
+
+            if all_plddts:
+                # Return the mean pLDDT across all samples
+                mean_plddt = sum(all_plddts) / len(all_plddts)
+                return mean_plddt, len(all_plddts), [str(f) for f in structure_files]
+            else:
+                logger.warning(f"No valid pLDDT scores found for {sequence_id}")
+                return None, 0, [str(f) for f in structure_files]
+
+        except Exception as e:
+            logger.error(f"Error calculating pLDDT for {sequence_id}: {e}")
+            return None, 0, []
 
 class SystemMonitor:
     """Monitors system resources during benchmark runs"""
@@ -284,25 +338,15 @@ class BenchmarkRunner:
         base_config_path = self.openfold_root / "msa_only_runner.yaml"
 
         configs = [
-            # Primary configuration with MSA - now works properly!
+            # Primary MLX configuration with MSA
             BenchmarkConfig(
                 name="mlx_with_msa",
-                description="MLX attention with MSA server (high accuracy, ~32s)",
+                description="MLX attention with MSA server (high accuracy)",
                 runner_yaml=str(base_config_path),
                 use_msa_server=True,
                 use_templates=False,
                 use_mlx_attention=True,
-                timeout_minutes=45,  # Longer timeout for MSA processing
-            ),
-            # Comparison config without MSA for speed reference
-            BenchmarkConfig(
-                name="mlx_no_msa",
-                description="MLX attention without MSA (fastest but low accuracy ~0.4 lDDT)",
-                runner_yaml=str(base_config_path),
-                use_msa_server=False,
-                use_templates=False,
-                use_mlx_attention=True,
-                timeout_minutes=15,
+                timeout_minutes=60,  # Generous timeout for MSA processing
             ),
         ]
 
@@ -455,6 +499,16 @@ class BenchmarkRunner:
                 if config.use_msa_server:
                     warnings.append(f"DEBUG: {len(output_files)} output files generated")
 
+                # Calculate accuracy metrics
+                mean_plddt, num_samples, structure_files = AccuracyCalculator.calculate_plddt_from_output(
+                    run_output_dir, seq_info.id
+                )
+
+                if mean_plddt is not None:
+                    logger.info(f"   Mean pLDDT: {mean_plddt:.1f} ({num_samples} samples)")
+                else:
+                    warnings.append("Could not calculate pLDDT - no confidence files found")
+
                 return BenchmarkResult(
                     sequence_id=seq_info.id,
                     config_name=config.name,
@@ -465,7 +519,10 @@ class BenchmarkRunner:
                     avg_gpu_percent=stats['avg_gpu_percent'],
                     output_files=[str(f) for f in output_files],
                     msa_fallback_detected=msa_fallback_detected,
-                    warnings=warnings
+                    warnings=warnings,
+                    mean_plddt=mean_plddt,
+                    num_samples=num_samples,
+                    structure_files=structure_files
                 )
             else:
                 # Failure
@@ -602,6 +659,20 @@ class BenchmarkRunner:
         if successful_runs > 0:
             successful_df = df[df['success'] == True]
 
+            # Calculate accuracy statistics
+            successful_df_with_plddt = successful_df[successful_df['mean_plddt'].notna()]
+            accuracy_stats = {}
+
+            if len(successful_df_with_plddt) > 0:
+                accuracy_stats = {
+                    'avg_mean_plddt': successful_df_with_plddt['mean_plddt'].mean(),
+                    'median_mean_plddt': successful_df_with_plddt['mean_plddt'].median(),
+                    'min_mean_plddt': successful_df_with_plddt['mean_plddt'].min(),
+                    'max_mean_plddt': successful_df_with_plddt['mean_plddt'].max(),
+                    'plddt_available_runs': len(successful_df_with_plddt),
+                    'avg_num_samples': successful_df_with_plddt['num_samples'].mean(),
+                }
+
             report['summary_stats'] = {
                 'total_wall_time_hours': successful_df['wall_time_seconds'].sum() / 3600,
                 'avg_wall_time_seconds': successful_df['wall_time_seconds'].mean(),
@@ -610,17 +681,29 @@ class BenchmarkRunner:
                 'max_wall_time_seconds': successful_df['wall_time_seconds'].max(),
                 'avg_peak_memory_gb': successful_df['peak_memory_gb'].mean(),
                 'max_peak_memory_gb': successful_df['peak_memory_gb'].max(),
+                **accuracy_stats
             }
 
             # Per-config stats
             for config_name in successful_df['config_name'].unique():
                 config_df = successful_df[successful_df['config_name'] == config_name]
-                report['per_config_stats'][config_name] = {
+                config_df_with_plddt = config_df[config_df['mean_plddt'].notna()]
+
+                config_stats = {
                     'count': len(config_df),
                     'avg_wall_time_seconds': config_df['wall_time_seconds'].mean(),
                     'median_wall_time_seconds': config_df['wall_time_seconds'].median(),
                     'avg_peak_memory_gb': config_df['peak_memory_gb'].mean(),
                 }
+
+                if len(config_df_with_plddt) > 0:
+                    config_stats.update({
+                        'avg_mean_plddt': config_df_with_plddt['mean_plddt'].mean(),
+                        'median_mean_plddt': config_df_with_plddt['mean_plddt'].median(),
+                        'plddt_count': len(config_df_with_plddt),
+                    })
+
+                report['per_config_stats'][config_name] = config_stats
 
         # Failures
         failed_df = df[df['success'] == False]
@@ -790,6 +873,14 @@ def main():
             print(f"\nMemory Summary:")
             print(f"  Average peak: {report['summary_stats']['avg_peak_memory_gb']:.1f} GB")
             print(f"  Maximum peak: {report['summary_stats']['max_peak_memory_gb']:.1f} GB")
+
+            if 'avg_mean_plddt' in report['summary_stats']:
+                print(f"\nAccuracy Summary (pLDDT):")
+                print(f"  Average: {report['summary_stats']['avg_mean_plddt']:.1f}")
+                print(f"  Median: {report['summary_stats']['median_mean_plddt']:.1f}")
+                print(f"  Range: {report['summary_stats']['min_mean_plddt']:.1f} - {report['summary_stats']['max_mean_plddt']:.1f}")
+                print(f"  Available for: {report['summary_stats']['plddt_available_runs']}/{report['metadata']['successful_runs']} runs")
+                print(f"  Average samples per run: {report['summary_stats']['avg_num_samples']:.1f}")
 
         if report['metadata']['failed_runs'] > 0:
             print(f"\nFailures:")

@@ -16,10 +16,10 @@
             },
             "eval": {
                 "chunk_size": 4,
-                "use_deepspeed_evo_attention": false,
+                "use_deepspeed_evo_attention": true,
                 "use_cueq_triangle_kernels": false,
                 "use_lma": false,
-                "use_mlx_attention": true,
+                "use_mlx_attention": false,
                 "use_mlx_triangle_kernels": false,
                 "use_mlx_activation_functions": false,
                 "msa_module": {

@@ -1,19 +1,19 @@
 {
     "experiment_settings": {
         "mode": "predict",
-        "output_dir": "results/results/mlx_with_msa/T1206",
+        "output_dir": ".",
         "log_dir": null,
         "seeds": [
             42
         ],
         "num_seeds": null,
         "use_msa_server": true,
-        "use_templates": false,
+        "use_templates": true,
         "skip_existing": false
     },
     "pl_trainer_args": {
         "max_epochs": 1000,
-        "accelerator": "mps",
+        "accelerator": "gpu",
         "precision": "32-true",
         "num_nodes": 1,
         "devices": 1,
@@ -30,25 +30,15 @@
             "predict",
             "pae_enabled"
         ],
-        "custom": {
-            "settings": {
-                "memory": {
-                    "eval": {
-                        "use_deepspeed_evo_attention": false,
-                        "use_lma": false,
-                        "use_mlx_attention": true
-                    }
-                }
-            }
-        }
+        "custom": {}
     },
     "inference_ckpt_path": "/Users/gtaghon/.openfold3/of3_ft3_v1.pt",
     "cache_path": "/Users/gtaghon/.openfold3",
     "data_module_args": {
         "batch_size": 1,
         "data_seed": 42,
-        "num_workers": 0,
-        "num_workers_validation": 0,
+        "num_workers": 10,
+        "num_workers_validation": 4,
         "epoch_len": 4
     },
     "dataset_config_kwargs": {

@@ -87,34 +87,42 @@ python benchmark_runner.py --limit 1 --timeout 5 --verbose
 
 ## Benchmark Configurations
 
-The benchmarker automatically creates these configurations:
+The benchmarker runs with this optimized configuration:
 
 | Configuration | MSA Server | Templates | MLX Attention | Description |
 |--------------|------------|-----------|---------------|-------------|
-| `mlx_with_msa` | ✅ | ❌ | ✅ | MLX with MSA server (high accuracy, ~32s) |
-| `mlx_no_msa` | ❌ | ❌ | ✅ | MLX without MSA (fastest but low accuracy ~0.4 lDDT, ~10s) |
+| `mlx_with_msa` | ✅ | ❌ | ✅ | MLX with MSA server (high accuracy) |
 
-> **✅ MSA Fixed!**:
-> - **MSA Parsing Issue**: **RESOLVED** - Fixed pandas `.m8` file parsing errors
-> - **Template Support**: Temporarily disabled (parsing bugs in template alignment code)
-> - **Recommendation**: Use `mlx_with_msa` for accurate benchmarking, `mlx_no_msa` for speed reference only
+**Key Features:**
+- **✅ MSA Fixed**: Resolved pandas `.m8` file parsing errors
+- **✅ pLDDT Calculation**: Automatic accuracy assessment for all predictions
+- **✅ Streamlined**: Single high-quality configuration (no low-accuracy no-MSA mode)
+- **❌ Template Support**: Temporarily disabled (parsing bugs in template alignment code)
 
 ## Understanding Results
 
-### Timing Metrics
-- **Wall Time**: Total time from start to finish
-- **CPU Time**: Time spent on CPU computation
+### Performance Metrics
+- **Wall Time**: Total time from start to finish for inference
 - **Memory Usage**: Peak memory consumption during inference
+- **CPU/GPU Utilization**: System resource usage patterns
+
+### Accuracy Metrics
+- **pLDDT**: Predicted Local Distance Difference Test scores (0-100, higher is better)
+  - **Average pLDDT**: Mean confidence across all residues and samples
+  - **Range**: Distribution of pLDDT scores across sequences
+  - **Sample Count**: Number of diffusion samples generated per sequence
 
 ### Success Metrics
 - **Success Rate**: Percentage of sequences that completed successfully
-- **Failure Analysis**: Detailed error messages for failed runs
+- **MSA Integration**: Verification that MSA processing worked correctly
+- **Structure Generation**: Number of 3D structure files created per sequence
 
-### Performance Comparison
-Compare configurations to understand:
-- **MSA Impact**: How much MSA server adds to inference time
-- **Template Impact**: Performance cost of template usage
-- **MLX Benefits**: Speedup from Apple Silicon optimizations
+### Benchmarking Focus
+With the optimized configuration, the benchmarker measures:
+- **MLX Performance**: Apple Silicon-specific optimizations and speed
+- **MSA Quality**: Impact of multiple sequence alignments on accuracy
+- **Memory Efficiency**: Resource usage patterns for different sequence lengths
+- **Accuracy Consistency**: pLDDT score distribution across the CASP16 dataset
 
 ## Files Description
 

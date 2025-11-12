@@ -1,0 +1,18 @@
+{
+	"queries":{
+		"9hdf": { 
+			"chains": [
+				{
+					"molecule_type": "protein",
+					"chain_ids": ["A"],
+					"sequence": "FPTLISLLEVIEPEVLYSGYDSTLPDTSTRLMSTLNRLGGRQVVSAVKWAKALPGFRNLHLDDQMTLLQYSWMSLMAFSLGWRSYKQSNGNMLCFAPDLVINEERMQLPYMYDQCQQMLKISSEFVRLQVSYDEYLCMKVLLLLSTVPKDGLKSQAVFDEIRMTYIKELGKAIVKREGNSSQNWQRFYQLTKLLDSMHEMVGGLLQFCFYTFVNKSLSVEFPEMLAEIISNQLPKFKAGSVKPLLFHQ"
+				},
+				{
+					"molecule_type": "ligand",
+					"chain_ids": ["B"],
+					"ccd_codes": "DEX"
+				}
+			]
+		}
+	}
+}
