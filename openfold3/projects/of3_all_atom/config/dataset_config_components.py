@@ -100,7 +100,7 @@ class MSASettings(BaseModel):
         "nt_hits",
         "concat_cfdb_uniref100_filtered",
         "colabfold_main",
-        "dummy",
+        "dummy",  # aln containing only query; used for MSA-free inference
     ]
     paired_msa_order: list = ["colabfold_paired"]
 
