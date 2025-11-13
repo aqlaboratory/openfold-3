@@ -172,7 +172,7 @@ run_openfold predict \
 
 (323-inference-without-msas)=
 #### 3.2.3 🚫 Inference Without MSAs
-You can run OpenFold3 without MSAs.
+You can run OpenFold3 without MSAs. Prediction performance may be worse than predictions that use MSAs
 
 ```bash
 run_openfold predict \
