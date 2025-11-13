@@ -1,0 +1,23 @@
+{
+	"queries": {
+		"leucine_zipper": {
+			"chains": [
+				{
+					"molecule_type": "protein",
+					"chain_ids": ["A", "B"],
+					"sequence": "XRMKQLEDKVEELLSKNYHLENEVARLKKLVGER",
+					"template_cif_paths": [
+						"examples/example_inference_inputs/templates/honomer/chain_a_b/1dgc.cif",
+						"examples/example_inference_inputs/templates/honomer/chain_a_b/1ysa.cif",
+						"examples/example_inference_inputs/templates/honomer/chain_a_b/1zta.cif",
+						"examples/example_inference_inputs/templates/honomer/chain_a_b/4dmd.cif",
+						"examples/example_inference_inputs/templates/honomer/chain_a_b/4dme.cif"
+					]
+				}
+			]
+		}
+	}
+}
+
+
+

@@ -16,6 +16,7 @@
 Parsers for template alignments.
 """
 
+import logging
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -28,6 +29,8 @@ import pandas as pd
 from openfold3.core.data.io.sequence.fasta import parse_fasta
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.core.data.tools.kalign import run_kalign
+
+logger = logging.getLogger(__name__)
 
 """
 Updates compared to the old OpenFold version:
@@ -807,7 +810,137 @@ class M8Parser(TemplateParser):
         return templates
 
 
-TEMPLATE_PARSER_REGISTRY = {".a3m": A3mParser, ".sto": StoParser, ".m8": M8Parser}
+class CifDirectParser(TemplateParser):
+    """Parses templates directly from CIF files without pre-computed alignments.
+    
+    For multi-chain CIF files, automatically selects the chain with the best
+    alignment to the query sequence (highest seq_identity × coverage).
+    
+    This parser is designed for stateless inference environments (e.g., NIM)
+    where users provide CIF files directly without external alignment servers.
+    """
+
+    def __init__(
+        self,
+        max_sequences: int,
+        min_score_threshold: float = 0.1,
+    ):
+        """Initialize CifDirectParser.
+        
+        Args:
+            max_sequences: Maximum number of templates to parse (not used for 
+                single CIF parsing, but kept for interface compatibility)
+            min_score_threshold: Minimum seq_id × coverage score to consider
+                a chain as a valid template candidate
+        """
+        super().__init__(max_sequences)
+        self.min_score_threshold = min_score_threshold
+
+    def __call__(
+        self,
+        cif_file_path: Path,
+        query_seq_str: str,
+        chain_id_seq_map: dict[str, str],
+        entry_id: str | None = None,
+    ) -> dict[int, TemplateData]:
+        """Parse a CIF file and select the best matching chain.
+        
+        Args:
+            cif_file_path: Path to the CIF file
+            query_seq_str: Query sequence to align against
+            chain_id_seq_map: Mapping of chain IDs to their sequences
+                (extracted from CIF metadata)
+            entry_id: Optional entry ID (defaults to filename stem)
+            
+        Returns:
+            Dictionary with single entry (index 0) containing TemplateData
+            for the best matching chain, or empty dict if no valid chains found
+        """
+        if entry_id is None:
+            entry_id = cif_file_path.stem
+        
+        logger.info(f"CIF Direct: Processing {entry_id} with {len(chain_id_seq_map)} chains")
+        
+        candidate_chains = []
+        
+        for chain_id, chain_seq in chain_id_seq_map.items():
+            if not chain_seq or len(chain_seq) == 0:
+                continue
+            
+            fasta_input = (
+                f">query\n{query_seq_str}\n"
+                f">{entry_id}_{chain_id}\n{chain_seq}\n"
+            )
+            
+            try:
+                aligned_str = run_kalign(fasta_input)
+                alignments, _ = parse_fasta(aligned_str)
+                
+                if len(alignments) < 2:
+                    continue
+                
+                query_aln_arr = np.fromiter(
+                    alignments[0], dtype='<U1', count=len(alignments[0])
+                )
+                template_aln_arr = np.fromiter(
+                    alignments[1], dtype='<U1', count=len(alignments[1])
+                )
+                
+                seq_id, q_cov = self.compute_sequence_identity_and_coverage(
+                    query_aln_arr, template_aln_arr, query_seq_str
+                )
+                
+                score = seq_id * q_cov
+                
+                if score < self.min_score_threshold:
+                    continue
+                
+                query_ids_hit, template_ids_hit = calculate_ids_hit(
+                    q=query_aln_arr,
+                    t=template_aln_arr,
+                    query_start=1,
+                    template_start=1,
+                )
+                
+                candidate_chains.append({
+                    'chain_id': chain_id,
+                    'score': score,
+                    'seq_id': seq_id,
+                    'q_cov': q_cov,
+                    'query_aln_pos': query_ids_hit,
+                    'template_aln_pos': template_ids_hit,
+                    'template_seq': chain_seq,
+                })
+                
+            except Exception as e:
+                logger.warning(
+                    f"Failed to align chain {chain_id} from {entry_id}: {e}"
+                )
+                continue
+        
+        if not candidate_chains:
+            logger.info(f"CIF Direct: No valid chains found in {entry_id}")
+            return {}
+        
+        best_chain = max(candidate_chains, key=lambda x: x['score'])
+        
+        logger.info(f"CIF Direct: Selected chain {best_chain['chain_id']} from {entry_id} (seq_id={best_chain['seq_id']:.3f}, q_cov={best_chain['q_cov']:.3f})")
+        
+        template_data = TemplateData(
+            index=0,
+            entry_id=entry_id,
+            chain_id=best_chain['chain_id'],
+            query_aln_pos=best_chain['query_aln_pos'],
+            aln_pos=best_chain['template_aln_pos'],
+            seq_id=best_chain['seq_id'],
+            q_cov=best_chain['q_cov'],
+            seq=best_chain['template_seq'],
+        )
+        
+        return {0: template_data}
+
+
+TEMPLATE_PARSER_REGISTRY = {".a3m": A3mParser, ".sto": StoParser, ".m8": M8Parser, ".cif": CifDirectParser}
 
 
 def parse_template_alignment(
