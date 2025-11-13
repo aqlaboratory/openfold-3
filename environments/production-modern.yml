@@ -1,0 +1,57 @@
+# DO NOT EDIT DIRECTLY
+# This environment is automatically created from the pixi manifest.
+
+name: openfold3
+channels:
+- conda-forge
+- bioconda
+- nodefaults
+dependencies:
+- python *
+- numpy *
+- pandas *
+- mkl *
+- cuda-version <13
+- pytorch-gpu *
+- ml-collections *
+- pytorch-lightning *
+- deepspeed *
+- ninja *
+- cutlass *
+- cuda-minimal-build *
+- libcusparse-dev *
+- libcublas-dev *
+- libcusolver-dev *
+- libcurand-dev *
+- rdkit *
+- biotite <1.3
+- pdbeccdutils *
+- hmmer *
+- hhsuite *
+- kalign2 *
+- snakemake *
+- pyyaml *
+- ijson *
+- memory_profiler *
+- wandb *
+- func_timeout *
+- tqdm *
+- typing-extensions *
+- python-lmdb *
+- requests *
+- awscli *
+- boto3 *
+- aria2 *
+- pytest *
+- ruff *
+- sphinx *
+- myst-parser *
+- furo *
+- cuequivariance *
+- cuequivariance-torch *
+- pip
+- pip:
+  - cuequivariance-ops-torch-cu12
+  - -e .
+variables:
+  CUTLASS_PATH: DS_IGNORE_CUTLASS_DETECTION
