@@ -172,7 +172,15 @@ run_openfold predict \
 
 (323-inference-without-msas)=
 #### 3.2.3 🚫 Inference Without MSAs
-To run OpenFold3 without MSA features, you need to provide a "dummy" MSA file that only contains the query sequence. See the {ref}`MSA formatting section <1-precomputed-msa-files>` in our precomputed MSA documentation for how to prepare these files. Note that currently, if no MSAs are provided at all, the input sequence will not be propagated to the MSA embedder and prediction quality will be significantly reduced, so a completely MSA-free inference mode is currently discouraged if the goal is to obtain decent quality structures without aligned sequences. We are working on automatic dummmy MSA generation to make it the default no-MSA behavior.
+You can run OpenFold3 without MSAs. Prediction performance may be worse than predictions that use MSAs
+
+```bash
+run_openfold predict \
+    --query_json /path/to/query.json \
+    --use_msa_server=False \
+    --output_dir /path/to/output/ \
+    --runner_yaml /path/to/inference.yml
+```
 
 (33-customized-inference-settings-using-runneryml)=
 ### 3.3 Customized Inference Settings Using `runner.yml`

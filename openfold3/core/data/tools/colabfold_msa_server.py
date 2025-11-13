@@ -1044,3 +1044,48 @@ def preprocess_colabfold_msas(
     )
 
     return inference_query_set
+
+
+def augment_main_msa_with_query_sequence(
+    inference_query_set: InferenceQuerySet,
+    compute_settings: MsaComputationSettings,
+) -> InferenceQuerySet:
+    output_directory = compute_settings.msa_output_directory
+    for query_name, query in inference_query_set.queries.items():
+        for chain in query.chains:
+            if (
+                chain.molecule_type == MoleculeType.PROTEIN
+                or chain.molecule_type == MoleculeType.RNA
+            ) and chain.main_msa_file_paths is None:
+                dummy_rep_dir = (
+                    output_directory / "dummy" / get_sequence_hash(chain.sequence)
+                )
+                dummy_aln = ">query\n" + chain.sequence
+
+                # If save as a3m...
+                if compute_settings and "a3m" in compute_settings.msa_file_format:
+                    dummy_rep_dir.mkdir(parents=True, exist_ok=True)
+                    a3m_file = dummy_rep_dir / "colabfold_main.a3m"
+                    with open(a3m_file, "w") as f:
+                        f.write(dummy_aln)
+                    chain.main_msa_file_paths = [a3m_file]
+                # If save as npz...
+                else:
+                    npz_file = Path(f"{dummy_rep_dir}.npz")
+                    npz_file.parent.mkdir(exist_ok=True, parents=True)
+                    msas_preparsed = {"dummy": parse_a3m(dummy_aln).to_dict()}
+                    np.savez_compressed(npz_file, **msas_preparsed)
+                    chain.main_msa_file_paths = [npz_file]
+
+                chain_ids = ",".join(chain.chain_ids)
+                warnings.warn(
+                    (
+                        f"Expected MSA file for chain {chain_ids} of type "
+                        f"{chain.molecule_type.name} in query {query_name}, "
+                        "but no MSA files found. A dummy MSA with only "
+                        "the query sequence will be used for this chain."
+                    ),
+                    stacklevel=2,
+                )
+
+    return inference_query_set

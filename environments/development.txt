@@ -1,4 +1,4 @@
-pytest
+pytest==8.4.2  # until v9.0.1 is available due to unittest bug: pytest-dev/pytest#13895
 ruff
 awscli
 aria2
