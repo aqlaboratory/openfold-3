@@ -522,6 +522,8 @@ class InferenceExperimentRunner(ExperimentRunner):
         use_msa_server: bool = False,
         use_templates: bool = False,
         output_dir: Path | None = None,
+        offline_mode: bool = False,
+        foldseek_database_dir: Path | None = None,
     ):
         super().__init__(experiment_config)
 
@@ -532,6 +534,8 @@ class InferenceExperimentRunner(ExperimentRunner):
         self.data_module_args = experiment_config.data_module_args
         self.seeds = experiment_config.experiment_settings.seeds
         self.output_writer_settings = experiment_config.output_writer_settings
+        self.offline_mode = offline_mode
+        self.foldseek_database_dir = foldseek_database_dir
 
         self.update_config_with_cli_args(
             num_diffusion_samples,
@@ -699,6 +703,8 @@ class InferenceExperimentRunner(ExperimentRunner):
             use_msa_server=self.use_msa_server,
             use_templates=self.use_templates,
             msa_computation_settings=self.experiment_config.msa_computation_settings,
+            offline_mode=self.offline_mode,
+            foldseek_database_dir=self.foldseek_database_dir,
         )
 
     @cached_property

@@ -1,0 +1,14 @@
+{
+    "seeds": [42],
+    "queries": {
+        "T1201_test": {
+            "chains": [
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": ["A"],
+                    "sequence": "ETGCNKALCASDVSKCLIQELCQCRPGEGNCSCCKECMLCLGALWDECCDCVGMCNPRNYSDTPPTSKSTVEELHEPIPSLFRALTEGDTQLNWNIVSFPVAEELSHHENLVSFLETVNQPHHQNVSVPSNNVHAPYSSDKEHMCTVVYFDDCMSIHQCKISCESMGASKYRWFHNACCECIGPECIDYGSKTVKCMNCMFGTKHHHHHH"
+                }
+            ]
+        }
+    }
+}

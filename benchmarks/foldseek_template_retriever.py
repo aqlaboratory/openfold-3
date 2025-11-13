@@ -46,6 +46,7 @@ class FoldSeekTemplate:
     template_aligned: str   # Template aligned sequence
     template_path: str      # Path to template structure file
     search_type: str        # 'sequence' or 'structure'
+    database_source: str = ""  # Which database provided this template (pdb100, afdb_swissprot, cath50)
 
 
 class FoldSeekTemplateRetriever:
@@ -88,6 +89,15 @@ class FoldSeekTemplateRetriever:
                 "priority": 2,  # Search second
                 "weight": 1.0,  # Standard weight
                 "description": "AlphaFold predictions (high-confidence)"
+            },
+            "cath50": {
+                "sequence_path": db_base_path / "cath50_seq",  # CATH50 sequence database
+                "structure_path": db_base_path / "cath50",     # CATH50 structure database (3Di)
+                "name": "CATH50",
+                "type": "experimental",  # Domain-classified experimental structures
+                "priority": 3,  # Search third (after PDB100 and AFDB)
+                "weight": 1.1,  # 10% bonus for domain-classified structures
+                "description": "CATH domain-classified structures"
             }
         }
 
@@ -98,11 +108,13 @@ class FoldSeekTemplateRetriever:
         self.template_cache = {}
         self.search_cache = {}  # Cache search results by sequence hash
 
-        print(f"✅ Dual-database FOLDSEEK retriever initialized")
+        print(f"✅ Triple-database FOLDSEEK retriever initialized")
         print(f"   PDB100 Sequence: {self.databases['pdb100']['sequence_path']}")
         print(f"   PDB100 Structure: {self.databases['pdb100']['structure_path']}")
         print(f"   AFDB Swiss-Prot: {self.databases['afdb_swissprot']['sequence_path']}")
-        print(f"   Dual search: {'Enabled' if use_dual_search else 'PDB100 only'}")
+        print(f"   CATH50 Sequence: {self.databases['cath50']['sequence_path']}")
+        print(f"   CATH50 Structure: {self.databases['cath50']['structure_path']}")
+        print(f"   Multi-database search: {'Enabled' if use_dual_search else 'PDB100 only'}")
 
     def _verify_foldseek(self):
         """Verify FOLDSEEK installation and databases"""
@@ -240,7 +252,8 @@ class FoldSeekTemplateRetriever:
             db_path=db_config['sequence_path'],
             db_name=f"{db_name}_seq",
             db_type=db_config['type'],
-            db_weight=db_config['weight']
+            db_weight=db_config['weight'],
+            database_source=db_name
         )
 
         print(f"    🏗️  Structure validation...")
@@ -320,16 +333,17 @@ class FoldSeekTemplateRetriever:
                                db_path: Path,
                                db_name: str,
                                db_type: str,
-                               db_weight: float) -> List[FoldSeekTemplate]:
+                               db_weight: float,
+                               database_source: str = "") -> List[FoldSeekTemplate]:
         """Search a database using appropriate tool (MMseqs2 for sequences, FOLDSEEK for structures)"""
 
         # Determine search tool based on database name
         is_sequence_db = "seq" in str(db_name) or "pdb_seq" in str(db_path)
 
         if is_sequence_db:
-            return self._mmseqs_search(sequence, sequence_id, db_path, db_name, db_type, db_weight)
+            return self._mmseqs_search(sequence, sequence_id, db_path, db_name, db_type, db_weight, database_source)
         else:
-            return self._foldseek_structure_search(sequence, sequence_id, db_path, db_name, db_type, db_weight)
+            return self._foldseek_structure_search(sequence, sequence_id, db_path, db_name, db_type, db_weight, database_source)
 
     def _mmseqs_search(self,
                       sequence: str,
@@ -337,7 +351,8 @@ class FoldSeekTemplateRetriever:
                       db_path: Path,
                       db_name: str,
                       db_type: str,
-                      db_weight: float) -> List[FoldSeekTemplate]:
+                      db_weight: float,
+                      database_source: str = "") -> List[FoldSeekTemplate]:
         """Perform sequence search using MMseqs2"""
 
         templates = []
@@ -397,7 +412,7 @@ class FoldSeekTemplateRetriever:
 
             # Parse results
             if output_file.exists() and output_file.stat().st_size > 0:
-                templates = self._parse_m8_results(output_file, sequence_id, db_type, db_weight)
+                templates = self._parse_m8_results(output_file, sequence_id, db_type, db_weight, database_source)
 
         return templates
 
@@ -407,7 +422,8 @@ class FoldSeekTemplateRetriever:
                                   db_path: Path,
                                   db_name: str,
                                   db_type: str,
-                                  db_weight: float) -> List[FoldSeekTemplate]:
+                                  db_weight: float,
+                                  database_source: str = "") -> List[FoldSeekTemplate]:
         """Perform structure validation search using FOLDSEEK header lookup"""
 
         # This method is not used directly anymore - structure validation is done
@@ -488,7 +504,8 @@ class FoldSeekTemplateRetriever:
                           tmpdir: Path,
                           sequence_id: str,
                           db_type: str,
-                          db_weight: float) -> List[FoldSeekTemplate]:
+                          db_weight: float,
+                          database_source: str = "") -> List[FoldSeekTemplate]:
         """Alternative search approach for problematic databases"""
 
         try:
@@ -524,7 +541,7 @@ class FoldSeekTemplateRetriever:
 
             # Parse results
             if output_file.exists() and output_file.stat().st_size > 0:
-                return self._parse_m8_results(output_file, sequence_id, db_type, db_weight)
+                return self._parse_m8_results(output_file, sequence_id, db_type, db_weight, database_source)
 
         except Exception as e:
             print(f"⚠️  Alternative search error: {e}")
@@ -639,7 +656,7 @@ class FoldSeekTemplateRetriever:
 
             # Parse results
             if output_file.exists() and output_file.stat().st_size > 0:
-                templates = self._parse_m8_results(output_file, sequence_id, "sequence")
+                templates = self._parse_m8_results(output_file, sequence_id, "sequence", 1.0, "legacy")
 
         return templates
 
@@ -658,7 +675,8 @@ class FoldSeekTemplateRetriever:
                          results_file: Path,
                          sequence_id: str,
                          db_type: str,
-                         db_weight: float = 1.0) -> List[FoldSeekTemplate]:
+                         db_weight: float = 1.0,
+                         database_source: str = "") -> List[FoldSeekTemplate]:
         """Parse FOLDSEEK M8 format results"""
 
         templates = []
@@ -692,7 +710,8 @@ class FoldSeekTemplateRetriever:
                     query_aligned="",  # Would need alignment details for this
                     template_aligned="",
                     template_path=self._get_template_path(pdb_id),
-                    search_type=db_type
+                    search_type=db_type,
+                    database_source=database_source
                 )
 
                 templates.append(template)

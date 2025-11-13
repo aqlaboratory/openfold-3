@@ -20,3 +20,6 @@ cutlass/
 inference/
 research/
 reports/
+benchmarks/ 
+debug_*/
+# for now

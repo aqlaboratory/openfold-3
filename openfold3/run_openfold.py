@@ -129,6 +129,18 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     required=False,
     help="Output directory for writing results",
 )
+@click.option(
+    "--offline_mode",
+    type=bool,
+    default=False,
+    help="Use offline DIAMOND+MUSCLE pipeline for MSA/templates (blazingly fast, no internet required).",
+)
+@click.option(
+    "--foldseek_database_dir",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    required=False,
+    help="Directory containing FOLDSEEK databases (required for offline mode).",
+)
 def predict(
     query_json: Path,
     inference_ckpt_path: Path | None = None,
@@ -138,6 +150,8 @@ def predict(
     use_msa_server: bool = True,
     use_templates: bool = False,
     output_dir: Path | None = None,
+    offline_mode: bool = False,
+    foldseek_database_dir: Path | None = None,
 ):
     """Perform inference on a set of queries defined in the query_json."""
     _torch_gpu_setup()
@@ -158,6 +172,10 @@ def predict(
     expt_config = InferenceExperimentConfig(
         inference_ckpt_path=inference_ckpt_path, **runner_args
     )
+    # Validate offline mode requirements
+    if offline_mode and not foldseek_database_dir:
+        raise ValueError("--foldseek_database_dir is required when using --offline_mode")
+
     expt_runner = InferenceExperimentRunner(
         expt_config,
         num_diffusion_samples,
@@ -165,6 +183,8 @@ def predict(
         use_msa_server,
         use_templates,
         output_dir,
+        offline_mode,
+        foldseek_database_dir,
     )
 
     # Load inference query set

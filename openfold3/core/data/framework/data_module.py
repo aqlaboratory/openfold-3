@@ -43,6 +43,7 @@ import dataclasses
 import enum
 import random
 import warnings
+from pathlib import Path
 from typing import Any
 
 import pytorch_lightning as pl
@@ -434,13 +435,16 @@ class DataModule(pl.LightningDataModule):
         else:
             num_workers = self.num_workers
 
+        # Only set worker_init_fn if we're using multiple workers
+        worker_init_fn = None if num_workers == 0 else self.worker_init_function_with_data_seed
+
         return DataLoader(
             dataset=self.datasets_by_mode[mode],
             batch_size=self.batch_size,
             num_workers=num_workers,
             collate_fn=openfold_batch_collator,
             generator=self.generator,
-            worker_init_fn=self.worker_init_function_with_data_seed,
+            worker_init_fn=worker_init_fn,
         )
 
     def train_dataloader(self) -> DataLoader:
@@ -504,6 +508,8 @@ class InferenceDataModule(DataModule):
         use_msa_server: bool = False,
         use_templates: bool = False,
         msa_computation_settings: MsaComputationSettings | None = None,
+        offline_mode: bool = False,
+        foldseek_database_dir: Path | None = None,
     ):
         # get information about msas from the experiment runner
         # probably should add to the config
@@ -511,24 +517,145 @@ class InferenceDataModule(DataModule):
         self.use_msa_server = use_msa_server
         self.use_templates = use_templates
         self.msa_computation_settings = msa_computation_settings
+        self.offline_mode = offline_mode
+        self.foldseek_database_dir = foldseek_database_dir
         _configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.prediction)
         self.inference_config = _configs.configs[0]
 
     def prepare_data(self) -> None:
-        # Colabfold msa preparation
-        if self.use_msa_server:
-            self.inference_config.query_set = preprocess_colabfold_msas(
-                inference_query_set=self.inference_config.query_set,
-                compute_settings=self.msa_computation_settings,
-                use_templates=self.use_templates,
+        # Choose offline or online MSA/template generation
+        if self.offline_mode:
+            # Use blazingly fast offline DIAMOND+MUSCLE pipeline
+            self._prepare_offline_msas_and_templates()
+        else:
+            # Colabfold msa preparation (online)
+            if self.use_msa_server:
+                self.inference_config.query_set = preprocess_colabfold_msas(
+                    inference_query_set=self.inference_config.query_set,
+                    compute_settings=self.msa_computation_settings,
+                    use_templates=self.use_templates,
+                )
+
+            if self.use_templates:
+                template_preprocessor = TemplatePreprocessor(
+                    input_set=self.inference_config.query_set,
+                    config=self.inference_config.template_preprocessor_settings,
+                )
+                template_preprocessor()
+
+    def _prepare_offline_msas_and_templates(self) -> None:
+        """Generate MSAs and templates using offline DIAMOND+MUSCLE pipeline"""
+        import tempfile
+        import logging
+        import sys
+        import os
+
+        print("🚨 DEBUG: _prepare_offline_msas_and_templates() CALLED!")
+        print(f"🚨 DEBUG: offline_mode = {self.offline_mode}")
+        print(f"🚨 DEBUG: foldseek_database_dir = {self.foldseek_database_dir}")
+
+        # Add our benchmarks directory to path for importing our offline generator
+        benchmark_dir = Path(__file__).parent.parent.parent.parent.parent / "benchmarks"
+        sys.path.insert(0, str(benchmark_dir))
+
+        try:
+            from offline_msa_template_generator import OfflineTemplateGenerator
+        except ImportError as e:
+            raise ImportError(
+                f"Could not import offline_msa_template_generator: {e}. "
+                f"Make sure the benchmarks directory is accessible at {benchmark_dir}"
             )
 
-        if self.use_templates:
-            template_preprocessor = TemplatePreprocessor(
-                input_set=self.inference_config.query_set,
-                config=self.inference_config.template_preprocessor_settings,
-            )
-            template_preprocessor()
+        logger = logging.getLogger(__name__)
+        logger.info("🚀 Using offline DIAMOND+MUSCLE pipeline for MSA/template generation")
+
+        # Initialize offline generator
+        generator = OfflineTemplateGenerator(
+            database_dir=str(self.foldseek_database_dir),
+            temp_dir=None  # Will create temp directory
+        )
+
+        # Process each query in the query set
+        for query_name, query in self.inference_config.query_set.queries.items():
+            logger.info(f"⚡ Processing {query_name} with offline pipeline")
+
+            # Extract protein sequence from the first chain
+            protein_sequence = query.chains[0].sequence
+
+            # Create temporary FASTA file for this query
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+                f.write(f">{query_name}\n{protein_sequence}\n")
+                temp_fasta = f.name
+
+            try:
+                # Generate offline MSA and templates
+                results = generator.generate_offline_features(
+                    temp_fasta,
+                    sequence_max_hits=50,  # Configurable
+                    structure_max_templates=20
+                )
+
+                # Read the generated A3M MSA
+                with open(results['msa_a3m'], 'r') as f:
+                    msa_content = f.read()
+
+                # SURGICAL FIX: Create MSA directory with multiple standard filenames
+                import tempfile
+                temp_dir = Path(tempfile.mkdtemp(prefix=f'{query_name}_offline_'))
+
+                # Create multiple MSA files with standard naming conventions
+                standard_names = [
+                    "main.a3m",
+                    "colabfold_main.a3m",
+                    f"{query_name}.a3m",
+                    "uniref90_hits.a3m"
+                ]
+
+                for name in standard_names:
+                    msa_file = temp_dir / name
+                    with open(msa_file, 'w') as f:
+                        f.write(msa_content)
+
+                # Update query chains with offline MSA files
+                print("🚨 DEBUG: About to attach MSA files to chains...")
+                from openfold3.core.data.resources.residues import MoleculeType
+                for chain in query.chains:
+                    if chain.molecule_type == MoleculeType.PROTEIN:
+                        # Provide actual MSA file paths, not directory paths
+                        msa_files = list(temp_dir.glob('*.a3m'))
+                        print(f"🚨 DEBUG: Found {len(msa_files)} MSA files: {msa_files}")
+                        chain.main_msa_file_paths = msa_files
+                        print(f"🚨 DEBUG: Attached MSA files to chain: {chain.main_msa_file_paths}")
+
+                        # Set template alignment file if templates were found
+                        if os.path.exists(results['template_hits']):
+                            chain.template_alignment_file_path = Path(results['template_hits'])
+
+                        logger.info(f"🔍 DEBUG: MSA files attached to chain {chain.id if hasattr(chain, 'id') else 'unknown'}:")
+                        logger.info(f"   Temp dir: {temp_dir}")
+                        logger.info(f"   MSA files found: {msa_files}")
+                        logger.info(f"   chain.main_msa_file_paths = {chain.main_msa_file_paths}")
+
+                        # Verify files exist and are readable
+                        for msa_file in msa_files:
+                            if msa_file.exists():
+                                with open(msa_file, 'r') as f:
+                                    content = f.read()
+                                    lines = content.count('\n')
+                                logger.info(f"   ✅ {msa_file.name}: {len(content)} chars, {lines} lines")
+                            else:
+                                logger.error(f"   ❌ {msa_file.name}: FILE NOT FOUND!")
+                        break
+
+                logger.info(f"✅ Offline pipeline completed for {query_name}")
+                logger.info(f"   MSA file: {results['msa_a3m']}")
+                logger.info(f"   Template hits: {results['template_hits']}")
+
+            finally:
+                # Clean up temp FASTA
+                os.unlink(temp_fasta)
+
+        logger.info("🎉 All queries processed with offline pipeline!")
 
     def setup(self, stage=None):
         """Broadcast updated query set to all ranks if multiple GPUs are used."""
