@@ -69,6 +69,7 @@ from openfold3.core.data.framework.stochastic_sampler_dataset import (
 from openfold3.core.data.pipelines.preprocessing.template import TemplatePreprocessor
 from openfold3.core.data.tools.colabfold_msa_server import (
     MsaComputationSettings,
+    augment_main_msa_with_query_sequence,
     preprocess_colabfold_msas,
 )
 from openfold3.core.utils.tensor_utils import dict_multimap
@@ -564,6 +565,11 @@ class InferenceDataModule(DataModule):
             raise ImportError(
                 f"Could not import offline_msa_template_generator: {e}. "
                 f"Make sure the benchmarks directory is accessible at {benchmark_dir}"
+            )
+        else:
+            self.inference_config.query_set = augment_main_msa_with_query_sequence(
+                inference_query_set=self.inference_config.query_set,
+                compute_settings=self.msa_computation_settings,
             )
 
         logger = logging.getLogger(__name__)

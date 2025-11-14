@@ -30,6 +30,7 @@ from openfold3.core.data.tools.colabfold_msa_server import (
     ColabFoldQueryRunner,
     ComplexGroup,
     MsaComputationSettings,
+    augment_main_msa_with_query_sequence,
     collect_colabfold_msa_data,
     get_sequence_hash,
     preprocess_colabfold_msas,
@@ -214,6 +215,41 @@ class TestColabFoldQueryRunner:
             assert (tmp_path / "main" / f).exists(), (
                 f"Expected file {f} not found in main directory"
             )
+
+    @pytest.mark.parametrize(
+        "msa_file_format", ["a3m", "npz"], ids=lambda fmt: f"format={fmt}"
+    )
+    def test_augment_main_msa_with_query_sequence(
+        self,
+        tmp_path,
+        msa_file_format,
+    ):
+        sequence = "TEST"
+        msa_compute_settings = MsaComputationSettings(
+            msa_file_format=msa_file_format,
+            server_user_agent="test-agent",
+            server_url="https://dummy.url",
+            save_mappings=True,
+            msa_output_directory=tmp_path,
+            cleanup_msa_dir=False,
+        )
+
+        query = self._construct_monomer_query(sequence)
+        augmented = augment_main_msa_with_query_sequence(query, msa_compute_settings)
+        match msa_file_format:
+            case "a3m":
+                f = f"{get_sequence_hash(sequence)}/colabfold_main.a3m"
+            case "npz":
+                f = f"{get_sequence_hash(sequence)}.npz"
+
+        expected_file = tmp_path / "dummy" / f
+        assert expected_file.exists(), f"Expected file {f} not found in main directory"
+
+        paths_in_augmented = augmented.queries["query1"].chains[0].main_msa_file_paths
+        assert len(paths_in_augmented) == 1
+        assert expected_file == paths_in_augmented[0], (
+            f"Unexpected MSA path in augmented query set: {paths_in_augmented[0]}"
+        )
 
     @patch(
         "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server",

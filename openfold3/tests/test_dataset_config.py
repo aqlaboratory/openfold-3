@@ -24,6 +24,7 @@ from openfold3.core.data.framework.data_module import (
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
 )
+from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
     InferenceJobConfig,
@@ -308,6 +309,7 @@ class TestInferenceConfigConstruction:
             data_config,
             use_msa_server=False,
             use_templates=False,
+            msa_computation_settings=MsaComputationSettings(),
         )
 
         data_module.prepare_data()
