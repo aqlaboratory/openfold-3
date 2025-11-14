@@ -330,6 +330,36 @@ class TestColabFoldQueryRunner:
             assert len(template_files) == 0, (
                 "Expected no template files to be created when m8 file is empty"
             )
+        
+        # Test preprocess_colabfold_msas with empty template file
+        msa_compute_settings = MsaComputationSettings(
+            msa_file_format="npz",
+            server_user_agent="test-agent",
+            server_url="https://dummy.url",
+            save_mappings=True,
+            msa_output_directory=tmp_path,
+            cleanup_msa_dir=False,
+        )
+        
+        # Call preprocess_colabfold_msas - should not raise any exception
+        processed_query_set = preprocess_colabfold_msas(
+            inference_query_set=query,
+            compute_settings=msa_compute_settings
+        )
+        
+        # Verify that template fields are None/empty for all chains
+        for query_name, query_obj in processed_query_set.queries.items():
+            for chain in query_obj.chains:
+                assert chain.template_alignment_file_path is None, (
+                    f"Expected template_alignment_file_path to be None for chain "
+                    f"{chain.chain_ids} of query {query_name} when template file is empty, "
+                    f"but got {chain.template_alignment_file_path}"
+                )
+                assert chain.template_entry_chain_ids is None, (
+                    f"Expected template_entry_chain_ids to be None for chain "
+                    f"{chain.chain_ids} of query {query_name} when template file is empty, "
+                    f"but got {chain.template_entry_chain_ids}"
+                )
 
 
 class TestMsaComputationSettings:
