@@ -37,7 +37,7 @@ jobs:
     needs:
       - start-aws-runner
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
