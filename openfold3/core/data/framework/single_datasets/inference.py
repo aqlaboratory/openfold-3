@@ -195,7 +195,7 @@ class InferenceDataset(Dataset):
         return StructureWithReferenceMolecules(
             atom_array, processed_reference_molecules
         )
-
+    
     def create_structure_features(
         self,
         atom_array: AtomArray,
@@ -286,6 +286,7 @@ class InferenceDataset(Dataset):
         """Creates all features for a single datapoint."""
 
         features = {}
+        all_custom_ids = []
 
         # Create initial AtomArray and ReferenceMolecules from query entry
         structure_objs = self.get_structure_with_ref_mols(
@@ -317,6 +318,12 @@ class InferenceDataset(Dataset):
             query, preprocessed_atom_array, n_tokens
         )
         features.update(template_features)
+
+        # residue_ids features
+        for chain in query.chains:
+            all_custom_ids.append(chain.residue_ids)
+            
+        features['custom_residue_ids'] = all_custom_ids
 
         return features
 

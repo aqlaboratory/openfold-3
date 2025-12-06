@@ -15,6 +15,7 @@
 # TODO: Add more tests for general inference inputs
 import pickle
 from pathlib import Path
+from pydantic import ValidationError
 
 import pytest
 from rdkit import Chem
@@ -28,6 +29,8 @@ from openfold3.core.data.primitives.structure.query import (
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Query,
+    Chain,
+    MoleculeType,
 )
 from openfold3.tests.custom_assert_utils import (
     assert_atomarray_equal,
@@ -87,8 +90,8 @@ non_canonical_peptide_query = Query.model_validate(
         "non_canonical_peptide",
     ],
 )
-def test_structure_from_query(query: Query, ground_truth_file: Path):
-    """Tests that the generated structure and reference molecules matches gt."""
+def test_structure_with_ref_mols_from_query(query, ground_truth_file):
+    """Tests the structure_with_ref_mols_from_query function."""
     structure_with_ref_mols = structure_with_ref_mols_from_query(query)
 
     # Get reference file
@@ -134,3 +137,44 @@ def test_smiles_with_explicit_hydrogen():
         add_ref_space_uid_to_perm=False,
     )
     assert "ref_pos" in features
+
+
+def test_chain_residue_id_generation():
+    """Tests the custom residue ID generation logic in the Chain model, verifying
+    priority and validation of numbering schemes (residue_ids vs. starting_residue_number).
+    """
+    
+    base_params = {
+        "molecule_type": MoleculeType.PROTEIN,
+        "chain_ids": ["A"],
+        "sequence": "AAA" 
+    }
+    
+    chain_default = Chain.model_validate(base_params)
+    assert chain_default.residue_ids == ['1', '2', '3']
+    
+    params_start = base_params.copy()
+    params_start['starting_residue_number'] = "100"
+    
+    chain_start = Chain.model_validate(params_start)
+    assert chain_start.residue_ids == ['100', '101', '102']
+    
+    explicit_ids = ['1A', '2', '3B']
+    params_explicit_priority = base_params.copy()
+    params_explicit_priority['residue_ids'] = explicit_ids
+    params_explicit_priority['starting_residue_number'] = "500" 
+    
+    chain_explicit = Chain.model_validate(params_explicit_priority)
+    assert chain_explicit.residue_ids == explicit_ids
+    
+    params_mismatch = base_params.copy()
+    params_mismatch['residue_ids'] = ['10', '11'] 
+    
+    with pytest.raises(ValueError, match="Length of residue_ids"): 
+        Chain.model_validate(params_mismatch)
+        
+    params_invalid_start = base_params.copy()
+    params_invalid_start['starting_residue_number'] = "invalid_number"
+    
+    with pytest.raises(ValueError, match="must be convertible to an integer"):
+        Chain.model_validate(params_invalid_start)

@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Annotated, Any, NamedTuple
+from typing import Annotated, Any, NamedTuple, List, Optional, Union
+from pydantic import model_validator, Field
 
 from pydantic import (
     BaseModel,
     BeforeValidator,
     DirectoryPath,
     FilePath,
-    field_serializer,
+    field_serializer
 )
 
 from openfold3.core.config.config_utils import (
@@ -51,6 +52,8 @@ class Chain(BaseModel):
     chain_ids: Annotated[list[str], BeforeValidator(_ensure_list)]
     description: str | None = None
     sequence: str | None = None
+    starting_residue_number: Optional[str] = Field(default=None)
+    residue_ids: Optional[List[str]] = Field(default=None)
     non_canonical_residues: (
         Annotated[dict[int, str], BeforeValidator(_cast_keys_to_int)] | None
     ) = None
@@ -76,6 +79,42 @@ class Chain(BaseModel):
     # - if molecule type is protein / dna / rna - must specify sequence
     # - if molecule type is ligand - either ccd or smiles needs to be specifified
 
+    @model_validator(mode="before")
+    def _validate_and_generate_residue_ids(cls, data: dict) -> dict:
+        sequence = data.get("sequence")
+        res_ids_input = data.get("residue_ids")
+        starting_number_input = data.get("starting_residue_number")
+
+        if sequence is None:
+            return data
+
+        sequence_length = len(sequence)
+
+        if res_ids_input is not None:
+            if not isinstance(res_ids_input, list):
+                raise ValueError("Residue IDs must be a list of strings.")
+            if len(res_ids_input) != sequence_length:
+                raise ValueError(
+                    f"Length of residue_ids ({len(res_ids_input)}) must match the sequence length ({sequence_length})."
+                )
+            data["residue_ids"] = res_ids_input
+        elif starting_number_input is not None:
+            try:
+                start_num = int(starting_number_input)
+            except ValueError:
+                raise ValueError(
+                    "starting_residue_number must be convertible to an integer."
+                )
+
+            res_ids = [str(start_num + i) for i in range(sequence_length)]
+            data["residue_ids"] = res_ids
+            # Ensure consistency: clear starting_residue_number after use
+        else:
+            # Default to numbering starting from 1
+            res_ids = [str(1 + i) for i in range(sequence_length)]
+            data["residue_ids"] = res_ids
+
+        return data
 
 class Query(BaseModel):
     query_name: str | None = None
