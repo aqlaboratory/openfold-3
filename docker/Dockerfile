@@ -1,5 +1,5 @@
 # Full performance multi-stage build with complete CUDA toolchain
-ARG CUDA_BASE_IMAGE_TAG=12.2.2-cudnn8-devel-ubuntu22.04
+ARG CUDA_BASE_IMAGE_TAG=12.1.1-cudnn8-devel-ubuntu22.04
 FROM nvidia/cuda:${CUDA_BASE_IMAGE_TAG} AS builder
 
 # Install complete build dependencies including CUDA compiler tools
@@ -23,9 +23,10 @@ RUN wget -P /tmp \
 ENV PATH=/opt/conda/bin:$PATH
 ENV CONDA_PREFIX=/opt/conda
 
-# Copy and install dependencies with aggressive cleanup
-COPY environments/production.yml /opt/openfold3/environment.yml
-RUN mamba env update -n base --file /opt/openfold3/environment.yml \
+# Copy and install dependencies from lock file for reproducible builds
+# To regenerate the lock file, see docker/DOCKER.md
+COPY environments/production.lock /opt/openfold3/production.lock
+RUN mamba install -n base --file /opt/openfold3/production.lock \
     && mamba clean --all --yes \
     && conda clean --all --yes
 
@@ -52,7 +53,7 @@ ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
 #     python3 -c "import deepspeed; print('DeepSpeed ops loaded successfully')"
 
 # Devel stage - use devel image for full CUDA support
-ARG CUDA_BASE_IMAGE_TAG=12.2.2-cudnn8-devel-ubuntu22.04
+ARG CUDA_BASE_IMAGE_TAG=12.1.1-cudnn8-devel-ubuntu22.04
 FROM nvidia/cuda:${CUDA_BASE_IMAGE_TAG} AS devel
 
 # Install devel dependencies
