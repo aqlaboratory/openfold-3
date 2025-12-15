@@ -21,14 +21,22 @@ RUN wget -P /tmp \
     && rm /tmp/Miniforge3-Linux-x86_64.sh
 
 ENV PATH=/opt/conda/bin:$PATH
-ENV CONDA_PREFIX=/opt/conda
 
 # Copy and install dependencies from lock file for reproducible builds
 # To regenerate the lock file, see docker/DOCKER.md
+# Use only conda-lock to restore from .lock to correctly install also the pip packages.
+# We can no longer install into the 'base' environment with conda-lock, 
+# so instead a new 'openfold3' environment is created
 COPY environments/production.lock /opt/openfold3/production.lock
-RUN mamba install -n base --file /opt/openfold3/production.lock \
+RUN mamba install -n base -c conda-forge conda-lock --yes \
+    && conda-lock install --name openfold3 /opt/openfold3/production.lock \
     && mamba clean --all --yes \
     && conda clean --all --yes
+
+# Activate the openfold3 environment by default
+ENV PATH=/opt/conda/envs/openfold3/bin:$PATH
+ENV CONDA_PREFIX=/opt/conda/envs/openfold3
+ENV CONDA_DEFAULT_ENV=openfold3
 
 # Copy the minimal set of files needed to install the package
 COPY setup.py /opt/openfold3/
@@ -83,16 +91,24 @@ RUN rm -rf /usr/local/cuda/doc \
 
 # Copy the entire conda environment
 COPY --from=builder /opt/conda /opt/conda
-ENV PATH=/opt/conda/bin:$PATH
 
 # Copy CUTLASS
 COPY --from=builder /opt/cutlass /opt/cutlass
 
+# Activate the openfold3 environment by default
+ENV PATH=/opt/conda/envs/openfold3/bin:/opt/conda/bin:$PATH
+ENV CONDA_PREFIX=/opt/conda/envs/openfold3
+ENV CONDA_DEFAULT_ENV=openfold3
+
+# Ensure interactive shells also activate openfold3
+RUN /opt/conda/bin/conda init bash \
+    && echo "conda activate openfold3" >> /root/.bashrc
+
 # Set environment variables
 ENV CUTLASS_PATH=/opt/cutlass
 ENV KMP_AFFINITY=none
-ENV LIBRARY_PATH=/opt/conda/lib:$LIBRARY_PATH
-ENV LD_LIBRARY_PATH=/opt/conda/lib:$LD_LIBRARY_PATH
+ENV LIBRARY_PATH=/opt/conda/envs/openfold3/lib:$LIBRARY_PATH
+ENV LD_LIBRARY_PATH=/opt/conda/envs/openfold3/lib:$LD_LIBRARY_PATH
 
 # Copy the entire source tree directly (at the very end for optimal caching)
 COPY . /opt/openfold3
