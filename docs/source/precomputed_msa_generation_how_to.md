@@ -40,17 +40,17 @@ We use the workflow manager [snakemake](https://snakemake.readthedocs.io/en/stab
 
 4. Verify snakemake is configured correctly by running a dryrun with snakemake. If this runs successfully, you should see no error messages, and list of alignment jobs the pipeline will run.
 
-```
+```bash
 snakemake -np -s MSA_Snakefile --configfile <path/to/config.json>
 ```
 
 5. You can then run the main alignment workflow like this. 
 
-```
+```bash
 snakemake -s MSA_Snakefile \
-    --cores <available cores> \ 
+    --cores <available cores> \
     --configfile <path/to/config.json>  \
-    --nolock  \ 
+    --nolock  \
     --keep-going \
     --latency-wait 120
 ```
