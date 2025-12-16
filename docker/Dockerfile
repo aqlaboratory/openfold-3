@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y \
 # Install miniforge
 # FIXME this needs to be pinned, with more recent versions (25.11.0-1) the package resolution is stuck
 RUN wget -P /tmp \
-    "https://github.com/conda-forge/miniforge/releases/download/25.3.1-0/Miniforge3-Linux-x86_64.sh" \
+    "https://github.com/conda-forge/miniforge/releases/download/25.11.0-1/Miniforge3-Linux-x86_64.sh" \
     && bash /tmp/Miniforge3-Linux-x86_64.sh -b -p /opt/conda \
     && rm /tmp/Miniforge3-Linux-x86_64.sh
 
