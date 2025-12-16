@@ -44,7 +44,8 @@ from openfold3.core.data.io.sequence.msa import parse_msas_direct, standardize_f
     "input as a JSON string. Key must match the msa filenames without "
     "extension that are in the per-chain alignment directories. Alignments "
     "whose names do not match any key in max_seq_counts will not be parsed. "
-    "Values are the maximum number of sequences to parse from the alignment.",
+    "Values are the maximum number of sequences to parse from the alignment."
+    "Example: --max_seq_counts '{\"uniref90_hits\": 10000}'",
 )
 @click.option(
     "--num_workers",
@@ -64,8 +65,8 @@ def main(
     """Preparse multiple sequence alignments for AF3 dataset."""
     try:
         max_seq_counts = json.loads(max_seq_counts)
-    except json.JSONDecodeError:
-        click.echo("Invalid max_seq_counts JSON string!")
+    except json.JSONDecodeError as e:
+        raise click.ClickException(f"Invalid max_seq_counts JSON string: {e}")
 
     rep_chain_dir_iterator = [it.name for it in alignments_directory.iterdir()]
 
