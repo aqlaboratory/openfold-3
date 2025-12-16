@@ -66,7 +66,7 @@ def main(
     try:
         max_seq_counts = json.loads(max_seq_counts)
     except json.JSONDecodeError as e:
-        raise click.ClickException(f"Invalid max_seq_counts JSON string: {e}")
+        raise click.ClickException(f"Invalid max_seq_counts JSON string: {e}") from None
 
     rep_chain_dir_iterator = [it.name for it in alignments_directory.iterdir()]
 
