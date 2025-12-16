@@ -122,7 +122,8 @@ def parse_args() -> Namespace:
         type=str,
         nargs="+",
         default=None,
-        help=f"Jackhmmer databases to download. Defaults to all: {JACKHMMER_DATABASES}. "
+        help="Jackhmmer databases to download. "
+        f"Defaults to all: {JACKHMMER_DATABASES}. "
         "Use 'uniref90 pdb_seqres' for a minimal test set.",
     )
     download_parser.add_argument(

@@ -18,8 +18,6 @@ from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from download_of3_databases import (
     BFD_DATABASE,
     CFDB_DATABASE,
@@ -35,7 +33,6 @@ from download_of3_databases import (
     list_databases,
     parse_args,
 )
-
 
 # --- Constants tests ---
 
@@ -153,7 +150,9 @@ def test_parse_args_download_rna_dbs_flag():
 
 
 def test_parse_args_custom_jackhmmer_dbs():
-    with patch("sys.argv", ["script", "download", "--jackhmmer-dbs", "uniref90", "pdb_seqres"]):
+    with patch(
+        "sys.argv", ["script", "download", "--jackhmmer-dbs", "uniref90", "pdb_seqres"]
+    ):
         args = parse_args()
     assert args.jackhmmer_dbs == ["uniref90", "pdb_seqres"]
 
@@ -169,9 +168,18 @@ def test_parse_args_custom_hhblits_dbs():
 
 def test_download_from_s3_command():
     with patch("download_of3_databases.sp.run") as mock_run:
-        download_from_s3(bucket="test-bucket", key="path/file.gz", destination="/tmp/file.gz")
+        download_from_s3(
+            bucket="test-bucket", key="path/file.gz", destination="/tmp/file.gz"
+        )
         mock_run.assert_called_once_with(
-            ["aws", "s3", "cp", "--no-sign-request", "s3://test-bucket/path/file.gz", "/tmp/file.gz"],
+            [
+                "aws",
+                "s3",
+                "cp",
+                "--no-sign-request",
+                "s3://test-bucket/path/file.gz",
+                "/tmp/file.gz",
+            ],
             check=True,
         )
 
@@ -249,7 +257,7 @@ def test_list_databases_shows_type_column(capsys):
 def test_download_skips_existing_jackhmmer_databases():
     with (
         tempfile.TemporaryDirectory() as tmpdir,
-        patch("download_of3_databases.sp.run") as mock_run,
+        patch("download_of3_databases.sp.run"),
         patch("download_of3_databases.download_from_s3") as mock_download,
     ):
         # Create existing unzipped file
