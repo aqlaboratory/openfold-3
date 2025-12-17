@@ -1,0 +1,30 @@
+FROM nvidia/cuda:12.0.0-cudnn8-devel-ubuntu22.04
+
+# Install pixi
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates
+ADD https://pixi.sh/install.sh pixi-install.sh
+RUN sh pixi-install.sh && rm pixi-install.sh
+ENV PATH="/root/.pixi/bin/:$PATH"
+
+# We need to get the checkpoint inside the container. We will mount them here.
+ENV OPENFOLD_CACHE="/root/.openfold3"
+
+WORKDIR /app
+
+# Install pixi environment (without lock for testing)
+COPY . .
+ENV CONDA_OVERRIDE_CUDA=12.0
+RUN pixi install
+
+# create the shell-hook bash script to activate the environment
+RUN pixi shell-hook -s bash > /shell-hook
+RUN echo "#!/bin/bash" > /app/entrypoint.sh
+RUN cat /shell-hook >> /app/entrypoint.sh
+# extend the shell-hook script to run the command passed to the container
+RUN echo 'exec "$@"' >> /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+ENTRYPOINT [ "/app/entrypoint.sh" ]
+
+CMD ["pytest", "-m", "inference_verification"]

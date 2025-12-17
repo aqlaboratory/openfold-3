@@ -1,0 +1,38 @@
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+
+# We need to get the checkpoint inside the container. We will mount them here.
+ENV OPENFOLD_CACHE="/root/.openfold3"
+
+# curl and ca-certificates are needed to install pixi
+# The rest is for rdkit
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    libxrender1 \
+    libxext6 \
+    libx11-6 \
+    libexpat1
+
+# Install pixi to install kalign2 (because I could not find another way to do it excpet for building from source)
+# This is the only time we touch conda in any way
+ADD https://pixi.sh/install.sh pixi-install.sh
+RUN sh pixi-install.sh && rm pixi-install.sh
+ENV PATH="/root/.pixi/bin/:$PATH"
+RUN pixi global install -c bioconda -c conda-forge kalign2
+
+# Install uv for "pure python environment" management
+ADD https://astral.sh/uv/install.sh /uv-installer.sh
+RUN sh /uv-installer.sh && rm /uv-installer.sh
+ENV PATH="/root/.local/bin/:$PATH"
+
+WORKDIR /app
+
+# Install dependencies first for faster rebuilds when code changes
+COPY pyproject.toml uv.lock .python-version . 
+RUN uv sync --locked --all-extras --no-install-project
+
+# Now copy the rest of the code
+COPY . .
+RUN uv sync --locked --all-extras
+
+CMD ["uv", "run", "pytest", "-m", "inference_verification"]

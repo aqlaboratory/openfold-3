@@ -71,6 +71,7 @@ test = [
 dev = [
   "pytest",
   "ruff",
+  "ipdb>=0.13.13",  # Just for me, remove later
 
   # used for documentation
   "sphinx",
@@ -82,6 +83,11 @@ cuequivariance = [
   "cuequivariance-ops-torch-cu12>=0.6.1",
   "cuequivariance-torch>=0.6.1",
   "torch>=2.7",
+]
+# I put the cutlass dependency in an extra group for now as we need it for the pure pip installation, 
+# but don't want it for the pixi installation
+cutlass = [
+  "nvidia-cutlass",
 ]
 
 [tool.setuptools]

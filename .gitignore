@@ -20,3 +20,6 @@ cutlass/
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# uv environments
+.venv/
