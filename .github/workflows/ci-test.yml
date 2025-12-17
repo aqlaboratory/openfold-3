@@ -23,10 +23,12 @@ jobs:
       matrix:
         include:
           - cuda_base_image_tag: "12.1.1-cudnn8-devel-ubuntu22.04"
+            build_mode: "yaml"
     concurrency:
       group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}-${{ matrix.cuda_base_image_tag }}
       cancel-in-progress: true
     uses: ./.github/workflows/ci-test-reusable.yml
     with:
       cuda_base_image_tag: ${{ matrix.cuda_base_image_tag }}
+      build_mode: ${{ matrix.build_mode }}
     secrets: inherit

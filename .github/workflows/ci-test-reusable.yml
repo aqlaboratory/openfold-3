@@ -4,6 +4,10 @@ on:
   # Can only be called by another workflow, not directly by the user
   workflow_call:
     inputs:
+      build_mode:
+        description: 'Build mode: "lock" for reproducible builds, "yaml" for flexible dev builds'
+        required: true
+        type: string
       cuda_base_image_tag:
         description: 'CUDA base image tag (e.g., 12.2.2-cudnn8-devel-ubuntu22.04)'
         required: true
@@ -68,6 +72,7 @@ jobs:
           push: true
           build-args: |
             CUDA_BASE_IMAGE_TAG=${{ inputs.cuda_base_image_tag }}
+            BUILD_MODE=${{ inputs.build_mode }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-${{ inputs.cuda_base_image_tag }}-${{ github.sha }}
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-${{ inputs.cuda_base_image_tag }}

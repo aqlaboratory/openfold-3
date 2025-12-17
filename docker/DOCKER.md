@@ -1,6 +1,6 @@
-## Updating the Lock File
+## Updating the production.lock file
 
-When you modify `environments/production.yml`, you need to regenerate the lock file to pin exact versions. This ensures reproducible builds.
+When you modify `environments/production.yml`, you need to regenerate the lock file to pin exact versions. This ensures reproducible builds, prevents conda from resolving the environment again. `environment/production.lock` is then used for 'stable' builds.
 
 ```bash
 # Build the lock file generator image
@@ -14,12 +14,6 @@ git add environments/production.lock
 git commit -m "Update production.lock"
 ```
 
-## Production images
-
-TODO
-
-For Blackwell image build, see [Build_instructions_blackwell.md](Build_instructions_blackwell.md)
-
 ## Development images
 
 These images are the biggest but come with all the build tooling, needed to compile things at runtime (Deepspeed)
@@ -28,7 +22,18 @@ These images are the biggest but come with all the build tooling, needed to comp
 docker build \
     -f docker/Dockerfile \
     --target devel \
-    -t openfold-docker:devel .
+    -t openfold-docker:devel-yaml .
+```
+
+Or more explicitly
+
+```bash
+docker build \
+    -f docker/Dockerfile \
+    --build-arg BUILD_MODE=yaml \
+    --build-arg CUDA_BASE_IMAGE_TAG=12.1.1-cudnn8-devel-ubuntu22.04 \
+    --target devel \
+    -t openfold-docker:devel-yaml .
 ```
 
 ## Test images
@@ -51,3 +56,20 @@ docker run \
     -t openfold-docker:test \
     pytest openfold3/tests -vvv
 ```
+
+## Production images
+
+Build a 'stable' image with all the dependancies exactly pinned (production.lock)
+
+```bash
+docker build \
+    -f docker/Dockerfile \
+    --build-arg BUILD_MODE=lock \
+    --build-arg CUDA_BASE_IMAGE_TAG=12.1.1-cudnn8-devel-ubuntu22.04 \
+    --target devel \
+    -t openfold-docker:devel-locked .
+```
+
+For Blackwell image build, see [Build_instructions_blackwell.md](Build_instructions_blackwell.md)
+
+

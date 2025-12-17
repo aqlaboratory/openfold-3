@@ -2,6 +2,9 @@
 ARG CUDA_BASE_IMAGE_TAG=12.1.1-cudnn8-devel-ubuntu22.04
 FROM nvidia/cuda:${CUDA_BASE_IMAGE_TAG} AS builder
 
+# Environment mode: "lock" for reproducible builds, "yaml" for flexible dev builds
+ARG BUILD_MODE=lock
+
 # Install complete build dependencies including CUDA compiler tools
 RUN apt-get update && apt-get install -y \
     wget \
@@ -22,14 +25,23 @@ RUN wget -P /tmp \
 
 ENV PATH=/opt/conda/bin:$PATH
 
-# Copy and install dependencies from lock file for reproducible builds
+# Copy environment files for both modes (small files, good for caching)
 # To regenerate the lock file, see docker/DOCKER.md
-# Use only conda-lock to restore from .lock to correctly install also the pip packages.
-# We can no longer install into the 'base' environment with conda-lock, 
-# so instead a new 'openfold3' environment is created
+# Use BUILD_MODE=lock (default) for reproducible builds, BUILD_MODE=yml for flexible dev builds
 COPY environments/production.lock /opt/openfold3/production.lock
+COPY environments/production.yml /opt/openfold3/production.yml
+
+# Install environment based on BUILD_MODE
+# - lock: uses conda-lock for exact reproducible builds (training/production)
+# - yaml: uses mamba env create for flexible version resolution (development/testing)
 RUN mamba install -n base -c conda-forge conda-lock --yes \
-    && conda-lock install --name openfold3 /opt/openfold3/production.lock \
+    && if [ "$BUILD_MODE" = "lock" ]; then \
+         conda-lock install --name openfold3 /opt/openfold3/production.lock; \
+       elif [ "$BUILD_MODE" = "yaml" ]; then \
+         mamba env create -f /opt/openfold3/production.yml --name openfold3; \
+       else \
+         echo "Invalid BUILD_MODE: $BUILD_MODE. Use 'lock' or 'yaml'." && exit 1; \
+       fi \
     && mamba clean --all --yes \
     && conda clean --all --yes
 
