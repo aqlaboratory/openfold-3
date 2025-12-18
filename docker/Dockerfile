@@ -3,7 +3,7 @@ ARG CUDA_BASE_IMAGE_TAG=12.1.1-cudnn8-devel-ubuntu22.04
 FROM nvidia/cuda:${CUDA_BASE_IMAGE_TAG} AS builder
 
 # Environment mode: "lock" for reproducible builds, "yaml" for flexible dev builds
-ARG BUILD_MODE=lock
+ARG BUILD_MODE=yaml
 
 # Install complete build dependencies including CUDA compiler tools
 RUN apt-get update && apt-get install -y \
@@ -27,7 +27,7 @@ ENV PATH=/opt/conda/bin:$PATH
 
 # Copy environment files for both modes (small files, good for caching)
 # To regenerate the lock file, see docker/DOCKER.md
-# Use BUILD_MODE=lock (default) for reproducible builds, BUILD_MODE=yml for flexible dev builds
+# Use BUILD_MODE=yaml (default) for reproducible builds, BUILD_MODE=yml for flexible dev builds
 COPY environments/production.lock /opt/openfold3/production.lock
 COPY environments/production.yml /opt/openfold3/production.yml
 
