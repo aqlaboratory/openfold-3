@@ -11,9 +11,15 @@ def prep_deepspeed():
 
 
 def prep_cutlass():
+    if os.environ.get("CONDA_PREFIX") is not None:
+        # Assume pixi/conda takes care of this
+        # Also, the conda cutlass package does not contain the python bindings
+        return
+
     # apparently need to set the headers for cutlass
     try:
         import cutlass_library
+
         headers_dir = Path(cutlass_library.__file__).parent / "source/include"
         cpath = os.environ.get("CPATH", "")
         # TODO: technically, this test should be a little fancier
@@ -24,10 +30,6 @@ def prep_cutlass():
             os.environ["CPATH"] = cpath + str(headers_dir.resolve())
     except ImportError:
         # Assume we are in a conda setting that does not require the PATH modification
-        # Unfortunately, if we are not, then the build will fail with a rather cryptic 
+        # Unfortunately, if we are not, then the build will fail with a rather cryptic
         # error message.
         pass
-
-        
-
-
