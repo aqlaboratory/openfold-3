@@ -61,6 +61,14 @@ Repository = "https://github.com/aqlaboratory/openfold-3"
 run_openfold="openfold3.run_openfold:cli"
 setup_openfold="openfold3.setup_openfold:main"
 
+[dependency-groups]
+test = [
+  "pytest",
+  "ruff",
+  "awscli",
+  "aria2",
+]
+
 [project.optional-dependencies]
 dev = [
   "pytest",
