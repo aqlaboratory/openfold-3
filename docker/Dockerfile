@@ -61,7 +61,7 @@ RUN /opt/openfold3/scripts/install_third_party_dependencies.sh
 
 # Install the package
 WORKDIR /opt/openfold3
-RUN python -m pip install --editable --no-deps .
+RUN python -m uv pip install --editable --no-deps .
 
 # Set CUDA architecture for compilation (adjust based on your GPU)
 ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
@@ -129,5 +129,6 @@ WORKDIR /opt/openfold3
 FROM devel AS test
 
 WORKDIR /opt/openfold3
-RUN pip install --dependency-groups=test
-RUN pip install --no-deps --editable .
+# Only uv supports --dependency-groups from pyproject.toml
+RUN uv pip install --dependency-groups=test
+RUN uv pip install --no-deps --editable .

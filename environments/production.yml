@@ -9,6 +9,7 @@ dependencies:
   - awscli
   - setuptools
   - pip
+  - conda-forge::uv
   - pytorch-lightning
   - biopython
   - numpy
