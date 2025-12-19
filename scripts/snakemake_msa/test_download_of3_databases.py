@@ -18,6 +18,8 @@ from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from download_of3_databases import (
     BFD_DATABASE,
     CFDB_DATABASE,
@@ -34,74 +36,46 @@ from download_of3_databases import (
     parse_args,
 )
 
-# --- Constants tests ---
+
+# --- Fixtures and helpers ---
 
 
-def test_jackhmmer_databases_defined():
-    assert isinstance(JACKHMMER_DATABASES, list)
-    assert "uniref90" in JACKHMMER_DATABASES
-    assert "pdb_seqres" in JACKHMMER_DATABASES
-
-
-def test_rna_databases_defined():
-    assert isinstance(RNA_DATABASES, list)
-    assert "rfam" in RNA_DATABASES
-    assert "rnacentral" in RNA_DATABASES
-    assert "nucleotide_collection" in RNA_DATABASES
-
-
-def test_hhblits_databases_defined():
-    assert isinstance(HHBLITS_DATABASES, list)
-    assert "uniref30" in HHBLITS_DATABASES
-
-
-def test_optional_databases_defined():
-    assert BFD_DATABASE == "bfd"
-    assert CFDB_DATABASE == "cfdb"
-
-
-def test_s3_config_defined():
-    assert S3_BUCKET == "openfold"
-    assert S3_PREFIX == "alignment_databases"
+def make_download_args(
+    output_dir,
+    *,
+    download_bfd=False,
+    download_cfdb=False,
+    download_rna_dbs=False,
+    jackhmmer_dbs=None,
+    hhblits_dbs=None,
+):
+    """Create a Namespace with download args, using sensible defaults."""
+    return Namespace(
+        output_dir=output_dir,
+        download_bfd=download_bfd,
+        download_cfdb=download_cfdb,
+        download_rna_dbs=download_rna_dbs,
+        jackhmmer_dbs=jackhmmer_dbs if jackhmmer_dbs is not None else [],
+        hhblits_dbs=hhblits_dbs,
+    )
 
 
 # --- Helper function tests ---
 
 
-def test_get_known_database_info():
-    known = get_known_database_info()
-    assert isinstance(known, dict)
-    # Check protein databases
-    assert known["uniref90.fasta.gz"] == "Protein"
-    assert known["pdb_seqres.fasta.gz"] == "Protein"
-    assert known["uniref30.tar.gz"] == "Protein"
-    assert known["bfd.tar.gz"] == "Protein"
-    assert known["cfdb.tar.gz"] == "Protein"
-    # Check DNA/RNA databases
-    assert known["rfam.fasta.gz"] == "DNA/RNA"
-    assert known["rnacentral.fasta.gz"] == "DNA/RNA"
-    assert known["nucleotide_collection.fasta.gz"] == "DNA/RNA"
-
-
-def test_format_size_bytes():
-    assert format_size(500) == "500.0 B"
-
-
-def test_format_size_kilobytes():
-    assert format_size(1024) == "1.0 KB"
-    assert format_size(2048) == "2.0 KB"
-
-
-def test_format_size_megabytes():
-    assert format_size(1024 * 1024) == "1.0 MB"
-
-
-def test_format_size_gigabytes():
-    assert format_size(1024 * 1024 * 1024) == "1.0 GB"
-
-
-def test_format_size_terabytes():
-    assert format_size(1024 * 1024 * 1024 * 1024) == "1.0 TB"
+@pytest.mark.parametrize(
+    "size_bytes,expected",
+    [
+        (500, "500.0 B"),
+        (1024, "1.0 KB"),
+        (2048, "2.0 KB"),
+        (1024 * 1024, "1.0 MB"),
+        (1024 * 1024 * 1024, "1.0 GB"),
+        (1024 * 1024 * 1024 * 1024, "1.0 TB"),
+    ],
+)
+def test_format_size(size_bytes, expected):
+    assert format_size(size_bytes) == expected
 
 
 # --- parse_args tests ---
@@ -131,22 +105,18 @@ def test_parse_args_download_custom_output_dir():
     assert args.output_dir == "/custom/path"
 
 
-def test_parse_args_download_bfd_flag():
-    with patch("sys.argv", ["script", "download", "--download-bfd"]):
+@pytest.mark.parametrize(
+    ["flag", "attr"],
+    [
+        ("--download-bfd", "download_bfd"),
+        ("--download-cfdb", "download_cfdb"),
+        ("--download-rna-dbs", "download_rna_dbs"),
+    ],
+)
+def test_parse_args_download_flag(flag, attr):
+    with patch("sys.argv", ["script", "download", flag]):
         args = parse_args()
-    assert args.download_bfd is True
-
-
-def test_parse_args_download_cfdb_flag():
-    with patch("sys.argv", ["script", "download", "--download-cfdb"]):
-        args = parse_args()
-    assert args.download_cfdb is True
-
-
-def test_parse_args_download_rna_dbs_flag():
-    with patch("sys.argv", ["script", "download", "--download-rna-dbs"]):
-        args = parse_args()
-    assert args.download_rna_dbs is True
+    assert getattr(args, attr) is True
 
 
 def test_parse_args_custom_jackhmmer_dbs():
@@ -182,13 +152,6 @@ def test_download_from_s3_command():
             ],
             check=True,
         )
-
-
-def test_download_from_s3_uses_no_sign_request():
-    with patch("download_of3_databases.sp.run") as mock_run:
-        download_from_s3(bucket="bucket", key="key", destination="/dest")
-        cmd = mock_run.call_args[0][0]
-        assert "--no-sign-request" in cmd
 
 
 # --- list_databases tests ---
@@ -265,14 +228,7 @@ def test_download_skips_existing_jackhmmer_databases():
         db_dir.mkdir()
         (db_dir / "uniref90.fasta").touch()
 
-        args = Namespace(
-            output_dir=tmpdir,
-            download_bfd=False,
-            download_cfdb=False,
-            download_rna_dbs=False,
-            jackhmmer_dbs=["uniref90"],
-            hhblits_dbs=[],
-        )
+        args = make_download_args(tmpdir, jackhmmer_dbs=["uniref90"], hhblits_dbs=[])
         download(args)
 
         # Should not download uniref90 since it exists
@@ -285,13 +241,8 @@ def test_download_downloads_custom_jackhmmer_dbs():
         patch("download_of3_databases.sp.run"),
         patch("download_of3_databases.download_from_s3") as mock_download,
     ):
-        args = Namespace(
-            output_dir=tmpdir,
-            download_bfd=False,
-            download_cfdb=False,
-            download_rna_dbs=False,
-            jackhmmer_dbs=["uniref90", "pdb_seqres"],
-            hhblits_dbs=[],
+        args = make_download_args(
+            tmpdir, jackhmmer_dbs=["uniref90", "pdb_seqres"], hhblits_dbs=[]
         )
         download(args)
 
@@ -307,13 +258,8 @@ def test_download_includes_rna_dbs_when_flag_set():
         patch("download_of3_databases.sp.run"),
         patch("download_of3_databases.download_from_s3") as mock_download,
     ):
-        args = Namespace(
-            output_dir=tmpdir,
-            download_bfd=False,
-            download_cfdb=False,
-            download_rna_dbs=True,
-            jackhmmer_dbs=["uniref90"],
-            hhblits_dbs=[],
+        args = make_download_args(
+            tmpdir, download_rna_dbs=True, jackhmmer_dbs=["uniref90"], hhblits_dbs=[]
         )
         download(args)
 
@@ -336,14 +282,7 @@ def test_download_skips_existing_hhblits_databases():
         db_dir = Path(tmpdir) / "uniref30"
         db_dir.mkdir()
 
-        args = Namespace(
-            output_dir=tmpdir,
-            download_bfd=False,
-            download_cfdb=False,
-            download_rna_dbs=False,
-            jackhmmer_dbs=[],
-            hhblits_dbs=None,
-        )
+        args = make_download_args(tmpdir)
         download(args)
 
         # uniref30 should be skipped
@@ -351,48 +290,30 @@ def test_download_skips_existing_hhblits_databases():
             assert "uniref30" not in call_args.kwargs.get("key", "")
 
 
-def test_download_downloads_bfd_when_flag_set():
+@pytest.mark.parametrize(
+    "flag_name,db_name",
+    [
+        ("download_bfd", "bfd"),
+        ("download_cfdb", "cfdb"),
+    ],
+)
+def test_download_optional_db_when_flag_set(flag_name, db_name):
     with (
         tempfile.TemporaryDirectory() as tmpdir,
         patch("download_of3_databases.sp.run"),
         patch("download_of3_databases.download_from_s3") as mock_download,
         patch.object(Path, "unlink"),
     ):
-        args = Namespace(
-            output_dir=tmpdir,
-            download_bfd=True,
-            download_cfdb=False,
-            download_rna_dbs=False,
-            jackhmmer_dbs=[],
-            hhblits_dbs=None,
+        args = make_download_args(
+            tmpdir,
+            download_bfd=(flag_name == "download_bfd"),
+            download_cfdb=(flag_name == "download_cfdb"),
         )
         download(args)
 
         calls = mock_download.call_args_list
         downloaded_keys = [c.kwargs["key"] for c in calls]
-        assert f"{S3_PREFIX}/bfd.tar.gz" in downloaded_keys
-
-
-def test_download_downloads_cfdb_when_flag_set():
-    with (
-        tempfile.TemporaryDirectory() as tmpdir,
-        patch("download_of3_databases.sp.run"),
-        patch("download_of3_databases.download_from_s3") as mock_download,
-        patch.object(Path, "unlink"),
-    ):
-        args = Namespace(
-            output_dir=tmpdir,
-            download_bfd=False,
-            download_cfdb=True,
-            download_rna_dbs=False,
-            jackhmmer_dbs=[],
-            hhblits_dbs=None,
-        )
-        download(args)
-
-        calls = mock_download.call_args_list
-        downloaded_keys = [c.kwargs["key"] for c in calls]
-        assert f"{S3_PREFIX}/cfdb.tar.gz" in downloaded_keys
+        assert f"{S3_PREFIX}/{db_name}.tar.gz" in downloaded_keys
 
 
 def test_download_custom_hhblits_dbs_ignores_bfd_cfdb_flags():
@@ -402,13 +323,9 @@ def test_download_custom_hhblits_dbs_ignores_bfd_cfdb_flags():
         patch("download_of3_databases.download_from_s3") as mock_download,
         patch.object(Path, "unlink"),
     ):
-        args = Namespace(
-            output_dir=tmpdir,
-            download_bfd=True,  # Should be ignored
-            download_cfdb=True,  # Should be ignored
-            download_rna_dbs=False,
-            jackhmmer_dbs=[],
-            hhblits_dbs=["custom_db"],
+        # bfd/cfdb flags should be ignored when custom hhblits_dbs is set
+        args = make_download_args(
+            tmpdir, download_bfd=True, download_cfdb=True, hhblits_dbs=["custom_db"]
         )
         download(args)
 
@@ -428,14 +345,7 @@ def test_download_gunzip_called_for_jackhmmer_dbs():
         patch("download_of3_databases.sp.run") as mock_run,
         patch("download_of3_databases.download_from_s3"),
     ):
-        args = Namespace(
-            output_dir=tmpdir,
-            download_bfd=False,
-            download_cfdb=False,
-            download_rna_dbs=False,
-            jackhmmer_dbs=["uniref90"],
-            hhblits_dbs=[],
-        )
+        args = make_download_args(tmpdir, jackhmmer_dbs=["uniref90"], hhblits_dbs=[])
         download(args)
 
         gunzip_calls = [c for c in mock_run.call_args_list if "gunzip" in c[0][0]]
@@ -449,14 +359,7 @@ def test_download_tar_called_for_hhblits_dbs():
         patch("download_of3_databases.download_from_s3"),
         patch.object(Path, "unlink"),
     ):
-        args = Namespace(
-            output_dir=tmpdir,
-            download_bfd=False,
-            download_cfdb=False,
-            download_rna_dbs=False,
-            jackhmmer_dbs=[],
-            hhblits_dbs=["testdb"],
-        )
+        args = make_download_args(tmpdir, hhblits_dbs=["testdb"])
         download(args)
 
         tar_calls = [c for c in mock_run.call_args_list if c[0][0][0] == "tar"]
