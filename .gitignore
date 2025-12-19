@@ -10,3 +10,6 @@ dist
 openfold3/resources/
 tests/test_data/sample_feats.pickle
 cutlass/
+
+# User-specific claude settings
+.claude/
