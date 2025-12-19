@@ -29,7 +29,7 @@ ENV PATH=/opt/conda/bin:$PATH
 # To regenerate the lock file, see docker/DOCKER.md
 # Use BUILD_MODE=yaml (default) for reproducible builds, BUILD_MODE=yml for flexible dev builds
 COPY environments/production-linux-64.lock /opt/openfold3/production-linux-64.lock
-COPY environments/production.yml /opt/openfold3/production.yml
+COPY environments/production-linux-64 /opt/openfold3/production-linux-64
 
 # Install environment based on BUILD_MODE
 # - lock: uses conda-lock for exact reproducible builds (training/production)
@@ -38,7 +38,7 @@ RUN mamba install -n base -c conda-forge conda-lock --yes \
     && if [ "$BUILD_MODE" = "lock" ]; then \
          conda-lock install --name openfold3 /opt/openfold3/production-linux-64.lock; \
        elif [ "$BUILD_MODE" = "yaml" ]; then \
-         mamba env create -f /opt/openfold3/production.yml --name openfold3; \
+         mamba env create -f /opt/openfold3/pproduction-linux-64 --name openfold3; \
        else \
          echo "Invalid BUILD_MODE: $BUILD_MODE. Use 'lock' or 'yaml'." && exit 1; \
        fi \

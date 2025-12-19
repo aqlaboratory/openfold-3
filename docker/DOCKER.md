@@ -1,16 +1,16 @@
 ## Generating and updating production.lock file
 
-While a conda env can be created from `environments/production.yml`, this causes the environment to be resolved from scratch everytime. 
+While a conda env can be created from `environments/production-linux-64.yml`, this causes the environment to be resolved from scratch everytime. 
 For reproducible builds, one needs to generate a .lock file that exactly re-creates the environment.
 
-When you modify `environments/production.yml`, you need to regenerate the lock file to pin exact versions. This ensures reproducible builds, prevents conda from resolving the environment again. `environment/production.lock` is then used for 'stable' builds.
+When you modify `environments/production-linux-64.yml`, you need to regenerate the lock file to pin exact versions. This ensures reproducible builds, prevents conda from resolving the environment again. `environment/production.lock` is then used for 'stable' builds.
 
 ```bash
 # Build the lock file generator image
 docker build -f docker/Dockerfile.update-reqs -t openfold3-update-reqs .
 
 # Generate the lock file (linux-64 only for now)
-docker run --rm openfold3-update-reqs > environments/production-linux-64.lock
+docker run -v $(pwd)/environments:/output --rm openfold3-update-reqs 
 
 # Commit the updated lock file
 git add environments/production-linux-64.lock

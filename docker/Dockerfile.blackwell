@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /opt
 RUN git clone https://github.com/aqlaboratory/openfold-3.git && \
     cd openfold-3 && \
-    cp -p environments/production.yml environments/production.yml.backup && \
+    cp -p environments/production-linux-64.yml environments/production.yml.backup && \
     grep -v "pytorch::pytorch" environments/production.yml > environments/production.yml.tmp && \
     mv environments/production.yml.tmp environments/production.yml
 
