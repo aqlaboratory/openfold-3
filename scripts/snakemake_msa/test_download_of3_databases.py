@@ -19,23 +19,14 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from download_of3_databases import (
-    BFD_DATABASE,
-    CFDB_DATABASE,
-    HHBLITS_DATABASES,
-    JACKHMMER_DATABASES,
-    RNA_DATABASES,
-    S3_BUCKET,
     S3_PREFIX,
     download,
     download_from_s3,
     format_size,
-    get_known_database_info,
     list_databases,
     parse_args,
 )
-
 
 # --- Fixtures and helpers ---
 

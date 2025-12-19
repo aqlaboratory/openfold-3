@@ -1,16 +1,44 @@
 """MSA pre-parsing script for AF3 dataset."""
 
-import json
 import multiprocessing as mp
 import traceback
 from functools import wraps
 from pathlib import Path
+from typing import Annotated
 
 import click
 import numpy as np
+from pydantic import BaseModel, Field, ValidationError
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.msa import parse_msas_direct, standardize_filepaths
+
+PositiveInt = Annotated[int, Field(gt=0)]
+
+
+class MaxSeqCounts(BaseModel):
+    """Maximum sequence counts per alignment database.
+    Potentially brittle when new datasets added but it's more
+    IDE-friendly without dynamically generated fields.
+    """
+
+    model_config = {"extra": "forbid"}  # Reject unknown fields
+
+    # Jackhmmer databases
+    uniprot_hits: PositiveInt | None = None
+    uniref90_hits: PositiveInt | None = None
+    mgnify_hits: PositiveInt | None = None
+    pdb_seqres_hits: PositiveInt | None = None
+
+    # HHblits databases
+    uniref30_hits: PositiveInt | None = None
+    bfd_hits: PositiveInt | None = None
+    cfdb_hits: PositiveInt | None = None
+
+    # RNA databases
+    rfam_hits: PositiveInt | None = None
+    rnacentral_hits: PositiveInt | None = None
+    nucleotide_collection_hits: PositiveInt | None = None
 
 
 @click.command()
@@ -64,8 +92,8 @@ def main(
 ):
     """Preparse multiple sequence alignments for AF3 dataset."""
     try:
-        max_seq_counts = json.loads(max_seq_counts)
-    except json.JSONDecodeError as e:
+        max_seq_counts = MaxSeqCounts.model_validate_json(max_seq_counts)
+    except ValidationError as e:
         raise click.ClickException(f"Invalid max_seq_counts JSON string: {e}") from None
 
     rep_chain_dir_iterator = [it.name for it in alignments_directory.iterdir()]
