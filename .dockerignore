@@ -6,7 +6,6 @@
 !LICENSE
 !pyproject.toml
 !README.md
-!setup.py
 
 # Allow specific directories
 !deepspeed_configs/**

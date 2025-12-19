@@ -51,7 +51,6 @@ ENV CONDA_PREFIX=/opt/conda/envs/openfold3
 ENV CONDA_DEFAULT_ENV=openfold3
 
 # Copy the minimal set of files needed to install the package
-COPY setup.py /opt/openfold3/
 COPY pyproject.toml /opt/openfold3/
 COPY openfold3/__init__.py /opt/openfold3/openfold3/
 COPY scripts/ /opt/openfold3/scripts/
@@ -62,8 +61,7 @@ RUN /opt/openfold3/scripts/install_third_party_dependencies.sh
 
 # Install the package
 WORKDIR /opt/openfold3
-# even `pip install --no-build-isolation` not actually working here, needs investigation
-RUN python setup.py install
+RUN python -m pip install --editable --no-deps .
 
 # Set CUDA architecture for compilation (adjust based on your GPU)
 ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
