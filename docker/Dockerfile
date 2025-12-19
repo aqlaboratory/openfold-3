@@ -29,7 +29,7 @@ ENV PATH=/opt/conda/bin:$PATH
 # To regenerate the lock file, see docker/DOCKER.md
 # Use BUILD_MODE=yaml (default) for reproducible builds, BUILD_MODE=yml for flexible dev builds
 COPY environments/production-linux-64.lock /opt/openfold3/production-linux-64.lock
-COPY environments/production-linux-64 /opt/openfold3/production-linux-64
+COPY environments/production-linux-64.yml /opt/openfold3/production-linux-64.yml
 
 # Install environment based on BUILD_MODE
 # - lock: uses conda-lock for exact reproducible builds (training/production)
