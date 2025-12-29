@@ -147,6 +147,10 @@ cuequivariance-torch = "*"
 #   https://github.com/aqlaboratory/openfold-3/blob/3ba7b3589798eb2c60e78fa2c0ec25bd18decc92/openfold3/hacks.py#L1-L21
 #   https://github.com/aqlaboratory/openfold-3/blob/3ba7b3589798eb2c60e78fa2c0ec25bd18decc92/pyproject.toml#L33-L41
 # Note that this pins down some other cuda dependencies and add other dependencies, which is a bad side effect
+# Even more problematic, pytorch itself depends on cutlass python API, with this triaged issue
+#   https://github.com/pytorch/pytorch/issues/157456
+# This is particularly relevant:
+#   https://github.com/pytorch/pytorch/blob/82eefaedd98b63de8a87e34275af781f8eb177e1/torch/_inductor/codegen/cuda/cutlass_utils.py#L63
 # nvidia-cutlass = "==3.8"
 
 # While this is closed (as they can now use pip check to test) we still need to install ninja-python
