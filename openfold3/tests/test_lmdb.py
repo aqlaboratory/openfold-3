@@ -66,7 +66,7 @@ class TestLMDBDict:
 
         # Create LMDB
         test_lmdb_dir = tmp_path / "test_lmdb"
-        map_size = 20 * 1024
+        map_size = 200 * 1024
         convert_datacache_to_lmdb(test_config_json, test_lmdb_dir, map_size)
 
         # read lmdb
