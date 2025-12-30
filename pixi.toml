@@ -34,7 +34,7 @@ biotite = "<1.3"
 
 [feature.openfold3-cpu.target.linux-aarch64.dependencies]
 # biotite = "<1.3"
-# Uncomment when our upstream package addition gets published, and remove next one
+# Uncomment when our upstream package addition gets published, add back to default deps, and remove next ones
 # See https://github.com/conda-forge/biotite-feedstock/pull/81 and related PRs
 
 [feature.openfold3-cpu.target.linux-aarch64.pypi-dependencies]
@@ -47,7 +47,6 @@ biotite = "<1.3"
 
 [feature.openfold3-cpu.target.osx-arm64.dependencies]
 biotite = "<1.3"
-
 
 [feature.openfold3-cpu.dependencies]
 
@@ -132,6 +131,11 @@ openfold3 = { path = ".", editable = true }
 #   pytorch-gpu = "*"
 
 # --- DeepSpeed
+# TODO: make deepspeed CF package for linux_aarch64
+#       note: https://github.com/deepspeedai/DeepSpeed/issues/5640
+#             https://github.com/conda-forge/deepspeed-feedstock/pull/81
+#       but it does seem to work, according to:
+#             https://github.com/aqlaboratory/openfold-3/issues/78
 
 [feature.deepspeed]
 
