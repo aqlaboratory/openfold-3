@@ -212,8 +212,9 @@ openfold3 = { path = ".", editable = true }
 [feature.cuequivariance]
 
   [feature.cuequivariance-cu12.dependencies]
-  cuequivariance = "*"
-  cuequivariance-torch = "*"
+  # N.B., tests fail with cuequivariance >=0.8, need to assess + pinning in the meantime
+  cuequivariance = "<0.8"
+  cuequivariance-torch = "<0.8"
 
 [feature.cuequivariance-cu12]
 
@@ -227,7 +228,7 @@ openfold3 = { path = ".", editable = true }
   #   * nvidia-cublas-cu12
   # With cublas being the problematic one - also packaged in CF but not clobbering
   # We would need to also package this in conda-forge
-  cuequivariance-ops-torch-cu12 = "*"  # we need to coordinate this with the conda packages, or install all from pypi
+  cuequivariance-ops-torch-cu12 = "<0.8"  # we need to coordinate this with the conda packages, or install all from pypi
 
 # [feature.cuequivariance-cu13]
 #   [feature.cuequivariance-cu13.pypi-dependencies]
