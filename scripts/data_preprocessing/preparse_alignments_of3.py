@@ -2,7 +2,6 @@
 
 import multiprocessing as mp
 import traceback
-from functools import wraps
 from pathlib import Path
 from typing import Annotated
 
@@ -92,7 +91,7 @@ def main(
 ):
     """Preparse multiple sequence alignments for AF3 dataset."""
     try:
-        max_seq_counts = MaxSeqCounts.model_validate_json(max_seq_counts)
+        max_seq_counts_parsed = MaxSeqCounts.model_validate_json(max_seq_counts)
     except ValidationError as e:
         raise click.ClickException(f"Invalid max_seq_counts JSON string: {e}") from None
 
@@ -100,7 +99,9 @@ def main(
 
     # Create template cache for each query chain
     wrapped_msa_preparser = _MsaPreparser(
-        alignments_directory, alignment_array_directory, max_seq_counts
+        alignments_directory,
+        alignment_array_directory,
+        max_seq_counts_parsed.model_dump(exclude_none=True),
     )
     with mp.Pool(num_workers) as pool:
         for _ in tqdm(
@@ -165,7 +166,6 @@ class _MsaPreparser:
         self.alignment_array_directory = alignment_array_directory
         self.max_seq_counts = max_seq_counts
 
-    @wraps(preparse_msas)
     def __call__(self, rep_pdb_chain_id: str) -> None:
         try:
             preparse_msas(
