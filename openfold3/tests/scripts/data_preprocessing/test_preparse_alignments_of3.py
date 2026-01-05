@@ -48,9 +48,9 @@ class TestPreparseAlignmentsOf3:
 
         # Check that npz files were created for both chains
         npz_files = list(temp_output_dir.glob("*.npz"))
-        assert (
-            len(npz_files) == 6
-        ), f"Expected 6 npz files, got {len(npz_files)}: {[f.name for f in npz_files]}"
+        assert len(npz_files) == 6, (
+            f"Expected 6 npz files, got {len(npz_files)}: {[f.name for f in npz_files]}"
+        )
 
         chain_names = {f.stem for f in npz_files}
         assert "2q2k_A" in chain_names
