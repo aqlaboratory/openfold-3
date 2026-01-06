@@ -38,7 +38,7 @@ RUN mamba install -n base -c conda-forge conda-lock --yes \
     && if [ "$BUILD_MODE" = "lock" ]; then \
          conda-lock install --name openfold3 /opt/openfold3/production-linux-64.lock; \
        elif [ "$BUILD_MODE" = "yaml" ]; then \
-         mamba env create -f /opt/openfold3/production-linux-64.yaml --name openfold3; \
+         mamba env create -f /opt/openfold3/production-linux-64.yml --name openfold3; \
        else \
          echo "Invalid BUILD_MODE: $BUILD_MODE. Use 'lock' or 'yaml'." && exit 1; \
        fi \
