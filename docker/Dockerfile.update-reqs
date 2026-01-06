@@ -16,7 +16,6 @@ RUN micromamba install -y -n base -c conda-forge conda-lock \
 USER $MAMBA_USER
 
 COPY --chown=$MAMBA_USER:$MAMBA_USER environments/production-linux-64.yml /tmp/production-linux-64.yml
-COPY --chown=$MAMBA_USER:$MAMBA_USER environments/production-osx-arm64.yml /tmp/production-osx-arm64.yml
 
 # Generate explicit lock file for linux-64
 # The explicit format is directly consumable by mamba/conda
@@ -24,13 +23,6 @@ RUN micromamba run -n base conda-lock lock \
     --mamba \
     --platform linux-64 \
     --file /tmp/production-linux-64.yml \
-    --kind explicit \
-    --filename-template '/tmp/production-{platform}.lock'
-
-RUN micromamba run -n base conda-lock lock \
-    --mamba \
-    --platform osx-arm64 \
-    --file /tmp/production-osx-arm64.yml \
     --kind explicit \
     --filename-template '/tmp/production-{platform}.lock'
 
