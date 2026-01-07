@@ -130,5 +130,5 @@ FROM devel AS test
 
 WORKDIR /opt/openfold3
 # Only uv supports --dependency-groups from pyproject.toml
-RUN uv pip install --dependency-groups=test
+RUN uv pip install --group=test
 RUN uv pip install --no-deps --editable .
