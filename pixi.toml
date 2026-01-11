@@ -65,6 +65,11 @@ numpy = "*"
 scipy = "*"
 pandas = "*"
 
+# In case we need some hacks / post-modifications
+# (pixi joint pypi/conda resolution is too good and does not allow sometimes necessary evil)
+# Here at least until we get CF cuda13 dependencies
+pip = "*"
+
 # --- Pytorch & its accelerators
 # Note that we use a pixi feature on top for taking care of GPU environments.
 # We take advantage that pytorch and pytorch-gpu are compatible packages.
