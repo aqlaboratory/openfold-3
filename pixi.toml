@@ -166,7 +166,7 @@ biotite = "<1.3"
   env.DS_BUILD_CACHE_DIR = "$CONDA_PREFIX/caches/deepspeed"
 
   [feature.deepspeed.dependencies]
-  deepspeed = "*"
+  deepspeed = ">=0.18.3"
 
   # These are only needed to build local extensions the first time
   # Think on whether we want to delete them afterwards and how it would play with the user
