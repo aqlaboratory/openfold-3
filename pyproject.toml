@@ -26,17 +26,7 @@ dependencies = [
   "func_timeout",
   "lmdb", # == 1.6  # This verison might be required to avoid Error during training
   "ijson",
-  "deepspeed",
   "pdbeccdutils",
-  # For cutlass >=4, import library is cutlass_cppgen, but deepspeed is
-  # currently using cutlass.
-  # "nvidia-cutlass <4",
-
-  # additional pins
-
-  # Pinned cutlass <4 calls from cuda.__version__, which was removed when
-  # cuda-python went fully metapackage
-  # "cuda-python <12.9.1",
 ]
 authors = [
   {name = "OpenFold Team", email = "support@openfold.io" }
@@ -84,10 +74,21 @@ cuequivariance = [
   "cuequivariance-torch>=0.6.1",
   "torch>=2.7",
 ]
-# I put the cutlass dependency in an extra group for now as we need it for the pure pip installation, 
-# but don't want it for the pixi installation
-cutlass = [
+
+deepspeed = [
+  "deepspeed",
+  # nvidia cutlass dependency should be eventually removed:
   "nvidia-cutlass",
+
+  # For cutlass >=4, import library is cutlass_cppgen, but deepspeed is
+  # currently using cutlass.
+  # "nvidia-cutlass <4",
+
+  # additional pins
+
+  # Pinned cutlass <4 calls from cuda.__version__, which was removed when
+  # cuda-python went fully metapackage
+  # "cuda-python <12.9.1",
 ]
 
 [tool.setuptools]
