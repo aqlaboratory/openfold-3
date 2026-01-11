@@ -6,28 +6,6 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openfold3"
 version = "0.3.1"
-dependencies = [
-  "awscli",
-  "torch",# ==2.5.1",
-  "pytorch-lightning >=2.1",
-  "numpy",
-  "pandas",
-  "PyYAML",
-  "requests",
-  "scipy",
-  "tqdm",
-  "typing-extensions",
-  "wandb",
-  "ml-collections",
-  "biotite >=1.1.0, <1.3",
-  "rdkit",
-  "boto3",
-  "memory_profiler",
-  "func_timeout",
-  "lmdb", # == 1.6  # This verison might be required to avoid Error during training
-  "ijson",
-  "pdbeccdutils",
-]
 authors = [
   {name = "OpenFold Team", email = "support@openfold.io" }
 ]
@@ -53,12 +31,27 @@ Repository = "https://github.com/aqlaboratory/openfold-3"
 run_openfold="openfold3.run_openfold:cli"
 setup_openfold="openfold3.setup_openfold:main"
 
-[dependency-groups]
-test = [
-  "pytest",
-  "ruff",
+dependencies = [
   "awscli",
-  "aria2",
+  "torch",# ==2.5.1",
+  "pytorch-lightning >=2.1",
+  "numpy",
+  "pandas",
+  "PyYAML",
+  "requests",
+  "scipy",
+  "tqdm",
+  "typing-extensions",
+  "wandb",
+  "ml-collections",
+  "biotite >=1.1.0, <1.3",
+  "rdkit",
+  "boto3",
+  "memory_profiler",
+  "func_timeout",
+  "lmdb", # == 1.6  # This verison might be required to avoid Error during training
+  "ijson",
+  "pdbeccdutils",
 ]
 
 [project.optional-dependencies]
@@ -81,7 +74,7 @@ cuequivariance = [
 
 deepspeed = [
   "deepspeed",
-  # nvidia cutlass dependency should be eventually removed:
+  # nvidia cutlass dependency should be eventually removed
   "nvidia-cutlass",
 
   # For cutlass >=4, import library is cutlass_cppgen, but deepspeed is
