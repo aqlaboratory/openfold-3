@@ -11,7 +11,6 @@ authors = [
 ]
 description = "OpenFold's Biological Structure Prediction Model based on DeepMind's AlphaFold 3"
 readme = "README.md"
-requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
@@ -23,14 +22,15 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+urls.Homepage = "https://openfold.io/"
+urls.Documentation = "https://openfold-3.readthedocs.io/en/latest/"
+urls.Repository = "https://github.com/aqlaboratory/openfold-3"
+urls.Issues = "https://github.com/aqlaboratory/openfold-3/issues"
 
-[project.urls]
-Repository = "https://github.com/aqlaboratory/openfold-3"
+scripts.run_openfold = "openfold3.run_openfold:cli"
+scripts.setup_openfold = "openfold3.setup_openfold:main"
 
-[project.scripts]
-run_openfold = "openfold3.run_openfold:cli"
-setup_openfold = "openfold3.setup_openfold:main"
-
+requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "scipy",
@@ -54,8 +54,7 @@ dependencies = [
     "lmdb", # == 1.6  # This verison might be required to avoid Error during training
 ]
 
-[project.optional-dependencies]
-dev = [
+optional-dependencies.dev = [
     "pytest",
     "ruff",
     "ipdb>=0.13.13", # Just for me, remove later
@@ -65,13 +64,13 @@ dev = [
     "myst-parser",
     "furo"
 ]
-cuequivariance = [
+optional-dependencies.cuequivariance = [
     "cuequivariance>=0.6.1",
     "cuequivariance-ops-torch-cu12>=0.6.1",
     "cuequivariance-torch>=0.6.1",
     "torch>=2.7",
 ]
-deepspeed = [
+optional-dependencies.deepspeed = [
     "deepspeed",
     # nvidia cutlass dependency should be eventually removed
     "nvidia-cutlass",
@@ -86,11 +85,10 @@ deepspeed = [
     # "cuda-python <12.9.1",
 ]
 
-
-[dependency-groups]
 # Let's take a decision if these are optional-dependencies or dependency-groups
 # See: https://github.com/astral-sh/uv/issues/9011
 # Leaving here to not break ongoing docker revamp efforts
+[dependency-groups]
 test = [
     "pytest",
     "ruff",
