@@ -24,29 +24,17 @@ platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
 version = "0.1.0"
 requires-pixi = ">=0.62"
 
+# --- Environments
+
+[environments]
+default = {features=["openfold3-cpu"]}  # Any better way to alias or remove the default environment?
+openfold3-cpu = {features=["openfold3-cpu"]}
+openfold3-cuda12 = {features=["openfold3-cpu", "cuda12", "deepspeed", "cuequivariance", "cuequivariance-cu12"]}
+# openfold3-cuda13 = {features=["openfold3-cpu", "cuda13", "deepspeed", "cuequivariance", "cuequivariance-cu13"]}
+# Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
+# N.B. at the moment all these are editable installs
+
 # --- CPU (base) environment
-
-# --- TODO: (pixi) How to do merge these two in one definition / table?
-
-[feature.openfold3-cpu.target.linux-64.dependencies]
-mkl = "*"
-biotite = "<1.3"
-
-[feature.openfold3-cpu.target.linux-aarch64.dependencies]
-# biotite = "<1.3"
-# Uncomment when our upstream package addition gets published, add back to default deps, and remove next ones
-# See https://github.com/conda-forge/biotite-feedstock/pull/81 and related PRs
-
-[feature.openfold3-cpu.target.linux-aarch64.pypi-dependencies]
-# Remove once we get an aarch conda package
-# Note that it is unclear this will be a fully correct installation (see biotite docs about CCD generation)
-biotite = "<1.3"
-
-[feature.openfold3-cpu.target.osx-64.dependencies]
-biotite = "<1.3"
-
-[feature.openfold3-cpu.target.osx-arm64.dependencies]
-biotite = "<1.3"
 
 [feature.openfold3-cpu.dependencies]
 
@@ -107,6 +95,26 @@ furo = "*"
 # The goal here would be to avoid getting anything installed from pypi in this step.
 # TODO: we should provide this as an optional in the environment (matrix devel vs prod)
 openfold3 = { path = ".", editable = true }
+
+[feature.openfold3-cpu.target.linux-64.dependencies]
+mkl = "*"
+biotite = "<1.3"
+
+[feature.openfold3-cpu.target.linux-aarch64.dependencies]
+# biotite = "<1.3"
+# Uncomment when our upstream package addition gets published, add back to default deps, and remove next ones
+# See https://github.com/conda-forge/biotite-feedstock/pull/81 and related PRs
+
+[feature.openfold3-cpu.target.linux-aarch64.pypi-dependencies]
+# Remove all these biotite special cases once we get an aarch conda package
+# Note that it is unclear this will be a fully correct installation (see biotite docs about CCD generation)
+biotite = "<1.3"
+
+[feature.openfold3-cpu.target.osx-64.dependencies]
+biotite = "<1.3"
+
+[feature.openfold3-cpu.target.osx-arm64.dependencies]
+biotite = "<1.3"
 
 # --- Cuda
 
@@ -236,13 +244,3 @@ openfold3 = { path = ".", editable = true }
 # [feature.cuequivariance-cu13]
 #   [feature.cuequivariance-cu13.pypi-dependencies]
 #   cuequivariance-ops-torch-cu13 = "*"  # we need to coordinate this with the conda packages, or install all from pypi
-
-# --- Environments
-
-[environments]
-default = {features=["openfold3-cpu"]}  # Any better way to alias or remove the default environment?
-openfold3-cpu = {features=["openfold3-cpu"]}
-openfold3-cuda12 = {features=["openfold3-cpu", "cuda12", "deepspeed", "cuequivariance", "cuequivariance-cu12"]}
-# openfold3-cuda13 = {features=["openfold3-cpu", "cuda13", "deepspeed", "cuequivariance", "cuequivariance-cu13"]}
-
-# Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
