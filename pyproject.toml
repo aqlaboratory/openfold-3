@@ -88,6 +88,19 @@ deepspeed = [
   # "cuda-python <12.9.1",
 ]
 
+
+[dependency-groups]
+# Let's take a decision if these are optional-dependencies or dependency-groups
+# See: https://github.com/astral-sh/uv/issues/9011
+# Leaving here to not break ongoing docker revamp efforts
+test = [
+  "pytest",
+  "ruff",
+  "awscli",
+  "aria2",
+]
+
+
 [tool.setuptools]
 include-package-data = true
 
