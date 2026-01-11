@@ -214,7 +214,7 @@ openfold3 = { path = ".", editable = true }
 
 [feature.cuequivariance]
 
-  [feature.cuequivariance-cu12.dependencies]
+  [feature.cuequivariance.dependencies]
   # N.B., tests fail with cuequivariance >=0.8, need to assess + pinning in the meantime
   cuequivariance = "<0.8"
   cuequivariance-torch = "<0.8"
@@ -224,7 +224,6 @@ openfold3 = { path = ".", editable = true }
   [feature.cuequivariance-cu12.pypi-dependencies]
   # --- Missing package for cuequivariance
   # At the moment the optimized kernels are not distributed in conda-forge
-  # At the moment we also would need this that is only in pypi
   #   * cuequivariance-ops-torch-cu12
   # Warning, this install some other libs from pypi:
   #   * cuequivarance-ops-cu12
