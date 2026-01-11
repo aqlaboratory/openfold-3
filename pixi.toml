@@ -121,6 +121,8 @@ openfold3 = { path = ".", editable = true }
   pytorch-gpu = "*"
 
 # [feature.cuda13]
+# Blocked by CF not publishing pytorch against CUDA 13 yet.
+# See: https://github.com/conda-forge/pytorch-cpu-feedstock/pull/457
 # 
 #   platforms = ["linux-64"]
 # 
