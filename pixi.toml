@@ -105,6 +105,7 @@ furo = "*"
 
 # --- OpenFold3 in editable mode
 # The goal here would be to avoid getting anything installed from pypi in this step.
+# TODO: we should provide this as an optional in the environment (matrix devel vs prod)
 openfold3 = { path = ".", editable = true }
 
 # --- Cuda
