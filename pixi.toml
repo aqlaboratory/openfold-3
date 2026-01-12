@@ -119,6 +119,9 @@ openfold3 = { path = ".", editable = true, extras = ["cuequivariance", "deepspee
 # func_timeout does not get resolved by pixi from pypi, likely a pixi bug regarding "_" vs "-"?
 # see: https://pypi.org/project/func-timeout/#description
 func_timeout = "*"
+# kalign is required for tests, but not present in pypi
+# we could consider extending to the rest of the non-pypi deps
+kaling = "*"
 
 [feature.python.dependencies]
 python = "*"
