@@ -121,7 +121,9 @@ openfold3 = { path = ".", editable = true, extras = ["cuequivariance", "deepspee
 func_timeout = "*"
 # kalign is required for tests, but not present in pypi
 # we could consider extending to the rest of the non-pypi deps
-kaling = "*"
+hmmer = "*"
+hhsuite = "*"
+kalign2 = "*"
 
 [feature.python.dependencies]
 python = "*"
