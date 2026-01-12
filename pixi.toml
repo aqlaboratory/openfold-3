@@ -49,19 +49,22 @@ requires-pixi = ">=0.62"
 
 [environments]
 # Any better way to alias or remove the default environment?
-default = { features = ["openfold3-cpu", "openfold3-editable"] }
-openfold3-cpu = { features = ["openfold3-cpu", "openfold3-editable"] }
+default = { features = ["python", "openfold3-cpu", "openfold3-editable"] }
+openfold3-cpu = { features = ["python", "openfold3-cpu", "openfold3-editable"] }
 openfold3-cuda12 = { features = [
+    "python",
     "openfold3-cpu",
     "openfold3-editable",
     "cuda12",
     "pytorch-gpu-conda",
     "deepspeed",
+    "deepspeed-build",
     "deepspeed-cuda12",
     "cuequivariance",
     "cuequivariance-cuda12"
 ] }
 openfold3-cuda13 = { features = [
+    "python",
     "openfold3-cpu",
     "openfold3-editable",
     "cuda13",
@@ -69,14 +72,39 @@ openfold3-cuda13 = { features = [
     # See: https://github.com/conda-forge/pytorch-cpu-feedstock/pull/457
     # "pytorch-gpu-conda",
     "deepspeed",
+    "deepspeed-build",
     "deepspeed-cuda13",
     "cuequivariance",
     "cuequivariance-cuda13"
 ] }
+openfold3-cuda12-pypi = { features = [
+    "python",
+    "cuda12",
+    "not-in-pypi",
+    "deepspeed-build",
+    "openfold3-editable",
+] }
+openfold3-cuda13-pypi = { features = [
+    "python",
+    "cuda13",
+    "not-in-pypi",
+    "deepspeed-build",
+    "openfold3-editable",
+] }
+
 # Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
 # N.B. at the moment all these are editable installs
 
 # --- CPU (base) environment
+
+[feature.not-in-pypi.target.linux.dependencies]
+# func_timeout does not get resolved by pixi from pypi, likely a pixi bug regarding "_" vs "-"?
+# see: https://pypi.org/project/func-timeout/#description
+func_timeout = "*"
+
+[feature.python.dependencies]
+python = "*"
+
 
 [feature.openfold3-cpu.dependencies]
 
@@ -136,9 +164,10 @@ sphinx = "*"
 myst-parser = "*"
 furo = "*"
 
-[feature.openfold3-editable.pypi-dependencies]
 
 # --- OpenFold3 in editable mode
+
+[feature.openfold3-editable.pypi-dependencies]
 # The goal here would be to avoid getting anything installed from pypi in this step.
 # TODO: we should provide this as an optional in the environment (matrix devel vs prod)
 openfold3 = { path = ".", editable = true }
@@ -229,6 +258,15 @@ pytorch-gpu = "*"
   deepspeed = ">=0.18.3"
 
   [feature.deepspeed.dependencies]
+  # These are installed by pypi nvidia-cutlass
+  # But we want them to be conda-aware so they are compatible with our env
+  # treelib = "*"
+  # pydot = "*"
+  # This is needed to agree with the pin in openfold-3 dependencies
+  # This actually pins down other conda deps, and it is not needed in conda-world
+  # cuda-python = "<12.9.1"
+
+  [feature.deepspeed-build.dependencies]
   # These are only needed to build local extensions the first time
   # Think on whether we want to delete them afterwards and how it would play with the user
   ninja = "*"
@@ -239,45 +277,6 @@ pytorch-gpu = "*"
   libcusolver-dev = "*"
   libcurand-dev = "*"
 
-  # These are installed by pypi nvidia-cutlass
-  # But we want them to be conda-aware so they are compatible with our env
-  # treelib = "*"
-  # pydot = "*"
-  # This is needed to agree with the pin in openfold-3 dependencies
-  # This actually pins down other conda deps, and it is not needed in conda-world
-  # cuda-python = "<12.9.1"
-
-  [feature.deepspeed.pypi-dependencies]
-
-  # --- Poor native library detection from DeepSpeed
-
-  # DeepSpeed relies on cutlass python interface only for checking that cutlass is installed.
-  # Here where this check was added:
-  #   https://github.com/deepspeedai/DeepSpeed/commit/51da191eb54b69224edfb7cb4ce69db9a88956f7
-  # Note that this interface is DEPRECATED and not shipped anymore after cutlass 3.8.0
-  #   https://github.com/NVIDIA/cutlass/discussions/2119
-  #   https://github.com/NVIDIA/cutlass/issues/2549
-  # In conda environments, cutlass is well configured and works perfectly when building the extension
-  # No python bindings are at the moment included in the conda package (arguably we should also include them)
-  #   https://github.com/conda-forge/cutlass-feedstock/blob/main/recipe/meta.yaml
-  # The best solution would be to patch deepspeed upstream to have a python independent way to assess the availability of cutlass.
-  # These chores are of course well known:
-  #   https://github.com/aqlaboratory/openfold-3/blob/3ba7b3589798eb2c60e78fa2c0ec25bd18decc92/openfold3/hacks.py#L1-L21
-  #   https://github.com/aqlaboratory/openfold-3/blob/3ba7b3589798eb2c60e78fa2c0ec25bd18decc92/pyproject.toml#L33-L41
-  # Note that this pins down some other cuda dependencies and add other dependencies, which is a bad side effect
-  # Even more problematic, pytorch itself depends on cutlass python API, with this triaged issue
-  #   https://github.com/pytorch/pytorch/issues/157456
-  # This is particularly relevant:
-  #   https://github.com/pytorch/pytorch/blob/82eefaedd98b63de8a87e34275af781f8eb177e1/torch/_inductor/codegen/cuda/cutlass_utils.py#L63
-  # nvidia-cutlass = "==3.8"
-
-  # While this is closed (as they can now use pip check to test) we still need to install ninja-python
-  #   https://github.com/conda-forge/deepspeed-feedstock/issues/1
-  #   https://github.com/conda-forge/deepspeed-feedstock/pull/100
-  #   https://github.com/conda-forge/deepspeed-feedstock/commit/87cec8c4344b8eaefa3d17bffb69e2c83c28a82a
-  # DeepSpeed still cannot find conda-forge ninja, owing to this issue
-  #   https://github.com/conda-forge/ninja-feedstock/issues/26
-  # ninja = "*"
 
 # --- CuEquivariance
 # https://developer.nvidia.com/cuequivariance#section-get-started
