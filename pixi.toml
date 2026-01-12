@@ -112,7 +112,7 @@ openfold3 = { path = ".", editable = true }
 python = "<3.14"
 
 [feature.openfold3-editable-full.pypi-dependencies]
-openfold3 = { path = ".", editable = true, extras = ["cuequivariance", "deepspeed"] }
+openfold3 = { path = ".", editable = true, extras = ["cuequivariance", "deepspeed", "dev"] }
 
 
 [feature.not-in-pypi.target.linux.dependencies]
