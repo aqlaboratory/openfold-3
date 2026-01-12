@@ -248,20 +248,6 @@ pytorch-gpu = "*"
   # N.B. aarch64 is not officially supported (yet), but seems to be working (for OF3-used primitives at least)
   platforms = ["linux-64", "linux-aarch64"]
 
-  [feature.deepspeed.activation]
-  # Trick deepspeed - we could also point to $CONDA_PREFIX
-  env.CUTLASS_PATH = "DS_IGNORE_CUTLASS_DETECTION"
-  # --- Isolating completely the environment, including built extensions
-  # Note that this might not play well with advanced users or people who do not want to recompile
-  # So we likely do not want to enforce it or document it well
-
-  # Change triton cache to be local
-  env.TRITON_CACHE_DIR = "$CONDA_PREFIX/caches/triton"
-  # Change torch caches
-  env.TORCH_HOME = "$CONDA_PREFIX/caches/pytorch"
-  env.TORCH_EXTENSIONS_DIR = "$CONDA_PREFIX/caches/torch_extensions"
-  env.DS_BUILD_CACHE_DIR = "$CONDA_PREFIX/caches/deepspeed"
-
   # FIXME: A few temporary variants:
   #   - soon deepspeed will have cuda13 package in CF
   #   - aarch64 is not officially supported, so at the moment installing from sdist and crossing fingers
@@ -291,6 +277,20 @@ pytorch-gpu = "*"
   libcublas-dev = "*"
   libcusolver-dev = "*"
   libcurand-dev = "*"
+
+  [feature.deepspeed-build.activation]
+  # Trick deepspeed - we could also point to $CONDA_PREFIX
+  env.CUTLASS_PATH = "DS_IGNORE_CUTLASS_DETECTION"
+  # --- Isolating completely the environment, including built extensions
+  # Note that this might not play well with advanced users or people who do not want to recompile
+  # So we likely do not want to enforce it or document it well
+
+  # Change triton cache to be local
+  env.TRITON_CACHE_DIR = "$CONDA_PREFIX/caches/triton"
+  # Change torch caches
+  env.TORCH_HOME = "$CONDA_PREFIX/caches/pytorch"
+  env.TORCH_EXTENSIONS_DIR = "$CONDA_PREFIX/caches/torch_extensions"
+  env.DS_BUILD_CACHE_DIR = "$CONDA_PREFIX/caches/deepspeed"
 
 
 # --- CuEquivariance
