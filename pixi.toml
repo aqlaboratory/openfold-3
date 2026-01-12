@@ -48,10 +48,24 @@ requires-pixi = ">=0.62"
 # --- Environments
 
 [environments]
-default = {features=["openfold3-cpu"]}  # Any better way to alias or remove the default environment?
-openfold3-cpu = {features=["openfold3-cpu"]}
-openfold3-cuda12 = {features=["openfold3-cpu", "cuda12", "deepspeed", "deepspeed-cuda12", "cuequivariance", "cuequivariance-cuda12"]}
-openfold3-cuda13 = {features=["openfold3-cpu", "cuda13", "deepspeed", "deepspeed-cuda13", "cuequivariance", "cuequivariance-cuda13"]}
+default = { features = ["openfold3-cpu"] }  # Any better way to alias or remove the default environment?
+openfold3-cpu = { features = ["openfold3-cpu"] }
+openfold3-cuda12 = { features = [
+    "openfold3-cpu",
+    "cuda12",
+    "deepspeed",
+    "deepspeed-cuda12",
+    "cuequivariance",
+    "cuequivariance-cuda12"
+] }
+openfold3-cuda13 = { features = [
+    "openfold3-cpu",
+    "cuda13",
+    "deepspeed",
+    "deepspeed-cuda13",
+    "cuequivariance",
+    "cuequivariance-cuda13"
+] }
 # Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
 # N.B. at the moment all these are editable installs
 
