@@ -52,17 +52,16 @@ requires-pixi = ">=0.62"
 
 [environments]
 # Any better way to alias or remove the default environment?
-default = { features = ["python", "openfold3-cpu", "openfold3-editable"] }
-openfold3-cpu = { features = ["python", "openfold3-cpu", "openfold3-editable"] }
+default = { features = ["python", "openfold3-cpu", "pytorch-conda", "openfold3-editable"] }
+openfold3-cpu = { features = ["python", "openfold3-cpu", "pytorch-conda", "openfold3-editable"] }
 openfold3-cuda12 = { features = [
     "python",
     "openfold3-cpu",
     "cuda12",
-    "pytorch-gpu-conda",
+    "pytorch-conda-cuda",
     "deepspeed",
     "deepspeed-build",
     "deepspeed-cuda12",
-    "cuequivariance",
     "cuequivariance-cuda12",
     "openfold3-editable"
 ] }
@@ -73,10 +72,10 @@ openfold3-cuda13 = { features = [
     # pytorch-gpu-conda Blocked by CF not publishing pytorch against CUDA 13 yet.
     # See: https://github.com/conda-forge/pytorch-cpu-feedstock/pull/457
     # "pytorch-gpu-conda",
+    "pytorch-pypi-cuda13",
     "deepspeed",
     "deepspeed-build",
     "deepspeed-cuda13",
-    "cuequivariance",
     "cuequivariance-cuda13",
     "openfold3-editable"
 ] }
@@ -85,6 +84,7 @@ openfold3-cuda12-pypi = { features = [
     "cuda12",
     "not-in-pypi",
     "deepspeed-build",
+    "cuequivariance-cuda12",
     "openfold3-editable-full",
 ] }
 openfold3-cuda13-pypi = { features = [
@@ -92,13 +92,14 @@ openfold3-cuda13-pypi = { features = [
     "cuda13",
     "not-in-pypi",
     "deepspeed-build",
+    "cuequivariance-cuda13",
     "openfold3-editable-full",
 ] }
 
 # Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
 # N.B. at the moment all these are editable installs
 
-# --- CPU (base) environment
+# --- CPU dependencies (excluding torch-related)
 
 # --- OpenFold3 in editable mode
 # The goal here would be to avoid getting anything installed from pypi in this step.
@@ -112,7 +113,7 @@ openfold3 = { path = ".", editable = true }
 python = "<3.14"
 
 [feature.openfold3-editable-full.pypi-dependencies]
-openfold3 = { path = ".", editable = true, extras = ["cuequivariance", "deepspeed", "dev"] }
+openfold3 = { path = ".", editable = true, extras = ["deepspeed", "dev"] }
 
 
 [feature.not-in-pypi.target.linux.dependencies]
@@ -127,7 +128,6 @@ kalign2 = "*"
 
 [feature.python.dependencies]
 python = "*"
-
 
 [feature.openfold3-cpu.dependencies]
 
@@ -145,11 +145,10 @@ pip = "*"
 # --- Pytorch & its accelerators
 # Note that we use a pixi feature on top for taking care of GPU environments.
 # We take advantage that pytorch and pytorch-gpu are compatible packages.
-pytorch = "*"
+# pytorch = "*"
 
 # --- More ML
 ml-collections = "*"
-pytorch-lightning = "*"
 
 # --- Handling molecules
 rdkit = "*"
@@ -207,10 +206,24 @@ biotite = "<1.3"
 [feature.openfold3-cpu.target.osx-arm64.dependencies]
 biotite = "<1.3"
 
-# --- Cuda
+# --- Pytorch & Cuda
 
-[feature.pytorch-gpu-conda.dependencies]
+[feature.pytorch-conda-cuda.dependencies]
+pytorch-lightning = "*"
 pytorch-gpu = "*"
+
+[feature.pytorch-conda.dependencies]
+# This let's conda decide which pytorch to pull, is compatible with pytorch-cuda-conda
+pytorch-lightning = "*"
+pytorch = "*"
+
+# [feature.pytorch-pypi-cuda12.pypi-dependencies]
+# pytorch-lightning = "*"
+# torch = { version = "*", index = "https://download.pytorch.org/whl/cu129" }
+
+[feature.pytorch-pypi-cuda13.pypi-dependencies]
+pytorch-lightning = "*"
+torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
 [feature.cuda12]
 
@@ -222,6 +235,11 @@ pytorch-gpu = "*"
   [feature.cuda12.dependencies]
   cuda-version = ">=12,<13"
 
+  [feature.cuda12.activation]
+  # https://github.com/triton-lang/triton/issues/8539
+  # https://github.com/vllm-project/vllm/issues/30245
+  env.TRITON_PTXAS_PATH = "$CONDA_PREFIX/bin/ptxas"
+
 [feature.cuda13]
 
   platforms = ["linux-64", "linux-aarch64"]
@@ -230,10 +248,12 @@ pytorch-gpu = "*"
   cuda = "13.0"
 
   [feature.cuda13.dependencies]
-  cuda-version = ">=13,<14"
+  cuda-version = "==13.0"
 
-  [feature.cuda13.pypi-dependencies]
-  torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
+  [feature.cuda13.activation]
+  # https://github.com/triton-lang/triton/issues/8539
+  # https://github.com/vllm-project/vllm/issues/30245
+  env.TRITON_PTXAS_PATH = "$CONDA_PREFIX/bin/ptxas"
 
 
 # --- DeepSpeed
@@ -295,33 +315,31 @@ pytorch-gpu = "*"
 
 # --- CuEquivariance
 # https://developer.nvidia.com/cuequivariance#section-get-started
+#
+# Problems (2026/01/13)
+# --------------------
+# 1) Missing conda packages for cuequivariance kernels
+#    In CF we have cuequivariance and cuequivariance-torch
+#    At the moment the optimized kernels are not distributed in conda-forge
+#     * cuequivariance-ops-torch-cu12
+#   There are no sources and LICENSE does not allow to redistribute wheels, so not very CF friednly.
+#   This install some other libs from pypi:
+#     * cuequivarance-ops-cu12
+#     * nvidia-cublas-cu12
+#   With cublas being the problematic one - also packaged in CF but not clobbering
+#   We would need to also package this in conda-forge
+#   See also: https://github.com/NVIDIA/cuEquivariance/issues/218
+#
+# 2) Tests fail with cuequivariance >=0.8, need to assess + pinning in the meantime
+# 2.1) No aarch wheel for cuequivariance-ops-torch-cu13 <0.8
+#
 
-[feature.cuequivariance]
+[feature.cuequivariance-cuda12.pypi-dependencies]
+cuequivariance = "<0.8"
+cuequivariance-torch = "<0.8"
+cuequivariance-ops-torch-cu12 = "<0.8"
 
-  [feature.cuequivariance.dependencies]
-  # N.B., tests fail with cuequivariance >=0.8, need to assess + pinning in the meantime
-  cuequivariance = "<0.8"
-  cuequivariance-torch = "<0.8"
-
-  # Missing packages for cuequivariance kernels
-  # At the moment the optimized kernels are not distributed in conda-forge
-  #   * cuequivariance-ops-torch-cu12
-  # There are no sources and LICENSE does not allow to redistribute wheels, so not very CF friednly.
-  # This install some other libs from pypi:
-  #   * cuequivarance-ops-cu12
-  #   * nvidia-cublas-cu12
-  # With cublas being the problematic one - also packaged in CF but not clobbering
-  # We would need to also package this in conda-forge
-  # See also: https://github.com/NVIDIA/cuEquivariance/issues/218
-  [feature.cuequivariance-cuda12]
-    [feature.cuequivariance-cuda12.pypi-dependencies]
-    # we need to coordinate this with the conda packages, or install all from pypi
-    cuequivariance-ops-torch-cu12 = "<0.8"
-
-  [feature.cuequivariance-cuda13]
-    platforms = ["linux-64"]  # FIXME: There are no wheels for cuequivariance-ops-torch-cu13 for versions <0.8
-    [feature.cuequivariance-cuda13.dependencies]
-    triton = "*"
-    [feature.cuequivariance-cuda13.pypi-dependencies]
-    # we need to coordinate this with the conda packages, or install all from pypi
-    cuequivariance-ops-torch-cu13 = "<0.8"
+[feature.cuequivariance-cuda13.target.linux-64.pypi-dependencies]
+cuequivariance = "<0.8"
+cuequivariance-torch = "<0.8"
+cuequivariance-ops-torch-cu13 = "<0.8"
