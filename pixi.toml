@@ -19,11 +19,28 @@
 #   - openfold3-cuda12 and openfold-cuda13: environments with cuda, deepspeed and cuequivariance
 #   - openfold3-cuda12-pypi and openfold-cuda13-pypi: environments with python and cuda from conda,
 #                                                     everything else from pypi
+#                                                     keeping the environments as sane and consistent as possible
 #                                                     (useful if requiring deps not yet in conda-forge)
 #
 # The current environments pass all inference tests available in each platform.
 # (aarch64 and osx-64 are untested at the moment).
 # The GPU versions work at least from NVIDIA Ampere to Blackwell microarchitectures
+# +---------------+------------+------------+------------+------------+
+# | Linux         | x64        | x64        | aarch64    | aarch64    |
+# |               | conda      | pypi       | conda      | pypi       |
+# +---------------+------------+------------+------------+------------+
+# | A100 cuda12   | works      | works      | to test    | to test    |
+# | A100 cuda13   | works      | works      | to test    | to test    |
+# | H100 cuda12   | to test    | to test    | to test    | to test    |
+# | H100 cuda13   | to test    | to test    | to test    | to test    |
+# | B300 cuda12   | works      | works      | to test    | to test    |
+# | B300 cuda13   | works      | works      | to test    | to test    |
+# | CPU           | works      | n/a        | to test    | n/a        |
+# +---------------+------------+------------+------------+------------+
+#    * works = "works for me"
+#    * to test = "have not tried yet, but environment resolves"
+#    * all cuda13-conda use pypi pytorch; support for CUDA13 in CF is in the making
+#    * while all tests pass, there are large log dumps in CUDA12/CUDA13 pypi + Blackwell
 #
 # Using the environments
 # ----------------------
