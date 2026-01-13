@@ -18,7 +18,6 @@ from pathlib import Path
 import numpy as np
 import pytest  # noqa: F401  - used for pytest tmp fixture
 from biotite import structure
-from biotite.structure import AtomArray
 from biotite.structure.io import pdb, pdbx
 
 from openfold3.core.runners.writer import OF3OutputWriter
@@ -83,24 +82,6 @@ class TestPredictionWriter:
             case "npz":
                 actual_full_scores = np.load(output_file_path)
         return actual_full_scores
-
-    @pytest.fixture
-    def dummy_atom_array(self):
-        # Create dummy atom array
-        coords = np.array(
-            [
-                [0.0, 0.0, 0.0],
-                [1.2, 0.0, 0.0],
-                [2.4, 0.0, 0.0],
-                [3.0, 0.0, 0.0],
-                [4.4, 0.0, 0.0],
-            ],
-            dtype=float,
-        )
-        atom_array = AtomArray(len(coords))
-        atom_array.coord = coords
-        atom_array.chain_id = np.array(["A", "A", "B", "B", "B"])
-        return atom_array
 
     @pytest.mark.parametrize(
         "output_fmt",
