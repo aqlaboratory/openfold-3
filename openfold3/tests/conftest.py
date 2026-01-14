@@ -18,5 +18,4 @@ def dummy_atom_array():
     )
     atom_array = AtomArray(len(coords))
     atom_array.coord = coords
-    atom_array.chain_id = np.array(["A", "A", "B", "B", "B"])
     return atom_array
