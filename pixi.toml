@@ -51,10 +51,20 @@
 # If you want to run out of the openfold-3 environment, there are multiple options:
 #  use `pixi shell` to allow running out of the directory and saving prefixing with "pixi run".
 #  use detached environments or specify a different manifest location
-# If you prefer to use conda, the environments can be exported to regular conda yamls:
-#   pixi workspace export conda-environment -n openfold3
-# (note that at the moment this does not export environment variable definitios
-#  which we use for isolating deepspeed extension building)
+#  hold tight for pixi's environment registry feature: https://github.com/prefix-dev/pixi/pull/5277
+#
+# If you prefer to use conda, the environments can be exported to regular conda YAMLs:
+#   pixi run export-conda openfold3-cuda12 linux-64
+#   pixi run export-conda-all
+# Note that at the moment this does not export environment variable definitions
+# which we use for isolating deepspeed extension building.
+#
+# Also conda-lock files can be exported
+#   pixi run export-conda openfold3-cuda12
+#   pixi run export-conda-all
+# Note that all environment variables (skip cutlass detection and deepspeed build isolation)
+# need to be setup manually for these environments. We hope that soon we will be able
+# to export the whole environment variable setup together with these conda environments.
 #
 
 [workspace]
@@ -112,6 +122,7 @@ openfold3-cuda13-pypi = { features = [
     "cuequivariance-cuda13",
     "openfold3-editable-full",
 ] }
+pixi-to-conda-lock = { features = [ "python", "pixi-to-conda-lock" ], no-default-feature = true }
 
 # Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
 # N.B. at the moment all these are editable installs
@@ -145,6 +156,10 @@ kalign2 = "*"
 
 [feature.python.dependencies]
 python = "*"
+# Enable evil post-modifications, also pixi-to-conda-lock
+# (pixi joint pypi/conda resolution is too good and does not allow sometimes necessary evil)
+pip = "*"
+
 
 [feature.openfold3-cpu.dependencies]
 
@@ -153,11 +168,6 @@ python = "*"
 numpy = "*"
 scipy = "*"
 pandas = "*"
-
-# In case we need some hacks / post-modifications
-# (pixi joint pypi/conda resolution is too good and does not allow sometimes necessary evil)
-# Here at least until we get CF cuda13 dependencies
-pip = "*"
 
 # --- Pytorch & its accelerators
 # Note that we use a pixi feature on top for taking care of GPU environments.
@@ -306,7 +316,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
   [feature.deepspeed-build.dependencies]
   # These are only needed to build local extensions the first time
-  # Think on whether we want to delete them afterwards and how it would play with the user
+  # Think on whether we want to delete them afterward and how it would play with the user
   ninja = "*"
   cutlass = "*"
   cuda-minimal-build = "*"
@@ -360,3 +370,81 @@ cuequivariance-ops-torch-cu12 = "<0.8"
 cuequivariance = "<0.8"
 cuequivariance-torch = "<0.8"
 cuequivariance-ops-torch-cu13 = "<0.8"
+
+# --- Tasks
+
+[tasks]
+
+export-conda.args = [
+    { "arg" = "environment", "default" = "openfold3-cpu" },
+    { "arg" = "platform", "default" = "linux-64" },
+]
+export-conda.cmd = [
+    "echo",
+    "# Pixi generated this environment, please do not edit manually.",
+    ">$PIXI_PROJECT_ROOT/environments/{{ environment }}_{{ platform }}.yml",
+    "&&",
+    "pixi",
+    "workspace",
+    "export",
+    "conda-environment",
+    ">>$PIXI_PROJECT_ROOT/environments/{{ environment }}_{{ platform }}.yml",
+    "&&",
+    "echo",
+    "\nvariables:\n  CUTLASS_PATH: DS_IGNORE_CUTLASS_DETECTION",
+    ">>$PIXI_PROJECT_ROOT/environments/{{ environment }}_{{ platform }}.yml",
+    # N.B.: this will add noise to the CPU-only environments, maybe guard with an arg / conditional
+    # We would also need to add the isolation extension build envs, as pixi does not do yet, but these are optional
+]
+
+export-conda-all.depends-on = [
+    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "osx-arm64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "osx-arm64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12-pypi" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12-pypi" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12-pypi" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12-pypi" }, { platform = "osx-arm64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13" }, { platform = "osx-arm64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13-pypi" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13-pypi" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13-pypi" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13-pypi" }, { platform = "osx-arm64" } ]},
+]
+
+
+export-conda-lock.args = [
+    { "arg" = "environment", "default" = "openfold3-cpu" },
+]
+export-conda-lock.cmd = [
+    "pixi-to-conda-lock",
+    "$PIXI_PROJECT_ROOT/pixi.lock",
+    "--output",
+    "$PIXI_PROJECT_ROOT/environments",
+    "--environment",
+    "{{ environment }}",
+    "--verbose"
+    # For this one I feel we need pixi.lock to contain variables and pixi-to-conda-lock to support
+    # (or maybe for pixi-to-conda-lock to read from pixi.toml instead)
+]
+export-conda-lock.default-environment = "pixi-to-conda-lock"
+
+export-conda-lock-all.depends-on = [
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cpu" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12-pypi" } ]},
+    # we are hitting a bug here
+    # { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13-pypi" } ]},
+]
+
+[feature.pixi-to-conda-lock.pypi-dependencies]
+pixi-to-conda-lock = "*"
