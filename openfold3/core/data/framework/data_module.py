@@ -159,6 +159,44 @@ class DataModuleConfig(BaseModel):
     epoch_len: int = 1
 
 
+# Custom worker init function with manual data seed
+# (top level to enable pickling working regardless of forking strategy and platform)
+def _worker_init_function_with_data_seed(
+        self,
+        worker_id: int, rank: int | None = None
+) -> None:
+    """Modified default Lightning worker_init_fn with manual data seed.
+
+    This worker_init_fn enables decoupling stochastic processes in the data
+    pipeline from those in the model. Taken from Pytorch Lightning 2.4.1 source
+    code: https://github.com/Lightning-AI/pytorch-lightning/blob/f3f10d460338ca8b2901d5cd43456992131767ec/src/lightning/fabric/utilities/seed.py#L85
+
+    Args:
+        worker_id (int):
+            Worker id.
+        rank (Optional[int], optional):
+            Worker process rank. Defaults to None.
+    """
+    # implementation notes: https://github.com/pytorch/pytorch/issues/5059#issuecomment-817392562
+    global_rank = rank if rank is not None else rank_zero_only.rank
+    process_seed = self.data_seed
+    # back out the base seed so we can use all the bits
+    base_seed = process_seed - worker_id
+    seed_sequence = _generate_seed_sequence(
+        base_seed, worker_id, global_rank, count=4
+    )
+    torch.manual_seed(seed_sequence[0])  # torch takes a 64-bit seed
+    random.seed(
+        (seed_sequence[1] << 32) | seed_sequence[2]
+    )  # combine two 64-bit seeds
+    if _NUMPY_AVAILABLE:
+        import numpy as np
+
+        np.random.seed(
+            seed_sequence[3] & 0xFFFFFFFF
+        )  # numpy takes 32-bit seed only
+
+
 class DataModule(pl.LightningDataModule):
     """A LightningDataModule class for organizing Datasets and DataLoaders."""
 
@@ -187,42 +225,8 @@ class DataModule(pl.LightningDataModule):
                 self.next_dataset_indices[cfg.name] = 0
 
     def setup(self, stage=None):
-        # Custom worker init function with manual data seed
-        def worker_init_function_with_data_seed(
-            worker_id: int, rank: int | None = None
-        ) -> None:
-            """Modified default Lightning worker_init_fn with manual data seed.
-
-            This worker_init_fn enables decoupling stochastic processes in the data
-            pipeline from those in the model. Taken from Pytorch Lightning 2.4.1 source
-            code: https://github.com/Lightning-AI/pytorch-lightning/blob/f3f10d460338ca8b2901d5cd43456992131767ec/src/lightning/fabric/utilities/seed.py#L85
-
-            Args:
-                worker_id (int):
-                    Worker id.
-                rank (Optional[int], optional):
-                    Worker process rank. Defaults to None.
-            """
-            # implementation notes: https://github.com/pytorch/pytorch/issues/5059#issuecomment-817392562
-            global_rank = rank if rank is not None else rank_zero_only.rank
-            process_seed = self.data_seed
-            # back out the base seed so we can use all the bits
-            base_seed = process_seed - worker_id
-            seed_sequence = _generate_seed_sequence(
-                base_seed, worker_id, global_rank, count=4
-            )
-            torch.manual_seed(seed_sequence[0])  # torch takes a 64-bit seed
-            random.seed(
-                (seed_sequence[1] << 32) | seed_sequence[2]
-            )  # combine two 64-bit seeds
-            if _NUMPY_AVAILABLE:
-                import numpy as np
-
-                np.random.seed(
-                    seed_sequence[3] & 0xFFFFFFFF
-                )  # numpy takes 32-bit seed only
-
-        self.worker_init_function_with_data_seed = worker_init_function_with_data_seed
+        from functools import partial
+        self.worker_init_function_with_data_seed = partial(_worker_init_function_with_data_seed, self)
         self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
         self.datasets_by_mode = {k: [] for k in DatasetMode}
