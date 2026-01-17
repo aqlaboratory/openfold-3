@@ -244,7 +244,6 @@ pytorch-lightning = "*"
 pytorch-gpu = "*"
 
 [feature.pytorch-conda.dependencies]
-# This let's conda decide which pytorch to pull, is compatible with pytorch-cuda-conda
 pytorch-lightning = "*"
 pytorch = "*"
 
@@ -267,8 +266,6 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   cuda-version = ">=12,<13"
 
   [feature.cuda12.activation]
-  # https://github.com/triton-lang/triton/issues/8539
-  # https://github.com/vllm-project/vllm/issues/30245
   env.TRITON_PTXAS_PATH = "$CONDA_PREFIX/bin/ptxas"
 
 [feature.cuda13]
@@ -282,8 +279,6 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   cuda-version = "==13.0"
 
   [feature.cuda13.activation]
-  # https://github.com/triton-lang/triton/issues/8539
-  # https://github.com/vllm-project/vllm/issues/30245
   env.TRITON_PTXAS_PATH = "$CONDA_PREFIX/bin/ptxas"
 
 
