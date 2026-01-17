@@ -331,12 +331,10 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   # Note that this might not play well with advanced users or people who do not want to recompile
   # So we likely do not want to enforce it or document it well
 
-  # Change triton cache to be local
+  # Change triton cache to be isolated
   env.TRITON_CACHE_DIR = "$CONDA_PREFIX/caches/triton"
-  # Change torch caches
-  env.TORCH_HOME = "$CONDA_PREFIX/caches/pytorch"
+  # Change torch extensions cache, used by deepspeed, to be isolated
   env.TORCH_EXTENSIONS_DIR = "$CONDA_PREFIX/caches/torch_extensions"
-  env.DS_BUILD_CACHE_DIR = "$CONDA_PREFIX/caches/deepspeed"
 
 
 # --- CuEquivariance
