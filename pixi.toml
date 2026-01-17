@@ -73,7 +73,11 @@ authors = []
 channels = ["conda-forge", "bioconda"]
 platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
 version = "0.1.0"
-requires-pixi = ">=0.62"
+
+# as we use task.default-environment
+# hoping for environment markers to also come to conda dependencies, as it would help simplifying this toml
+# https://github.com/prefix-dev/pixi/blob/main/CHANGELOG.md#-highlights-1
+requires-pixi = ">=0.63.1"
 
 # --- Environments
 
