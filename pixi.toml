@@ -447,3 +447,17 @@ export-conda-lock-all.depends-on = [
     # { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13" } ]},
     { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13-pypi" } ]},
 ]
+
+
+test.cmd = [
+    "mkdir",
+    "-p",
+    "$PIXI_PROJECT_ROOT/test-results/{{ pixi.environment.name }}_{{ pixi.platform }}",
+    "&&",
+    "python",
+    "-m",
+    "pytest",
+    "-v",
+    ".",
+    "&>$PIXI_PROJECT_ROOT/test-results/{{ pixi.environment.name }}_{{ pixi.platform }}/tests_{{ pixi.environment.name }}_{{ pixi.platform }}.log"
+]
