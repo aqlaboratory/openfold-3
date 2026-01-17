@@ -126,7 +126,7 @@ openfold3-cuda13-pypi = { features = [
     "cuequivariance-cuda13",
     "openfold3-editable-full",
 ] }
-pixi-to-conda-lock = { features = [ "python", "pixi-to-conda-lock" ], no-default-feature = true }
+maintenance = { features = [ "python", "pixi-to-conda-lock" ], no-default-feature = true }
 
 # Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
 # N.B. at the moment all these are editable installs
@@ -370,6 +370,10 @@ cuequivariance-ops-torch-cu13 = "<0.8"
 
 # --- Tasks
 
+[feature.pixi-to-conda-lock.pypi-dependencies]
+pixi-to-conda-lock = "*"
+
+
 [tasks]
 
 export-conda.args = [
@@ -393,6 +397,7 @@ export-conda.cmd = [
     # N.B.: this will add noise to the CPU-only environments, maybe guard with an arg / conditional
     # We would also need to add the isolation extension build envs, as pixi does not do yet, but these are optional
 ]
+export-conda.default-environment = "maintenace"
 
 export-conda-all.depends-on = [
     { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "linux-64" } ]},
@@ -432,7 +437,7 @@ export-conda-lock.cmd = [
     # For this one I feel we need pixi.lock to contain variables and pixi-to-conda-lock to support
     # (or maybe for pixi-to-conda-lock to read from pixi.toml instead)
 ]
-export-conda-lock.default-environment = "pixi-to-conda-lock"
+export-conda-lock.default-environment = "maintenance"
 
 export-conda-lock-all.depends-on = [
     { task = "export-conda-lock", args = [ { environment = "openfold3-cpu" } ]},
@@ -442,6 +447,3 @@ export-conda-lock-all.depends-on = [
     # { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13" } ]},
     { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13-pypi" } ]},
 ]
-
-[feature.pixi-to-conda-lock.pypi-dependencies]
-pixi-to-conda-lock = "*"
