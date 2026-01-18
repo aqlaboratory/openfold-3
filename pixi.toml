@@ -173,11 +173,6 @@ numpy = "*"
 scipy = "*"
 pandas = "*"
 
-# --- Pytorch & its accelerators
-# Note that we use a pixi feature on top for taking care of GPU environments.
-# We take advantage that pytorch and pytorch-gpu are compatible packages.
-# pytorch = "*"
-
 # --- More ML
 ml-collections = "*"
 
@@ -285,11 +280,6 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 # --- DeepSpeed
 
 [feature.deepspeed]
-# TODO: make deepspeed CF package for linux_aarch64
-#       note: https://github.com/deepspeedai/DeepSpeed/issues/5640
-#             https://github.com/conda-forge/deepspeed-feedstock/pull/81
-#       but it does seem to work, according to:
-#             https://github.com/aqlaboratory/openfold-3/issues/78
 
   # N.B. aarch64 is not officially supported (yet), but seems to be working (for OF3-used primitives at least)
   platforms = ["linux-64", "linux-aarch64"]
@@ -303,15 +293,6 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   deepspeed = ">=0.18.3"
   [feature.deepspeed-cuda13.pypi-dependencies]
   deepspeed = ">=0.18.3"
-
-  [feature.deepspeed.dependencies]
-  # These are installed by pypi nvidia-cutlass
-  # But we want them to be conda-aware so they are compatible with our env
-  # treelib = "*"
-  # pydot = "*"
-  # This is needed to agree with the pin in openfold-3 dependencies
-  # This actually pins down other conda deps, and it is not needed in conda-world
-  # cuda-python = "<12.9.1"
 
   [feature.deepspeed-build.dependencies]
   # These are only needed to build local extensions the first time
