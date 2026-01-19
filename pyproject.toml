@@ -56,8 +56,10 @@ dependencies = [
 
 optional-dependencies.dev = [
     "pytest",
+    "pytest-xdist",
+    "pytest-cov",
+    "pytest-benchmark",
     "ruff",
-    "ipdb>=0.13.13", # Just for me, remove later
 
     # used for documentation
     "sphinx",

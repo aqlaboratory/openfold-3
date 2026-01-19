@@ -204,6 +204,9 @@ aria2 = "*"
 
 # --- Testing
 pytest = "*"
+pytest-xdist = "*"
+pytest-cov = "*"
+pytest-benchmark = "*"
 
 # --- Dev and documentation optionals
 # We do not put on a feature to avoid combinatorial explosion.
