@@ -83,9 +83,14 @@ requires-pixi = ">=0.63.1"
 
 [environments]
 # Any better way to alias or remove the default environment?
-default = { features = ["python", "openfold3-cpu", "pytorch-conda", "openfold3-editable"] }
-openfold3-cpu = { features = ["python", "openfold3-cpu", "pytorch-conda", "openfold3-editable"] }
-openfold3-cuda12 = { features = [
+default = { features = [ "python", "pixi-to-conda-lock" ] }
+openfold3-cpu = { no-default-feature = true, features = [
+    "python",
+    "openfold3-cpu",
+    "pytorch-conda",
+    "openfold3-editable"
+] }
+openfold3-cuda12 = { no-default-feature = true, features = [
     "python",
     "openfold3-cpu",
     "cuda12",
@@ -96,7 +101,7 @@ openfold3-cuda12 = { features = [
     "cuequivariance-cuda12",
     "openfold3-editable"
 ] }
-openfold3-cuda13 = { features = [
+openfold3-cuda13 = { no-default-feature = true, features = [
     "python",
     "openfold3-cpu",
     "cuda13",
@@ -110,7 +115,7 @@ openfold3-cuda13 = { features = [
     "cuequivariance-cuda13",
     "openfold3-editable"
 ] }
-openfold3-cuda12-pypi = { features = [
+openfold3-cuda12-pypi = { no-default-feature = true, features = [
     "python",
     "cuda12",
     "pytorch-pypi-cuda12",
@@ -119,7 +124,7 @@ openfold3-cuda12-pypi = { features = [
     "cuequivariance-cuda12",
     "openfold3-editable-full",
 ] }
-openfold3-cuda13-pypi = { features = [
+openfold3-cuda13-pypi = { no-default-feature = true, features = [
     "python",
     "cuda13",
     "pytorch-pypi-cuda13",
@@ -128,7 +133,6 @@ openfold3-cuda13-pypi = { features = [
     "cuequivariance-cuda13",
     "openfold3-editable-full",
 ] }
-maintenance = { features = [ "python", "pixi-to-conda-lock" ], no-default-feature = true }
 
 # Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
 # N.B. at the moment all these are editable installs
@@ -357,7 +361,9 @@ cuequivariance-ops-torch-cu13 = "<0.8"
 # --- Tasks
 
 [feature.pixi-to-conda-lock.pypi-dependencies]
-pixi-to-conda-lock = "*"
+pixi-to-conda-lock = ">=0.4.3"
+# we were hitting a bug for all environments that bring pytorch from pytorch indices
+# see https://github.com/basnijholt/pixi-to-conda-lock/pull/12
 
 
 [tasks]
@@ -383,7 +389,6 @@ export-conda.cmd = [
     # N.B.: this will add noise to the CPU-only environments, maybe guard with an arg / conditional
     # We would also need to add the isolation extension build envs, as pixi does not do yet, but these are optional
 ]
-export-conda.default-environment = "maintenace"
 
 export-conda-all.depends-on = [
     { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "linux-64" } ]},
@@ -408,9 +413,8 @@ export-conda-all.depends-on = [
     { task = "export-conda", args = [ { environment = "openfold3-cuda13-pypi" }, { platform = "osx-arm64" } ]},
 ]
 
-
 export-conda-lock.args = [
-    { "arg" = "environment", "default" = "openfold3-cpu" },
+    { "arg" = "env", "default" = "openfold3-cpu" },
 ]
 export-conda-lock.cmd = [
     "pixi-to-conda-lock",
@@ -418,20 +422,17 @@ export-conda-lock.cmd = [
     "--output",
     "$PIXI_PROJECT_ROOT/environments",
     "--environment",
-    "{{ environment }}",
-    "--verbose"
+    "{{ env }}"
     # For this one I feel we need pixi.lock to contain variables and pixi-to-conda-lock to support
     # (or maybe for pixi-to-conda-lock to read from pixi.toml instead)
 ]
-export-conda-lock.default-environment = "maintenance"
 
 export-conda-lock-all.depends-on = [
-    { task = "export-conda-lock", args = [ { environment = "openfold3-cpu" } ]},
-    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12" } ]},
-    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12-pypi" } ]},
-    # we are hitting a bug here
-    # { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13" } ]},
-    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13-pypi" } ]},
+    { task = "export-conda-lock", args = [ { env = "openfold3-cpu" } ]},
+    { task = "export-conda-lock", args = [ { env = "openfold3-cuda12" } ]},
+    { task = "export-conda-lock", args = [ { env = "openfold3-cuda12-pypi" } ]},
+    { task = "export-conda-lock", args = [ { env = "openfold3-cuda13" } ]},
+    { task = "export-conda-lock", args = [ { env = "openfold3-cuda13-pypi" } ]},
 ]
 
 
