@@ -87,6 +87,14 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-${{ inputs.cuda_base_image_tag }}-${{ github.sha }} \
             pytest openfold3/tests -vvv -n auto --cov=openfold3 --cov-report=xml
 
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report-${{ inputs.build_mode }}-${{ inputs.cuda_base_image_tag }}
+          path: coverage.xml
+          retention-days: 30
+
   stop-aws-runner:
     runs-on: ubuntu-latest
     permissions:
