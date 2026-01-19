@@ -447,7 +447,7 @@ class DataModule(pl.LightningDataModule):
             generator=self.generator,
             worker_init_fn=self.worker_init_function_with_data_seed,
             # https://github.com/pytorch/pytorch/issues/87688
-            multiprocessing_context = "fork" if torch.backends.mps.is_available() else None
+            multiprocessing_context = "fork" if torch.backends.mps.is_available() and num_workers else None
         )
 
     def train_dataloader(self) -> DataLoader:
