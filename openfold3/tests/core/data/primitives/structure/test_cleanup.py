@@ -22,6 +22,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
     remove_crystallization_aids,
     return_on_empty_atom_array,
 )
+from openfold3.tests.custom_assert_utils import assert_atomarray_equal
 
 
 @pytest.fixture
@@ -143,13 +144,14 @@ class TestConvertMSEtoMET:
         """When no MSE residues are present, the function returns early without modifications."""
         # Add required attributes for the function
         dummy_atom_array.res_name = np.array(["ALA", "ALA", "GLY", "GLY", "GLY"])
+        original = dummy_atom_array.copy()
 
         result = convert_MSE_to_MET(dummy_atom_array)
 
         # Function returns None for early exit
         assert result is None
         # res_name should be unchanged
-        assert np.all(dummy_atom_array.res_name == ["ALA", "ALA", "GLY", "GLY", "GLY"])
+        assert_atomarray_equal(original, dummy_atom_array)
 
     def test_converts_mse_to_met(self, mse_ala_atom_array):
         """MSE residues are converted to MET with correct element, atom_name, and hetero changes."""
@@ -169,20 +171,12 @@ class TestConvertMSEtoMET:
 
     def test_ala_residue_unchanged(self, mse_ala_atom_array):
         """ALA residue should remain unchanged after MSE conversion."""
-        # Store original ALA values
-        ala_mask = mse_ala_atom_array.res_id == 2
-        original_res_name = mse_ala_atom_array.res_name[ala_mask].copy()
-        original_element = mse_ala_atom_array.element[ala_mask].copy()
-        original_atom_name = mse_ala_atom_array.atom_name[ala_mask].copy()
-        original_hetero = mse_ala_atom_array.hetero[ala_mask].copy()
-
+        original = mse_ala_atom_array.copy()
+        ala_mask = mse_ala_atom_array.res_name == "ALA"
         convert_MSE_to_MET(mse_ala_atom_array)
 
         # ALA should be unchanged
-        assert np.all(mse_ala_atom_array.res_name[ala_mask] == original_res_name)
-        assert np.all(mse_ala_atom_array.element[ala_mask] == original_element)
-        assert np.all(mse_ala_atom_array.atom_name[ala_mask] == original_atom_name)
-        assert np.all(mse_ala_atom_array.hetero[ala_mask] == original_hetero)
+        assert_atomarray_equal(original[ala_mask], mse_ala_atom_array[ala_mask])
 
 
 class TestFixArginineNaming:
@@ -217,22 +211,21 @@ class TestFixArginineNaming:
 
     def test_no_change_when_nh1_already_closer_to_cd(self, good_arginine_atom_array):
         """When NH1 is already closer to CD than NH2, no changes are made."""
-        # Store original atom names
-        original_names = good_arginine_atom_array.atom_name.copy()
+        original = good_arginine_atom_array.copy()
 
         # Apply fix
         result = fix_arginine_naming(good_arginine_atom_array)
 
         # Names should be unchanged
-        np.testing.assert_array_equal(result.atom_name, original_names)
+        assert_atomarray_equal(original, result)
 
     def test_returns_early_when_no_arginine(self, mse_ala_atom_array):
         """When no ARG residues are present, no changes are made."""
-        original_names = mse_ala_atom_array.atom_name.copy()
+        original = mse_ala_atom_array.copy()
 
         result = fix_arginine_naming(mse_ala_atom_array)
 
-        np.testing.assert_array_equal(result.atom_name, original_names)
+        assert_atomarray_equal(original, result)
 
     def test_cleans_up_temporary_annotation(self, bad_arginine_atom_array):
         """The temporary _atom_idx_arginine_fix annotation is removed after processing."""
@@ -282,42 +275,50 @@ class TestRemoveCrystallizationAids:
 
     def test_removes_crystallization_aids(self, atom_array_with_crystallization_aids):
         """Crystallization aids (SO4, GOL) are removed from the AtomArray."""
+        original = atom_array_with_crystallization_aids.copy()
+        ala_mask = atom_array_with_crystallization_aids.res_name == "ALA"
+        ala_indices = np.nonzero(ala_mask)[0]
+
         result = remove_crystallization_aids(atom_array_with_crystallization_aids)
 
         # Only ALA should remain
-        assert len(result) == 5
-        assert np.all(result.res_name == "ALA")
+        assert_atomarray_equal(original[ala_indices], result)
 
     def test_preserves_non_crystallization_aid_residues(
         self, atom_array_with_crystallization_aids
     ):
         """Non-crystallization aid residues are preserved unchanged."""
-        original_ala_coords = atom_array_with_crystallization_aids.coord[:5].copy()
+        original = atom_array_with_crystallization_aids.copy()
+        ala_mask = atom_array_with_crystallization_aids.res_name == "ALA"
+        ala_indices = np.nonzero(ala_mask)[0]
 
         result = remove_crystallization_aids(atom_array_with_crystallization_aids)
 
-        np.testing.assert_array_equal(result.coord, original_ala_coords)
-        np.testing.assert_array_equal(result.atom_name, ["N", "CA", "C", "O", "CB"])
+        assert_atomarray_equal(original[ala_indices], result[ala_indices])
 
     def test_no_change_when_no_crystallization_aids(self, mse_ala_atom_array):
         """When no crystallization aids are present, the array is unchanged."""
-        original_len = len(mse_ala_atom_array)
+        original = mse_ala_atom_array.copy()
 
         result = remove_crystallization_aids(mse_ala_atom_array)
 
-        assert len(result) == original_len
+        assert_atomarray_equal(original, result)
 
     def test_custom_ccd_codes(self, atom_array_with_crystallization_aids):
         """Custom ccd_codes parameter allows specifying which residues to remove."""
+        original = atom_array_with_crystallization_aids.copy()
+        resname_mask = np.isin(
+            atom_array_with_crystallization_aids.res_name, ["ALA", "GOL"]
+        )
+        resname_indicies = np.nonzero(resname_mask)[0]
+
         # Only remove SO4, keep GOL
         result = remove_crystallization_aids(
             atom_array_with_crystallization_aids, ccd_codes=["SO4"]
         )
 
         # ALA (5 atoms) + GOL (6 atoms) should remain
-        assert len(result) == 11
-        unique_res_names = np.unique(result.res_name)
-        np.testing.assert_array_equal(sorted(unique_res_names), ["ALA", "GOL"])
+        assert_atomarray_equal(original[resname_indicies], result)
 
     def test_empty_atom_array_returns_empty(self):
         """Empty AtomArray returns empty (via decorator)."""
@@ -325,4 +326,4 @@ class TestRemoveCrystallizationAids:
 
         result = remove_crystallization_aids(empty_array)
 
-        assert len(result) == 0
+        assert_atomarray_equal(empty_array, result)
