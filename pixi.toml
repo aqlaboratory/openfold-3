@@ -82,15 +82,17 @@ requires-pixi = ">=0.63.1"
 # --- Environments
 
 [environments]
-# Any better way to alias or remove the default environment?
 default = { features = [ "python", "pixi-to-conda-lock" ] }
-openfold3-cpu = { no-default-feature = true, features = [
+# correct for all these environments would be to set no-default-feature = true
+# but pixi seems to have a bug and then the test task does not run / crashes without notice
+# TODO: file bug, get back no-default-feature when solved
+openfold3-cpu = { features = [
     "python",
     "openfold3-cpu",
     "pytorch-conda",
     "openfold3-editable"
 ] }
-openfold3-cuda12 = { no-default-feature = true, features = [
+openfold3-cuda12 = { features = [
     "python",
     "openfold3-cpu",
     "cuda12",
@@ -101,7 +103,7 @@ openfold3-cuda12 = { no-default-feature = true, features = [
     "cuequivariance-cuda12",
     "openfold3-editable"
 ] }
-openfold3-cuda13 = { no-default-feature = true, features = [
+openfold3-cuda13 = { features = [
     "python",
     "openfold3-cpu",
     "cuda13",
@@ -115,7 +117,7 @@ openfold3-cuda13 = { no-default-feature = true, features = [
     "cuequivariance-cuda13",
     "openfold3-editable"
 ] }
-openfold3-cuda12-pypi = { no-default-feature = true, features = [
+openfold3-cuda12-pypi = { features = [
     "python",
     "cuda12",
     "pytorch-pypi-cuda12",
@@ -124,7 +126,7 @@ openfold3-cuda12-pypi = { no-default-feature = true, features = [
     "cuequivariance-cuda12",
     "openfold3-editable-full",
 ] }
-openfold3-cuda13-pypi = { no-default-feature = true, features = [
+openfold3-cuda13-pypi = { features = [
     "python",
     "cuda13",
     "pytorch-pypi-cuda13",
