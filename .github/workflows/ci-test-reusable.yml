@@ -52,6 +52,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v6
+        with: 
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -83,7 +85,7 @@ jobs:
           docker run \
             -v ${{ github.workspace }}:/opt/openfold3 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-${{ inputs.cuda_base_image_tag }}-${{ github.sha }} \
-            pytest openfold3/tests -vvv
+            pytest openfold3/tests -vvv -n auto --cov=openfold3 --cov-report=xml
 
   stop-aws-runner:
     runs-on: ubuntu-latest

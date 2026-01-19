@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /opt
 RUN git clone https://github.com/aqlaboratory/openfold-3.git && \
     cd openfold-3 && \
-    cp -p environments/production.yml environments/production.yml.backup && \
+    cp -p environments/production-linux-64.yml environments/production.yml.backup && \
     grep -v "pytorch::pytorch" environments/production.yml > environments/production.yml.tmp && \
     mv environments/production.yml.tmp environments/production.yml
 
@@ -56,7 +56,7 @@ RUN git clone https://github.com/NVIDIA/cutlass --branch v3.6.0 --depth 1
 
 # Install OpenFold3 package itself (provides run_openfold command)
 WORKDIR /opt/openfold-3
-RUN python3 setup.py install
+RUN python3 -m pip install --editable --no-deps .
 
 # Set environment variables including CUDA architecture for Blackwell
 ENV PYTHONUNBUFFERED=1 \

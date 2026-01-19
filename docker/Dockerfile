@@ -29,7 +29,7 @@ ENV PATH=/opt/conda/bin:$PATH
 # To regenerate the lock file, see docker/DOCKER.md
 # Use BUILD_MODE=yaml (default) for reproducible builds, BUILD_MODE=yml for flexible dev builds
 COPY environments/production-linux-64.lock /opt/openfold3/production-linux-64.lock
-COPY environments/production.yml /opt/openfold3/production.yml
+COPY environments/production-linux-64.yml /opt/openfold3/production-linux-64.yml
 
 # Install environment based on BUILD_MODE
 # - lock: uses conda-lock for exact reproducible builds (training/production)
@@ -38,7 +38,7 @@ RUN mamba install -n base -c conda-forge conda-lock --yes \
     && if [ "$BUILD_MODE" = "lock" ]; then \
          conda-lock install --name openfold3 /opt/openfold3/production-linux-64.lock; \
        elif [ "$BUILD_MODE" = "yaml" ]; then \
-         mamba env create -f /opt/openfold3/production.yml --name openfold3; \
+         mamba env create -f /opt/openfold3/production-linux-64.yml --name openfold3; \
        else \
          echo "Invalid BUILD_MODE: $BUILD_MODE. Use 'lock' or 'yaml'." && exit 1; \
        fi \
@@ -51,7 +51,6 @@ ENV CONDA_PREFIX=/opt/conda/envs/openfold3
 ENV CONDA_DEFAULT_ENV=openfold3
 
 # Copy the minimal set of files needed to install the package
-COPY setup.py /opt/openfold3/
 COPY pyproject.toml /opt/openfold3/
 COPY openfold3/__init__.py /opt/openfold3/openfold3/
 COPY scripts/ /opt/openfold3/scripts/
@@ -62,8 +61,7 @@ RUN /opt/openfold3/scripts/install_third_party_dependencies.sh
 
 # Install the package
 WORKDIR /opt/openfold3
-# even `pip install --no-build-isolation` not actually working here, needs investigation
-RUN python setup.py install
+RUN uv pip install --no-deps --editable .
 
 # Set CUDA architecture for compilation (adjust based on your GPU)
 ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
@@ -130,8 +128,7 @@ WORKDIR /opt/openfold3
 # Test stage - build on devel layer with test dependencies
 FROM devel AS test
 
-COPY environments/requirements-test.txt /opt/openfold3/requirements-test.txt
-
 WORKDIR /opt/openfold3
-RUN pip install -r requirements-test.txt
-RUN pip install --no-deps --editable .
+# Only uv supports --dependency-groups from pyproject.toml
+RUN uv pip install --group=test
+RUN uv pip install --no-deps --editable .

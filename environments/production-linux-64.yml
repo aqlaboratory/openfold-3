@@ -9,6 +9,7 @@ dependencies:
   - awscli
   - setuptools
   - pip
+  - conda-forge::uv
   - pytorch-lightning
   - biopython
   - numpy
@@ -22,7 +23,7 @@ dependencies:
   - modelcif
   - ml-collections
   - mkl
-  - rdkit
+  - rdkit=2025.09.3
   - biotite==1.2.0
   - mmseqs2
   - bioconda::hmmer

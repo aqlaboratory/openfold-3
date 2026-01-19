@@ -15,16 +15,18 @@ RUN micromamba install -y -n base -c conda-forge conda-lock \
 
 USER $MAMBA_USER
 
-COPY --chown=$MAMBA_USER:$MAMBA_USER environments/production.yml /tmp/environment.yml
+COPY --chown=$MAMBA_USER:$MAMBA_USER environments/production-linux-64.yml /tmp/production-linux-64.yml
 
 # Generate explicit lock file for linux-64
 # The explicit format is directly consumable by mamba/conda
 RUN micromamba run -n base conda-lock lock \
     --mamba \
     --platform linux-64 \
-    --file /tmp/environment.yml \
+    --file /tmp/production-linux-64.yml \
     --kind explicit \
     --filename-template '/tmp/production-{platform}.lock'
 
 # Output the lock file to stdout when container runs
-CMD ["cat", "/tmp/production-linux-64.lock"]
+USER root
+CMD ["sh", "-c", "cp /tmp/production-*.lock /output/"]
+

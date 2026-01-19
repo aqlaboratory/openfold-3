@@ -13,3 +13,6 @@ cutlass/
 
 # User-specific claude settings
 .claude/
+
+# User-specific pre-commit settings
+.pre-commit-config.yaml
