@@ -113,6 +113,7 @@ openfold3-cuda13 = { features = [
 openfold3-cuda12-pypi = { features = [
     "python",
     "cuda12",
+    "pytorch-pypi-cuda12",
     "not-in-pypi",
     "deepspeed-build",
     "cuequivariance-cuda12",
@@ -121,6 +122,7 @@ openfold3-cuda12-pypi = { features = [
 openfold3-cuda13-pypi = { features = [
     "python",
     "cuda13",
+    "pytorch-pypi-cuda13",
     "not-in-pypi",
     "deepspeed-build",
     "cuequivariance-cuda13",
@@ -245,9 +247,9 @@ pytorch-gpu = "*"
 pytorch-lightning = "*"
 pytorch = "*"
 
-# [feature.pytorch-pypi-cuda12.pypi-dependencies]
-# pytorch-lightning = "*"
-# torch = { version = "*", index = "https://download.pytorch.org/whl/cu129" }
+[feature.pytorch-pypi-cuda12.pypi-dependencies]
+pytorch-lightning = "*"
+torch = { version = "*", index = "https://download.pytorch.org/whl/cu129" }
 
 [feature.pytorch-pypi-cuda13.pypi-dependencies]
 pytorch-lightning = "*"
