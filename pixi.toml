@@ -414,7 +414,7 @@ export-conda-all.depends-on = [
 ]
 
 export-conda-lock.args = [
-    { "arg" = "env", "default" = "openfold3-cpu" },
+    { "arg" = "environment", "default" = "openfold3-cpu" },
 ]
 export-conda-lock.cmd = [
     "pixi-to-conda-lock",
@@ -422,17 +422,17 @@ export-conda-lock.cmd = [
     "--output",
     "$PIXI_PROJECT_ROOT/environments",
     "--environment",
-    "{{ env }}"
+    "{{ environment }}"
     # For this one I feel we need pixi.lock to contain variables and pixi-to-conda-lock to support
     # (or maybe for pixi-to-conda-lock to read from pixi.toml instead)
 ]
 
 export-conda-lock-all.depends-on = [
-    { task = "export-conda-lock", args = [ { env = "openfold3-cpu" } ]},
-    { task = "export-conda-lock", args = [ { env = "openfold3-cuda12" } ]},
-    { task = "export-conda-lock", args = [ { env = "openfold3-cuda12-pypi" } ]},
-    { task = "export-conda-lock", args = [ { env = "openfold3-cuda13" } ]},
-    { task = "export-conda-lock", args = [ { env = "openfold3-cuda13-pypi" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cpu" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12-pypi" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13-pypi" } ]},
 ]
 
 
