@@ -95,39 +95,45 @@ def good_arginine_atom_array():
     return atom_array
 
 
+def make_tracking_dummy():
+    """Create a decorated dummy function that tracks whether it was called.
+
+    Returns:
+        tuple: (dummy_function, was_called) where was_called is a callable
+               that returns True if dummy_function was invoked.
+    """
+    called = False
+
+    @return_on_empty_atom_array
+    def dummy_function(atom_array: AtomArray) -> AtomArray:
+        nonlocal called
+        called = True
+        return atom_array
+
+    return dummy_function, lambda: called
+
+
 class TestReturnOnEmptyAtomArrayDecorator:
     """Tests for the return_on_empty_atom_array decorator."""
 
     def test_empty_atom_array_returns_immediately(self):
         """When given an empty AtomArray, the decorator returns it without calling the wrapped function."""
-        function_was_called = False
-
-        @return_on_empty_atom_array
-        def dummy_function(atom_array: AtomArray) -> AtomArray:
-            nonlocal function_was_called
-            function_was_called = True
-            return atom_array
+        dummy_function, was_called = make_tracking_dummy()
 
         empty_array = AtomArray(0)
         result = dummy_function(empty_array)
 
         assert result is empty_array
-        assert not function_was_called
+        assert not was_called()
 
     def test_non_empty_atom_array_calls_function(self, dummy_atom_array):
         """When given a non-empty AtomArray, the decorator calls the wrapped function."""
-        function_was_called = False
-
-        @return_on_empty_atom_array
-        def dummy_function(atom_array: AtomArray) -> AtomArray:
-            nonlocal function_was_called
-            function_was_called = True
-            return atom_array
+        dummy_function, was_called = make_tracking_dummy()
 
         result = dummy_function(dummy_atom_array)
 
         assert result is dummy_atom_array
-        assert function_was_called
+        assert was_called()
 
 
 class TestConvertMSEtoMET:
