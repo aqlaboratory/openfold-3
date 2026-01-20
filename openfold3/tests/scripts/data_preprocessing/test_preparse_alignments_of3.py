@@ -10,7 +10,7 @@ from click.testing import CliRunner
 from scripts.data_preprocessing.preparse_alignments_of3 import main
 
 # Path to test data
-TEST_DATA_DIR = Path(__file__).parent.parent.parent / "test_data" / "alignments"
+TEST_DATA_DIR = Path(__file__).parent.parent.parent / "test_data" / "alignments" / "pdb"
 
 
 class TestPreparseAlignmentsOf3:
@@ -42,13 +42,7 @@ class TestPreparseAlignmentsOf3:
 
         # Check that npz files were created for both chains
         npz_files = list(tmp_path.glob("*.npz"))
-        assert len(npz_files) == 6, (
-            f"Expected 6 npz files, got {len(npz_files)}: {[f.name for f in npz_files]}"
-        )
-
-        chain_names = {f.stem for f in npz_files}
-        assert "2q2k_A" in chain_names
-        assert "2q2k_B" in chain_names
+        assert [f.name for f in npz_files] == ["2q2k_B.npz", "2q2k_A.npz"]
 
         # Check contents of one npz file
         npz_data = np.load(tmp_path / "2q2k_A.npz", allow_pickle=True)
