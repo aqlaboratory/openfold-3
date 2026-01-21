@@ -67,15 +67,15 @@ test = [
   "ruff",
   "awscli",
   "aria2",
+  "pytest-xdist",
+  "pytest-cov",
+  "pytest-benchmark",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest",
-  "pytest-xdist",
-  "pytest-cov",
   "ruff",
-
   # used for documentation
   "sphinx",
   "myst-parser",

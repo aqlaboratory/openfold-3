@@ -85,7 +85,25 @@ jobs:
           docker run \
             -v ${{ github.workspace }}:/opt/openfold3 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-${{ inputs.cuda_base_image_tag }}-${{ github.sha }} \
-            pytest openfold3/tests -vvv -n auto --cov=openfold3 --cov-report=xml
+            pytest openfold3/tests -vvv -n auto --cov=openfold3 --cov-report=xml --cov-report=term
+
+      - name: Debug - List files and find coverage
+        if: always()
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo "=== Files in workspace root ==="
+          ls -la ${{ github.workspace }}
+          echo "=== Looking for coverage files ==="
+          find ${{ github.workspace }} -name "coverage.xml" -o -name ".coverage" 2>/dev/null || echo "No coverage files found"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report-${{ inputs.build_mode }}-${{ inputs.cuda_base_image_tag }}
+          path: coverage.xml
+          retention-days: 30
 
   stop-aws-runner:
     runs-on: ubuntu-latest
