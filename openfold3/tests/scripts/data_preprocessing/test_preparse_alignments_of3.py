@@ -9,8 +9,28 @@ from click.testing import CliRunner
 
 from scripts.data_preprocessing.preparse_alignments_of3 import main
 
-# Path to test data
-TEST_DATA_DIR = Path(__file__).parent.parent.parent / "test_data" / "alignments" / "pdb"
+"""
+This test data in alignments/ directory has the following structure:
+
+These are all inputs to the preparse_alignments_of3.py script.
+
+The script produces a single .npz file per input directory (chain).
+
+2q2k_A/
+    bfd_uniclust_hits.a3m
+    hmm_output.sto
+    mgnify_hits.sto
+    uniprot_hits.sto
+    uniref90_hits.sto
+
+2q2k_B/
+    bfd_uniclust_hits.a3m
+    hmm_output.sto
+    mgnify_hits.sto
+    uniprot_hits.sto
+    uniref90_hits.sto
+"""
+TEST_DATA_DIR = Path(__file__).parent.parent.parent / "test_data" / "alignments"
 
 
 class TestPreparseAlignmentsOf3:
@@ -21,7 +41,7 @@ class TestPreparseAlignmentsOf3:
         return CliRunner()
 
     def test_preparse_databases(self, cli_runner, tmp_path):
-        """Test preparsing alignments with a single database (uniref90_hits)."""
+        """Test preparsing alignments with a two databases (uniref90_hits, uniprot_hits)."""
         max_seq_counts = json.dumps({"uniref90_hits": 100, "uniprot_hits": 50})
 
         result = cli_runner.invoke(
