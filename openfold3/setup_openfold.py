@@ -18,6 +18,7 @@ Setup script for OpenFold3 parameters.
 Downloads model parameters and runs verification tests.
 """
 
+import hashlib
 import importlib.util
 import logging
 import os
@@ -175,8 +176,21 @@ def download_parameters(param_dir) -> None:
 
 
 def setup_biotite_ccd(*, force_download: bool) -> None:
+    # FIXME: This is only needed because we're locked into biotite 1.2.0 for now.
+    # And this versions pull a stale CCD file by default.
+    # Once we can upgrade biotite, we can remove this function entirely
+    STALE_CCD_CHECKSUMS = {
+        "f106327c29bc6a247f8eab541648a501"  # biotite==1.2.0
+    }
+
+    def ccd_is_stale(*, ccd_path: Path) -> bool:
+        if not ccd_path.exists():
+            return True
+        md5 = hashlib.md5(ccd_path.read_bytes()).hexdigest()
+        return md5 in STALE_CCD_CHECKSUMS
+
     logger.info("Starting Biotite CCD setup...")
-    if force_download or not biotite.setup_ccd.OUTPUT_CCD.exists():
+    if force_download or ccd_is_stale(ccd_path=biotite.setup_ccd.OUTPUT_CCD):
         logger.info(f"Downloading biotite CCD to {biotite.setup_ccd.OUTPUT_CCD}...")
         biotite.setup_ccd.main()
     else:
@@ -241,7 +255,7 @@ def main():
         download_parameters(param_dir)
 
     # Step 5: Setup CCD with biotite
-    setup_biotite_ccd(force_download=True)
+    setup_biotite_ccd(force_download=False)
 
     # Step 6: Run tests (always run regardless of download status)
     run_integration_tests()
