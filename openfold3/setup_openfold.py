@@ -174,9 +174,9 @@ def download_parameters(param_dir) -> None:
     logger.info("Download completed successfully.")
 
 
-def setup_biotite_ccd() -> None:
+def setup_biotite_ccd(*, force_download: bool) -> None:
     logger.info("Starting Biotite CCD setup...")
-    if not biotite.setup_ccd.OUTPUT_CCD.exists():
+    if force_download or not biotite.setup_ccd.OUTPUT_CCD.exists():
         logger.info(f"Downloading biotite CCD to {biotite.setup_ccd.OUTPUT_CCD}...")
         biotite.setup_ccd.main()
     else:
@@ -241,7 +241,7 @@ def main():
         download_parameters(param_dir)
 
     # Step 5: Setup CCD with biotite
-    setup_biotite_ccd()
+    setup_biotite_ccd(force_download=True)
 
     # Step 6: Run tests (always run regardless of download status)
     run_integration_tests()
