@@ -102,7 +102,9 @@ jobs:
         if: always()
         with:
           name: coverage-report-${{ inputs.build_mode }}-${{ inputs.cuda_base_image_tag }}
-          path: coverage.xml
+          path: |
+            coverage.xml
+            .coverage
           retention-days: 30
 
   stop-aws-runner:
