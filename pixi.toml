@@ -83,16 +83,14 @@ requires-pixi = ">=0.63.1"
 
 [environments]
 default = { features = [ "python", "pixi-to-conda-lock" ] }
-# correct for all these environments would be to set no-default-feature = true
-# but pixi seems to have a bug and then the test task does not run / crashes without notice
-# TODO: file bug, get back no-default-feature when solved
-openfold3-cpu = { features = [
+openfold3-cpu = { no-default-feature = true, features = [
     "python",
     "openfold3-cpu",
     "pytorch-conda",
-    "openfold3-editable"
+    "openfold3-editable",
+    "tests"
 ] }
-openfold3-cuda12 = { features = [
+openfold3-cuda12 = { no-default-feature = true, features = [
     "python",
     "openfold3-cpu",
     "cuda12",
@@ -101,9 +99,10 @@ openfold3-cuda12 = { features = [
     "deepspeed-build",
     "deepspeed-cuda12",
     "cuequivariance-cuda12",
-    "openfold3-editable"
+    "openfold3-editable",
+    "tests"
 ] }
-openfold3-cuda13 = { features = [
+openfold3-cuda13 = { no-default-feature = true, features = [
     "python",
     "openfold3-cpu",
     "cuda13",
@@ -115,9 +114,10 @@ openfold3-cuda13 = { features = [
     "deepspeed-build",
     "deepspeed-cuda13",
     "cuequivariance-cuda13",
-    "openfold3-editable"
+    "openfold3-editable",
+    "tests"
 ] }
-openfold3-cuda12-pypi = { features = [
+openfold3-cuda12-pypi = { no-default-feature = true, features = [
     "python",
     "cuda12",
     "pytorch-pypi-cuda12",
@@ -125,8 +125,9 @@ openfold3-cuda12-pypi = { features = [
     "deepspeed-build",
     "cuequivariance-cuda12",
     "openfold3-editable-full",
+    "tests"
 ] }
-openfold3-cuda13-pypi = { features = [
+openfold3-cuda13-pypi = { no-default-feature = true, features = [
     "python",
     "cuda13",
     "pytorch-pypi-cuda13",
@@ -134,6 +135,7 @@ openfold3-cuda13-pypi = { features = [
     "deepspeed-build",
     "cuequivariance-cuda13",
     "openfold3-editable-full",
+    "tests"
 ] }
 
 # Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
@@ -441,7 +443,10 @@ export-conda-lock-all.depends-on = [
 ]
 
 
-test.cmd = [
+# Running a task on an environment will not work unless the task is defined in one of its features.
+# See: https://github.com/prefix-dev/pixi/issues/5380
+[feature.tests]
+tasks.test.cmd = [
     "mkdir",
     "-p",
     "$PIXI_PROJECT_ROOT/test-results/{{ pixi.environment.name }}_{{ pixi.platform }}",
