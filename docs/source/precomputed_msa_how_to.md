@@ -158,6 +158,25 @@ alignments/
 
 For main MSAs, we provide support for preparsing MSA files from `a3m` and `sto` into `npz` numpy array format. This optional step reduces overall MSA parsing and processing times in the inference pipeline for large batch jobs with redundant sets of sequences as well as the disk space required to store these MSAs (see {ref}`this <5-preparsing-raw-msas-into-npz-format>` section for details). The preparsed, compressed MSA files can be generated from raw MSA data with the directory and file structure specified above using [this preparsing script](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/preparse_alignments_of3.py). 
 
+Here is an example use, as used in the OF3 training, with all the datasets ingested
+```bash
+python ./scripts/data_preprocessing/preparse_alignments_of3.py \
+    --alignments_directory msa-raw/some-input-dir/ \
+    --alignment_array_directory msa-cache/some-output-dir/ \
+    --num_workers 1 \
+    --max_seq_counts ''{"uniprot_hits": 50000, "uniref90_hits": 10000, "cfdb_hits": 100000000, "mgnify_hits": 5000, "rfam_hits": 10000, "rnacentral_hits": 10000, "nucleotide_collection_hits": 10000}'
+```
+
+Here is a minimal example for testing, only looking at UniRef90 (small and runnable locally)
+```bash
+python ./scripts/data_preprocessing/preparse_alignments_of3.py \
+    --alignments_directory msa-raw/some-input-dir/ \
+    --alignment_array_directory msa-cache/some-output-dir/ \
+    --num_workers 1 \
+    --max_seq_counts '{"uniref90_hits":1024}'
+```
+
+
 Output for the example above should look like this
 ```
 preparsed_alignments/
