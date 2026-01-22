@@ -25,6 +25,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import biotite.setup_ccd
+
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
@@ -172,6 +174,18 @@ def download_parameters(param_dir) -> None:
     logger.info("Download completed successfully.")
 
 
+def setup_biotite_ccd() -> None:
+    logger.info("Starting Biotite CCD setup...")
+    if not biotite.setup_ccd.OUTPUT_CCD.exists():
+        logger.info(f"Downloading biotite CCD to {biotite.setup_ccd.OUTPUT_CCD}...")
+        biotite.setup_ccd.main()
+    else:
+        logger.info(
+            "Biotite CCD already configured at "
+            f"{biotite.setup_ccd.OUTPUT_CCD}, skipping."
+        )
+
+
 def run_integration_tests() -> None:
     """Run integration tests."""
     confirm = input("Run integration tests? (yes/no)")
@@ -226,7 +240,10 @@ def main():
     if should_download:
         download_parameters(param_dir)
 
-    # Step 5: Run tests (always run regardless of download status)
+    # Step 5: Setup CCD with biotite
+    setup_biotite_ccd()
+
+    # Step 6: Run tests (always run regardless of download status)
     run_integration_tests()
 
 
