@@ -132,3 +132,17 @@ WORKDIR /opt/openfold3
 # Only uv supports --dependency-groups from pyproject.toml
 RUN uv pip install --group=test
 RUN uv pip install --no-deps --editable .
+
+# Build the affinity image
+FROM devel AS affinity
+
+WORKDIR /opt/openfold3
+
+RUN uv pip install huggingface_hub
+
+RUN --mount=type=secret,id=hf_token \
+    HF_TOKEN=$(cat /run/secrets/hf_token) \
+    hf download SandboxAQ/aqaffinity \
+    --local-dir /opt/aqaffinity
+
+RUN uv pip install --no-deps /opt/aqaffinity/

@@ -1,0 +1,18 @@
+{
+	"queries":{
+		"mcl1": { 
+			"chains": [
+				{
+					"molecule_type": "protein",
+					"chain_ids": ["A"],
+					"sequence": "GDDELYRQSLEIISRYLREQATGAKDTKPMGRSGATSRKALETLRRVGDGVQRNHETAFQGMLRKLDIKNEDDVKSLSRVMIHVFSDGVTNWGRIVTLISFGAFVAKHLKTINQESCIEPLAESITDVLVRTKRDWLVKQRGWDGFVEFFHVEDLEGG"
+				},
+				{
+					"molecule_type": "ligand",
+					"chain_ids": "Z",
+					"smiles": "CC(=O)OC1C[NH+]2CCC1CC2"
+				}
+			]
+		}
+	}
+}
