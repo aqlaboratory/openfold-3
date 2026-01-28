@@ -18,7 +18,6 @@ Setup script for OpenFold3 parameters.
 Downloads model parameters and runs verification tests.
 """
 
-import hashlib
 import importlib.util
 import logging
 import os
@@ -179,15 +178,15 @@ def setup_biotite_ccd(*, force_download: bool) -> None:
     # FIXME: This is only needed because we're locked into biotite 1.2.0 for now.
     # And this versions pull a stale CCD file by default.
     # Once we can upgrade biotite, we can remove this function entirely
-    STALE_CCD_CHECKSUMS = {
-        "f106327c29bc6a247f8eab541648a501"  # biotite==1.2.0
-    }
+    from openfold3.core.utils.s3 import s3_file_matches_local
+
+    S3_BUCKET = "openfold3-data"
+    S3_KEY = "components.bcif"
 
     def ccd_is_stale(*, ccd_path: Path) -> bool:
         if not ccd_path.exists():
             return True
-        md5 = hashlib.md5(ccd_path.read_bytes()).hexdigest()
-        return md5 in STALE_CCD_CHECKSUMS
+        return not s3_file_matches_local(ccd_path, S3_BUCKET, S3_KEY)
 
     logger.info("Starting Biotite CCD setup...")
     if force_download or ccd_is_stale(ccd_path=biotite.setup_ccd.OUTPUT_CCD):
