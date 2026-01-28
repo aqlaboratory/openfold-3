@@ -190,12 +190,15 @@ def setup_biotite_ccd(*, force_download: bool) -> None:
 
     logger.info("Starting Biotite CCD setup...")
     if force_download or ccd_is_stale(ccd_path=biotite.setup_ccd.OUTPUT_CCD):
-        logger.info(f"Downloading biotite CCD to {biotite.setup_ccd.OUTPUT_CCD}...")
+        logger.info(
+            f"Downloading biotite CCD from s3://{S3_BUCKET}/{S3_KEY} "
+            f"to {biotite.setup_ccd.OUTPUT_CCD}..."
+        )
         biotite.setup_ccd.main()
     else:
         logger.info(
-            "Biotite CCD already configured at "
-            f"{biotite.setup_ccd.OUTPUT_CCD}, skipping."
+            f"Biotite CCD file at {biotite.setup_ccd.OUTPUT_CCD} is up-to-date with "
+            f"s3://{S3_BUCKET}/{S3_KEY}, skipping."
         )
 
 
