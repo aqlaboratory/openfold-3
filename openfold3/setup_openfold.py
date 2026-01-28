@@ -27,6 +27,12 @@ from pathlib import Path
 
 import biotite.setup_ccd
 
+from openfold3.core.utils.s3 import s3_file_matches_local
+
+S3_BUCKET = "openfold3-data"
+S3_KEY = "components.bcif"
+
+
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
@@ -175,14 +181,6 @@ def download_parameters(param_dir) -> None:
 
 
 def setup_biotite_ccd(*, force_download: bool) -> None:
-    # FIXME: This is only needed because we're locked into biotite 1.2.0 for now.
-    # And this versions pull a stale CCD file by default.
-    # Once we can upgrade biotite, we can remove this function entirely
-    from openfold3.core.utils.s3 import s3_file_matches_local
-
-    S3_BUCKET = "openfold3-data"
-    S3_KEY = "components.bcif"
-
     def ccd_is_stale(*, ccd_path: Path) -> bool:
         if not ccd_path.exists():
             return True
