@@ -56,4 +56,4 @@ def mse_ala_atom_array():
 @pytest.fixture(scope="session", autouse=True)
 def ensure_biotite_ccd():
     """Download CCD file before any tests run (once per test session)."""
-    setup_biotite_ccd(force_download=True)
+    setup_biotite_ccd(force_download=False)

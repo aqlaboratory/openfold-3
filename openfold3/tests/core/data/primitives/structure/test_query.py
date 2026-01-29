@@ -1,3 +1,5 @@
+from collections import Counter
+
 import pytest
 
 from openfold3.core.data.primitives.structure.query import (
@@ -37,4 +39,12 @@ def test_consistent_structure_from_smiles_and_ccd_code(smiles, ccd_code):
     struct_from_smiles = structure_with_ref_mol_from_smiles(smiles, chain_id="X")
     struct_from_ccd = structure_with_ref_mol_from_ccd_code(ccd_code, chain_id="X")
 
+    # Ideally, one day, we'll be able to do just this
+    # from openfold3.tests import custom_assert_utils
+    # custom_assert_utils.assert_atomarray_equal(struct_from_smiles.atom_array, struct_from_ccd.atom_array)
+
     assert len(struct_from_smiles.atom_array) == len(struct_from_ccd.atom_array)
+
+    assert Counter(struct_from_smiles.atom_array.element) == Counter(
+        struct_from_ccd.atom_array.element
+    )
