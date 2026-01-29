@@ -28,9 +28,7 @@ import biotite.setup_ccd
 import boto3
 
 from openfold3.core.utils.s3 import compute_local_crc64nvme_base64
-
-S3_BUCKET = "openfold3-data"
-S3_KEY = "components.bcif"
+from openfold3.setup_openfold import S3_BUCKET, S3_KEY
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
