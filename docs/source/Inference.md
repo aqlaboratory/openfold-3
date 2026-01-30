@@ -524,7 +524,7 @@ When processing multimer inputs (e.g., hemoglobin α + β chains), OpenFold3 aut
 
 ### 4.5 Embeddings
 
-At inference you can instruct the model to produce the pair-rep and single-rep embeddings. You can do so by providing `write_latent_outputs: True` in your `runner.yaml`. 
+At inference you can instruct the model to produce the pair-rep and single-rep embeddings by {ref}`adjusting the output_writer_settings in your runner.yaml <output-model-embeddings>`. 
 
 This will cause the model to produce a `*_latent_output.pt`, which can be loaded like so and has the following shape. 
 
