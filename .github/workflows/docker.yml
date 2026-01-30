@@ -62,7 +62,7 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        uses: docker/metadata-action@a60f0f62b5c12316066c8db464bfb2faafd7907b
         with:
           images: openfoldconsortium/openfold3
           tags: |
