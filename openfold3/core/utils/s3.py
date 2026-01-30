@@ -19,11 +19,13 @@ from pathlib import Path
 
 import boto3
 from awscrt import checksums
+from botocore import UNSIGNED
+from botocore.config import Config
 
 
 def get_s3_checksum(bucket: str, key: str) -> str | None:
     """Get CRC64NVME checksum from S3 object metadata (HEAD request, no download)."""
-    s3 = boto3.client("s3")
+    s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
     response = s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
 
     if "ChecksumCRC64NVME" in response:
