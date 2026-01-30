@@ -50,6 +50,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v6
         with: 
@@ -64,6 +65,12 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
+          aws-region: us-east-1
 
       - name: Build and push test image
         uses: docker/build-push-action@v6
@@ -84,6 +91,10 @@ jobs:
         run: |
           docker run \
             -v ${{ github.workspace }}:/opt/openfold3 \
+            -e AWS_ACCESS_KEY_ID \
+            -e AWS_SECRET_ACCESS_KEY \
+            -e AWS_SESSION_TOKEN \
+            -e AWS_REGION \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-${{ inputs.cuda_base_image_tag }}-${{ github.sha }} \
             pytest openfold3/tests -vvv -n auto --cov=openfold3 --cov-report=xml --cov-report=term
 
