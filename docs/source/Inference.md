@@ -71,7 +71,7 @@ Coming soon:
 - Polymeric ligands such as glycans
 
 
-## 2. Pre-requisites:
+## 2. Pre-requisites
 
 - OpenFold3 Conda Environment. See {ref}`OpenFold3 Installation <openfold3-installation>` for instructions on how to build this environment.
 - OpenFold3 Model Parameters. See {ref}`OpenFold3 Parameters <openfold3-parameters>` for how to download these parameters.
@@ -512,6 +512,15 @@ When processing multimer inputs (e.g., hemoglobin α + β chains), OpenFold3 aut
 - Stores raw alignments in `raw/paired/` temporarily
 - Converts them into per-chain `.npz` alignments in [`paired/`](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/output_multimer_with_colabfold_msas/colabfold_msas/paired)
 
+### 4.5 Embeddings
 
+At inference you can instruct the model to produce the pair-rep and single-rep embeddings. You can do so by providing `write_latent_outputs: True` in your `runner.yaml`. 
 
+This will cause the model to produce a `*_latent_output.pt`, which can be loaded like so and has the following shape. 
+
+```python
+output = torch.load("*_latent_output.pt")
+print(output.keys())
+["si_trunk", "zij_trunk", "atom_positions_predicted"]
+```
 
