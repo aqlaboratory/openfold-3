@@ -524,3 +524,4 @@ print(output.keys())
 ["si_trunk", "zij_trunk", "atom_positions_predicted"]
 ```
 
+If you want to change these outputs, the code is in the [model.py](../../openfold3/projects/of3_all_atom/model.py#L384-L388)
