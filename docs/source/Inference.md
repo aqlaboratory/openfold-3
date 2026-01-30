@@ -258,6 +258,16 @@ output_writer_settings:
 
 ---
 
+(output-model-embeddings)=
+#### 📦 Output single and pair model embeddings
+To save model embeddings, add the field `write_latent_outputs` to the `output_writer_settings` i.e.: 
+```yaml
+output_writer_settings:
+	write_latent_outputs: True
+```
+
+---
+
 (inference-low-memory-mode)=
 #### 🧠 Low Memory Mode
 To run inference on larger queries to run on limited memory, add the following to apply the [model presets](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/model_setting_presets.yml) to run in low memory mode.
