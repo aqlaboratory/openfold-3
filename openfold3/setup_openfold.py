@@ -25,6 +25,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+import biotite.setup_ccd
+
+from openfold3.core.utils.s3 import s3_file_matches_local
+
+S3_BUCKET = "openfold3-data"
+S3_KEY = "components.bcif"
+
+
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
@@ -172,6 +180,26 @@ def download_parameters(param_dir) -> None:
     logger.info("Download completed successfully.")
 
 
+def setup_biotite_ccd(*, force_download: bool) -> None:
+    def ccd_is_stale(*, ccd_path: Path) -> bool:
+        if not ccd_path.exists():
+            return True
+        return not s3_file_matches_local(ccd_path, S3_BUCKET, S3_KEY)
+
+    logger.info("Starting Biotite CCD setup...")
+    if force_download or ccd_is_stale(ccd_path=biotite.setup_ccd.OUTPUT_CCD):
+        logger.info(
+            f"Downloading biotite CCD from s3://{S3_BUCKET}/{S3_KEY} "
+            f"to {biotite.setup_ccd.OUTPUT_CCD}..."
+        )
+        biotite.setup_ccd.main()
+    else:
+        logger.info(
+            f"Biotite CCD file at {biotite.setup_ccd.OUTPUT_CCD} is up-to-date with "
+            f"s3://{S3_BUCKET}/{S3_KEY}, skipping."
+        )
+
+
 def run_integration_tests() -> None:
     """Run integration tests."""
     confirm = input("Run integration tests? (yes/no)")
@@ -226,7 +254,10 @@ def main():
     if should_download:
         download_parameters(param_dir)
 
-    # Step 5: Run tests (always run regardless of download status)
+    # Step 5: Setup CCD with biotite
+    setup_biotite_ccd(force_download=False)
+
+    # Step 6: Run tests (always run regardless of download status)
     run_integration_tests()
 
 

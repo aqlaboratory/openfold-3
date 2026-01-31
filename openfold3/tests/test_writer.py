@@ -93,6 +93,8 @@ class TestPredictionWriter:
     ):
         n_tokens = 3
         n_atoms = 5
+        dummy_atom_array.chain_id = np.array(["A", "A", "B", "B", "B"])
+
         confidence_scores = {
             "plddt": np.random.uniform(size=n_atoms),
             "pde_probs": np.random.uniform(size=(n_tokens, n_tokens, 64)),
@@ -141,6 +143,7 @@ class TestPredictionWriter:
     def test_confidence_writer_with_pae(self, tmp_path, output_fmt, dummy_atom_array):
         n_tokens = 3
         n_atoms = 5
+        dummy_atom_array.chain_id = np.array(["A", "A", "B", "B", "B"])
 
         confidence_scores = {
             "plddt": np.random.uniform(size=n_atoms),

@@ -272,8 +272,9 @@ Below is a complete example of an input JSON file specifying a single bioassembl
 ```
 
 Additional example input JSON files can be found here:
-- [Single-chain protein (monomer)](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs/query_ubiquitin.json): Ubiquitin (PDB: 1UBQ)
-- [Multi-chain protein with identical chains (homomer)](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs/query_homomer.json): GCN4 leucine zipper (PDB: 2ZTA)
-- [Multi-chain protein with different chains (multimer)](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs/query_multimer.json): Deoxy human hemoglobin (PDB: 1A3N)
-- [Protein-ligand complex](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
-- [Multiple Protein-ligand complexes](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs/query_protein_ligand_multiple.json): Two queries with Mcl-1 and different small molecule inhibitors (PDB: 5FDR)
+- [Single-chain protein (monomer)](../../examples/example_inference_inputs/query_ubiquitin.json): Ubiquitin (PDB: 1UBQ)
+- [Multi-chain protein with identical chains (homomer)](../../examples/example_inference_inputs/query_homomer.json): GCN4 leucine zipper (PDB: 2ZTA)
+- [Multi-chain protein with different chains (multimer)](../../examples/example_inference_inputs/query_multimer.json): Deoxy human hemoglobin (PDB: 1A3N)
+- [Protein-ligand complex](../../examples/example_inference_inputs/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
+- [Sigle protein-single ligand complex](../../examples/example_inference_inputs/query_single_protein_single_ligand.json): T4 Lysozyme (L99A mutant) with toluene (PDB: 7L39)
+- [Multiple Protein-ligand complexes](../../examples/example_inference_inputs/query_protein_ligand_multiple.json): Two queries with Mcl-1 and different small molecule inhibitors (PDB: 5FDR)

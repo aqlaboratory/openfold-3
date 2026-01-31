@@ -245,6 +245,14 @@ def processed_reference_molecule_from_mol(
             A processed reference molecule containing the RDKit mol with a computed
             conformer and the atom mask.
     """
+    # Compute conformer (note that we call this before creating the annotations, as this
+    # function will remove all hydrogens in the input mol and can therefore change the
+    # mask length)
+    mol, conf_id, _ = multistrategy_compute_conformer(
+        mol, remove_hs=True, timeout_standard=120, timeout_rand_init=120
+    )
+    assert conf_id == 0
+
     # Assume all atoms are in the structure if no special mask is given
     if atom_mask is None:
         atom_mask = np.ones(mol.GetNumAtoms(), dtype=bool)
@@ -260,12 +268,6 @@ def processed_reference_molecule_from_mol(
     # This is a different mask only required for fallback conformers in the training
     # script where some coordinates are not defined
     mol = set_atomwise_annotation(mol, "used_atom_mask", [True] * mol.GetNumAtoms())
-
-    # Compute conformer
-    mol, conf_id, _ = multistrategy_compute_conformer(
-        mol, remove_hs=True, timeout_standard=120, timeout_rand_init=120
-    )
-    assert conf_id == 0
 
     return ProcessedReferenceMolecule(
         mol=mol,

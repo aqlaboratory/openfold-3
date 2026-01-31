@@ -60,6 +60,14 @@ docker run \
     pytest openfold3/tests -vvv
 ```
 
+## Affinity images
+
+docker build \
+    -f docker/Dockerfile \
+    --secret id=hf_token,src=$HOME/.cache/huggingface/token \
+    --target affinity \
+    -t openfold-docker:affinity .
+
 ## Production images
 
 Build a 'stable' image with all the dependancies exactly pinned (production.lock)

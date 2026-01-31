@@ -72,6 +72,7 @@ This script will:
 - Setup a directory for OpenFold3 model parameters [default: `~/.openfold3`]
     - Writes the path to `$OPENFOLD_CACHE/ckpt_path` 
 - Download the model parameters, if the parameter file does not already exist 
+- Download and setup the [Chemical Component Dictionary (CCD)](https://www.wwpdb.org/data/ccd) with [Biotite](https://www.biotite-python.org/latest/apidoc/biotite.structure.info.get_ccd.html)
 - Optionally runs an inference integration test on two samples, without MSA alignments (~5 min on A100)
     - N.B. To run the integration tests, `pytest` must be installed. 
 

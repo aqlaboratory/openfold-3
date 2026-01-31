@@ -17,8 +17,13 @@ import pickle
 from pathlib import Path
 
 import pytest
+from rdkit import Chem
 
+from openfold3.core.data.pipelines.featurization.conformer import (
+    featurize_reference_conformers_of3,
+)
 from openfold3.core.data.primitives.structure.query import (
+    processed_reference_molecule_from_mol,
     structure_with_ref_mols_from_query,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
@@ -104,3 +109,28 @@ def test_structure_from_query(query: Query, ground_truth_file: Path):
         strict=False,
     ):
         assert_ref_mols_equal(ref_mol, ref_mol_gt)
+
+
+def test_smiles_with_explicit_hydrogen():
+    """Tests that SMILES with explicit hydrogens can be processed.
+
+    Regression test for a bug where explicit hydrogens in the input molecule
+    caused a length mismatch between the atom mask and the molecule after
+    conformer generation (which removes hydrogens).
+    """
+    # SMILES with explicit hydrogen - this triggered the bug
+    smiles_with_explicit_h = "[H]/C=C\\Cl"
+    mol = Chem.MolFromSmiles(smiles_with_explicit_h)
+
+    # Should not raise an error
+    ref_mol = processed_reference_molecule_from_mol(mol)
+
+    # Verify mask length matches mol atom count
+    assert ref_mol.mol.GetNumAtoms() == len(ref_mol.in_crop_mask)
+
+    # Featurization should also succeed
+    features = featurize_reference_conformers_of3(
+        [ref_mol],
+        add_ref_space_uid_to_perm=False,
+    )
+    assert "ref_pos" in features

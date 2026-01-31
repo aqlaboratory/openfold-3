@@ -32,7 +32,7 @@ jobs:
           aws-region: us-east-1
       - name: Create cloud runner
         id: aws-start
-        uses: omsf/start-aws-gha-runner@v1.1.0
+        uses: omsf/start-aws-gha-runner@v1.1.1
         with:
           aws_image_id: ami-0754c6e75b3b97dcd  # Deep Learning AMI Neuron (Ubuntu 22.04)
           aws_instance_type: trn1.2xlarge 
@@ -62,7 +62,7 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        uses: docker/metadata-action@a60f0f62b5c12316066c8db464bfb2faafd7907b
         with:
           images: openfoldconsortium/openfold3
           tags: |

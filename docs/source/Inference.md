@@ -71,7 +71,7 @@ Coming soon:
 - Polymeric ligands such as glycans
 
 
-## 2. Pre-requisites:
+## 2. Pre-requisites
 
 - OpenFold3 Conda Environment. See {ref}`OpenFold3 Installation <openfold3-installation>` for instructions on how to build this environment.
 - OpenFold3 Model Parameters. See {ref}`OpenFold3 Parameters <openfold3-parameters>` for how to download these parameters.
@@ -254,6 +254,16 @@ Change the structure output format from `cif` to `pdb` using [`output_writer_set
 ```yaml
 output_writer_settings:
   structure_format: pdb    # Default: cif
+```
+
+---
+
+(output-model-embeddings)=
+#### 📦 Output single and pair model embeddings
+To save model embeddings, add the field `write_latent_outputs` to the `output_writer_settings` i.e.: 
+```yaml
+output_writer_settings:
+	write_latent_outputs: True
 ```
 
 ---
@@ -512,6 +522,16 @@ When processing multimer inputs (e.g., hemoglobin α + β chains), OpenFold3 aut
 - Stores raw alignments in `raw/paired/` temporarily
 - Converts them into per-chain `.npz` alignments in [`paired/`](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/output_multimer_with_colabfold_msas/colabfold_msas/paired)
 
+### 4.5 Embeddings
 
+At inference you can instruct the model to produce the pair-rep and single-rep embeddings by {ref}`adjusting the output_writer_settings in your runner.yaml <output-model-embeddings>`. 
 
+This will cause the model to produce a `*_latent_output.pt`, which can be loaded like so and has the following shape. 
 
+```python
+output = torch.load("*_latent_output.pt")
+print(output.keys())
+["si_trunk", "zij_trunk", "atom_positions_predicted"]
+```
+
+If you want to change these outputs, the code is in the [model.py](../../openfold3/projects/of3_all_atom/model.py#L384-L388)
