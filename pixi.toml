@@ -207,6 +207,7 @@ python-lmdb = "*"
 # --- Downloading stuff
 requests = "*"
 awscli = "*"
+awscrt = "*"
 boto3 = "*"
 aria2 = "*"
 

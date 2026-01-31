@@ -43,6 +43,7 @@ dependencies = [
     "pdbeccdutils",
     "requests",
     "awscli",
+    "awscrt",
     "boto3",
     "PyYAML",
     "ijson",
