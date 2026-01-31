@@ -97,7 +97,6 @@ openfold3-cuda12 = { no-default-feature = true, features = [
     "pytorch-conda-cuda",
     "deepspeed",
     "deepspeed-build",
-    "deepspeed-cuda12",
     "cuequivariance-cuda12",
     "openfold3-editable",
     "tests"
@@ -120,7 +119,6 @@ openfold3-cuda13 = { no-default-feature = true, features = [
     "pytorch-pypi-cuda13",
     "deepspeed",
     "deepspeed-build",
-    "deepspeed-cuda13",
     "cuequivariance-cuda13",
     "openfold3-editable",
     "tests"
@@ -319,15 +317,11 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   # N.B. aarch64 is not officially supported (yet), but seems to be working (for OF3-used primitives at least)
   platforms = ["linux-64", "linux-aarch64"]
 
-  # FIXME: A few temporary variants:
-  #   - soon deepspeed will have cuda13 package in CF
-  #   - aarch64 is not officially supported, so at the moment installing from sdist and crossing fingers
-  [feature.deepspeed-cuda12.target.linux-64.dependencies]
-  deepspeed = ">=0.18.3"
-  [feature.deepspeed-cuda12.target.linux-aarch64.pypi-dependencies]
-  deepspeed = ">=0.18.3"
-  [feature.deepspeed-cuda13.pypi-dependencies]
-  deepspeed = ">=0.18.3"
+  # aarch64 is not built in CF, so at the moment installing from sdist and crossing fingers
+  [feature.deepspeed.target.linux-64.dependencies]
+  deepspeed = ">=0.18.5"
+  [feature.deepspeed.target.linux-aarch64.pypi-dependencies]
+  deepspeed = ">=0.18.5"
 
   [feature.deepspeed-build.dependencies]
   # These are only needed to build local extensions the first time
