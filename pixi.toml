@@ -105,10 +105,7 @@ openfold3-cuda13 = { no-default-feature = true, features = [
     "python",
     "openfold3-cpu",
     "cuda13",
-    # pytorch-gpu-conda Blocked by CF not publishing pytorch against CUDA 13 yet.
-    # See: https://github.com/conda-forge/pytorch-cpu-feedstock/pull/457
-    # "pytorch-gpu-conda",
-    "pytorch-pypi-cuda13",
+    "pytorch-conda-cuda",
     "deepspeed",
     "deepspeed-build",
     "cuequivariance-cuda13",
