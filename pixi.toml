@@ -274,6 +274,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
   [feature.cuda12.activation]
   env.TRITON_PTXAS_PATH = "$CONDA_PREFIX/bin/ptxas"
+  env.TRITON_PTXAS_BLACKWELL_PATH = "$TRITON_PTXAS_PATH"
 
 [feature.cuda13]
 
@@ -287,6 +288,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
   [feature.cuda13.activation]
   env.TRITON_PTXAS_PATH = "$CONDA_PREFIX/bin/ptxas"
+  env.TRITON_PTXAS_BLACKWELL_PATH = "$TRITON_PTXAS_PATH"
 
 
 # --- DeepSpeed
