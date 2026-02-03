@@ -15,7 +15,8 @@
 # Platforms and hardware support
 # ------------------------------
 # We support linux-64, linux-aarch64, osx-64 and osx-arm64 platforms and provide the following environments:
-#   - openfold3-cpu (alias for default): base environment without CUDA, to enable developing without GPU
+#   - default: an environment to maintain the rest of environments
+#   - openfold3-cpu: base environment without CUDA, to enable developing without GPU
 #   - openfold3-cuda12 and openfold-cuda13: environments with cuda, deepspeed and cuequivariance
 #   - openfold3-cuda12-pypi and openfold-cuda13-pypi: environments with python and cuda from conda,
 #                                                     everything else from pypi
@@ -39,8 +40,6 @@
 # +---------------+------------+------------+------------+------------+
 #    * works = "works for me"
 #    * to test = "have not tried yet, but environment resolves"
-#    * all cuda13-conda use pypi pytorch; support for CUDA13 in CF is in the making
-#    * while all tests pass, there are large log dumps in CUDA12/CUDA13 pypi + Blackwell
 #
 # Using the environments
 # ----------------------
