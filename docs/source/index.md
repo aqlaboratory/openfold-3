@@ -67,6 +67,9 @@ Inference
 precomputed_msa_generation_how_to
 precomputed_msa_how_to
 template_how_to
+
+Development
+debugging_how_to
 ```
 
 ```{toctree}
