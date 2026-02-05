@@ -70,6 +70,7 @@ test = [
   "pytest-xdist",
   "pytest-cov",
   "pytest-benchmark",
+  "debugpy",
 ]
 
 [project.optional-dependencies]
