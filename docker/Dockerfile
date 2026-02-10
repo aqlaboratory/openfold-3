@@ -138,6 +138,9 @@ FROM devel AS affinity
 
 WORKDIR /opt/openfold3
 
+# Install openfold3 package (required by aqaffinity)
+RUN uv pip install --no-deps .
+
 RUN uv pip install huggingface_hub
 
 RUN --mount=type=secret,id=hf_token \

@@ -427,9 +427,9 @@ class TrainingExperimentRunner(ExperimentRunner):
         """Determine if WandB should be used.
 
         Returns:
-            True if WandB configuration is provided and is rank zero
+            True if WandB configuration is provided
         """
-        return self.logging_config.wandb_config and self.is_rank_zero
+        return self.logging_config.wandb_config
 
     def _wandb_setup(self) -> None:
         """Initialize WandB logging and store configuration files."""
@@ -439,16 +439,17 @@ class TrainingExperimentRunner(ExperimentRunner):
             self.output_dir,
         )
 
-        if self.is_rank_zero and self.logging_config.log_grads:
-            self.wandb.logger.watch(
-                self.lightning_module, log="gradients", log_graph=False
-            )
+        if self.is_rank_zero:
+            if self.logging_config.log_grads:
+                self.wandb.logger.watch(
+                    self.lightning_module, log="gradients", log_graph=False
+                )
 
-        self.wandb.store_configs(
-            self.experiment_config,
-            self.data_module_config,
-            self.model_config,
-        )
+            self.wandb.store_configs(
+                self.experiment_config,
+                self.data_module_config,
+                self.model_config,
+            )
 
     def _setup_logger(self) -> None:
         """Configure the logging settings.
@@ -792,8 +793,10 @@ class WandbHandler:
             id=self.wandb_args.id,
         )
 
-        # Only initialize wandb for rank zero worker
-        # each worker will generate a different id
+        # Only initialize wandb for rank zero worker or
+        # each worker could generate a different id.
+        # Usually handled by WandbLogger, but have seen cases
+        # where it fails to initialize properly.
         if self.is_rank_zero:
             wandb.run = wandb.init(**wandb_init_dict)
 
