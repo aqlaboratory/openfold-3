@@ -7,7 +7,7 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "OpenFold3"
-copyright = "2026, OpenFold Team"
+copyright = "2025, OpenFold Team"
 author = "OpenFold Team"
 
 # -- General configuration ---------------------------------------------------
