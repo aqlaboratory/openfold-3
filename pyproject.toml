@@ -8,6 +8,7 @@ name = "openfold3"
 version = "0.3.1"
 dependencies = [
   "awscli",
+  "awscrt",
   "torch",# ==2.5.1",
   "pytorch-lightning >=2.1",
   "numpy",
