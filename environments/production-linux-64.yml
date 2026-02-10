@@ -39,4 +39,4 @@ dependencies:
   - pip:
       - deepspeed
       - pdbeccdutils
-      - kalign
+      - kalign-python
