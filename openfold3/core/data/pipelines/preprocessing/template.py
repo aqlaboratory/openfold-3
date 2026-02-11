@@ -74,8 +74,11 @@ from openfold3.core.data.primitives.sequence.template import (
 from openfold3.core.data.primitives.structure.component import BiotiteCCDWrapper
 from openfold3.core.data.primitives.structure.metadata import (
     get_asym_id_to_canonical_seq_dict,
+    get_author_to_label_chain_ids,
     get_cif_block,
+    get_label_to_author_chain_id_dict,
     get_release_date,
+    resolve_author_to_label_chain_id,
 )
 from openfold3.core.data.primitives.structure.template import clean_template_atom_array
 from openfold3.core.data.resources.residues import (
@@ -1941,7 +1944,20 @@ class TemplatePreprocessor:
                             "Residue-wise template alignment missing for"
                             f" {template.entry_id} {template.chain_id}. Realigning."
                         )
-                    template_sequence = chain_id_seq_map.get(template.chain_id)
+                    # template.chain_id is an author chain ID; map it to label asym_id
+                    label_to_author = get_label_to_author_chain_id_dict(cif_file)
+                    author_to_label_chain_ids = get_author_to_label_chain_ids(
+                        label_to_author
+                    )
+                    label_chain_id = resolve_author_to_label_chain_id(
+                        author_to_label_chain_ids[template.chain_id],
+                        author_chain_id=template.chain_id,
+                        chain_id_seq_map=chain_id_seq_map,
+                    )
+
+                    template_sequence = chain_id_seq_map.get(label_chain_id)
+
+                    template_sequence = chain_id_seq_map.get(label_chain_id)
                     if template_sequence is None:
                         # TODO: add warning - the chain ID from the alignment is not
                         # present in the structure file

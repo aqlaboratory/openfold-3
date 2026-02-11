@@ -1,7 +1,5 @@
 from pathlib import Path
 
-from biotite.database.rcsb import fetch
-
 from openfold3.core.data.io.sequence.template import (
     A3mParser,
     parse_template_alignment,
@@ -9,12 +7,14 @@ from openfold3.core.data.io.sequence.template import (
 from openfold3.core.data.io.structure.cif import _load_ciffile
 from openfold3.core.data.primitives.structure.metadata import (
     get_asym_id_to_canonical_seq_dict,
+    get_author_to_label_chain_ids,
     get_label_to_author_chain_id_dict,
+    resolve_author_to_label_chain_id,
 )
 
 
 class TestTemplatePreprocessor:
-    def test_template_has_author_chain_id(self, tmp_path):
+    def test_template_has_author_chain_id(self):
         """
         https://github.com/aqlaboratory/openfold-3/issues/101
 
@@ -32,22 +32,18 @@ class TestTemplatePreprocessor:
         template = templates[16]
         assert template.chain_id == "A" and template.entry_id == "1rnb"
 
-        fetch(
-            pdb_ids=template.entry_id,
-            format="cif",
-            target_path=tmp_path,
-        )
-
-        template_structure_file = tmp_path / f"{template.entry_id}.cif"
+        template_structure_file = Path(__file__).parent / f"{template.entry_id}.cif"
 
         cif_file = _load_ciffile(template_structure_file)
 
         chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
-
-        # template.chain_id is an author chain ID; map it to label asym_id
         label_to_author = get_label_to_author_chain_id_dict(cif_file)
-        author_to_label = {v: k for k, v in label_to_author.items()}
-        label_chain_id = author_to_label[template.chain_id]
+        author_to_label_chain_ids = get_author_to_label_chain_ids(label_to_author)
+        label_chain_id = resolve_author_to_label_chain_id(
+            author_to_label_chain_ids[template.chain_id],
+            author_chain_id=template.chain_id,
+            chain_id_seq_map=chain_id_seq_map,
+        )
 
         template_sequence = chain_id_seq_map.get(label_chain_id)
 

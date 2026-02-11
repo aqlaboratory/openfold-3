@@ -342,8 +342,71 @@ def get_label_to_author_chain_id_dict(
     asym_ids = poly_scheme["asym_id"].as_array()
     author_ids = poly_scheme["pdb_strand_id"].as_array()
 
-    _, idx = np.unique(asym_ids, return_index=True)
-    return dict(zip(asym_ids[idx].tolist(), author_ids[idx].tolist(), strict=True))
+    return dict(zip(asym_ids.tolist(), author_ids.tolist(), strict=True))
+
+
+def get_author_to_label_chain_ids(
+    label_to_author: dict[str, str],
+) -> dict[str, list[str]]:
+    """Get a mapping from author (pdb_strand_id) chain ID to label asym_ids.
+
+    Multiple label asym_ids can map to the same author chain ID for homomeric
+    chains.  The returned lists are sorted by label asym_id for determinism.
+
+    Args:
+        cif_file:
+            Parsed mmCIF file containing the structure.
+
+    Returns:
+        A dictionary mapping author chain IDs to sorted lists of label asym IDs.
+    """
+    author_to_labels: dict[str, list[str]] = defaultdict(list)
+    for label, author in label_to_author.items():
+        author_to_labels[author].append(label)
+    for labels in author_to_labels.values():
+        labels.sort()
+    return dict(author_to_labels)
+
+
+def resolve_author_to_label_chain_id(
+    matching_labels: dict[str, list[str]],
+    author_chain_id: str,
+    chain_id_seq_map: dict[str, str],
+) -> str:
+    """Resolve an author (pdb_strand_id) chain ID to a single label asym_id.
+
+    For homomeric chains, multiple label asym_ids share the same author chain
+    ID.  This function returns the lexicographically smallest label asym_id.
+    When *asym_id_to_seq* is provided, it additionally verifies that all
+    matching label chains carry the same canonical sequence.
+
+    Args:
+        cif_file:
+            Parsed mmCIF file containing the structure.
+        author_chain_id:
+            The author chain ID to resolve.
+        asym_id_to_seq:
+            Optional mapping from label asym_id to canonical sequence
+            (as returned by :func:`get_asym_id_to_canonical_seq_dict`).
+            When provided, an error is raised if homomeric chains have
+            differing sequences.
+
+    Returns:
+        The label asym_id corresponding to *author_chain_id*.
+
+    Raises:
+        KeyError: If *author_chain_id* is not found.
+        ValueError: If homomeric chains have differing sequences.
+    """
+    if len(matching_labels) > 1:
+        seqs = {chain_id_seq_map[label] for label in matching_labels}
+        if len(seqs) != 1:
+            raise ValueError(
+                f"Expected identical sequences for homomeric chains "
+                f"mapping to author ID '{author_chain_id}', "
+                f"got {len(seqs)} distinct sequences"
+            )
+    return matching_labels[0]
 
 
 def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[str]]:
