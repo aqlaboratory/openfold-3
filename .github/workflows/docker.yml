@@ -41,7 +41,7 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
 
   push-to-registry:
-    name: Push Docker image to Docker Hub
+    name: Push Docker image to registries
     runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
     needs:
       - start-aws-runner
@@ -54,7 +54,18 @@ jobs:
       - name: Check out the repo
         uses: actions/checkout@v6
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@28fdb31ff34708d19615a74d67103ddc2ea9725c
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Log in to Docker Hub
+        if: github.repository == 'aqlaboratory/openfold-3'
         uses: docker/login-action@28fdb31ff34708d19615a74d67103ddc2ea9725c
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -64,7 +75,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@a60f0f62b5c12316066c8db464bfb2faafd7907b
         with:
-          images: openfoldconsortium/openfold3
+          images: |
+            name=ghcr.io/${{ github.repository }}/openfold3-docker
+            name=openfoldconsortium/openfold3,enable=${{ github.repository == 'aqlaboratory/openfold-3' }}
           tags: |
             type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
             type=raw,value=${{ inputs.additional_tags }},enable=${{ inputs.additional_tags != '' && github.event_name == 'workflow_dispatch' }}
@@ -75,12 +88,14 @@ jobs:
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
           context: .
-          file: ./Dockerfile
+          file: docker/Dockerfile
+          target: devel
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Generate artifact attestation
+        if: github.repository == 'aqlaboratory/openfold-3'
         uses: actions/attest-build-provenance@v3
         with:
           subject-name: index.docker.io/openfoldconsortium/openfold3
