@@ -102,16 +102,6 @@ openfold3-cuda12 = { no-default-feature = true, features = [
     "openfold3-editable",
     "tests"
 ] }
-openfold3-cuda12-safe = { no-default-feature = true, features = [
-    "python",
-    "openfold3-cpu",
-    "cuda12",
-    "pytorch-conda-cuda",
-    "deepspeed",
-    "deepspeed-build",
-    "openfold3-editable",
-    "tests"
-] }
 openfold3-cuda13 = { no-default-feature = true, features = [
     "python",
     "openfold3-cpu",
@@ -120,16 +110,6 @@ openfold3-cuda13 = { no-default-feature = true, features = [
     "deepspeed",
     "deepspeed-build",
     "cuequivariance-cuda13",
-    "openfold3-editable",
-    "tests"
-] }
-openfold3-cuda13-safe = { no-default-feature = true, features = [
-    "python",
-    "openfold3-cpu",
-    "cuda13",
-    "pytorch-conda-cuda",
-    "deepspeed",
-    "deepspeed-build",
     "openfold3-editable",
     "tests"
 ] }
