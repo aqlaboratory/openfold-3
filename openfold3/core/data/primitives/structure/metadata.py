@@ -370,7 +370,6 @@ def get_author_to_label_chain_ids(
 
 def resolve_author_to_label_chain_id(
     matching_labels: dict[str, list[str]],
-    author_chain_id: str,
     chain_id_seq_map: dict[str, str],
 ) -> str:
     """Resolve an author (pdb_strand_id) chain ID to a single label asym_id.
@@ -383,8 +382,6 @@ def resolve_author_to_label_chain_id(
     Args:
         cif_file:
             Parsed mmCIF file containing the structure.
-        author_chain_id:
-            The author chain ID to resolve.
         asym_id_to_seq:
             Optional mapping from label asym_id to canonical sequence
             (as returned by :func:`get_asym_id_to_canonical_seq_dict`).
@@ -403,7 +400,6 @@ def resolve_author_to_label_chain_id(
         if len(seqs) != 1:
             raise ValueError(
                 f"Expected identical sequences for homomeric chains "
-                f"mapping to author ID '{author_chain_id}', "
                 f"got {len(seqs)} distinct sequences"
             )
     return matching_labels[0]

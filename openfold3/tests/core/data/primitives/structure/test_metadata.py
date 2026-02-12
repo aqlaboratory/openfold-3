@@ -53,25 +53,27 @@ class TestGetLabelToAuthorChainIdDict:
 
 
 class TestGetAuthorToLabelChainIds:
-    def test_single_chain(self):
-        """Single label → author entry produces a single-element list."""
-        result = get_author_to_label_chain_ids({"A": "X"})
-        assert result == {"X": ["A"]}
-
-    def test_multiple_distinct_chains(self):
-        """Distinct author IDs each get their own list."""
-        result = get_author_to_label_chain_ids({"A": "X", "B": "Y", "C": "Z"})
-        assert result == {"X": ["A"], "Y": ["B"], "Z": ["C"]}
-
-    def test_homomeric_chains(self):
-        """Multiple label asym_ids mapping to the same author ID are grouped."""
-        result = get_author_to_label_chain_ids({"A": "X", "B": "X"})
-        assert result == {"X": ["A", "B"]}
-
-    def test_homomeric_chains_sorted(self):
-        """Grouped label IDs are sorted regardless of input order."""
-        result = get_author_to_label_chain_ids({"C": "X", "A": "X", "B": "X"})
-        assert result == {"X": ["A", "B", "C"]}
+    @pytest.mark.parametrize(
+        ("label_to_author", "expected"),
+        [
+            pytest.param({"A": "X"}, {"X": ["A"]}, id="single_chain"),
+            pytest.param(
+                {"A": "X", "B": "Y", "C": "Z"},
+                {"X": ["A"], "Y": ["B"], "Z": ["C"]},
+                id="multiple_distinct_chains",
+            ),
+            pytest.param(
+                {"A": "X", "B": "X"}, {"X": ["A", "B"]}, id="homomeric_chains"
+            ),
+            pytest.param(
+                {"C": "X", "A": "X", "B": "X"},
+                {"X": ["A", "B", "C"]},
+                id="homomeric_chains_sorted",
+            ),
+        ],
+    )
+    def test_author_to_labels(self, label_to_author, expected):
+        assert get_author_to_label_chain_ids(label_to_author) == expected
 
 
 class TestResolveAuthorToLabelChainId:
@@ -79,7 +81,6 @@ class TestResolveAuthorToLabelChainId:
         """Single matching label is returned directly."""
         result = resolve_author_to_label_chain_id(
             matching_labels=["A"],
-            author_chain_id="X",
             chain_id_seq_map={"A": "MSEQ"},
         )
         assert result == "A"
@@ -88,7 +89,6 @@ class TestResolveAuthorToLabelChainId:
         """For homomeric chains with identical sequences, returns the first label."""
         result = resolve_author_to_label_chain_id(
             matching_labels=["A", "B", "C"],
-            author_chain_id="X",
             chain_id_seq_map={"A": "MSEQ", "B": "MSEQ", "C": "MSEQ"},
         )
         assert result == "A"
@@ -98,15 +98,5 @@ class TestResolveAuthorToLabelChainId:
         with pytest.raises(ValueError, match="got 2 distinct sequences"):
             resolve_author_to_label_chain_id(
                 matching_labels=["A", "B"],
-                author_chain_id="X",
                 chain_id_seq_map={"A": "MSEQ", "B": "MOTHER"},
-            )
-
-    def test_homomeric_three_labels_two_distinct_raises(self):
-        """Raises ValueError even when only some of the sequences differ."""
-        with pytest.raises(ValueError, match="got 2 distinct sequences"):
-            resolve_author_to_label_chain_id(
-                matching_labels=["A", "B", "C"],
-                author_chain_id="X",
-                chain_id_seq_map={"A": "MSEQ", "B": "MSEQ", "C": "OTHER"},
             )

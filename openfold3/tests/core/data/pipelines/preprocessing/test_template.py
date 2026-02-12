@@ -41,7 +41,6 @@ class TestTemplatePreprocessor:
         author_to_label_chain_ids = get_author_to_label_chain_ids(label_to_author)
         label_chain_id = resolve_author_to_label_chain_id(
             author_to_label_chain_ids[template.chain_id],
-            author_chain_id=template.chain_id,
             chain_id_seq_map=chain_id_seq_map,
         )
 
