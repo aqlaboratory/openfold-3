@@ -2088,18 +2088,11 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/zstd-1.5.7-h85ac4a6_6.conda
       - pypi: https://files.pythonhosted.org/packages/24/95/ce1bbe59adb442390f57ffc4a4b93799ce9babd755e82db0b4a55fe87ca9/biotite-1.2.0.tar.gz
       - pypi: https://files.pythonhosted.org/packages/07/21/2287edfd0d2569639eea706e25c39e63b46a384cf1712db8ea05768317b0/biotraj-1.2.2.tar.gz
-      - pypi: https://files.pythonhosted.org/packages/81/63/447db5f84bc9399681ba984821e5406cde0bcc580622d9bdd01057940ea2/cuequivariance-0.7.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/0b/c6/70b5b423029dc38759b7b96311fee568f7ee3d527b2a57564b83f4174ca4/cuequivariance_ops_cu12-0.7.0-py3-none-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl
-      - pypi: https://files.pythonhosted.org/packages/6b/6a/adb1678744ef04f5887a9b20f1cfe2d3c4932a2564c208ac0fe5c98f25bc/cuequivariance_ops_torch_cu12-0.7.0-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl
-      - pypi: https://files.pythonhosted.org/packages/98/88/fd38997baf849608281eafdfa21b616db20789d407889427da90cddb0e50/cuequivariance_torch-0.7.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ca/0a/97f1896665690fb6199342284a6afb96cdfe10603f5edf83d1386ecfd081/deepspeed-0.18.5.tar.gz
       - pypi: https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1f/7f/13cd798d180af4bf4c0ceddeefba2b864a63c71645abc0308b768d67bb81/hjson-3.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/d3/68/93180dce57f684a61a88a45ed13047558ded2be46f03acb8dec6d7c513af/msgpack-1.1.2-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/8e/de/6e1cd6b84b412ac1ef327b76f0641aeb5dcc01e9d3f9eee0286d0c34fd93/ninja-1.13.0-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl
-      - pypi: https://files.pythonhosted.org/packages/82/6c/90d3f532f608a03a13c1d6c16c266ffa3828e8011b1549d3b61db2ad59f5/nvidia_cublas_cu12-12.9.1.4-py3-none-manylinux_2_27_aarch64.whl
-      - pypi: https://files.pythonhosted.org/packages/fd/72/fb2af0d259a651affdce65fd6a495f0e07a685a0136baf585c5065204ee7/nvidia_ml_py-13.590.48-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: ./
   openfold3-cuda12-pypi:
     channels:
@@ -2468,10 +2461,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/9d/10/1630db1edd8ce675124a2ee0f7becc603d2bb7b345c2387b4b95c6907094/coverage-7.13.2-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/05/8b/b4b2d1c7775fa403b64333e720cfcfccef8dcb9cdeb99947061ca5a77628/cuda_bindings-12.9.4-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/0b/02/4dbe7568a42e46582248942f54dc64ad094769532adbe21e525e4edf7bc4/cuda_pathfinder-1.3.3-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/81/63/447db5f84bc9399681ba984821e5406cde0bcc580622d9bdd01057940ea2/cuequivariance-0.7.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/0b/c6/70b5b423029dc38759b7b96311fee568f7ee3d527b2a57564b83f4174ca4/cuequivariance_ops_cu12-0.7.0-py3-none-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl
-      - pypi: https://files.pythonhosted.org/packages/6b/6a/adb1678744ef04f5887a9b20f1cfe2d3c4932a2564c208ac0fe5c98f25bc/cuequivariance_ops_torch_cu12-0.7.0-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl
-      - pypi: https://files.pythonhosted.org/packages/98/88/fd38997baf849608281eafdfa21b616db20789d407889427da90cddb0e50/cuequivariance_torch-0.7.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ca/0a/97f1896665690fb6199342284a6afb96cdfe10603f5edf83d1386ecfd081/deepspeed-0.18.5.tar.gz
       - pypi: https://files.pythonhosted.org/packages/93/69/e391bd51bc08ed9141ecd899a0ddb61ab6465309f1eb470905c0c8868081/docutils-0.19-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2a/09/f8d8f8f31e4483c10a906437b4ce31bdf3d6d417b73fe33f1a8b59e34228/einops-0.8.2-py3-none-any.whl
@@ -2516,12 +2505,10 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/03/99/686ff9bf3a82a531c62b1a5c614476e8dfa24a9d89067aeedf3592ee4538/nvidia_cusolver_cu12-11.7.5.82-py3-none-manylinux_2_27_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/5e/6f/8710fbd17cdd1d0fc3fea7d36d5b65ce1933611c31e1861da330206b253a/nvidia_cusparse_cu12-12.5.10.65-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/73/b9/598f6ff36faaece4b3c50d26f50e38661499ff34346f00e057760b35cc9d/nvidia_cusparselt_cu12-0.7.1-py3-none-manylinux2014_aarch64.whl
-      - pypi: https://files.pythonhosted.org/packages/fd/72/fb2af0d259a651affdce65fd6a495f0e07a685a0136baf585c5065204ee7/nvidia_ml_py-13.590.48-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/bb/1c/857979db0ef194ca5e21478a0612bcdbbe59458d7694361882279947b349/nvidia_nccl_cu12-2.27.5-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/97/bc/2dcba8e70cf3115b400fef54f213bcd6715a3195eba000f8330f11e40c45/nvidia_nvjitlink_cu12-12.9.86-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/1d/6a/03aa43cc9bd3ad91553a88b5f6fb25ed6a3752ae86ce2180221962bc2aa5/nvidia_nvshmem_cu12-3.4.5-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/c4/e4/82155e4aaedb41621087ba219c95e99c5e417f37a7649b4fb6ec32dcb14d/nvidia_nvtx_cu12-12.9.79-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl
-      - pypi: https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b7/b9/c538f279a4e237a006a2c98387d081e9eb060d203d8ed34467cc0f0b9b53/packaging-26.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ba/da/53bbc8c5363b7e5bd10f9ae59ab250fc7a382ea6ba08e4d06d8694370354/pandas-3.0.0-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/5d/94/77773171d66dac29e59a22df87505e05faba30a2c4a1faceff5262228a10/pdbeccdutils-1.0.0-py3-none-any.whl
@@ -9573,18 +9560,6 @@ packages:
   - numpy ; extra == 'test'
   - pytest ; extra == 'test'
   requires_python: '>=3.10'
-- pypi: https://files.pythonhosted.org/packages/0b/c6/70b5b423029dc38759b7b96311fee568f7ee3d527b2a57564b83f4174ca4/cuequivariance_ops_cu12-0.7.0-py3-none-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl
-  name: cuequivariance-ops-cu12
-  version: 0.7.0
-  sha256: c7ebc510c273add481c5f0b3dbdf05d5cc2db2d4b1327436fca60e92623494da
-  requires_dist:
-  - nvidia-cublas-cu12>=12.5.0
-  - tqdm
-  - nvidia-ml-py
-  - platformdirs
-  - numpy ; extra == 'test'
-  - pytest ; extra == 'test'
-  requires_python: '>=3.10'
 - pypi: https://files.pythonhosted.org/packages/3e/48/ac08d789556fe1818cb4a25d7f1fce781579be1cdc2c2eb8cb83f1406cd6/cuequivariance_ops_cu13-0.7.0-py3-none-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
   name: cuequivariance-ops-cu13
   version: 0.7.0
@@ -9596,24 +9571,6 @@ packages:
   - platformdirs
   - numpy ; extra == 'test'
   - pytest ; extra == 'test'
-  requires_python: '>=3.10'
-- pypi: https://files.pythonhosted.org/packages/6b/6a/adb1678744ef04f5887a9b20f1cfe2d3c4932a2564c208ac0fe5c98f25bc/cuequivariance_ops_torch_cu12-0.7.0-cp313-cp313-manylinux_2_26_aarch64.manylinux_2_28_aarch64.whl
-  name: cuequivariance-ops-torch-cu12
-  version: 0.7.0
-  sha256: 881b7d83a3d36c6092859a164d8ba2413a1a4de1f062f2af2c84abe0123ac55f
-  requires_dist:
-  - cuequivariance-ops-cu12==0.7.0
-  - scipy
-  - torch>=2.4 ; extra == 'test'
-  - numpy>=1.23,<2.0a0 ; extra == 'test'
-  - pytest ; extra == 'test'
-  - onnx ; extra == 'plugins'
-  - onnxscript ; extra == 'plugins'
-  - onnxruntime ; extra == 'plugins'
-  - onnxruntime-extensions ; extra == 'plugins'
-  - tensorrt-cu12 ; extra == 'plugins'
-  - cupy-cuda12x ; extra == 'plugins'
-  - polygraphy ; extra == 'plugins'
   requires_python: '>=3.10'
 - pypi: https://files.pythonhosted.org/packages/85/c5/1f264077b7ecd4e09fd7f61213b1276663fcaa535f23cdb12159742a85a6/cuequivariance_ops_torch_cu12-0.7.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
   name: cuequivariance-ops-torch-cu12
@@ -16839,7 +16796,7 @@ packages:
 - pypi: ./
   name: openfold3
   version: 0.3.1
-  sha256: ca14ad275c042e674b4e0368f7b9c03ba8f53ef320448ac2673ce78f2a141992
+  sha256: 3c7c83c3deedfae2b205180453a4d0736927e4ec07ab2d422eb5b31e62c408f4
   requires_dist:
   - numpy
   - scipy

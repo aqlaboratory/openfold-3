@@ -36,6 +36,8 @@
 # | H100 cuda13   | to test    | to test    | to test    | to test    |
 # | B300 cuda12   | works      | works      | to test    | to test    |
 # | B300 cuda13   | works      | works      | to test    | to test    |
+# | GB10 cuda12   | n/a        | n/a        | works      | works      |
+# | GB10 cuda13   | n/a        | n/a        | works      | works      |
 # | CPU           | works      | n/a        | to test    | n/a        |
 # +---------------+------------+------------+------------+------------+
 #    * works = "works for me"
@@ -368,7 +370,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 # 2.1) No aarch wheel for cuequivariance-ops-torch-cu13 <0.8
 #
 
-[feature.cuequivariance-cuda12.pypi-dependencies]
+[feature.cuequivariance-cuda12.target.linux-64.pypi-dependencies]
 cuequivariance = "<0.8"
 cuequivariance-torch = "<0.8"
 cuequivariance-ops-torch-cu12 = "<0.8"

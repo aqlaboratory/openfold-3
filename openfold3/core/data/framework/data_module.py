@@ -162,8 +162,7 @@ class DataModuleConfig(BaseModel):
 # Custom worker init function with manual data seed
 # (top level to enable pickling working regardless of forking strategy and platform)
 def _worker_init_function_with_data_seed(
-        self,
-        worker_id: int, rank: int | None = None
+    self, worker_id: int, rank: int | None = None
 ) -> None:
     """Modified default Lightning worker_init_fn with manual data seed.
 
@@ -182,19 +181,13 @@ def _worker_init_function_with_data_seed(
     process_seed = self.data_seed
     # back out the base seed so we can use all the bits
     base_seed = process_seed - worker_id
-    seed_sequence = _generate_seed_sequence(
-        base_seed, worker_id, global_rank, count=4
-    )
+    seed_sequence = _generate_seed_sequence(base_seed, worker_id, global_rank, count=4)
     torch.manual_seed(seed_sequence[0])  # torch takes a 64-bit seed
-    random.seed(
-        (seed_sequence[1] << 32) | seed_sequence[2]
-    )  # combine two 64-bit seeds
+    random.seed((seed_sequence[1] << 32) | seed_sequence[2])  # combine two 64-bit seeds
     if _NUMPY_AVAILABLE:
         import numpy as np
 
-        np.random.seed(
-            seed_sequence[3] & 0xFFFFFFFF
-        )  # numpy takes 32-bit seed only
+        np.random.seed(seed_sequence[3] & 0xFFFFFFFF)  # numpy takes 32-bit seed only
 
 
 class DataModule(pl.LightningDataModule):
@@ -226,7 +219,10 @@ class DataModule(pl.LightningDataModule):
 
     def setup(self, stage=None):
         from functools import partial
-        self.worker_init_function_with_data_seed = partial(_worker_init_function_with_data_seed, self)
+
+        self.worker_init_function_with_data_seed = partial(
+            _worker_init_function_with_data_seed, self
+        )
         self.generator = torch.Generator(device="cpu").manual_seed(self.data_seed)
 
         self.datasets_by_mode = {k: [] for k in DatasetMode}
@@ -447,7 +443,9 @@ class DataModule(pl.LightningDataModule):
             generator=self.generator,
             worker_init_fn=self.worker_init_function_with_data_seed,
             # https://github.com/pytorch/pytorch/issues/87688
-            multiprocessing_context = "fork" if torch.backends.mps.is_available() and num_workers else None
+            multiprocessing_context="fork"
+            if torch.backends.mps.is_available() and num_workers
+            else None,
         )
 
     def train_dataloader(self) -> DataLoader:
