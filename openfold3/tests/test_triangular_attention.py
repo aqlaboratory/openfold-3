@@ -23,7 +23,12 @@ from openfold3.tests.config import consts
 # biased by z[i, k]. False would transpose internally for the
 # "ending node" variant (columns attend to columns).
 @pytest.mark.parametrize("starting", [True, False])
-def test_shape(starting):
+def test_shape(starting, ndarrays_regression):
+    # NOTE: seeding may need further work — torch.manual_seed controls both
+    # the random input and the module's weight init. If init changes upstream,
+    # regenerate snapshots with: pytest --force-regen
+    torch.manual_seed(42)
+
     # c_z: pair representation channel dim (128 in production)
     c_z = consts.c_z
     # c: attention hidden dim (production uses 32; smaller here for speed)
@@ -36,6 +41,7 @@ def test_shape(starting):
         no_heads,
         starting=starting,
     )
+    tan.eval()
 
     batch_size = consts.batch_size
     n_res = consts.n_res
@@ -44,8 +50,16 @@ def test_shape(starting):
     x = torch.rand((batch_size, n_res, n_res, c_z))
     shape_before = x.shape
     # chunk_size=None -> no memory-saving chunking, full attention in one pass
-    x = tan(x, chunk_size=None)
+    with torch.no_grad():
+        x = tan(x, chunk_size=None)
     shape_after = x.shape
 
     # Shape must be preserved for the residual addition z = z + tri_att(z)
     assert shape_before == shape_after
+
+    # Snapshot regression: output must be numerically identical across runs.
+    # Regenerate with: pytest --force-regen
+    ndarrays_regression.check(
+        {"output": x.cpu().numpy()},
+        default_tolerance=dict(atol=1e-6, rtol=1e-5),
+    )
