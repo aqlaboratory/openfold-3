@@ -233,6 +233,34 @@ class TestFixArginineNaming:
 
         assert "_atom_idx_arginine_fix" not in result.get_annotation_categories()
 
+    @pytest.mark.parametrize(
+        "atoms_to_remove",
+        [
+            ["NH1", "NH2"],  # Missing guanidinium nitrogens (e.g., PDB 4YVD)
+            ["NH1", "NH2", "CD"],  # Missing CD and guanidinium (e.g., PDB 8DMQ)
+            ["CD"],  # Missing only CD
+            ["NH1"],  # Missing only NH1
+            ["NH2"],  # Missing only NH2
+        ],
+    )
+    def test_skips_arginine_with_missing_atoms(
+        self, bad_arginine_atom_array, atoms_to_remove
+    ):
+        """When an arginine is missing required atoms, it is skipped without error.
+
+        This represents real-world cases where an arginine residue is only partially
+        resolved in the crystal structure. See PDB entries like 4YVD and 8DMQ.
+        """
+        mask = ~np.isin(bad_arginine_atom_array.atom_name, atoms_to_remove)
+        incomplete_arg = bad_arginine_atom_array[mask]
+
+        # Should not raise an error
+        result = fix_arginine_naming(incomplete_arg)
+
+        # Verify the array is returned unchanged (no swapping possible)
+        assert len(result) == len(incomplete_arg)
+        assert np.all(result.atom_name == incomplete_arg.atom_name)
+
 
 @pytest.fixture
 def atom_array_with_crystallization_aids():
