@@ -71,6 +71,7 @@ test = [
   "pytest-xdist",
   "pytest-cov",
   "pytest-benchmark",
+  "pytest-regressions",
   "debugpy",
 ]
 
