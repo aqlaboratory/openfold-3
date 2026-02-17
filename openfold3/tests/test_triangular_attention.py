@@ -27,7 +27,7 @@ def test_shape(starting, ndarrays_regression):
     # NOTE: seeding may need further work — torch.manual_seed controls both
     # the random input and the module's weight init. If init changes upstream,
     # regenerate snapshots with: pytest --force-regen
-    torch.manual_seed(42)
+    torch.manual_seed(123)
 
     # c_z: pair representation channel dim (128 in production)
     c_z = consts.c_z
@@ -41,6 +41,11 @@ def test_shape(starting, ndarrays_regression):
         no_heads,
         starting=starting,
     )
+    # AlphaFold initializes the output projection to zero (so residual blocks
+    # start as identity). Reinitialize all params so the test exercises the
+    # actual computation and produces non-trivial output.
+    for p in tan.parameters():
+        torch.nn.init.normal_(p, std=0.01)
     tan.eval()
 
     batch_size = consts.batch_size
@@ -56,6 +61,11 @@ def test_shape(starting, ndarrays_regression):
 
     # Shape must be preserved for the residual addition z = z + tri_att(z)
     assert shape_before == shape_after
+
+    # Guard against trivial all-zero output (e.g. from zero-initialized weights)
+    assert x.abs().max().item() > 0, (
+        "Output is all zeros — snapshot would be meaningless"
+    )
 
     # Snapshot regression: output must be numerically identical across runs.
     # Regenerate with: pytest --force-regen
