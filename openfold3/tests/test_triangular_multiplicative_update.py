@@ -48,8 +48,7 @@ class TestTriangularMultiplicativeUpdate(unittest.TestCase):
                 c,
             )
 
-        # NOTE: n_res is set to c_z (128) here, not consts.n_res (22)
-        n_res = consts.c_z
+        n_res = consts.n_res
         batch_size = consts.batch_size
 
         # Pair representation: [batch, N_residues, N_residues, C_z]
