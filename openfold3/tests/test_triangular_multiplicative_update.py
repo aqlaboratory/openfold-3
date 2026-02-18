@@ -37,13 +37,20 @@ def _make_module(c_z, c):
     return TriangleMultiplicationOutgoing(c_z, c)
 
 
-def test_shape():
+def test_shape(ndarrays_regression):
+    torch.manual_seed(123)
+
     # c_z: pair representation channel dim (128 in production)
     c_z = consts.c_z
     # c: hidden projection dim (production uses ~128; smaller here for speed)
     c = 11
 
     tm = _make_module(c_z, c)
+    # Reinitialize all params to non-trivial values (some layers may be
+    # zero-initialized by default for residual identity at init)
+    for p in tm.parameters():
+        torch.nn.init.normal_(p, std=0.01)
+    tm.eval()
 
     n_res = consts.n_res
     batch_size = consts.batch_size
@@ -53,8 +60,21 @@ def test_shape():
     # Binary mask: which residue pairs are valid
     mask = torch.randint(0, 2, size=(batch_size, n_res, n_res))
     shape_before = x.shape
-    x = tm(x, mask)
+    with torch.no_grad():
+        x = tm(x, mask)
     shape_after = x.shape
 
     # Shape must be preserved for the residual addition z = z + tri_mul(z)
     assert shape_before == shape_after
+
+    # Guard against trivial all-zero output (e.g. from zero-initialized weights)
+    assert x.abs().max().item() > 0, (
+        "Output is all zeros — snapshot would be meaningless"
+    )
+
+    # Snapshot regression: output must be numerically identical across runs.
+    # Regenerate with: pytest --force-regen
+    ndarrays_regression.check(
+        {"output": x.cpu().numpy()},
+        default_tolerance=dict(atol=1e-6, rtol=1e-5),
+    )
