@@ -78,7 +78,7 @@ version = "0.1.0"
 # as we use task.default-environment
 # hoping for environment markers to also come to conda dependencies, as it would help simplifying this toml
 # https://github.com/prefix-dev/pixi/blob/main/CHANGELOG.md#-highlights-1
-requires-pixi = ">=0.63.1"
+requires-pixi = ">=0.64"
 
 # --- Environments
 
@@ -383,13 +383,11 @@ export-conda.cmd = [
     "workspace",
     "export",
     "conda-environment",
+    "--environment",
+    "{{ environment }}",
+    "--platform",
+    "{{ platform }}",
     ">>$PIXI_PROJECT_ROOT/environments/{{ environment }}_{{ platform }}.yml",
-    "&&",
-    "echo",
-    "\nvariables:\n  CUTLASS_PATH: DS_IGNORE_CUTLASS_DETECTION",
-    ">>$PIXI_PROJECT_ROOT/environments/{{ environment }}_{{ platform }}.yml",
-    # N.B.: this will add noise to the CPU-only environments, maybe guard with an arg / conditional
-    # We would also need to add the isolation extension build envs, as pixi does not do yet, but these are optional
 ]
 
 export-conda-all.depends-on = [
