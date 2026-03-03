@@ -23,7 +23,6 @@ import traceback
 import pandas as pd
 import torch
 from biotite.structure import AtomArray
-from biotite.structure.io import pdbx
 from torch.utils.data import Dataset
 
 from openfold3.core.config.msa_pipeline_configs import MsaSampleProcessorInputInference
@@ -56,6 +55,7 @@ from openfold3.core.data.pipelines.sample_processing.msa import (
 from openfold3.core.data.pipelines.sample_processing.template import (
     process_template_structures_of3,
 )
+from openfold3.core.data.primitives.structure.biotite_ccd import configure_biotite_ccd
 from openfold3.core.data.primitives.structure.component import BiotiteCCDWrapper
 from openfold3.core.data.primitives.structure.query import (
     StructureWithReferenceMolecules,
@@ -112,12 +112,13 @@ class InferenceDataset(Dataset):
         if self.template_preprocessor_settings.preparse_structures:
             self.template_preprocessor_settings.structure_file_format = "npz"
 
-        # Parse CCD
-        if dataset_config.ccd_file_path is not None:
-            logger.debug("Parsing CCD file.")
-            self.ccd = pdbx.CIFFile.read(dataset_config.ccd_file_path)
-        else:
-            self.ccd = BiotiteCCDWrapper()
+        # If a custom CCD file is provided, overwrite Biotite's global CCD.
+        # This tempdir is assigned to a dummy handle to keep it alive for the duration
+        # of the dataset instance
+        self._tmp_ccd_dir_handle = configure_biotite_ccd(dataset_config.ccd_file_path)
+
+        # Template code requires "conventional" CIF format
+        self._ccd = BiotiteCCDWrapper()
 
         # Create individual datapoint cache (allows rerunning the same query with
         # different seeds)
@@ -264,7 +265,7 @@ class InferenceDataset(Dataset):
             template_structures_directory=self.template_preprocessor_settings.structure_directory,
             template_structure_array_directory=self.template_preprocessor_settings.structure_array_directory,
             template_file_format=self.template_preprocessor_settings.structure_file_format,
-            ccd=self.ccd,
+            ccd=self._ccd,
         )
 
         # Featurization
@@ -359,3 +360,11 @@ class InferenceDataset(Dataset):
 
     def __len__(self):
         return len(self.datapoint_cache)
+
+    def close(self) -> None:
+        """Release temporary resources owned by this dataset instance."""
+        handle = self._tmp_ccd_dir_handle
+        self._tmp_ccd_dir_handle = None
+
+        if handle is not None:
+            handle.cleanup()

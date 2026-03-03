@@ -546,6 +546,15 @@ class InferenceDataModule(DataModule):
             self.inference_config.query_set = placeholder[0]
         super().setup()
 
+    def teardown(self, stage=None):
+        """Release prediction dataset resources after inference."""
+        prediction_dataset = self.datasets_by_mode.get(DatasetMode.prediction)
+        close_fn = getattr(prediction_dataset, "close", None)
+        if callable(close_fn):
+            close_fn()
+
+        super().teardown(stage)
+
 
 # TODO: Remove debug logic and improve handlingi of training only features
 def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):

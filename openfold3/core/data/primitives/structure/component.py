@@ -16,7 +16,7 @@
 import logging
 from collections import defaultdict
 from collections.abc import Generator, Iterable
-from functools import cached_property
+from functools import cached_property, lru_cache
 from typing import Literal, NamedTuple, TypeAlias
 
 import biotite.structure as struc
@@ -24,7 +24,7 @@ import gemmi
 import numpy as np
 import requests
 from biotite.structure import AtomArray, BondType, info
-from biotite.structure.io.pdbx import CIFFile
+from biotite.structure.io.pdbx import CIFBlock, CIFCategory, CIFFile
 from pdbeccdutils.core import ccd_reader
 from pdbeccdutils.core.ccd_reader import Component
 from rdkit import Chem
@@ -717,3 +717,131 @@ class BiotiteCCDWrapper(_ImplementsGet):
                 )
 
             return result
+
+
+def _bcif_to_cif_category(bcif_category) -> CIFCategory:
+    """Convert a BinaryCIF category from Biotite to a text CIF category.
+
+    Args:
+        bcif_category:
+            A BinaryCIF category object from Biotite's CCD access functions.
+
+    Returns:
+        A text-based CIFCategory object that can be serialized.
+    """
+    # Get column names from the BinaryCIF category
+    column_names = list(bcif_category.keys())
+
+    # Build a dictionary of column data
+    column_data = {}
+    for col_name in column_names:
+        col_array = bcif_category[col_name].as_array()
+        # Convert numpy array to list of strings
+        column_data[col_name] = [str(val) for val in col_array]
+
+    # Create a new CIFCategory with the data
+    return CIFCategory(column_data)
+
+
+def cif_block_from_biotite_ccd(ccd_code: str) -> CIFBlock:
+    """Convert Biotite internal CCD entry to text CIF block.
+
+    Args:
+        ccd_code:
+            The CCD code to look up in Biotite's internal CCD.
+
+    Returns:
+        A CIFBlock that can be serialized to text CIF format.
+
+    Raises:
+        KeyError: If the component is not found in Biotite's CCD.
+    """
+    chem_comp = info.get_from_ccd("chem_comp", ccd_code)
+    chem_comp_atom = info.get_from_ccd("chem_comp_atom", ccd_code)
+    chem_comp_bond = info.get_from_ccd("chem_comp_bond", ccd_code)
+
+    if chem_comp is None:
+        raise KeyError(f"Component {ccd_code} not found in CCD")
+    if chem_comp_atom is None:
+        raise KeyError(
+            f"Component {ccd_code} missing required category 'chem_comp_atom' in CCD"
+        )
+
+    # Convert BinaryCIF categories to text CIF categories
+    block = CIFBlock(name=ccd_code)
+    block["chem_comp"] = _bcif_to_cif_category(chem_comp)
+    block["chem_comp_atom"] = _bcif_to_cif_category(chem_comp_atom)
+    if chem_comp_bond is not None:
+        block["chem_comp_bond"] = _bcif_to_cif_category(chem_comp_bond)
+
+    return block
+
+
+def mol_from_biotite_ccd(ccd_code: str) -> AnnotatedMol:
+    """Builds mol from Biotite's internal CCD using pdbeccdutils.
+
+    Args:
+        ccd_code:
+            The CCD code of the component to build.
+
+    Returns:
+        An AnnotatedMol with atom names and (potentially) ideal/model conformers.
+    """
+    cif_block = cif_block_from_biotite_ccd(ccd_code)
+    cif_str = cif_block.serialize()
+    doc = gemmi.cif.read_string(cif_str)
+    gemmi_block = doc.sole_block()
+    result = ccd_reader._parse_pdb_mmcif(gemmi_block, sanitize=True)
+    return mol_from_pdbeccdutils_component(result.component)
+
+
+_mol_from_biotite_ccd_cached = lru_cache(maxsize=500)(mol_from_biotite_ccd)
+"""Cached version to speed up repeated access to same CCD entries."""
+
+
+def mol_from_biotite_ccd_cached(ccd_code: str) -> AnnotatedMol:
+    """Builds mol from Biotite's internal CCD using pdbeccdutils.
+
+    Internally uses a cached version of `mol_from_biotite_ccd` to speed up repeated
+    access to the same CCD entries (cache memory is limited to 500 entries).
+
+    Args:
+        ccd_code:
+            The CCD code of the component to build.
+
+    Returns:
+        An AnnotatedMol with atom names and (potentially) ideal/model conformers.
+        Despite caching, the returned Mol will be a new object that can be safely
+        modified without affecting future calls with the same CCD code.
+    """
+    mol = _mol_from_biotite_ccd_cached(ccd_code)
+
+    # Copy to avoid issues with mutable objects
+    mol_cp = Chem.Mol(mol)
+
+    return mol_cp
+
+
+_get_residue_cached = lru_cache(maxsize=500)(struc.info.residue)
+
+
+def get_residue_atom_array_cached(ccd_code: str) -> AtomArray:
+    """Cached version of `biotite.structure.info.residue`.
+
+    The internal cache memory is limited to 500 entries.
+
+    Args:
+        ccd_code:
+            The CCD code of the residue to look up.
+
+    Returns:
+        The residue AtomArray from Biotite's internal CCD for the given CCD code.
+        Despite internal caching, the returned AtomArray is a new object that can be
+        safely modified without affecting future calls with the same CCD code.
+    """
+    residue_atom_array = _get_residue_cached(ccd_code)
+
+    # Copy to avoid issues with mutable objects
+    residue_atom_array_cp = residue_atom_array.copy()
+
+    return residue_atom_array_cp

@@ -19,7 +19,6 @@ molecules.
 
 import logging
 from collections.abc import Iterable
-from functools import lru_cache
 from typing import NamedTuple
 
 import biotite.structure as struc
@@ -32,7 +31,11 @@ from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
 )
 from openfold3.core.data.primitives.structure.cleanup import remove_hydrogens
-from openfold3.core.data.primitives.structure.component import set_atomwise_annotation
+from openfold3.core.data.primitives.structure.component import (
+    get_residue_atom_array_cached,
+    mol_from_biotite_ccd_cached,
+    set_atomwise_annotation,
+)
 from openfold3.core.data.primitives.structure.conformer import (
     multistrategy_compute_conformer,
 )
@@ -63,10 +66,6 @@ class StructureWithReferenceMolecules(NamedTuple):
 
     atom_array: struc.AtomArray
     processed_reference_mols: list[ProcessedReferenceMolecule]
-
-
-get_residue_cached = lru_cache(maxsize=500)(struc.info.residue)
-"""Cached residue information retrieval from Biotite to speed up preprocessing."""
 
 
 def get_leaving_atoms(ccd_code: str) -> np.ndarray:
@@ -118,7 +117,7 @@ def atom_array_from_ccd_code(
             The MoleculeType of the molecule. If None, no molecule type annotation will
             be set. Defaults to None.
     """
-    res_array = get_residue_cached(ccd_code)
+    res_array = get_residue_atom_array_cached(ccd_code)
     res_array = remove_hydrogens(res_array)
 
     res_array.res_id[:] = res_id
@@ -272,6 +271,47 @@ def processed_reference_molecule_from_mol(
     return ProcessedReferenceMolecule(
         mol=mol,
         in_crop_mask=atom_mask,
+        permutations=None,
+    )
+
+
+def processed_reference_molecule_from_ccd_code(
+    ccd_code: str,
+) -> ProcessedReferenceMolecule:
+    """Creates a processed reference molecule from a CCD code using pdbeccdutils.
+
+    Uses pdbeccdutils for building the RDKit molecule, which applies proper
+    sanitization including dative bond corrections for metal-containing
+    compounds like HEM.
+
+    Args:
+        ccd_code:
+            The CCD code of the molecule to create.
+
+    Returns:
+        ProcessedReferenceMolecule:
+            A processed reference molecule containing the RDKit mol with a
+            computed conformer. All atoms are included (in_crop_mask is all True).
+    """
+    # Get sanitized mol from pdbeccdutils
+    mol = mol_from_biotite_ccd_cached(ccd_code)
+
+    # Remove existing conformers from CCD (Ideal/Model) before computing new one
+    for conf in list(mol.GetConformers()):
+        mol.RemoveConformer(conf.GetId())
+
+    # Set used_atom_mask (all True since mol is already sanitized and H-removed)
+    mol = set_atomwise_annotation(mol, "used_atom_mask", [True] * mol.GetNumAtoms())
+
+    # Compute conformer
+    mol, conf_id, _ = multistrategy_compute_conformer(
+        mol, remove_hs=True, timeout_standard=120, timeout_rand_init=120
+    )
+    assert conf_id == 0
+
+    return ProcessedReferenceMolecule(
+        mol=mol,
+        in_crop_mask=np.ones(mol.GetNumAtoms(), dtype=bool),
         permutations=None,
     )
 
@@ -462,17 +502,22 @@ def structure_with_ref_mol_from_ccd_code(
             A named tuple containing the AtomArray and a list with a single processed
             reference molecule. The residue ID will be set to 1.
     """
+    # Build processed reference molecule using pdbeccdutils for proper sanitization
+    proc_ref_mol = processed_reference_molecule_from_ccd_code(ccd_code)
 
-    # Build ligand AtomArray
-    atom_array = atom_array_from_ccd_code(
-        ccd_code,
+    # Build the ligand AtomArray from the same sanitized mol to guarantee atom-order
+    # consistency with the generated reference conformer.
+    atom_names = [
+        atom.GetProp("annot_atom_name") for atom in proc_ref_mol.mol.GetAtoms()
+    ]
+    atom_array = atom_array_from_mol(
+        proc_ref_mol.mol,
+        atom_names=atom_names,
         chain_id=chain_id,
-        res_id=1,
         molecule_type=MoleculeType.LIGAND,
+        res_id=1,
+        res_name=ccd_code,
     )
-
-    # Get processed reference molecule
-    proc_ref_mol = processed_reference_molecule_from_atom_array(atom_array)
 
     # Force coordinates to 0 for consistency
     atom_array.coord[:] = 0.0
