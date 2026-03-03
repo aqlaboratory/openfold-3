@@ -1,6 +1,9 @@
 # Full performance multi-stage build with complete CUDA toolchain
+
 ARG CUDA_BASE_IMAGE_TAG=12.1.1-cudnn8-devel-ubuntu22.04
+
 FROM nvidia/cuda:${CUDA_BASE_IMAGE_TAG} AS builder
+ARG INSTALL_CUEQ=false
 
 # Environment mode: "lock" for reproducible builds, "yaml" for flexible dev builds
 ARG BUILD_MODE=yaml
@@ -44,7 +47,6 @@ RUN mamba install -n base -c conda-forge conda-lock --yes \
        fi \
     && mamba clean --all --yes \
     && conda clean --all --yes
-
 # Activate the openfold3 environment by default
 ENV PATH=/opt/conda/envs/openfold3/bin:$PATH
 ENV CONDA_PREFIX=/opt/conda/envs/openfold3
@@ -61,7 +63,11 @@ RUN /opt/openfold3/scripts/install_third_party_dependencies.sh
 
 # Install the package
 WORKDIR /opt/openfold3
-RUN uv pip install --no-deps --editable .
+RUN if [ "$INSTALL_CUEQ" = "true" ]; then \
+        uv pip install --no-build-isolation --editable ".[cuequivariance]"; \
+    else \
+        uv pip install --no-deps --editable "."; \
+    fi
 
 # Set CUDA architecture for compilation (adjust based on your GPU)
 ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
@@ -71,7 +77,6 @@ ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
 #     python3 -c "import deepspeed; print('DeepSpeed ops loaded successfully')"
 
 # Devel stage - use devel image for full CUDA support
-ARG CUDA_BASE_IMAGE_TAG=12.1.1-cudnn8-devel-ubuntu22.04
 FROM nvidia/cuda:${CUDA_BASE_IMAGE_TAG} AS devel
 
 # Install devel dependencies
@@ -105,6 +110,7 @@ COPY --from=builder /opt/conda /opt/conda
 # Copy CUTLASS
 COPY --from=builder /opt/cutlass /opt/cutlass
 
+
 # Activate the openfold3 environment by default
 ENV PATH=/opt/conda/envs/openfold3/bin:/opt/conda/bin:$PATH
 ENV CONDA_PREFIX=/opt/conda/envs/openfold3
@@ -127,7 +133,6 @@ WORKDIR /opt/openfold3
 
 # Test stage - build on devel layer with test dependencies
 FROM devel AS test
-
 WORKDIR /opt/openfold3
 # Only uv supports --dependency-groups from pyproject.toml
 RUN uv pip install --group=test

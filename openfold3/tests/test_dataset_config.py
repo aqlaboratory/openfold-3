@@ -61,7 +61,7 @@ class TestOF3DatasetConfigConstruction:
                     reference_molecule_directory: {tmp_path}
                     template_cache_directory: {tmp_path} 
                     template_structures_directory: {tmp_path} 
-                    template_file_format: npz
+                    template_file_format: cif
                     ccd_file: None 
         """)
         test_yaml_file = tmp_path / "runner.yml"
@@ -101,7 +101,7 @@ class TestOF3DatasetConfigConstruction:
                     "reference_molecule_directory": tmp_path,
                     "template_cache_directory": tmp_path,
                     "template_structures_directory": tmp_path,
-                    "template_file_format": "npz",
+                    "template_file_format": "cif",
                     "ccd_file": None,
                 },
             },
@@ -127,7 +127,7 @@ class TestOF3DatasetConfigConstruction:
                     reference_molecule_directory: {tmp_path}
                     template_cache_directory: {tmp_path} 
                     template_structures_directory: {tmp_path} 
-                    template_file_format: npz
+                    template_file_format: cif
                     ccd_file: None 
         """)
         test_yaml_file = tmp_path / "runner.yml"
@@ -160,7 +160,7 @@ class TestOF3DatasetConfigConstruction:
                     "reference_molecule_directory": tmp_path,
                     "template_cache_directory": tmp_path,
                     "template_structures_directory": tmp_path,
-                    "template_file_format": "npz",
+                    "template_file_format": "cif",
                     "ccd_file": None,
                 },
             },
@@ -185,7 +185,7 @@ class TestOF3DatasetConfigConstruction:
                     target_structures_directory: {tmp_path} 
                     reference_molecule_directory: {tmp_path}
                     template_cache_directory: {tmp_path} 
-                    template_structures_directory: {tmp_path} 
+                    template_structure_array_directory: {tmp_path} 
                     template_file_format: npz
                     ccd_file: None 
         """)
@@ -208,7 +208,7 @@ class TestOF3DatasetConfigConstruction:
                     "target_structure_file_format": "npz",
                     "reference_molecule_directory": tmp_path,
                     "template_cache_directory": tmp_path,
-                    "template_structures_directory": tmp_path,
+                    "template_structure_array_directory": tmp_path,
                     "template_file_format": "npz",
                     "ccd_file": None,
                 },
@@ -256,6 +256,89 @@ class TestOF3DatasetConfigConstruction:
                     "target_structures_directory": tmp_path,
                     "target_structure_file_format": "npz",
                     "reference_molecule_directory": tmp_path,
+                }
+            )
+
+    def test_dataset_config_with_no_template_paths(self, tmp_path):
+        """Test that dataset configs work when template paths are None."""
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+
+        with pytest.warns(UserWarning, match="No template paths provided"):
+            config = TrainingDatasetPaths.model_validate(
+                {
+                    "alignments_directory": None,
+                    "alignment_array_directory": tmp_path,
+                    "dataset_cache_file": test_dummy_file,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                    "template_structures_directory": None,
+                    "template_structure_array_directory": None,
+                    "template_file_format": None,
+                }
+            )
+
+        assert config.template_structures_directory is None
+        assert config.template_structure_array_directory is None
+
+    def test_error_if_both_template_paths_set(self, tmp_path):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+        with pytest.raises(ValueError, match="Only one template path"):
+            TrainingDatasetPaths.model_validate(
+                {
+                    "alignments_directory": None,
+                    "alignment_array_directory": tmp_path,
+                    "dataset_cache_file": test_dummy_file,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                    "template_structures_directory": tmp_path,
+                    "template_structure_array_directory": tmp_path,
+                    "template_file_format": "cif",
+                }
+            )
+
+    def test_error_if_invalid_template_file_format_for_structures_directory(
+        self, tmp_path
+    ):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+        with pytest.raises(
+            ValueError, match="template_file_format must be one of: cif, pdb"
+        ):
+            TrainingDatasetPaths.model_validate(
+                {
+                    "alignments_directory": None,
+                    "alignment_array_directory": tmp_path,
+                    "dataset_cache_file": test_dummy_file,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                    "template_structures_directory": tmp_path,
+                    "template_structure_array_directory": None,
+                    "template_file_format": "pkl",
+                }
+            )
+
+    def test_error_if_invalid_template_file_format_for_array_directory(self, tmp_path):
+        test_dummy_file = tmp_path / "test.json"
+        test_dummy_file.write_text("test")
+        with pytest.raises(
+            ValueError, match="template_file_format must be one of: pkl, npz"
+        ):
+            TrainingDatasetPaths.model_validate(
+                {
+                    "alignments_directory": None,
+                    "alignment_array_directory": tmp_path,
+                    "dataset_cache_file": test_dummy_file,
+                    "target_structures_directory": tmp_path,
+                    "target_structure_file_format": "npz",
+                    "reference_molecule_directory": tmp_path,
+                    "template_structures_directory": None,
+                    "template_structure_array_directory": tmp_path,
+                    "template_file_format": "cif",
                 }
             )
 

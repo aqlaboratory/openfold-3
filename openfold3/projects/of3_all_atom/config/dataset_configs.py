@@ -28,7 +28,7 @@ These fields are parsed by the DataModule to create the appropriate Dataset clas
 
 """
 
-from pathlib import Path
+import warnings
 from typing import Any
 
 from pydantic import (
@@ -75,35 +75,60 @@ class TrainingDatasetPaths(BaseModel):
     use_roda_monomer_format: bool = False
 
     @model_validator(mode="after")
-    def _validate_paths(self):
-        def _validate_exactly_one_path_exists(
-            group_name: str, path_values: list[Path | None]
-        ):
-            which_paths_exist = [p is not None for p in path_values]
-            if sum(which_paths_exist) != 1:
-                existing_paths = [
-                    p for p, b in zip(path_values, which_paths_exist, strict=True) if b
-                ]
-                raise ValueError(
-                    f"Exactly one path in set of {group_name} should exist."
-                    f"Found {existing_paths} exist."
-                )
+    def _validate_alignment_paths(self):
+        path_values = [
+            self.alignments_directory,
+            self.alignment_db_directory,
+            self.alignment_array_directory,
+        ]
+        existing_paths = [p for p in path_values if p is not None]
+        if len(existing_paths) != 1:
+            raise ValueError(
+                f"Exactly one path in set of alignment paths should exist."
+                f" Found {existing_paths} exist."
+            )
+        return self
 
-        _validate_exactly_one_path_exists(
-            "alignment paths",
-            [
-                self.alignments_directory,
-                self.alignment_db_directory,
-                self.alignment_array_directory,
-            ],
-        )
-        _validate_exactly_one_path_exists(
-            "template_paths",
-            [
-                self.template_structures_directory,
-                self.template_structure_array_directory,
-            ],
-        )
+    @model_validator(mode="after")
+    def _validate_template_paths(self):
+        if (
+            self.template_structures_directory is not None
+            and self.template_structure_array_directory is not None
+        ):
+            raise ValueError(
+                "Only one template path should be provided. "
+                f"Found {self.template_structures_directory} "
+                f"and {self.template_structure_array_directory}."
+            )
+
+        if (
+            self.template_structures_directory is None
+            and self.template_structure_array_directory is None
+        ):
+            warnings.warn(
+                "No template paths provided. "
+                "Templates will not be used for this dataset.",
+                stacklevel=2,
+            )
+
+        if (
+            self.template_structures_directory is not None
+            and self.template_file_format not in ["cif", "pdb"]
+        ):
+            raise ValueError(
+                f"template_file_format must be one of: cif, pdb. "
+                f"Got: {self.template_file_format}"
+            )
+
+        if (
+            self.template_structure_array_directory is not None
+            and self.template_file_format not in ["pkl", "npz"]
+        ):
+            raise ValueError(
+                f"template_file_format must be one of: pkl, npz. "
+                f"Got: {self.template_file_format}"
+            )
+
         return self
 
 

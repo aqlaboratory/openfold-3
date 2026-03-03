@@ -139,11 +139,10 @@ class BaseOF3Dataset(SingleDataset, ABC):
         )
         self.datapoint_cache = {}
 
-        # CCD - only used if template structures are not preprocessed
-        if dataset_config.dataset_paths.template_structure_array_directory is not None:
-            self.ccd = None
-        else:
+        if dataset_config.dataset_paths.template_structures_directory is not None:
             self.ccd = pdbx.CIFFile.read(dataset_config.dataset_paths.ccd_file)
+        else:
+            self.ccd = None
 
         # Dataset configuration
         # n_tokens can be set in the getitem method separately for each sample using

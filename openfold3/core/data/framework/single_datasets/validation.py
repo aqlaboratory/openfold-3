@@ -93,13 +93,16 @@ class ValidationPDBDataset(BaseOF3Dataset):
         pdb_ids = list(self.dataset_cache.structure_data.keys())
 
         def null_safe_token_count(x):
-            token_count = self.dataset_cache.structure_data[x].token_count
+            elem = self.dataset_cache.structure_data[x]
+            token_count = elem.token_count if hasattr(elem, "token_count") else None
             return token_count if token_count is not None else 0
 
         pdb_ids = sorted(
             pdb_ids,
             key=null_safe_token_count,
+            reverse=False,
         )
+
         _datapoint_cache = pd.DataFrame({"pdb_id": pdb_ids})
         self.datapoint_cache = pad_to_world_size(_datapoint_cache, self.world_size)
 
@@ -186,15 +189,19 @@ class ValidationPDBDataset(BaseOF3Dataset):
 
         structure_entry = self.dataset_cache.structure_data[pdb_id]
 
+        def _use_metrics(x):
+            """Check if the chain or interface should be used for metrics."""
+            return x.use_metrics if hasattr(x, "use_metrics") else True
+
         chains_for_intra_metrics = [
             int(cid)
             for cid, cdata in structure_entry.chains.items()
-            if cdata.use_metrics
+            if _use_metrics(cdata)
         ]
 
         interfaces_to_include = []
         for interface_id, cluster_data in structure_entry.interfaces.items():
-            if cluster_data.use_metrics:
+            if _use_metrics(cluster_data):
                 interface_chains = tuple(int(ci) for ci in interface_id.split("_"))
                 interfaces_to_include.append(interface_chains)
 

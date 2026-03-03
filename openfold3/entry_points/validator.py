@@ -81,10 +81,16 @@ def _maybe_download_parameters(target_path: Path) -> None:
 class CheckpointConfig(BaseModel):
     """Settings for training checkpoint writing."""
 
+    monitor: str | None = None
+    mode: str | None = None
     every_n_epochs: int = 1
     auto_insert_metric_name: bool = False
+    filename: str | None = None
+    enable_version_counter: bool = True
     save_last: bool = True
     save_top_k: int = -1
+    every_n_train_steps: int | None = None
+    save_on_train_epoch_end: bool | None = None
 
 
 class WandbConfig(BaseModel):

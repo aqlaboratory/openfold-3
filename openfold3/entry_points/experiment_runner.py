@@ -393,7 +393,8 @@ class TrainingExperimentRunner(ExperimentRunner):
         self.lightning_module.load_state_dict(
             state_dict, strict=self.ckpt_load_settings.strict_loading
         )
-        self.lightning_module.ema.load_state_dict(ckpt["ema"])
+        if "ema" in ckpt:
+            self.lightning_module.ema.load_state_dict(ckpt["ema"])
 
         if self.ckpt_load_settings.restore_lr_scheduler:
             last_global_step = int(ckpt["global_step"])
