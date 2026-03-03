@@ -280,4 +280,9 @@ template_preprocessor_settings:
   ccd_file_path: <optional/path/to/ccd/file>
 ```
 
-where a CCD file can be optionally provided if the template structures contain custom ligands or other chemical components.
+where a CCD file can be optionally provided if the template structures contain
+custom ligands or other chemical components.
+
+For regular inference runs, prefer setting custom CCD via
+`dataset_config_kwargs.ccd_file_path` in `runner.yml`; this value is copied to
+`template_preprocessor_settings.ccd_file_path` automatically.

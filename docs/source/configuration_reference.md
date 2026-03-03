@@ -133,16 +133,36 @@ data_module_args:
 
 ### 3.6. Dataset Config Kwargs (`dataset_config_kwargs`)
 
-Configures MSA and template feature generation.
+Configures MSA/template feature generation and optional custom CCD input for
+inference.
 
 **Pydantic Model**: [`InferenceDatasetConfigKwargs`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_configs.py#L270)
 
 **All Options**:
-- `ccd_file_path` *(FilePath | None)*: Path to Chemical Component Dictionary file, uses CCD from Biotite if null (default: `null`)
+- `ccd_file_path` *(FilePath | None)*: Path to custom Chemical Component
+  Dictionary file for inference (`.cif` or `.bcif`). If `null`, uses Biotite's
+  bundled CCD (default: `null`)
 - `msa` *(MSASettings)*: MSA processing settings (see below)
 - `template` *(TemplateSettings)*: Template processing settings (see below)
 
-#### 3.6.1. MSA Settings (`msa`)
+#### 3.6.1 User-provided Chemical Component Dictionary
+
+For inference, set `dataset_config_kwargs.ccd_file_path` to provide a custom CCD file.
+This can be useful for finer control of atom names of custom ligands, as well as
+allowing for more readable query JSONs using user-defined ligand keys. 
+
+- Supported formats: `.bcif` and `.cif`.
+- `.cif` input is converted to temporary `BinaryCIF` before being passed to
+  Biotite. Note that this on-the-fly conversion may add over a minute of startup time.
+- `.bcif` can also be generated from a cif-file beforehand, using [preprocess_ccd_biotite.py](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/preprocess_ccd_biotite.py)
+
+**Example**:
+```yaml
+dataset_config_kwargs:
+  ccd_file_path: /path/to/custom/components.cif
+```
+
+#### 3.6.2. MSA Settings (`msa`)
 
 Controls how MSAs are parsed and processed into features.
 
@@ -169,7 +189,7 @@ dataset_config_kwargs:
     moltypes: [0, 1]  # protein and RNA
 ```
 
-#### 3.6.2. Template Settings (`template`)
+#### 3.6.3. Template Settings (`template`)
 
 Controls template structure processing.
 
@@ -267,7 +287,9 @@ Configures template structure preprocessing and filtering.
 - `structure_array_directory` *(Path | None)*: Directory for preparsed structures (default: `null`)
 - `cache_directory` *(Path | None)*: Directory for template cache (default: `null`)
 - `log_directory` *(Path | None)*: Directory for logs (default: `null`)
-- `ccd_file_path` *(Path | None)*: Path to Chemical Component Dictionary file (default: `null`)
+- `ccd_file_path` *(Path | None)*: Path to Chemical Component Dictionary file.
+  Primarily useful for standalone template preprocessing workflows; for
+  inference, prefer `dataset_config_kwargs.ccd_file_path` (default: `null`)
 
 **Example**:
 ```yaml
@@ -286,4 +308,3 @@ For the complete list of default values, see the Pydantic model classes in:
 - [`openfold3/projects/of3_all_atom/config/dataset_config_components.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py) - MSA and template settings
 - [`openfold3/core/data/tools/colabfold_msa_server.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py) - MSA server settings
 - [`openfold3/core/data/pipelines/preprocessing/template.py`](http://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py) - Template preprocessing settings
-

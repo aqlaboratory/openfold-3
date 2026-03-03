@@ -63,7 +63,7 @@ data_module_args:
 # DatasetConfigKwargs: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_configs.py#L270
 # Arguments for creating template and MSA features
 dataset_config_kwargs: 
-  ccd_file_path: null  # if null, uses CCD from Biotite
+  ccd_file_path: null  # optional custom CCD (.cif or .bcif); if null, uses Biotite CCD
   # MSA Settings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py#L32
   # Use this section to customize parsing of MSAs into features, more information in docs/source/precomputed_msa_how_to.md
   msa: 
