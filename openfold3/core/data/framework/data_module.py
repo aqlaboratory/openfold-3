@@ -546,14 +546,23 @@ class InferenceDataModule(DataModule):
             self.inference_config.query_set = placeholder[0]
         super().setup()
 
-    def teardown(self, stage=None):
-        """Release prediction dataset resources after inference."""
-        prediction_dataset = self.datasets_by_mode.get(DatasetMode.prediction)
-        close_fn = getattr(prediction_dataset, "close", None)
-        if callable(close_fn):
-            close_fn()
+        # Wrap the existing worker init so that DataLoader workers started with
+        # spawn/forkserver re-apply the custom Biotite CCD path (which is
+        # process-local global state and therefore not inherited).
+        _original_worker_init = self.worker_init_function_with_data_seed
 
-        super().teardown(stage)
+        def _worker_init_with_ccd(worker_id, rank=None):
+            _original_worker_init(worker_id, rank)
+            dataset = torch.utils.data.get_worker_info().dataset
+            ccd_path = getattr(dataset, "_biotite_ccd_path", None)
+            if ccd_path is not None:
+                from openfold3.core.data.primitives.structure.biotite_ccd import (
+                    update_biotite_ccd,
+                )
+
+                update_biotite_ccd(ccd_path)
+
+        self.worker_init_function_with_data_seed = _worker_init_with_ccd
 
 
 # TODO: Remove debug logic and improve handlingi of training only features

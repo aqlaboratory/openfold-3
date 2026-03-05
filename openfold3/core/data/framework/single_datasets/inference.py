@@ -55,7 +55,9 @@ from openfold3.core.data.pipelines.sample_processing.msa import (
 from openfold3.core.data.pipelines.sample_processing.template import (
     process_template_structures_of3,
 )
-from openfold3.core.data.primitives.structure.biotite_ccd import configure_biotite_ccd
+from openfold3.core.data.primitives.structure.biotite_ccd import (
+    update_biotite_ccd_from_file,
+)
 from openfold3.core.data.primitives.structure.component import BiotiteCCDWrapper
 from openfold3.core.data.primitives.structure.query import (
     StructureWithReferenceMolecules,
@@ -113,9 +115,11 @@ class InferenceDataset(Dataset):
             self.template_preprocessor_settings.structure_file_format = "npz"
 
         # If a custom CCD file is provided, overwrite Biotite's global CCD.
-        # This tempdir is assigned to a dummy handle to keep it alive for the duration
-        # of the dataset instance
-        self._tmp_ccd_dir_handle = configure_biotite_ccd(dataset_config.ccd_file_path)
+        # The resolved path is stored for re-applying in DataLoader workers
+        # started with spawn/forkserver.
+        self._biotite_ccd_path = update_biotite_ccd_from_file(
+            dataset_config.ccd_file_path
+        )
 
         # Template code requires "conventional" CIF format
         self._ccd = BiotiteCCDWrapper()
@@ -360,11 +364,3 @@ class InferenceDataset(Dataset):
 
     def __len__(self):
         return len(self.datapoint_cache)
-
-    def close(self) -> None:
-        """Release temporary resources owned by this dataset instance."""
-        handle = self._tmp_ccd_dir_handle
-        self._tmp_ccd_dir_handle = None
-
-        if handle is not None:
-            handle.cleanup()

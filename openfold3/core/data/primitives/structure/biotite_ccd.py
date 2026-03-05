@@ -66,49 +66,97 @@ from biotite.structure.io.pdbx import (
     MaskValue,
     compress,
 )
+from openfold3.core.data.primitives.structure.component import (
+    _get_residue_cached,
+    _mol_from_biotite_ccd_cached,
+)
 
 DEFAULT_BIOTITE_CCD_CATEGORIES = ("chem_comp", "chem_comp_atom", "chem_comp_bond")
 
 
-def configure_biotite_ccd(
+def update_biotite_ccd(bcif_path: Path | str) -> None:
+    """Update Biotite's global CCD to *bcif_path* and invalidate caches.
+
+    Biotite maintains a process-global CCD path used by ``info.residue()``,
+    ``info.get_from_ccd()``, and related helpers.  OpenFold additionally
+    wraps some of these in LRU caches for performance.  This function
+    keeps both in sync: it calls ``set_ccd_path`` and then clears the
+    downstream LRU caches so subsequent lookups reflect the new CCD.
+
+    Use this whenever the global CCD needs to be (re-)applied: initial
+    setup in the main process, re-application in DataLoader workers
+    started with ``spawn``/``forkserver``, and test fixtures.
+    
+    Args:
+        bcif_path:
+            Path to the CCD in BinaryCIF format.  This is the format
+            Biotite requires, and can be generated from a CIF file with
+            :func:`concatenate_ccd` or the standalone
+            ``preprocess_ccd_biotite.py`` script.
+    """
+    struc.info.set_ccd_path(bcif_path)
+    _mol_from_biotite_ccd_cached.cache_clear()
+    _get_residue_cached.cache_clear()
+
+
+def update_biotite_ccd_from_file(
     ccd_file_path: Path | str | None,
     categories: Sequence[str] = DEFAULT_BIOTITE_CCD_CATEGORIES,
-) -> tempfile.TemporaryDirectory | None:
-    """Configure Biotite's global CCD path from a custom CCD file.
+) -> Path | None:
+    """Update Biotite's global CCD from a user-supplied CCD file.
+
+    Biotite ships with its own copy of the Chemical Component Dictionary.
+    This function updates that global default so that all downstream
+    lookups (``info.residue()``, ``info.get_from_ccd()``, etc.) resolve
+    against the user's file instead.
+
+    Internally calls :func:`update_biotite_ccd` to apply the path and
+    invalidate caches.
+
+    Supported input formats:
+
+    * ``.bcif`` — used directly, no conversion needed.
+    * ``.cif``  — converted on the fly to a temporary BinaryCIF file that
+      persists for the lifetime of the process.  This adds startup time;
+      to avoid it in future runs, pre-convert with
+      ``preprocess_ccd_biotite.py`` or pass a ``.bcif`` file directly.
 
     Args:
         ccd_file_path:
-            Path to a custom CCD file. Supported suffixes are ``.bcif`` and
-            ``.cif``. If ``None``, no configuration changes are applied.
+            Path to the custom CCD.  If ``None``, the function is a no-op
+            and Biotite's built-in CCD remains unchanged.
         categories:
-            Category names to keep when converting ``.cif`` input into temporary
-            BinaryCIF format for Biotite.
+            CCD categories to keep when converting ``.cif`` to BinaryCIF.
 
     Returns:
-        A ``TemporaryDirectory`` handle if conversion from ``.cif`` was performed;
-        otherwise ``None``. The caller should keep this handle alive while Biotite
-        uses the temporary BinaryCIF path.
+        The resolved ``.bcif`` path that Biotite is now using, or ``None``
+        if no update was requested.  The returned path is a plain
+        ``Path`` and therefore safe to pickle into DataLoader workers.
     """
     if ccd_file_path is None:
         return None
 
+    # --- Validate input -------------------------------------------------
     ccd_path = Path(ccd_file_path)
     if not ccd_path.exists():
         raise FileNotFoundError(f"CCD file not found: {ccd_path}")
     if not ccd_path.is_file():
         raise ValueError(f"CCD path is not a file: {ccd_path}")
 
-    tmp_ccd_dir_handle: tempfile.TemporaryDirectory | None = None
+    # --- Resolve to .bcif -----------------------------------------------
     ccd_suffix = ccd_path.suffix.lower()
     if ccd_suffix == ".bcif":
+        # Ready to use as-is.
         biotite_ccd_path = ccd_path
     elif ccd_suffix == ".cif":
-        # Keep converted file in a temp directory so Biotite can read it by path.
-        tmp_ccd_dir_handle = tempfile.TemporaryDirectory(prefix="of3_biotite_ccd_")
-        biotite_ccd_path = Path(tmp_ccd_dir_handle.name) / "components.bcif"
+        # Biotite requires BinaryCIF, so convert on the fly.
+        tmp_dir = tempfile.mkdtemp(prefix="of3_biotite_ccd_")
+        biotite_ccd_path = Path(tmp_dir) / "components.bcif"
         logging.warning(
             "Converting custom CCD to temporary BinaryCIF for Biotite "
-            "(this may take over a minute).",
+            "(this may take over a minute). To skip this in future runs, "
+            "pre-convert with preprocess_ccd_biotite.py or pass a .bcif "
+            "file directly.",
         )
         concatenate_ccd(
             ccd_path=ccd_path,
@@ -120,7 +168,8 @@ def configure_biotite_ccd(
             "Expected '.cif' or '.bcif'."
         )
 
-    struc.info.set_ccd_path(biotite_ccd_path)
+    # --- Apply and sanity-check -----------------------------------------
+    update_biotite_ccd(biotite_ccd_path)
     try:
         component_count = len(struc.info.all_residues())
     except Exception as exc:
@@ -137,9 +186,7 @@ def configure_biotite_ccd(
         component_count,
     )
 
-    # Returning the handle keeps the temporary directory alive for the lifetime
-    # of the inference dataset.
-    return tmp_ccd_dir_handle
+    return biotite_ccd_path
 
 
 def concatenate_ccd(

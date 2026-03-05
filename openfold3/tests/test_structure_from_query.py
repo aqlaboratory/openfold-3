@@ -27,10 +27,9 @@ from rdkit import Chem
 from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_reference_conformers_of3,
 )
-from openfold3.core.data.primitives.structure.biotite_ccd import concatenate_ccd
-from openfold3.core.data.primitives.structure.component import (
-    _get_residue_cached,
-    _mol_from_biotite_ccd_cached,
+from openfold3.core.data.primitives.structure.biotite_ccd import (
+    update_biotite_ccd,
+    concatenate_ccd,
 )
 from openfold3.core.data.primitives.structure.query import (
     processed_reference_molecule_from_mol,
@@ -262,18 +261,11 @@ def _custom_biotite_ccd_context():
         concatenate_ccd(
             ccd_path=ccd_cif_path,
         ).write(ccd_bcif_path)
-        struc.info.set_ccd_path(ccd_bcif_path)
-
-        # Clear caches of these CCD-dependent caches to avoid downstream weirdness
-        _mol_from_biotite_ccd_cached.cache_clear()
-        _get_residue_cached.cache_clear()
+        update_biotite_ccd(ccd_bcif_path)
         try:
             yield
         finally:
-            struc.info.set_ccd_path(original_ccd_path)
-            # Clear caches of these CCD-dependent caches to avoid downstream weirdness
-            _mol_from_biotite_ccd_cached.cache_clear()
-            _get_residue_cached.cache_clear()
+            update_biotite_ccd(original_ccd_path)
 
 
 def _assert_atom_names_align_with_reference_mol(structure_with_ref_mols):
