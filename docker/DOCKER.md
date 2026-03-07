@@ -83,4 +83,31 @@ docker build \
 
 For Blackwell image build, see [Build_instructions_blackwell.md](Build_instructions_blackwell.md)
 
+## cuEquivariance Support
+
+[cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) provides accelerated kernels for `triangle_multiplicative_update` and `triangle_attention` operations that can speed up inference and training.
+
+### Requirements
+
+- **CUDA**: >= 12.6.1-cudnn-devel-ubuntu22.04 (CUDA 12.1.1 is not compatible)
+- **PyTorch**: >= 2.7
+- **cuequivariance**: >= 0.6.1
+
+### Building with cuEquivariance
+
+To build a Docker image with cuEquivariance support, use the `INSTALL_CUEQ=true` build argument along with a compatible CUDA base image. The example below uses `BUILD_MODE=yaml` to avoid needing the lock file (see above for regenerating the lock file):
+
+```bash
+docker build \
+    -f docker/Dockerfile \
+    --build-arg INSTALL_CUEQ=true \
+    --build-arg CUDA_BASE_IMAGE_TAG=12.6.1-cudnn-devel-ubuntu22.04 \
+    --build-arg BUILD_MODE=yaml \
+    --target devel \
+    -t openfold-docker:devel-cueq .
+```
+
+### Usage
+
+After building the image, enable cuEquivariance kernels via the runner.yaml configuration. See the [cuequivariance.yml example](../examples/example_runner_yamls/cuequivariance.yml) and the [kernels documentation](https://openfold-3.readthedocs.io/en/latest/kernels.html) for details.
 

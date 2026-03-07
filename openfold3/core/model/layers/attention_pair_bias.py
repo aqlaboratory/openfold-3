@@ -203,7 +203,9 @@ class AttentionPairBias(nn.Module):
         #  and expects batch and seq dims to exist
         #  Current reshape function only expects missing batch dim
         batch_dims = a.shape[:-2]
-        reshape_for_ds_kernel = use_deepspeed_evo_attention and len(batch_dims) == 1
+        reshape_for_ds_kernel = (
+            use_deepspeed_evo_attention or use_cueq_triangle_kernels
+        ) and len(batch_dims) == 1
         if reshape_for_ds_kernel:
             a = a.unsqueeze(1)
             biases = [b.unsqueeze(1) for b in biases]

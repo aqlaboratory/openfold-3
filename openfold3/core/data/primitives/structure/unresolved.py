@@ -184,6 +184,7 @@ def build_unresolved_polymer_segment(
                 - auth_asym_id
                 - molecule_type_id
                 - entity_id
+                - sym_id
                 - _atom_idx
                     - incremented appropriately based on the reference atom's _atom_idx
                       attribute
@@ -219,6 +220,7 @@ def build_unresolved_polymer_segment(
         "auth_asym_id",
         "molecule_type_id",
         "entity_id",
+        "sym_id",
         "_atom_idx",
     ]
     set_non_inferable_labels_to_dummy_value(
@@ -647,6 +649,7 @@ def add_unresolved_atoms_within_residue(
                 - auth_asym_id
                 - auth_comp_id
                 - auth_seq_id
+                - sym_id
                 - molecule_type_id
                 - entity_id
                 - _atom_idx
@@ -851,6 +854,7 @@ def add_unresolved_atoms_within_residue(
                             "auth_seq_id",
                             "molecule_type_id",
                             "entity_id",
+                            "sym_id",
                             "_atom_idx",
                         ],
                     )

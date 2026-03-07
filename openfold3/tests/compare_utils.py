@@ -17,6 +17,8 @@ import unittest
 
 import torch
 
+from openfold3.core.kernels.cueq_utils import is_cuequivariance_available
+
 
 def skip_unless_ds4s_installed():
     deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
@@ -30,11 +32,8 @@ def skip_unless_ds4s_installed():
 
 
 def skip_unless_cueq_installed():
-    cueq_is_installed = cueq_is_installed = (
-        importlib.util.find_spec("cuequivariance_torch") is not None
-    )
     return unittest.skipUnless(
-        cueq_is_installed, "Requires CU-Equivaraince to be installed"
+        is_cuequivariance_available(), "Requires CU-Equivaraince to be installed"
     )
 
 
