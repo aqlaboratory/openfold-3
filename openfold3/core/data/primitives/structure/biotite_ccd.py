@@ -66,6 +66,7 @@ from biotite.structure.io.pdbx import (
     MaskValue,
     compress,
 )
+
 from openfold3.core.data.primitives.structure.component import (
     _get_residue_cached,
     _mol_from_biotite_ccd_cached,
@@ -86,7 +87,7 @@ def update_biotite_ccd(bcif_path: Path | str) -> None:
     Use this whenever the global CCD needs to be (re-)applied: initial
     setup in the main process, re-application in DataLoader workers
     started with ``spawn``/``forkserver``, and test fixtures.
-    
+
     Args:
         bcif_path:
             Path to the CCD in BinaryCIF format.  This is the format

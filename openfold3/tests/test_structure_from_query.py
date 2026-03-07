@@ -18,7 +18,6 @@ import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
-import biotite.structure as struc
 import biotite.structure.info.ccd as biotite_ccd
 import numpy as np
 import pytest
@@ -28,8 +27,8 @@ from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_reference_conformers_of3,
 )
 from openfold3.core.data.primitives.structure.biotite_ccd import (
-    update_biotite_ccd,
     concatenate_ccd,
+    update_biotite_ccd,
 )
 from openfold3.core.data.primitives.structure.query import (
     processed_reference_molecule_from_mol,
