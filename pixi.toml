@@ -155,7 +155,7 @@ openfold3 = { path = ".", editable = true, extras = ["deepspeed", "dev"] }
 
 
 [feature.not-in-pypi.target.linux.dependencies]
-# func_timeout does not get resolved by pixi from pypi
+# func_timeout does not get resolved by pixi from pypi if running pixi in osx
 #   see: https://pypi.org/project/func-timeout/#description
 # if we remove this, we fail to solve the environment with:
 #   Error:   × failed to solve the pypi requirements of environment 'openfold3-cuda12-pypi' for platform 'linux-aarch64'
