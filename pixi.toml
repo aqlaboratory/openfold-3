@@ -187,6 +187,7 @@ ml-collections = "*"
 
 # --- Handling molecules
 rdkit = "*"
+biotite = ">=1.6"
 pdbeccdutils = "*"
 
 # --- Bioinformatics & Workflows
@@ -227,23 +228,6 @@ furo = "*"
 
 [feature.openfold3-cpu.target.linux-64.dependencies]
 mkl = "*"
-biotite = "<1.3"
-
-[feature.openfold3-cpu.target.linux-aarch64.dependencies]
-# biotite = "<1.3"
-# Uncomment when our upstream package addition gets published, add back to default deps, and remove next ones
-# See https://github.com/conda-forge/biotite-feedstock/pull/81 and related PRs
-
-[feature.openfold3-cpu.target.linux-aarch64.pypi-dependencies]
-# Remove all these biotite special cases once we get an aarch conda package
-# Note that it is unclear this will be a fully correct installation (see biotite docs about CCD generation)
-biotite = "<1.3"
-
-[feature.openfold3-cpu.target.osx-64.dependencies]
-biotite = "<1.3"
-
-[feature.openfold3-cpu.target.osx-arm64.dependencies]
-biotite = "<1.3"
 
 # --- Pytorch & Cuda
 
