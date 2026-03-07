@@ -284,9 +284,9 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
   # aarch64 is not built in CF, so at the moment installing from sdist and crossing fingers
   [feature.deepspeed.target.linux-64.dependencies]
-  deepspeed = ">=0.18.5"
+  deepspeed = ">=0.18.7"
   [feature.deepspeed.target.linux-aarch64.pypi-dependencies]
-  deepspeed = ">=0.18.5"
+  deepspeed = ">=0.18.7"
 
   [feature.deepspeed-build.dependencies]
   # These are only needed to build local extensions the first time
