@@ -434,3 +434,18 @@ tasks.test.cmd = [
     ".",
     "&>$PIXI_PROJECT_ROOT/test-results/{{ pixi.environment.name }}_{{ pixi.platform }}/tests_{{ pixi.environment.name }}_{{ pixi.platform }}.log"
 ]
+
+# This workspace is massive and pushes makes pixi push the limits of the system
+# This is an example update command which should work regardless of user OSX setup
+tasks.safe-but-slow-update.cmd = [
+    "pixi",
+    "update",
+    # This and --tls-no-verify can help with SSL struggles in corporate environments
+    "--tls-root-certs",
+    "all",
+    # These can help avoiding running out of system resources (e.g., file handles in osx, greedy pixi...)
+    "--concurrent-downloads",
+    "20",
+    "--concurrent-solves",
+    "4"
+]
