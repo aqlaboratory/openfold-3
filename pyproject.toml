@@ -74,7 +74,7 @@ optional-dependencies.cuequivariance = [
     "torch>=2.7",
 ]
 optional-dependencies.deepspeed = [
-    "deepspeed>=0.18.5",
+    "deepspeed>=0.18.7",
 ]
 
 # Let's take a decision if these are optional-dependencies or dependency-groups
