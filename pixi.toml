@@ -177,7 +177,6 @@ pip = "*"
 [feature.openfold3-cpu.dependencies]
 
 # Explicit basics that could get anyway installed
-python = "*"
 numpy = "*"
 scipy = "*"
 pandas = "*"
