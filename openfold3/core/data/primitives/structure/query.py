@@ -37,7 +37,11 @@ from openfold3.core.data.primitives.structure.component import (
     set_atomwise_annotation,
 )
 from openfold3.core.data.primitives.structure.conformer import (
+    ConformerGenerationError,
+    add_conformer_atom_mask,
     multistrategy_compute_conformer,
+    replace_nan_coords_with_zeros,
+    set_single_conformer,
 )
 from openfold3.core.data.resources.residues import (
     DNA_RESTYPE_1TO3,
@@ -284,6 +288,9 @@ def processed_reference_molecule_from_ccd_code(
     sanitization including dative bond corrections for metal-containing
     compounds like HEM.
 
+    If conformer generation fails, falls back to the CCD Ideal coordinates (Model
+    coordinates are never used).
+
     Args:
         ccd_code:
             The CCD code of the molecule to create.
@@ -293,20 +300,37 @@ def processed_reference_molecule_from_ccd_code(
             A processed reference molecule containing the RDKit mol with a
             computed conformer. All atoms are included (in_crop_mask is all True).
     """
-    # Get sanitized mol from pdbeccdutils
+    # Get sanitized mol from pdbeccdutils (may contain Ideal/Model conformers)
     mol = mol_from_biotite_ccd_cached(ccd_code)
 
-    # Remove existing conformers from CCD (Ideal/Model) before computing new one
+    # Save Ideal conformer as fallback before stripping
+    ideal_conf = None
+    for conf in mol.GetConformers():
+        if conf.GetProp("name") == "Ideal":
+            ideal_conf = Chem.Conformer(conf)
+            break
+
     mol.RemoveAllConformers()
 
-    # Set used_atom_mask (all True since mol is already sanitized and H-removed)
-    mol = set_atomwise_annotation(mol, "used_atom_mask", [True] * mol.GetNumAtoms())
+    # Compute conformer, falling back to Ideal coordinates on failure
+    try:
+        mol, conf_id, _ = multistrategy_compute_conformer(
+            mol, remove_hs=True, timeout_standard=120, timeout_rand_init=120
+        )
+        assert conf_id == 0
+    except ConformerGenerationError:
+        if ideal_conf is None:
+            raise
+        logger.warning(
+            "Conformer generation failed for %s; "
+            "falling back to CCD Ideal coordinates.",
+            ccd_code,
+        )
+        mol = set_single_conformer(mol, ideal_conf)
 
-    # Compute conformer
-    mol, conf_id, _ = multistrategy_compute_conformer(
-        mol, remove_hs=True, timeout_standard=120, timeout_rand_init=120
-    )
-    assert conf_id == 0
+    # Shouldn't be necessary for ideal coordinates but better to be safe
+    mol = add_conformer_atom_mask(mol)
+    replace_nan_coords_with_zeros(mol)
 
     return ProcessedReferenceMolecule(
         mol=mol,

@@ -21,6 +21,7 @@ from pathlib import Path
 import biotite.structure.info.ccd as biotite_ccd
 import numpy as np
 import pytest
+import torch
 from rdkit import Chem
 
 from openfold3.core.data.pipelines.featurization.conformer import (
@@ -30,7 +31,9 @@ from openfold3.core.data.primitives.structure.biotite_ccd import (
     concatenate_ccd,
     update_biotite_ccd,
 )
+from openfold3.core.data.primitives.structure.conformer import ConformerGenerationError
 from openfold3.core.data.primitives.structure.query import (
+    processed_reference_molecule_from_ccd_code,
     processed_reference_molecule_from_mol,
     structure_with_ref_mol_from_ccd_code,
     structure_with_ref_mols_from_query,
@@ -317,3 +320,59 @@ def test_ligand_ccd_paths_respect_custom_ccd_and_atom_order(input_type):
             )
 
     _assert_atom_names_align_with_reference_mol(structure_with_ref_mols)
+
+
+def test_conformer_fallback_to_ideal_with_partial_nan(monkeypatch):
+    """Verify the Ideal-coordinate fallback produces valid features even with partial NaN.
+
+    Mocks conformer generation to always fail, then injects an Ideal conformer
+    with one NaN atom position. Checks that:
+    - The fallback is used without raising
+    - NaN positions are zeroed out
+    - used_atom_mask correctly marks the NaN atom as False
+    - Featurization succeeds without NaN in the output
+    """
+    from unittest.mock import patch
+
+    from openfold3.core.data.primitives.structure.component import (
+        mol_from_biotite_ccd_cached,
+    )
+
+    # Get a real mol (ALA) with its CCD Ideal conformer and corrupt one atom
+    mol = mol_from_biotite_ccd_cached("ALA")
+    ideal_conf = mol.GetConformer(0)
+    assert ideal_conf.GetProp("name") == "Ideal"
+    ideal_conf.SetAtomPosition(0, (float("nan"), float("nan"), float("nan")))
+
+    # Patch the cached mol getter to return our modified mol, and conformer
+    # generation to always fail
+    with (
+        patch(
+            "openfold3.core.data.primitives.structure.query.mol_from_biotite_ccd_cached",
+            return_value=Chem.Mol(mol),
+        ),
+        patch(
+            "openfold3.core.data.primitives.structure.query.multistrategy_compute_conformer",
+            side_effect=ConformerGenerationError("mocked failure"),
+        ),
+    ):
+        proc_ref_mol = processed_reference_molecule_from_ccd_code("ALA")
+
+    ref_mol = proc_ref_mol.mol
+    positions = ref_mol.GetConformer(0).GetPositions()
+
+    # NaN positions should be zeroed, not NaN
+    assert np.isfinite(positions).all()
+    assert np.allclose(positions[0], [0, 0, 0])
+
+    # used_atom_mask should be False for the NaN atom
+    masks = [atom.GetBoolProp("annot_used_atom_mask") for atom in ref_mol.GetAtoms()]
+    assert masks[0] is False
+    assert all(masks[1:])
+
+    # Featurization should succeed without NaN
+    features = featurize_reference_conformers_of3(
+        [proc_ref_mol],
+        add_ref_space_uid_to_perm=False,
+    )
+    assert torch.isfinite(features["ref_pos"]).all()
