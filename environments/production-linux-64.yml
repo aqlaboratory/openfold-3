@@ -24,7 +24,7 @@ dependencies:
   - ml-collections
   - mkl
   - rdkit=2025.09.3
-  - biotite==1.2.0
+  - biotite
   - mmseqs2
   - bioconda::hmmer
   - bioconda::hhsuite
