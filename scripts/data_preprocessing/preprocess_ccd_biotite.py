@@ -6,7 +6,10 @@ import argparse
 import logging
 from pathlib import Path
 
-from openfold3.core.data.primitives.structure.biotite_ccd import concatenate_ccd
+from openfold3.core.data.primitives.structure.biotite_ccd import (
+    DEFAULT_BIOTITE_CCD_CATEGORIES,
+    concatenate_ccd,
+)
 
 
 def main():
@@ -34,7 +37,7 @@ def main():
 
     compressed_ccd = concatenate_ccd(
         ccd_path=args.ccd_path,
-        categories=["chem_comp", "chem_comp_atom", "chem_comp_bond"],
+        categories=DEFAULT_BIOTITE_CCD_CATEGORIES,
     )
     compressed_ccd.write(args.output)
 
