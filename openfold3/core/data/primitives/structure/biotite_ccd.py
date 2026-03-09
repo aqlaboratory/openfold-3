@@ -72,6 +72,8 @@ from openfold3.core.data.primitives.structure.component import (
     _mol_from_biotite_ccd_cached,
 )
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_BIOTITE_CCD_CATEGORIES = ("chem_comp", "chem_comp_atom", "chem_comp_bond")
 
 
@@ -153,7 +155,7 @@ def update_biotite_ccd_from_file(
         # Biotite requires BinaryCIF, so convert on the fly.
         tmp_dir = tempfile.mkdtemp(prefix="of3_biotite_ccd_")
         biotite_ccd_path = Path(tmp_dir) / "components.bcif"
-        logging.warning(
+        logger.warning(
             "Converting custom CCD to temporary BinaryCIF for Biotite "
             "(this may take over a minute). To skip this in future runs, "
             "pre-convert with preprocess_ccd_biotite.py or pass a .bcif "
@@ -181,7 +183,7 @@ def update_biotite_ccd_from_file(
     if component_count == 0:
         raise ValueError(f"Biotite CCD at {biotite_ccd_path} contained no components.")
 
-    logging.info(
+    logger.info(
         "Set Biotite CCD path to %s with %d components.",
         biotite_ccd_path,
         component_count,
@@ -206,7 +208,7 @@ def concatenate_ccd(
     Returns:
         A compressed BinaryCIF representation of the CCD.
     """
-    logging.info("Reading CCD from file...")
+    logger.info("Reading CCD from file...")
     ccd_path = Path(ccd_path)
     ccd_file = CIFFile.read(StringIO(ccd_path.read_text()))
 
@@ -215,7 +217,7 @@ def concatenate_ccd(
         categories = _list_all_category_names(ccd_file)
 
     for category_name in categories:
-        logging.info("Concatenating and compressing '%s' category...", category_name)
+        logger.info("Concatenating and compressing '%s' category...", category_name)
         concatenated_category = _concatenate_blocks_into_category(
             ccd_file, category_name
         )
