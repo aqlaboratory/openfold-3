@@ -268,22 +268,18 @@ def _create_cif_file(
     else:
         raise ValueError("Suffix must be either .cif or .bcif")
 
-    try:
-        # copy entity_id to label_entity_id so biotite uses it for the atom_site table
-        atom_array.set_annotation("label_entity_id", atom_array.entity_id)
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
-    # This error sometimes happens in the PDB preprocessing
-    except KeyError:
-        logger.warning(
-            "KeyError while writing structure to CIF file. Retrying with "
-            "intra-residue COORDINATION bonds set to SINGLE."
-        )
+    # copy entity_id to label_entity_id so biotite uses it for the atom_site table
+    atom_array.set_annotation("label_entity_id", atom_array.entity_id)
+
+    # Biotite cannot serialize COORDINATION bonds in the _chem_comp_bond table which are
+    # introduced by pdbeccdutils
+    # Convert to SINGLE proactively to avoid a KeyError in set_structure.
+    if include_bonds:
         atom_array = convert_intra_residue_dative_to_single(atom_array)
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
+
+    pdbx.set_structure(
+        cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
+    )
 
     # Update and add additional metadata tables
     if make_ost_compatible:

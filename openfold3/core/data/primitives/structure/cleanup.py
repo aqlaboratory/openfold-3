@@ -1091,9 +1091,12 @@ def convert_intra_residue_dative_to_single(atom_array: AtomArray):
     Returns:
         Copy of the AtomArray with intra-residue dative bonds converted to single bonds.
     """
-    # Copy AtomArray
-    atom_array = atom_array.copy()
+    # Fast path: skip if no coordination bonds exist
+    bondlist_arr = atom_array.bonds.as_array()
+    if not np.any(bondlist_arr[:, 2] == BondType.COORDINATION):
+        return atom_array
 
+    atom_array = atom_array.copy()
     bondlist_arr = atom_array.bonds.as_array()
 
     resid_starts_1, resid_starts_2 = (
