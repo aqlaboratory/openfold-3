@@ -788,11 +788,9 @@ def mol_from_biotite_ccd(ccd_code: str) -> AnnotatedMol:
         An AnnotatedMol with atom names and (potentially) ideal/model conformers.
     """
     cif_block = cif_block_from_biotite_ccd(ccd_code)
-    cif_str = cif_block.serialize()
-    doc = gemmi.cif.read_string(cif_str)
-    gemmi_block = doc.sole_block()
-    result = ccd_reader._parse_pdb_mmcif(gemmi_block, sanitize=True)
-    return mol_from_pdbeccdutils_component(result.component)
+    cif_file = CIFFile()
+    cif_file[ccd_code] = cif_block
+    return mol_from_ccd_entry(ccd_code, cif_file, ccdutils_sanitize=True)
 
 
 _mol_from_biotite_ccd_cached = lru_cache(maxsize=500)(mol_from_biotite_ccd)
