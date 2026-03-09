@@ -297,8 +297,7 @@ def processed_reference_molecule_from_ccd_code(
     mol = mol_from_biotite_ccd_cached(ccd_code)
 
     # Remove existing conformers from CCD (Ideal/Model) before computing new one
-    for conf in list(mol.GetConformers()):
-        mol.RemoveConformer(conf.GetId())
+    mol.RemoveAllConformers()
 
     # Set used_atom_mask (all True since mol is already sanitized and H-removed)
     mol = set_atomwise_annotation(mol, "used_atom_mask", [True] * mol.GetNumAtoms())
