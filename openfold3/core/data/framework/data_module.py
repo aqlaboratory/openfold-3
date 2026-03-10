@@ -66,6 +66,9 @@ from openfold3.core.data.framework.stochastic_sampler_dataset import (
     SamplerDataset,
 )
 from openfold3.core.data.pipelines.preprocessing.template import TemplatePreprocessor
+from openfold3.core.data.primitives.structure.biotite_ccd import (
+    update_biotite_ccd,
+)
 from openfold3.core.data.tools.colabfold_msa_server import (
     MsaComputationSettings,
     augment_main_msa_with_query_sequence,
@@ -558,10 +561,6 @@ class InferenceDataModule(DataModule):
         dataset = torch.utils.data.get_worker_info().dataset
         ccd_path = getattr(dataset, "_biotite_ccd_path", None)
         if ccd_path is not None:
-            from openfold3.core.data.primitives.structure.biotite_ccd import (
-                update_biotite_ccd,
-            )
-
             update_biotite_ccd(ccd_path)
 
 

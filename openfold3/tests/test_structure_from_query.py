@@ -17,6 +17,7 @@ import pickle
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 import biotite.structure.info.ccd as biotite_ccd
 import numpy as np
@@ -30,6 +31,9 @@ from openfold3.core.data.pipelines.featurization.conformer import (
 from openfold3.core.data.primitives.structure.biotite_ccd import (
     concatenate_ccd,
     update_biotite_ccd,
+)
+from openfold3.core.data.primitives.structure.component import (
+    mol_from_biotite_ccd_cached,
 )
 from openfold3.core.data.primitives.structure.conformer import ConformerGenerationError
 from openfold3.core.data.primitives.structure.query import (
@@ -332,12 +336,6 @@ def test_conformer_fallback_to_ideal_with_partial_nan(monkeypatch):
     - used_atom_mask correctly marks the NaN atom as False
     - Featurization succeeds without NaN in the output
     """
-    from unittest.mock import patch
-
-    from openfold3.core.data.primitives.structure.component import (
-        mol_from_biotite_ccd_cached,
-    )
-
     # Get a real mol (ALA) with its CCD Ideal conformer and corrupt one atom
     mol = mol_from_biotite_ccd_cached("ALA")
     ideal_conf = mol.GetConformer(0)
