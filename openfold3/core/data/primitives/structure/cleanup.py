@@ -138,7 +138,7 @@ def fix_arginine_naming(atom_array: AtomArray) -> AtomArray:
 
         # Skip if any of the required atoms are missing
         if nh1_coord.size == 0 or nh2_coord.size == 0 or cd_coord.size == 0:
-            logger.warning(
+            logger.debug(
                 f"Skipping arginine naming fix for residue "
                 f"missing atoms - NH1={np.sum(nh1_mask)}, "
                 f"NH2={np.sum(nh2_mask)}, CD={np.sum(cd_mask)}"
