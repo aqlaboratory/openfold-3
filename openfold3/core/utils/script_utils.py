@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ import resource
 
 logging.basicConfig()
 logger = logging.getLogger(__file__)
-logger.setLevel(level=logging.WARNING)
 
 
 def set_ulimits():

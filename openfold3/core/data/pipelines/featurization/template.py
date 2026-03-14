@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,7 +16,12 @@
 
 import numpy as np
 import torch
+from biotite.structure import AtomArray
 
+from openfold3.core.data.primitives.featurization.padding import pad_token_dim
+from openfold3.core.data.primitives.featurization.structure import (
+    extract_starts_entities,
+)
 from openfold3.core.data.primitives.featurization.template import (
     create_template_distogram,
     create_template_feature_precursor_of3,
@@ -42,6 +47,7 @@ def featurize_templates_dummy_of3(n_templ, n_token):
 
 @log_runtime_memory(runtime_dict_key="runtime-template-feat")
 def featurize_template_structures_of3(
+    atom_array: AtomArray,
     template_slice_collection: TemplateSliceCollection,
     n_templates: int,
     n_tokens: int,
@@ -89,8 +95,20 @@ def featurize_template_structures_of3(
         n_tokens,
     )
 
-    features = {}
+    # Create asym ID to mask inter-chain features and mask
+    token_starts_with_stop, _ = extract_starts_entities(atom_array)
+    token_starts = token_starts_with_stop[:-1]
+    chain_ids_token = atom_array.chain_id[token_starts]
+    _, renum_ids = np.unique(chain_ids_token, return_inverse=True)
+    asym_id = pad_token_dim(
+        {"asym_id": torch.tensor(renum_ids + 1, dtype=torch.int32)}, n_tokens
+    )["asym_id"]
+    multichain_pair_mask = (asym_id[..., None] == asym_id[..., None, :])[
+        ..., None, :, :, None
+    ]
 
+    # Create features
+    features = {}
     features["template_pseudo_beta_mask"] = torch.tensor(
         ~np.isnan(template_feature_precursor.pseudo_beta_atom_coords).any(axis=-1),
         dtype=torch.float,
@@ -106,6 +124,7 @@ def featurize_template_structures_of3(
     features["template_distogram"] = create_template_distogram(
         template_feature_precursor.pseudo_beta_atom_coords,
         features["template_pseudo_beta_mask"],
+        multichain_pair_mask,
         min_bin,
         max_bin,
         n_bins,
@@ -113,5 +132,6 @@ def featurize_template_structures_of3(
     features["template_unit_vector"] = create_template_unit_vector(
         template_feature_precursor.frame_atom_coords,
         features["template_backbone_frame_mask"],
+        multichain_pair_mask,
     )
     return features

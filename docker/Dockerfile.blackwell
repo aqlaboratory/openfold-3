@@ -6,7 +6,6 @@ RUN apt-get update && apt-get install -y \
     wget \
     git \
     hmmer \
-    kalign \
     libxrender1 \
     libxext6 \
     libsm6 \
@@ -47,6 +46,7 @@ RUN pip install --no-cache-dir \
     memory_profiler \
     func_timeout \
     biotite==1.2.0 \
+    kalign-python \
     "nvidia-cutlass<4" \
     "cuda-python<12.9.1"
 

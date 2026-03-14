@@ -88,6 +88,7 @@ dataset_config_kwargs:
       rnacentral_hits: 10000
       nt_hits: 10000
       concat_cfdb_uniref100_filtered: 10000000
+      mmseqs_colabfold: 16384
       colabfold_main: 16384
       colabfold_paired: 8192
     msas_to_pair:
@@ -103,6 +104,7 @@ dataset_config_kwargs:
       - rnacentral_hits
       - nt_hits
       - concat_cfdb_uniref100_filtered
+      - mmseqs_colabfold
       - colabfold_main
     paired_msa_order:
       - colabfold_paired

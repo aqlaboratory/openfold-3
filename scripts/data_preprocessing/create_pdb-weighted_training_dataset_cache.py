@@ -91,7 +91,7 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_weighted import (
     ),
 )
 @click.option(
-    "--missing_alignment_log",
+    "--missing-alignment-log",
     type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
     help=(
@@ -171,6 +171,7 @@ def main(
 
     # Add file handler if log file is specified
     if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_file, mode="w")
         logger.addHandler(file_handler)
 

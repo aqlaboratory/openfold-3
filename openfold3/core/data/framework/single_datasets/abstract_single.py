@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -91,6 +91,8 @@ class SingleDataset(ABC, Dataset):
         if not self.__class__._registered:
             raise DatasetNotRegisteredError(self.__class__.__name__)
 
+        self.dataset_cache = None
+        self.datapoint_cache = None
         self.datapoint_index = None
 
     def __post_init__(self) -> None:

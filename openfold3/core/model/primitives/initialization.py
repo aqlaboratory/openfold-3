@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -83,7 +83,3 @@ def gating_init_(weights):
 
 def kaiming_normal_init_(weights):
     torch.nn.init.kaiming_normal_(weights, nonlinearity="linear")
-
-
-def normal_init_(weights):
-    torch.nn.init.normal_(weights)

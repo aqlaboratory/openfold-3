@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,8 @@
 # limitations under the License.
 
 """This module contains reference tables for the data pipeline."""
+
+from itertools import combinations_with_replacement
 
 # Removed crystallization aids as defined in AF3 SI, Table 9
 CRYSTALLIZATION_AIDS = [
@@ -1357,3 +1359,6 @@ IONS = [
     "ZO3",
     "ZR",
 ]
+
+AB_AG_CHAIN_TYPES = ["AB-H", "AB-L", "AG"]
+AB_AG_CHAIN_PAIR_TYPES = list(combinations_with_replacement(AB_AG_CHAIN_TYPES, 2))

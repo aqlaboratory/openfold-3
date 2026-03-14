@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import torch
 from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 
+from openfold3.core.config.msa_pipeline_configs import MsaSampleProcessorInputTrain
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     SingleDataset,
     register_dataset,
@@ -31,7 +32,10 @@ from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_reference_conformers_of3,
 )
 from openfold3.core.data.pipelines.featurization.loss_weights import set_loss_weights
-from openfold3.core.data.pipelines.featurization.msa import featurize_msa_of3
+from openfold3.core.data.pipelines.featurization.msa import (
+    MsaFeaturizerOF3,
+    MsaFeaturizerOF3Config,
+)
 from openfold3.core.data.pipelines.featurization.structure import (
     featurize_target_gt_structure_of3,
 )
@@ -42,7 +46,7 @@ from openfold3.core.data.pipelines.sample_processing.conformer import (
     get_reference_conformer_data_of3,
 )
 from openfold3.core.data.pipelines.sample_processing.msa import (
-    process_msas_of3,
+    MsaSampleProcessorTrain,
 )
 from openfold3.core.data.pipelines.sample_processing.structure import (
     process_target_structure_of3,
@@ -75,9 +79,6 @@ class BaseOF3Dataset(SingleDataset, ABC):
     - implement the __getitem__ method
     - implement the datapoint_cache property and
     - decorate the class with the register_dataset decorator.
-
-    In addition, child classes of BaseAF3Dataset must set whether cropping is performed
-    by setting the self.apply_crop attribute.
     """
 
     # TODO: add typehint - currently causes circular import issues
@@ -104,14 +105,14 @@ class BaseOF3Dataset(SingleDataset, ABC):
         self.alignment_db_directory = (
             dataset_config.dataset_paths.alignment_db_directory
         )
+        self.alignment_array_directory = (
+            dataset_config.dataset_paths.alignment_array_directory
+        )
         if self.alignment_db_directory is not None:
             with open(self.alignment_db_directory / Path("alignment_db.index")) as f:
                 self.alignment_index = json.load(f)
         else:
             self.alignment_index = None
-        self.alignment_array_directory = (
-            dataset_config.dataset_paths.alignment_array_directory
-        )
         self.template_cache_directory = (
             dataset_config.dataset_paths.template_cache_directory
         )
@@ -128,6 +129,24 @@ class BaseOF3Dataset(SingleDataset, ABC):
 
         self.use_roda_monomer_format = (
             dataset_config.dataset_paths.use_roda_monomer_format
+        )
+
+        # MSA pipeline
+        self.msa_settings = dataset_config.msa
+        self.msa_sample_processor_train = MsaSampleProcessorTrain(
+            config=self.msa_settings,
+            alignment_array_directory=self.alignment_array_directory,
+            alignment_db_directory=self.alignment_db_directory,
+            alignment_index=self.alignment_index,
+            alignments_directory=self.alignments_directory,
+            use_roda_monomer_format=self.use_roda_monomer_format,
+        )
+        self.msa_featurizer_of3 = MsaFeaturizerOF3(
+            config=MsaFeaturizerOF3Config(
+                max_rows=self.msa_settings.max_rows,
+                max_rows_paired=self.msa_settings.max_rows_paired,
+                subsample_with_bands=self.msa_settings.subsample_with_bands,
+            )
         )
 
         # Dataset/datapoint cache
@@ -147,22 +166,13 @@ class BaseOF3Dataset(SingleDataset, ABC):
         # Dataset configuration
         # n_tokens can be set in the getitem method separately for each sample using
         # the output of create_target_structure_features
-        self.apply_crop = None
-        self.crop = {}
+        self.crop = dataset_config.crop.model_dump()
         self.loss = dataset_config.loss.model_dump()
-        self.msa = dataset_config.msa
         self.template = dataset_config.template
 
         # Misc
         self.single_moltype = None
         self.debug_mode = dataset_config.debug_mode
-
-    def __post_init__(self):
-        if self.apply_crop is None:
-            raise ValueError(
-                "Attribute self.apply_crop must be set in the __init__ of"
-                f"{self.get_class_name()}."
-            )
 
     @log_runtime_memory(runtime_dict_key="runtime-create-structure-features")
     def create_structure_features(
@@ -178,7 +188,6 @@ class BaseOF3Dataset(SingleDataset, ABC):
         atom_array_gt, crop_strategy, self.n_tokens = process_target_structure_of3(
             target_structures_directory=self.target_structures_directory,
             pdb_id=pdb_id,
-            apply_crop=self.apply_crop,
             crop_config=self.crop,
             preferred_chain_or_interface=preferred_chain_or_interface,
             structure_format=self.target_structure_file_format,
@@ -241,33 +250,18 @@ class BaseOF3Dataset(SingleDataset, ABC):
     def create_msa_features(self, pdb_id: str, atom_array: AtomArray) -> dict:
         """Creates the MSA features."""
 
-        msa_array_collection = process_msas_of3(
+        input = MsaSampleProcessorInputTrain.create_from_dataset_cache_entry(
+            dataset_cache_entry=self.dataset_cache.structure_data[pdb_id],
             atom_array=atom_array,
-            assembly_data=self.fetch_fields_for_chains(
-                pdb_id=pdb_id,
-                fields=["alignment_representative_id", "molecule_type"],
-                defaults=[None, self.single_moltype],
-            ),
-            alignments_directory=self.alignments_directory,
-            alignment_db_directory=self.alignment_db_directory,
-            alignment_index=self.alignment_index,
-            alignment_array_directory=self.alignment_array_directory,
-            max_seq_counts=self.msa.max_seq_counts,
-            aln_order=self.msa.aln_order,
-            max_rows_paired=self.msa.max_rows_paired,
-            min_chains_paired_partial=self.msa.min_chains_paired_partial,
-            pairing_mask_keys=self.msa.pairing_mask_keys,
-            moltypes=self.msa.moltypes,
-            msas_to_pair=self.msa.msas_to_pair,
-            use_roda_monomer_format=self.use_roda_monomer_format,
+            default_moltype=self.single_moltype,
+            default_alignment_representative_id=None,
         )
-        msa_features = featurize_msa_of3(
+        msa_array_collection = self.msa_sample_processor_train(input=input)
+
+        msa_features = self.msa_featurizer_of3(
             atom_array=atom_array,
             msa_array_collection=msa_array_collection,
-            max_rows=self.msa.max_rows,
-            max_rows_paired=self.msa.max_rows_paired,
             n_tokens=self.n_tokens,
-            subsample_with_bands=self.msa.subsample_with_bands,
         )
 
         return msa_features
@@ -280,6 +274,7 @@ class BaseOF3Dataset(SingleDataset, ABC):
             atom_array=atom_array,
             n_templates=self.template.n_templates,
             take_top_k=self.template.take_top_k,
+            min_n_tokens_per_chain=self.template.min_n_tokens_per_chain,
             template_cache_directory=self.template_cache_directory,
             assembly_data=self.fetch_fields_for_chains(
                 pdb_id=pdb_id,
@@ -294,6 +289,7 @@ class BaseOF3Dataset(SingleDataset, ABC):
         )
 
         template_features = featurize_template_structures_of3(
+            atom_array=atom_array,
             template_slice_collection=template_slice_collection,
             n_templates=self.template.n_templates,
             n_tokens=self.n_tokens,

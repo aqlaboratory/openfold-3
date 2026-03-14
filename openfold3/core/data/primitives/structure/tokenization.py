@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -136,7 +136,9 @@ def find_modified_residue_atom_ids(atom_array: AtomArray) -> np.ndarray:
     return atomized_crp_token_ids
 
 
-@log_runtime_memory(runtime_dict_key="runtime-target-structure-proc-token")
+@log_runtime_memory(
+    runtime_dict_key="runtime-target-structure-proc-token", multicall=True
+)
 def tokenize_atom_array(atom_array: AtomArray):
     """Creates token id, token center atom, and is_atomized annotations for atom array.
 

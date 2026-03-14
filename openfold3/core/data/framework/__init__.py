@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-# %%
 from pathlib import Path
 
 
@@ -26,5 +24,3 @@ def _import_all_py_files_from_dir(directory: Path):
 _import_all_py_files_from_dir(
     Path(__file__).parent.parent / Path("framework/single_datasets")
 )
-
-# %%

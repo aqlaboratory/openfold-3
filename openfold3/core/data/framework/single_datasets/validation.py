@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,41 +23,25 @@ import torch
 from openfold3.core.data.framework.single_datasets.abstract_single import (
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.base_of3 import BaseOF3Dataset
+from openfold3.core.data.framework.single_datasets.base_of3 import (
+    BaseOF3Dataset,
+)
 from openfold3.core.data.framework.single_datasets.dataset_utils import (
+    check_invalid_feature_dict,
     pad_to_world_size,
 )
-from openfold3.core.data.framework.single_datasets.pdb import is_invalid_feature_dict
 from openfold3.core.data.primitives.featurization.structure import (
     extract_starts_entities,
+    make_chain_pair_labels_padded,
+    make_chain_pair_mask_padded,
+)
+from openfold3.core.data.resources.lists import (
+    AB_AG_CHAIN_PAIR_TYPES,
+    AB_AG_CHAIN_TYPES,
 )
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 logger = logging.getLogger(__name__)
-
-
-def make_chain_pair_mask_padded(
-    all_chains: torch.Tensor, interfaces_to_include: list[tuple[int, int]]
-) -> torch.Tensor:
-    """Creates a pairwise mask for chains given a list of chain tuples.
-    Args:
-        all_chains: tensor containing all chain ids in complex
-        interfaces_to_include: tuples with pairwise interactions to include
-    Returns:
-        torch.Tensor [n_chains + 1, n_chains + 1] where:
-            - each value [i,j] represents
-            - a 0th row and 0th column of all zeros is added as padding
-    """
-    largest_chain_index = torch.max(all_chains)
-    chain_mask = torch.zeros(
-        (largest_chain_index + 1, largest_chain_index + 1), dtype=torch.int
-    )
-
-    for interface_tuple in interfaces_to_include:
-        chain_mask[interface_tuple[0], interface_tuple[1]] = 1
-        chain_mask[interface_tuple[1], interface_tuple[0]] = 1
-
-    return chain_mask
 
 
 @register_dataset
@@ -79,8 +63,17 @@ class ValidationPDBDataset(BaseOF3Dataset):
         # Dataset/datapoint cache
         self.create_datapoint_cache()
 
-        # Cropping is turned off
-        self.apply_crop = False
+        # Cropping should be disabled for validation datasets
+        if self.crop["token_crop"]["enabled"]:
+            logger.warning(
+                "Token cropping is enabled for ValidationPDBDataset. Make sure this is"
+                " intended."
+            )
+        if self.crop["chain_crop"]["enabled"]:
+            logger.warning(
+                "Chain cropping is enabled for ValidationPDBDataset. Make sure this is"
+                " intended."
+            )
 
     def create_datapoint_cache(self):
         """Creates the datapoint_cache for iterating over each sample.
@@ -149,9 +142,7 @@ class ValidationPDBDataset(BaseOF3Dataset):
                 features["pdb_id"] = pdb_id
                 features["preferred_chain_or_interface"] = "none"
 
-                if is_invalid_feature_dict(features):
-                    index = random.randint(0, len(self) - 1)
-                    return self.__getitem__(index)
+                check_invalid_feature_dict(features)
 
                 features["repeated_sample"] = torch.tensor(
                     [is_repeated_sample], dtype=torch.bool
@@ -161,10 +152,11 @@ class ValidationPDBDataset(BaseOF3Dataset):
 
             except Exception as e:
                 tb = traceback.format_exc()
+                dataset_name = self.get_class_name()
                 logger.warning(
                     "-" * 40
                     + "\n"
-                    + f"Failed to process ValidationPDBDataset entry {pdb_id}:"
+                    + f"Failed to process {dataset_name} entry {pdb_id}:"
                     + f" {str(e)}\n"
                     + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
                     + "-" * 40
@@ -172,6 +164,7 @@ class ValidationPDBDataset(BaseOF3Dataset):
                 index = random.randint(0, len(self) - 1)
                 return self.__getitem__(index)
 
+    # TODO factor out primitives
     def get_validation_homology_features(self, pdb_id: str, sample_data: dict) -> dict:
         """Create masks for validation metrics analysis.
 
@@ -180,9 +173,9 @@ class ValidationPDBDataset(BaseOF3Dataset):
             sample_data: dictionary containing features for the sample and atom array
         Returns:
             dict with two features:
-            - use_for_intra_validation [*, n_tokens]
+            - use_for_intra_validation [*, n_atoms]
                 mask indicating if token should be used for intrachain metrics
-            - use_for_inter_validation [*, n_tokens]
+            - use_for_inter_validation [*, n_atoms, n_atoms]
                 mask indicating if token should be used for intrachain metrics
         """
         features = {}
@@ -254,6 +247,122 @@ class ValidationPDBDataset(BaseOF3Dataset):
 
         return features
 
+    # TODO factor out primitives
+    def get_ab_ag_features(self, pdb_id, sample_data):
+        """Create AB/AG label features for validation metrics.
+
+        Label tensors encode the following types:
+            Chain labels:
+                1. antibody heavy chain
+                2. antibody light chain
+                3. antigen chain
+            Chain pair labels:
+                1. antibody heavy chain - antibody heavy chain
+                2. antibody heavy chain - antibody light chain
+                3. antibody heavy chain - antigen chain
+                4. antibody light chain - antibody light chain
+                5. antibody light chain - antigen chain
+                6. antigen chain - antigen chain
+
+        Args:
+            pdb_id:
+                PDB id for example found in dataset_cache
+            sample_data:
+                dictionary containing features for the sample and atom array
+        Returns:
+            dict with two features:
+            - intra_ab_ag_type_atomized [*, n_atoms]
+                per atom integer labels indicating which chain type an atom belongs to
+            - inter_ab_ag_type_atomized [*, n_atoms, n_atoms]
+                per atom pair integer labels indicating which chain pair type an atom
+                pair belongs to
+        """
+        features = {}
+        structure_entry = self.dataset_cache.structure_data[pdb_id]
+
+        # Create AB/AG type features
+        # Per-chain maps
+        ab_ag_type_to_chain_id = {t: [] for t in AB_AG_CHAIN_TYPES}
+        for chain_id, chain_data in structure_entry.chains.items():
+            sabdab_annotation = chain_data.sabdab_annotation
+            if sabdab_annotation:
+                ab_ag_type_to_chain_id[sabdab_annotation].append(int(chain_id))
+        # Per-interface maps
+        ab_ag_type_to_chain_id_pair = {t: [] for t in AB_AG_CHAIN_PAIR_TYPES}
+        for chain_id_pair in structure_entry.interfaces:
+            chain_id_i, chain_id_j = chain_id_pair.split("_")
+            chain_data_i = structure_entry.chains[chain_id_i]
+            chain_data_j = structure_entry.chains[chain_id_j]
+            sabdab_annotation_i = chain_data_i.sabdab_annotation
+            sabdab_annotation_j = chain_data_j.sabdab_annotation
+            if sabdab_annotation_i and sabdab_annotation_j:
+                if (
+                    sabdab_annotation_i,
+                    sabdab_annotation_j,
+                ) in ab_ag_type_to_chain_id_pair:
+                    ab_ag_type_to_chain_id_pair[
+                        (sabdab_annotation_i, sabdab_annotation_j)
+                    ].append((int(chain_id_i), int(chain_id_j)))
+                else:
+                    ab_ag_type_to_chain_id_pair[
+                        (sabdab_annotation_j, sabdab_annotation_i)
+                    ].append((int(chain_id_j), int(chain_id_i)))
+
+        atom_array = sample_data["atom_array"]
+        token_starts_with_stop, _ = extract_starts_entities(atom_array)
+        token_starts = token_starts_with_stop[:-1]
+        token_chain_id = atom_array.chain_id[token_starts].astype(int)
+
+        token_mask = sample_data["features"]["token_mask"]
+        num_atoms_per_token = sample_data["features"]["num_atoms_per_token"]
+
+        token_ab_ag_type = torch.zeros_like(
+            torch.tensor(token_chain_id),
+            dtype=torch.int32,
+        )
+
+        # Intra
+        for ab_ag_type_int, ab_ag_type_str in enumerate(AB_AG_CHAIN_TYPES, start=1):
+            mask = torch.tensor(
+                np.isin(token_chain_id, ab_ag_type_to_chain_id[ab_ag_type_str]),
+                dtype=torch.int32,
+            )
+            token_ab_ag_type += mask * ab_ag_type_int
+
+        intra_ab_ag_type_atomized = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=token_ab_ag_type,
+        ).to(torch.int32)
+
+        features["intra_ab_ag_type_atomized"] = intra_ab_ag_type_atomized
+
+        # Inter
+        token_chain_id = torch.tensor(token_chain_id, dtype=torch.int32)
+        chain_pair_labels = make_chain_pair_labels_padded(
+            token_chain_id, AB_AG_CHAIN_PAIR_TYPES, ab_ag_type_to_chain_id_pair
+        )
+        token_pair_labels = chain_pair_labels[
+            token_chain_id.unsqueeze(0), token_chain_id.unsqueeze(1)
+        ]
+
+        inter_ab_ag_type_atomized = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=token_pair_labels,
+            token_dim=-2,
+        )
+        inter_ab_ag_type_atomized = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=inter_ab_ag_type_atomized.transpose(-1, -2),
+            token_dim=-2,
+        )
+        inter_ab_ag_type_atomized = inter_ab_ag_type_atomized.transpose(-1, -2)
+        features["inter_ab_ag_type_atomized"] = inter_ab_ag_type_atomized
+
+        return features
+
     def create_all_features(
         self,
         pdb_id: str,
@@ -270,10 +379,12 @@ class ValidationPDBDataset(BaseOF3Dataset):
             return_crop_strategy=return_crop_strategy,
         )
 
-        validation_homology_filters = self.get_validation_homology_features(
-            pdb_id, sample_data
+        sample_data["features"]["ground_truth"].update(
+            self.get_validation_homology_features(pdb_id, sample_data)
         )
-        sample_data["features"]["ground_truth"].update(validation_homology_filters)
+        sample_data["features"]["ground_truth"].update(
+            self.get_ab_ag_features(pdb_id, sample_data)
+        )
         sample_data["features"]["atom_array"] = sample_data["atom_array"]
 
         # Remove atom arrays if they are not needed

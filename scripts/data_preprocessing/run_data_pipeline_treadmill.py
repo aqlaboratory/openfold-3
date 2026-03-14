@@ -45,7 +45,6 @@ In addition, one can specify the following flags for extended functionality:
 
 import json
 import os
-import random
 import sys
 import warnings
 from pathlib import Path
@@ -55,20 +54,17 @@ import numpy as np
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-from lightning_fabric.utilities.rank_zero import (
-    rank_zero_only,
-)
-from ml_collections import ConfigDict
+from lightning_fabric.utilities.seed import pl_worker_init_function
 from torch.utils.data import DataLoader, get_worker_info
 from tqdm import tqdm
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import (
-    _NUMPY_AVAILABLE,
     DataModule,
+    DataModuleConfig,
 )
-from openfold3.core.data.framework.lightning_utils import _generate_seed_sequence
 from openfold3.core.data.framework.stochastic_sampler_dataset import (
+    OF3DistributedSampler,
     SamplerDataset,
 )
 from openfold3.core.data.io.utils import JsonStrOrFile
@@ -86,7 +82,8 @@ from openfold3.core.data.primitives.quality_control.worker_config import (
     configure_worker_init_func_logger,
     set_worker_init_attributes,
 )
-from openfold3.projects import registry
+from openfold3.entry_points.validator import TrainingExperimentConfig
+from openfold3.projects.of3_all_atom.config.dataset_configs import TrainingDatasetSpec
 
 np.set_printoptions(threshold=sys.maxsize)
 
@@ -202,7 +199,7 @@ np.set_printoptions(threshold=sys.maxsize)
     default="",
     type=str,
     help=(
-        "Comma separated list of PDB IDs use to subset the dataset cache to run "
+        "Comma separated list of PDB IDs used to subset the dataset cache to run "
         "asserts on."
     ),
 )
@@ -221,7 +218,7 @@ np.set_printoptions(threshold=sys.maxsize)
     default=False,
     help=(
         "Whether to sample the datapoints with stochastic sampling."
-        " If multiple datasets are provided without sttochastic sampling enabled,"
+        " If multiple datasets are provided without stochastic sampling enabled,"
         " the datasets will be concatenated."
     ),
 )
@@ -347,36 +344,48 @@ def main(
     Returns:
         None
     """
+    if save_features == "False":
+        save_features = False
+    if save_atom_array == "False":
+        save_atom_array = False
+
     # Set seed
     pl.seed_everything(seed, workers=False)
 
-    # Parse runner yml file and init Dataset
-    runner_args = ConfigDict(config_utils.load_yaml(runner_yml_file))
+    # Parse runner YAML into the new pydantic config
+    experiment_cfg = TrainingExperimentConfig.model_validate(
+        config_utils.load_yaml(runner_yml_file)
+    )
 
     # Run checks on the input args
     run_arg_checks(
-        runner_args,
+        experiment_cfg.data_module_args.num_workers,
         run_asserts,
         save_statistics,
         log_runtimes,
         log_memory,
     )
 
-    project_entry = registry.get_project_entry(runner_args.project_type)
-    project_config = registry.make_config_with_presets(
-        project_entry, runner_args.presets
-    )
-    dataset_config_builder = project_entry.dataset_config_builder
-    data_module_config = registry.make_dataset_module_config(
-        runner_args,
-        dataset_config_builder,
-        project_config,
-    )
-    if len(data_module_config.datasets) < 1:
-        raise ValueError("No datasets found in the input yaml file.")
+    # Seed (use the model/experiment seed from the new config)
+    pl.seed_everything(experiment_cfg.experiment_settings.seed, workers=False)
 
-    # TODO: add more extended checks here
-    # Dataset configs in input format -> flattened dataset configs
+    # Build DataModuleConfig the same way TrainingExperimentRunner does it
+    _cfgs: list[TrainingDatasetSpec] = []
+    for mode, ds_specs in experiment_cfg.dataset_configs.items():
+        for name, spec in ds_specs.items():
+            spec = dict(spec)
+            spec["name"] = name
+            spec["mode"] = mode
+            spec.setdefault("config", {})
+            spec["config"]["dataset_paths"] = experiment_cfg.dataset_paths[name]
+            _cfgs.append(TrainingDatasetSpec.model_validate(spec))
+
+    data_module_config = DataModuleConfig(
+        datasets=_cfgs,
+        **experiment_cfg.data_module_args.model_dump(),
+    )
+
+    # Flatten/normalize into the "multi dataset" structure the logging wrappers expect
     multi_dataset_config = DataModule.parse_data_config(data_module_config.datasets)
 
     # Wrap each dataset in logging
@@ -397,16 +406,20 @@ def main(
     if add_stochastic_sampling:
         logging_dataset = SamplerDataset(
             datasets=datasets,
+            epoch_len=experiment_cfg.data_module_args.epoch_len,
+        )
+        sampler = OF3DistributedSampler(
+            dataset=logging_dataset,
             dataset_probabilities=multi_dataset_config.weights,
-            epoch_len=data_module_config.epoch_len,
-            num_epochs=data_module_config.num_epochs,
-            generator=torch.Generator(device="cpu").manual_seed(
-                data_module_config.data_seed
-            ),
+            epoch_len=experiment_cfg.data_module_args.epoch_len,
             next_dataset_indices=next_dataset_indices,
+            num_replicas=1,
+            rank=0,
+            seed=experiment_cfg.data_module_args.data_seed,
         )
     else:
         logging_dataset = ConcatDataset(datasets)
+        sampler = None
 
     # This function needs to be defined here to form a closure
     # around log_output_directory, log_level and save_statistics
@@ -425,24 +438,7 @@ def main(
             rank (Optional[int], optional):
                 Worker process rank. Defaults to None.
         """
-        # implementation notes: https://github.com/pytorch/pytorch/issues/5059#issuecomment-817392562
-        global_rank = rank if rank is not None else rank_zero_only.rank
-        process_seed = torch.initial_seed()
-        # back out the base seed so we can use all the bits
-        base_seed = process_seed - worker_id
-        seed_sequence = _generate_seed_sequence(
-            base_seed, worker_id, global_rank, count=4
-        )
-        torch.manual_seed(seed_sequence[0])  # torch takes a 64-bit seed
-        random.seed(
-            (seed_sequence[1] << 32) | seed_sequence[2]
-        )  # combine two 64-bit seeds
-        if _NUMPY_AVAILABLE:
-            import numpy as np
-
-            np.random.seed(
-                seed_sequence[3] & 0xFFFFFFFF
-            )  # numpy takes 32-bit seed only
+        pl_worker_init_function(worker_id=worker_id, rank=rank)
 
         # Get worker dataset
         worker_info = get_worker_info()
@@ -490,8 +486,12 @@ def main(
     # Configure DataLoader
     data_loader = DataLoader(
         dataset=logging_dataset,
-        batch_size=data_module_config.batch_size,
-        num_workers=data_module_config.num_workers,
+        batch_size=experiment_cfg.data_module_args.batch_size,
+        num_workers=experiment_cfg.data_module_args.num_workers,
+        sampler=sampler,
+        generator=torch.Generator().manual_seed(
+            experiment_cfg.data_module_args.data_seed
+        ),
         worker_init_fn=worker_init_function_with_logging,
     )
 
@@ -514,7 +514,7 @@ def main(
         # Collate passed IDs from all workers
         if run_asserts:
             all_passed_ids = set()
-            for worker_id in range(runner_args.num_workers):
+            for worker_id in range(experiment_cfg.data_module_args.num_workers):
                 worker_compliance_file = log_output_directory / Path(
                     f"worker_{worker_id}/passed_ids.tsv"
                 )
@@ -536,7 +536,7 @@ def main(
         # Collate the extra data from different workers
         if save_statistics:
             df_all = pd.DataFrame()
-            for worker_id in range(runner_args.num_workers):
+            for worker_id in range(experiment_cfg.data_module_args.num_workers):
                 worker_extra_data_file = log_output_directory / Path(
                     f"worker_{worker_id}/datapoint_statistics.tsv"
                 )
@@ -568,7 +568,7 @@ def main(
         if log_memory:
             # Convert memory profile logs to dataframes
             df_all = pd.DataFrame()
-            for worker_id in range(runner_args.num_workers):
+            for worker_id in range(experiment_cfg.data_module_args.num_workers):
                 worker_memory_file = log_output_directory / Path(
                     f"worker_{worker_id}/memory_profile.log"
                 )
@@ -596,7 +596,7 @@ def main(
         # Collate logs
         combined_log = log_output_directory / Path("worker_logs.log")
         with combined_log.open("w") as out_file:
-            for worker_id in range(runner_args.num_workers):
+            for worker_id in range(experiment_cfg.data_module_args.num_workers):
                 worker_dir = log_output_directory / Path(f"worker_{worker_id}")
                 worker_log = worker_dir / Path(f"worker_{worker_id}.log")
                 out_file.write(f"Log file: {worker_log.name}\n")
@@ -608,13 +608,13 @@ def main(
 
 
 def run_arg_checks(
-    runner_args: ConfigDict,
+    num_workers: int,
     run_asserts: bool,
     save_statistics: bool,
     log_runtimes: bool,
     log_memory: bool,
 ) -> None:
-    if runner_args.num_workers < 1:
+    if num_workers < 1:
         raise ValueError("This script only works with num_workers >= 1.")
     if sum([run_asserts, save_statistics]) > 1:
         raise ValueError(
@@ -622,11 +622,11 @@ def run_arg_checks(
         )
     if sum([log_runtimes, log_memory]) > 1:
         raise ValueError("Only one of log_runtimes, and log_memory can be set to True.")
-    if log_memory & (runner_args.num_workers > 1):
+    if log_memory & (num_workers > 1):
         warnings.warn(
             (
                 "Memory logging with more than one worker (currently using "
-                f"{runner_args.num_workers}) may significantly slow down the treadmill "
+                f"{num_workers}) may significantly slow down the treadmill "
                 "iteration time."
             ),
             stacklevel=2,
@@ -635,10 +635,3 @@ def run_arg_checks(
 
 if __name__ == "__main__":
     main()
-
-# TODOs:
-# 6. implement the model forward pass
-# 8. Add logic to re-crop the structure if the number of tokens is larger than the
-# token budget - the number of re-crops and featurizations should be determined
-# dynamically and in a way that likely covers the entire structure but with a
-# maximun number of re-crops

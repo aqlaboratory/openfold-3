@@ -55,9 +55,20 @@ def mse_ala_atom_array():
     return atom_array
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--skip-ccd-update",
+        action="store_true",
+        default=False,
+        help="Skip downloading/verifying the Biotite CCD file",
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
-def ensure_biotite_ccd():
+def ensure_biotite_ccd(request):
     """Download CCD file before any tests run (once per test session)."""
+    if request.config.getoption("--skip-ccd-update"):
+        return
     setup_biotite_ccd(ccd_path=biotite.setup_ccd.OUTPUT_CCD, force_download=False)
 
 

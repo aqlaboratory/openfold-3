@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -39,6 +39,10 @@ from openfold3.core.data.primitives.structure.cleanup import (
 from openfold3.core.data.primitives.structure.metadata import get_cif_block
 from openfold3.core.data.primitives.structure.unresolved import (
     add_unresolved_atoms,
+)
+from openfold3.core.data.resources.residues import (
+    MOLECULE_TYPE_TO_RESIDUES_3,
+    MoleculeType,
 )
 
 logger = logging.getLogger(__name__)
@@ -201,7 +205,7 @@ def sample_templates(
     if take_top_k:
         k = np.min([l, n_templates])
     else:
-        k = np.min([np.random.randint(0, l), n_templates])
+        k = np.min([np.random.randint(0, l + 1), n_templates])
 
     if k > 0 and template_cache_directory is not None:
         # Load template cache entry numpy file
@@ -216,20 +220,17 @@ def sample_templates(
                     chain_data["alignment_representative_id"] + ".npz"
                 )
 
-            template_cache_entry = np.load(
-                template_cache_directory / template_file_name, allow_pickle=True
-            )
+            template_cache_path = template_cache_directory / template_file_name
 
         # From the file path during inference
         else:
-            template_cache_entry = np.load(
-                chain_data["cache_entry_file_path"], allow_pickle=True
-            )
+            template_cache_path = chain_data["cache_entry_file_path"]
 
-        # Unpack into dict
-        template_cache_entry = {
-            key: value.item() for key, value in template_cache_entry.items()
-        }
+        with np.load(template_cache_path, allow_pickle=True) as template_cache_npz:
+            # Unpack into dict
+            template_cache_entry = {
+                key: value.item() for key, value in template_cache_npz.items()
+            }
 
         # Randomly sample k templates (core PDB training sets) or take top k templates
         # (distillation, inference sets)
@@ -444,6 +445,52 @@ def map_token_pos_to_template_residues(
     """
     idx_map_in_crop = template_cache_entry.idx_map
 
+    # Get list of standard residues
+    template_molecule_type_id = np.unique(atom_array_template_chain.molecule_type_id)
+    if len(template_molecule_type_id) > 1:
+        raise ValueError("Found chain with more than 1 molecule type.")
+    else:
+        standard_residues = MOLECULE_TYPE_TO_RESIDUES_3[
+            MoleculeType(template_molecule_type_id)
+        ]
+
+    # Get template atom array with residues aligning to query residues in the crop
+    atom_array_cropped_template = atom_array_template_chain[
+        np.isin(
+            atom_array_template_chain.res_id.astype(int),
+            idx_map_in_crop[:, 1],
+        )
+    ]
+
+    # Drop nonstandard residues without backbone or pseudo-beta atoms
+    if ~np.all(np.isin(atom_array_cropped_template.res_name, standard_residues)):
+        # Check if any non-standard residues are missing backbone or pseudo-beta atoms
+        is_n = atom_array_cropped_template.atom_name == "N"
+        is_ca = atom_array_cropped_template.atom_name == "CA"
+        is_c = atom_array_cropped_template.atom_name == "C"
+
+        is_gly = atom_array_cropped_template.res_name == "GLY"
+        is_cb = atom_array_cropped_template.atom_name == "CB"
+        is_pseudo_beta_atom = (is_gly & is_ca) | (~is_gly & is_cb)
+
+        res_ids = atom_array_cropped_template.res_id.astype(np.int64)
+        unique_res_ids, res_idx = np.unique(res_ids, return_inverse=True)
+
+        # Accumulate presence for each required atom type
+        has_atom = np.zeros((unique_res_ids.size, 4), dtype=bool)
+        for col, mask in enumerate([is_n, is_ca, is_c, is_pseudo_beta_atom]):
+            np.logical_or.at(has_atom[:, col], res_idx, mask)
+
+        # Residues missing any of N/CA/C/pseudo-beta
+        missing_res_mask = ~has_atom.all(axis=1)
+
+        atom_array_cropped_template = atom_array_cropped_template[
+            ~missing_res_mask[res_idx]
+        ]
+        idx_map_in_crop = idx_map_in_crop[
+            np.isin(idx_map_in_crop[:, 1], unique_res_ids[~missing_res_mask])
+        ]
+
     # Map query token positions to template residues
     query_token_atoms = atom_array_query_chain[get_token_starts(atom_array_query_chain)]
 
@@ -454,29 +501,35 @@ def map_token_pos_to_template_residues(
     # Expand residues tokenized per atom
     _, repeats = np.unique(query_token_atoms_aligned_cropped.res_id, return_counts=True)
 
-    # Get template atom array with residues aligning to query residues in the crop
-    atom_array_cropped_template = atom_array_template_chain[
-        np.isin(
-            atom_array_template_chain.res_id.astype(int),
-            idx_map_in_crop[:, 1],
+    # Select highest occupancy residue for multi-occupancy residues
+    residue_starts = struc.get_residue_starts(atom_array_cropped_template)
+    if residue_starts.shape != repeats.shape:
+        # sort 1st by residue id and 2nd by descending per-residue occupancy
+        res_ids_multi_occ = atom_array_cropped_template[residue_starts].res_id
+        occ_sums = np.add.reduceat(
+            atom_array_cropped_template.occupancy, residue_starts
         )
-    ]
+        order = np.lexsort((-occ_sums, res_ids_multi_occ))
+        res_ids_sorted = res_ids_multi_occ[order]
 
-    # Skip template if query and template are still misaligned, this can happen due to
-    # unhandled multi-occupancy residues or author annotation errors
-    # TODO: add fixes and logging for these cases
-    has_multioccupancy_residue = (
-        struc.get_residue_starts(atom_array_cropped_template).shape != repeats.shape
-    )
-    if has_multioccupancy_residue:
-        template_slice = TemplateSlice(
-            atom_array=AtomArray(0),
-            query_token_positions=np.array([]),
-            template_residue_repeats=np.array([]),
+        # keep first occurrence per residue id
+        order_to_keep = order[
+            np.concatenate(([True], res_ids_sorted[1:] != res_ids_sorted[:-1]))
+        ]
+        mask_singleocc = np.isin(
+            np.repeat(
+                np.arange(residue_starts.shape[0]),
+                np.diff(np.append(residue_starts, len(atom_array_cropped_template))),
+            ),
+            order_to_keep,
         )
+        atom_array_cropped_template = atom_array_cropped_template[mask_singleocc]
 
+    # Skip if still misaligned
+    if residue_starts.shape != repeats.shape:
+        template_slice = None
+    # Add token position annotation to template atom array mapping to the crop
     else:
-        # Add token position annotation to template atom array mapping to the crop
         template_slice = TemplateSlice(
             atom_array=atom_array_cropped_template,
             query_token_positions=query_token_atoms_aligned_cropped.token_position,
@@ -484,7 +537,7 @@ def map_token_pos_to_template_residues(
         )
 
     # Add to list of cropped + aligned template atom arrays for this chain
-    if len(template_slice.atom_array) > 0:
+    if template_slice is not None:
         template_slices.append(template_slice)
 
 

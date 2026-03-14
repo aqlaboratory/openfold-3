@@ -100,7 +100,7 @@ Optionally, you can preparse the raw alignment files generated using our snakema
 (4-msa-generation-adding-msa-paths)=
 ## 4. Adding MSA Paths to the Inference Query Json
 
-The {doc}`inference query json <input_format>` specifies the input into the model. You can tell the data pipeline which MSAs to use for which chain by adding the paths to the MSAs of the corresponding chain's field in the json file. For example, for a complex with one of each of the above three protein chains and one of the RNA chains, you can do the following:
+The {doc}`inference query json <input_format_reference>` specifies the input into the model. You can tell the data pipeline which MSAs to use for which chain by adding the paths to the MSAs of the corresponding chain's field in the json file. For example, for a complex with one of each of the above three protein chains and one of the RNA chains, you can do the following:
 
 <details>
 <summary>Query json with MSA paths example ...</summary>

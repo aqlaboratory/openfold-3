@@ -27,19 +27,10 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
 )
 @click.option(
     "--train-dataset-cache",
-    "train_dataset_cache_paths",
+    "train_dataset_cache_path",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
-    multiple=True,
     required=True,
     help="Path to the structure train_cache.json created in preprocessing.",
-)
-@click.option(
-    "--train-preprocessed-dir",
-    "train_preprocessed_dirs",
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
-    multiple=True,
-    required=True,
-    help="Path to preprocessed dirs matching the training caches.",
 )
 @click.option(
     "--alignment-representatives-fasta",
@@ -102,7 +93,7 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     ),
 )
 @click.option(
-    "--missing_alignment_log",
+    "--missing-alignment-log",
     type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
     default=None,
     help=(
@@ -132,13 +123,21 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     "--seq-identity-threshold",
     type=float,
     default=0.4,
-    help="Sequence identity threshold for homology detection.",
+    help=(
+        "Sequence identity threshold for homology detection. Hits with identity "
+        "strictly greater than this are considered homologous. Note that this refers "
+        "to the global sequence identity with respect to the full length of the query "
+        "sequence."
+    ),
 )
 @click.option(
     "--tanimoto-threshold",
     type=float,
     default=0.85,
-    help="Tanimoto similarity threshold for ligand homology detection.",
+    help=(
+        "Tanimoto similarity threshold for ligand homology detection. Ligands with "
+        "similarity strictly greater than this are considered homologous."
+    ),
 )
 @click.option(
     "--log-level",
@@ -155,8 +154,7 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
 def main(
     metadata_cache_path: Path,
     preprocessed_dir: Path,
-    train_dataset_cache_paths: list[Path],
-    train_preprocessed_dirs: list[Path],
+    train_dataset_cache_path: Path,
     alignment_representatives_fasta: Path,
     output_path: Path,
     dataset_name: str,
@@ -180,14 +178,14 @@ def main(
     This follows the validation set creation outlined in the AF3 SI Section 5.8.
 
     Args:
-        pdb_weighted_cache_path (Path):
-            Path to the PDB-weighted training set cache created in preprocessing.
         metadata_cache_path (Path):
             Path to the structure metadata_cache.json created in preprocessing.
         preprocessed_dir (Path):
             Path to directory of directories containing files related to preprocessed
             structures (in particular the .fasta files created by the preprocessing
-            pipeline).
+            pipeline). This is used for both validation and training sequences.
+        train_dataset_cache_path (Path):
+            Path to the training dataset cache JSON file.
         alignment_representatives_fasta (Path):
             Path to the alignment representatives FASTA file.
         output_path (Path):
@@ -226,14 +224,14 @@ def main(
 
     # Add file handler if log file is specified
     if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_file, mode="w")
         logger.addHandler(file_handler)
 
     create_pdb_val_dataset_cache_of3(
         metadata_cache_path=metadata_cache_path,
         preprocessed_dir=preprocessed_dir,
-        train_cache_paths=list(train_dataset_cache_paths),
-        train_preprocessed_dirs=list(train_preprocessed_dirs),
+        train_cache_path=train_dataset_cache_path,
         alignment_representatives_fasta=alignment_representatives_fasta,
         output_path=output_path,
         dataset_name=dataset_name,

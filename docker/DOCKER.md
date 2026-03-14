@@ -10,7 +10,7 @@ When you modify `environments/production-linux-64.yml`, you need to regenerate t
 docker build -f docker/Dockerfile.update-reqs -t openfold3-update-reqs .
 
 # Generate the lock file (linux-64 only for now)
-docker run -v $(pwd)/environments:/output --rm openfold3-update-reqs 
+docker run --rm -v $(pwd)/environments:/output openfold3-update-reqs 
 
 # Commit the updated lock file
 git add environments/production-linux-64.lock

@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -110,21 +110,21 @@ diffusion_att_pair_bias_init = ConfigDict(
 tri_mul_init = ConfigDict(
     {
         "linear_a_p": {"bias": False, "init": "default"},
-        "linear_a_g": {"bias": False, "init": "final"},
+        "linear_a_g": {"bias": False, "init": "gating"},
         "linear_b_p": {"bias": False, "init": "default"},
-        "linear_b_g": {"bias": False, "init": "final"},
-        "linear_g": {"bias": False, "init": "final"},
+        "linear_b_g": {"bias": False, "init": "gating"},
+        "linear_g": {"bias": False, "init": "gating"},
         "linear_z": {"bias": False, "init": "final"},
     }
 )
 
-# AF2-Multimer
+# AF3
 fused_tri_mul_init = ConfigDict(
     {
-        "linear_ab_p": {"bias": True, "init": "default"},
-        "linear_ab_g": {"bias": True, "init": "gating"},
-        "linear_g": {"bias": True, "init": "gating"},
-        "linear_z": {"bias": True, "init": "final"},
+        "linear_ab_p": {"bias": False, "init": "default"},
+        "linear_ab_g": {"bias": False, "init": "gating"},
+        "linear_g": {"bias": False, "init": "gating"},
+        "linear_z": {"bias": False, "init": "final"},
     }
 )
 

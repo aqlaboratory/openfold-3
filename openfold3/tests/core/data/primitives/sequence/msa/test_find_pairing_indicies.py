@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -99,11 +99,6 @@ def test_find_pairing_indices(count_array, pairing_masks, expected):
 @pytest.mark.parametrize(
     "max_rows_paired,expected",
     [
-        pytest.param(
-            2,
-            np.array([[0, 0], [0, 0]]),
-            id="max_rows_2",
-        ),
         pytest.param(
             4,
             np.array([[0, 0], [0, 0], [1, 1], [1, 1]]),

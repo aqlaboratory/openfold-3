@@ -19,10 +19,8 @@ Welcome to the Documentation for [OpenFold3-preview](https://github.com/aqlabora
 ## Quick-Start Guide
 
 1. Install OpenFold3 using our pip package, {doc}`more details here <Installation>`
-
 ```bash
 pip install openfold3 
-mamba install kalign2 -c bioconda
 ```
 
 2. Setup your installation of OpenFold3 and download parameters with our script:
@@ -31,7 +29,7 @@ setup_openfold
 ``` 
 3. Make your first prediction with:
 ```bash
-run_openfold predict --query_json=examples/example_inference_inputs/query_ubiquitin.json
+run_openfold predict --query-json=examples/example_inference_inputs/query_ubiquitin.json
 ```
 
 
@@ -44,7 +42,7 @@ A summary of the features supported include:
 - Pipelines for generating MSAs using the [ColabFold server](https://github.com/sokrypton/ColabFold) or using JackHMMER / hhblits following the AlphaFold3 protocol
 - {doc}`Structure templates <template_how_to>` for protein monomers
 - Kernel acceleration through [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) and [DeepSpeed4Science](https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/) kernels - more details {doc}`here <kernels>`
-- Support for {doc}`multi-query jobs <input_format>` with {ref}`distributed predictions across multiple GPUs <inference-run-on-multiple-gpus>`
+- Support for {doc}`multi-query jobs <input_format_reference>` with {ref}`distributed predictions across multiple GPUs <inference-run-on-multiple-gpus>`
 - Custom settings for {ref}`memory constrained GPU resources <inference-low-memory-mode>`
 
 and more features to come...
@@ -61,29 +59,37 @@ kernels.md
 
 ```{toctree}
 :caption: How To Guides
-:hidden: 
+:hidden:
 
-Inference
+inference
+training
+data_pipeline_reference
 precomputed_msa_generation_how_to
 precomputed_msa_how_to
 template_how_to
+```
 
-Development
+```{toctree}
+:caption: Development
+:hidden:
+
 debugging_how_to
 ```
 
 ```{toctree}
-:caption: Reference 
-:hidden: 
+:caption: Reference
+:hidden:
 
-input_format
+parameters_reference
+input_format_reference
 configuration_reference
 ```
 
 ```{toctree}
-:caption: Deep Dives 
-:hidden: 
+:caption: Deep Dives
+:hidden:
 
 precomputed_msa_explanation
 template_explanation
+understanding_dataset_caches
 ```

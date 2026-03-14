@@ -28,7 +28,6 @@ dependencies:
   - mmseqs2
   - bioconda::hmmer
   - bioconda::hhsuite
-  - bioconda::kalign2
   - bioconda::snakemake
   - pytorch::pytorch
   - pytorch::pytorch-cuda
@@ -40,3 +39,4 @@ dependencies:
   - pip:
       - deepspeed
       - pdbeccdutils
+      - kalign-python

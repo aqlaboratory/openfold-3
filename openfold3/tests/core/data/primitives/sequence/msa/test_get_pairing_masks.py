@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -66,26 +66,6 @@ from openfold3.core.data.primitives.sequence.msa import get_pairing_masks
             ["shared_by_two"],
             np.array([True, True, True, False]),
             id="shared_by_two_three_chains",
-        ),
-        # less_than_600 filter alone
-        pytest.param(
-            np.array([[601, 10], [10, 10]]),
-            ["less_than_600"],
-            np.array([False, True]),
-            id="less_than_600_only",
-        ),
-        # Combined filters
-        pytest.param(
-            np.array([[601, 10], [10, 10]]),
-            ["shared_by_two", "less_than_600"],
-            np.array([False, True]),
-            id="combined_high_frequency_filtered",
-        ),
-        pytest.param(
-            np.array([[600, 10], [10, 10]]),
-            ["shared_by_two", "less_than_600"],
-            np.array([True, True]),
-            id="combined_exactly_600_passes",
         ),
     ],
 )

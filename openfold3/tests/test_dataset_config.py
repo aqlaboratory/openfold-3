@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -47,11 +47,17 @@ class TestOF3DatasetConfigConstruction:
             weight: 0.37
             config:
                 crop:
-                    token_budget: 10
-                    crop_weights:
-                        contiguous: 0.33
-                        spatial: 0.33
-                        spatial_interface: 0.33
+                    token_crop:
+                        token_budget: 10
+                        crop_weights:
+                            contiguous: 0.33
+                            spatial: 0.33
+                            spatial_interface: 0.33
+                    chain_crop:
+                        enabled: true
+                        n_chains: 7
+                        interface_distance_threshold: 12.5
+                        ligand_inclusion_distance: 4.5
                 dataset_paths:
                     alignments_directory: None 
                     alignment_array_directory: {tmp_path} 
@@ -77,20 +83,29 @@ class TestOF3DatasetConfigConstruction:
             "config": {
                 "crop": {
                     # based on yaml specified settings
-                    "token_budget": 10,
-                    "crop_weights": {
-                        "contiguous": 0.33,
-                        "spatial": 0.33,
-                        "spatial_interface": 0.33,
+                    "token_crop": {
+                        "enabled": True,
+                        "token_budget": 10,
+                        "crop_weights": {
+                            "contiguous": 0.33,
+                            "spatial": 0.33,
+                            "spatial_interface": 0.33,
+                        },
                     },
-                    # based on default dataset settings
-                    "sample_weights": {
-                        "a_prot": 3.0,
-                        "a_nuc": 3.0,
-                        "a_ligand": 1.0,
-                        "w_chain": 0.5,
-                        "w_interface": 1.0,
+                    "chain_crop": {
+                        "enabled": True,
+                        "n_chains": 7,
+                        "interface_distance_threshold": 12.5,
+                        "ligand_inclusion_distance": 4.5,
                     },
+                },
+                # based on default dataset settings
+                "sample_weights": {
+                    "a_prot": 3.0,
+                    "a_nuc": 3.0,
+                    "a_ligand": 1.0,
+                    "w_chain": 0.5,
+                    "w_interface": 1.0,
                 },
                 "dataset_paths": {
                     "alignments_directory": None,

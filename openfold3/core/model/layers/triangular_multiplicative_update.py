@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -521,8 +521,6 @@ class TriangleMultiplicationIncoming(TriangleMultiplicativeUpdate):
 class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
     """
     Implements AF2-Multimer version of AF2 Algorithm 11 and 12.
-    Not compatible with AF3 - Linear layers here are instantiated with
-    biases, compared to AF3 version which uses LinearNoBias
     """
 
     def __init__(
@@ -625,12 +623,22 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
+        # Supersede inplace_safe conditional if cueq kernel is used
         if use_cueq_triangle_kernels:
-            raise NotImplementedError(
-                "CUEQ triangle multiplicative update kernel not"
-                "supported for FusedTriangleMultiplicativeUpdate."
-                "\nPlease change config"
+            x = _cueq_triangle_mult(
+                z=z,
+                g_in_weight=self.linear_ab_g.weight,
+                p_in_weight=self.linear_ab_p.weight,
+                _outgoing=self._outgoing,
+                mask=mask,
+                norm_in_weight=self.layer_norm_in.weight,
+                norm_in_bias=self.layer_norm_in.bias,
+                norm_out_weight=self.layer_norm_out.weight,
+                norm_out_bias=self.layer_norm_out.bias,
+                p_out_weight=self.linear_z.weight,
+                g_out_weight=self.linear_g.weight,
             )
+            return x
 
         if inplace_safe:
             x = self._inference_forward(

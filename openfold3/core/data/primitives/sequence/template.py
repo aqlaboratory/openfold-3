@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -143,12 +143,12 @@ def parse_representatives(
 
 # Template cache construction
 def check_sequence(
-    query_seq: str,
+    query: TemplateHit,
     hit: TemplateHit,
     max_subseq: float = 0.95,
     min_align: float = 0.1,
     min_len: int = 10,
-) -> bool:
+) -> tuple[bool, np.ndarray | None, np.ndarray | None]:
     """Applies sequence filters to template hits following AF3 SI Section 2.4.
 
     Args:
@@ -164,15 +164,41 @@ def check_sequence(
             Minimum required template hit length. Defaults to 10 residues.
 
     Returns:
-        bool:
-            Whether the hit passes the sequence filters.
+        tuple[bool, np.ndarray, np.ndarray]:
+            Whether the hit passes the sequence filters and the aligned query and hit
+            sequences as numpy arrays.
     """
-    hit_seq = hit.hit_sequence.replace("-", "")
-    return (
-        ((len(hit_seq) / len(query_seq)) > max_subseq)
-        | ((hit.aligned_cols / len(query_seq)) < min_align)
-        | (len(hit_seq) < min_len)
-    )
+    q_aln_str = query.hit_sequence.replace(".", "-")
+    h_aln_str = hit.hit_sequence.replace(".", "-")
+
+    query_sequence = q_aln_str.replace("-", "").upper()
+    matching_sequence = h_aln_str.replace("-", "").upper()
+
+    # Fail if no query sequence for whatever reason
+    q_len = len(query_sequence)
+    if q_len == 0:
+        return True, None, None
+
+    # Hits that are too short
+    if len(matching_sequence) < min_len:
+        return True, None, None
+
+    query_aln = np.frombuffer(q_aln_str.encode("ascii"), dtype="S1")
+    hit_aln = np.frombuffer(h_aln_str.encode("ascii"), dtype="S1")
+
+    # Hits with too few aligned columns
+    is_upper = (hit_aln >= b"A") & (hit_aln <= b"Z")
+    n_aligned = int(is_upper.sum())
+    align_ratio = n_aligned / q_len
+    if align_ratio <= min_align:
+        return True, None, None
+
+    # Hits with too long exact contiguous subsequence
+    length_ratio = len(matching_sequence) / q_len
+    if (length_ratio > max_subseq) and (matching_sequence in query_sequence):
+        return True, None, None
+
+    return False, query_aln, hit_aln
 
 
 def parse_release_date(cif_file: CIFFile) -> datetime:
@@ -224,11 +250,10 @@ def match_query_chain_and_sequence(
     query: TemplateHit,
     query_pdb_id: str,
     query_chain_id: str,
-    query_seq_load_logic: str,
     query_file_format: str,
     query_structure_filename: str,
     s3_profile: str | None,
-) -> bool:
+) -> tuple[bool, str | None]:
     """Checks if the query sequences in the CIF and template alignment file match.
 
     Note: The chain-ID to sequence mapping is attempted to be extracted first from the
@@ -246,9 +271,6 @@ def match_query_chain_and_sequence(
             The PDB ID of the query.
         query_chain_id (str):
             The chain ID of the query.
-        query_seq_load_logic (str):
-            Whether to load the query sequence from the preprocessed fasta file or from
-            a structure file.
         query_file_format (str):
             The file format of the query structure from which the sequence is parsed if
             load_logic is set to 'structure'.
@@ -260,21 +282,23 @@ def match_query_chain_and_sequence(
             seq_load_logic is set to 'structure'.
 
     Returns:
-        bool:
-            Whether the query sequence-structure pair is invalid.
+        tuple[bool, str | None]:
+            Whether the query sequence-structure pair is invalid and the full query
+            sequence if found.
     """
     is_query_invalid = True
 
     # TODO: rework this logic, currently only 2 options are supported
     # Get the query sequence from the structure
-    if query_seq_load_logic == "fasta":
+    if (query_file_format == "fasta") or (query_file_format == "fa"):
         chain_id_seq_map = get_chain_id_to_seq_from_fasta(
-            query_structures_directory / Path(f"{query_pdb_id}.fasta")
+            query_structures_directory
+            / Path(f"{query_pdb_id}/{query_pdb_id}.{query_file_format}")
         )
         query_seq_structure = chain_id_seq_map.get(query_chain_id)
-    elif query_seq_load_logic == "structure":
+    elif query_file_format in ["cif", "pdb", "bcif"]:
         file_path = query_structures_directory / Path(
-            f"{query_structure_filename}.{query_file_format}"
+            f"{query_pdb_id}/{query_structure_filename}.{query_file_format}"
         )
         if query_file_format in ["cif", "bcif"]:
             # _, atom_array = parse_structure(
@@ -286,7 +310,8 @@ def match_query_chain_and_sequence(
             )
         else:
             raise ValueError(
-                "Invalid query file format. Must be one of 'cif', 'bcif', or 'pdb'."
+                "Invalid query file format. Must be one of 'fasta', 'cif', 'bcif', or "
+                "'pdb'."
             )
 
         # Attempt to find the chain ID from the query TemplateHit name
@@ -297,7 +322,7 @@ def match_query_chain_and_sequence(
         residue_names = atom_array.res_name[residue_starts]
         query_seq_structure = "".join(list(get_with_unknown_3_to_1(residue_names)))
     else:
-        raise ValueError("Invalid load logic. Must be one of 'fasta' or 'structure'.")
+        raise ValueError("Query file format. Must be one of 'fasta' or 'cif'.")
 
     # Get the query sequence from the template alignment
     query_seq_hmm = query.hit_sequence.replace("-", "")
@@ -315,7 +340,7 @@ def match_query_chain_and_sequence(
     else:
         is_query_invalid = False
 
-    return is_query_invalid
+    return is_query_invalid, query_seq_structure
 
 
 def remap_chain_id(
@@ -360,7 +385,7 @@ def remap_chain_id(
 def match_template_chain_and_sequence(
     chain_id_seq_map: dict[str, str],
     hit: TemplateHit,
-) -> str | None:
+) -> tuple[str | None, str | None]:
     """Attempts to locate the chain of a template hit in its CIF file.
 
     Args:
@@ -370,7 +395,7 @@ def match_template_chain_and_sequence(
             The template hit.
 
     Returns:
-        str | None:
+        tuple[str | None, str | None]:
             The chain ID of the hit, or None if the chain is not found in the CIF file.
     """
     hit_pdb_id, hit_chain_id = hit.name.split("_")
@@ -406,17 +431,22 @@ def match_template_chain_and_sequence(
             "CIF sequence."
         )
 
-    return hit_chain_id_matched
+    return hit_chain_id_matched, chain_id_seq_map.get(hit_chain_id_matched)
 
 
-def create_residue_idx_map(query: TemplateHit, hit: TemplateHit) -> np.ndarray[int]:
+def create_residue_idx_map(
+    query_aln: np.ndarray[str],
+    hit_aln: np.ndarray[str],
+    query_seq_full: str,
+    hit_seq_full: str,
+) -> np.ndarray[int]:
     """Create a mapping from the query to the hit residue indices.
 
     Args:
-        query (TemplateHit):
-            The query TemplateHit from the alignment.
-        hit (TemplateHit):
-            The filtered template TemplateHit from the alignment.
+        query_aln (np.ndarray[str]):
+            Query alignment string.
+        hit_aln (np.ndarray[str]):
+            Template alignment string.
 
     Returns:
         np.ndarray[int]:
@@ -424,13 +454,49 @@ def create_residue_idx_map(query: TemplateHit, hit: TemplateHit) -> np.ndarray[i
             the query (1st col) and aligned hit (2nd col) for columns where the template
             sequence is not a gap.
     """
-    return np.asarray(
+    # Create boolean masks to identify non-gaps
+    query_not_gap = ~np.isin(query_aln, ["-", "."])
+    hit_not_gap = ~np.isin(hit_aln, ["-", "."])
+    query_seq_aln = "".join(query_aln[query_not_gap])
+    hit_seq_aln = "".join(hit_aln[hit_not_gap])
+
+    if len(query_seq_aln) == 0:
+        raise ValueError("Empty query alignment sequence.")
+    if len(query_seq_aln) > len(query_seq_full):
+        raise ValueError(
+            "Sequence from query alignment longer than full query sequence."
+        )
+    if (len(hit_seq_aln) == 0) or (len(query_seq_aln) > len(query_seq_full)):
+        return None
+
+    # Find start indices of ungapped alignment sequences in full sequences
+    query_start = query_seq_full.find(query_seq_aln)
+    if query_start == -1:
+        raise ValueError(
+            "Ungapped query alignment subsequence not found in full sequence."
+        )
+    hit_start = hit_seq_full.find(hit_seq_aln)
+    if hit_start == -1:
+        return None
+
+    # Create a mask to identify columns that should be kept
+    columns_to_keep = query_not_gap & hit_not_gap
+
+    # Calculate the running count of residues for each sequence
+    query_cumsum = np.cumsum(query_not_gap)
+    hit_cumsum = np.cumsum(hit_not_gap)
+
+    # Apply the start offset and set gap positions to -1
+    query_map = np.where(query_not_gap, query_cumsum + query_start, -1)
+    template_map = np.where(hit_not_gap, hit_cumsum + hit_start, -1)
+
+    # Filter out the columns where both sequences had a gap
+    return np.concatenate(
         [
-            (q_i, h_i)
-            for q_i, h_i in zip(query.indices_hit, hit.indices_hit, strict=True)
-            if h_i != -1
+            query_map[columns_to_keep][..., None],
+            template_map[columns_to_keep][..., None],
         ],
-        dtype=int,
+        axis=-1,
     )
 
 
