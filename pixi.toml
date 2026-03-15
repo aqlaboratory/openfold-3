@@ -153,19 +153,19 @@ python = "<3.14"
 [feature.openfold3-editable-full.pypi-dependencies]
 openfold3 = { path = ".", editable = true, extras = ["deepspeed", "dev"] }
 
+#[feature.kalign.pypi-dependencies]
+#kalign-python = "*"
 
 [feature.not-in-pypi.target.linux.dependencies]
+hmmer = "*"
+hhsuite = "*"
 # func_timeout does not get resolved by pixi from pypi if running pixi in osx
 #   see: https://pypi.org/project/func-timeout/#description
 # if we remove this, we fail to solve the environment with:
 #   Error:   × failed to solve the pypi requirements of environment 'openfold3-cuda12-pypi' for platform 'linux-aarch64'
 #    ╰─▶ build dispatch initialization failed: there is no compatible Python interpreter for 'osx-arm64'
 func_timeout = "*"
-# kalign is required for tests, but not present in pypi
-# we could consider extending to the rest of the non-pypi deps
-hmmer = "*"
-hhsuite = "*"
-kalign2 = "*"
+
 
 [feature.python.dependencies]
 python = "*"
@@ -192,7 +192,6 @@ pdbeccdutils = "*"
 # --- Bioinformatics & Workflows
 hmmer = "*"
 hhsuite = "*"
-kalign2 = "*"
 snakemake = "*"
 
 # --- Misc
