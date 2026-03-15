@@ -70,10 +70,10 @@
 
 [workspace]
 name = "openfold3"
-authors = []
+authors = ["OpenFold Team <support@openfold.io>"]
 channels = ["conda-forge", "bioconda"]
 platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
-version = "0.1.0"
+version = "0.4.0"
 
 # as we use task.default-environment
 # hoping for environment markers to also come to conda dependencies, as it would help simplifying this toml
