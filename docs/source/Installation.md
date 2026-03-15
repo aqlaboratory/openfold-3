@@ -30,6 +30,30 @@ to install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, us
 pip install openfold3[cuequivariance]
 ```
 
+### Modern conda environments with pixi
+
+OpenFold3 can now be installed in conda environments with [pixi](https://pixi.prefix.dev/latest/index.html).
+
+First [install pixi](https://pixi.prefix.dev/latest/installation/)
+
+```shell
+# Do this once and enjoy pixi for all your future projects!
+curl -fsSL https://pixi.sh/install.sh | sh
+# Then restart your shell and optionally install pixi completions
+```
+
+You can simply run openfold in one of the provided environments with pixi:
+```shell
+pixi run -e openfold3-cpu setup_openfold
+pixi run -e openfold3-cpu run_openfold
+```
+
+We provide the following environments:
+ - openfold3-cpu (linux-64, linux-aarch64, osx-64,osx-arm64)
+ - openfold3-cuda12 and openfold-cuda13 (linux-64, linux-aarch64) 
+
+For more information, including rationale, tips and tricks, see [Modern Conda Environments with Pixi](./modern-conda-environments-with-pixi.md).
+
 ### OpenFold3 Docker Image
 
 #### Dockerhub
