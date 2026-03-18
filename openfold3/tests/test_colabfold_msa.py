@@ -94,6 +94,11 @@ class TestColabfoldMapping:
         assert ComplexGroup(order1).rep_id == ComplexGroup(order2).rep_id
 
 
+def _identity_chain_map(pdb_ids):
+    """Return identity author->label mapping for fake PDB IDs in tests."""
+    return {pid: {"A": ["A"], "B": ["B"], "C": ["C"]} for pid in pdb_ids}
+
+
 class TestColabFoldQueryRunner:
     def _construct_monomer_query(self, sequence):
         return InferenceQuerySet.model_validate(
@@ -145,10 +150,15 @@ class TestColabFoldQueryRunner:
         # Create an empty file (0 bytes)
         (raw_main_dir / "pdb70.m8").touch()
 
+    @patch(
+        "openfold3.core.data.tools.colabfold_msa_server.fetch_author_to_label_chain_ids",
+        side_effect=_identity_chain_map,
+    )
     @patch("openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server")
     def test_runner_on_multimer_example(
         self,
         mock_query,
+        _mock_chain_map,
         tmp_path,
         multimer_query_set,
         multimer_sequences,
@@ -181,6 +191,10 @@ class TestColabFoldQueryRunner:
             assert (expected_paired_dir / f).exists()
 
     @patch(
+        "openfold3.core.data.tools.colabfold_msa_server.fetch_author_to_label_chain_ids",
+        side_effect=_identity_chain_map,
+    )
+    @patch(
         "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server",
         side_effect=_construct_dummy_a3m,
     )
@@ -190,6 +204,7 @@ class TestColabFoldQueryRunner:
     def test_msa_generation_on_multiple_queries_with_same_name(
         self,
         mock_query,
+        _mock_chain_map,
         tmp_path,
         msa_file_format,
     ):
@@ -260,6 +275,10 @@ class TestColabFoldQueryRunner:
         )
 
     @patch(
+        "openfold3.core.data.tools.colabfold_msa_server.fetch_author_to_label_chain_ids",
+        side_effect=_identity_chain_map,
+    )
+    @patch(
         "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server",
         side_effect=_construct_dummy_a3m,
     )
@@ -269,6 +288,7 @@ class TestColabFoldQueryRunner:
     def test_features_on_multiple_queries_with_same_name(
         self,
         mock_query,
+        _mock_chain_map,
         tmp_path,
         msa_file_format,
     ):
