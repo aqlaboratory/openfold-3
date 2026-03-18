@@ -12,15 +12,20 @@ from openfold3.core.data.primitives.structure.metadata import (
     resolve_author_to_label_chain_id,
 )
 
+_TEST_DATA_DIR = Path(__file__).parent
+
 
 class TestTemplatePreprocessor:
     def test_template_has_author_chain_id(self):
-        """
+        """Verify author->label chain ID resolution for 1RNB.
+
         https://github.com/aqlaboratory/openfold-3/issues/101
 
+        In 1RNB, author chain "A" is label chain "B" (the protein barnase).
+        The ColabFold alignment reports "1rnb_A" which must be resolved to
+        label chain "B" before the sequence can be looked up.
         """
-
-        alignment_file = Path(__file__).parent / "colabfold_template.m8"
+        alignment_file = _TEST_DATA_DIR / "colabfold_template.m8"
         query_seq_str = "AQVINTFDGVADYLQTYHKLPDNYITKSEAQALGWVASKGNLADVAPGKSIGGDIFSNREGKLPGKSGRTWREADINYTSGFRNSDRILYSSDWLIYKTTDHYQTFTKIR"
         templates = parse_template_alignment(
             aln_path=Path(alignment_file),
@@ -32,8 +37,7 @@ class TestTemplatePreprocessor:
         template = templates[16]
         assert template.chain_id == "A" and template.entry_id == "1rnb"
 
-        template_structure_file = Path(__file__).parent / f"{template.entry_id}.cif"
-
+        template_structure_file = _TEST_DATA_DIR / f"{template.entry_id}.cif"
         cif_file = _load_ciffile(template_structure_file)
 
         chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
@@ -43,6 +47,9 @@ class TestTemplatePreprocessor:
             author_to_label_chain_ids[template.chain_id],
             chain_id_seq_map=chain_id_seq_map,
         )
+
+        # Author "A" -> label "B" (the protein chain)
+        assert label_chain_id == "B"
 
         template_sequence = chain_id_seq_map.get(label_chain_id)
 

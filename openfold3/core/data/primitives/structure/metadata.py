@@ -354,8 +354,9 @@ def get_author_to_label_chain_ids(
     chains.  The returned lists are sorted by label asym_id for determinism.
 
     Args:
-        cif_file:
-            Parsed mmCIF file containing the structure.
+        label_to_author:
+            Dictionary mapping label asym IDs to author chain IDs, as returned
+            by :func:`get_label_to_author_chain_id_dict`.
 
     Returns:
         A dictionary mapping author chain IDs to sorted lists of label asym IDs.
@@ -369,30 +370,30 @@ def get_author_to_label_chain_ids(
 
 
 def resolve_author_to_label_chain_id(
-    matching_labels: dict[str, list[str]],
+    matching_labels: list[str],
     chain_id_seq_map: dict[str, str],
 ) -> str:
     """Resolve an author (pdb_strand_id) chain ID to a single label asym_id.
 
     For homomeric chains, multiple label asym_ids share the same author chain
-    ID.  This function returns the lexicographically smallest label asym_id.
-    When *asym_id_to_seq* is provided, it additionally verifies that all
-    matching label chains carry the same canonical sequence.
+    ID.  This function returns the lexicographically smallest label asym_id
+    and verifies that all matching label chains carry the same canonical
+    sequence.
 
     Args:
-        cif_file:
-            Parsed mmCIF file containing the structure.
-        asym_id_to_seq:
-            Optional mapping from label asym_id to canonical sequence
-            (as returned by :func:`get_asym_id_to_canonical_seq_dict`).
-            When provided, an error is raised if homomeric chains have
-            differing sequences.
+        matching_labels:
+            Sorted list of label asym_ids that map to the same author chain ID,
+            as returned by indexing into the result of
+            :func:`get_author_to_label_chain_ids`.
+        chain_id_seq_map:
+            Mapping from label asym_id to canonical sequence (as returned by
+            :func:`get_asym_id_to_canonical_seq_dict`).  Used to verify that
+            homomeric chains carry the same sequence.
 
     Returns:
-        The label asym_id corresponding to *author_chain_id*.
+        The lexicographically smallest label asym_id.
 
     Raises:
-        KeyError: If *author_chain_id* is not found.
         ValueError: If homomeric chains have differing sequences.
     """
     if len(matching_labels) > 1:

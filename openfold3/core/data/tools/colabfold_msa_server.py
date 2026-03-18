@@ -29,8 +29,6 @@ from typing import Literal, NamedTuple
 import numpy as np
 import pandas as pd
 import requests
-from biotite.database.rcsb import fetch
-from biotite.structure.io.pdbx import CIFFile
 from pydantic import BaseModel, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 from pydantic_core import Url
@@ -39,10 +37,6 @@ from tqdm import tqdm
 from openfold3.core.config import config_utils
 from openfold3.core.data.io.sequence.msa import parse_a3m
 from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
-from openfold3.core.data.primitives.structure.metadata import (
-    get_author_to_label_chain_ids,
-    get_label_to_author_chain_id_dict,
-)
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
@@ -648,6 +642,140 @@ def save_colabfold_mappings(
         )
 
 
+_RCSB_GRAPHQL_URL = "https://data.rcsb.org/graphql"
+
+_CHAIN_MAPPING_QUERY = """
+query($ids: [String!]!) {
+  entries(entry_ids: $ids) {
+    rcsb_id
+    polymer_entities {
+      rcsb_polymer_entity_container_identifiers {
+        asym_ids
+        auth_asym_ids
+      }
+    }
+  }
+}
+"""
+
+
+def fetch_author_to_label_chain_ids(
+    pdb_ids: set[str],
+) -> dict[str, dict[str, list[str]]]:
+    """Fetch author-to-label chain ID mappings from the RCSB PDB GraphQL API.
+
+    Makes a single batched request for all PDB IDs and returns a nested dict
+    mapping ``entry_id`` → ``author_chain_id`` → ``[label_asym_ids]``.
+
+    Args:
+        pdb_ids: Set of PDB entry IDs (e.g. ``{"4pqx", "1rnb"}``).
+
+    Returns:
+        Nested dict: ``entry_id`` (lower-case) → ``author_chain_id`` →
+        sorted list of ``label_asym_ids``.
+
+    Raises:
+        RuntimeError: If the RCSB API request fails.
+    """
+    if not pdb_ids:
+        return {}
+
+    try:
+        resp = requests.post(
+            _RCSB_GRAPHQL_URL,
+            json={
+                "query": _CHAIN_MAPPING_QUERY,
+                "variables": {"ids": sorted(pdb_ids)},
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to fetch chain ID mappings from RCSB for "
+            f"{len(pdb_ids)} entries. Cannot proceed without chain ID "
+            f"re-mapping."
+        ) from e
+
+    data = resp.json().get("data", {})
+    entries = data.get("entries") or []
+
+    result: dict[str, dict[str, list[str]]] = {}
+    for entry in entries:
+        entry_id = entry["rcsb_id"].lower()
+        author_to_labels: dict[str, list[str]] = {}
+        for entity in entry.get("polymer_entities") or []:
+            ids = entity["rcsb_polymer_entity_container_identifiers"]
+            for asym_id, auth_id in zip(
+                ids["asym_ids"], ids["auth_asym_ids"], strict=True
+            ):
+                author_to_labels.setdefault(auth_id, []).append(asym_id)
+        # Sort label lists for determinism
+        for labels in author_to_labels.values():
+            labels.sort()
+        result[entry_id] = author_to_labels
+
+    return result
+
+
+def remap_colabfold_template_chain_ids(
+    template_alignments: pd.DataFrame,
+    m_with_templates: set[int],
+    rep_ids: list[str],
+    rep_id_to_m: dict[str, int],
+) -> dict[str, pd.DataFrame]:
+    """Remap author chain IDs to label (``label_asym_id``) chain IDs.
+
+    ColabFold returns template IDs with author-assigned chain IDs
+    (``pdb_strand_id``), but the rest of the pipeline expects mmCIF
+    ``label_asym_id``.  This function queries the RCSB PDB API to obtain
+    the mapping and rewrites the template IDs.
+
+    Args:
+        template_alignments: Raw template alignment DataFrame from ``pdb70.m8``.
+        m_with_templates: Set of ColabFold M-indices that have template hits.
+        rep_ids: List of representative chain IDs.
+        rep_id_to_m: Mapping from representative ID to ColabFold M-index.
+
+    Returns:
+        Dictionary mapping ``rep_id`` to a DataFrame with remapped template IDs.
+    """
+    # Collect DataFrames per rep_id and accumulate unique PDB IDs
+    per_rep: dict[str, pd.DataFrame] = {}
+    unique_pdb_ids: set[str] = set()
+    for rep_id in rep_ids:
+        m_i = rep_id_to_m[rep_id]
+        if m_i not in m_with_templates:
+            continue
+        chain_alns = template_alignments[template_alignments[0] == m_i]
+        top_n = chain_alns.copy()
+        per_rep[rep_id] = top_n
+        unique_pdb_ids.update(top_n[1].str.split("_").str[0])
+
+    # Fetch author->label mappings in one API call
+    author_to_label_maps = fetch_author_to_label_chain_ids(unique_pdb_ids)
+
+    # Remap chain IDs
+    for top_n in per_rep.values():
+        remapped_ids = []
+        for template_id in top_n[1]:
+            entry_id, author_chain_id = template_id.split("_")
+
+            author_to_label = author_to_label_maps.get(entry_id, {})
+            if author_chain_id not in author_to_label:
+                raise RuntimeError(
+                    f"Author chain {author_chain_id} not found in {entry_id}. "
+                    f"Available author chains: {sorted(author_to_label.keys())}"
+                )
+            label_chain_id = author_to_label[author_chain_id][0]
+
+            remapped_ids.append(f"{entry_id}_{label_chain_id}")
+
+        top_n[1] = remapped_ids
+
+    return per_rep
+
+
 class ColabFoldQueryRunner:
     """Class to run queries on the ColabFold MSA server.
 
@@ -757,85 +885,20 @@ class ColabFoldQueryRunner:
         if len(template_alignments) == 0:
             return
 
-        max_templates_per_chain = 25
+        # 3) Remap author chain IDs -> label chain IDs via RCSB API
+        remapped = remap_colabfold_template_chain_ids(
+            template_alignments=template_alignments,
+            m_with_templates=m_with_templates,
+            rep_ids=self.colabfold_mapper.rep_ids,
+            rep_id_to_m=self.colabfold_mapper.rep_id_to_m,
+        )
 
-        # Gather unique PDB entry IDs from the top-n rows per chain
-        unique_pdb_ids = set()
-        for rep_id in self.colabfold_mapper.rep_ids:
-            m_i = self.colabfold_mapper.rep_id_to_m[rep_id]
-            if m_i not in m_with_templates:
-                continue
-            chain_alns = template_alignments[template_alignments[0] == m_i]
-            top_n = chain_alns.head(max_templates_per_chain)
-            # Column 1 = template_id, e.g. "4pqx_A" -> entry_id = "4pqx"
-            entry_ids = top_n[1].str.split("_").str[0]
-            unique_pdb_ids.update(entry_ids)
-
-        # 3) Download CIF files for all unique PDB IDs
-        cif_dir = self.output_directory / "template_cifs_tmp"
-        cif_dir.mkdir(parents=True, exist_ok=True)
-
-        pdb_ids_to_download = [
-            pdb_id
-            for pdb_id in unique_pdb_ids
-            if not (cif_dir / f"{pdb_id}.cif").exists()
-        ]
-        if pdb_ids_to_download:
-            for pdb_id in tqdm(pdb_ids_to_download, desc="Downloading template CIFs"):
-                fetch(pdb_id, format="cif", target_path=cif_dir)
-
-        # 4) Build author->label chain ID maps and remap + save templates
-        # Cache per entry_id so we don't re-parse CIFs
-        author_to_label_cache: dict[str, dict[str, list[str]]] = {}
-
-        for rep_id in self.colabfold_mapper.rep_ids:
-            m_i = self.colabfold_mapper.rep_id_to_m[rep_id]
-            if m_i not in m_with_templates:
-                continue
-
-            chain_alns = template_alignments[template_alignments[0] == m_i]
-            top_n = chain_alns.head(max_templates_per_chain).copy()
-
-            # Remap author chain IDs -> label chain IDs
-            remapped_template_ids = []
-            for template_id in top_n[1]:
-                entry_id, author_chain_id = template_id.split("_")
-
-                if entry_id not in author_to_label_cache:
-                    cif_path = cif_dir / f"{entry_id}.cif"
-                    if cif_path.exists():
-                        cif_file = CIFFile.read(cif_path)
-                        label_to_author = get_label_to_author_chain_id_dict(cif_file)
-                        author_to_label_cache[entry_id] = get_author_to_label_chain_ids(
-                            label_to_author
-                        )
-                    else:
-                        logger.warning(
-                            f"CIF file not found for {entry_id}, skipping remap"
-                        )
-                        author_to_label_cache[entry_id] = {}
-
-                a2l = author_to_label_cache[entry_id]
-                if author_chain_id in a2l:
-                    # first (smallest) label ID
-                    label_chain_id = a2l[author_chain_id][0]
-                else:
-                    logger.warning(
-                        f"Author chain {author_chain_id} not found in {entry_id}, "
-                        "keeping as-is"
-                    )
-                    label_chain_id = author_chain_id
-
-                remapped_template_ids.append(f"{entry_id}_{label_chain_id}")
-
-            top_n[1] = remapped_template_ids
-
-            # 5) Save remapped m8
+        # 4) Save remapped m8 files
+        for rep_id, df in remapped.items():
             template_rep_dir = template_alignments_path / str(rep_id)
             template_rep_dir.mkdir(parents=True, exist_ok=True)
-            template_alignment_file = template_rep_dir / "colabfold_template.m8"
-            top_n.to_csv(
-                template_alignment_file,
+            df.to_csv(
+                template_rep_dir / "colabfold_template.m8",
                 sep="\t",
                 header=False,
                 index=False,
