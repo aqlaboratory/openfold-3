@@ -26,8 +26,8 @@ Defines overall experiment parameters, including execution mode and seed configu
 - `log_dir` *(Path | None)*: Directory for logs (default: `null`)
 - `seeds` *(int | list[int])*: Starting seed or list of random seeds for inference (default: `[42]`)
 - `num_seeds` *(int | None)*: Number of seeds to generate if only a starting seed is provided (default: `null`)
-- `use_msa_server` *(bool)*: Whether to use ColabFold MSA server (default: `false`)
-- `use_templates` *(bool)*: Whether to use template structures (default: `false`)
+- `use_msa_server` *(bool)*: Whether to use ColabFold MSA server (default: `true`)
+- `use_templates` *(bool)*: Whether to use template structures (default: `true`)
 - `skip_existing` *(bool)*: Skip results that already exist (default: `false`)
 
 **Example**:
@@ -104,6 +104,9 @@ model_update:
 - `inference_ckpt_path` *(Path | None)*: Path to model checkpoint file (`.pt` file)
   - Default: `$HOME/.openfold3/of3_ft3_v1.pt`
   - Will download parameters if not present
+- `inference_ckpt_name` *(str | None)*: Name of the model checkpoint to use.
+  - Default: `openfold3_p2_v1`
+  - Must be a key in `OPENFOLD_MODEL_CHECKPOINT_REGISTRY`(https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/parameters.py#L29)
 - `cache_path` *(Path | None)*: Directory for storing cached model parameters
   - Default: `$HOME/.openfold3/`
 
@@ -178,6 +181,7 @@ Controls template structure processing.
 **All Options**:
 - `n_templates` *(int)*: Number of templates to use (default: `4`)
 - `take_top_k` *(bool)*: Use top K templates by quality (default: `false`)
+- `min_n_tokens_per_chain` *(int)*: Minimum number of tokens a chain has to have for it to get template features (default: `4`)
 - `distogram` *(TemplateDistogramSettings)*: Distogram binning settings
   - `min_bin` *(float)*: Minimum distance bin (default: `3.25`)
   - `max_bin` *(float)*: Maximum distance bin (default: `50.75`)

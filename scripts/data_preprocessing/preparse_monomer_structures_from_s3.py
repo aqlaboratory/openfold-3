@@ -1,4 +1,3 @@
-# %%
 import json
 from pathlib import Path
 
@@ -10,7 +9,6 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
 
 
 # TODO: add option to load from local dir, merge with monomer cache creation code
-# %%
 @click.command()
 @click.option(
     "--dataset_cache",
@@ -46,4 +44,3 @@ def main(dataset_cache: str, output_dir: str, s3_config: str, num_workers: int =
 
 if __name__ == "__main__":
     main()
-# %%

@@ -73,8 +73,8 @@ Coming soon:
 
 ## 2. Pre-requisites
 
-- OpenFold3 Conda Environment. See {ref}`OpenFold3 Installation <openfold3-installation>` for instructions on how to build this environment.
-- OpenFold3 Model Parameters. See {ref}`OpenFold3 Parameters <openfold3-parameters>` for how to download these parameters.
+- OpenFold3 Conda Environment. See [OpenFold3 Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md) for instructions on how to build this environment.
+- OpenFold3 Model Parameters. See {ref}`OpenFold3 Setup <setup-openfold3-parameters>` for an easy option to download model parameters.
 
 
 ## 3. Running OpenFold3 Inference
@@ -82,7 +82,7 @@ Coming soon:
 A prediction job can be submitted with the following command:
 
 ```bash
-run_openfold --query_json=<query_json>
+run_openfold --query-json=<query_json>
 ```
 
 Sample input query jsons can be found in the [examples/example_inference_inputs](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs) directory.
@@ -98,7 +98,7 @@ Full output directories are provided on the [OpenFold HuggingFace repo](https://
 
 Queries can include any combination of single- or multi-chain proteins, with or without ligands, and may contain multiple such complexes. <br/>
 Input is provided via a `query.json` file — a structured JSON document that defines each query, its constituent chains, chain types (e.g., protein, DNA, ligand) and sequences or molecular graphs. Optionally, the query can include paths to precomputed protein or RNA MSAs. <br/>
-See {doc}`OpenFold3 input format <input_format>` for instructions on how to specify your input data.
+See {doc}`OpenFold3 input format <input_format_reference>` for instructions on how to specify your input data.
 
 
 ### 3.2 Inference Modes by MSA Input
@@ -110,45 +110,49 @@ OpenFold3 currently supports three inference modes with respect to MSAs:
 
 Each mode shares the same command structure but differs in how MSAs are provided or generated.
 
+(default-inference)=
 #### 3.2.1 🚀 Inference with ColabFold MSA Server (Default)
 
 This mode automatically generates MSAs using the ColabFold server. Only protein sequences are sent to the server. We recommend this mode if you only have a couple of structures to predict.
 
 ```bash
 run_openfold predict \
-    --query_json /path/to/query.json \
-    --inference_ckpt_path /path/to/inference.ckpt \
-    --use_msa_server \
-    --output_dir /path/to/output/
+    --query-json /path/to/query.json \
+    --use-msa-server \
+    --output-dir /path/to/output/
 ```
 
 This command uses the `run_openfold` binary, for which the source code is available [here](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/run_openfold.py).
 
 **Required arguments**
 
-- `--query_json` *(Path)*
+- `--query-json` *(Path)*
     - Path to the input query JSON file.
 
 **Optional arguments**
 
-- `--inference_ckpt_path` *(Path)*
+- `--inference-ckpt-path` *(Path, optional)*
     - Path to a model checkpoint file (`.pt` file)
-    - Will use a default checkpoint if not specified, which will be downloaded on the first inference run. See {ref}`OpenFold Parameters <openfold3-parameters>` for information
+    - Will use a default checkpoint if not specified, which will be downloaded on the first inference run. See {doc}`parameters_reference`
+ for details 
 
-- `--use_msa_server` *(bool, optional, default = True)*
+- `--inference-ckpt-name` *(str, optional, default = `openfold3_p2_v1`)* 
+    - Name of model checkpoint from a supported list to be used for inference. Only used if `inference_ckpt_path` is `None`. See {{doc}`parameters_reference` for information 
+
+- `--use-msa-server` *(bool, optional, default = True)*
     - Whether to use the ColabFold server for MSA generation.
 
-- `--output_dir` *(Path, optional, default = `test_train_output/`)*
+- `--output-dir` *(Path, optional, default = `test_train_output/`)*
     - Directory where outputs will be written.
 
-- `--num_diffusion_samples` *(int, optional, default = 5)*
+- `--num-diffusion-samples` *(int, optional, default = 5)*
     - Number of diffusion samples per query.
 
-- `--num_model_seeds` *(int, optional, default = 1)*
+- `--num-model-seeds` *(int, optional, default = 1)*
     - Number of random seeds to use per query.
     - To manually select specific seeds, please use the `runner.yml` and refer to the {ref}`Custom Random Seeds section <custom-random-seeds-inference>` below.
 
-- `--runner_yaml` *(Path, optional, default = null)*
+- `--runner-yaml` *(Path, optional, default = null)*
     - YAML config for full control over model and data parameters. See the {doc}`configuration reference <configuration_reference>` and [full configuration reference file](https://github.com/aqlaboratory/openfold-3/blob/main/examples/reference_full_config/full_config.yml) for all available options.
     - See the {ref}`runner yaml section below for more information <33-customized-inference-settings-using-runneryml>` 
 
@@ -164,10 +168,10 @@ An example query json with a sample of how the alignment directories can be form
 
 ```bash
 run_openfold predict \
-    --query_json /path/to/query_precomputed.json \
-    --use_msa_server=False \
-    --output_dir /path/to/output/ \
-    --runner_yaml /path/to/inference_precomputed.yml
+    --query-json /path/to/query_precomputed.json \
+    --use-msa-server=False \
+    --output-dir /path/to/output/ \
+    --runner-yaml /path/to/inference_precomputed.yml
 ```
 
 (323-inference-without-msas)=
@@ -176,10 +180,10 @@ You can run OpenFold3 without MSAs. Prediction performance may be worse than pre
 
 ```bash
 run_openfold predict \
-    --query_json /path/to/query.json \
-    --use_msa_server=False \
-    --output_dir /path/to/output/ \
-    --runner_yaml /path/to/inference.yml
+    --query-json /path/to/query.json \
+    --use-msa-server=False \
+    --output-dir /path/to/output/ \
+    --runner-yaml /path/to/inference.yml
 ```
 
 (33-customized-inference-settings-using-runneryml)=
@@ -244,7 +248,7 @@ experiment_settings:
 ```
 
 Seeding behavior is controlled in the following priority:
-- Command line argument `--num_model_seeds`
+- Command line argument `--num-model-seeds`
 - `runner.yml` via the `experiment_settings.seeds` field.
 
 ---
@@ -263,7 +267,7 @@ output_writer_settings:
 To save model embeddings, add the field `write_latent_outputs` to the `output_writer_settings` i.e.: 
 ```yaml
 output_writer_settings:
-	write_latent_outputs: True
+  write_latent_outputs: True
 ```
 
 ---
@@ -406,7 +410,7 @@ Each seed produces `l` (number of diffusion samples) structure predictions, and 
 
 
 ### 4.2 Processed MSAs (`main/` and `paired/`)
-Only created if `--use_msa_server=True`. <br/>
+Only created if `--use-msa-server=True`. <br/>
 Processed MSAs for each unique chain are saved as `.npz` files used to create input features for OpenFold3. 
 If a chain is reused across multiple queries, its MSA is only computed once and named after the first occurrence. This reduces the number of queries to the ColabFold server.
 
@@ -431,7 +435,7 @@ For a sequence with two representative chains, the final output directory would 
 ```
 
 
-If a query is a heteromeric protein complex (has at least two different protein chains) and `--use_msa_server` is enabled, **paired MSAs** are also generated. 
+If a query is a heteromeric protein complex (has at least two different protein chains) and `--use-msa-server` is enabled, **paired MSAs** are also generated. 
 If a set of chains with a specific stoichiometry is reused across multiple queries, for example if the same heterodimer is screened against multiple small molecule ligands, its set of paired MSAs is only computed once and named after the first occurrence. This reduces the number of queries to the ColabFold server. 
 
 ```bash
@@ -476,7 +480,7 @@ This file representing the full input query in a validated internal format defin
 
 - Created automatically from the original `query.json`.
 
-- If `--use_msa_server=True`, automatically populates:
+- If `--use-msa-server=True`, automatically populates:
 
   - `main_msa_file_paths`: Paths to single-chain `.a3m` or `.npz` files
 
@@ -484,7 +488,7 @@ This file representing the full input query in a validated internal format defin
 
   Note: Refer to the {doc}`Precomputed MSA Documentation <precomputed_msa_how_to>` for how to specify these fields if you want to use precomputed MSAs instead of MSAs from the Colabfold server.
 
-- If `--use_templates=True`, automatically populates:
+- If `--use-templates=True`, automatically populates:
 
   - `template_alignment_file_path`: Path to the preprocessed template cache entry `.npz` file used for template featurization. By default, template cache entries are automatically created in a short preprocessing step using the raw template alignment files provided under this same field and the template structures identified in the alignment. 
 
@@ -495,7 +499,7 @@ This file representing the full input query in a validated internal format defin
 Note: If MSA and template files are persisted between runs, the same `inference_query_set.json` file can be used to resubmit the query without needing to rerun the template and MSA pipelines. To do so:
 
 1. Turn off the [MSA cleanup option](34-saving-msa-outputs).
-2. pass in the generated `inference_query_set.json` as the `query.json` and use `--use_msa_server=False` and `--use_templates=True`.
+2. pass in the generated `inference_query_set.json` as the `query.json` and use `--use-msa-server=False` and `--use-templates=True`.
 
 Model seeds should still be set either from the command line or using the `seeds` field under `experiment_settings` in the `runner.yml`.
 

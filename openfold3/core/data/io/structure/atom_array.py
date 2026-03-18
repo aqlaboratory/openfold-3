@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -68,20 +68,19 @@ def read_atomarray_from_npz(input_file: Path, allow_pickle=False) -> AtomArray:
         AtomArray object
     """
 
-    npz_obj = np.load(input_file, allow_pickle=allow_pickle)
+    with np.load(input_file, allow_pickle=allow_pickle) as npz_obj:
+        # Initialize empty atom array
+        n_atoms = npz_obj["coord"].shape[0]
 
-    # Initialize empty atom array
-    n_atoms = npz_obj["coord"].shape[0]
+        atom_array = AtomArray(n_atoms)
 
-    atom_array = AtomArray(n_atoms)
-
-    # Fill in all annotations
-    for annotation, values in npz_obj.items():
-        if annotation == "coord":
-            atom_array.coord = npz_obj["coord"]
-        elif annotation == "bonds":
-            atom_array.bonds = BondList(n_atoms, npz_obj["bonds"])
-        else:
-            atom_array.set_annotation(annotation, values)
+        # Fill in all annotations
+        for annotation, values in npz_obj.items():
+            if annotation == "coord":
+                atom_array.coord = npz_obj["coord"]
+            elif annotation == "bonds":
+                atom_array.bonds = BondList(n_atoms, npz_obj["bonds"])
+            else:
+                atom_array.set_annotation(annotation, values)
 
     return atom_array

@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,7 +49,6 @@ class Transition(nn.Module, ABC):
             no_batch_dims=len(x.shape[:-2]),
         )
 
-    # TODO: Make this a more general function
     def _low_mem_ckpt_chunk(
         self,
         x: torch.Tensor,
@@ -65,7 +64,7 @@ class Transition(nn.Module, ABC):
             x:
                 [*, N, C_in] Input activation
             mask:
-                [*, N] Input mask
+                [*, N, 1] Input mask
             chunk_size:
                 Chunk size over chunk dim
             chunk_dim:
@@ -74,19 +73,27 @@ class Transition(nn.Module, ABC):
         Returns:
             [*, N, C_in] Loss for each sample
         """
-        chunks = []
+        ndim = x.dim()
+        x_out = torch.zeros_like(x)
         for i in range(0, x.shape[chunk_dim], chunk_size):
+            # Create slice object to slice the chunk_dim
+            slicing_object = [slice(None)] * ndim
+            slicing_object[chunk_dim] = slice(i, i + chunk_size)
+            dynamic_slice = tuple(slicing_object)
+
             l_chunk = checkpoint_section(
                 fn=self._transition,
                 args=(
-                    x[..., i : i + chunk_size, :, :],
-                    mask[..., i : i + chunk_size, :, :],
+                    x[dynamic_slice],
+                    mask[dynamic_slice],
                 ),
                 apply_ckpt=True,
                 use_reentrant=False,
             )
-            chunks.append(l_chunk)
-        return torch.cat(chunks, dim=chunk_dim)
+
+            x_out[dynamic_slice] = l_chunk
+
+        return x_out
 
     def forward(
         self,

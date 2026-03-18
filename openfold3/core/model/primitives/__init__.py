@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ from .initialization import (
     he_normal_init_,
     kaiming_normal_init_,
     lecun_normal_init_,
-    normal_init_,
     trunc_normal_init_,
 )
 from .linear import Linear
@@ -50,7 +49,6 @@ __all__ = [
     "final_init_",
     "gating_init_",
     "kaiming_normal_init_",
-    "normal_init_",
     "AdaLN",
     "LayerNorm",
 ]

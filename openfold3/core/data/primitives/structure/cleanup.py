@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,13 +24,10 @@ from biotite.structure import (
     index_distance,
 )
 from biotite.structure.io.pdbx import CIFFile
-from scipy.spatial.distance import cdist
 
 from openfold3.core.data.primitives.structure.component import find_cross_chain_bonds
 from openfold3.core.data.primitives.structure.interface import (
     chain_paired_interface_atom_iter,
-    get_interface_token_center_atoms,
-    get_query_interface_atom_pair_idxs,
 )
 from openfold3.core.data.primitives.structure.labels import (
     AtomArrayView,
@@ -41,7 +38,6 @@ from openfold3.core.data.primitives.structure.labels import (
     remove_atom_indices,
     residue_view_iter,
 )
-from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
 from openfold3.core.data.resources.lists import (
     CRYSTALLIZATION_AIDS,
 )
@@ -135,6 +131,15 @@ def fix_arginine_naming(atom_array: AtomArray) -> AtomArray:
         nh1_coord = arginine_view.coord[nh1_mask]
         nh2_coord = arginine_view.coord[nh2_mask]
         cd_coord = arginine_view.coord[cd_mask]
+
+        # Skip if any of the required atoms are missing
+        if nh1_coord.size == 0 or nh2_coord.size == 0 or cd_coord.size == 0:
+            logger.debug(
+                f"Skipping arginine naming fix for residue "
+                f"missing atoms - NH1={np.sum(nh1_mask)}, "
+                f"NH2={np.sum(nh2_mask)}, CD={np.sum(cd_mask)}"
+            )
+            continue
 
         # If NH2 is closer to CD than NH1, swap the names
         if struc.distance(nh2_coord, cd_coord) < struc.distance(nh1_coord, cd_coord):
@@ -736,264 +741,6 @@ def remove_chains_with_CA_gaps(
     return atom_array_filtered
 
 
-def get_small_ligand_chain_ids(
-    atom_array: AtomArray,
-    max_atoms: int = 5,
-) -> np.ndarray:
-    """Returns chain IDs of small ligands
-
-    The "smallness" of a ligand is determined by the number of atoms it consists of.
-
-    Args:
-        atom_array:
-            AtomArray containing the structure to get the small ligand chain IDs from.
-        max_atoms:
-            Maximum number of atoms for a ligand to be considered small. Default is 5.
-
-    Returns:
-        Array of unique chain IDs of small ligands.
-    """
-    ligand_array = atom_array[atom_array.molecule_type_id == MoleculeType.LIGAND]
-
-    if len(ligand_array) == 0:
-        return np.array([])
-
-    lig_chain_starts = struc.get_chain_starts(ligand_array, add_exclusive_stop=True)
-    lig_chain_sizes = np.diff(lig_chain_starts)
-    small_lig_chain_idxs = np.where(lig_chain_sizes <= max_atoms)[0]
-    small_lig_chain_ids = ligand_array[lig_chain_starts[small_lig_chain_idxs]].chain_id
-
-    # TODO: Dev-only, remove later
-    assert np.unique(small_lig_chain_ids).size == small_lig_chain_ids.size, (
-        "Small ligand chain IDs are not unique"
-    )
-
-    return small_lig_chain_ids
-
-
-def get_small_ligand_mask(
-    atom_array: AtomArray,
-    max_atoms: int = 5,
-) -> np.ndarray:
-    """Returns a mask for atoms in small ligands.
-
-    The "smallness" of a ligand is determined by the number of atoms it consists of.
-
-    Args:
-        atom_array:
-            AtomArray containing the structure to get the small ligand mask for.
-        max_atoms:
-            Maximum number of atoms for a ligand to be considered small. Default is 5.
-    """
-    small_lig_chain_ids = get_small_ligand_chain_ids(atom_array, max_atoms)
-    return np.isin(atom_array.chain_id, small_lig_chain_ids)
-
-
-def maybe_precrop_chains(
-    atom_array: AtomArray,
-    n_chains: int = 20,
-    disable_for_rna: bool = False,
-    ignore_ligands_below: int | float = 6,
-    random_seed: int | None = None,
-) -> AtomArray:
-    """Precrops assemblies meeting the criteria to N chains
-
-    Applies the precropping logic to N chains as described in AlphaFold3 SI 2.5.4, with
-    additional options to skip precropping in RNA structures or exclude small ligands
-    from the N-chain counter.
-
-    Args:
-        atom_array:
-            AtomArray containing the structure to precrop.
-        n_chains:
-            Number of chains to keep in the precrop. If the structure has less than N
-            chains, all of them are kept. Default is 20.
-        disable_for_rna:
-            If True and if the structure contains RNA, skip the N-chain precropping.
-        ignore_ligands_below:
-            Ligand chains with fewer atoms than this value will be ignored in the
-            N-chain counter for precropping, and included based on proximity to the
-            selected chains. Set this to inf to ignore all ligands from the chain
-            budget.
-        random_seed:
-            Random seed for reproducibility
-
-    Returns:
-        AtomArray (precropped to N chains if chain count > N).
-    """
-    apply_precropping = True
-
-    # Skip if RNA found and disable_for_rna is True
-    if disable_for_rna and (atom_array.molecule_type_id == MoleculeType.RNA).any():
-        logger.info("Skipping precropping for RNA structure.")
-        apply_precropping = False
-    else:
-        if ignore_ligands_below:
-            total_chain_count = struc.get_chain_count(
-                atom_array[
-                    ~get_small_ligand_mask(
-                        atom_array, max_atoms=ignore_ligands_below - 1
-                    )
-                ]
-            )
-        else:
-            total_chain_count = struc.get_chain_count(atom_array)
-
-    # Precrop assemblies larger than N chains
-    if apply_precropping and (total_chain_count > n_chains):
-        tokenize_atom_array(atom_array)
-        atom_array_precropped = precrop_chains(
-            atom_array=atom_array,
-            n_chains=n_chains,
-            interface_distance_threshold=15.0,
-            ignore_ligands_below=ignore_ligands_below,
-            random_seed=random_seed,
-        )
-
-        removed_chains = get_differing_chain_ids(atom_array, atom_array_precropped)
-
-        logger.info(
-            f"Precropping removed {len(removed_chains)} chains: {removed_chains}"
-        )
-
-        return atom_array_precropped
-
-    # Don't apply precropping otherwise
-    else:
-        return atom_array
-
-
-@return_on_empty_atom_array
-def precrop_chains(
-    atom_array: AtomArray,
-    n_chains: int = 20,
-    interface_distance_threshold: float = 15.0,
-    ignore_ligands_below: int | float = 6,
-    ligand_inclusion_distance: float = 5.0,
-    random_seed: int = None,
-) -> AtomArray:
-    """Subsets structures with too many chains to N chains
-
-    Follows 2.5.4 of the AlphaFold3 SI. Will select a random interface token center atom
-    and return the closest N chains based on minimum distances between any token center
-    atoms, therefore acting as an initial fixed precropping of too-large assemblies.
-
-    Requires the 'token_center_atom' annotation created by the tokenizer function.
-
-    Args:
-        atom_array:
-            AtomArray containing the structure to subset
-        n_chains:
-            Number of chains to keep in the precrop. If the structure has less than N
-            chains, all of them are kept. Default is 20.
-        interface_distance_threshold:
-            Distance threshold in Å that an interface token center atom must have to any
-            token center atom in another chain to be considered an interface token
-            center atom
-        ignore_ligands_below:
-            Any ligands with fewer atoms than this number will be excluded from
-            the precrop chain count. Instead, they will be included based on
-            proximity to the selected chains in the subset. Set to float('inf')
-            to never count any ligands toward the chain budget. Default is 6.
-        ligand_inclusion_distance:
-            Distance threshold in Å when adding ligands excluded by
-            `ignore_ligands_below` back into the precrop. Any such ligand with
-            a distance ≤ this threshold to any retained chain will be included.
-        random_seed:
-            Random seed for reproducibility. Default is None.
-
-    Returns:
-        AtomArray with the closest n_chains based on token center atom distances,
-        plus any nearby small ligands.
-    """
-    if random_seed is not None:
-        np.random.seed(random_seed)
-
-    # Keep pointer to unfiltered AtomArray
-    atom_array_orig = atom_array
-
-    # 1) Carve out "small" ligands before selecting chains
-    small_ligand_mask = get_small_ligand_mask(
-        atom_array_orig, max_atoms=ignore_ligands_below - 1
-    )
-    atom_array = atom_array_orig[~small_ligand_mask]
-
-    # 2) All token center atoms
-    all_token_center_atoms = atom_array[atom_array.token_center_atom]
-
-    # 3) Select random interface token center atom
-    interface_token_center_atoms = get_interface_token_center_atoms(
-        atom_array, distance_threshold=interface_distance_threshold
-    )
-    if len(interface_token_center_atoms) == 0:
-        logger.warning(
-            "No interface token center atoms found for precropping. "
-            "Taking a random token center atom instead."
-        )
-        selected_atom = np.random.choice(all_token_center_atoms)
-    else:
-        selected_atom = np.random.choice(interface_token_center_atoms)
-
-    # 4) Compute distances to all token centers
-    dists = cdist(
-        selected_atom.coord.reshape(1, 3),
-        all_token_center_atoms.coord,
-    )[0]
-
-    # 5) Sort chain IDs by distance
-
-    # Get indices that sort distances low-to-high
-    sort_idx = np.argsort(dists)
-
-    # Chain IDs of all token centers, sorted by distance to the selected atom
-    chain_ids_sorted = all_token_center_atoms.chain_id[sort_idx]
-
-    # Get indices of the *first* occurrence (i.e., closest distance) for each unique
-    # chain ID.
-    # Sort these indices to get the distance rank of unique chains.
-    unique_chain_idxs_sorted = np.sort(
-        np.unique(chain_ids_sorted, return_index=True)[1]
-    )
-
-    # Select indices corresponding to the N closest unique chains
-    closest_idxs = unique_chain_idxs_sorted[:n_chains]
-
-    # Get the actual IDs of the N closest unique chains
-    closest_chain_ids = chain_ids_sorted[closest_idxs]
-
-    # 6) Mask for the closest N chains on the original AtomArray
-    n_chain_mask = np.isin(atom_array_orig.chain_id, closest_chain_ids)
-
-    # 7) Build initial subset
-    atom_array_subset = atom_array_orig[n_chain_mask]
-
-    # 8) Re-include small ligands by proximity
-    atom_array_small_lig = atom_array_orig[small_ligand_mask]
-    if len(atom_array_small_lig) == 0:
-        return atom_array_subset
-
-    _, proximal_small_lig_chains = get_query_interface_atom_pair_idxs(
-        query_atom_array=atom_array_small_lig,
-        target_atom_array=atom_array_subset,
-        distance_threshold=ligand_inclusion_distance,
-        return_chain_pairs=True,
-    )
-
-    # 9) If none requalify, just return the core subset
-    if proximal_small_lig_chains is None:
-        return atom_array_subset
-
-    # 10) Otherwise, add those ligand chains back in
-    proximal_ids = np.unique(proximal_small_lig_chains[:, 0])
-    proximal_mask = np.isin(atom_array_orig.chain_id, proximal_ids)
-    logger.debug(
-        f"Adding {len(proximal_ids)} small (< {ignore_ligands_below}) ligand chains to "
-        "the precrop by proximity."
-    )
-    final_mask = n_chain_mask | proximal_mask
-    return atom_array_orig[final_mask]
-
-
 @return_on_empty_atom_array
 def remove_std_residue_terminal_atoms(atom_array: AtomArray) -> AtomArray:
     """Removes terminal atoms like OXT and OP3 from standard residues.
@@ -1312,14 +1059,19 @@ def remove_covalent_nonprotein_chains(atom_array: AtomArray) -> AtomArray:
     ]
 
     # Find bonds that have exactly one protein atom
+    cross_chain_bonds_covalent_has_nonprotein_mask = (
+        cross_chain_bonds_covalent_mol_type[:, 0] == MoleculeType.PROTEIN
+    ) ^ (cross_chain_bonds_covalent_mol_type[:, 1] == MoleculeType.PROTEIN)
     cross_chain_bonds_covalent_has_nonprotein = cross_chain_bonds_covalent[
-        (cross_chain_bonds_covalent_mol_type[:, 0] == MoleculeType.PROTEIN)
-        ^ (cross_chain_bonds_covalent_mol_type[:, 1] == MoleculeType.PROTEIN)
+        cross_chain_bonds_covalent_has_nonprotein_mask
     ]
 
     # Get non-protein atom indices then covalent non-protein chain IDs
     cross_chain_atom_nonprotein = cross_chain_bonds_covalent_has_nonprotein.ravel()[
-        cross_chain_bonds_covalent_mol_type.ravel() != MoleculeType.PROTEIN
+        cross_chain_bonds_covalent_mol_type[
+            cross_chain_bonds_covalent_has_nonprotein_mask
+        ].ravel()
+        != MoleculeType.PROTEIN
     ]
     covalent_nonprotein_chain_ids = atom_array.chain_id[cross_chain_atom_nonprotein]
 

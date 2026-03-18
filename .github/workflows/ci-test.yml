@@ -2,7 +2,9 @@ name: Run Tests with Docker image
 
 on:
   pull_request_target:
-    types: [labeled]
+    # opened/synchronize: run CI on PRs in internal repos without requiring a label
+    # labeled: run CI on public repo PRs only after the 'safe-to-test' label is applied
+    types: [labeled, opened, synchronize]
   push:
     branches: [main]
   workflow_dispatch:
@@ -13,8 +15,10 @@ jobs:
       (github.event_name == 'push') ||
       (github.event_name == 'workflow_dispatch') ||
       (github.event_name == 'pull_request_target' &&
-       github.event.action == 'labeled' &&
-       github.event.label.name == 'safe-to-test')
+       (github.repository == 'aqlaboratory/openfold-3' &&
+        github.event.action == 'labeled' &&
+        github.event.label.name == 'safe-to-test') ||
+       (github.repository != 'aqlaboratory/openfold-3'))
     permissions:
       id-token: write
       contents: read

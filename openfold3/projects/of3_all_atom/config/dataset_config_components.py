@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,6 +48,8 @@ class MSASettings(BaseModel):
             chains ... down to any 3 of the 7 chains.
         pairing_mask_keys (list[str]):
             Masks to apply during online pairing to exclude certain sequences.
+        max_seq_per_species (int):
+            Max number of sequences to keep per species in each chain's paired MSA.
         moltypes (list[MoleculeType]):
             Molecule types to generate MSA features for. Only "protein" and "rna" are
             supported.
@@ -70,6 +72,7 @@ class MSASettings(BaseModel):
     subsample_with_bands: bool = False
     min_chains_paired_partial: int = 2
     pairing_mask_keys: list[str] = ["shared_by_two", "less_than_600"]
+    max_seq_per_species: int = 600
     moltypes: Annotated[list[MoleculeType], BeforeValidator(_convert_molecule_type)] = [
         MoleculeType.PROTEIN,
         MoleculeType.RNA,
@@ -85,6 +88,7 @@ class MSASettings(BaseModel):
         "rnacentral_hits": 10000,
         "nt_hits": 10000,
         "concat_cfdb_uniref100_filtered": 10000000,
+        "mmseqs_colabfold": 16384,
         "colabfold_main": 16384,
         "colabfold_paired": 8192,
     }
@@ -99,9 +103,12 @@ class MSASettings(BaseModel):
         "rnacentral_hits",
         "nt_hits",
         "concat_cfdb_uniref100_filtered",
+        "mmseqs_colabfold",
         "colabfold_main",
         "dummy",  # aln containing only query; used for MSA-free inference
     ]
+    subsample_main: bool = True
+    keep_subsampled_order: bool = False
     paired_msa_order: list = ["colabfold_paired"]
 
 
@@ -116,6 +123,7 @@ class TemplateSettings(BaseModel):
 
     n_templates: int = 4
     take_top_k: bool = False
+    min_n_tokens_per_chain: int = 5
     distogram: TemplateDistogramSettings = TemplateDistogramSettings()
 
 
@@ -125,11 +133,28 @@ class CropWeights(BaseModel):
     spatial_interface: float = 0.4
 
 
+class TokenCropSettings(BaseModel):
+    """Settings for "standard" token-wise cropping."""
+
+    enabled: bool = True
+    token_budget: int = 384
+    crop_weights: CropWeights = CropWeights()
+
+
+class ChainCropSettings(BaseModel):
+    """Settings for chain-wise "pre-cropping" that limits the max. number of chains."""
+
+    enabled: bool = False
+    n_chains: int = 20
+    interface_distance_threshold: float = 15.0
+    ligand_inclusion_distance: float = 5.0
+
+
 class CropSettings(BaseModel):
     """Settings for crop featurization."""
 
-    token_budget: int = 384
-    crop_weights: CropWeights = CropWeights()
+    token_crop: TokenCropSettings = TokenCropSettings()
+    chain_crop: ChainCropSettings = ChainCropSettings()
 
 
 class LossWeights(BaseModel):
@@ -139,7 +164,7 @@ class LossWeights(BaseModel):
     distogram: float = 3e-2
     experimentally_resolved: float = 1e-4
     plddt: float = 1e-4
-    pae: float = 0.0
+    pae: float = 1e-4
     pde: float = 1e-4
 
 

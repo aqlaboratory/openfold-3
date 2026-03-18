@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -178,8 +178,8 @@ def all_atom_plddt_loss(
         num_atoms_per_token=batch["num_atoms_per_token"],
         token_feat=batch["is_dna"] + batch["is_rna"],
     )
-    pair_mask = (d < 15) * protein_atom_mask[..., None, :] + (
-        d < 30
+    pair_mask = (dx_gt < 15) * protein_atom_mask[..., None, :] + (
+        dx_gt < 30
     ) * nucleotide_atom_mask[..., None, :]
 
     # Construct indices for representative atoms

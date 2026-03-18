@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,6 +53,7 @@ from openfold3.core.data.io.structure.mol import write_annotated_sdf
 from openfold3.core.data.io.structure.pdb import (
     parse_pdb_af2,
     parse_protein_monomer_pdb_tmp,
+    parse_RNA_monomer_pdb_tmp,
 )
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
@@ -62,6 +63,7 @@ from openfold3.core.data.primitives.caches.format import (
     PreprocessingDataCache,
     PreprocessingStructureData,
     ProteinMonomerDatasetCache,
+    RNAMonomerDatasetCache,
 )
 from openfold3.core.data.primitives.structure.alignment import (
     calculate_distance_clash_map,
@@ -72,7 +74,6 @@ from openfold3.core.data.primitives.structure.cleanup import (
     canonicalize_atom_order,
     convert_MSE_to_MET,
     fix_arginine_naming,
-    maybe_precrop_chains,
     prefilter_bonds,
     remove_chains_with_CA_gaps,
     remove_clashing_chains,
@@ -144,10 +145,6 @@ def cleanup_structure_of3(
     atom_array: AtomArray,
     cif_data: CIFBlock,
     ccd: CIFFile,
-    precrop_n_chains: int = 20,
-    precrop_disable_rna: bool = False,
-    precrop_ignore_ligands_below: int | float = 6,
-    random_seed: int | None = None,
 ) -> AtomArray:
     """Cleans up a structure following the AlphaFold3 SI and formats it for training.
 
@@ -170,18 +167,6 @@ def cleanup_structure_of3(
             `metadata_extraction.get_cif_block`)
         ccd:
             CIFFile containing the parsed CCD (components.cif)
-        precrop_n_chains:
-            Number of chains to keep in the precropping step. If the structure has less
-            than N chains, all of them are kept. Default is 20.
-        precrop_disable_rna:
-            If True and if the structure contains RNA, skip the N-chain precropping.
-        precrop_ignore_ligands_below:
-            Ligand chains with fewer atoms than this value will be ignored in the
-            N-chain counter for precropping, and included based on proximity to the
-            selected chains. Set this to inf to ignore all ligands from the chain
-            budget.
-        random_seed:
-            Random seed for reproducibility in precropping.
 
     Returns:
         AtomArray with all cleaning steps applied
@@ -212,14 +197,6 @@ def cleanup_structure_of3(
         remove_inter_chain_poly_links=True,
         remove_intra_chain_poly_links=True,
         remove_longer_than=2.4,
-    )
-
-    atom_array = maybe_precrop_chains(
-        atom_array=atom_array,
-        n_chains=precrop_n_chains,
-        disable_for_rna=precrop_disable_rna,
-        ignore_ligands_below=precrop_ignore_ligands_below,
-        random_seed=random_seed,
     )
 
     ## Structure formatting
@@ -417,9 +394,6 @@ def preprocess_structure_and_write_outputs_of3(
     reference_mol_out_dir: Path,
     output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
     max_polymer_chains: int | None = None,
-    precrop_n_chains: int = 20,
-    precrop_disable_rna: bool = False,
-    precrop_ignore_ligands_below: int | float = 6,
     skip_components: set | SharedSet | None = None,
     random_seed: int | None = None,
 ) -> tuple[dict, dict]:
@@ -443,24 +417,12 @@ def preprocess_structure_and_write_outputs_of3(
         output_formats:
             What formats to write the output files to. Allowed values are "cif", "bcif",
             "npz", and "pkl".
-        precrop_n_chains:
-            Number of chains to keep in the precropping step. If the structure has less
-            than N chains, all of them are kept. Default is 20.
-        precrop_disable_rna:
-            If True and if the structure contains RNA, skip the N-chain precropping.
-        precrop_ignore_ligands_below:
-            Ligand chains with fewer atoms than this value will be ignored in the
-            N-chain counter for precropping, and included based on proximity to the
-            selected chains. Set this to inf to ignore all ligands from the chain
-            budget.
         max_polymer_chains:
             The maximum number of polymer chains in the first bioassembly after which a
             structure is skipped by the parser.
         skip_components:
             A set of components to skip, if any. Useful to avoid repeated processing of
             components e.g. by using a SharedSet.
-        random_seed:
-            Random seed for reproducibility in precropping.
 
 
     Returns:
@@ -527,6 +489,7 @@ def preprocess_structure_and_write_outputs_of3(
             strict=True,
         )
     }
+    logger.info(f"Processing structure with {len(chain_to_pdb_chain)} chains.")
     logger.info(f"label_asym_id to new chain_id mapping: {chain_to_pdb_chain}")
 
     # Cleanup structure and extract metadata
@@ -535,10 +498,6 @@ def preprocess_structure_and_write_outputs_of3(
             atom_array=atom_array,
             cif_data=cif_data,
             ccd=ccd,
-            precrop_n_chains=precrop_n_chains,
-            precrop_disable_rna=precrop_disable_rna,
-            precrop_ignore_ligands_below=precrop_ignore_ligands_below,
-            random_seed=random_seed,
         )
     except SkippedStructureError as e:
         return {
@@ -625,18 +584,6 @@ class _OF3PreprocessingWrapper:
         output_formats:
             What formats to write the output files to. Allowed values are "cif", "bcif",
             and "pkl".
-        precrop_n_chains:
-            Number of chains to keep in the precropping step. If the structure has less
-            than N chains, all of them are kept. Default is 20.
-        precrop_disable_rna:
-            If True and if the structure contains RNA, skip the N-chain precropping.
-        precrop_ignore_ligands_below:
-            Ligand chains with fewer atoms than this value will be ignored in the
-            N-chain counter for precropping, and included based on proximity to the
-            selected chains. Set this to inf to ignore all ligands from the chain
-            budget.
-        random_seed:
-            Random seed for reproducibility in precropping.
     """
 
     def __init__(
@@ -646,20 +593,12 @@ class _OF3PreprocessingWrapper:
         max_polymer_chains: int | None,
         skip_components: set | SharedSet | None,
         output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
-        precrop_n_chains: int = 20,
-        precrop_disable_rna: bool = False,
-        precrop_ignore_ligands_below: int | float = 6,
-        random_seed: int | None = None,
     ):
         self.ccd = ccd
         self.reference_mol_out_dir = reference_mol_out_dir
         self.max_polymer_chains = max_polymer_chains
         self.skip_components = skip_components
         self.output_formats = output_formats
-        self.precrop_n_chains = precrop_n_chains
-        self.precrop_disable_rna = precrop_disable_rna
-        self.precrop_ignore_ligands_below = precrop_ignore_ligands_below
-        self.random_seed = random_seed
 
     def __call__(self, paths: tuple[Path, Path]) -> tuple[dict, dict]:
         cif_file, out_dir = paths
@@ -680,10 +619,6 @@ class _OF3PreprocessingWrapper:
                         max_polymer_chains=self.max_polymer_chains,
                         skip_components=self.skip_components,
                         output_formats=self.output_formats,
-                        precrop_n_chains=self.precrop_n_chains,
-                        precrop_disable_rna=self.precrop_disable_rna,
-                        precrop_ignore_ligands_below=self.precrop_ignore_ligands_below,
-                        random_seed=self.random_seed,
                     )
                 )
 
@@ -720,10 +655,6 @@ def preprocess_cif_dir_of3(
     num_workers: int | None = None,
     chunksize: int = 20,
     output_formats: list[Literal["npz", "cif", "bcif", "pkl"]] = False,
-    precrop_n_chains: int = 20,
-    precrop_disable_rna: bool = False,
-    precrop_ignore_ligands_below: int | float = 6,
-    random_seed: int | None = None,
     log_queue: mp.queues.Queue | None = None,
     log_level: int = logging.WARNING,
     early_stop: int | None = None,
@@ -759,18 +690,6 @@ def preprocess_cif_dir_of3(
         output_formats:
             What formats to write the output files to. Allowed values are "npz", "cif",
             "bcif", and "pkl".
-        precrop_n_chains:
-            Number of chains to keep in the precropping step. If the structure has less
-            than N chains, all of them are kept. Default is 20.
-        precrop_disable_rna:
-            If True and if the structure contains RNA, skip the N-chain precropping.
-        precrop_ignore_ligands_below:
-            Ligand chains with fewer atoms than this value will be ignored in the
-            N-chain counter for precropping, and included based on proximity to the
-            selected chains. Set this to inf to ignore all ligands from the chain
-            budget.
-        random_seed:
-            Random seed for reproducibility in precropping.
         log_queue:
             A multiprocessing queue for logging. Required if num_workers > 0.
         log_level:
@@ -817,10 +736,6 @@ def preprocess_cif_dir_of3(
         max_polymer_chains=max_polymer_chains,
         skip_components=processed_mol_ids,
         output_formats=output_formats,
-        precrop_n_chains=precrop_n_chains,
-        precrop_disable_rna=precrop_disable_rna,
-        precrop_ignore_ligands_below=precrop_ignore_ligands_below,
-        random_seed=random_seed,
     )
 
     def update_output_dicts(structure_metadata_dict: dict, ref_mol_metadata_dict: dict):
@@ -974,6 +889,51 @@ def preparse_monomer(
     write_structure(atom_array, output_dir / f"{entry_id}/{entry_id}.pkl")
 
 
+# TODO: combine local and S3 monomer preparsing
+def preparse_RNA_monomer(
+    entry_id: str,
+    data_directory: Path,
+    structure_filename: str,
+    structure_file_format: str,
+    output_dir: Path,
+):
+    ### to reduce run times only parse if the file does not exist
+    output_file = output_dir / f"{entry_id}/structure.npz"
+    if output_file.exists():
+        return
+    _, atom_array = parse_RNA_monomer_pdb_tmp(
+        data_directory / entry_id / f"{entry_id}.{structure_file_format}"
+    )
+    write_structure(atom_array, output_dir / f"{entry_id}/structure.npz")
+
+
+class _RNAMonomerPreprocessingWrapper:
+    def __init__(
+        self,
+        data_directory: Path,
+        structure_filename: str,
+        structure_file_format: str,
+        output_dir: Path,
+    ) -> None:
+        """Wrapper class for pre-parsing protein mononer files into .pkl."""
+        self.data_directory = data_directory
+        self.structure_filename = structure_filename
+        self.structure_file_format = structure_file_format
+        self.output_dir = output_dir
+
+    def __call__(self, entry_id: str) -> None:
+        try:
+            preparse_RNA_monomer(
+                entry_id,
+                self.data_directory,
+                self.structure_filename,
+                self.structure_file_format,
+                self.output_dir,
+            )
+        except Exception as e:
+            print(f"Failed to preparse monomer {entry_id}:\n{e}\n")
+
+
 class _ProteinMonomerPreprocessingWrapper:
     def __init__(
         self,
@@ -999,6 +959,43 @@ class _ProteinMonomerPreprocessingWrapper:
             )
         except Exception as e:
             print(f"Failed to preparse monomer {entry_id}:\n{e}\n")
+
+
+def preparse_RNA_monomer_structures(
+    dataset_cache: RNAMonomerDatasetCache,
+    data_directory: Path,
+    structure_filename: str,
+    structure_file_format: str,
+    output_dir: Path,
+    num_workers: int,
+    chunksize: int,
+):
+    # Create per-chain directories
+    entry_ids = list(dataset_cache.structure_data.keys())
+    output_dir = output_dir / "structure_files"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for entry_id in tqdm(
+        entry_ids, total=len(entry_ids), desc="1/2: Creating output directories"
+    ):
+        entry_dir = output_dir / f"{entry_id}"
+        if not entry_dir.exists():
+            entry_dir.mkdir(parents=True, exist_ok=True)
+
+    wrapped_monomer_preparser = _RNAMonomerPreprocessingWrapper(
+        data_directory, structure_filename, structure_file_format, output_dir
+    )
+
+    with mp.Pool(num_workers) as pool:
+        for _ in tqdm(
+            pool.imap_unordered(
+                wrapped_monomer_preparser,
+                entry_ids,
+                chunksize=chunksize,
+            ),
+            total=len(entry_ids),
+            desc="2/2: Pre-parsing monomer structures",
+        ):
+            pass
 
 
 def preparse_protein_monomer_structures(

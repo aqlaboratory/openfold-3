@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 """All operations for processing and manipulating metadata and training caches."""
 
 import functools
+import itertools
 import logging
 import random
 from collections import defaultdict
@@ -1157,9 +1158,6 @@ def subsample_chains_by_type(
     Follows AF3 SI 5.8 Monomer Selection Step 4). The function subsamples specific
     chains and deletes all other chains from the cache.
 
-    Note that proteins are sampled as unique cluster representatives, which is not
-    directly stated in the SI but seems logical given that chains are preclustered.
-
     Args:
         dataset_cache (ClusteredDatasetCache):
             The cache to subsample.
@@ -1180,11 +1178,11 @@ def subsample_chains_by_type(
     if random_seed is not None:
         random.seed(random_seed)
 
-    # Store the chain data points grouped by cluster
-    chain_type_to_clusters = {
-        MoleculeType.PROTEIN: defaultdict(list),
-        MoleculeType.DNA: defaultdict(list),
-        MoleculeType.RNA: defaultdict(list),
+    # Store the chain data points grouped by molecule type
+    chain_type_to_datapoints = {
+        MoleculeType.PROTEIN: [],
+        MoleculeType.DNA: [],
+        MoleculeType.RNA: [],
     }
     chain_type_to_n_samples = {
         MoleculeType.PROTEIN: n_protein,
@@ -1192,36 +1190,33 @@ def subsample_chains_by_type(
         MoleculeType.RNA: n_rna,
     }
 
-    # Collect all chain data points of the specified types grouped by cluster
+    # Sort the chain datapoints into their respective molecule type lists
     for pdb_id, structure_data in dataset_cache.structure_data.items():
         for chain_id, chain_data in structure_data.chains.items():
             chain_type = chain_data.molecule_type
 
-            if chain_type not in chain_type_to_clusters:
+            if chain_type not in chain_type_to_datapoints:
                 continue
 
-            chain_type_to_clusters[chain_type][chain_data.cluster_id].append(
+            chain_type_to_datapoints[chain_type].append(
                 ChainDataPoint(pdb_id, chain_id)
             )
 
+    # Subsample the chains, taking N per type except if the count is set to None in
+    # which case all samples are taken
     keep_chain_datapoints = set()
 
-    # Subsample the chains, taking one per cluster except if the count is set to None in
-    # which case all samples are taken
-    for chain_type, clusters in chain_type_to_clusters.items():
+    for chain_type, datapoints in chain_type_to_datapoints.items():
         n_samples = chain_type_to_n_samples[chain_type]
 
         # Take every single datapoint if n_samples is None
         if n_samples is None:
-            for chain_datapoints in clusters.values():
-                keep_chain_datapoints.update(chain_datapoints)
+            keep_chain_datapoints.update(datapoints)
 
-        # Otherwise, take 1 sample from n_samples clusters
+        # Otherwise, take N random samples
         else:
-            sampled_clusters = random.sample(list(clusters.keys()), n_samples)
-
-            for cluster_id in sampled_clusters:
-                keep_chain_datapoints.add(random.choice(clusters[cluster_id]))
+            sampled_datapoints = random.sample(datapoints, n_samples)
+            keep_chain_datapoints.update(sampled_datapoints)
 
     # Remove everything outside of the selected chains
     filter_cache_to_specified_chains(dataset_cache, keep_chain_datapoints)
@@ -1676,70 +1671,150 @@ def filter_chains_by_metric_eligibility(
     return structure_data
 
 
-def select_final_validation_data(
-    unfiltered_cache: ValidationDatasetCache,
-    monomer_structure_data: dict[str, ValidationDatasetStructureData],
-    multimer_structure_data: dict[str, ValidationDatasetStructureData],
-) -> None:
-    """Selects the final targets and marks chains/interfaces to score on.
-
-    This will create the final validation dataset cache by subsetting the unfiltered
-    cache only to the relevant PDB-IDs, and then turning on the use_metrics flag only
-    for select chains and interfaces coming out of the multimer and monomer sets. Note
-    that we are not scoring validation metrics on all low-homology chains and interfaces
-    of each target in the final validation set, but only those that are part of the
-    selected monomer and multimer sets.
+def select_one_per_cluster(
+    datapoints: list[ChainDataPoint | InterfaceDataPoint],
+    cache: ValidationDatasetCache,
+    random_seed: int | None = None,
+) -> list[ChainDataPoint] | list[InterfaceDataPoint]:
+    """Selects one random datapoint per cluster from the provided list.
 
     Args:
-        unfiltered_cache: ValClusteredDatasetCache
-            Preliminary validation dataset cache corresponding to the full proto
-            validation set, after the initial time- and token-based filtering.
-        monomer_structure_data: dict[str, ValClusteredDatasetStructureData]
-            The monomer set of SI 5.8, containing the subsampled low-homology polymer
-            chains and metric-eligible low-homology interfaces.
-        multimer_structure_data: dict[str, ValClusteredDatasetStructureData]
-            The multimer set of SI 5.8, containing subsampled low-homology interfaces
-            and their constituent chains.
-
+        datapoints: List of chain or interface datapoints.
+        cache: The cache to look up cluster IDs from.
+        random_seed: Random seed for reproducibility.
 
     Returns:
-        None, the filtered_structure_data is updated in-place.
+        Filtered list with one datapoint per cluster.
     """
-    # First subset the unfiltered cache to only the relevant PDB-IDs
-    relevant_pdb_ids = set(monomer_structure_data.keys()) | set(
-        multimer_structure_data.keys()
-    )
-    structure_data = unfiltered_cache.structure_data
-    structure_data = {pdb_id: structure_data[pdb_id] for pdb_id in relevant_pdb_ids}
+    if random_seed is not None:
+        random.seed(random_seed)
 
-    for pdb_id, structure_data_entry in structure_data.items():
-        # Go through the monomer and multimer sets sequentially
-        for set_name, set_structure_data in zip(
-            ("monomer", "multimer"),
-            (
-                monomer_structure_data,
-                multimer_structure_data,
-            ),
-            strict=True,
+    # Group by cluster_id
+    cluster_to_datapoints = defaultdict(list)
+
+    for dp in datapoints:
+        if isinstance(dp, ChainDataPoint):
+            cluster_id = cache.structure_data[dp.pdb_id].chains[dp.chain_id].cluster_id
+        else:  # InterfaceDataPoint
+            cluster_id = (
+                cache.structure_data[dp.pdb_id].interfaces[dp.interface_id].cluster_id
+            )
+        cluster_to_datapoints[cluster_id].append(dp)
+
+    # Pick one per cluster
+    return [random.choice(dps) for dps in cluster_to_datapoints.values()]
+
+
+def select_final_validation_data(
+    val_dataset_cache: ValidationDatasetCache,
+    selected_chains: list[ChainDataPoint],
+    selected_interfaces: list[InterfaceDataPoint],
+    random_seed: int | None = None,
+) -> None:
+    """Subsets cache and marks cluster representatives with priority.
+
+    1. Subsets cache to PDB IDs from selected chains/interfaces
+    2. Marks selected chains/interfaces as cluster representatives
+    3. For remaining clusters, picks additional representatives from
+       metric-eligible chains/interfaces in the subsetted PDBs
+    4. Enables use_metrics for all representatives
+
+    Args:
+        val_dataset_cache: The full validation dataset cache.
+        selected_chains: Chain datapoints from monomer selection.
+        selected_interfaces: Interface datapoints from multimer selection.
+        random_seed: Random seed for reproducibility when picking additional
+            representatives.
+
+    Returns:
+        None, modifies val_dataset_cache in place.
+    """
+    if random_seed is not None:
+        random.seed(random_seed)
+
+    # Step 1: Collect PDB IDs and subset cache
+    monomer_pdb_ids = {dp.pdb_id for dp in selected_chains}
+    multimer_pdb_ids = {dp.pdb_id for dp in selected_interfaces}
+    selected_pdb_ids = monomer_pdb_ids | multimer_pdb_ids
+
+    val_dataset_cache.structure_data = {
+        pdb_id: data
+        for pdb_id, data in val_dataset_cache.structure_data.items()
+        if pdb_id in selected_pdb_ids
+    }
+
+    # Step 2: Track which subset each PDB came from for logging purposes
+    pdb_id_to_source = {
+        pdb_id: "monomer" if pdb_id in monomer_pdb_ids else "multimer"
+        for pdb_id in selected_pdb_ids
+    }
+
+    # Step 3: Turn on metrics for selected chains/interfaces and track which clusters
+    # are already represented
+    represented_clusters: set[str] = set()
+
+    # Iterate through all chains and interfaces
+    for dp in itertools.chain(selected_chains, selected_interfaces):
+        pdb_id = dp.pdb_id
+        structure_data = val_dataset_cache.structure_data[pdb_id]
+
+        if isinstance(dp, ChainDataPoint):
+            dp_data = structure_data.chains[dp.chain_id]
+        else:
+            dp_data = structure_data.interfaces[dp.interface_id]
+
+        # Turn on metrics and mark the cluster as represented
+        dp_data.use_metrics = True
+        represented_clusters.add(dp_data.cluster_id)
+
+        # Store which subset the PDB came from
+        dp_data.source_subset = pdb_id_to_source[pdb_id]
+
+    # Step 4: Collect chains/interfaces in the PDBs that are metric-eligible and not yet
+    # "represented"
+    non_represented_dps: list[ChainDataPoint | InterfaceDataPoint] = []
+
+    for pdb_id, structure_data in val_dataset_cache.structure_data.items():
+        for dp_id, metadata in itertools.chain(
+            structure_data.chains.items(), structure_data.interfaces.items()
         ):
-            if pdb_id not in set_structure_data:
-                continue
+            if (
+                metadata.metric_eligible
+                and metadata.cluster_id not in represented_clusters
+            ):
+                if isinstance(metadata, ValidationDatasetChainData):
+                    non_represented_dps.append(
+                        ChainDataPoint(
+                            pdb_id=pdb_id,
+                            chain_id=dp_id,
+                        )
+                    )
+                else:
+                    non_represented_dps.append(
+                        InterfaceDataPoint(
+                            pdb_id=pdb_id,
+                            interface_id=dp_id,
+                        )
+                    )
 
-            # Activate metrics for all chains in the monomer/multimer sets
-            for chain_id in set_structure_data[pdb_id].chains:
-                structure_data_entry.chains[chain_id].use_metrics = True
+    # Step 5: Pick random representatives from non-represented clusters
+    subsampled_dps = select_one_per_cluster(
+        non_represented_dps, val_dataset_cache, random_seed=random_seed
+    )
 
-                # Add this for logging purposes
-                structure_data_entry.chains[chain_id].source_subset = set_name
+    # Step 6: Mark selected representatives to use metrics as well
+    for dp in subsampled_dps:
+        pdb_id = dp.pdb_id
+        structure_data = val_dataset_cache.structure_data[pdb_id]
 
-            # Activate metrics for all interfaces in the monomer/multimer sets
-            for interface_id in set_structure_data[pdb_id].interfaces:
-                structure_data_entry.interfaces[interface_id].use_metrics = True
+        if isinstance(dp, ChainDataPoint):
+            dp_data = structure_data.chains[dp.chain_id]
+        else:
+            dp_data = structure_data.interfaces[dp.interface_id]
 
-                # Add this for logging purposes
-                structure_data_entry.interfaces[interface_id].source_subset = set_name
-
-    unfiltered_cache.structure_data = structure_data
+        # Turn on metrics and store source of original PDB-ID
+        dp_data.use_metrics = True
+        dp_data.source_subset = pdb_id_to_source[pdb_id]
 
 
 def filter_only_ligand_ligand_metrics(

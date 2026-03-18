@@ -164,7 +164,7 @@ python ./scripts/data_preprocessing/preparse_alignments_of3.py \
     --alignments_directory msa-raw/some-input-dir/ \
     --alignment_array_directory msa-cache/some-output-dir/ \
     --num_workers 1 \
-    --max_seq_counts ''{"uniprot_hits": 50000, "uniref90_hits": 10000, "cfdb_hits": 100000000, "mgnify_hits": 5000, "rfam_hits": 10000, "rnacentral_hits": 10000, "nucleotide_collection_hits": 10000}'
+    --max_seq_counts '{"uniprot_hits": 50000, "uniref90_hits": 10000, "cfdb_hits": 100000000, "mgnify_hits": 5000, "rfam_hits": 10000, "rnacentral_hits": 10000, "nucleotide_collection_hits": 10000}'
 ```
 
 Here is a minimal example for testing, only looking at UniRef90 (small and runnable locally)

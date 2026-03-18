@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -78,8 +78,6 @@ class TemplateHit(NamedTuple):
             Number of
         hit_sequence (str):
             The PDB ID of the hit.
-        indices_hit (str):
-            The PDB ID of the hit.
         e_value (str):
             The PDB ID of the hit.
     """
@@ -88,7 +86,6 @@ class TemplateHit(NamedTuple):
     name: str
     aligned_cols: int
     hit_sequence: str
-    indices_hit: list[int]
     e_value: float | None
 
 
@@ -267,7 +264,7 @@ def convert_stockholm_to_a3m(
         query_non_gaps = [res != "-" for res in query_sequence]
     for seqname, sto_sequence in sequences.items():
         # Dots are optional in a3m format and are commonly removed.
-        out_sequence = sto_sequence.replace(".", "")
+        out_sequence = sto_sequence.replace(".", "-")
         if remove_first_row_gaps:
             out_sequence = "".join(
                 _convert_sto_seq_to_a3m(query_non_gaps, out_sequence)
@@ -309,7 +306,6 @@ def parse_hmmsearch_a3m(a3m_string: str) -> dict[int, TemplateHit]:
 
         # Aligned columns are only the match states
         aligned_cols = sum([r.isupper() and r != "-" for r in hit_sequence])
-        indices_hit = _get_indices(hit_sequence, start=metadata.start)
 
         # Embed in TempateHit dataclass
         hits[i] = TemplateHit(
@@ -318,7 +314,6 @@ def parse_hmmsearch_a3m(a3m_string: str) -> dict[int, TemplateHit]:
             aligned_cols=aligned_cols,
             e_value=0,
             hit_sequence=hit_sequence.upper(),
-            indices_hit=indices_hit,
         )
 
     return hits
@@ -407,8 +402,8 @@ def calculate_ids_hit(
     """
 
     # 1. Create boolean masks to identify non-gaps
-    q_is_residue = q != "-"
-    t_is_residue = t != "-"
+    q_is_residue = ~np.isin(q, ["-", "."])
+    t_is_residue = ~np.isin(t, ["-", "."])
 
     # 2. Create a mask to identify columns that should be kept
     columns_to_keep = q_is_residue | t_is_residue
@@ -634,14 +629,13 @@ class StoParser(TemplateParser):
                 query_start_idx=query_start_idx,
             )
         else:
-            all_sequences = f">query\n{query_seq_str}\n"
+            seq_list = [query_seq_str]
             for _, row in headers.iterrows():
                 full_id = f"{row['id']}/{row['start']}-{row['end']}"
                 ungapped_seq = aln_row_map[full_id].replace(".", "").replace("-", "")
-                all_sequences += f">{full_id}\n{ungapped_seq}\n"
+                seq_list.append(ungapped_seq)
 
-            realigned_str = run_kalign(all_sequences)
-            alignments, _ = parse_fasta(realigned_str)
+            alignments = run_kalign(seq_list)
 
             return self._process_alignment_hits(
                 query_seq_str=query_seq_str,
@@ -724,15 +718,14 @@ class A3mParser(TemplateParser):
         else:
             # Realign with kalign if:
             # - Query is not first, OR
-            # - Realign is explicitly requested, OR
+            # - Realign is explicitly requested, O
             # - Headers lack coordinate information
-            all_sequences = f">query\n{query_seq_str}\n"
-            for header, seq in zip(headers_raw, alignments, strict=True):
+            seq_list = [query_seq_str]
+            for seq in alignments:
                 ungapped_seq = "".join(c for c in seq if c.isupper())
-                all_sequences += f">{header}\n{ungapped_seq}\n"
+                seq_list.append(ungapped_seq)
 
-            realigned_str = run_kalign(all_sequences)
-            realigned_alignments, _ = parse_fasta(realigned_str)
+            realigned_alignments = run_kalign(seq_list)
 
             return self._process_alignment_hits(
                 query_seq_str=query_seq_str,

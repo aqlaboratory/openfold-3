@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -313,7 +313,11 @@ class TestColabFoldQueryRunner:
             expected_shape = (1, expected_msa, len(sequence), 32)
             # the implicit iter here is causing a segfault in Python 3.13
             for batch in dataloader:
-                assert batch["msa"].shape == expected_shape
+                b, s, t, e = batch["msa"].shape
+                b_expected, s_expected, t_expected, e_expected = expected_shape
+                assert b == b_expected, f"Batch size mismatch: {b} != {b_expected}"
+                assert t == t_expected, f"Target length mismatch: {t} != {t_expected}"
+                assert e == e_expected, f"Feature size mismatch: {e} != {e_expected}"
 
         # Test contents of mapping file after all runs
         with open(tmp_path / "mappings/seq_to_rep_id.json") as f:

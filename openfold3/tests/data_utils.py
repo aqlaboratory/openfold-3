@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,13 +22,15 @@ from scipy.spatial.transform import Rotation
 from openfold3.core.data.primitives.featurization.structure import (
     create_atom_to_token_index,
 )
+from openfold3.core.data.resources.residues import (
+    STANDARD_DNA_RESIDUES,
+    STANDARD_PROTEIN_RESIDUES_3,
+    STANDARD_RESIDUES_3,
+    STANDARD_RESIDUES_WITH_GAP_3,
+    STANDARD_RNA_RESIDUES,
+)
 from openfold3.core.data.resources.token_atom_constants import (
-    DNA_NUCLEOTIDE_TYPES,
-    PROTEIN_RESTYPES,
-    RNA_NUCLEOTIDE_TYPES,
     TOKEN_NAME_TO_ATOM_NAMES,
-    TOKEN_TYPES,
-    TOKEN_TYPES_WITH_GAP,
 )
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.tests.config import consts
@@ -159,11 +161,11 @@ def random_attention_inputs(
 
 
 def random_of3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
-    restypes_flat = torch.randint(0, len(TOKEN_TYPES), (n_token,))
-    restypes_names = [TOKEN_TYPES[token_idx] for token_idx in restypes_flat]
+    restypes_flat = torch.randint(0, len(STANDARD_RESIDUES_3), (n_token,))
+    restypes_names = [STANDARD_RESIDUES_3[token_idx] for token_idx in restypes_flat]
     restypes_one_hot = torch.nn.functional.one_hot(
         restypes_flat,
-        len(TOKEN_TYPES_WITH_GAP),
+        len(STANDARD_RESIDUES_WITH_GAP_3),
     )
 
     num_atoms_per_token = torch.Tensor(
@@ -171,13 +173,13 @@ def random_of3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
     )
 
     is_protein = torch.Tensor(
-        [1.0 if name in PROTEIN_RESTYPES else 0.0 for name in restypes_names]
+        [1.0 if name in STANDARD_PROTEIN_RESIDUES_3 else 0.0 for name in restypes_names]
     )
     is_rna = torch.Tensor(
-        [1.0 if name in RNA_NUCLEOTIDE_TYPES else 0.0 for name in restypes_names]
+        [1.0 if name in STANDARD_RNA_RESIDUES else 0.0 for name in restypes_names]
     )
     is_dna = torch.Tensor(
-        [1.0 if name in DNA_NUCLEOTIDE_TYPES else 0.0 for name in restypes_names]
+        [1.0 if name in STANDARD_DNA_RESIDUES else 0.0 for name in restypes_names]
     )
 
     n_atom = torch.max(torch.sum(num_atoms_per_token, dim=-1)).int().item()
@@ -270,13 +272,13 @@ def random_of3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
             ),
         },
         "loss_weights": {
-            "bond": torch.Tensor([0.0]).repeat(batch_size),
+            "bond": torch.Tensor([4.0]).repeat(batch_size),
             "smooth_lddt": torch.Tensor([4.0]).repeat(batch_size),
             "mse": torch.Tensor([4.0]).repeat(batch_size),
             "plddt": torch.Tensor([1e-4]).repeat(batch_size),
             "pde": torch.Tensor([1e-4]).repeat(batch_size),
             "experimentally_resolved": torch.Tensor([1e-4]).repeat(batch_size),
-            "pae": torch.Tensor([0.0]).repeat(batch_size),
+            "pae": torch.Tensor([1e-4]).repeat(batch_size),
             "distogram": torch.Tensor([3e-2]).repeat(batch_size),
         },
     }

@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,9 @@ from biotite.structure import Atom, AtomArray, BondList, BondType
 from openfold3.core.data.primitives.structure.cleanup import (
     filter_fully_atomized_bonds,
     prefilter_bonds,
+    remove_covalent_nonprotein_chains,
 )
+from openfold3.core.data.primitives.structure.component import find_cross_chain_bonds
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.tests.custom_assert_utils import assert_atomarray_equal
 from openfold3.tests.data_utils import create_atomarray_with_bondlist
@@ -395,6 +397,149 @@ def test_filter_fully_atomized_bonds(
         filtered_bondlist,
         atom_array_expected,
     )
+
+
+# -- Test find_cross_chain_bonds --
+
+
+def test_find_cross_chain_bonds_single_cross_chain():
+    """Tests that find_cross_chain_bonds correctly identifies cross-chain bonds."""
+    # Minimal protein-ligand complex: 2 atoms in chain A, 2 atoms in chain B
+    atoms = [
+        Atom([0, 0, 0], chain_id="A", res_id=1),  # idx 0
+        Atom([1, 0, 0], chain_id="A", res_id=1),  # idx 1
+        Atom([2, 0, 0], chain_id="B", res_id=1),  # idx 2
+        Atom([3, 0, 0], chain_id="B", res_id=1),  # idx 3
+    ]
+    bonds = np.array(
+        [
+            (0, 1, BondType.SINGLE),  # intra-chain A
+            (2, 3, BondType.SINGLE),  # intra-chain B
+            (1, 2, BondType.SINGLE),  # cross-chain A->B
+        ]
+    )
+    atom_array = create_atomarray_with_bondlist(atoms, bonds)
+
+    cross_chain_bonds = find_cross_chain_bonds(atom_array)
+
+    assert cross_chain_bonds.shape == (1, 3)
+    assert tuple(cross_chain_bonds[0]) == (1, 2, BondType.SINGLE)
+
+
+def test_find_cross_chain_bonds_no_cross_chain():
+    """Tests find_cross_chain_bonds with no cross-chain bonds."""
+    # Two separate chains with no bonds between them
+    atoms = [
+        Atom([0, 0, 0], chain_id="A", res_id=1),
+        Atom([1, 0, 0], chain_id="A", res_id=1),
+        Atom([10, 0, 0], chain_id="B", res_id=1),
+        Atom([11, 0, 0], chain_id="B", res_id=1),
+    ]
+    bonds = np.array(
+        [
+            (0, 1, BondType.SINGLE),  # intra-chain A only
+            (2, 3, BondType.SINGLE),  # intra-chain B only
+        ]
+    )
+    atom_array = create_atomarray_with_bondlist(atoms, bonds)
+
+    cross_chain_bonds = find_cross_chain_bonds(atom_array)
+
+    assert cross_chain_bonds.shape[0] == 0
+
+
+def test_find_cross_chain_bonds_includes_coordination():
+    """Tests that find_cross_chain_bonds includes coordination (dative) bonds."""
+    # Metal ion coordinated to protein residue across chains
+    atoms = [
+        Atom([0, 0, 0], chain_id="A", res_id=1),  # idx 0: protein atom
+        Atom([2.3, 0, 0], chain_id="B", res_id=1),  # idx 1: metal ion
+    ]
+    bonds = np.array(
+        [
+            (0, 1, BondType.COORDINATION),  # cross-chain coordination bond
+        ]
+    )
+    atom_array = create_atomarray_with_bondlist(atoms, bonds)
+
+    cross_chain_bonds = find_cross_chain_bonds(atom_array)
+
+    assert cross_chain_bonds.shape == (1, 3)
+    assert tuple(cross_chain_bonds[0]) == (0, 1, BondType.COORDINATION)
+
+
+# -- Test remove_covalent_nonprotein_chains --
+
+
+def test_remove_covalent_nonprotein_chains_removes_ligand():
+    """Tests that ligand chains covalently bonded to protein are removed."""
+    # Protein chain A covalently bonded to ligand chain B
+    atoms = [
+        Atom([0, 0, 0], chain_id="A", res_id=1, molecule_type_id=PROTEIN),
+        Atom([1, 0, 0], chain_id="A", res_id=1, molecule_type_id=PROTEIN),
+        Atom([2, 0, 0], chain_id="B", res_id=1, molecule_type_id=LIGAND),
+        Atom([3, 0, 0], chain_id="B", res_id=1, molecule_type_id=LIGAND),
+    ]
+    bonds = np.array(
+        [
+            (0, 1, BondType.SINGLE),  # intra-chain A (protein)
+            (2, 3, BondType.SINGLE),  # intra-chain B (ligand)
+            (1, 2, BondType.SINGLE),  # cross-chain covalent bond protein->ligand
+        ]
+    )
+    atom_array = create_atomarray_with_bondlist(atoms, bonds)
+
+    result = remove_covalent_nonprotein_chains(atom_array)
+
+    # Ligand chain B should be removed, only protein chain A remains
+    assert len(result) == 2
+    assert set(result.chain_id) == {"A"}
+
+
+def test_remove_covalent_nonprotein_chains_keeps_coordination_bonded():
+    """Tests that coordination bonds don't trigger removal of non-protein chains."""
+    # Protein chain A with coordination bond to metal ion chain B
+    atoms = [
+        Atom([0, 0, 0], chain_id="A", res_id=1, molecule_type_id=PROTEIN),
+        Atom([2.3, 0, 0], chain_id="B", res_id=1, molecule_type_id=LIGAND),
+    ]
+    bonds = np.array(
+        [
+            (0, 1, BondType.COORDINATION),  # cross-chain coordination bond
+        ]
+    )
+    atom_array = create_atomarray_with_bondlist(atoms, bonds)
+
+    result = remove_covalent_nonprotein_chains(atom_array)
+
+    # Both chains should remain since coordination bonds are excluded
+    assert len(result) == 2
+    assert set(result.chain_id) == {"A", "B"}
+
+
+def test_remove_covalent_nonprotein_chains_keeps_protein_protein():
+    """Tests that protein-protein cross-chain bonds don't trigger removal."""
+    # Two protein chains with a disulfide-like bond
+    atoms = [
+        Atom([0, 0, 0], chain_id="A", res_id=1, molecule_type_id=PROTEIN),
+        Atom([1, 0, 0], chain_id="A", res_id=1, molecule_type_id=PROTEIN),
+        Atom([2, 0, 0], chain_id="B", res_id=1, molecule_type_id=PROTEIN),
+        Atom([3, 0, 0], chain_id="B", res_id=1, molecule_type_id=PROTEIN),
+    ]
+    bonds = np.array(
+        [
+            (0, 1, BondType.SINGLE),  # intra-chain A
+            (2, 3, BondType.SINGLE),  # intra-chain B
+            (1, 2, BondType.SINGLE),  # cross-chain protein-protein bond
+        ]
+    )
+    atom_array = create_atomarray_with_bondlist(atoms, bonds)
+
+    result = remove_covalent_nonprotein_chains(atom_array)
+
+    # Both protein chains should remain
+    assert len(result) == 4
+    assert set(result.chain_id) == {"A", "B"}
 
 
 if __name__ == "__main__":

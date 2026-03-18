@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
 """This module contains building blocks for template feature generation."""
 
 import dataclasses
+import logging
+import traceback
 
 import biotite.structure as struc
 import numpy as np
@@ -28,6 +30,8 @@ from openfold3.core.data.resources.residues import (
 )
 from openfold3.core.utils.all_atom_multimer import make_transform_from_reference
 from openfold3.core.utils.geometry.vector import Vec3Array
+
+logger = logging.getLogger(__name__)
 
 
 @dataclasses.dataclass(frozen=False)
@@ -107,6 +111,9 @@ def create_template_feature_precursor_of3(
                 # cases to be able to include them or skip them in a way that allows for
                 # retaining the correct number of sampled templates
                 if sum(is_pseudo_beta_atom) != len(residue_starts):
+                    logger.debug(
+                        "Skipping template with non-canonical/missing C-beta atoms."
+                    )
                     continue
 
                 pseudo_beta_atom_coords[template_idx, query_token_positions, :] = (
@@ -144,7 +151,15 @@ def create_template_feature_precursor_of3(
                 )
 
                 template_idx += 1
-            except Exception as _:
+            except Exception as e:
+                tb = traceback.format_exc()
+                logger.warning(
+                    "-" * 40
+                    + "\n"
+                    + f"Skipping template with exception: {str(e)}\n"
+                    + f"Exception type: {type(e).__name__}\nTraceback: {tb}"
+                    + "-" * 40
+                )
                 continue
 
     return OF3TemplateFeaturePrecursor(
@@ -174,12 +189,13 @@ def create_template_restype(
         get_with_unknown_3_to_idx(res_names), dtype=torch.int64
     )
     template_restype = encode_one_hot(restype_index, len(STANDARD_RESIDUES_WITH_GAP_3))
-    return (template_restype * template_pseudo_beta_mask.unsqueeze(-1)).to(torch.int32)
+    return template_restype.to(torch.int32)
 
 
 def create_template_distogram(
     pseudo_beta_atom_coords: np.ndarray[float],
     pseudo_beta_mask: np.ndarray[float],
+    multichain_pair_mask: torch.Tensor,
     min_bin: float = 3.25,
     max_bin: float = 50.75,
     n_bins: int = 39,
@@ -194,6 +210,10 @@ def create_template_distogram(
         pseudo_beta_atom_coords (np.ndarray[float]):
             The coordinates of the pseudo beta atoms. Has shape
             [n_templates, n_tokens, 3].
+        pseudo_beta_mask (np.ndarray[float]):
+            Pseudo beta mask for tokens with an unresolved pseudo beta atom.
+        multichain_pair_mask (torch.Tensor):
+            Per-token-pair mask for inter-chain residue pair features.
         min_bin (float, optional):
             Bin lower bound. Defaults to 3.25.
         max_bin (float, optional):
@@ -232,12 +252,14 @@ def create_template_distogram(
     return (
         template_distogram
         * (pseudo_beta_mask[..., None] * pseudo_beta_mask[..., None, :])[..., None]
+        * multichain_pair_mask
     )
 
 
 def create_template_unit_vector(
     frame_atom_coords: np.ndarray[float],
     backbone_frame_mask: np.ndarray[float],
+    multichain_pair_mask: torch.Tensor,
 ) -> torch.Tensor:
     """Creates the unit vector template feature for OF3.
 
@@ -248,6 +270,8 @@ def create_template_unit_vector(
         backbone_frame_mask (np.ndarray[float]):
             The mask indicating for each token in each template if all backbone frame
             atoms are available. Has shape [n_templates, n_tokens].
+        multichain_pair_mask (torch.Tensor):
+            Per-token-pair mask for inter-chain residue pair features.
 
     Returns:
         torch.Tensor:
@@ -286,4 +310,4 @@ def create_template_unit_vector(
         masked_coord = (coord * backbone_frame_2d)[..., None]
         masked_unit_vector.append(masked_coord)
 
-    return torch.cat(masked_unit_vector, dim=-1)
+    return torch.cat(masked_unit_vector, dim=-1) * multichain_pair_mask

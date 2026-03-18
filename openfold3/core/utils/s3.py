@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,25 +12,53 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""S3 utilities for checksum comparison without downloading."""
+"""S3 utilities for checksum comparison and downloading."""
 
 import base64
+import logging
 from pathlib import Path
 
 import boto3
+import tqdm
 from awscrt import checksums
 from botocore import UNSIGNED
 from botocore.config import Config
 
+logger = logging.getLogger(__name__)
+
+
+def _get_s3_client():
+    return boto3.client(
+        "s3",
+        config=Config(signature_version=UNSIGNED, connect_timeout=10, read_timeout=60),
+    )
+
 
 def get_s3_checksum(bucket: str, key: str) -> str | None:
     """Get CRC64NVME checksum from S3 object metadata (HEAD request, no download)."""
-    s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
-    response = s3.head_object(Bucket=bucket, Key=key, ChecksumMode="ENABLED")
+    response = _get_s3_client().head_object(
+        Bucket=bucket, Key=key, ChecksumMode="ENABLED"
+    )
 
     if "ChecksumCRC64NVME" in response:
         return response["ChecksumCRC64NVME"]
     return None
+
+
+def download_s3_file(bucket: str, key: str, local_path: Path) -> None:
+    """Download a file from a public S3 bucket to a local path."""
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    client = _get_s3_client()
+    file_size = client.head_object(Bucket=bucket, Key=key)["ContentLength"]
+    file_size_gb = file_size / (1024**3)
+    logger.info(
+        f"Downloading s3://{bucket}/{key} ({file_size_gb:.2f} GB) to {local_path}..."
+    )
+    with tqdm.tqdm(
+        total=file_size, unit="B", unit_scale=True, desc=local_path.name
+    ) as pbar:
+        client.download_file(bucket, key, str(local_path), Callback=pbar.update)
+    logger.info("Download complete.")
 
 
 def compute_local_crc64nvme_base64(filepath: Path) -> str:

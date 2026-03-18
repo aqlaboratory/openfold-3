@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import logging
 import random
 import time
 from pathlib import Path
@@ -23,6 +24,9 @@ import torch
 from lightning_fabric.utilities.rank_zero import (
     rank_zero_only,
 )
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 class PredictTimer(pl.Callback):
@@ -82,14 +86,13 @@ class PredictTimer(pl.Callback):
             runtime_file.write_text(json.dumps(runtime_json, indent=4))
 
 
-def set_seed_for_rank(seed: int, rank: int, deterministic: bool = False) -> None:
+def set_seed_for_rank(seed: int, rank: int) -> None:
     """
     Sets the seed for all relevant random number generators on a specific rank.
 
     Args:
         seed (int): The base seed to use.
         rank (int): The process rank, used to create a unique seed for the process.
-        deterministic (bool): Whether to set torch deterministic flags.
     """
     # Calculate a unique seed for each rank
     rank_specific_seed = seed + rank
@@ -103,10 +106,6 @@ def set_seed_for_rank(seed: int, rank: int, deterministic: bool = False) -> None
     # Set seed for PyTorch on CPU and CUDA
     torch.manual_seed(rank_specific_seed)
     torch.cuda.manual_seed_all(rank_specific_seed)  # Seeds all GPUs
-
-    if deterministic:
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
 
 
 class RankSpecificSeedCallback(pl.Callback):
@@ -147,9 +146,9 @@ class RankSpecificSeedCallback(pl.Callback):
         set_seed_for_rank(self.base_seed, rank)
         self._has_been_set = True
 
-        print(
-            f"SEEDING: Base seed set to {self.base_seed}. Rank {trainer.global_rank} "
-            f"initialized with seed {self.base_seed + rank}."
+        logging.info(
+            f"[rank: {trainer.global_rank}] Model base seed set to {self.base_seed}, "
+            f"rank initialized with seed {self.base_seed + rank}"
         )
 
 
