@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import openfold3
 from openfold3.core.data.io.sequence.template import (
     A3mParser,
     M8Parser,
@@ -25,7 +26,9 @@ from openfold3.core.data.io.sequence.template import (
     TemplateData,
 )
 
-TEST_DIR = Path(__file__).parent / "test_data" / "template_alignments"
+TEST_DIR = (
+    Path(openfold3.__file__).parent / "tests" / "test_data" / "template_alignments"
+)
 
 QUERY_SEQUENCE = """
 MLNSFKLSLQYILPKLWLTRLAGWGASKRAGWLTKLVIDLFVKYYKVDMKEAQKPDTASYRTFNEFFVRPLRDEVRPIDTDPNVLV
