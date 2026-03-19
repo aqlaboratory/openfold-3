@@ -41,7 +41,10 @@ from openfold3.core.data.primitives.caches.format import (
     "parent_dataset_cache_file",
     type=click.Path(path_type=Path, exists=True, dir_okay=False),
     required=True,
-    help="Path to parent training cache JSON (e.g. training_cache_with_templates.json).",
+    help=(
+        "Path to parent training cache JSON (e.g. "
+        "training_cache_with_templates.json)."
+    ),
 )
 @click.option(
     "--out",
@@ -55,7 +58,10 @@ from openfold3.core.data.primitives.caches.format import (
     "--clash-distance-threshold",
     type=str,
     default="1.1",
-    help='Distance threshold key used in distance_clash_map (often stored as a string, e.g. "1.1").',
+    help=(
+        "Distance threshold key used in distance_clash_map "
+        '(often stored as a string, e.g. "1.1").'
+    ),
 )
 @click.option("--name", type=str, default="disordered-pdb", help="Dataset cache name.")
 @click.option(
@@ -106,7 +112,8 @@ def main(
     for pdb_id, structure_data_entry in iterator:
         # Core success filter from disordered metadata
         if structure_data_entry.status != "success":
-            # Keeping your original behavior/message (even though "parent" wording is a bit confusing)
+            # Keeping your original behavior/message (even though "parent" wording is a
+            # bit confusing).
             click.echo(
                 f"Fail parent cache status for {pdb_id}: {structure_data_entry.status}",
                 err=True,
@@ -152,8 +159,10 @@ def main(
         if clash_distance_threshold not in structure_data_entry.distance_clash_map:
             available = sorted(structure_data_entry.distance_clash_map.keys())
             raise click.ClickException(
-                f'clash-distance-threshold "{clash_distance_threshold}" not found for {pdb_id}. '
-                f"Available keys include: {available[:20]}{'...' if len(available) > 20 else ''}"
+                f'clash-distance-threshold "{clash_distance_threshold}" not found for '
+                f"{pdb_id}. "
+                "Available keys include: "
+                f"{available[:20]}{'...' if len(available) > 20 else ''}"
             )
 
         if structure_data_entry.distance_clash_map[clash_distance_threshold]:
