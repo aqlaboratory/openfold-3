@@ -592,7 +592,7 @@ def align_template_to_query(
             template_file_format,
             ccd,
         )
-        if not atom_array_template_chain:
+        if atom_array_template_chain is None:
             continue
 
         # Create query token position to template residue ID map
