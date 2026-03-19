@@ -11,12 +11,12 @@ Only CLI options:
 import multiprocessing as mp
 from pathlib import Path
 
+import biotite.structure.io as strucio
 import click
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-import biotite.structure.io as strucio
 from openfold3.core.data.io.structure.cif import parse_target_structure
 
 
