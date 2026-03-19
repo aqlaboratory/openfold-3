@@ -55,6 +55,6 @@ def run_kalign(
         alignment_result = result.stdout
 
     except subprocess.CalledProcessError as e:
-        print(f"Kalign command failed:\n{e.stderr}")
+        raise RuntimeError(f"Kalign failed:\n{e.stderr}") from e
 
     return alignment_result
