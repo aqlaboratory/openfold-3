@@ -522,6 +522,9 @@ def map_token_pos_to_template_residues(
         )
         atom_array_cropped_template = atom_array_cropped_template[mask_singleocc]
 
+        # Recompute residue starts
+        residue_starts = struc.get_residue_starts(atom_array_cropped_template)
+
     # Skip if still misaligned
     if residue_starts.shape != repeats.shape:
         template_slice = None
