@@ -199,12 +199,11 @@ def assert_no_all_zero_idxs(features):
         "is_ligand",
     ]
     for idx_key in index_keys:
-        torch.any(~(features[idx_key] == 0)), f"Tensor '{idx_key}' contains all zeros."
+        assert torch.any(~(features[idx_key] == 0)), f"Tensor '{idx_key}' contains all zeros."
     for idx_key in index_keys:
-        (
-            torch.any(~(features["ground_truth"][idx_key] == 0)),
-            f"GT tensor '{idx_key}' contains all zeros.",
-        )
+        assert (
+            torch.any(~(features["ground_truth"][idx_key] == 0))
+        ), f"GT tensor '{idx_key}' contains all zeros."
 
 
 def assert_gt_crop_slice(features):
