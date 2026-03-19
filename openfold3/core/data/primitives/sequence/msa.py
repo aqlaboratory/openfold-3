@@ -81,7 +81,7 @@ class MsaArray:
         if isinstance(row_slice, int):
             row_slice = slice(row_slice)
         elif not isinstance(row_slice, slice):
-            ValueError(
+            raise ValueError(
                 "Argument max_seq_count should be an integer or a slice."
                 f"but got {type(row_slice)}."
             )
