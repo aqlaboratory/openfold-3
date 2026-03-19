@@ -64,8 +64,9 @@ def main(
     """Preparse multiple sequence alignments for AF3 dataset."""
     try:
         max_seq_counts = json.loads(max_seq_counts)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e:
         click.echo("Invalid max_seq_counts JSON string!")
+        raise RuntimeError("max_seq_counts must be a valid JSON string.") from e
 
     rep_chain_dir_iterator = [it.name for it in alignments_directory.iterdir()]
 
