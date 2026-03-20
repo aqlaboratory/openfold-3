@@ -1,0 +1,41 @@
+name: openfold3-env  # Temporary pinned env for training, will be deleted!
+channels:
+  - conda-forge
+  - bioconda
+  - pytorch
+  - nvidia
+dependencies:
+  - python==3.12.12
+  - awscli==2.31.36
+  - setuptools==80.9.0
+  - pip==25.3
+  - pytorch-lightning==2.5.5
+  - biopython==1.86
+  - numpy==2.3.4
+  - pandas==2.3.3
+  - PyYAML==6.0.3
+  - requests==2.32.5
+  - scipy==1.16.3
+  - tqdm==4.67.1
+  - typing-extensions==4.15.0
+  - wandb==0.22.3
+  - modelcif==1.5
+  - ml-collections==1.0.0
+  - mkl==2023.2.0
+  - rdkit==2025.3.1
+  - biotite==1.2.0
+  - mmseqs2==18.8cc5c
+  - bioconda::hmmer==3.4
+  - bioconda::hhsuite==3.3.0
+  - bioconda::kalign2==2.04
+  - bioconda::snakemake==9.13.7
+  - pytorch::pytorch==2.5.1
+  - pytorch::pytorch-cuda==12.4
+  - memory_profiler==0.61.0
+  - func_timeout==4.3.5
+  - boto3==1.40.73
+  - conda-forge::python-lmdb==1.6.2
+  - conda-forge::ijson==3.4.0.post0
+  - pip:
+      - deepspeed==0.18.2
+      - pdbeccdutils==1.0.0
