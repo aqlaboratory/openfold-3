@@ -209,7 +209,7 @@ class DataModuleConfig(BaseModel):
                         "issues. Consider using 'fork' or 'openfold-default' (which resolves to 'fork' on MPS).",
                         stacklevel=2,
                     )
-            if platform.system() == "linux":
+            if platform.system() == "Linux":
                 dangerous_start_method = (
                     multiprocessing_context == "fork" or
                     multiprocessing_context is None and sys.version_info < (3, 14)
