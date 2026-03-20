@@ -287,6 +287,15 @@ def create_main(
             axis=0,
         )
 
+        # Deduplicate within the main MSA
+        main_view = main_msa_redundant.view(
+            np.dtype((np.void, main_msa_redundant.dtype.itemsize * main_msa_redundant.shape[1]))
+        )
+        _, unique_idx = np.unique(main_view, return_index=True)
+        unique_idx.sort()  # preserve original order
+        main_msa_redundant = main_msa_redundant[unique_idx, :]
+        main_deletion_matrix_redundant = main_deletion_matrix_redundant[unique_idx, :]
+
         # Get paired MSAs if any and deduplicate
         if len(chain_id_to_paired_msa) > 0:
             # The relevant paired MSA for this representative
