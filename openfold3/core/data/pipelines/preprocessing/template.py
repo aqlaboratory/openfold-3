@@ -1021,10 +1021,11 @@ class _OF3TemplateCacheFilter:
             return valid_templates
         except Exception as e:
             if self.is_core_train:
+                query_pdb_chain_id = input.dated_query.query_pdb_chain_id
                 TEMPLATE_PROCESS_LOGGER.get().info(
-                    f"Failed to filter templates for query {input[0][0]}: \n{e}\n"
+                    f"Failed to filter templates for query {query_pdb_chain_id}: \n{e}\n"
                 )
-                return {input[0][0]: []}
+                return {tuple(query_pdb_chain_id.split("_")): []}
             else:
                 query_pdb_chain_ids = [
                     query_pdb_chain_id.query_pdb_chain_id
@@ -1036,7 +1037,8 @@ class _OF3TemplateCacheFilter:
                     f"\n{e}\n"
                 )
                 return {
-                    query_pdb_chain_id: [] for query_pdb_chain_id in query_pdb_chain_ids
+                    tuple(query_pdb_chain_id.split("_")): []
+                    for query_pdb_chain_id in query_pdb_chain_ids
                 }
 
 
