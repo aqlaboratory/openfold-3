@@ -194,7 +194,7 @@ class DataModuleConfig(BaseModel):
             # Backports the new python 3.14 default in previous python versions.
             # An alternative for further safety would be "spawn". Avoid "fork".
             # See: https://github.com/python/cpython/issues/84559
-            if platform.system() == "linux":
+            if platform.system() == "Linux":
                 return "forkserver"
 
             # Use the platform default otherwise - "spawn" at the time of writing
