@@ -234,7 +234,7 @@ class DataModule(pl.LightningDataModule):
         self.batch_size = data_module_config.batch_size
         self.num_workers = data_module_config.num_workers
         self.num_workers_validation = data_module_config.num_workers_validation
-        self.multiprocessing_context = data_module_config.safe_multiprocessing_context
+        self.multiprocessing_context = data_module_config.multiprocessing_context
         self.data_seed = data_module_config.data_seed
         self.next_data_seed = data_module_config.data_seed
         self.epoch_len = data_module_config.epoch_len
