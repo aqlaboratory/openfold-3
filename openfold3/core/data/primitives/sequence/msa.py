@@ -636,7 +636,7 @@ def extract_alignments_to_pair(
         for msa_name in msas_to_pair:
             m = rep_msa_map_per_chain.get(msa_name)
             if m is not None:
-                # exclude query from subsequent MSAs 
+                # exclude query from subsequent MSAs
                 # only relevant when there are multiple MSAs to pair
                 if len(msa_arrays_to_pair_i) > 0:
                     non_query_mask = np.ones(m.msa.shape[0], dtype=bool)

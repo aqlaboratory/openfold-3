@@ -198,7 +198,9 @@ class OF3DistributedSampler(DistributedSampler):
         datapoint_probabilities = torch.tensor(
             dataset.datapoint_cache["datapoint_probabilities"].to_numpy()
         )
-        if not torch.allclose(datapoint_probabilities, torch.ones_like(datapoint_probabilities)):
+        if not torch.allclose(
+            datapoint_probabilities, torch.ones_like(datapoint_probabilities)
+        ):
             raise ValueError(
                 "Ordered slicing of datasets not supported for "
                 "datasets with nonuniform probabilities"

@@ -141,7 +141,6 @@ def assert_resid_asym_refuid_match(features):
         "Mismatch between changing positions of ref_space_uid and atom-broadcasted "
         "residue_index-asym_id tuples."
     )
-    
 
 
 def assert_atom_pos_resolved(features):
@@ -200,11 +199,13 @@ def assert_no_all_zero_idxs(features):
         "is_ligand",
     ]
     for idx_key in index_keys:
-        assert torch.any(~(features[idx_key] == 0)), f"Tensor '{idx_key}' contains all zeros."
+        assert torch.any(~(features[idx_key] == 0)), (
+            f"Tensor '{idx_key}' contains all zeros."
+        )
     for idx_key in index_keys:
-        assert (
-            torch.any(~(features["ground_truth"][idx_key] == 0))
-        ), f"GT tensor '{idx_key}' contains all zeros."
+        assert torch.any(~(features["ground_truth"][idx_key] == 0)), (
+            f"GT tensor '{idx_key}' contains all zeros."
+        )
 
 
 def assert_gt_crop_slice(features):

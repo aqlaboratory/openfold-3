@@ -1324,7 +1324,9 @@ def update_gt_position_features(
         intra_ab_ag_type_atomized = permute_gt_atom_features(
             [intra_ab_ag_type_atomized], gt_atom_indexes
         )[0]
-        updated_ground_truth_features["intra_ab_ag_type_atomized"] = intra_ab_ag_type_atomized
+        updated_ground_truth_features["intra_ab_ag_type_atomized"] = (
+            intra_ab_ag_type_atomized
+        )
 
     inter_ab_ag_type_atomized = ground_truth_features.get("inter_ab_ag_type_atomized")
     if inter_ab_ag_type_atomized is not None:
@@ -1335,7 +1337,9 @@ def update_gt_position_features(
             [inter_ab_ag_type_atomized.transpose(-1, -2)], gt_atom_indexes
         )[0]
         inter_ab_ag_type_atomized = inter_ab_ag_type_atomized.transpose(-1, -2)
-        updated_ground_truth_features["inter_ab_ag_type_atomized"] = inter_ab_ag_type_atomized
+        updated_ground_truth_features["inter_ab_ag_type_atomized"] = (
+            inter_ab_ag_type_atomized
+        )
 
     return updated_ground_truth_features
 

@@ -68,7 +68,7 @@ def convert_datacache_to_lmdb(
     )
 
     if mode == "single-read":
-        if isinstance(dataset_cache_file_or_obj, Path): 
+        if isinstance(dataset_cache_file_or_obj, Path):
             dataset_cache = read_datacache(dataset_cache_file_or_obj)
         else:
             dataset_cache = dataset_cache_file_or_obj

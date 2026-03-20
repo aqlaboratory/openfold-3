@@ -1023,7 +1023,8 @@ class _OF3TemplateCacheFilter:
             if self.is_core_train:
                 query_pdb_chain_id = input.dated_query.query_pdb_chain_id
                 TEMPLATE_PROCESS_LOGGER.get().info(
-                    f"Failed to filter templates for query {query_pdb_chain_id}: \n{e}\n"
+                    f"Failed to filter templates for query {query_pdb_chain_id}: "
+                    f"\n{e}\n"
                 )
                 return {tuple(query_pdb_chain_id.split("_")): []}
             else:

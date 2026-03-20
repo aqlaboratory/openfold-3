@@ -321,8 +321,12 @@ class DataModule(pl.LightningDataModule):
             train_idx = 0
             for i, is_train in enumerate(train_mask):
                 if is_train:
-                    multi_dataset_config.weights[i] = train_dataset_config.weights[train_idx]
-                    multi_dataset_config.configs[i] = train_dataset_config.configs[train_idx]
+                    multi_dataset_config.weights[i] = train_dataset_config.weights[
+                        train_idx
+                    ]
+                    multi_dataset_config.configs[i] = train_dataset_config.configs[
+                        train_idx
+                    ]
                     train_idx += 1
 
         # Check if provided dataset mode combination is valid
