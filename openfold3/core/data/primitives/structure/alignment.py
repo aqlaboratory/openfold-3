@@ -156,7 +156,7 @@ def coalign_atom_arrays(
         ]
 
         # Get resolved mask
-        resolved_mask = mobile_pocket_align_subset.occupancy == 1.0
+        resolved_mask = mobile_pocket_align_subset.occupancy > 0
 
         # Align
         _, transformation = struc.superimpose(
