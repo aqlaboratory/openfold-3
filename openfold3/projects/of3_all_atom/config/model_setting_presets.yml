@@ -3,10 +3,6 @@ train:
     blocks_per_ckpt: 1
     ckpt_intermediate_steps: true
   architecture:
-    shared:
-      use_confidence_emb_prob: 0.8
-      diffusion:
-        use_conditioning_prob: 0.8
     loss_module:
       diffusion:
         chunk_size: 4

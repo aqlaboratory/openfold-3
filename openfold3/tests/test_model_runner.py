@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -121,3 +121,13 @@ def test_oom_exception_handling(batches):
     expected_results = [not bool("oom" in query_id) for query_id in results]
     actual_results = [bool(result) for result in results.values()]
     assert expected_results == actual_results
+
+
+def test_version_registration():
+    project_entry = OF3ProjectEntry()
+    config = project_entry.get_model_config_with_presets()
+    model_runner = OpenFold3AllAtom(model_config=config)
+
+    # Check that the version property returns the expected version string
+    expected_version = "1.0.0"
+    assert model_runner.version == expected_version

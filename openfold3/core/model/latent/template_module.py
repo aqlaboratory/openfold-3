@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 # Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
 #

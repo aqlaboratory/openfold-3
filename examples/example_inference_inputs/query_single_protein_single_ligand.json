@@ -1,0 +1,18 @@
+{
+	"queries":{
+		"pdb_7L39": { 
+			"chains": [
+				{
+					"molecule_type": "protein",
+					"chain_ids": ["A"],
+					"sequence": "MNIFEMLRIDEGLRLKIYKDTEGYYTIGIGHLLTKSPSLNAAKSELDKAIGRNCNGVITKDEAEKLFNQDVDAAVRGILRNAKLKPVYDSLDAVRRCAAINMVFQMGETGVAGFTNSLRMLQQKRWDEAAVNLAKSRWYNQTPNRAKRVITTFRTGTWDAYKNL"
+				},
+				{
+					"molecule_type": "ligand",
+					"chain_ids": "X",
+					"smiles": "Cc1ccccc1"
+				}
+			]
+		}
+	}
+}
