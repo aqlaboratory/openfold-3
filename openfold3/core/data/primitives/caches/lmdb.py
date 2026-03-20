@@ -195,7 +195,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
         with self._lmdb_env.begin() as transaction:
             key_bytes = f"{self._prefix}{key}".encode(self._key_encoding)
             value_bytes = transaction.get(key_bytes)
-            if not value_bytes:
+            if value_bytes is None:
                 raise KeyError(key)
             else:
                 if self._value_encoding == "pkl":
