@@ -2398,7 +2398,7 @@ def fails_template_release_date_checks(
         ).days < min_release_date_diff
 
     if max_template_release_date is not None:
-        fails |= template_release_date > max_template_release_date
+        fails |= template_release_date >= max_template_release_date
 
     return fails
 
