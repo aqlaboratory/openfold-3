@@ -139,8 +139,9 @@ def assert_resid_asym_refuid_match(features):
 
     assert torch.isin(ref_space_uid_pos[0], result_tensor_pos[0]).all(), (
         "Mismatch between changing positions of ref_space_uid and atom-broadcasted "
+        "residue_index-asym_id tuples."
     )
-    "residue_index-asym_id tuples."
+    
 
 
 def assert_atom_pos_resolved(features):
