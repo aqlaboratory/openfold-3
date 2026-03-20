@@ -2374,7 +2374,7 @@ def fails_template_sequence_checks(
         fails |= template.seq_id > max_seq_id
     if min_align is not None:
         fails |= template.q_cov < min_align
-    if min_len is not None:
+    if min_len is not None and template.seq is not None:
         fails |= len(template.seq) < min_len
     return fails
 
