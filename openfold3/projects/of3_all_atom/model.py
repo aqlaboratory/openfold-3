@@ -378,6 +378,11 @@ class OpenFold3(nn.Module):
                 device=si_input.device,
             )
 
+            # If enabled, sync conditioning trunk rep dropout to match the embedding
+            # dropout in the confidence heads
+            use_conditioning = (
+                use_trunk_embedding if self.shared.sync_rollout_use_emb else True
+            )
             atom_positions_predicted = self.sample_diffusion(
                 batch=batch,
                 si_input=si_input,
@@ -385,7 +390,7 @@ class OpenFold3(nn.Module):
                 zij_trunk=zij_trunk,
                 noise_schedule=noise_schedule,
                 no_rollout_samples=no_rollout_samples,
-                use_conditioning=True,
+                use_conditioning=use_conditioning,
                 chunk_size=mode_mem_settings.chunk_size,
                 use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,

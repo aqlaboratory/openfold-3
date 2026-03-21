@@ -163,6 +163,7 @@ model_config = mlc.ConfigDict(
                 "c_s": c_s,
                 "c_z": c_z,
                 "num_recycles": 3,
+                "sync_rollout_use_emb": False,
                 "use_confidence_emb_prob": 1.0,
                 "diffusion": {
                     "sigma_data": sigma_data,
