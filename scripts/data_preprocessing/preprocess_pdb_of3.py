@@ -1,4 +1,5 @@
 import logging
+import logging.handlers
 import multiprocessing
 from pathlib import Path
 from typing import Literal
@@ -134,7 +135,7 @@ def main(
     )
 
     # Multiprocessing queue for logs
-    log_queue = multiprocessing.Queue(-1)
+    log_queue: multiprocessing.Queue = multiprocessing.Queue(-1)
 
     # Set up Queue listener for multi-worker logging
     listener = logging.handlers.QueueListener(

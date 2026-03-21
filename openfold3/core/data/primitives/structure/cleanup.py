@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -131,6 +131,15 @@ def fix_arginine_naming(atom_array: AtomArray) -> AtomArray:
         nh1_coord = arginine_view.coord[nh1_mask]
         nh2_coord = arginine_view.coord[nh2_mask]
         cd_coord = arginine_view.coord[cd_mask]
+
+        # Skip if any of the required atoms are missing
+        if nh1_coord.size == 0 or nh2_coord.size == 0 or cd_coord.size == 0:
+            logger.debug(
+                f"Skipping arginine naming fix for residue "
+                f"missing atoms - NH1={np.sum(nh1_mask)}, "
+                f"NH2={np.sum(nh2_mask)}, CD={np.sum(cd_mask)}"
+            )
+            continue
 
         # If NH2 is closer to CD than NH1, swap the names
         if struc.distance(nh2_coord, cd_coord) < struc.distance(nh1_coord, cd_coord):

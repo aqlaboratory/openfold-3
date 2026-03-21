@@ -1,3 +1,9 @@
+## Script to generate test examples
+
+python openfold3/tests/test_data/tokenization/construct_tokenization_examples.py
+
+Assumes raw `.cif` files are stored under top level directory.
+
 ## Input Files
 
 Generated from raw `.cif` files by parsing into an `atom_array` using:
@@ -16,8 +22,8 @@ followed by sanitizing using:
   - `.remove_fully_unknown_polymers`
   - `.remove_non_CCD_atoms`
   - `.canonicalize_atom_order`
-  - `.add_unresolved_atoms`
-  - `.remove_std_residue_terminal_atoms`
+- `unresolved.add_unresolved_atoms` # update to show it comes from unresolved module
+- `cleanup.remove_std_residue_terminal_atoms`
 
 ---
 
@@ -31,4 +37,4 @@ Generated from the parsed, sanitized `atom_arrays` using:
 
 ## Commit
 
-[See this commit for the code used to generate the input/output files.](https://github.com/aqlaboratory/openfold3/pull/239/commits/63e2841fecff266e8c51e3532f716143a9468a95)
+[See this commit for the code used to generate the input/output files.](https://github.com/aqlaboratory/openfold-3/pull/124/changes/53ca255b4e30bb7b9585bb87120808dcbecd5dda)

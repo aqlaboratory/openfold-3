@@ -1,0 +1,11 @@
+# Model changes for low memory 
+model_update:
+  presets: 
+    - predict
+    - low_mem
+    - pae_enabled
+
+# Model changes for affinity
+experiment_settings:
+  seeds:
+    - 42    

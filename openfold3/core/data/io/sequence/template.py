@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -629,14 +629,13 @@ class StoParser(TemplateParser):
                 query_start_idx=query_start_idx,
             )
         else:
-            all_sequences = f">query\n{query_seq_str}\n"
+            seq_list = [query_seq_str]
             for _, row in headers.iterrows():
                 full_id = f"{row['id']}/{row['start']}-{row['end']}"
                 ungapped_seq = aln_row_map[full_id].replace(".", "").replace("-", "")
-                all_sequences += f">{full_id}\n{ungapped_seq}\n"
+                seq_list.append(ungapped_seq)
 
-            realigned_str = run_kalign(all_sequences)
-            alignments, _ = parse_fasta(realigned_str)
+            alignments = run_kalign(seq_list)
 
             return self._process_alignment_hits(
                 query_seq_str=query_seq_str,
@@ -719,15 +718,14 @@ class A3mParser(TemplateParser):
         else:
             # Realign with kalign if:
             # - Query is not first, OR
-            # - Realign is explicitly requested, OR
+            # - Realign is explicitly requested, O
             # - Headers lack coordinate information
-            all_sequences = f">query\n{query_seq_str}\n"
-            for header, seq in zip(headers_raw, alignments, strict=True):
+            seq_list = [query_seq_str]
+            for seq in alignments:
                 ungapped_seq = "".join(c for c in seq if c.isupper())
-                all_sequences += f">{header}\n{ungapped_seq}\n"
+                seq_list.append(ungapped_seq)
 
-            realigned_str = run_kalign(all_sequences)
-            realigned_alignments, _ = parse_fasta(realigned_str)
+            realigned_alignments = run_kalign(seq_list)
 
             return self._process_alignment_hits(
                 query_seq_str=query_seq_str,
