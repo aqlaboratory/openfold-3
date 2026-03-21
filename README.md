@@ -47,7 +47,7 @@ pip install openfold3
 setup_openfold
 ```
 
-3. Run your first prediction using the ColabFold MSA server with the `run_openfold` binary
+3. Run your first prediction using the ColabFold MSA server with the `run_openfold` binary. It may also be necessary to [configure your environment variables](https://openfold-3.readthedocs.io/en/latest/Installation.html#environment-variables) depending on your system.  
 
 ```bash
 run_openfold predict --query_json=examples/example_inference_inputs/query_ubiquitin.json
@@ -56,8 +56,6 @@ run_openfold predict --query_json=examples/example_inference_inputs/query_ubiqui
 More information on how to customize your inference prediction can be found at our documentation home at https://openfold-3.readthedocs.io/en/latest/. More examples for inputs and outputs can be found in our [HuggingFace examples](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/common_examples).
 
 ## Benchmarking
-
-OpenFold3-preview performs competitively with the state of the art in open source biomolecular structure prediction, while being the only model to match AlphaFold3's performance on monomeric RNA structures.
 
 **OpenFold3-preview-2 results:**
 <picture>
@@ -82,12 +80,14 @@ For more details on inferences procedures and benchmarking methods, please refer
 
 **OpenFold3-preview results:**
 
+OpenFold3-preview performs competitively with the state of the art in open source biomolecular structure prediction, while being the only model to match AlphaFold3's performance on monomeric RNA structures.
+
 Performance of OF3p and other models on a diverse set of benchmarks:
 - Protein and RNA monomers from [CASP16](https://www.biorxiv.org/content/10.1101/2025.05.06.652459v2) and [Ludaic et al](https://www.biorxiv.org/content/10.1101/2025.04.30.651414v2)
 - Protein-protein complexes from [CASP16](https://www.biorxiv.org/content/10.1101/2025.05.29.656875v1) and [FoldBench](https://www.biorxiv.org/content/10.1101/2025.05.22.655600v1) 
 - Protein-ligand complexes from the [Runs and Poses](https://www.biorxiv.org/content/10.1101/2025.02.03.636309v3) 
 
-For more details on inferences procedures and benchmarking methods, please refer to the [OpenFold3 Preview whitepaper](assets/whitepaper.pdf).
+For more details on inferences procedures and benchmarking methods, please refer to the [OpenFold3 Preview whitepaper](assets/of3p1_technical_report.pdf).
 
 ## Upcoming
 The final OpenFold3 model is still in development, and we are actively working on the following features:
@@ -110,8 +110,8 @@ If you use OpenFold3-preview in your research, please cite the following:
   title = {OpenFold3-preview},
   author = {{The OpenFold3 Team}},
   year = {2025},
-  version = {0.2.0},
-  doi = {10.5281/zenodo.17485510},
+  version = {0.4.0},
+  doi = {10.5281/zenodo.19001000},
   url = {https://github.com/aqlaboratory/openfold-3},
   abstract = {OpenFold3-preview is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's AlphaFold3, developed by the AlQuraishi Lab at Columbia University and the OpenFold consortium.}
 }
