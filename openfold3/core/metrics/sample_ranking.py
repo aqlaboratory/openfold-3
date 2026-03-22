@@ -42,7 +42,7 @@ def full_complex_sample_ranking_metric(
         output: model outputs
 
     Returns:
-        sample_ranking_metric: [num_samplesample] score used for sample ranking
+        sample_ranking_metric: [num_sample] score used for sample ranking
     """
     # inputs
     atom_positions_predicted = output["atom_positions_predicted"]
