@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import openfold3
 from openfold3.core.data.io.sequence.template import (
     A3mParser,
     parse_template_alignment,
@@ -10,7 +11,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_author_to_label_chain_ids,
 )
 
-_TEST_DATA_DIR = Path(__file__).parent
+_TEST_DATA_DIR = Path(openfold3.__file__).parent / "tests" / "test_data"
 
 
 class TestTemplatePreprocessor:
@@ -23,7 +24,9 @@ class TestTemplatePreprocessor:
         The ColabFold alignment reports "1rnb_A" which must be resolved to
         label chain "B" before the sequence can be looked up.
         """
-        alignment_file = _TEST_DATA_DIR / "colabfold_template.m8"
+        alignment_file = (
+            _TEST_DATA_DIR / "template_alignments" / "colabfold_template.m8"
+        )
         query_seq_str = "AQVINTFDGVADYLQTYHKLPDNYITKSEAQALGWVASKGNLADVAPGKSIGGDIFSNREGKLPGKSGRTWREADINYTSGFRNSDRILYSSDWLIYKTTDHYQTFTKIR"
         templates = parse_template_alignment(
             aln_path=Path(alignment_file),
@@ -35,7 +38,7 @@ class TestTemplatePreprocessor:
         template = templates[16]
         assert template.chain_id == "A" and template.entry_id == "1rnb"
 
-        template_structure_file = _TEST_DATA_DIR / f"{template.entry_id}.cif"
+        template_structure_file = _TEST_DATA_DIR / "mmcifs" / f"{template.entry_id}.cif"
         cif_file = _load_ciffile(template_structure_file)
 
         chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
