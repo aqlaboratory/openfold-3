@@ -223,6 +223,7 @@ ruff = "*"
 sphinx = "*"
 myst-parser = "*"
 furo = "*"
+pre-commit = "*"
 
 [feature.openfold3-cpu.target.linux-64.dependencies]
 mkl = "*"

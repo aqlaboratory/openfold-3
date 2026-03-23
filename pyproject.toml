@@ -62,6 +62,7 @@ optional-dependencies.dev = [
     "pytest-cov",
     "pytest-benchmark",
     "ruff",
+    "pre-commit",
 
     # used for documentation
     "sphinx",
