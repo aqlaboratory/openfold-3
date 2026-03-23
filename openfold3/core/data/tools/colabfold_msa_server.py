@@ -37,7 +37,11 @@ from tqdm import tqdm
 from openfold3.core.config import config_utils
 from openfold3.core.data.io.sequence.msa import parse_a3m
 from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
+from openfold3.core.data.primitives.structure.metadata import (
+    get_author_to_label_chain_ids,
+)
 from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.core.data.tools.rscb import fetch_label_to_author_chain_ids
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
@@ -642,82 +646,6 @@ def save_colabfold_mappings(
         )
 
 
-_RCSB_GRAPHQL_URL = "https://data.rcsb.org/graphql"
-
-_CHAIN_MAPPING_QUERY = """
-query($ids: [String!]!) {
-  entries(entry_ids: $ids) {
-    rcsb_id
-    polymer_entities {
-      rcsb_polymer_entity_container_identifiers {
-        asym_ids
-        auth_asym_ids
-      }
-    }
-  }
-}
-"""
-
-
-def fetch_author_to_label_chain_ids(
-    pdb_ids: set[str],
-) -> dict[str, dict[str, list[str]]]:
-    """Fetch author-to-label chain ID mappings from the RCSB PDB GraphQL API.
-
-    Makes a single batched request for all PDB IDs and returns a nested dict
-    mapping ``entry_id`` → ``author_chain_id`` → ``[label_asym_ids]``.
-
-    Args:
-        pdb_ids: Set of PDB entry IDs (e.g. ``{"4pqx", "1rnb"}``).
-
-    Returns:
-        Nested dict: ``entry_id`` (lower-case) → ``author_chain_id`` →
-        sorted list of ``label_asym_ids``.
-
-    Raises:
-        RuntimeError: If the RCSB API request fails.
-    """
-    if not pdb_ids:
-        return {}
-
-    try:
-        resp = requests.post(
-            _RCSB_GRAPHQL_URL,
-            json={
-                "query": _CHAIN_MAPPING_QUERY,
-                "variables": {"ids": sorted(pdb_ids)},
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-    except Exception as e:
-        raise RuntimeError(
-            f"Failed to fetch chain ID mappings from RCSB for "
-            f"{len(pdb_ids)} entries. Cannot proceed without chain ID "
-            f"re-mapping."
-        ) from e
-
-    data = resp.json().get("data", {})
-    entries = data.get("entries") or []
-
-    result: dict[str, dict[str, list[str]]] = {}
-    for entry in entries:
-        entry_id = entry["rcsb_id"].lower()
-        author_to_labels: dict[str, list[str]] = {}
-        for entity in entry.get("polymer_entities") or []:
-            ids = entity["rcsb_polymer_entity_container_identifiers"]
-            for asym_id, auth_id in zip(
-                ids["asym_ids"], ids["auth_asym_ids"], strict=True
-            ):
-                author_to_labels.setdefault(auth_id, []).append(asym_id)
-        # Sort label lists for determinism
-        for labels in author_to_labels.values():
-            labels.sort()
-        result[entry_id] = author_to_labels
-
-    return result
-
-
 def remap_colabfold_template_chain_ids(
     template_alignments: pd.DataFrame,
     m_with_templates: set[int],
@@ -752,8 +680,12 @@ def remap_colabfold_template_chain_ids(
         per_rep[rep_id] = top_n
         unique_pdb_ids.update(top_n[1].str.split("_").str[0])
 
-    # Fetch author->label mappings in one API call
-    author_to_label_maps = fetch_author_to_label_chain_ids(unique_pdb_ids)
+    # Fetch label->author mappings in one API call, then invert
+    label_to_author_maps = fetch_label_to_author_chain_ids(unique_pdb_ids)
+    author_to_label_maps = {
+        entry_id: get_author_to_label_chain_ids(l2a)
+        for entry_id, l2a in label_to_author_maps.items()
+    }
 
     # Remap chain IDs
     for top_n in per_rep.values():
