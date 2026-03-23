@@ -151,7 +151,6 @@ class MultiDatasetConfig:
         return self.get_subset(datasets_stage_mask)
 
 
-
 class DataModuleConfig(BaseModel):
     datasets: list[SerializeAsAny[BaseModel]]
     batch_size: int = 1
@@ -163,7 +162,7 @@ class DataModuleConfig(BaseModel):
 
     @staticmethod
     def safe_multiprocessing_context(
-            multiprocessing_context: str | None, num_workers: int
+        multiprocessing_context: str | None, num_workers: int
     ) -> str | None:
         """
         Returns multiprocessing start methods with safer/sensible defaults:
@@ -171,7 +170,8 @@ class DataModuleConfig(BaseModel):
           - forkserver for linux, matching the new 3.14 default
           - default otherwise
 
-        For general info on risks and defaults across platformas and python versions see:
+        For general info on risks and defaults across platforms
+        and python versions see:
           https://docs.pytorch.org/docs/stable/data.html#torch.utils.data.DataLoader
           https://docs.pytorch.org/docs/stable/notes/multiprocessing.html#multiprocessing-poison-fork-note
           https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
@@ -183,7 +183,6 @@ class DataModuleConfig(BaseModel):
 
         # Set safe defaults
         if multiprocessing_context == "openfold-default":
-
             # Use fork to create processes when using MPS. See:
             #  - https://github.com/pytorch/pytorch/issues/70344
             #  - https://github.com/pytorch/pytorch/issues/87688
@@ -202,22 +201,32 @@ class DataModuleConfig(BaseModel):
 
         # Warn about unsafe defaults
         else:
-            if platform.system() == "Darwin" and torch.backends.mps.is_available():
-                if multiprocessing_context != "fork":
-                    logger.warning(
-                        f"Using multiprocessing context {multiprocessing_context} on MPS may cause "
-                        "issues. Consider using 'fork' or 'openfold-default' (which resolves to 'fork' on MPS).",
-                        stacklevel=2,
-                    )
+            if (
+                platform.system() == "Darwin"
+                and torch.backends.mps.is_available()
+                and multiprocessing_context != "fork"
+            ):
+                logger.warning(
+                    "Using multiprocessing context "
+                    f"{multiprocessing_context} on MPS may cause "
+                    "issues. Consider using 'fork' or "
+                    "'openfold-default' (which resolves to "
+                    "'fork' on MPS).",
+                    stacklevel=2,
+                )
             if platform.system() == "Linux":
                 dangerous_start_method = (
-                    multiprocessing_context == "fork" or
-                    multiprocessing_context is None and sys.version_info < (3, 14)
+                    multiprocessing_context == "fork"
+                    or multiprocessing_context is None
+                    and sys.version_info < (3, 14)
                 )
                 if dangerous_start_method:
                     logger.warning(
-                        "Using 'fork' multiprocessing context in linux may cause issues. Consider using "
-                        "'spawn', 'forkserver' or 'openfold-default' (which resolves to 'forkserver' on linux).",
+                        "Using 'fork' multiprocessing context "
+                        "in linux may cause issues. Consider "
+                        "using 'spawn', 'forkserver' or "
+                        "'openfold-default' (which resolves to "
+                        "'forkserver' on linux).",
                         stacklevel=2,
                     )
 
