@@ -323,28 +323,6 @@ def get_asym_id_to_canonical_seq_dict(
     }
 
 
-def get_label_to_author_chain_id_dict(
-    cif_file: CIFFile | BinaryCIFFile,
-) -> dict[str, str]:
-    """Get a mapping from label asym_id to author (pdb_strand_id) chain ID.
-
-    Reads from ``pdbx_poly_seq_scheme`` so no atom array is needed.
-
-    Args:
-        cif_file:
-            Parsed mmCIF file containing the structure.
-
-    Returns:
-        A dictionary mapping label asym IDs to author chain IDs.
-    """
-    block = cif_file.block
-    poly_scheme = block["pdbx_poly_seq_scheme"]
-    asym_ids = poly_scheme["asym_id"].as_array()
-    author_ids = poly_scheme["pdb_strand_id"].as_array()
-
-    return dict(zip(asym_ids.tolist(), author_ids.tolist(), strict=True))
-
-
 def get_author_to_label_chain_ids(
     label_to_author: dict[str, str],
 ) -> dict[str, list[str]]:
@@ -355,8 +333,7 @@ def get_author_to_label_chain_ids(
 
     Args:
         label_to_author:
-            Dictionary mapping label asym IDs to author chain IDs, as returned
-            by :func:`get_label_to_author_chain_id_dict`.
+            Dictionary mapping label asym IDs to author chain IDs.
 
     Returns:
         A dictionary mapping author chain IDs to sorted lists of label asym IDs.
@@ -367,43 +344,6 @@ def get_author_to_label_chain_ids(
     for labels in author_to_labels.values():
         labels.sort()
     return dict(author_to_labels)
-
-
-def resolve_author_to_label_chain_id(
-    matching_labels: list[str],
-    chain_id_seq_map: dict[str, str],
-) -> str:
-    """Resolve an author (pdb_strand_id) chain ID to a single label asym_id.
-
-    For homomeric chains, multiple label asym_ids share the same author chain
-    ID.  This function returns the lexicographically smallest label asym_id
-    and verifies that all matching label chains carry the same canonical
-    sequence.
-
-    Args:
-        matching_labels:
-            Sorted list of label asym_ids that map to the same author chain ID,
-            as returned by indexing into the result of
-            :func:`get_author_to_label_chain_ids`.
-        chain_id_seq_map:
-            Mapping from label asym_id to canonical sequence (as returned by
-            :func:`get_asym_id_to_canonical_seq_dict`).  Used to verify that
-            homomeric chains carry the same sequence.
-
-    Returns:
-        The lexicographically smallest label asym_id.
-
-    Raises:
-        ValueError: If homomeric chains have differing sequences.
-    """
-    if len(matching_labels) > 1:
-        seqs = {chain_id_seq_map[label] for label in matching_labels}
-        if len(seqs) != 1:
-            raise ValueError(
-                f"Expected identical sequences for homomeric chains "
-                f"got {len(seqs)} distinct sequences"
-            )
-    return matching_labels[0]
 
 
 def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[str]]:

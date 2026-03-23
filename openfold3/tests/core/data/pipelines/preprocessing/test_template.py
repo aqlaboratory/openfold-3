@@ -8,8 +8,6 @@ from openfold3.core.data.io.structure.cif import _load_ciffile
 from openfold3.core.data.primitives.structure.metadata import (
     get_asym_id_to_canonical_seq_dict,
     get_author_to_label_chain_ids,
-    get_label_to_author_chain_id_dict,
-    resolve_author_to_label_chain_id,
 )
 
 _TEST_DATA_DIR = Path(__file__).parent
@@ -41,12 +39,16 @@ class TestTemplatePreprocessor:
         cif_file = _load_ciffile(template_structure_file)
 
         chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
-        label_to_author = get_label_to_author_chain_id_dict(cif_file)
-        author_to_label_chain_ids = get_author_to_label_chain_ids(label_to_author)
-        label_chain_id = resolve_author_to_label_chain_id(
-            author_to_label_chain_ids[template.chain_id],
-            chain_id_seq_map=chain_id_seq_map,
+        poly_scheme = cif_file.block["pdbx_poly_seq_scheme"]
+        label_to_author = dict(
+            zip(
+                poly_scheme["asym_id"].as_array().tolist(),
+                poly_scheme["pdb_strand_id"].as_array().tolist(),
+                strict=True,
+            )
         )
+        author_to_label_chain_ids = get_author_to_label_chain_ids(label_to_author)
+        label_chain_id = author_to_label_chain_ids[template.chain_id][0]
 
         # Author "A" -> label "B" (the protein chain)
         assert label_chain_id == "B"
