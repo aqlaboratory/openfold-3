@@ -34,6 +34,7 @@ from openfold3.core.data.tools.colabfold_msa_server import (
     collect_colabfold_msa_data,
     get_sequence_hash,
     preprocess_colabfold_msas,
+    query_colabfold_msa_server,
     remap_colabfold_template_chain_ids,
 )
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
@@ -521,3 +522,56 @@ class TestMsaComputationSettings:
         assert "Output directory mismatch" in str(exc_info.value), (
             "Expected ValueError on output directory conflict"
         )
+
+
+# Barnase sequence — 1RNB author chain A = label chain B
+_BARNASE_SEQ = (
+    "AQVINTFDGVADYLQTYHKLPDNYITKSEAQALGWVASKGNLADVAPGKSIGGDIFSNREGKLPGK"
+    "SGRTWREADINYTSGFRNSDRILYSSDWLIYKTTDHYQTFTKIR"
+)
+
+
+class TestQueryColabfoldMsaServer:
+    """Functional test — hits real ColabFold API (~30-60s)."""
+
+    def test_barnase_with_templates(self, tmp_path):
+        raw_dir = tmp_path / "raw"
+        a3m_lines, template_paths = query_colabfold_msa_server(
+            x=[_BARNASE_SEQ],
+            prefix=raw_dir,
+            user_agent="openfold-test/1.0",
+            use_templates=True,
+            use_pairing=False,
+            use_env=True,
+            use_filter=True,
+        )
+
+        # -- Returned values --
+        assert len(a3m_lines) == 1
+        assert a3m_lines[0].startswith(f">101\n{_BARNASE_SEQ}\n")
+        n_seqs = sum(1 for l in a3m_lines[0].strip().split("\n") if l.startswith(">"))
+        assert n_seqs > 10  # barnase is well-represented
+
+        assert len(template_paths) == 1
+        tpl_dir = Path(template_paths[0])
+        assert tpl_dir.name == "templates_101"
+        assert tpl_dir.is_dir()
+        cif_files = list(tpl_dir.glob("*.cif"))
+        assert len(cif_files) > 0
+
+        # -- Files on disk --
+        assert (raw_dir / "uniref.a3m").stat().st_size > 0
+        assert (raw_dir / "bfd.mgnify30.metaeuk30.smag30.a3m").stat().st_size > 0
+        assert (raw_dir / "out.tar.gz").exists()
+
+        pdb70 = raw_dir / "pdb70.m8"
+        assert pdb70.stat().st_size > 0
+        m8_lines = pdb70.read_text().strip().split("\n")
+        template_ids = [l.split("\t")[1] for l in m8_lines]
+
+        # All hits should be for M-index 101
+        assert all(l.split("\t")[0] == "101" for l in m8_lines)
+        # Template IDs are pdb_chain format
+        assert all("_" in tid for tid in template_ids)
+        # 1rnb_A must appear (the bug case — author chain A != label chain B)
+        assert "1rnb_A" in template_ids
