@@ -76,7 +76,7 @@ def query_colabfold_msa_server(
     use_filter: bool = True,
     filter: bool | None = None,
     host_url: str = "https://api.colabfold.com",
-) -> list[str] | tuple[list[str], list[str]]:
+) -> list[str] | tuple[list[str], list[str | None]]:
     """Submints a single query to the colabfold MSA server.
 
     Adapted from Colabfold run_mmseqs2 https://github.com/sokrypton/ColabFold/blob/main/colabfold/colabfold.py#L69
@@ -125,7 +125,7 @@ def query_colabfold_msa_server(
             "in the future."
         )
 
-    def submit(seqs, mode, N=101):
+    def submit(seqs: list[str], mode: str, N: int = 101) -> dict[str, str]:
         n, query = N, ""
         for seq in seqs:
             query += f">{n}\n{seq}\n"
@@ -160,13 +160,13 @@ def query_colabfold_msa_server(
             break
 
         try:
-            out = res.json()
+            out: dict[str, str] = res.json()
         except ValueError:
             logger.error(f"Server didn't reply with json: {res.text}")
             out = {"status": "ERROR"}
         return out
 
-    def status(ID):
+    def status(ID: str) -> dict[str, str]:
         while True:
             error_count = 0
             try:
@@ -191,13 +191,13 @@ def query_colabfold_msa_server(
                 continue
             break
         try:
-            out = res.json()
+            out: dict[str, str] = res.json()
         except ValueError:
             logger.error(f"Server didn't reply with json: {res.text}")
             out = {"status": "ERROR"}
         return out
 
-    def download(ID, path):
+    def download(ID: str, path: str) -> None:
         error_count = 0
         while True:
             try:
@@ -236,14 +236,14 @@ def query_colabfold_msa_server(
     else:
         mode = "env-nofilter" if use_env else "nofilter"
     # TODO move to config construction
-    pairing_strategy = MsaServerPairingStrategy[pairing_strategy.upper()]
+    pairing_mode = MsaServerPairingStrategy[pairing_strategy.upper()]
     if use_pairing:
         use_templates = False
         mode = ""
         # greedy is default, complete was the previous behavior
-        if pairing_strategy == MsaServerPairingStrategy.GREEDY:
+        if pairing_mode == MsaServerPairingStrategy.GREEDY:
             mode = "pairgreedy"
-        elif pairing_strategy == MsaServerPairingStrategy.COMPLETE:
+        elif pairing_mode == MsaServerPairingStrategy.COMPLETE:
             mode = "paircomplete"
         if use_env:
             mode = mode + "-env"
@@ -261,7 +261,9 @@ def query_colabfold_msa_server(
     seqs_unique = []
     # TODO this might be slow for large sets - see main MSA deduplication code for a
     # faster option
-    [seqs_unique.append(x) for x in seqs if x not in seqs_unique]
+    for s in seqs:
+        if s not in seqs_unique:
+            seqs_unique.append(s)
     Ms = [N + seqs_unique.index(seq) for seq in seqs]
 
     # Run query
@@ -337,17 +339,16 @@ def query_colabfold_msa_server(
 
     # Process templates
     if use_templates:
-        templates = {}
+        templates: dict[int, list[str]] = {}
         with open(f"{path}/pdb70.m8") as f:
             for line in f:
                 p = line.rstrip().split()
-                M, pdb, _, _ = p[0], p[1], p[2], p[10]  # M, pdb, qid, e_value
-                M = int(M)
-                if M not in templates:
-                    templates[M] = []
-                templates[M].append(pdb)
+                m_idx, pdb = int(p[0]), p[1]
+                if m_idx not in templates:
+                    templates[m_idx] = []
+                templates[m_idx].append(pdb)
 
-        template_paths = {}
+        template_paths_by_m: dict[int, str] = {}
         for k, TMPL in templates.items():
             TMPL_PATH = f"{prefix}/templates_{k}"
             if not os.path.isdir(TMPL_PATH):
@@ -387,20 +388,15 @@ def query_colabfold_msa_server(
                 os.symlink("pdb70_a3m.ffindex", f"{TMPL_PATH}/pdb70_cs219.ffindex")
                 with open(f"{TMPL_PATH}/pdb70_cs219.ffdata", "w") as f:
                     f.write("")
-            template_paths[k] = TMPL_PATH
+            template_paths_by_m[k] = TMPL_PATH
 
-        template_paths_ = []
-        for n in Ms:
-            if n not in template_paths:
-                template_paths_.append(None)
-            else:
-                template_paths_.append(template_paths[n])
-        template_paths = template_paths_
+        template_paths_list: list[str | None] = [template_paths_by_m.get(n) for n in Ms]
 
     # Gather a3m lines
-    a3m_lines = {}
+    a3m_by_m: dict[int, list[str]] = {}
     for a3m_file in a3m_files:
-        update_M, M = True, None
+        update_M = True
+        current_m: int | None = None
         with open(a3m_file) as f:
             for line in f:
                 if len(line) > 0:
@@ -408,15 +404,16 @@ def query_colabfold_msa_server(
                         line = line.replace("\x00", "")
                         update_M = True
                     if line.startswith(">") and update_M:
-                        M = int(line[1:].rstrip())
+                        current_m = int(line[1:].rstrip())
                         update_M = False
-                        if M not in a3m_lines:
-                            a3m_lines[M] = []
-                    a3m_lines[M].append(line)
+                        if current_m not in a3m_by_m:
+                            a3m_by_m[current_m] = []
+                    if current_m is not None:
+                        a3m_by_m[current_m].append(line)
 
-    a3m_lines = ["".join(a3m_lines[n]) for n in Ms]
+    a3m_lines_out = ["".join(a3m_by_m[n]) for n in Ms]
 
-    return (a3m_lines, template_paths) if use_templates else a3m_lines
+    return (a3m_lines_out, template_paths_list) if use_templates else a3m_lines_out
 
 
 class ChainInput(NamedTuple):
