@@ -66,6 +66,7 @@ class MsaServerPairingStrategy(IntEnum):
 
 def query_colabfold_msa_server(
     x: list[str],
+    *,
     prefix: Path,
     user_agent: str,
     use_templates: bool = False,
