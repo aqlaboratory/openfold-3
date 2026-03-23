@@ -776,7 +776,7 @@ class ColabFoldQueryRunner:
 
         # 1) Save MSA a3m/npz files
         for rep_id, aln in zip(
-            self.colabfold_mapper.rep_ids, a3m_lines_main, strict=False
+            self.colabfold_mapper.rep_ids, a3m_lines_main, strict=True
         ):
             rep_dir = main_alignments_path / str(rep_id)
 
