@@ -670,7 +670,7 @@ def find_greedy_optimal_mol_permutation(
             # Stack to [N_sym, N, 3] and [N_sym, N] respectively
             instance_sizes = [t.shape[0] for t in gt_coords_entity_split]
             if len(set(instance_sizes)) > 1:
-                raise RuntimeError(
+                raise ValueError(
                     f"Entity {entity_id} has symmetric instances with "
                     f"different token counts: {instance_sizes}. These chains "
                     f"were identified as symmetry-equivalent but have different "
