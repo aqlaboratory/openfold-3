@@ -344,7 +344,9 @@ def pae_loss(
     # Compute binned alignment error
     # [*, N_token, N_token, no_bins]
     bin_size = (bin_max - bin_min) / no_bins
-    v_bins = bin_min + bin_size / 2 + torch.arange(no_bins, device=logits.device) * bin_size
+    v_bins = (
+        bin_min + bin_size / 2 + torch.arange(no_bins, device=logits.device) * bin_size
+    )
     e_b = binned_one_hot(e, v_bins).to(dtype=logits.dtype)
 
     # Compute predicted alignment error
