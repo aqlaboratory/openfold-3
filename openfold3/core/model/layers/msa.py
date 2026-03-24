@@ -412,8 +412,6 @@ class MSAColumnAttention(nn.Module):
 
         # [*, N_seq, N_res, C_in]
         m = m.transpose(-2, -3)
-        if mask is not None:
-            mask = mask.transpose(-1, -2)
 
         return m
 
@@ -561,7 +559,7 @@ class MSAPairWeightedAveraging(nn.Module):
         self,
         z: torch.Tensor,
         mask: torch.Tensor | None = None,
-    ) -> [torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         if mask is None:
             # [*, N_token, N_token]
             mask = z.new_ones(
@@ -638,8 +636,6 @@ class MSAPairWeightedAveraging(nn.Module):
             )
 
         inputs = {"m_in": m, "z_in": z}
-
-        fn = partial(fn)
 
         return chunk_layer(
             fn, inputs, chunk_size=chunk_size, no_batch_dims=len(m.shape[:-2])
