@@ -289,7 +289,12 @@ def create_main(
 
         # Deduplicate within the main MSA
         main_view = main_msa_redundant.view(
-            np.dtype((np.void, main_msa_redundant.dtype.itemsize * main_msa_redundant.shape[1]))
+            np.dtype(
+                (
+                    np.void,
+                    main_msa_redundant.dtype.itemsize * main_msa_redundant.shape[1],
+                )
+            )
         )
         _, unique_idx = np.unique(main_view, return_index=True)
         unique_idx.sort()  # preserve original order
