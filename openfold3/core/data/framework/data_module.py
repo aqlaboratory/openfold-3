@@ -152,7 +152,11 @@ class DataModuleConfig(BaseModel):
     datasets: list[SerializeAsAny[BaseModel]]
     batch_size: int = 1
     num_workers: int = 0
+    prefetch_factor: int | None = None
     num_workers_validation: int = 0
+    prefetch_factor_validation: int | None = None
+    persistent_workers: bool = False
+    multiprocessing_context: str | None = None
     data_seed: int = 42
     epoch_len: int = 1
 
@@ -165,8 +169,14 @@ class DataModule(pl.LightningDataModule):
 
         # Possibly initialize directly from DataModuleConfig
         self.batch_size = data_module_config.batch_size
+
         self.num_workers = data_module_config.num_workers
+        self.prefetch_factor = data_module_config.prefetch_factor
         self.num_workers_validation = data_module_config.num_workers_validation
+        self.prefetch_factor_validation = data_module_config.prefetch_factor_validation
+        self.persistent_workers = data_module_config.persistent_workers
+        self.multiprocessing_context = data_module_config.multiprocessing_context
+
         self.data_seed = data_module_config.data_seed
         self.next_data_seed = data_module_config.data_seed
         self.epoch_len = data_module_config.epoch_len
@@ -408,17 +418,20 @@ class DataModule(pl.LightningDataModule):
         Returns:
             DataLoader: DataLoader object.
         """
-
-        # TODO: Val does not need this many workers. Due to memory leak issue,
-        #  reduce workers here to run with more workers overall in training
-        #  as temporary quick fix.
         if (
             mode == DatasetMode.validation
             and DatasetMode.train in self.multi_dataset_config.modes
         ):
             num_workers = self.num_workers_validation
+            prefetch_factor = self.prefetch_factor_validation
         else:
             num_workers = self.num_workers
+            prefetch_factor = self.prefetch_factor
+
+        persistent_workers = self.persistent_workers and num_workers > 0
+        multiprocessing_context = (
+            self.multiprocessing_context if num_workers > 0 else None
+        )
 
         generator = self.generators.get(mode)
         if generator is None:
@@ -445,6 +458,9 @@ class DataModule(pl.LightningDataModule):
             collate_fn=openfold_batch_collator,
             generator=self.generators[mode],
             worker_init_fn=worker_init_fn,
+            persistent_workers=persistent_workers,
+            prefetch_factor=prefetch_factor,
+            multiprocessing_context=multiprocessing_context,
         )
 
     def train_dataloader(self) -> DataLoader:

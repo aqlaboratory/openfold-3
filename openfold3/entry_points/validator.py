@@ -112,7 +112,11 @@ class DataModuleArgs(BaseModel):
     batch_size: int = 1
     data_seed: int | None = None
     num_workers: int = 10
+    prefetch_factor: int | None = None
     num_workers_validation: int = 4
+    prefetch_factor_validation: int | None = None
+    multiprocessing_context: str | None = None
+    persistent_workers: bool = False
     epoch_len: int = 4
 
 

@@ -15,7 +15,9 @@
 import copy
 import logging
 import os
+import time
 from itertools import cycle, islice
+from pathlib import Path
 
 import pandas as pd
 import torch
@@ -30,6 +32,7 @@ from openfold3.core.utils.permutation_alignment import (
     naive_alignment,
 )
 
+logger = logging.getLogger(__name__)
 worker_seed_log = logging.getLogger(f"{__name__}.worker_seed")
 
 
@@ -153,3 +156,19 @@ def getitem_debug_log(dataset_name: str = "") -> None:
         f"pid={os.getpid()} worker_id={worker_id} wi.seed={wi_seed} "
         f"wi.base_seed={wi_base_seed} torch.initial_seed={torch_seed}",
     )
+
+
+def warm_lmdb_cache(lmdb_directory: Path) -> None:
+    """Sequentially read the LMDB data file to warm the OS page cache"""
+    data_file = lmdb_directory / "data.mdb"
+    file_size_gb = data_file.stat().st_size / (1024**3)
+    logger.info(
+        f"Warming LMDB page cache for {lmdb_directory} ({file_size_gb:.1f} GB)..."
+    )
+    t0 = time.monotonic()
+    chunk_size = 8 * 1024 * 1024
+    with open(data_file, "rb") as f:
+        while f.read(chunk_size):
+            pass
+    elapsed = time.monotonic() - t0
+    logger.info(f"LMDB cache warm complete in {elapsed:.1f}s")

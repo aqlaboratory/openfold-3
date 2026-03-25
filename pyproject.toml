@@ -27,7 +27,7 @@ dependencies = [
   "boto3",
   "memory_profiler",
   "func_timeout",
-  "lmdb", # == 1.6  # This verison might be required to avoid Error during training
+  "lmdb",
   "ijson",
   "deepspeed",
   "pdbeccdutils",
