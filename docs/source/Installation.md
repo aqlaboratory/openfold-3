@@ -30,6 +30,31 @@ to install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, us
 pip install openfold3[cuequivariance]
 ```
 
+### Environment variables
+
+OpenFold may need a few environment variables set so CUDA, compilation, and JIT-built extensions can be found correctly. 
+
+- `CUDA_HOME` should point to the CUDA installation. On many HPC clusters you will this can be set by loading the appropriate toolchain using environment modules, for example `module load cuda`.  If you do not set this you will likely get a `No such file or directory: '/usr/local/cuda/bin/nvcc'` error. 
+- `CUTLASS_PATH` will need to be set for most systems. If you do not set this you will get Deepspeed related errors such as `Error: Unable to JIT load the evoformer_attn op`. Generally this can be set using 
+    ```bash
+    # Start your environment which as openfold3 installed
+    source .venv/bin/activate
+    # Set CUTLASS_PATH using the resolved path  
+    export CUTLASS_PATH=$(python - << 'PY'
+    import cutlass_library, pathlib
+    print(pathlib.Path(cutlass_library.__file__).resolve().parent.joinpath("source"))
+    PY
+    )
+    ```
+- `LD_LIBRARY_PATH` may need to be set to the matching CUDA directories. How to set this will depend on the system. 
+    - Example: `export LD_LIBRARY_PATH="$CUDA_HOME/targets/x86_64-linux/lib:${LD_LIBRARY_PATH:-}"`
+    - You can often run `find "$CUDA_HOME" -name 'libcurand.so*' 2>/dev/null` to find the CUDA layout of your system. 
+
+- If you get a `/usr/bin/ld: cannot find -lcurand` error, this usually means the CUDA math libraries (which include `libcurand`) are not on your library search path. You may need to add the appropriate CUDA library directory to  `LIBRARY_PATH`. 
+    - Example: `export LIBRARY_PATH="$(echo "$CUDA_HOME" | sed 's|/cuda/|/math_libs/|')/targets/sbsa-linux/lib:${LIBRARY_PATH:-}"`
+
+
+
 ### OpenFold3 Docker Image
 
 #### Dockerhub
