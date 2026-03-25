@@ -1,7 +1,6 @@
 experiment_settings:
   mode: train
-  output_dir: ./test_train_output 
-  seed: 1272025
+  output_dir: ./test_train_output
   restart_checkpoint_path: last
   preemption_safe_resume: true
   ckpt_load_settings:

@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -99,6 +99,11 @@ class OpenFold3AllAtom(ModelRunner):
             )
             self.automatic_optimization = False
             self.log_lr = model_config.settings.manual_optimization.log_lr
+
+    @property
+    def version(self):
+        v = self.model.version_tensor.long().tolist()
+        return f"{v[0]}.{v[1]}.{v[2]}"
 
     def setup(self, stage: str):
         # Setup metrics

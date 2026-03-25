@@ -171,6 +171,7 @@ def main(
 
     # Add file handler if log file is specified
     if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_file, mode="w")
         logger.addHandler(file_handler)
 
