@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -43,6 +43,8 @@ from openfold3.core.utils.permutation_alignment import (
     safe_multi_chain_permutation_alignment,
 )
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
+
+MODEL_VERSION = torch.tensor([1, 0, 0], dtype=torch.float32)
 
 
 class OffloadModules(Enum):
@@ -106,6 +108,8 @@ class OpenFold3(nn.Module):
 
         # Confidence and Distogram Heads
         self.aux_heads = AuxiliaryHeadsAllAtom(config=self.config.architecture.heads)
+
+        self.register_buffer("version_tensor", MODEL_VERSION)
 
     def _disable_activation_checkpointing(self):
         """

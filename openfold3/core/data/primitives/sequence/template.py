@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -148,7 +148,7 @@ def check_sequence(
     max_subseq: float = 0.95,
     min_align: float = 0.1,
     min_len: int = 10,
-) -> bool:
+) -> tuple[bool, np.ndarray | None, np.ndarray | None]:
     """Applies sequence filters to template hits following AF3 SI Section 2.4.
 
     Args:
@@ -168,31 +168,37 @@ def check_sequence(
             Whether the hit passes the sequence filters and the aligned query and hit
             sequences as numpy arrays.
     """
-    query_seq = query.hit_sequence.replace("-", "")
-    hit_seq = hit.hit_sequence.replace("-", "")
-    if len(hit_seq) < min_len:
-        return True, None, None
-    query_aln = np.frombuffer(
-        query.hit_sequence.replace(".", "-").encode("ascii"), dtype="S1"
-    )
-    hit_aln = np.frombuffer(
-        hit.hit_sequence.replace(".", "-").encode("ascii"), dtype="S1"
-    )
+    q_aln_str = query.hit_sequence.replace(".", "-")
+    h_aln_str = hit.hit_sequence.replace(".", "-")
 
-    query_not_gap = query_aln != b"-"
-    hit_not_gap = hit_aln != b"-"
+    query_sequence = q_aln_str.replace("-", "").upper()
+    matching_sequence = h_aln_str.replace("-", "").upper()
 
-    columns_to_keep = query_not_gap & hit_not_gap
-    covered = columns_to_keep.sum()
-
-    coverage = covered / (len(query_seq) or 1)
-
-    if coverage < min_align:
+    # Fail if no query sequence for whatever reason
+    q_len = len(query_sequence)
+    if q_len == 0:
         return True, None, None
 
-    identical = (columns_to_keep & (query_not_gap == hit_not_gap)).sum()
+    # Hits that are too short
+    if len(matching_sequence) < min_len:
+        return True, None, None
 
-    return coverage >= max_subseq and identical == covered, query_aln, hit_aln
+    query_aln = np.frombuffer(q_aln_str.encode("ascii"), dtype="S1")
+    hit_aln = np.frombuffer(h_aln_str.encode("ascii"), dtype="S1")
+
+    # Hits with too few aligned columns
+    is_upper = (hit_aln >= b"A") & (hit_aln <= b"Z")
+    n_aligned = int(is_upper.sum())
+    align_ratio = n_aligned / q_len
+    if align_ratio <= min_align:
+        return True, None, None
+
+    # Hits with too long exact contiguous subsequence
+    length_ratio = len(matching_sequence) / q_len
+    if (length_ratio > max_subseq) and (matching_sequence in query_sequence):
+        return True, None, None
+
+    return False, query_aln, hit_aln
 
 
 def parse_release_date(cif_file: CIFFile) -> datetime:

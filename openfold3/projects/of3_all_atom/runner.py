@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -60,7 +60,6 @@ if deepspeed_is_installed:
     import deepspeed
 
 logger = logging.getLogger(__name__)
-
 # We define extra metrics that will cause this warning depending on the training stage
 # Only metrics with values present are logged, so we can ignore this error
 warnings.filterwarnings(
@@ -100,6 +99,11 @@ class OpenFold3AllAtom(ModelRunner):
             )
             self.automatic_optimization = False
             self.log_lr = model_config.settings.manual_optimization.log_lr
+
+    @property
+    def version(self):
+        v = self.model.version_tensor.long().tolist()
+        return f"{v[0]}.{v[1]}.{v[2]}"
 
     def setup(self, stage: str):
         # Setup metrics
@@ -781,10 +785,44 @@ class OpenFold3AllAtom(ModelRunner):
                 step=self.global_step - 1,
             )
 
+    def _get_train_sampler(self):
+        dl = self.trainer.train_dataloader
+        # If PL uses multiple loaders, dl can be CombinedLoader etc.
+        # Handle the simple/common case first:
+        sampler = getattr(dl, "sampler", None)
+
+        # If it's a BatchSampler, the underlying sampler is sampler.sampler
+        if (
+            sampler is not None
+            and hasattr(sampler, "sampler")
+            and (hasattr(sampler, "batch_size") and hasattr(sampler, "drop_last"))
+        ):
+            # only unwrap if it looks like a BatchSampler wrapper
+            # (BatchSampler has .sampler and .batch_size, .drop_last)
+            sampler = sampler.sampler
+        return sampler
+
+    def on_train_epoch_start(self):
+        sampler = self._get_train_sampler()
+
+        logger.info(
+            f"Rank - {self.global_rank} starting epoch {self.trainer.current_epoch} "
+            f"sampler epoch: {sampler.epoch} "
+            f"global_step={self.trainer.global_step} "
+            f"next_dataset_indices={self.trainer.datamodule.next_dataset_indices}"
+        )
+
     def on_train_epoch_end(self):
         """Log aggregated epoch metrics for training."""
         self._log_epoch_metrics(metrics=self.train_losses)
         self._log_epoch_metrics(metrics=self.train_metrics)
+        sampler = self._get_train_sampler()
+        logger.info(
+            f"Rank - {self.global_rank} finished epoch {self.trainer.current_epoch} "
+            f"sampler epoch: {sampler.epoch} "
+            f"global_step={self.trainer.global_step} "
+            f"next_dataset_indices={self.trainer.datamodule.next_dataset_indices}"
+        )
 
     def on_validation_epoch_end(self):
         """Log aggregated epoch metrics for validation."""

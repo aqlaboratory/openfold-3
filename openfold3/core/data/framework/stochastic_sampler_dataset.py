@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -127,8 +127,8 @@ class OF3DistributedSampler(DistributedSampler):
         self,
         dataset: SamplerDataset,
         dataset_probabilities: Sequence[float],
-        epoch_len: int,
         next_dataset_indices: dict[str, Any],
+        epoch_len: int,
         num_replicas: int | None = None,
         rank: int | None = None,
         seed: int = 0,
@@ -143,8 +143,9 @@ class OF3DistributedSampler(DistributedSampler):
                 Probabilities of sampling each dataset.
             epoch_len (int):
                 Number of datapoints to sample in total for each virtual epoch.
-            next_dataset_indices:
-                Record of last used indices for datasets that use in-order sampling
+            next_dataset_indices: dict[str, Any]
+                Record of last used indices for datasets that use in-order
+                sampling
             num_replicas:
                 Number of processes participating in distributed training
             rank:
@@ -152,6 +153,10 @@ class OF3DistributedSampler(DistributedSampler):
             seed:
                 Random seed used to shuffle the sampler if shuffle=True
         """
+        logger.debug(
+            f"Rank {rank} - Initializing OF3DistributedSampler with "
+            f"{dataset_probabilities=}, {next_dataset_indices=}, {epoch_len=}, {seed=}"
+        )
         super().__init__(
             dataset,
             num_replicas=num_replicas,
@@ -214,6 +219,11 @@ class OF3DistributedSampler(DistributedSampler):
             slice_indices = torch.concat((slice_indices, torch.arange(0, end_idx)))
 
         self.next_dataset_indices[dataset.name] = end_idx
+
+        logger.debug(
+            f"Fetching ordered subset for epoch {self.epoch} {dataset.name}: "
+            f"start={start_idx}, n={num_examples}, end={end_idx}"
+        )
 
         return slice_indices
 
@@ -291,6 +301,14 @@ class OF3DistributedSampler(DistributedSampler):
         # super().__iter__() yields the indices for this rank.
         # Use those indices to pick the correct tuples from the global list
         indices_for_this_rank = list(super().__iter__())
+
+        logger.debug(
+            f"Called OF3DistributedSampler.__iter__ in rank {self.rank}: "
+            f"epoch {self.epoch}, seed {self.seed + self.epoch}, sampled dataset "
+            f"indices {dataset_indices.tolist()}, sampled datapoint indices "
+            f"{datapoint_indices.tolist()}, indices_for_this_rank "
+            f"{indices_for_this_rank}."
+        )
 
         for i in indices_for_this_rank:
             dataset_idx, datapoint_idx = global_pairs[i]

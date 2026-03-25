@@ -2,13 +2,6 @@ train:
   settings:
     blocks_per_ckpt: 1
     ckpt_intermediate_steps: true
-    memory:
-      train:
-        msa_module:
-          swiglu_seq_chunk_size: 4000
-      eval:
-        msa_module:
-          swiglu_seq_chunk_size: 4000
   architecture:
     loss_module:
       diffusion:

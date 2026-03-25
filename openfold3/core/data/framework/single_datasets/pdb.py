@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@ from openfold3.core.data.framework.single_datasets.base_of3 import (
 )
 from openfold3.core.data.framework.single_datasets.dataset_utils import (
     check_invalid_feature_dict,
+    getitem_debug_log,
 )
 from openfold3.core.data.pipelines.featurization.loss_weights import (
     set_loss_weights_for_disordered_set,
@@ -254,6 +255,7 @@ class WeightedPDBDataset(BaseOF3Dataset):
             return features
         else:
             try:
+                getitem_debug_log("WeightedPDBDataset")
                 sample_data = self.create_all_features(
                     pdb_id=pdb_id,
                     preferred_chain_or_interface=preferred_chain_or_interface,

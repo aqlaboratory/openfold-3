@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -649,7 +649,7 @@ class AtomArrayView:
     """Container to access underlying arrays holding AtomArray attributes."""
 
     def __init__(self, atom_array: AtomArray, indices: np.ndarray | slice):
-        if not isinstance(indices, (np.ndarray, slice)):
+        if not isinstance(indices, np.ndarray | slice):
             raise ValueError(
                 "The indices argument must be a NumPy array or a slice object."
             )

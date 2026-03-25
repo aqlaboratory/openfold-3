@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -145,8 +145,8 @@ class MsaArray:
                     f"deletion {d1.shape[1]} vs {d2.shape[1]})."
                 )
             # Preserve metadata if both are list/ndarray
-            if isinstance(self.metadata, (list, np.ndarray)) and isinstance(
-                msa_array.metadata, (list, np.ndarray)
+            if isinstance(self.metadata, list | np.ndarray) and isinstance(
+                msa_array.metadata, list | np.ndarray
             ):
                 metadata_concat_fn = partial(np.concatenate, axis=0)
             else:
@@ -227,7 +227,7 @@ class MsaArray:
             # metadata: can only stitch if all are array-like
             if all(isinstance(md, pd.DataFrame) for md in metas):
                 meta_concat = pd.concat(metas, ignore_index=True)
-            elif all(isinstance(md, (list, np.ndarray)) for md in metas):
+            elif all(isinstance(md, list | np.ndarray) for md in metas):
                 meta_concat = np.concatenate([np.asarray(md) for md in metas], axis=0)
             else:
                 meta_concat = pd.DataFrame()

@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,10 +13,14 @@
 # limitations under the License.
 
 import copy
+import logging
+import os
 from itertools import cycle, islice
 
 import pandas as pd
 import torch
+import torch.distributed as dist
+from torch.utils.data import get_worker_info
 
 from openfold3.core.data.framework.data_module import openfold_batch_collator
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
@@ -25,6 +29,8 @@ from openfold3.core.utils.permutation_alignment import (
     multi_chain_permutation_alignment,
     naive_alignment,
 )
+
+worker_seed_log = logging.getLogger(f"{__name__}.worker_seed")
 
 
 def pad_to_world_size(df: pd.DataFrame, world_size: int | None = None) -> pd.DataFrame:
@@ -129,3 +135,21 @@ def check_invalid_feature_dict(features: dict):
             batch=feats_perm,
             atom_positions_predicted=torch.randn_like(feats_perm["ref_pos"]),
         )
+
+
+def getitem_debug_log(dataset_name: str = "") -> None:
+    wi = get_worker_info()
+    worker_id = wi.id if wi is not None else 0
+    wi_seed = wi.seed if wi else None
+    wi_base_seed = (wi_seed - worker_id) if wi_seed is not None else None
+    torch_seed = torch.initial_seed()
+    if dist.is_available() and dist.is_initialized():
+        global_rank = dist.get_rank()
+    else:
+        global_rank = int(os.environ.get("RANK", 0))
+    local_rank = os.environ.get("LOCAL_RANK", 0)
+    worker_seed_log.debug(
+        f"__getitem__ {dataset_name}: rank={global_rank} local_rank={local_rank} "
+        f"pid={os.getpid()} worker_id={worker_id} wi.seed={wi_seed} "
+        f"wi.base_seed={wi_base_seed} torch.initial_seed={torch_seed}",
+    )

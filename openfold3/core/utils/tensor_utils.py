@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -63,7 +63,7 @@ def dict_multimap(fn, dicts):
             new_dict[k] = [
                 dict_multimap(fn, [x[idx] for x in all_v]) for idx in range(len(v))
             ]
-        elif isinstance(v, (AtomArray, str)):
+        elif isinstance(v, AtomArray | str):
             new_dict[k] = all_v
         else:
             new_dict[k] = fn(all_v)

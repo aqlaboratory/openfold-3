@@ -1,16 +1,43 @@
 """MSA pre-parsing script for AF3 dataset."""
 
-import json
 import multiprocessing as mp
 import traceback
-from functools import wraps
 from pathlib import Path
+from typing import Annotated
 
 import click
 import numpy as np
+from pydantic import BaseModel, Field, ValidationError
 from tqdm import tqdm
 
 from openfold3.core.data.io.sequence.msa import parse_msas_direct, standardize_filepaths
+
+PositiveInt = Annotated[int, Field(gt=0)]
+
+
+class MaxSeqCounts(BaseModel):
+    """Maximum sequence counts per alignment database.
+    Potentially brittle when new datasets added but it's more
+    IDE-friendly without dynamically generated fields.
+    """
+
+    model_config = {"extra": "forbid"}  # Reject unknown fields
+
+    # Jackhmmer databases
+    uniprot_hits: PositiveInt | None = None
+    uniref90_hits: PositiveInt | None = None
+    mgnify_hits: PositiveInt | None = None
+    pdb_seqres_hits: PositiveInt | None = None
+
+    # HHblits databases
+    uniref30_hits: PositiveInt | None = None
+    bfd_hits: PositiveInt | None = None
+    cfdb_hits: PositiveInt | None = None
+
+    # RNA databases
+    rfam_hits: PositiveInt | None = None
+    rnacentral_hits: PositiveInt | None = None
+    nucleotide_collection_hits: PositiveInt | None = None
 
 
 @click.command()
@@ -44,7 +71,8 @@ from openfold3.core.data.io.sequence.msa import parse_msas_direct, standardize_f
     "input as a JSON string. Key must match the msa filenames without "
     "extension that are in the per-chain alignment directories. Alignments "
     "whose names do not match any key in max_seq_counts will not be parsed. "
-    "Values are the maximum number of sequences to parse from the alignment.",
+    "Values are the maximum number of sequences to parse from the alignment."
+    "Example: --max_seq_counts '{\"uniref90_hits\": 10000}'",
 )
 @click.option(
     "--num_workers",
@@ -63,15 +91,17 @@ def main(
 ):
     """Preparse multiple sequence alignments for AF3 dataset."""
     try:
-        max_seq_counts = json.loads(max_seq_counts)
-    except json.JSONDecodeError:
-        click.echo("Invalid max_seq_counts JSON string!")
+        max_seq_counts_parsed = MaxSeqCounts.model_validate_json(max_seq_counts)
+    except ValidationError as e:
+        raise click.ClickException(f"Invalid max_seq_counts JSON string: {e}") from None
 
     rep_chain_dir_iterator = [it.name for it in alignments_directory.iterdir()]
 
     # Create template cache for each query chain
     wrapped_msa_preparser = _MsaPreparser(
-        alignments_directory, alignment_array_directory, max_seq_counts
+        alignments_directory,
+        alignment_array_directory,
+        max_seq_counts_parsed.model_dump(exclude_none=True),
     )
     with mp.Pool(num_workers) as pool:
         for _ in tqdm(
@@ -136,7 +166,6 @@ class _MsaPreparser:
         self.alignment_array_directory = alignment_array_directory
         self.max_seq_counts = max_seq_counts
 
-    @wraps(preparse_msas)
     def __call__(self, rep_pdb_chain_id: str) -> None:
         try:
             preparse_msas(

@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -92,7 +92,7 @@ model_config = mlc.ConfigDict(
                     "chunk_size": None,
                     # Use DeepSpeed memory-efficient attention kernel. Mutually
                     # exclusive with use_lma.
-                    "use_deepspeed_evo_attention": True,
+                    "use_deepspeed_evo_attention": False,
                     "use_cueq_triangle_kernels": False,
                     # Use Staats & Rabe's low-memory attention algorithm. Mutually
                     # exclusive with use_deepspeed_evo_attention.
@@ -164,7 +164,7 @@ model_config = mlc.ConfigDict(
                 "c_z": c_z,
                 "num_recycles": 3,
                 "sync_rollout_use_emb": False,
-                "use_confidence_emb_prob": 1.0,  # Change to 0.8 after confirming
+                "use_confidence_emb_prob": 1.0,
                 "diffusion": {
                     "sigma_data": sigma_data,
                     "no_samples": 48,
@@ -172,7 +172,7 @@ model_config = mlc.ConfigDict(
                     "no_full_rollout_samples": 5,
                     "no_mini_rollout_steps": 20,
                     "no_full_rollout_steps": 200,
-                    "use_conditioning_prob": 1.0,  # Change to 0.8 after confirming
+                    "use_conditioning_prob": 1.0,
                 },
             },
             "input_embedder": {
@@ -233,6 +233,7 @@ model_config = mlc.ConfigDict(
                     "tri_mul_first": True,
                     "fuse_projection_weights": False,
                     "blocks_per_ckpt": blocks_per_ckpt,
+                    "ckpt_per_template": False,
                     "inf": inf,
                     "linear_init_params": lin_init.pair_block_init,
                     "use_reentrant": False,
