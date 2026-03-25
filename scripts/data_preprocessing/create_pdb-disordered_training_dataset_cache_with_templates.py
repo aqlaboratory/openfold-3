@@ -42,8 +42,7 @@ from openfold3.core.data.primitives.caches.format import (
     type=click.Path(path_type=Path, exists=True, dir_okay=False),
     required=True,
     help=(
-        "Path to parent training cache JSON (e.g. "
-        "training_cache_with_templates.json)."
+        "Path to parent training cache JSON (e.g. training_cache_with_templates.json)."
     ),
 )
 @click.option(
