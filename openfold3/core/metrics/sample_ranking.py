@@ -77,7 +77,7 @@ def full_complex_sample_ranking_metric(
     ).bool()
     asym_id_atomized = broadcast_token_feat_to_atoms(
         token_mask, num_atoms_per_token, asym_id
-    ).bool()
+    )
 
     has_clash = compute_has_clash(
         asym_id=asym_id_atomized,
@@ -254,10 +254,10 @@ def compute_chain_pair_iptm(
             chain_pair_iptm[:, i, j] = iptm
             chain_pair_iptm[:, j, i] = iptm
 
-    chain_has_frame = torch.tensor(
-        [(chain_mask & has_frame).any().item() for chain_mask in chain_masks],
-        device=device,
-    )
+    chain_has_frame = torch.stack(
+        [(chain_mask & has_frame).any(dim=-1) for chain_mask in chain_masks],
+        dim=-1,
+    )  # [num_samples, num_chains]
     chain_is_ligand = torch.tensor(
         [
             (chain_mask & is_ligand).sum() * 2 >= chain_mask.sum()
@@ -268,23 +268,22 @@ def compute_chain_pair_iptm(
 
     chain_mean_iptm = torch.zeros((num_samples, num_chains), device=device, dtype=dtype)
     for i in range(num_chains):
-        values = [
-            chain_pair_iptm[:, i, j]
-            for j in range(num_chains)
-            if j != i and chain_has_frame[i]
-        ]
-        values.extend(
-            [
-                chain_pair_iptm[:, j, i]
-                for j in range(num_chains)
-                if j != i and chain_has_frame[j]
-            ]
-        )
+        vals = []
+        masks = []
+        for j in range(num_chains):
+            if j == i:
+                continue
+            # AF3 SI 5.9.3 Sample ranking third item
+            vals.append(chain_pair_iptm[:, i, j])
+            masks.append(chain_has_frame[:, i])
+            vals.append(chain_pair_iptm[:, j, i])
+            masks.append(chain_has_frame[:, j])
 
-        if values:
-            chain_mean_iptm[:, i] = torch.stack(values, dim=-1).mean(dim=-1)
-        else:
-            chain_mean_iptm[:, i] = 0.0
+        if vals:
+            vals_t = torch.stack(vals, dim=-1)
+            masks_t = torch.stack(masks, dim=-1).to(dtype)
+            denom = masks_t.sum(dim=-1).clamp(min=1)
+            chain_mean_iptm[:, i] = (vals_t * masks_t).sum(dim=-1) / denom
 
     bespoke_iptm = torch.zeros_like(chain_pair_iptm)
     for i in range(num_chains):
