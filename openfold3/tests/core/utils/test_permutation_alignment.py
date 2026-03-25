@@ -1,7 +1,7 @@
 """Tests for the defensive size check in find_greedy_optimal_mol_permutation."""
 
-from contextlib import nullcontext
-
+import biotite.structure as struc
+import numpy as np
 import pytest
 import torch
 
@@ -10,20 +10,33 @@ from openfold3.core.utils.permutation_alignment import (
 )
 
 
-def _make_symmetric_inputs(n_tokens_per_instance):
-    """Create permutation alignment inputs for one entity with two sym instances.
+def _make_homodimer_inputs(n_tokens_a, n_tokens_b):
+    """Build permutation alignment inputs mimicking a homodimer.
 
-    Args:
-        n_tokens_per_instance: list of two ints, token count per sym instance.
-            Equal values = valid input; unequal = triggers the size mismatch error.
+    Creates two symmetric instances of the same entity with the given token
+    counts. When n_tokens_a != n_tokens_b this reproduces the mismatch caused
+    by the sym_id residue-splitting bug.
     """
-    n_a, n_b = n_tokens_per_instance
-    n_total = n_a + n_b
+    # Build a minimal atom array with two chains
+    n_atoms_a, n_atoms_b = n_tokens_a, n_tokens_b  # 1 atom per token
+    n_total = n_atoms_a + n_atoms_b
 
+    aa = struc.AtomArray(n_total)
+    aa.chain_id[:n_atoms_a] = "A"
+    aa.chain_id[n_atoms_a:] = "B"
+    aa.res_id[:n_atoms_a] = np.arange(1, n_atoms_a + 1)
+    aa.res_id[n_atoms_a:] = np.arange(1, n_atoms_b + 1)
+    aa.ins_code[:] = ""
+    aa.res_name[:] = "ALA"
+    aa.atom_name[:] = "CA"
+    aa.element[:] = "C"
+    aa.coord[:] = np.random.randn(n_total, 3)
+
+    # Derive tensor inputs from the atom array
     entity_ids = torch.ones(n_total, dtype=torch.long)
-    sym_ids = torch.tensor([1] * n_a + [2] * n_b)
-    sym_token_index = torch.tensor(list(range(n_a)) + list(range(n_b)))
-    gt_coords = torch.randn(1, n_total, 3)
+    sym_ids = torch.tensor([1] * n_atoms_a + [2] * n_atoms_b)
+    sym_token_index = torch.tensor(list(range(n_tokens_a)) + list(range(n_tokens_b)))
+    gt_coords = torch.tensor(aa.coord, dtype=torch.float32).unsqueeze(0)
     gt_resolved = torch.ones(n_total)
     pred_coords = torch.randn(n_total, 3)
 
@@ -40,26 +53,27 @@ def _make_symmetric_inputs(n_tokens_per_instance):
     )
 
 
-@pytest.mark.parametrize(
-    "token_counts, expectation",
-    [
-        (
-            [5, 3],
-            pytest.raises(
-                ValueError, match="symmetric instances with different token counts"
-            ),
-        ),
-        ([4, 4], nullcontext()),
-    ],
-    ids=["mismatched", "matched"],
-)
-def test_symmetric_instance_token_counts(token_counts, expectation):
-    """Symmetric instances must have equal token counts to be stackable."""
-    inputs = _make_symmetric_inputs(token_counts)
+def test_mismatched_token_counts_raises():
+    """Symmetric instances with different token counts raise a clear error.
 
-    with expectation:
-        result = find_greedy_optimal_mol_permutation(**inputs)
+    This reproduces the crash caused by partially-unresolved residues where
+    biotite's get_residue_starts() splits residues on sym_id boundaries,
+    producing different token counts for symmetric chains.
+    """
+    inputs = _make_homodimer_inputs(n_tokens_a=5, n_tokens_b=3)
 
-    if isinstance(expectation, nullcontext):
-        assert isinstance(result, dict)
-        assert len(result) == 2
+    with pytest.raises(
+        ValueError,
+        match="symmetric instances with different token counts",
+    ):
+        find_greedy_optimal_mol_permutation(**inputs)
+
+
+def test_matched_token_counts_succeeds():
+    """Symmetric instances with equal token counts produce a valid mapping."""
+    inputs = _make_homodimer_inputs(n_tokens_a=4, n_tokens_b=4)
+
+    result = find_greedy_optimal_mol_permutation(**inputs)
+
+    assert isinstance(result, dict)
+    assert len(result) == 2
