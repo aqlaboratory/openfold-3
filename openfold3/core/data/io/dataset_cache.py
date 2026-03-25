@@ -192,6 +192,9 @@ def read_datacache(
         with lmdb_env.begin() as txn:
             dataset_cache_type = json.loads(txn.get(type_key).decode(str_encoding))
 
+        # Only one connection can be open at a time, close before creating LMDBDict
+        lmdb_env.close()
+
         if not dataset_cache_type:
             raise ValueError("No type found for this directory.")
 

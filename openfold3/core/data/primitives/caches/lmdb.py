@@ -28,6 +28,30 @@ K = TypeVar("K")
 V = TypeVar("V")
 
 
+class LMDBEnv:
+    """Lazy-opened LMDB environment shared between LMDBDict instances"""
+
+    def __init__(self, path: str) -> None:
+        self._path = path
+        self._env: lmdb.Environment | None = None
+
+    def get(self) -> lmdb.Environment:
+        if self._env is None:
+            self._env = lmdb.open(self._path, readonly=True, lock=False, subdir=True)
+        return self._env
+
+    def close(self) -> None:
+        if self._env is not None:
+            self._env.close()
+            self._env = None
+
+    def __getstate__(self) -> dict:
+        return {"_path": self._path, "_env": None}
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+
+
 def convert_datacache_to_lmdb(
     dataset_cache_file_or_obj: Union[Path, "DatasetCache"],
     lmdb_directory: Path,
@@ -129,54 +153,42 @@ def convert_datacache_to_lmdb(
 class LMDBDict(Mapping[K, V], Generic[K, V]):
     def __init__(
         self,
-        lmdb_env: lmdb.Environment,
+        lmdb_env: LMDBEnv,
         prefix: str,
         separator: str = ":",
         key_encoding: Literal["utf-8", "pkl"] = "utf-8",
         value_encoding: Literal["utf-8", "pkl"] = "pkl",
-        lmdb_path: str | Path | None = None,
     ):
         """A dict-like class with an LMDB backend for lazy loading of datacache entries.
 
+        Takes a shared LMDBEnv instance. Multiple LMDBDict objects for the same
+        file should share a single LMDBEnv so only one lmdb.Environment is opened
+        per file per process. Because pickle deduplicates shared references, this
+        sharing is preserved across fork/forkserver/spawn.
+
         Args:
-            lmdb_env (lmdb.Environment):
-                The LMDB environment object.
+            lmdb_env (LMDBEnv):
+                Shared lazy env for this LMDB directory.
             prefix (str): header for fields used to construct keys in lmdb
             separator (str): Single separator character used to construct key
             key_encoding (Literal["utf-8", "pkl"]):
                 Encoding of keys. Defaults to "utf-8".
             value_encoding (Literal["utf-8", "pkl"]):
                 Encoding of values. Defaults to "pkl".
-            lmdb_path (str | Path | None):
-                Path to the LMDB directory. Used to reopen env after pickle
-                (e.g. for forkserver/spawn multiprocessing).
 
         Raises:
             KeyError:
                 If a non-existent key is requested.
         """
         self._lmdb_env = lmdb_env
-        self._lmdb_path = str(lmdb_path) if lmdb_path is not None else None
         self._prefix = prefix + separator
         self._key_encoding = key_encoding
         self._value_encoding = value_encoding
         self._n_keys = None  # Computed on first __len__ call
 
-    def __getstate__(self):
-        state = self.__dict__.copy()
-        del state["_lmdb_env"]
-        return state
-
-    def __setstate__(self, state):
-        self.__dict__.update(state)
-        if self._lmdb_path is not None:
-            self._lmdb_env = lmdb.open(
-                self._lmdb_path, readonly=True, lock=False, subdir=True
-            )
-        else:
-            raise RuntimeError(
-                "Cannot unpickle LMDBDict: no lmdb_path was provided at creation"
-            )
+    def close(self) -> None:
+        """Close the underlying env. Reopens lazily on next access."""
+        self._lmdb_env.close()
 
     def _decode_key(self, key):
         encoded_prefix = self._prefix.encode(self._key_encoding)
@@ -185,7 +197,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
     def __iter__(self):
         "Use an iterative method to not have to store all keys in memory."
         encoded_prefix = self._prefix.encode(self._key_encoding)
-        with self._lmdb_env.begin() as txn, txn.cursor() as cursor:
+        with self._lmdb_env.get().begin() as txn, txn.cursor() as cursor:
             # Seek to the first key >= prefix
             if cursor.set_range(encoded_prefix):
                 while True:
@@ -203,7 +215,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
         """Count keys matching the prefix."""
         encoded_prefix = self._prefix.encode(self._key_encoding)
         count = 0
-        with self._lmdb_env.begin() as txn, txn.cursor() as cursor:
+        with self._lmdb_env.get().begin() as txn, txn.cursor() as cursor:
             # Use set_range to jump to the first prefix occurrence
             # and avoid scanning the entire LMDB.
             if cursor.set_range(encoded_prefix):
@@ -221,7 +233,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
         return self._n_keys
 
     def __getitem__(self, key):
-        with self._lmdb_env.begin() as transaction:
+        with self._lmdb_env.get().begin() as transaction:
             key_bytes = f"{self._prefix}{key}".encode(self._key_encoding)
             value_bytes = transaction.get(key_bytes)
             if value_bytes is None:

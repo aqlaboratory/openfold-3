@@ -180,8 +180,12 @@ class BaseOF3Dataset(SingleDataset, ABC):
         self.single_moltype = None
         self.debug_mode = dataset_config.debug_mode
 
+        # Release backend connections so worker processes inherit clean state.
+        # Each backend reopens lazily on first access in the worker.
+        self.dataset_cache.release_connections()
+
     def warm_cache(self) -> None:
-        """Warm the LMDB page cache (no-op for JSON cache)."""
+        """Warm the OS page cache for LMDB. No-op for JSON."""
         if self._dataset_cache_file.is_dir():
             warm_lmdb_cache(self._dataset_cache_file)
 

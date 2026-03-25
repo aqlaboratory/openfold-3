@@ -24,7 +24,7 @@ from typing import Literal, TypeAlias, TypeVar
 
 import lmdb
 
-from openfold3.core.data.primitives.caches.lmdb import LMDBDict
+from openfold3.core.data.primitives.caches.lmdb import LMDBDict, LMDBEnv
 from openfold3.core.data.resources.residues import MoleculeType
 
 K = TypeVar("K")
@@ -482,6 +482,15 @@ class DatasetCache:
             ref_mol_data[ref_mol_id] = per_ref_mol_data_fmt
         return ref_mol_data
 
+    def release_connections(self) -> None:
+        """
+        Close any open backend connections so fork inherits clean state.
+        Each backend reopens lazily on next access. No-op for plain dicts.
+        """
+        for attr in (self.structure_data, self.reference_molecule_data):
+            if hasattr(attr, "close"):
+                attr.close()
+
     def to_json(self, file: Path) -> None:
         """Write the dataset cache to a JSON file.
 
@@ -526,32 +535,27 @@ class DatasetCache:
             DatasetCache:
                 The constructed datacache.
         """
-
-        lmdb_env = lmdb.open(
-            str(lmdb_directory), readonly=True, lock=False, subdir=True
-        )
-
-        with lmdb_env.begin() as transaction:
+        lmdb_env = LMDBEnv(str(lmdb_directory))
+        with lmdb_env.get().begin() as transaction:
             _ = cls._parse_type_lmdb(transaction, str_encoding)
             name = cls._parse_name_lmdb(transaction, str_encoding)
-            structure_data = cls._parse_structure_data_lmdb(
-                lmdb_env,
-                str_encoding,
-                structure_data_encoding,
-                lmdb_path=lmdb_directory,
-            )
-            reference_molecule_data = cls._parse_ref_mol_data_lmdb(
-                lmdb_env,
-                str_encoding,
-                reference_molecule_data_encoding,
-                lmdb_path=lmdb_directory,
-            )
 
-            return cls(
-                name=name,
-                structure_data=structure_data,
-                reference_molecule_data=reference_molecule_data,
-            )
+        structure_data = cls._parse_structure_data_lmdb(
+            lmdb_env=lmdb_env,
+            str_encoding=str_encoding,
+            structure_data_encoding=structure_data_encoding,
+        )
+        reference_molecule_data = cls._parse_ref_mol_data_lmdb(
+            lmdb_env=lmdb_env,
+            str_encoding=str_encoding,
+            reference_molecule_data_encoding=reference_molecule_data_encoding,
+        )
+
+        return cls(
+            name=name,
+            structure_data=structure_data,
+            reference_molecule_data=reference_molecule_data,
+        )
 
     @staticmethod
     def _parse_type_lmdb(
@@ -579,40 +583,28 @@ class DatasetCache:
 
     @staticmethod
     def _parse_structure_data_lmdb(
-        lmdb_env: lmdb.Environment,
+        lmdb_env: LMDBEnv,
         str_encoding: Literal["utf-8", "pkl"],
         structure_data_encoding: Literal["utf-8", "pkl"],
-        lmdb_path: Path | None = None,
     ) -> LMDBDict:
-        from openfold3.core.data.primitives.caches.lmdb import (
-            LMDBDict,
-        )
-
         return LMDBDict(
             lmdb_env=lmdb_env,
             prefix="structure_data",
             key_encoding=str_encoding,
             value_encoding=structure_data_encoding,
-            lmdb_path=lmdb_path,
         )
 
     @staticmethod
     def _parse_ref_mol_data_lmdb(
-        lmdb_env: lmdb.Environment,
+        lmdb_env: LMDBEnv,
         str_encoding: Literal["utf-8", "pkl"],
         reference_molecule_data_encoding: Literal["utf-8", "pkl"],
-        lmdb_path: Path | None = None,
     ) -> LMDBDict:
-        from openfold3.core.data.primitives.caches.lmdb import (
-            LMDBDict,
-        )
-
         return LMDBDict(
             lmdb_env=lmdb_env,
             prefix="reference_molecule_data",
             key_encoding=str_encoding,
             value_encoding=reference_molecule_data_encoding,
-            lmdb_path=lmdb_path,
         )
 
     def to_lmdb(

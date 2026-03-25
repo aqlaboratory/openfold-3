@@ -158,17 +158,19 @@ def getitem_debug_log(dataset_name: str = "") -> None:
     )
 
 
-def warm_lmdb_cache(lmdb_directory: Path) -> None:
-    """Sequentially read the LMDB data file to warm the OS page cache"""
-    data_file = lmdb_directory / "data.mdb"
-    file_size_gb = data_file.stat().st_size / (1024**3)
-    logger.info(
-        f"Warming LMDB page cache for {lmdb_directory} ({file_size_gb:.1f} GB)..."
-    )
+def warm_file_cache(file_path: Path) -> None:
+    """Sequentially read a file to warm the OS page cache."""
+    file_size_gb = file_path.stat().st_size / (1024**3)
+    logger.info(f"Warming page cache for {file_path} ({file_size_gb:.1f} GB)...")
     t0 = time.monotonic()
     chunk_size = 8 * 1024 * 1024
-    with open(data_file, "rb") as f:
+    with open(file_path, "rb") as f:
         while f.read(chunk_size):
             pass
     elapsed = time.monotonic() - t0
-    logger.info(f"LMDB cache warm complete in {elapsed:.1f}s")
+    logger.info(f"Page cache warm complete in {elapsed:.1f}s")
+
+
+def warm_lmdb_cache(lmdb_directory: Path) -> None:
+    """Sequentially read the LMDB data file to warm the OS page cache."""
+    warm_file_cache(lmdb_directory / "data.mdb")
