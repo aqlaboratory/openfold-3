@@ -1,3 +1,5 @@
+import pytest
+
 from openfold3.core.data.tools.rscb import (
     fetch_label_to_author_chain_ids,
     get_model_ranking_fit,
@@ -5,8 +7,9 @@ from openfold3.core.data.tools.rscb import (
 
 
 class TestFetchLabelToAuthorChainIds:
-    """Tests for fetch_label_to_author_chain_ids (hits real RCSB API)."""
+    """Tests for fetch_label_to_author_chain_ids (recorded RCSB responses)."""
 
+    @pytest.mark.vcr
     def test_1rnb_label_to_author(self):
         """1RNB: label chain B -> author chain A (protein)."""
         result = fetch_label_to_author_chain_ids({"1rnb"})
@@ -16,6 +19,7 @@ class TestFetchLabelToAuthorChainIds:
         assert l2a["B"] == "A"
         assert l2a["A"] == "C"
 
+    @pytest.mark.vcr
     def test_identity_mapping(self):
         """4PQX: label chain IDs match author chain IDs."""
         result = fetch_label_to_author_chain_ids({"4pqx"})
@@ -23,6 +27,7 @@ class TestFetchLabelToAuthorChainIds:
         assert "4pqx" in result
         assert result["4pqx"]["A"] == "A"
 
+    @pytest.mark.vcr
     def test_batch_query(self):
         """Multiple PDB IDs are fetched in a single request."""
         result = fetch_label_to_author_chain_ids({"1rnb", "4pqx"})
@@ -36,8 +41,9 @@ class TestFetchLabelToAuthorChainIds:
 
 
 class TestGetModelRankingFit:
-    """Tests for get_model_ranking_fit (hits real RCSB API)."""
+    """Tests for get_model_ranking_fit (recorded RCSB responses)."""
 
+    @pytest.mark.vcr
     def test_entry_with_ligands(self):
         """4PQX has ligands with ranking_model_fit scores."""
         result = get_model_ranking_fit("4pqx")
@@ -48,12 +54,14 @@ class TestGetModelRankingFit:
             assert rcsb_id.startswith("4PQX.")
             assert isinstance(score, (int, float))
 
+    @pytest.mark.vcr
     def test_entry_without_ligands(self):
         """1RNB (protein-only) returns empty dict."""
         result = get_model_ranking_fit("1rnb")
 
         assert result == {}
 
+    @pytest.mark.vcr
     def test_nonexistent_entry(self):
         """Invalid PDB ID returns empty dict without raising."""
         result = get_model_ranking_fit("0000")
