@@ -189,6 +189,9 @@ class WeightedPDBDataset(BaseOF3Dataset):
         # Datapoint cache
         self.create_datapoint_cache()
 
+        # Release so fork/forkserver inherits clean state for the first epoch
+        self.dataset_cache.release_connections()
+
     def create_datapoint_cache(self) -> None:
         """Creates the datapoint_cache with chain/interface probabilities.
 

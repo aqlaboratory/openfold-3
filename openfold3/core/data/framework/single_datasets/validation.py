@@ -63,6 +63,9 @@ class ValidationPDBDataset(BaseOF3Dataset):
         # Dataset/datapoint cache
         self.create_datapoint_cache()
 
+        # Release so fork/forkserver inherits clean state for the first epoch
+        self.dataset_cache.release_connections()
+
         # Cropping should be disabled for validation datasets
         if self.crop["token_crop"]["enabled"]:
             logger.warning(
