@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -224,12 +224,7 @@ class ExperimentRunner(ABC):
                 ),
                 timeout=self.pl_trainer_args.distributed_timeout,
             )
-
-            _use_deepspeed_adam = (
-                self.model_config.settings.optimizer.use_deepspeed_adam
-            )
-            if not _use_deepspeed_adam:
-                _strategy.config["zero_force_ds_cpu_optimizer"] = False
+            _strategy.config["zero_force_ds_cpu_optimizer"] = False
 
             return _strategy
 
@@ -426,7 +421,7 @@ class TrainingExperimentRunner(ExperimentRunner):
     def manual_load_checkpoint(self):
         init_from_ema_weights = self.ckpt_load_settings.init_from_ema_weights
         ckpt = load_checkpoint(Path(self.restart_checkpoint_path))
-        state_dict = get_state_dict_from_checkpoint(
+        state_dict, ema = get_state_dict_from_checkpoint(
             ckpt, init_from_ema_weights=init_from_ema_weights
         )
 
@@ -434,7 +429,18 @@ class TrainingExperimentRunner(ExperimentRunner):
         self.lightning_module.load_state_dict(
             state_dict, strict=self.ckpt_load_settings.strict_loading
         )
-        self.lightning_module.ema.load_state_dict(ckpt["ema"])
+
+        self.lightning_module.ema.load_state_dict(ema)
+
+        configured_ema_decay = self.model_config.settings.ema.decay
+        loaded_ema_decay = self.lightning_module.ema.decay
+        if configured_ema_decay != loaded_ema_decay:
+            logger.info(
+                "Overriding checkpoint EMA decay (%s) with config EMA decay (%s).",
+                loaded_ema_decay,
+                configured_ema_decay,
+            )
+        self.lightning_module.ema.decay = configured_ema_decay
 
         if self.ckpt_load_settings.restore_lr_scheduler:
             last_global_step = int(ckpt["global_step"])
@@ -651,6 +657,23 @@ class InferenceExperimentRunner(ExperimentRunner):
 
         return deduplicated_inference_set
 
+    def _warn_on_missing_version_tensor_in_load_statedict(
+        self, state_dict: dict
+    ) -> None:
+        """Load state dict, warning if only version_tensor is missing."""
+        try:
+            self.lightning_module.load_state_dict(state_dict, strict=True)
+        except RuntimeError as e:
+            if 'Missing key(s) in state_dict: "model.version_tensor".' in str(e):
+                logger.warning(
+                    "No version_tensor is found for this checkpoint."
+                    "Assuming the user knows checkpoints are parameters are compatible,"
+                    " continuing..."
+                )
+                self.lightning_module.load_state_dict(state_dict, strict=False)
+            else:
+                raise
+
     def setup(self) -> None:
         """Set up environment and load checkpoints."""
         super().setup()
@@ -658,8 +681,8 @@ class InferenceExperimentRunner(ExperimentRunner):
         self._log_model_config()
         logger.info(f"Loading weights from {self.ckpt_path}")
         ckpt = load_checkpoint(self.ckpt_path)
-        state_dict = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
-        self.lightning_module.load_state_dict(state_dict, strict=True)
+        state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
+        self._warn_on_missing_version_tensor_in_load_statedict(state_dict)
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
@@ -833,7 +856,12 @@ class WandbHandler:
 
     @cached_property
     def run_exists(self) -> bool:
-        wandb_ckpt_dir = Path(self.output_dir) / wandb.run.project / wandb.run.id
+        wandb_ckpt_dir = (
+            Path(self.output_dir)
+            / self.wandb_args.project
+            / self.wandb_args.id
+            / "checkpoints"
+        )
         return wandb_ckpt_dir.is_dir() and any(wandb_ckpt_dir.iterdir())
 
     def store_configs(

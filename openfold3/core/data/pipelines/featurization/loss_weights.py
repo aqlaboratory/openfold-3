@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -42,10 +42,12 @@ def set_loss_weights(
             Dictionary containing the loss settings.
     """
     loss_weight = copy.deepcopy(loss_settings["loss_weights"])
-    if (resolution is None) or (
-        resolution < loss_settings["min_resolution"]
-        or resolution > loss_settings["max_resolution"]
-    ):
+
+    is_valid_resolution = (resolution is not None) and (
+        loss_settings["min_resolution"] <= resolution <= loss_settings["max_resolution"]
+    )
+
+    if not is_valid_resolution:
         # Set all confidence losses to 0
         for loss_name in loss_settings["confidence_loss_names"]:
             loss_weight[loss_name] = 0

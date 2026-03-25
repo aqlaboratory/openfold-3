@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ from pathlib import Path
 import numpy as np
 import pytest  # noqa: F401  - used for pytest tmp fixture
 from biotite import structure
-from biotite.structure import AtomArray
 from biotite.structure.io import pdb, pdbx
 
 from openfold3.core.runners.writer import OF3OutputWriter
@@ -84,24 +83,6 @@ class TestPredictionWriter:
                 actual_full_scores = np.load(output_file_path)
         return actual_full_scores
 
-    @pytest.fixture
-    def dummy_atom_array(self):
-        # Create dummy atom array
-        coords = np.array(
-            [
-                [0.0, 0.0, 0.0],
-                [1.2, 0.0, 0.0],
-                [2.4, 0.0, 0.0],
-                [3.0, 0.0, 0.0],
-                [4.4, 0.0, 0.0],
-            ],
-            dtype=float,
-        )
-        atom_array = AtomArray(len(coords))
-        atom_array.coord = coords
-        atom_array.chain_id = np.array(["A", "A", "B", "B", "B"])
-        return atom_array
-
     @pytest.mark.parametrize(
         "output_fmt",
         ["json", "npz"],
@@ -112,6 +93,8 @@ class TestPredictionWriter:
     ):
         n_tokens = 3
         n_atoms = 5
+        dummy_atom_array.chain_id = np.array(["A", "A", "B", "B", "B"])
+
         confidence_scores = {
             "plddt": np.random.uniform(size=n_atoms),
             "pde_probs": np.random.uniform(size=(n_tokens, n_tokens, 64)),
@@ -160,6 +143,7 @@ class TestPredictionWriter:
     def test_confidence_writer_with_pae(self, tmp_path, output_fmt, dummy_atom_array):
         n_tokens = 3
         n_atoms = 5
+        dummy_atom_array.chain_id = np.array(["A", "A", "B", "B", "B"])
 
         confidence_scores = {
             "plddt": np.random.uniform(size=n_atoms),

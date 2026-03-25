@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ from openfold3.core.data.io.sequence.template import (
     TemplateData,
 )
 
-TEST_DIR = Path(__file__).parent / "test_data/template_alignments"
+TEST_DIR = Path(__file__).parent / "test_data" / "template_alignments"
 
 QUERY_SEQUENCE = """
 MLNSFKLSLQYILPKLWLTRLAGWGASKRAGWLTKLVIDLFVKYYKVDMKEAQKPDTASYRTFNEFFVRPLRDEVRPIDTDPNVLV

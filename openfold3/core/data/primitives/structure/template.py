@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -166,6 +166,9 @@ def sample_templates(
         dict[str, TemplateCacheEntry] | dict[None]:
             The sampled template data per chain given chain.
     """
+    if not template_structure_array_directory and not template_cache_directory:
+        return {}
+
     chain_data = assembly_data[chain_id]
     template_ids = chain_data["template_ids"]
     if not template_ids:
@@ -204,7 +207,7 @@ def sample_templates(
     else:
         k = np.min([np.random.randint(0, l + 1), n_templates])
 
-    if k > 0:
+    if k > 0 and template_cache_directory is not None:
         # Load template cache entry numpy file
         # From the representative ID during training
         if "alignment_representative_id" in chain_data:
