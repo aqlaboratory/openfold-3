@@ -245,6 +245,36 @@ def set_contiguous_crop_mask(atom_array: AtomArray, token_budget: int) -> None:
     remove_atom_indices(atom_array)
 
 
+def is_interface(preferred_chain_or_interface):
+    """Helper to check if preferred_chain_or_interface indicates an interface."""
+    return (
+        isinstance(preferred_chain_or_interface, list)
+        and len(preferred_chain_or_interface) == 2
+    )
+
+
+def get_interface_token_center_atoms(preferred_token_center_atoms):
+    """Get interface-biased reference atom candidates.
+
+    When preferred_chain_or_interface is a 2-chain pair, restricts candidates to token
+    center atoms at the interface between those two specific chains. Falls back to
+    preferred_token_center_atoms if no interface atoms found or if
+    preferred_chain_or_interface is a single chain.
+    """
+    interface_atoms = get_interface_atoms(
+        atom_array=preferred_token_center_atoms,
+        distance_threshold=15.0,
+    )
+    if len(interface_atoms) > 0:
+        return interface_atoms
+    else:
+        logger.warning(
+            "No interface token center atoms found in the preferred interface, "
+            "falling back to all preferred token center atoms."
+        )
+        return preferred_token_center_atoms
+
+
 def set_spatial_crop_mask(
     atom_array: AtomArray,
     token_budget: int,
@@ -276,6 +306,12 @@ def set_spatial_crop_mask(
             atom_array, preferred_chain_or_interface, caller_name="Token spatial crop"
         )
     )
+
+    # Take only interface atoms between the two chains
+    if is_interface(preferred_chain_or_interface):
+        preferred_token_center_atoms = get_interface_token_center_atoms(
+            preferred_token_center_atoms
+        )
 
     # Get reference atom
     reference_atom = np.random.choice(preferred_token_center_atoms)
@@ -321,10 +357,19 @@ def set_spatial_interface_crop_mask(
     )
 
     if len(set(atom_array.chain_id)) > 1:
-        # Find interface token center atoms
-        preferred_interface_token_center_atoms = get_query_interface_token_center_atoms(
-            preferred_token_center_atoms, token_center_atoms
-        )
+        # Take only interface atoms between actual two chains
+        if is_interface(preferred_chain_or_interface):
+            preferred_interface_token_center_atoms = get_interface_token_center_atoms(
+                preferred_token_center_atoms
+            )
+
+        else:
+            # Find interface token center atoms
+            preferred_interface_token_center_atoms = (
+                get_query_interface_token_center_atoms(
+                    preferred_token_center_atoms, token_center_atoms
+                )
+            )
 
         if len(preferred_interface_token_center_atoms) == 0:
             logger.warning(
