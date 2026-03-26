@@ -81,7 +81,6 @@ Specifies model presets and custom architecture modifications.
 - `presets` *(list[str])*: List of model presets to apply (default: `[]`)
   - `predict`: Inference configuration (required for inference)
   - `low_mem`: Low memory mode for large structures
-  - `pae_enabled`: Enable Predicted Aligned Error (PAE) head
 - `custom` *(dict)*: Custom model configuration overrides (default: `{}`)
 
 **Example**:
@@ -89,7 +88,6 @@ Specifies model presets and custom architecture modifications.
 model_update:
   presets:
     - predict
-    - pae_enabled
     - low_mem
   custom: {}
 ```
@@ -208,6 +206,7 @@ Configures the format of output files.
 - `full_confidence_output_format` *(Literal["json", "npz"])*: Confidence output format (default: `json`)
 - `write_features` *(bool)*: Write intermediate features (default: `false`)
 - `write_latent_outputs` *(bool)*: Write model intermediate outputs (default: `false`)
+- `write_full_confidence_scores` *(bool)*: Write full confidence scores, e.g. PAE, PDE, PLDDT (default: `true`)
 
 **Example**:
 ```yaml

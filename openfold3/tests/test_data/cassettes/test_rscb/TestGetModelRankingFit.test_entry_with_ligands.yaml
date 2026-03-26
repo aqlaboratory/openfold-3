@@ -1,0 +1,50 @@
+interactions:
+- request:
+    body: '{"query": "\nquery GetRankingFit($pdb_id: String!) {\n    entry(entry_id:
+      $pdb_id) {\n        nonpolymer_entities {\n            nonpolymer_entity_instances
+      {\n                rcsb_id\n                rcsb_nonpolymer_instance_validation_score
+      {\n                    ranking_model_fit\n                }\n            }\n        }\n    }\n}\n",
+      "variables": {"pdb_id": "4pqx"}}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '375'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - python-requests/2.32.5
+    method: POST
+    uri: https://data.rcsb.org/graphql
+  response:
+    body:
+      string: '{"data":{"entry":{"nonpolymer_entities":[{"nonpolymer_entity_instances":[{"rcsb_id":"4PQX.L","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.4034}]}]},{"nonpolymer_entity_instances":[{"rcsb_id":"4PQX.Z","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.334}]},{"rcsb_id":"4PQX.Y","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.2004}]},{"rcsb_id":"4PQX.W","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.3206}]},{"rcsb_id":"4PQX.V","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.5388}]},{"rcsb_id":"4PQX.K","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.197}]}]},{"nonpolymer_entity_instances":[{"rcsb_id":"4PQX.X","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.2365}]},{"rcsb_id":"4PQX.U","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.0197}]},{"rcsb_id":"4PQX.T","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.0619}]},{"rcsb_id":"4PQX.S","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.3467}]},{"rcsb_id":"4PQX.R","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.4149}]},{"rcsb_id":"4PQX.Q","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.2279}]},{"rcsb_id":"4PQX.P","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.2422}]},{"rcsb_id":"4PQX.O","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.4178}]},{"rcsb_id":"4PQX.N","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.4496}]},{"rcsb_id":"4PQX.M","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.4725}]},{"rcsb_id":"4PQX.J","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.079}]},{"rcsb_id":"4PQX.I","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.6692}]},{"rcsb_id":"4PQX.H","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.2255}]},{"rcsb_id":"4PQX.G","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.1442}]},{"rcsb_id":"4PQX.F","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.2186}]},{"rcsb_id":"4PQX.E","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":0.6289}]}]}]}}}'
+    headers:
+      access-control-allow-headers:
+      - X-Requested-With,Content-Type,Authorization,rcsb-analytics-traffic-origin,rcsb-analytics-traffic-stage
+      access-control-allow-methods:
+      - GET, OPTIONS, HEAD, PUT, POST
+      access-control-allow-origin:
+      - '*'
+      alt-svc:
+      - h3=":443";ma=60;
+      content-encoding:
+      - gzip
+      content-type:
+      - application/json;charset=UTF-8
+      date:
+      - Wed, 25 Mar 2026 12:23:16 GMT
+      strict-transport-security:
+      - max-age=16000000; includeSubDomains; preload;
+      transfer-encoding:
+      - chunked
+      vary:
+      - accept-encoding
+    status:
+      code: 200
+      message: OK
+version: 1

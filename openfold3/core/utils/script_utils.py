@@ -41,7 +41,7 @@ def set_ulimits():
     if no_file_limit > hard:
         logger.warning(
             f"RLIMIT_NOFILE hard limit {hard} is less than the desired limit "
-            "{no_file_limit}. Lower the number of dataloader workers if issues arise."
+            f"{no_file_limit}. Lower the number of dataloader workers if issues arise."
         )
         no_file_limit = hard
 

@@ -197,7 +197,6 @@ We provide several example runner files in our [examples directory](https://gith
 - Using low memory settings
 - Customizing output formats
 - Enabling cuEquivariance kernels
-- Enabling PAE (predicted aligned error) calculations
 - Saving MSA and Template processing outputs
 - And more
 
@@ -272,6 +271,18 @@ output_writer_settings:
 
 ---
 
+#### ⏩ Skip full confidence model outputs
+OpenFold3 writes both aggregated confidence scores and full, per-atom confidence scores. See [Prediction Outputs](41-prediction-outputs) for more information.
+
+For large inference jobs, especially jobs with many seeds, it is useful to skip the full confidence score generation to save disk space. This can be done with the following settings
+
+```yaml
+output_writer_settings:
+  write_full_confidence_scores: False 
+```
+
+---
+
 (inference-low-memory-mode)=
 #### 🧠 Low Memory Mode
 To run inference on larger queries to run on limited memory, add the following to apply the [model presets](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/model_setting_presets.yml) to run in low memory mode.
@@ -282,38 +293,10 @@ model_update:
   presets:
     - predict  # required for inference
     - low_mem
-    - pae_enabled
 ```
 
 ---
 
-#### 📊 Toggle PAE head model
-
-Predicted Aligned Error (PAE) is a predicted confidence metric from the OpenFold3 model that is used to compute predicted TM scores. You can find more information about confidence metrics [here](https://www.ebi.ac.uk/training/online/courses/alphafold/inputs-and-outputs/evaluating-alphafolds-predicted-structures-using-confidence-scores/confidence-scores-in-alphafold-multimer/).
-
-The PAE model head is enabled by default in inference by its selection in the model presets. The current models available from OpenFold all require `pae_enabled` as a setting.
-
-To disable PAE model, provide a list of model presets that does not include the `pae_enabled` preset, e.g.
-
-```yaml
-model_update:
-  presets:
-    - predict # required for inference 
-```
-
-Conversely, if you provide your own model_update and wish to use the PAE head, please ensure the `pae_enabled` preset is selected:
-
-```yaml
-model_update:
-  presets:
-    - predict  # required for inference
-    - low_mem  # default low memory settings
-    - pae_enabled  # required to run PAE head
-  custom:
-    - ... custom model changes
-```
-
----
 
 ### 3.4 Customized ColabFold MSA Server Settings Using `runner.yml` 
 
@@ -361,6 +344,7 @@ msa_computation_settings:
 
 In the inference pipeline, we generate a dedicated output directory for each query, named by the corresponding query key (e.g., `query_1` or `3hfm`, if the PDB ID is provided). Each such directory will contain prediction results, MSAs, and intermediate files for MSA and template processing:
 
+(41-prediction-outputs)=
 ### 4.1 Prediction Outputs (`query/seed/`)
 
 Each seed produces `l` (number of diffusion samples) structure predictions, and their associated confidence scores, stored in subdirectories named after the query, seed and the index of the diffusion sample, e.g.:
@@ -387,8 +371,6 @@ Each seed produces `l` (number of diffusion samples) structure predictions, and 
   - `avg_plddt` - Average pLDDT over structure
 
   - `gpde` - Global Predicted Distance Error (see AF3 SI Section 5.7 Eq. 16)
-
-  The following metrics are available only when `pae_enabled` is set. 
   
   - `ptm` - Predicted TM score of a full complex (SI §5.9.1)
 

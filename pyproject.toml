@@ -91,6 +91,7 @@ test = [
     "pytest-xdist",
     "pytest-cov",
     "pytest-benchmark",
+    "pytest-recording",
     "debugpy",
 ]
 

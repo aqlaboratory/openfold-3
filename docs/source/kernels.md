@@ -17,7 +17,6 @@ Then, to enable these kernels via the runner.yaml, add the following:
 model_update:
   presets: 
     - "predict"
-    - "pae_enabled"  # if using PAE enabled model
     - "low_mem"  # for lower memory systems
   custom:
     settings:

@@ -40,10 +40,9 @@ pl_trainer_args:
 # ModelUpdate: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/project_entry.py#L28
 # Custom model settings and presets
 model_update:  
-  presets:   # [train | predict | low_mem | pae_enabled]
+  presets:   # [train | predict | low_mem ]
     - predict
     - low_mem
-    - pae_enabled
   custom: {}
 
 # Checkpoint path: [default: $HOME/.openfold3/of3_ft3_v1.pt]
