@@ -47,7 +47,7 @@ pip install openfold3
 setup_openfold
 ```
 
-3. Run your first prediction using the ColabFold MSA server with the `run_openfold` binary
+3. Run your first prediction using the ColabFold MSA server with the `run_openfold` binary. It may also be necessary to [configure your environment variables](https://openfold-3.readthedocs.io/en/latest/Installation.html#environment-variables) depending on your system.  
 
 ```bash
 run_openfold predict --query_json=examples/example_inference_inputs/query_ubiquitin.json
@@ -110,8 +110,8 @@ If you use OpenFold3-preview in your research, please cite the following:
   title = {OpenFold3-preview},
   author = {{The OpenFold3 Team}},
   year = {2025},
-  version = {0.2.0},
-  doi = {10.5281/zenodo.17485510},
+  version = {0.4.0},
+  doi = {10.5281/zenodo.19001000},
   url = {https://github.com/aqlaboratory/openfold-3},
   abstract = {OpenFold3-preview is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's AlphaFold3, developed by the AlQuraishi Lab at Columbia University and the OpenFold consortium.}
 }

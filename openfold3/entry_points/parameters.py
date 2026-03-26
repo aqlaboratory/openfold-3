@@ -36,18 +36,22 @@ class CheckpointEntry:
 
 
 OPENFOLD_MODEL_CHECKPOINT_REGISTRY = {
-    "openfold3-p1": CheckpointEntry(
-        file_name="of3_ft3_v1.pt", version_compatibility="<0.4"
-    ),
     "openfold3-p2-145k": CheckpointEntry(
         file_name="of3-p2-145k.pt", version_compatibility=">=0.4"
     ),
     "openfold3-p2-155k": CheckpointEntry(
         file_name="of3-p2-155k.pt", version_compatibility=">=0.4"
     ),
+    "openfold3-p1": CheckpointEntry(  # legacy
+        file_name="of3_ft3_v1.pt", version_compatibility="<0.4"
+    ),
 }
 
 DEFAULT_CHECKPOINT_NAME = "openfold3-p2-155k"
+
+# These checkpoints are not supported for download and use in the current version,
+# but are left in the registry for record-keeping and compatibility checks.
+LEGACY_CHECKPOINTS = ["openfold3-p1"]
 
 
 def download_model_parameters(

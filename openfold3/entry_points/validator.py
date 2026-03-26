@@ -162,6 +162,7 @@ class OutputWritingSettings(BaseModel):
     full_confidence_output_format: Literal["json", "npz"] = "json"
     write_features: bool = False
     write_latent_outputs: bool = False
+    write_full_confidence_scores: bool = True
 
 
 class ExperimentSettings(BaseModel):
@@ -376,7 +377,7 @@ class InferenceExperimentConfig(ExperimentConfig):
     cache_path: Path | None = None
 
     experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()
-    model_update: ModelUpdate = ModelUpdate(presets=["predict", "pae_enabled"])
+    model_update: ModelUpdate = ModelUpdate(presets=["predict"])
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
@@ -486,7 +487,7 @@ class InferenceExperimentConfig(ExperimentConfig):
             if self.template_preprocessor_settings.ccd_file_path is not None:
                 warnings.warn(
                     "Overwriting ccd_file_path in template_preprocessor_settings with "
-                    "dataset_config_kwargs.ccd_file_path. We recommend specifying"
+                    "dataset_config_kwargs.ccd_file_path. We recommend specifying "
                     "ccd_file_path only in dataset_config_kwargs.",
                     stacklevel=2,
                 )

@@ -3,4 +3,3 @@ model_update:
   presets: 
     - predict
     - low_mem
-    - pae_enabled

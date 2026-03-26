@@ -27,7 +27,7 @@ pip install openfold3
 ```bash
 setup_openfold
 ``` 
-3. Make your first prediction with:
+3. Make your first prediction. Note that you may need to {doc}`configure environment variables <Installation#environment-variables>`. 
 ```bash
 run_openfold predict --query-json=examples/example_inference_inputs/query_ubiquitin.json
 ```

@@ -96,6 +96,26 @@ def process_target_structure_of3(
         use_roda_monomer_format=use_roda_monomer_format,
     )
 
+    # TODO: Remove this legacy patch once all NPZs have been reprocessed with the
+    # fix from 06e118c5, which correctly sets sym_id=0 for unresolved atoms.
+    #
+    # NPZs preprocessed before that commit have sym_id=-1 on unresolved atoms
+    # (dummy integer value) while resolved atoms have sym_id=0. Biotite >=1.3's
+    # get_residue_starts() uses sym_id as a residue boundary criterion, so
+    # partially-resolved residues get split into two tokens. In homodimers with
+    # different disorder patterns per chain, this produces mismatched token counts
+    # for symmetric chains, crashing torch.stack() in permutation alignment. Safe
+    # to remove because the model's sym_id feature is independently computed from
+    # entity IDs in create_sym_id().
+    if "sym_id" in atom_array.get_annotation_categories() and np.any(
+        atom_array.sym_id == -1
+    ):
+        logger.warning(
+            f"Dummy sym_id=-1 found in {pdb_id}, applying legacy patch "
+            f"(removing sym_id annotation to prevent residue splitting)."
+        )
+        atom_array.del_annotation("sym_id")
+
     # Mark individual components (which get unique conformers)
     assign_component_ids_from_metadata(atom_array, per_chain_metadata)
 
