@@ -81,7 +81,7 @@ class MsaArray:
         if isinstance(row_slice, int):
             row_slice = slice(row_slice)
         elif not isinstance(row_slice, slice):
-            ValueError(
+            raise ValueError(
                 "Argument max_seq_count should be an integer or a slice."
                 f"but got {type(row_slice)}."
             )
@@ -637,9 +637,10 @@ def extract_alignments_to_pair(
             m = rep_msa_map_per_chain.get(msa_name)
             if m is not None:
                 # exclude query from subsequent MSAs
+                # only relevant when there are multiple MSAs to pair
                 if len(msa_arrays_to_pair_i) > 0:
-                    non_query_mask = np.bool([1] * len(m.msa.shape[0]))
-                    len(m.msa.shape[0])[0] = False
+                    non_query_mask = np.ones(m.msa.shape[0], dtype=bool)
+                    non_query_mask[0] = False
                     m = m.subset(non_query_mask)
                 if len(m) > 1:
                     msa_arrays_to_pair_i.append(m)
@@ -1221,7 +1222,7 @@ def calculate_profile(
         # Flatten subarray (size = n_rows * block_n_cols)
         val_indices = msa_chunk.ravel()  # row-major flatten by default
         # Build local col_indices of the same flattened shape
-        col_indices_local = np.repeat(np.arange(block_n_cols), n_rows)
+        col_indices_local = np.tile(np.arange(block_n_cols), n_rows)
         # Now each col in this chunk is offset from the "absolute" col_start, but for
         # bincount we just care about "relative" indexing from 0...(block_n_cols-1). We
         # combine into a single 1D array: offset + val Where offset = col_indices_local

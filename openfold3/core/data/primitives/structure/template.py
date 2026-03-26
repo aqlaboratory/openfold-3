@@ -525,6 +525,9 @@ def map_token_pos_to_template_residues(
         )
         atom_array_cropped_template = atom_array_cropped_template[mask_singleocc]
 
+        # Recompute residue starts
+        residue_starts = struc.get_residue_starts(atom_array_cropped_template)
+
     # Skip if still misaligned
     if residue_starts.shape != repeats.shape:
         template_slice = None
@@ -592,7 +595,7 @@ def align_template_to_query(
             template_file_format,
             ccd,
         )
-        if not atom_array_template_chain:
+        if atom_array_template_chain is None:
             continue
 
         # Create query token position to template residue ID map

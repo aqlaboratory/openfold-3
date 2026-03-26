@@ -104,7 +104,7 @@ class MsaFeaturizerOF3:
         )
         features["has_deletion"] = (deletion_matrix != 0).to(torch.float32)
         features["deletion_value"] = torch.atan(deletion_matrix / 3.0) * (
-            2.0 / torch.acos(torch.zeros(1, device=deletion_matrix.device)) * 2
+            2.0 / (torch.acos(torch.zeros(1, device=deletion_matrix.device)) * 2)
         ).to(torch.float32)
         features["deletion_mean"] = torch.tensor(
             msa_feature_precursor.deletion_mean, dtype=torch.float32

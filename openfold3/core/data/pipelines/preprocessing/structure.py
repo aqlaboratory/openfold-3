@@ -1312,7 +1312,7 @@ def preprocess_disordered_structure_and_write_outputs_of3(
 
     # Sanitize atom arrays
     pred_atom_array = remove_hydrogens(pred_atom_array)
-    fix_arginine_naming(pred_atom_array)
+    pred_atom_array = fix_arginine_naming(pred_atom_array)
     gt_atom_array = canonicalize_atom_order(gt_atom_array, ccd)
     pred_atom_array = canonicalize_atom_order(pred_atom_array, ccd)
     pred_atom_array = remove_std_residue_terminal_atoms(pred_atom_array)
