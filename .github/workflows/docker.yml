@@ -1,0 +1,126 @@
+name: Publish Docker image
+
+on:
+  workflow_dispatch:  # Allow manual creation of docker images
+    inputs:
+      version:
+        description: 'Version tag (e.g., 1.0.0)'
+        required: true
+        type: string
+      additional_tags:
+        description: 'Additional tags (comma-separated, e.g., latest,stable)'
+        required: false
+        type: string
+        default: ''
+  release:
+    types: [published]
+
+jobs:
+  start-aws-runner:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      mapping: ${{ steps.aws-start.outputs.mapping }}
+      instances: ${{ steps.aws-start.outputs.instances }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner 
+          aws-region: us-east-1
+      - name: Create cloud runner
+        id: aws-start
+        uses: omsf/start-aws-gha-runner@v1.1.1
+        with:
+          aws_image_id: ami-0754c6e75b3b97dcd  # Deep Learning AMI Neuron (Ubuntu 22.04)
+          aws_instance_type: trn1.2xlarge 
+          aws_home_dir: /home/ubuntu
+          aws_root_device_size: 200
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+  push-to-registry:
+    name: Push Docker image to registries
+    runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
+    needs:
+      - start-aws-runner
+    permissions:
+      packages: write
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@9fe7774c8f8ebfade96f0a62aa10f3882309d517
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: github.repository == 'aqlaboratory/openfold-3'
+        uses: docker/login-action@9fe7774c8f8ebfade96f0a62aa10f3882309d517
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@b13d25e5fcf2e04305d8aedc9a6c28ebe258e934
+        with:
+          images: |
+            name=ghcr.io/${{ github.repository }}/openfold3-docker
+            name=openfoldconsortium/openfold3,enable=${{ github.repository == 'aqlaboratory/openfold-3' }}
+          tags: |
+            type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=${{ inputs.additional_tags }},enable=${{ inputs.additional_tags != '' && github.event_name == 'workflow_dispatch' }}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: devel
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Generate artifact attestation
+        if: github.repository == 'aqlaboratory/openfold-3'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: index.docker.io/openfoldconsortium/openfold3
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  stop-aws-runner:
+    runs-on: ubuntu-latest
+    permissions:
+        id-token: write
+        contents: read
+    needs:
+      - start-aws-runner
+      - push-to-registry 
+    if: ${{ always() }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner 
+          aws-region: us-east-1
+      - name: Stop instances
+        uses: omsf/stop-aws-gha-runner@v1.0.0
+        with:
+          instance_mapping: ${{ needs.start-aws-runner.outputs.mapping }}
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}

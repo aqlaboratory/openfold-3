@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ class DatapointCollection:
     n_ligand: list[int]
     type: list[str]
     n_clust: list[int]
-    metadata = pd.DataFrame()
+    metadata: pd.DataFrame = dataclasses.field(default_factory=pd.DataFrame)
 
     @classmethod
     def create_empty(cls):

@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,7 +26,9 @@ from openfold3.core.data.primitives.caches.filtering import (
     get_all_cache_chains,
     logger,
 )
-from openfold3.core.data.primitives.caches.format import ClusteredDatasetCache
+from openfold3.core.data.primitives.caches.format import (
+    ClusteredDatasetCache,
+)
 from openfold3.core.data.resources.residues import MoleculeType
 
 
@@ -235,6 +237,10 @@ def add_cluster_data(
 
             # Increment cluster size
             cluster_id_to_size[interface_cluster_id] += 1
+
+    # TODO: debugging-only, remove
+    if "UNKNOWN" in cluster_id_to_size:
+        logger.warning(f"Cluster ID 'UNKNOWN' has size {cluster_id_to_size['UNKNOWN']}")
 
     # Add cluster sizes
     if add_sizes:

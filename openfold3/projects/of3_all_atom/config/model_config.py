@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -92,7 +92,7 @@ model_config = mlc.ConfigDict(
                     "chunk_size": None,
                     # Use DeepSpeed memory-efficient attention kernel. Mutually
                     # exclusive with use_lma.
-                    "use_deepspeed_evo_attention": True,
+                    "use_deepspeed_evo_attention": False,
                     "use_cueq_triangle_kernels": False,
                     # Use Staats & Rabe's low-memory attention algorithm. Mutually
                     # exclusive with use_deepspeed_evo_attention.
@@ -211,7 +211,7 @@ model_config = mlc.ConfigDict(
             "template": {
                 "c_t": c_t,
                 "c_z": c_z,
-                "linear_init_param": lin_init.templ_module_init,
+                "linear_init_params": lin_init.templ_module_init,
                 "template_pair_embedder": {
                     "c_in": c_z,
                     "c_dgram": 39,
@@ -221,8 +221,6 @@ model_config = mlc.ConfigDict(
                 },
                 "template_pair_stack": {
                     "c_t": c_t,
-                    # DISCREPANCY: c_hidden_tri_att here is given in the supplement
-                    # as 64. In the code, it's 16.
                     "c_hidden_tri_att": 16,
                     "c_hidden_tri_mul": 64,
                     "no_blocks": 2,
@@ -254,7 +252,7 @@ model_config = mlc.ConfigDict(
                 "msa_module": {
                     "c_m": c_m,
                     "c_z": c_z,
-                    "c_hidden_msa_att": 8,  # 8 or 32, possible typo in SI
+                    "c_hidden_msa_att": 8,
                     "c_hidden_opm": 32,
                     "c_hidden_mul": 128,
                     "c_hidden_pair_att": 32,

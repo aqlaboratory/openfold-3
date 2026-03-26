@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ from openfold3.core.data.primitives.permutation.mol_labels import (
 )
 from openfold3.tests.custom_assert_utils import assert_atomarray_equal
 
-TEST_DIR = Path(__file__).parent / "test_data/permutation_alignment"
+TEST_DIR = Path(__file__).parent / "test_data" / "permutation_alignment"
 
 
 def test_mol_symmetry_id_assignment():

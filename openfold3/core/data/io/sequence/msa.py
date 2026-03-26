@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -134,7 +134,7 @@ def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaArray:
 
     # Crop the MSA
     if max_seq_count is not None:
-        parsed_msa.truncate(max_seq_count)
+        parsed_msa.truncate(max_seq_count, inplace=True)
 
     return parsed_msa
 
@@ -214,7 +214,7 @@ def parse_stockholm(
 
     # Crop the MSA
     if max_seq_count is not None:
-        parsed_msa.truncate(max_seq_count)
+        parsed_msa.truncate(max_seq_count, inplace=True)
 
     return parsed_msa
 

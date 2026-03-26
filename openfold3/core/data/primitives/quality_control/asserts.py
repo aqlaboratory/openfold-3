@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -139,8 +139,8 @@ def assert_resid_asym_refuid_match(features):
 
     assert torch.isin(ref_space_uid_pos[0], result_tensor_pos[0]).all(), (
         "Mismatch between changing positions of ref_space_uid and atom-broadcasted "
+        "residue_index-asym_id tuples."
     )
-    "residue_index-asym_id tuples."
 
 
 def assert_atom_pos_resolved(features):
@@ -199,11 +199,12 @@ def assert_no_all_zero_idxs(features):
         "is_ligand",
     ]
     for idx_key in index_keys:
-        torch.any(~(features[idx_key] == 0)), f"Tensor '{idx_key}' contains all zeros."
+        assert torch.any(~(features[idx_key] == 0)), (
+            f"Tensor '{idx_key}' contains all zeros."
+        )
     for idx_key in index_keys:
-        (
-            torch.any(~(features["ground_truth"][idx_key] == 0)),
-            f"GT tensor '{idx_key}' contains all zeros.",
+        assert torch.any(~(features["ground_truth"][idx_key] == 0)), (
+            f"GT tensor '{idx_key}' contains all zeros."
         )
 
 

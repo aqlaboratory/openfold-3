@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -302,7 +302,7 @@ def get_mol_residue_index_mappings() -> tuple[dict, dict, dict, dict]:
     MOLECULE_TYPE_TO_ARGSORT_RESIDUES_1,
     MOLECULE_TYPE_TO_RESIDUES_POS_MAP,
 ) = get_mol_residue_index_mappings()
-MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3 = {
+MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_3 = {
     MoleculeType.PROTEIN: "UNK",
     MoleculeType.RNA: "N",
     MoleculeType.DNA: "DN",

@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -286,6 +286,20 @@ def create_main(
             [chain_data[aln].deletion_matrix for aln in aln_order if aln in chain_data],
             axis=0,
         )
+
+        # Deduplicate within the main MSA
+        main_view = main_msa_redundant.view(
+            np.dtype(
+                (
+                    np.void,
+                    main_msa_redundant.dtype.itemsize * main_msa_redundant.shape[1],
+                )
+            )
+        )
+        _, unique_idx = np.unique(main_view, return_index=True)
+        unique_idx.sort()  # preserve original order
+        main_msa_redundant = main_msa_redundant[unique_idx, :]
+        main_deletion_matrix_redundant = main_deletion_matrix_redundant[unique_idx, :]
 
         # Get paired MSAs if any and deduplicate
         if len(chain_id_to_paired_msa) > 0:

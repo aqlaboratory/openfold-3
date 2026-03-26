@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,8 +54,8 @@ class SwiGLU(nn.Module):
         self.linear_b = Linear(self.c_in, self.c_out, **linear_init_params.linear_b)
         self.swish = nn.SiLU()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if triton_is_installed and x.is_cuda:
+    def forward(self, x: torch.Tensor, use_kernel: bool = False) -> torch.Tensor:
+        if use_kernel:
             return LigerSiLUMulFunction.apply(self.linear_a(x), self.linear_b(x))
 
         return self.swish(self.linear_a(x)) * self.linear_b(x)

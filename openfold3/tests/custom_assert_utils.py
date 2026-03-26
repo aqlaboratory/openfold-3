@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ def assert_atomarray_equal(
             equal_nan = False
 
         assert np.array_equal(values_1, values_2, equal_nan=equal_nan), (
-            f"AtomArrays have different values for: {annotation}."
+            f"AtomArrays have different values for: {annotation}: {values_1} != {values_2}"
         )
 
     bonds_1 = atom_array_1.bonds

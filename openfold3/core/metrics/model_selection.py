@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -139,8 +139,14 @@ def compute_final_model_selection_metric(metrics: dict, model_selection_weights:
     total_weighted = 0.0
     sum_weights = 0.0
     for name, weight in model_selection_weights.items():
-        total_weighted += metrics[f"val/{name}"] * weight
-        sum_weights += weight
+        metric_val = metrics[f"val/{name}"]
+        if torch.isfinite(metric_val):
+            total_weighted += metric_val * weight
+            sum_weights += weight
+        else:
+            logger.warning(
+                f"Metric {name} is not finite and was not added to model selection."
+            )
 
     model_selection = total_weighted / sum_weights
 

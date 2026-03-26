@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -39,7 +39,7 @@ from openfold3.core.data.primitives.structure.conformer import (
 from openfold3.core.data.resources.residues import (
     DNA_RESTYPE_1TO3,
     MOLECULE_TYPE_TO_LEAVING_ATOMS,
-    MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3,
+    MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_3,
     PROTEIN_RESTYPE_1TO3,
     RNA_RESTYPE_1TO3,
     MoleculeType,
@@ -245,6 +245,14 @@ def processed_reference_molecule_from_mol(
             A processed reference molecule containing the RDKit mol with a computed
             conformer and the atom mask.
     """
+    # Compute conformer (note that we call this before creating the annotations, as this
+    # function will remove all hydrogens in the input mol and can therefore change the
+    # mask length)
+    mol, conf_id, _ = multistrategy_compute_conformer(
+        mol, remove_hs=True, timeout_standard=120, timeout_rand_init=120
+    )
+    assert conf_id == 0
+
     # Assume all atoms are in the structure if no special mask is given
     if atom_mask is None:
         atom_mask = np.ones(mol.GetNumAtoms(), dtype=bool)
@@ -260,12 +268,6 @@ def processed_reference_molecule_from_mol(
     # This is a different mask only required for fallback conformers in the training
     # script where some coordinates are not defined
     mol = set_atomwise_annotation(mol, "used_atom_mask", [True] * mol.GetNumAtoms())
-
-    # Compute conformer
-    mol, conf_id, _ = multistrategy_compute_conformer(
-        mol, remove_hs=True, timeout_standard=120, timeout_rand_init=120
-    )
-    assert conf_id == 0
 
     return ProcessedReferenceMolecule(
         mol=mol,
@@ -319,7 +321,7 @@ def structure_with_ref_mols_from_sequence(
             raise ValueError(f"Unsupported molecule type: {poly_type}")
 
     # Figure out the unknown residue 3-letter identifier and leaving atom names
-    unk_res = MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3[poly_type]
+    unk_res = MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_3[poly_type]
     base_leaving_atoms = MOLECULE_TYPE_TO_LEAVING_ATOMS[poly_type]
 
     atom_array = None

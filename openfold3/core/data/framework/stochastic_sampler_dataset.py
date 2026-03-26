@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -198,7 +198,9 @@ class OF3DistributedSampler(DistributedSampler):
         datapoint_probabilities = torch.tensor(
             dataset.datapoint_cache["datapoint_probabilities"].to_numpy()
         )
-        if not torch.all(torch.eq(datapoint_probabilities, 1.0)):
+        if not torch.allclose(
+            datapoint_probabilities, torch.ones_like(datapoint_probabilities)
+        ):
             raise ValueError(
                 "Ordered slicing of datasets not supported for "
                 "datasets with nonuniform probabilities"

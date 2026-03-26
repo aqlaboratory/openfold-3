@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ if deepspeed_is_installed:
 logger = logging.getLogger(__name__)
 
 
-def load_model_state_dict_from_ds_checkpoint(checkpoint_dir: Path) -> dict:
+def load_ds_checkpoint(checkpoint_dir: Path) -> dict:
     latest_path = checkpoint_dir / "latest"
     if latest_path.is_file():
         with open(latest_path) as fd:
@@ -38,35 +38,43 @@ def load_model_state_dict_from_ds_checkpoint(checkpoint_dir: Path) -> dict:
     state_file = zero_to_fp32.get_model_state_file(
         str(ds_checkpoint_dir), _DS_CHECKPOINT_VERSION
     )
-    return torch.load(state_file)
+    return torch.load(state_file, map_location="cpu", weights_only=False)
 
 
 def load_checkpoint(ckpt_path: Path) -> dict:
     if ckpt_path.is_dir():
-        return load_model_state_dict_from_ds_checkpoint(ckpt_path)
+        return load_ds_checkpoint(ckpt_path)
 
     if ckpt_path.is_file():
-        return torch.load(ckpt_path)
+        return torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
     raise ValueError(f"Checkpoint path {ckpt_path} is not a valid file or directory.")
 
 
-def get_state_dict_from_checkpoint(ckpt: dict, init_from_ema_weights: bool) -> dict:
-    """Retrieves state dict from various checkpoint formats."""
+def get_state_dict_from_checkpoint(
+    ckpt: dict, init_from_ema_weights: bool
+) -> tuple[dict, dict]:
+    """Retrieves model and ema state dicts from various checkpoint formats."""
     is_pretrained_model = "module" not in ckpt and "state_dict" not in ckpt
 
     # Loading from pre-trained model
     if is_pretrained_model:
-        return {"model." + k: v for k, v in ckpt.items()}
+        state_dict = {"model." + k: v for k, v in ckpt.items()}
+        # EMA decay is uninitialized here and will be set to default config value
+        ema = {"params": ckpt, "decay": 0.0}
+        return state_dict, ema
+
+    ema = ckpt["ema"]
 
     # Loading from EMA weights
     if init_from_ema_weights:
         logger.info("Loading model from ema weights")
-        return {"model." + k: v for k, v in ckpt["ema"]["params"].items()}
+        state_dict = {"model." + k: v for k, v in ckpt["ema"]["params"].items()}
+        return state_dict, ema
 
     # Loading from DeepSpeed checkpoint
     if "module" in ckpt:
-        return ckpt["module"]
+        return ckpt["module"], ema
 
     # Loading from PL checkpoint
-    return ckpt["state_dict"]
+    return ckpt["state_dict"], ema

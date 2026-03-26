@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 # Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
 #
@@ -28,6 +28,7 @@ import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
+from openfold3.core.kernels.cueq_utils import is_cuequivariance_available
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.tensor_utils import flatten_final_dims
 
@@ -46,7 +47,7 @@ if deepspeed_is_installed:
 if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
-cueq_is_installed = importlib.util.find_spec("cuequivariance_torch") is not None
+cueq_is_installed = is_cuequivariance_available()
 if cueq_is_installed:
     from cuequivariance_ops_torch.triangle_attention import (
         CUEQ_TRIATTN_FALLBACK_THRESHOLD,
@@ -353,7 +354,7 @@ class Attention(nn.Module):
             # cuEquivariance -> Torch fallback for small sequence length and some shapes
             use_fall_back = cueq_would_fall_back(
                 n_token=q_x.shape[-2],
-                hidden_dim=q_x.shape[-1] // self.no_heads,
+                hidden_dim=self.c_hidden,
                 dtype=q_x.dtype,
             )
             if use_fall_back:

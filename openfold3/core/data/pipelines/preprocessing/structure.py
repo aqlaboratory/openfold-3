@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,6 +46,7 @@ from openfold3.core.data.io.structure.atom_array import write_atomarray_to_npz
 from openfold3.core.data.io.structure.cif import (
     SkippedStructure,
     parse_mmcif,
+    parse_RNA_monomer_cif_tmp,
     parse_target_structure,
     write_structure,
 )
@@ -53,7 +54,6 @@ from openfold3.core.data.io.structure.mol import write_annotated_sdf
 from openfold3.core.data.io.structure.pdb import (
     parse_pdb_af2,
     parse_protein_monomer_pdb_tmp,
-    parse_RNA_monomer_pdb_tmp,
 )
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
@@ -893,18 +893,22 @@ def preparse_monomer(
 def preparse_RNA_monomer(
     entry_id: str,
     data_directory: Path,
-    structure_filename: str,
+    structure_filename: str | None,
     structure_file_format: str,
     output_dir: Path,
 ):
-    ### to reduce run times only parse if the file does not exist
-    output_file = output_dir / f"{entry_id}/structure.npz"
+    # to reduce run times only parse if the file does not exist
+    output_file = output_dir / entry_id / "structure.npz"
     if output_file.exists():
         return
-    _, atom_array = parse_RNA_monomer_pdb_tmp(
-        data_directory / entry_id / f"{entry_id}.{structure_file_format}"
+
+    structure_stem = structure_filename if structure_filename is not None else entry_id
+    structure_path = (
+        data_directory / entry_id / f"{structure_stem}.{structure_file_format}"
     )
-    write_structure(atom_array, output_dir / f"{entry_id}/structure.npz")
+
+    _, atom_array = parse_RNA_monomer_cif_tmp(structure_path)
+    write_structure(atom_array, output_file)
 
 
 class _RNAMonomerPreprocessingWrapper:
@@ -915,7 +919,7 @@ class _RNAMonomerPreprocessingWrapper:
         structure_file_format: str,
         output_dir: Path,
     ) -> None:
-        """Wrapper class for pre-parsing protein mononer files into .pkl."""
+        """Wrapper class for pre-parsing RNA monomer files into .npz."""
         self.data_directory = data_directory
         self.structure_filename = structure_filename
         self.structure_file_format = structure_file_format
@@ -1312,7 +1316,7 @@ def preprocess_disordered_structure_and_write_outputs_of3(
 
     # Sanitize atom arrays
     pred_atom_array = remove_hydrogens(pred_atom_array)
-    fix_arginine_naming(pred_atom_array)
+    pred_atom_array = fix_arginine_naming(pred_atom_array)
     gt_atom_array = canonicalize_atom_order(gt_atom_array, ccd)
     pred_atom_array = canonicalize_atom_order(pred_atom_array, ccd)
     pred_atom_array = remove_std_residue_terminal_atoms(pred_atom_array)

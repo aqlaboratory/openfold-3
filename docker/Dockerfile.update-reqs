@@ -1,0 +1,32 @@
+# Dockerfile for generating conda environment lock files
+# This produces a fully-pinned lock file for reproducible builds
+#
+# Usage:
+#   docker build -f docker/Dockerfile.update-reqs -t openfold3-update-reqs .
+#   docker run --rm openfold3-update-reqs > environments/production-linux64.lock
+
+FROM mambaorg/micromamba:1.5.10
+
+USER root
+
+# Install conda-lock
+RUN micromamba install -y -n base -c conda-forge conda-lock \
+    && micromamba clean --all --yes
+
+USER $MAMBA_USER
+
+COPY --chown=$MAMBA_USER:$MAMBA_USER environments/production-linux-64.yml /tmp/production-linux-64.yml
+
+# Generate explicit lock file for linux-64
+# The explicit format is directly consumable by mamba/conda
+RUN micromamba run -n base conda-lock lock \
+    --mamba \
+    --platform linux-64 \
+    --file /tmp/production-linux-64.yml \
+    --kind explicit \
+    --filename-template '/tmp/production-{platform}.lock'
+
+# Output the lock file to stdout when container runs
+USER root
+CMD ["sh", "-c", "cp /tmp/production-*.lock /output/"]
+

@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@ Manage imports run_openfold.py
 # ruff: noqa: F401
 
 
-def _torch_gpu_setup():
+def _enable_tf32():
     import torch
 
     torch_versions = torch.__version__.split(".")

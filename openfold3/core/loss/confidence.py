@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -257,7 +257,7 @@ def all_atom_plddt_loss(
     # Compute binned lddt
     # [*, N_atom, no_bins]
     bin_size = (bin_max - bin_min) / no_bins
-    v_bins = bin_min + torch.arange(no_bins, device=x.device) * bin_size
+    v_bins = bin_min + bin_size / 2 + torch.arange(no_bins, device=x.device) * bin_size
     lddt_b = binned_one_hot(lddt, v_bins).to(dtype=x.dtype)
 
     errors = softmax_cross_entropy(logits, lddt_b)
@@ -344,7 +344,9 @@ def pae_loss(
     # Compute binned alignment error
     # [*, N_token, N_token, no_bins]
     bin_size = (bin_max - bin_min) / no_bins
-    v_bins = bin_min + torch.arange(no_bins, device=logits.device) * bin_size
+    v_bins = (
+        bin_min + bin_size / 2 + torch.arange(no_bins, device=logits.device) * bin_size
+    )
     e_b = binned_one_hot(e, v_bins).to(dtype=logits.dtype)
 
     # Compute predicted alignment error
@@ -414,7 +416,7 @@ def pde_loss(
 
     # Compute binned prediction target
     bin_size = (bin_max - bin_min) / no_bins
-    v_bins = bin_min + torch.arange(no_bins, device=e.device) * bin_size
+    v_bins = bin_min + bin_size / 2 + torch.arange(no_bins, device=e.device) * bin_size
     e_b = binned_one_hot(e, v_bins).to(dtype=e.dtype)
 
     pair_mask = (rep_atom_mask_gt[..., None] * rep_atom_mask_gt[..., None, :]).bool()

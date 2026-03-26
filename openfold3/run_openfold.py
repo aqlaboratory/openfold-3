@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ from pathlib import Path
 import click
 
 from openfold3.core.config import config_utils
-from openfold3.entry_points.import_utils import _torch_gpu_setup
+from openfold3.entry_points.import_utils import _enable_tf32
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ def cli():
 
 @cli.command()
 @click.option(
+    "--runner-yaml",
     "--runner_yaml",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=True,
@@ -45,13 +46,27 @@ def cli():
 )
 @click.option("--seed", type=int, help="Initial seed for all processes")
 @click.option(
+    "--data-seed",
     "--data_seed",
     type=int,
     help="Initial seed for data pipeline. Defaults to seed if not specified.",
 )
-def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = None):
+@click.option(
+    "--use_tf32",
+    type=bool,
+    default=False,
+    help="Use tf32 precision",
+)
+def train(
+    runner_yaml: Path,
+    seed: int | None = None,
+    data_seed: int | None = None,
+    use_tf32: bool = False,
+):
     """Perform a training experiment with a preprepared dataset cache."""
-    _torch_gpu_setup()
+    if use_tf32:
+        _enable_tf32()
+
     from openfold3.entry_points.experiment_runner import (
         TrainingExperimentRunner,
     )
@@ -77,12 +92,14 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
 
 @cli.command()
 @click.option(
+    "--query-json",
     "--query_json",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=True,
     help="Json containing the queries for prediction.",
 )
 @click.option(
+    "--inference-ckpt-path",
     "--inference_ckpt_path",
     type=click.Path(exists=True, file_okay=True, dir_okay=True, path_type=Path),
     required=False,
@@ -91,6 +108,15 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     "$OPENFOLD_CACHE [default: ~/.openfold3/]",
 )
 @click.option(
+    "--inference-ckpt-name",
+    "--inference_ckpt_name",
+    type=str,
+    required=False,
+    help="Name of the checkpoint to be used for inference."
+    " Only used if `inference_ckpt_path` is not specified.",
+)
+@click.option(
+    "--num-diffusion-samples",
     "--num_diffusion_samples",
     type=int,
     default=None,
@@ -98,6 +124,7 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     help="Number of diffusion samples to generate for each query.",
 )
 @click.option(
+    "--num-model-seeds",
     "--num_model_seeds",
     type=int,
     default=None,
@@ -105,41 +132,54 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     help="Number of model seeds to use for each query.",
 )
 @click.option(
+    "--runner-yaml",
     "--runner_yaml",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=False,
     help="Yaml that specifies model and dataset parameters, see examples/runner.yml",
 )
 @click.option(
+    "--use-msa-server",
     "--use_msa_server",
     type=bool,
     default=True,
     help="Use ColabFold MSA server to perform alignments.",
 )
 @click.option(
+    "--use-templates",
     "--use_templates",
     type=bool,
     default=True,
     help="Use ColabFold MSA server to perform template alignments.",
 )
 @click.option(
+    "--output-dir",
     "--output_dir",
     type=click.Path(exists=False, file_okay=True, dir_okay=True, path_type=Path),
     required=False,
     help="Output directory for writing results",
 )
+@click.option(
+    "--use_tf32",
+    type=bool,
+    default=True,
+    help="Use tf32 precision",
+)
 def predict(
     query_json: Path,
     inference_ckpt_path: Path | None = None,
+    inference_ckpt_name: str | None = None,
     num_diffusion_samples: int | None = None,
     num_model_seeds: int | None = None,
     runner_yaml: Path | None = None,
     use_msa_server: bool = True,
-    use_templates: bool = False,
+    use_templates: bool = True,
     output_dir: Path | None = None,
+    use_tf32: bool = True,
 ):
     """Perform inference on a set of queries defined in the query_json."""
-    _torch_gpu_setup()
+    if use_tf32:
+        _enable_tf32()
 
     from openfold3.entry_points.experiment_runner import (
         InferenceExperimentRunner,
@@ -155,7 +195,9 @@ def predict(
     runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
 
     expt_config = InferenceExperimentConfig(
-        inference_ckpt_path=inference_ckpt_path, **runner_args
+        inference_ckpt_path=inference_ckpt_path,
+        inference_ckpt_name=inference_ckpt_name,
+        **runner_args,
     )
     expt_runner = InferenceExperimentRunner(
         expt_config,
@@ -177,18 +219,21 @@ def predict(
 
 @cli.command()
 @click.option(
+    "--query-json",
     "--query_json",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=True,
     help="Json containing the queries for prediction.",
 )
 @click.option(
+    "--output-dir",
     "--output_dir",
     type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
     required=True,
     help="Output directory for writing alignments",
 )
 @click.option(
+    "--msa-computation-settings-yaml",
     "--msa_computation_settings_yaml",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=False,
@@ -210,7 +255,6 @@ def align_msa_server(
     More settings can be specified using the `msa_computation_settings_yaml` flag
     An example yaml file is provided in `examples/msa_server.yml`
     """
-    _torch_gpu_setup()
     from openfold3.core.data.tools.colabfold_msa_server import (
         MsaComputationSettings,
         preprocess_colabfold_msas,

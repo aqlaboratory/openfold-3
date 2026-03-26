@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -1318,6 +1318,28 @@ def update_gt_position_features(
         )[0]
         inter_filter_atomized = inter_filter_atomized.transpose(-1, -2)
         updated_ground_truth_features["inter_filter_atomized"] = inter_filter_atomized
+
+    intra_ab_ag_type_atomized = ground_truth_features.get("intra_ab_ag_type_atomized")
+    if intra_ab_ag_type_atomized is not None:
+        intra_ab_ag_type_atomized = permute_gt_atom_features(
+            [intra_ab_ag_type_atomized], gt_atom_indexes
+        )[0]
+        updated_ground_truth_features["intra_ab_ag_type_atomized"] = (
+            intra_ab_ag_type_atomized
+        )
+
+    inter_ab_ag_type_atomized = ground_truth_features.get("inter_ab_ag_type_atomized")
+    if inter_ab_ag_type_atomized is not None:
+        inter_ab_ag_type_atomized = permute_gt_atom_features(
+            [inter_ab_ag_type_atomized], gt_atom_indexes
+        )[0]
+        inter_ab_ag_type_atomized = permute_gt_atom_features(
+            [inter_ab_ag_type_atomized.transpose(-1, -2)], gt_atom_indexes
+        )[0]
+        inter_ab_ag_type_atomized = inter_ab_ag_type_atomized.transpose(-1, -2)
+        updated_ground_truth_features["inter_ab_ag_type_atomized"] = (
+            inter_ab_ag_type_atomized
+        )
 
     return updated_ground_truth_features
 
