@@ -68,7 +68,10 @@ def _mock_fetch_label_to_author(pdb_ids):
 
 
 def _make_m8_dataframe(template_ids: list[str], m_index: int = 101) -> pd.DataFrame:
-    """Build a minimal m8-format DataFrame for testing."""
+    """Build a minimal m8-format DataFrame for testing.
+
+    See docs/source/template_how_to.md § 1.1.3 for the m8 column spec.
+    """
     n = len(template_ids)
     return pd.DataFrame(
         {

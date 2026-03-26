@@ -1,3 +1,21 @@
+"""Tests for the RCSB GraphQL API helpers in ``openfold3.core.data.tools.rscb``.
+
+Tests marked ``@pytest.mark.vcr`` use *pytest-recording* (vcrpy) to replay
+HTTP responses from YAML cassettes stored alongside this file in
+``cassettes/``.
+
+Generating cassettes for the first time::
+
+    pytest openfold3/tests/core/data/tools/test_rscb.py --vcr-record=all
+
+Re-recording after RCSB schema changes or new test methods::
+
+    pytest openfold3/tests/core/data/tools/test_rscb.py --vcr-record=new_episodes
+
+In CI the cassettes are replayed without network access (the default
+``--vcr-record=none`` mode).
+"""
+
 import pytest
 
 from openfold3.core.data.tools.rscb import (
