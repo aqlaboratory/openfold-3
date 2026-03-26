@@ -354,7 +354,7 @@ class Attention(nn.Module):
             # cuEquivariance -> Torch fallback for small sequence length and some shapes
             use_fall_back = cueq_would_fall_back(
                 n_token=q_x.shape[-2],
-                hidden_dim=q_x.shape[-1] // self.no_heads,
+                hidden_dim=self.c_hidden,
                 dtype=q_x.dtype,
             )
             if use_fall_back:
