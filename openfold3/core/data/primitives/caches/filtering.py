@@ -845,6 +845,15 @@ def set_nan_fallback_conformer_flag(
                 f"Fallback fonformer PDB ID {model_pdb_id} not found in cache, for "
                 f"molecule {ref_mol_id}, forcing NaN fallback conformer."
             )
+            metadata.set_fallback_to_nan = True
+
+        elif pdb_id_to_release_date[model_pdb_id] is None:
+            logger.warning(
+                f"Release date for fallback conformer PDB ID {model_pdb_id} not found "
+                f"in cache, for molecule {ref_mol_id}, forcing NaN fallback conformer."
+            )
+            metadata.set_fallback_to_nan = True
+
         # Check if the PDB ID's release date is after the cutoff
         elif pdb_id_to_release_date[model_pdb_id] > max_model_pdb_release_date:
             logger.debug(f"Setting fallback conformer to NaN for {ref_mol_id}.")
