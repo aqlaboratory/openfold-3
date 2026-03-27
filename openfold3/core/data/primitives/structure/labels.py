@@ -425,7 +425,7 @@ def update_author_to_pdb_labels(
     # Set residue IDs to PDB-assigned IDs but fallback to author-assigned IDs if they
     # are not assigned (important for correct bond record parsing/writing)
     # TODO: check if this is necessary for 'pdb' format
-    if use_author_res_id_if_missing & (atom_array_source_format == "cif"):
+    if use_author_res_id_if_missing and (atom_array_source_format == "cif"):
         author_res_ids = atom_array.res_id
         pdb_res_ids = atom_array.label_seq_id
         merged_res_ids = np.where(
