@@ -68,7 +68,7 @@ def centre_random_augmentation(
         xl * atom_mask[..., None],
         dim=-2,
         keepdim=True,
-    ) / torch.sum(atom_mask[..., None], dim=-2, keepdim=True).clamp(min=1) # no 0-div
+    ) / torch.sum(atom_mask[..., None], dim=-2, keepdim=True).clamp(min=1)  # no 0-div
 
     # center coordinates
     pos_centered = xl - mean_xl
