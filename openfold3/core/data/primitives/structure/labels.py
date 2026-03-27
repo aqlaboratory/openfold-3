@@ -277,7 +277,7 @@ def assign_renumbered_chain_ids(
     """Renumbers the chain IDs in the AtomArray starting from 1
 
     Iterates through all chains in the atom array and assigns unique numerical chain IDs
-    starting with 0 to each chain. This is useful for bioassembly parsing where chain
+    starting with 1 to each chain. This is useful for bioassembly parsing where chain
     IDs can be duplicated after the assembly is expanded.
 
     Args:
