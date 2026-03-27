@@ -101,22 +101,22 @@ def read_single_annotated_sdf(path: PathLike) -> AnnotatedMol:
 
     mol_annotations = mol.GetPropsAsDict(autoConvertStrings=False)
 
-    for key, value in mol_annotations.items():
-        if key.startswith("atom_annot_"):
+    for global_key, value in mol_annotations.items():
+        if global_key.startswith("atom_annot_"):
             # Remove atom_ prefix
-            key = key[5:]
+            new_key = global_key[5:]
 
             # Set to atom-wise annotations with proper type
             for atom, annot in zip(mol.GetAtoms(), value.split(), strict=True):
                 if annot.lower() == "true":
-                    atom.SetBoolProp(key, True)
+                    atom.SetBoolProp(new_key, True)
                 elif annot.lower() == "false":
-                    atom.SetBoolProp(key, False)
+                    atom.SetBoolProp(new_key, False)
                 elif utils.is_intlike_string(annot):
-                    atom.SetIntProp(key, int(annot))
+                    atom.SetIntProp(new_key, int(annot))
                 else:
-                    atom.SetProp(key, annot)
+                    atom.SetProp(new_key, annot)
 
-            mol.ClearProp(key)  # delete the global property
+            mol.ClearProp(global_key)  # delete the global property
 
     return mol
