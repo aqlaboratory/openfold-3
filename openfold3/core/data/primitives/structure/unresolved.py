@@ -295,10 +295,11 @@ def build_unresolved_polymer_segment(
 
         atom_names = atom_names[atom_mask]
         atom_elements = atom_elements[atom_mask]
+        atom_charges = atom_charges[atom_mask]
 
         # Add atoms for all unresolved residues
         for atom, element, charge in zip(
-            atom_names, atom_elements, atom_charges, strict=False
+            atom_names, atom_elements, atom_charges, strict=True
         ):
             atom_annotations = default_annotations.copy()
             atom_annotations["atom_name"] = atom
