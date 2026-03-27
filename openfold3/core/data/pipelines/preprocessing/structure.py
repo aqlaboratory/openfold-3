@@ -26,6 +26,7 @@ import os
 import sys
 import time
 import traceback
+from collections.abc import Iterable
 from functools import wraps
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -392,7 +393,7 @@ def preprocess_structure_and_write_outputs_of3(
     ccd: CIFFile,
     out_dir: Path,
     reference_mol_out_dir: Path,
-    output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
+    output_formats: Iterable[Literal["npz", "cif", "bcif", "pkl"]],
     max_polymer_chains: int | None = None,
     skip_components: set | SharedSet | None = None,
     random_seed: int | None = None,
@@ -592,7 +593,7 @@ class _OF3PreprocessingWrapper:
         reference_mol_out_dir: Path,
         max_polymer_chains: int | None,
         skip_components: set | SharedSet | None,
-        output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
+        output_formats: Iterable[Literal["npz", "cif", "bcif", "pkl"]],
     ):
         self.ccd = ccd
         self.reference_mol_out_dir = reference_mol_out_dir
@@ -654,7 +655,7 @@ def preprocess_cif_dir_of3(
     max_polymer_chains: int | None = None,
     num_workers: int | None = None,
     chunksize: int = 20,
-    output_formats: list[Literal["npz", "cif", "bcif", "pkl"]] = False,
+    output_formats: Iterable[Literal["npz", "cif", "bcif", "pkl"]] = ("npz",),
     log_queue: mp.queues.Queue | None = None,
     log_level: int = logging.WARNING,
     early_stop: int | None = None,
