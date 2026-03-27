@@ -422,7 +422,8 @@ def write_structure(
 
         case _:
             raise NotImplementedError(
-                "Only .cif, .bcif, and .pkl formats are supported"
+                "Only .npz, .pkl, .cif, .bcif, and .pdb formats are currently "
+                "supported."
             )
 
 
