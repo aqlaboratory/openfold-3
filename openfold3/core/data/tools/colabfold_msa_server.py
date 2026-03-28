@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import getpass
 import json
 import logging
 import os
@@ -19,6 +20,14 @@ import random
 import shutil
 import tarfile
 import tempfile
+
+
+def _get_username() -> str:
+    """Get current username for user-specific temp directories."""
+    try:
+        return getpass.getuser()
+    except Exception:
+        return str(os.getuid()) if hasattr(os, "getuid") else "default"
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -997,7 +1006,7 @@ class MsaComputationSettings(BaseModel):
     server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
     save_mappings: bool = True
-    msa_output_directory: Path = Path(tempfile.gettempdir()) / "of3_colabfold_msas"
+    msa_output_directory: Path = Path(tempfile.gettempdir()) / f"of3_colabfold_msas_{_get_username()}"
     cleanup_msa_dir: bool = True
 
     @model_validator(mode="after")
