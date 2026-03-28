@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import getpass
 import json
 import logging
 import os
@@ -997,7 +998,7 @@ class MsaComputationSettings(BaseModel):
     server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
     save_mappings: bool = True
-    msa_output_directory: Path = Path(tempfile.gettempdir()) / "of3_colabfold_msas"
+    msa_output_directory: Path = Path(tempfile.gettempdir()) / f"of3-{getpass.getuser()}" / "colabfold_msas"
     cleanup_msa_dir: bool = True
 
     @model_validator(mode="after")

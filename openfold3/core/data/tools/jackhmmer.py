@@ -15,11 +15,14 @@
 
 """Library to run Jackhmmer from Python."""
 
+import getpass
 import glob
 import logging
 import os
 import subprocess
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from concurrent import futures
 from typing import Any
 from urllib import request
@@ -203,7 +206,9 @@ class Jackhmmer:
             return f"{self.database_path}.{db_idx}"
 
         def db_local_chunk(db_idx):
-            return f"/tmp/ramdisk/{db_basename}.{db_idx}"
+            ramdisk_dir = Path(tempfile.gettempdir()) / f"of3-{getpass.getuser()}" / "ramdisk"
+            ramdisk_dir.mkdir(parents=True, exist_ok=True)
+            return str(ramdisk_dir / f"{db_basename}.{db_idx}")
 
         # Remove existing files to prevent OOM
         for f in glob.glob(db_local_chunk("[0-9]*")):

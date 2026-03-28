@@ -14,6 +14,7 @@
 
 """Preprocessing pipelines for template data ran before training/evaluation."""
 
+import getpass
 import logging
 import multiprocessing as mp
 import os
@@ -1602,7 +1603,7 @@ class TemplatePreprocessorSettings(BaseModel):
             )
 
         self.output_directory = (
-            self.output_directory or Path(tempfile.gettempdir()) / "of3_template_data"
+            self.output_directory or Path(tempfile.gettempdir()) / f"of3-{getpass.getuser()}" / "template_data"
         )
         base = self.output_directory
 
