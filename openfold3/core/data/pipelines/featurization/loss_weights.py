@@ -57,7 +57,7 @@ def set_loss_weights(
 
 def set_loss_weights_for_disordered_set(
     loss_settings: dict,
-    resolution: float,
+    resolution: float | None,
     disable_non_protein_diffusion_weights: bool,
 ) -> dict[str, torch.Tensor]:
     """Updates and tensorizes loss weights in the FeatureDict based on the resolution.
@@ -71,7 +71,7 @@ def set_loss_weights_for_disordered_set(
                 - loss_weight
                 - min_resolution
                 - max_resolution
-        resolution (float):
+        resolution (float | None):
             The resolution of the input data.
         disable_non_protein_diffusion_weights (bool):
             Whether loss mode should disable diffusion weights for non-proteins

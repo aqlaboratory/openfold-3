@@ -25,7 +25,7 @@ from pathlib import Path
 import click
 
 from openfold3.core.config import config_utils
-from openfold3.entry_points.import_utils import _torch_gpu_setup
+from openfold3.entry_points.import_utils import _enable_tf32
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +51,22 @@ def cli():
     type=int,
     help="Initial seed for data pipeline. Defaults to seed if not specified.",
 )
-def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = None):
+@click.option(
+    "--use_tf32",
+    type=bool,
+    default=False,
+    help="Use tf32 precision",
+)
+def train(
+    runner_yaml: Path,
+    seed: int | None = None,
+    data_seed: int | None = None,
+    use_tf32: bool = False,
+):
     """Perform a training experiment with a preprepared dataset cache."""
-    _torch_gpu_setup()
+    if use_tf32:
+        _enable_tf32()
+
     from openfold3.entry_points.experiment_runner import (
         TrainingExperimentRunner,
     )
@@ -146,6 +159,12 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     required=False,
     help="Output directory for writing results",
 )
+@click.option(
+    "--use_tf32",
+    type=bool,
+    default=True,
+    help="Use tf32 precision",
+)
 def predict(
     query_json: Path,
     inference_ckpt_path: Path | None = None,
@@ -156,9 +175,11 @@ def predict(
     use_msa_server: bool = True,
     use_templates: bool = True,
     output_dir: Path | None = None,
+    use_tf32: bool = True,
 ):
     """Perform inference on a set of queries defined in the query_json."""
-    _torch_gpu_setup()
+    if use_tf32:
+        _enable_tf32()
 
     from openfold3.entry_points.experiment_runner import (
         InferenceExperimentRunner,
@@ -234,7 +255,6 @@ def align_msa_server(
     More settings can be specified using the `msa_computation_settings_yaml` flag
     An example yaml file is provided in `examples/msa_server.yml`
     """
-    _torch_gpu_setup()
     from openfold3.core.data.tools.colabfold_msa_server import (
         MsaComputationSettings,
         preprocess_colabfold_msas,

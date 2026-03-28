@@ -134,7 +134,7 @@ def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaArray:
 
     # Crop the MSA
     if max_seq_count is not None:
-        parsed_msa.truncate(max_seq_count)
+        parsed_msa.truncate(max_seq_count, inplace=True)
 
     return parsed_msa
 
@@ -214,7 +214,7 @@ def parse_stockholm(
 
     # Crop the MSA
     if max_seq_count is not None:
-        parsed_msa.truncate(max_seq_count)
+        parsed_msa.truncate(max_seq_count, inplace=True)
 
     return parsed_msa
 

@@ -788,7 +788,7 @@ class ProteinMonomerChainData:
 
 @dataclass
 class RNAMonomerChainData:
-    """Chain-wise data for protein monomers."""
+    """Chain-wise data for RNA monomers."""
 
     alignment_representative_id: str | None
     index: int
@@ -864,7 +864,7 @@ class ProteinMonomerStructureData:
 
 @dataclass
 class RNAMonomerStructureData:
-    """Structure data for protein monomers."""
+    """Structure data for RNA monomers."""
 
     chains: dict[str, RNAMonomerChainData]
 
@@ -971,7 +971,7 @@ class ProteinMonomerDatasetCache(DatasetCache):
 @register_datacache
 @dataclass
 class RNAMonomerDatasetCache(DatasetCache):
-    """Full data cache for protein monomer data from AF2."""
+    """Full data cache for RNA monomer data from AF2."""
 
     name: str
     structure_data: RNAMonomerStructureDataCache
