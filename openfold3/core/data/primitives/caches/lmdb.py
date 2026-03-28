@@ -68,7 +68,10 @@ def convert_datacache_to_lmdb(
     )
 
     if mode == "single-read":
-        dataset_cache = read_datacache(dataset_cache_file_or_obj)
+        if isinstance(dataset_cache_file_or_obj, Path):
+            dataset_cache = read_datacache(dataset_cache_file_or_obj)
+        else:
+            dataset_cache = dataset_cache_file_or_obj
 
         lmdb_env = lmdb.open(str(lmdb_directory), map_size=map_size, subdir=True)
 
@@ -192,7 +195,7 @@ class LMDBDict(Mapping[K, V], Generic[K, V]):
         with self._lmdb_env.begin() as transaction:
             key_bytes = f"{self._prefix}{key}".encode(self._key_encoding)
             value_bytes = transaction.get(key_bytes)
-            if not value_bytes:
+            if value_bytes is None:
                 raise KeyError(key)
             else:
                 if self._value_encoding == "pkl":

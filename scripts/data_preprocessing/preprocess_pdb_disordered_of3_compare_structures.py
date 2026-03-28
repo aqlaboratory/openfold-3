@@ -160,6 +160,8 @@ def main(
         logger_main.info(msg)
         warnings.warn(msg, stacklevel=2)
 
+    output_directory.mkdir(parents=True, exist_ok=True)
+
     # Get list of predicted structures with GT structures available
     pred_pdb_ids = [i.stem for i in list(pred_structures_directory.iterdir())]
     logger_main.info(

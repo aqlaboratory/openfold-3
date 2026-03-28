@@ -19,7 +19,7 @@ Manage imports run_openfold.py
 # ruff: noqa: F401
 
 
-def _torch_gpu_setup():
+def _enable_tf32():
     import torch
 
     torch_versions = torch.__version__.split(".")
