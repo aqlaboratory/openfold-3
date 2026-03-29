@@ -255,7 +255,7 @@ class ExperimentRunner(ABC):
             _callbacks.append(
                 MemorySnapshot(
                     output_path=self.memory_snapshot.output_path,
-                    record_steps=self.memory_snapshot.record_steps,
+                    start_step=self.memory_snapshot.start_step,
                     dump_on_oom=self.memory_snapshot.dump_on_oom,
                     stacks=self.memory_snapshot.stacks,
                 )

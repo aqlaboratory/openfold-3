@@ -220,7 +220,8 @@ class MemorySnapshotConfig(BaseModel):
 
     enabled: bool = False
     output_path: str = "memory_snapshot.pickle"
-    record_steps: int | None = 1
+    # Step to record a snapshot. Set to null to disable step-based snapshotting.
+    start_step: int | None = 0
     dump_on_oom: bool = False
     stacks: str | None = None
 
