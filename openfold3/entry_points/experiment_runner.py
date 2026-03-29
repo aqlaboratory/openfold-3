@@ -33,6 +33,7 @@ from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
+from pytorch_lightning.profilers import PyTorchProfiler
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
 from openfold3.core.data.framework.data_module import (
@@ -43,8 +44,10 @@ from openfold3.core.data.framework.data_module import (
 from openfold3.core.runners.writer import OF3OutputWriter
 from openfold3.core.utils.callbacks import (
     LogInferenceQuerySet,
+    MemorySnapshot,
     PredictTimer,
     RankSpecificSeedCallback,
+    SecondsPerIterationProgressBar,
 )
 from openfold3.core.utils.checkpoint_loading_utils import (
     get_state_dict_from_checkpoint,
@@ -109,6 +112,8 @@ class ExperimentRunner(ABC):
 
         # typical model update config
         self.model_update = experiment_config.model_update
+        self.memory_snapshot = experiment_config.memory_snapshot
+        self.profiler_config = experiment_config.profiler
 
     def setup(self) -> None:
         """Set up the experiment environment.
@@ -243,8 +248,19 @@ class ExperimentRunner(ABC):
 
     @cached_property
     def callbacks(self):
-        """Set up and return the list of training callbacks."""
-        _callbacks = []
+        """Set up and return the list of callbacks."""
+        _callbacks = [SecondsPerIterationProgressBar()]
+
+        if self.memory_snapshot.enabled:
+            _callbacks.append(
+                MemorySnapshot(
+                    output_path=self.memory_snapshot.output_path,
+                    record_steps=self.memory_snapshot.record_steps,
+                    dump_on_oom=self.memory_snapshot.dump_on_oom,
+                    stacks=self.memory_snapshot.stacks,
+                )
+            )
+
         return _callbacks
 
     @cached_property
@@ -256,6 +272,29 @@ class ExperimentRunner(ABC):
     ###############
     # pl.Trainer class and run command
     ###############
+
+    def _build_profiler(self) -> PyTorchProfiler:
+        """Build a PyTorch profiler from the profiler config."""
+        cfg = self.profiler_config
+        return PyTorchProfiler(
+            dirpath=cfg.dirpath,
+            filename=cfg.filename,
+            schedule=torch.profiler.schedule(
+                skip_first=cfg.skip_first,
+                wait=cfg.wait,
+                warmup=cfg.warmup,
+                active=cfg.active,
+                repeat=cfg.repeat,
+            ),
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            record_shapes=cfg.record_shapes,
+            profile_memory=cfg.profile_memory,
+            with_stack=cfg.with_stack,
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(cfg.dirpath),
+        )
 
     @cached_property
     def trainer(self) -> pl.Trainer:
@@ -271,6 +310,9 @@ class ExperimentRunner(ABC):
                 "logger": self.loggers,
             }
         )
+
+        if self.profiler_config.enabled:
+            trainer_args["profiler"] = self._build_profiler()
 
         return pl.Trainer(**trainer_args)
 
@@ -522,11 +564,16 @@ class TrainingExperimentRunner(ExperimentRunner):
     @cached_property
     def callbacks(self):
         """Set up and return the list of training callbacks."""
-        _callbacks = [RankSpecificSeedCallback(base_seed=self.seed)]
+        _callbacks = list(super().callbacks)
+
+        _callbacks.append(RankSpecificSeedCallback(base_seed=self.seed))
 
         _checkpoint = self.checkpoint_config
         if _checkpoint is not None:
             _callbacks.append(ModelCheckpoint(**_checkpoint.model_dump()))
+
+        if self.model_config.settings.debug.log_iteration_time:
+            _callbacks.append(PredictTimer(output_dir=None))
 
         _log_lr = self.logging_config.log_lr
         if _log_lr and self.use_wandb:
@@ -706,15 +753,18 @@ class InferenceExperimentRunner(ExperimentRunner):
     @cached_property
     def callbacks(self):
         """Set up prediction writer callback."""
-        _callbacks = [
-            OF3OutputWriter(
-                output_dir=self.output_dir,
-                pae_enabled=self.pae_enabled,
-                **self.output_writer_settings.model_dump(),
-            ),
-            PredictTimer(self.output_dir),
-            LogInferenceQuerySet(self.output_dir),
-        ]
+        _callbacks = list(super().callbacks)
+        _callbacks.extend(
+            [
+                OF3OutputWriter(
+                    output_dir=self.output_dir,
+                    pae_enabled=self.pae_enabled,
+                    **self.output_writer_settings.model_dump(),
+                ),
+                PredictTimer(self.output_dir),
+                LogInferenceQuerySet(self.output_dir),
+            ]
+        )
         return _callbacks
 
     @cached_property

@@ -14,6 +14,7 @@
 
 import logging
 import os
+import platform
 import random
 import warnings
 from datetime import timedelta
@@ -190,6 +191,47 @@ class CheckpointLoadingSettings(BaseModel):
     strict_loading: bool = True
 
 
+class ProfilerConfig(BaseModel):
+    """
+    Configuration for PyTorch profiler with Chrome trace output.
+    When enabled, wraps training with torch.profiler and writes Chrome trace
+    files that can be viewed in chrome://tracing or Perfetto.
+    """
+
+    enabled: bool = False
+    dirpath: str = "logs/profiler_traces"
+    filename: str = "profile_trace"
+    skip_first: int = 0
+    wait: int = 1
+    warmup: int = 1
+    active: int = 3
+    repeat: int = 0
+    record_shapes: bool = True
+    profile_memory: bool = False
+    with_stack: bool = True
+
+
+class MemorySnapshotConfig(BaseModel):
+    """
+    Configuration for memory snapshot profiling.
+    When enabled, records GPU memory allocation history and dumps a pickle
+    file that can be visualized at https://pytorch.org/memory_viz
+    """
+
+    enabled: bool = False
+    output_path: str = "memory_snapshot.pickle"
+    record_steps: int | None = 1
+    dump_on_oom: bool = False
+    stacks: str | None = None
+
+    @model_validator(mode="after")
+    def default_stacks_for_platform(self):
+        if self.stacks is None:
+            # "all" (C++ + Python) requires libunwind which is x86_64 only
+            self.stacks = "all" if platform.machine() == "x86_64" else "python"
+        return self
+
+
 class TrainingExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
@@ -291,6 +333,8 @@ class ExperimentConfig(BaseModel):
     experiment_settings: ExperimentSettings
     pl_trainer_args: PlTrainerArgs = PlTrainerArgs()
     model_update: ModelUpdate
+    memory_snapshot: MemorySnapshotConfig = MemorySnapshotConfig()
+    profiler: ProfilerConfig = ProfilerConfig()
 
 
 class TrainingExperimentConfig(ExperimentConfig):
