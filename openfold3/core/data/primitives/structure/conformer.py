@@ -334,6 +334,10 @@ def resolve_and_format_fallback_conformer(
     # Remove all other conformers
     mol = set_single_conformer(mol, conf)
 
+    # Strip model PDB ID when the fallback is not from CCD model coordinates
+    if fallback_conformer_source != "ccd-model" and mol.HasProp("model_pdb_id"):
+        mol.ClearProp("model_pdb_id")
+
     # Add atom-wise mask of valid atoms in "annot_used_atom_mask" property
     mol = add_conformer_atom_mask(mol)
 
