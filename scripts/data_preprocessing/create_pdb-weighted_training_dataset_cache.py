@@ -157,13 +157,6 @@ def main(
     else:
         parsed_max_release_date = None
 
-    if max_conformer_release_date is not None:
-        parsed_max_conformer_release_date = datetime.strptime(
-            max_conformer_release_date, "%Y-%m-%d"
-        ).date()
-    else:
-        parsed_max_conformer_release_date = parsed_max_release_date
-
     # Set up logger
     logger = logging.getLogger("openfold3")
     logger.setLevel(getattr(logging, log_level))
@@ -179,7 +172,7 @@ def main(
         "max_release_date": parsed_max_release_date,
         "max_resolution": max_resolution,
         "max_polymer_chains": max_polymer_chains,
-        "max_conformer_release_date": parsed_max_conformer_release_date,
+        "max_conformer_release_date": max_conformer_release_date,
     }
     for filter_name, filter_value in filter_dict.items():
         if filter_value is None:
@@ -192,7 +185,7 @@ def main(
         output_path=output_path,
         dataset_name=dataset_name,
         max_release_date=parsed_max_release_date,
-        max_conformer_release_date=parsed_max_conformer_release_date,
+        max_conformer_release_date=max_conformer_release_date,
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
         filter_missing_alignment=not allow_missing_alignment,

@@ -162,6 +162,16 @@ def create_pdb_training_dataset_cache_of3(
             Path to write a JSON file containing all chains that were filtered out
             because they do not have a corresponding alignment.
     """
+    # Normalize date parameters to datetime.date
+    if isinstance(max_release_date, str):
+        max_release_date = datetime.datetime.strptime(
+            max_release_date, "%Y-%m-%d"
+        ).date()
+    if isinstance(max_conformer_release_date, str):
+        max_conformer_release_date = datetime.datetime.strptime(
+            max_conformer_release_date, "%Y-%m-%d"
+        ).date()
+
     if max_conformer_release_date is None:
         max_conformer_release_date = max_release_date
 
@@ -240,14 +250,9 @@ def create_pdb_training_dataset_cache_of3(
     logger.info("Done clustering.")
 
     # Block usage of reference conformer coordinates from PDB-IDs that are outside the
-    # training split. Needs to be run before the filtering to use the full release date
+    # training split. Needs to run before further filtering to use the full release date
     # information in structure_data.
     if max_conformer_release_date is not None:
-        if isinstance(max_conformer_release_date, str):
-            max_conformer_release_date = datetime.datetime.strptime(
-                max_conformer_release_date, "%Y-%m-%d"
-            ).date()
-
         set_nan_fallback_conformer_flag(
             pdb_id_to_release_date=pdb_id_to_release_date,
             reference_mol_cache=dataset_cache.reference_molecule_data,

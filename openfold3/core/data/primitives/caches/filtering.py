@@ -809,7 +809,7 @@ def get_mol_id_to_smiles(
 
 
 def set_nan_fallback_conformer_flag(
-    pdb_id_to_release_date: dict[str, date | str],
+    pdb_id_to_release_date: dict[str, date | None],
     reference_mol_cache: DatasetReferenceMoleculeCache,
     max_model_pdb_release_date: date | str,
 ) -> None:
@@ -817,16 +817,17 @@ def set_nan_fallback_conformer_flag(
 
     Based on AF3 SI 2.8, fallback conformers derived from PDB coordinates cannot be used
     if the corresponding PDB model was released after the training cutoff. This function
-    introduces a new key "set_fallback_to_nan" in the reference molecule cache, which is
-    set to True for these cases and will be read in the model dataloading pipeline.
+    sets "set_fallback_to_nan" in the reference molecule cache to True for these cases,
+    which will be read in the model dataloading pipeline.
 
     Args:
-        structure_cache:
-            The structure metadata cache.
+        pdb_id_to_release_date:
+            Mapping of PDB IDs to their release dates. Should be built from the full
+            preprocessing metadata cache (before any filtering).
         reference_mol_cache:
             The reference molecule metadata cache.
-        max_pdb_date:
-            The maximum PDB release date for structures in the training set. PDB IDs
+        max_model_pdb_release_date:
+            The maximum PDB release date for CCD model conformer sources. PDB IDs
             released after this date will have their fallback conformer set to NaN.
 
     """
@@ -836,11 +837,21 @@ def set_nan_fallback_conformer_flag(
         ).date()
 
     for ref_mol_id, metadata in reference_mol_cache.items():
-        # Check if the fallback conformer should be NaN
+        # Only CCD model conformers carry PDB leakage risk — all other sources
+        # (rdkit, ccd-ideal, all-nan) are safe regardless of release dates
+        if metadata.fallback_conformer_source != "ccd-model":
+            metadata.set_fallback_to_nan = False
+            continue
+
         model_pdb_id = metadata.fallback_conformer_pdb_id
 
         if model_pdb_id is None:
-            continue
+            # Conservatively force NaN if PDB-ID of deposited coords unknown
+            logger.warning(
+                f"CCD model conformer for molecule {ref_mol_id} has no associated "
+                "PDB ID, forcing NaN fallback conformer."
+            )
+            metadata.set_fallback_to_nan = True
 
         elif model_pdb_id not in pdb_id_to_release_date:
             logger.warning(

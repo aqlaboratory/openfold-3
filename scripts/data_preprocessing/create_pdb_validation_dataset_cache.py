@@ -66,6 +66,17 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     help="Minimum release date for included structures, formatted as 'YYYY-MM-DD'.",
 )
 @click.option(
+    "--max-conformer-release-date",
+    type=str,
+    default=None,
+    help=(
+        "Maximum release date for the model PDB-ID associated with a conformer, in the "
+        "rare case that conformer coordinates have to be inferred from the CCD model "
+        "coordinates. Formatted as 'YYYY-MM-DD'. If not provided, defaults to "
+        "min_release_date - 1 day (i.e. the last day of the training window)."
+    ),
+)
+@click.option(
     "--max-resolution",
     type=float,
     default=4.5,
@@ -160,6 +171,7 @@ def main(
     dataset_name: str,
     max_release_date: str = "2023-01-13",
     min_release_date: str = "2021-10-01",
+    max_conformer_release_date: str | None = None,
     max_resolution: float = 4.5,
     max_polymer_chains: int = 1000,
     allow_missing_alignment: bool = False,
@@ -237,6 +249,7 @@ def main(
         dataset_name=dataset_name,
         max_release_date=max_release_date,
         min_release_date=min_release_date,
+        max_conformer_release_date=max_conformer_release_date,
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
         filter_missing_alignment=not allow_missing_alignment,
