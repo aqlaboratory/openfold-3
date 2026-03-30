@@ -327,7 +327,7 @@ def create_pdb_val_dataset_cache_of3(
     output_path: Path,
     dataset_name: str,
     max_release_date: datetime.date | str = "2023-01-13",
-    min_release_date: datetime.date | str = "2021-09-30",
+    min_release_date: datetime.date | str = "2021-10-01",
     max_conformer_release_date: datetime.date | str | None = None,
     max_resolution: float = 4.5,
     max_polymer_chains: int = 1000,
