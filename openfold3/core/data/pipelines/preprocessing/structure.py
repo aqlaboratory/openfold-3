@@ -376,9 +376,11 @@ def extract_component_data_of3(
     # conformer coordinates
     for mol_id, mol in all_component_mols.items():
         residue_count = non_std_ligands_to_rescount.get(mol_id, 1)
-        mol, conformer_strategy = resolve_and_format_fallback_conformer(mol)
+        mol, conformer_strategy, fallback_source = (
+            resolve_and_format_fallback_conformer(mol)
+        )
         reference_mol_metadata[mol_id] = get_reference_molecule_metadata(
-            mol, conformer_strategy, residue_count
+            mol, conformer_strategy, residue_count, fallback_source
         )
 
         # Write SDF file

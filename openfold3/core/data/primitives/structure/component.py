@@ -545,11 +545,14 @@ def get_reference_molecule_metadata(
     mol: AnnotatedMol,
     conformer_strategy: Literal["default", "random_init", "use_fallback"],
     residue_count: int,
+    fallback_conformer_source: Literal["rdkit", "ccd-ideal", "ccd-model", "all-nan"]
+    | None = None,
 ) -> dict:
     """Convenience function to return the metadata for a reference molecule."""
     conf_metadata = {
         "residue_count": residue_count,
         "conformer_gen_strategy": conformer_strategy,
+        "fallback_conformer_source": fallback_conformer_source,
     }
 
     if mol.HasProp("model_pdb_id"):

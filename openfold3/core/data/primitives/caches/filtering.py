@@ -357,6 +357,7 @@ def build_provisional_clustered_dataset_cache(
             fallback_conformer_pdb_id=ref_mol_data.fallback_conformer_pdb_id,
             canonical_smiles=ref_mol_data.canonical_smiles,
             set_fallback_to_nan=False,
+            fallback_conformer_source=ref_mol_data.fallback_conformer_source,
         )
 
     new_dataset_cache = ClusteredDatasetCache(
@@ -446,6 +447,7 @@ def build_provisional_clustered_val_dataset_cache(
             canonical_smiles=ref_mol_data.canonical_smiles,
             residue_count=ref_mol_data.residue_count,
             set_fallback_to_nan=False,
+            fallback_conformer_source=ref_mol_data.fallback_conformer_source,
         )
 
     new_dataset_cache = ValidationDatasetCache(
