@@ -19,6 +19,7 @@ import torch.nn.functional as F
 
 from openfold3.core.loss.diffusion import (
     bond_loss,
+    bond_loss_sparse,
     diffusion_loss,
     mse_loss,
     smooth_lddt_loss,
@@ -155,6 +156,107 @@ class TestDiffusionLoss(unittest.TestCase):
 
         self.assertTrue(loss.shape == (batch_size, n_sample))
         self.assertTrue((loss < 1e-5).all())
+
+    def test_bond_loss_sparse_matches_dense(self):
+        """Verify bond_loss_sparse produces the same output as bond_loss."""
+        n_sample = 2
+
+        batch = self.setup_features()
+
+        # Use noisy positions so the loss is non-trivial
+        x = batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1))
+        x = x + torch.randn_like(x) * 0.5
+
+        loss_dense = bond_loss(x=x, batch=batch, eps=consts.eps)
+        loss_sparse = bond_loss_sparse(x=x, batch=batch, eps=consts.eps)
+
+        self.assertEqual(loss_dense.shape, loss_sparse.shape)
+        self.assertTrue(
+            torch.allclose(loss_dense, loss_sparse, atol=1e-5),
+            f"Dense and sparse bond loss differ: "
+            f"max diff={torch.max(torch.abs(loss_dense - loss_sparse)):.2e}",
+        )
+
+    @unittest.skipUnless(torch.cuda.is_available(), "requires GPU")
+    def test_bond_loss_sparse_uses_less_memory(self):
+        """Verify bond_loss_sparse uses less GPU memory than bond_loss."""
+        n_token = 100
+        n_atom = 2000
+        n_sample = 2
+        device = torch.device("cuda")
+
+        # Build a batch large enough to show memory differences
+        token_mask = torch.ones((1, n_token), device=device)
+        atoms_per_token = n_atom // n_token
+        num_atoms_per_token = torch.full((1, n_token), atoms_per_token, device=device)
+        start_atom_index = (
+            torch.arange(n_token, device=device).unsqueeze(0) * atoms_per_token
+        )
+
+        is_protein = torch.zeros((1, n_token), device=device)
+        is_protein[:, n_token // 2 :] = 1
+        is_ligand = torch.zeros((1, n_token), device=device)
+        is_ligand[:, : n_token // 2] = 1
+        is_rna = torch.zeros((1, n_token), device=device)
+        is_dna = torch.zeros((1, n_token), device=device)
+
+        token_bonds = torch.zeros((1, n_token, n_token), device=device)
+        # Create some bonds between ligand and protein tokens
+        for i in range(n_token // 2):
+            j = n_token // 2 + i
+            token_bonds[0, i, j] = 1
+            token_bonds[0, j, i] = 1
+
+        gt_positions = torch.randn((1, n_atom, 3), device=device)
+        gt_mask = torch.ones((1, n_atom), device=device)
+
+        batch = {
+            "token_mask": token_mask,
+            "num_atoms_per_token": num_atoms_per_token,
+            "start_atom_index": start_atom_index,
+            "is_protein": is_protein,
+            "is_rna": is_rna,
+            "is_dna": is_dna,
+            "is_ligand": is_ligand,
+            "token_bonds": token_bonds,
+            "ground_truth": {
+                "atom_resolved_mask": gt_mask,
+                "atom_positions": gt_positions,
+            },
+        }
+
+        x = gt_positions.unsqueeze(1).expand(-1, n_sample, -1, -1).clone()
+        x = x + torch.randn_like(x) * 0.5
+
+        # Measure dense
+        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.synchronize()
+        _ = bond_loss(x=x, batch=batch, eps=1e-8)
+        torch.cuda.synchronize()
+        peak_dense = torch.cuda.max_memory_allocated(device)
+
+        # Free intermediates
+        torch.cuda.empty_cache()
+
+        # Measure sparse
+        torch.cuda.reset_peak_memory_stats(device)
+        torch.cuda.synchronize()
+        _ = bond_loss_sparse(x=x, batch=batch, eps=1e-8)
+        torch.cuda.synchronize()
+        peak_sparse = torch.cuda.max_memory_allocated(device)
+
+        savings_mb = (peak_dense - peak_sparse) / (1024**2)
+        print(
+            f"\nbond_loss memory: dense={peak_dense / 1024**2:.1f} MB, "
+            f"sparse={peak_sparse / 1024**2:.1f} MB, "
+            f"savings={savings_mb:.1f} MB"
+        )
+        self.assertGreater(
+            peak_dense,
+            peak_sparse,
+            f"Expected sparse to use less memory. "
+            f"Dense={peak_dense / 1024**2:.1f} MB, Sparse={peak_sparse / 1024**2:.1f} MB",
+        )
 
     def test_smooth_lddt_loss(self):
         n_sample = 2

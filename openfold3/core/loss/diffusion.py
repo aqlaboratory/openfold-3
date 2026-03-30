@@ -258,27 +258,59 @@ def bond_loss_sparse(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
         return tensor.reshape(-1, *tensor.shape[len(batch_dims) :])
 
     def expand_sample_dim(t: torch.tensor) -> torch.tensor:
-        feat_dims = t.shape[2:]
-        t = t.expand(*batch_dims, *((-1,) * len(feat_dims)))
+        """Expand a ground-truth tensor to include the sample dimension.
+
+        Ground-truth tensors have shape [bs, *feat] (no sample dim), while
+        the predicted positions x have shape [bs, N_sample, *feat]. This
+        helper inserts a singleton sample dim at position 1 and expands it
+        to match batch_dims = (bs, N_sample).
+
+        Args:
+            t: Ground-truth tensor of shape [bs, *feat].
+               e.g. [bs, N_atom, 3] for positions,
+                    [bs, N_atom] for masks.
+
+        Returns:
+            Tensor of shape [bs, N_sample, *feat].
+               e.g. [bs, N_sample, N_atom, 3] for positions,
+                    [bs, N_sample, N_atom] for masks.
+
+        BUG FIX: The original code did not insert a sample dimension before
+        expanding. For a tensor of shape [bs, N_atom, 3],
+        feat_dims = t.shape[2:] = (3,), so expand(*batch_dims, -1) tried to
+        reshape [bs, N_atom, 3] -> [bs, N_sample, 3], crashing because N_atom
+        != N_sample. The fix: unsqueeze(1) first.
+
+        Original (broken):
+            feat_dims = t.shape[2:]
+            t = t.expand(*batch_dims, *((-1,) * len(feat_dims)))
+        """
+        t = t.unsqueeze(1)  # [bs, *feat] -> [bs, 1, *feat]
+        feat_dims = t.shape[len(batch_dims) :]
+        t = t.expand(*batch_dims, *((-1,) * len(feat_dims)))  # [bs, N_sample, *feat]
         return t
 
     # Flatten all tensors to have a single batch dimension
+    # x: [bs, N_sample, N_atom, 3] -> [bs*N_sample, N_atom, 3]
     x = flatten_batch_dims(x)
+    # x_gt: [bs, N_atom, 3] -> [bs, N_sample, N_atom, 3] -> [bs*N_sample, N_atom, 3]
     x_gt = flatten_batch_dims(
         expand_sample_dim(batch["ground_truth"]["atom_positions"])
     )
+    # atom_mask_gt: [bs, N_atom] -> [bs, N_sample, N_atom] -> [bs*N_sample, N_atom]
     atom_mask_gt = flatten_batch_dims(
         expand_sample_dim(batch["ground_truth"]["atom_resolved_mask"])
     )
 
     # Construct polymer-ligand per-token bond mask
-    # [*, N_token, N_token]
+    # [bs, N_token, N_token]
     is_polymer = batch["is_protein"] + batch["is_dna"] + batch["is_rna"]
     token_bond_mask = batch["token_bonds"] * (
         is_polymer[..., None, :] * batch["is_ligand"][..., None]
     )
 
-    # [*, N_atom, N_atom]
+    # Broadcast token-level bond mask to atom-level
+    # [bs, N_atom, N_atom]
     atom_bond_mask = broadcast_token_feat_to_atoms(
         token_mask=batch["token_mask"],
         num_atoms_per_token=batch["num_atoms_per_token"],
@@ -291,12 +323,25 @@ def bond_loss_sparse(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
         token_feat=atom_bond_mask.transpose(-1, -2),
         token_dim=-2,
     )
-    atom_bond_mask = atom_bond_mask.transpose(-1, -2)
+    atom_bond_mask = atom_bond_mask.transpose(-1, -2)  # [bs, N_atom, N_atom]
 
+    # Combine bond mask with atom resolved mask
+    # atom_bond_mask:           [bs, N_atom, N_atom] (broadcasts to [bs*N_sample, ...])
+    # atom_mask_gt[..., None]:  [bs*N_sample, N_atom, 1]
+    # atom_mask_gt[..., None,:]: [bs*N_sample, 1, N_atom]
+    # -> mask:                  [bs*N_sample, N_atom, N_atom]
     mask = (
         atom_bond_mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
     ).bool()
-    mask = flatten_batch_dims(mask)
+    # BUG FIX: The original code called flatten_batch_dims(mask) here, but mask
+    # is already [bs*N_sample, N_atom, N_atom] — atom_mask_gt was already
+    # flattened above, and atom_bond_mask [bs, N_atom, N_atom] broadcasts to
+    # match. Calling flatten_batch_dims again with len(batch_dims)=2 collapsed
+    # the 3D mask to 2D (reshape(-1, N_atom)), causing torch.nonzero to return
+    # [num_bonds, 2] instead of the expected [num_bonds, 3].
+    #
+    # Original (broken):
+    #   mask = flatten_batch_dims(mask)
 
     # Find the indices of the valid bonds
     # bond_indices will be a tensor of shape [num_bonds, 3]
