@@ -12,12 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from collections import defaultdict
 from datetime import datetime
 from typing import Literal
 
 import biotite.structure as struc
 import numpy as np
+
+logger = logging.getLogger(__name__)
 from biotite.structure import BondType
 from biotite.structure.info.bonds import BOND_TYPES
 from biotite.structure.io.pdbx import BinaryCIFFile, CIFBlock, CIFCategory, CIFFile
@@ -475,11 +478,18 @@ def get_ccd_atom_id_to_charge_dict(ccd_entry: CIFBlock) -> dict[str, float]:
 
 def get_first_bioassembly_polymer_count(cif_data: CIFBlock) -> int:
     """Returns the number of polymer chains in the first bioassembly."""
-    return (
-        cif_data["pdbx_struct_assembly"]["oligomeric_count"]
-        .as_array(dtype=int)[0]
-        .item()
-    )
+    col = cif_data["pdbx_struct_assembly"]["oligomeric_count"]
+    raw_value = col.as_array(dtype=str)[0]
+
+    # Biotite does this too but it's undocumented, so let's keep behavior future-proof
+    if raw_value in ("?", "."):
+        logger.warning(
+            f"oligomeric_count is '{raw_value}'; "
+            "defaulting to 0 (max_polymer_chains filter will be skipped)"
+        )
+        return 0
+    else:
+        return col.as_array(dtype=int)[0].item()
 
 
 def writer_update_atom_site(
