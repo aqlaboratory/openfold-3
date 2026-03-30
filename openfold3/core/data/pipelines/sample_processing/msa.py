@@ -14,6 +14,7 @@
 
 """This module contains SampleProcessingPipelines for MSA features."""
 
+import logging
 from collections.abc import Sequence
 from functools import partial
 
@@ -51,6 +52,8 @@ from openfold3.core.data.primitives.sequence.msa import (
     sort_subsample_paired_row_ids,
 )
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
+
+logger = logging.getLogger(__name__)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-query")
@@ -276,6 +279,14 @@ def create_main(
 
     for rep_id, chain_data in msa_array_collection.rep_id_to_main_msa.items():
         chain_data = msa_array_collection.rep_id_to_main_msa[rep_id]
+
+        dropped = [k for k in chain_data if k not in aln_order]
+        if dropped:
+            logger.warning(
+                "MSA keys %s dropped for rep_id '%s' (not in aln_order)",
+                dropped,
+                rep_id,
+            )
 
         # Get MSAs forming the main MSA and deletion matrices from all non-UniProt MSAs
         main_msa_redundant = np.concatenate(
