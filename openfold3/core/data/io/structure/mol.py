@@ -73,12 +73,13 @@ def write_annotated_sdf(mol: AnnotatedMol, out: PathLike | str) -> Path:
             if key.startswith("annot_"):
                 mol_annotations[f"atom_annot_{key[6:]}"].append(str(value))
 
-    # Write the global molecule-level annotations
+    # Write the global molecule-level annotations on a copy to avoid mutating the input
+    mol_copy = Chem.Mol(mol)
     for key, value in mol_annotations.items():
-        mol.SetProp(key, " ".join(value))
+        mol_copy.SetProp(key, " ".join(value))
 
     with Chem.SDWriter(str(out)) as writer:
-        writer.write(mol)
+        writer.write(mol_copy)
 
 
 def read_single_annotated_sdf(path: PathLike) -> AnnotatedMol:
