@@ -18,7 +18,6 @@ import os
 import random
 import shutil
 import tarfile
-import tempfile
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -997,13 +996,17 @@ class MsaComputationSettings(BaseModel):
     server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
     save_mappings: bool = True
-    msa_output_directory: Path = Path(tempfile.gettempdir()) / "of3_colabfold_msas"
+    msa_output_directory: Path | None = None
     cleanup_msa_dir: bool = True
 
     @model_validator(mode="after")
     def create_dir(self) -> "MsaComputationSettings":
         """Creates the output directory if it does not exist."""
-        if not self.msa_output_directory.exists():
+        if self.msa_output_directory is None:
+            from openfold3.core.data.tools.utils import get_of3_tmpdir
+
+            self.msa_output_directory = get_of3_tmpdir("colabfold_msas")
+        elif not self.msa_output_directory.exists():
             self.msa_output_directory.mkdir(parents=True, exist_ok=True)
         return self
 

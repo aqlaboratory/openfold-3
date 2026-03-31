@@ -19,7 +19,6 @@ import multiprocessing as mp
 import os
 import random
 import re
-import tempfile
 import traceback
 from datetime import datetime
 from functools import wraps
@@ -1601,9 +1600,11 @@ class TemplatePreprocessorSettings(BaseModel):
                 "pipeline."
             )
 
-        self.output_directory = (
-            self.output_directory or Path(tempfile.gettempdir()) / "of3_template_data"
-        )
+        if self.output_directory is None:
+            from openfold3.core.data.tools.utils import get_of3_tmpdir
+
+            self.output_directory = get_of3_tmpdir("template_data")
+
         base = self.output_directory
 
         # only set these if the user did not give them explicitly

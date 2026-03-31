@@ -20,6 +20,7 @@ implementation.
 
 import unittest
 
+import pytest
 import torch
 from torch.nn import functional as F
 
@@ -41,6 +42,7 @@ from openfold3.tests.data_utils import (
 
 # Needed to do backward for cuEq kernels with FP32
 torch.backends.cuda.matmul.allow_tf32 = True
+pytestmark = [pytest.mark.slow]
 
 
 @compare_utils.skip_unless_cuda_available()

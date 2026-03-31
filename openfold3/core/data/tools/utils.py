@@ -17,10 +17,27 @@
 
 import contextlib
 import datetime
+import getpass
 import logging
 import shutil
 import tempfile
 import time
+from pathlib import Path
+
+
+def get_of3_tmpdir(subdir: str | None = None) -> Path:
+    """Return a user-namespaced OpenFold3 temporary directory.
+
+    Follows the same convention as pytest (``/tmp/pytest-of-<user>/``):
+    ``<tmpdir>/of3-of-<user>/<subdir>``.  Respects ``$TMPDIR`` and other
+    platform conventions via :func:`tempfile.gettempdir`.
+
+    The returned directory is created on disk if it does not already exist.
+    """
+    base = Path(tempfile.gettempdir()) / f"of3-of-{getpass.getuser()}"
+    path = base / subdir if subdir else base
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 @contextlib.contextmanager

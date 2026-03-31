@@ -1,0 +1,26 @@
+name: Run integration tests with docker image 
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # every daily at 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  test:
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - cuda_base_image_tag: "12.1.1-cudnn8-devel-ubuntu22.04"
+            build_mode: "yaml"
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}-${{ matrix.cuda_base_image_tag }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/ci-integration-test-reusable.yml
+    with:
+      cuda_base_image_tag: ${{ matrix.cuda_base_image_tag }}
+      build_mode: ${{ matrix.build_mode }}
+    secrets: inherit

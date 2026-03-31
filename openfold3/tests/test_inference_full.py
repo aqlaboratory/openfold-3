@@ -19,10 +19,12 @@ Runs two small inference queries without msa or templates.
 
 import logging
 import os
+import textwrap
 from unittest.mock import patch
 
 import pytest
 
+from openfold3.core.config import config_utils
 from openfold3.entry_points.experiment_runner import InferenceExperimentRunner
 from openfold3.entry_points.validator import (
     InferenceExperimentConfig,
@@ -32,7 +34,7 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 )
 from openfold3.tests.compare_utils import skip_unless_cuda_available
 
-pytestmark = pytest.mark.inference_verification
+pytestmark = [pytest.mark.inference_verification, pytest.mark.slow]
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -75,16 +77,37 @@ protein_and_ligand_query = InferenceQuerySet.model_validate(
     }
 )
 
+inference_test_yaml_str = textwrap.dedent("""\
+    model_update:
+      presets: 
+        - predict
+        - low_mem
+      custom:
+        settings:
+          memory:
+            eval:
+              use_deepspeed_evo_attention: false 
+    """)
+
 
 @skip_unless_cuda_available()
 @pytest.mark.parametrize("query_set", [protein_only_query, protein_and_ligand_query])
 def test_inference_run(tmp_path, query_set):
+    # Set up runner args
+    runner_yaml = tmp_path / "runner_config.yaml"
+    runner_yaml.write_text(inference_test_yaml_str)
+
     # Trigger validation logic to replace the cache path
     with patch("builtins.input", return_value="no"):
-        # your test code that calls _maybe_download_parameters
-        experiment_config = InferenceExperimentConfig.model_validate({})
+        experiment_config = InferenceExperimentConfig(
+            **config_utils.load_yaml(runner_yaml)
+        )
     expt_runner = InferenceExperimentRunner(
-        experiment_config, num_diffusion_samples=1, output_dir=tmp_path
+        experiment_config,
+        num_diffusion_samples=1,
+        output_dir=tmp_path,
+        use_msa_server=True,
+        use_templates=True,
     )
     try:
         expt_runner.setup()
