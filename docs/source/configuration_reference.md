@@ -232,7 +232,7 @@ Configures the ColabFold MSA server integration.
 - `server_user_agent` *(str)*: User agent string (default: `openfold`)
 - `server_url` *(Url)*: ColabFold server URL (default: `https://api.colabfold.com`)
 - `save_mappings` *(bool)*: Save sequence ID mappings (default: `true`)
-- `msa_output_directory` *(Path)*: Directory for MSA outputs (default: temporary directory)
+- `msa_output_directory` *(Path)*: Directory for MSA outputs (default: `temporary directory/of3-of-<user>/colabfold_msas`)
 - `cleanup_msa_dir` *(bool)*: Delete MSAs after processing (default: `true`)
 
 **Example**:
