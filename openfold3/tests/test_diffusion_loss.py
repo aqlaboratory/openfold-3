@@ -26,6 +26,7 @@ from openfold3.core.loss.diffusion import (
     weighted_rigid_align,
 )
 from openfold3.core.model.structure.diffusion_module import centre_random_augmentation
+from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.tests.config import consts
 
 
@@ -167,8 +168,15 @@ class TestDiffusionLoss(unittest.TestCase):
         x = batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1))
         x = x + torch.randn_like(x) * 0.5
 
+        # bond_loss (dense) works without the sample dim in batch — it
+        # broadcasts x_gt [bs, N_atom, 3] against x [bs, N_sample, N_atom, 3].
         loss_dense = bond_loss(x=x, batch=batch, eps=consts.eps)
-        loss_sparse = bond_loss_sparse(x=x, batch=batch, eps=consts.eps)
+
+        # bond_loss_sparse requires the singleton sample dim in batch tensors,
+        # matching what model.py:662 does before calling the loss:
+        #   batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+        batch_with_sample_dim = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+        loss_sparse = bond_loss_sparse(x=x, batch=batch_with_sample_dim, eps=consts.eps)
 
         self.assertEqual(loss_dense.shape, loss_sparse.shape)
         self.assertTrue(
@@ -228,7 +236,7 @@ class TestDiffusionLoss(unittest.TestCase):
         x = gt_positions.unsqueeze(1).expand(-1, n_sample, -1, -1).clone()
         x = x + torch.randn_like(x) * 0.5
 
-        # Measure dense
+        # Measure dense (works without sample dim in batch)
         torch.cuda.reset_peak_memory_stats(device)
         torch.cuda.synchronize()
         _ = bond_loss(x=x, batch=batch, eps=1e-8)
@@ -238,10 +246,11 @@ class TestDiffusionLoss(unittest.TestCase):
         # Free intermediates
         torch.cuda.empty_cache()
 
-        # Measure sparse
+        # Measure sparse (needs singleton sample dim, matching model.py:662)
+        batch_with_sample_dim = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
         torch.cuda.reset_peak_memory_stats(device)
         torch.cuda.synchronize()
-        _ = bond_loss_sparse(x=x, batch=batch, eps=1e-8)
+        _ = bond_loss_sparse(x=x, batch=batch_with_sample_dim, eps=1e-8)
         torch.cuda.synchronize()
         peak_sparse = torch.cuda.max_memory_allocated(device)
 
