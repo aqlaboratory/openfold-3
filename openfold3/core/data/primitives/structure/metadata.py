@@ -19,8 +19,6 @@ from typing import Literal
 
 import biotite.structure as struc
 import numpy as np
-
-logger = logging.getLogger(__name__)
 from biotite.structure import BondType
 from biotite.structure.info.bonds import BOND_TYPES
 from biotite.structure.io.pdbx import BinaryCIFFile, CIFBlock, CIFCategory, CIFFile
@@ -35,6 +33,8 @@ from openfold3.core.data.resources.residues import (
     STANDARD_RNA_RESIDUES,
     MoleculeType,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def get_pdb_id(cif_file: CIFFile, format: Literal["upper", "lower"] = "lower") -> str:
