@@ -697,8 +697,12 @@ def add_unresolved_atoms_within_residue(
         for residue_view in residue_view_iter(chain):
             res_name = residue_view.res_name[0]
 
-            # For easier identification in logging
-            res_tuple = (residue_view.chain_id[0], residue_view.res_id[0], res_name)
+            # For easier identification in logging (use .item() to get native types)
+            res_tuple = (
+                residue_view.chain_id[0].item(),
+                residue_view.res_id[0].item(),
+                residue_view.res_name[0].item(),
+            )
 
             # Atoms in the structure
             resolved_atom_set = set(residue_view.atom_name.tolist())

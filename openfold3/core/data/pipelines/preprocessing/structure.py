@@ -485,7 +485,7 @@ def preprocess_structure_and_write_outputs_of3(
     # Log new chain-ID mapping (makes spot-checking from the logs easier)
     chain_starts = struc.get_chain_starts(atom_array)
     chain_to_pdb_chain = {
-        pdb_chain_id: new_chain_id
+        pdb_chain_id.item(): new_chain_id.item()
         for pdb_chain_id, new_chain_id in zip(
             atom_array.label_asym_id[chain_starts],
             atom_array.chain_id[chain_starts],

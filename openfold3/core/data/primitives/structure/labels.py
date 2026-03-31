@@ -169,9 +169,12 @@ def get_residue_tuples(
 
     residue_starts = struc.get_residue_starts(atom_array, add_exclusive_stop=False)
 
-    # Construct the list of residue tuples
+    # Construct the list of residue tuples, converting numpy scalars to native
+    # Python types so that repr() produces clean output (e.g. in log messages).
     residue_tuples = [
-        tuple(getattr(atom_array, attr)[residue_start] for attr in attrs_to_include)
+        tuple(
+            getattr(atom_array, attr)[residue_start].item() for attr in attrs_to_include
+        )
         for residue_start in residue_starts
     ]
 
@@ -265,7 +268,7 @@ def get_differing_chain_ids(
     differing_chain_ids = np.setxor1d(
         atom_array_1.chain_id,
         atom_array_2.chain_id,
-    )
+    ).tolist()
 
     # Chain IDs in this codebase are often numerical so sort them nicely.
     return sorted(differing_chain_ids, key=lambda x: x.rjust(5, "0"))
