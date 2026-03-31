@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
 
 import gc
 import importlib
-import itertools
 import logging
 import traceback
+import warnings
 from contextlib import nullcontext
 from datetime import datetime
 from functools import partial
@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 from torchmetrics import MeanMetric, MetricCollection, PearsonCorrCoef
 
 from openfold3.core.loss.loss_module import OpenFold3Loss
@@ -32,11 +33,12 @@ from openfold3.core.metrics.model_selection import (
     compute_final_model_selection_metric,
     compute_valid_model_selection_metrics,
 )
-from openfold3.core.metrics.validation_all_atom import (
+from openfold3.core.metrics.quality import (
     get_metrics,
     get_metrics_chunked,
 )
 from openfold3.core.runners.model_runner import ModelRunner
+from openfold3.core.utils.grad_manager import PerSampleGradManager, compute_global_norm
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.core.utils.timing import PerformanceTimer
@@ -45,6 +47,7 @@ from openfold3.projects.of3_all_atom.config.model_config import (
 )
 from openfold3.projects.of3_all_atom.constants import (
     CORRELATION_METRICS,
+    METRIC_DENOMINATOR_ATTRS,
     TRAIN_LOGGED_METRICS,
     TRAIN_LOSSES,
     VAL_LOGGED_METRICS,
@@ -55,9 +58,18 @@ from openfold3.projects.of3_all_atom.model import OpenFold3
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
     import deepspeed
-    from deepspeed.ops.adam import DeepSpeedCPUAdam
 
 logger = logging.getLogger(__name__)
+# We define extra metrics that will cause this warning depending on the training stage
+# Only metrics with values present are logged, so we can ignore this error
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        r"The ``compute`` method of metric .* was called before the ``update`` method"
+    ),
+    category=UserWarning,
+    module="torchmetrics",
+)
 
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
@@ -74,11 +86,29 @@ class OpenFold3AllAtom(ModelRunner):
             self.config.settings.model_selection_weight_scheme
         ]
 
+        # Settings for per-sample gradient clipping
+        self.per_sample_grad_clipping = (
+            model_config.settings.gradient_clipping.per_sample_clipping
+        )
+        self.grad_manager = None
+        if self.per_sample_grad_clipping:
+            self.grad_manager = PerSampleGradManager(
+                gradient_clip_val=model_config.settings.gradient_clipping.clip_val,
+                accumulate_grad_batches=model_config.settings.manual_optimization.accumulate_grad_batches,
+                log_grad_norm=model_config.settings.debug.log_grad_norm,
+            )
+            self.automatic_optimization = False
+            self.log_lr = model_config.settings.manual_optimization.log_lr
+
+    @property
+    def version(self):
+        v = self.model.version_tensor.long().tolist()
+        return f"{v[0]}.{v[1]}.{v[2]}"
+
     def setup(self, stage: str):
         # Setup metrics
         self._setup_train_metrics()
         self._setup_val_metrics()
-        self._init_metric_enabled_tracker()
 
         # Keep grads enabled for confidence head parameters only
         if stage == "fit" and self.config.settings.train_confidence_only:
@@ -91,6 +121,13 @@ class OpenFold3AllAtom(ModelRunner):
             ]
             self._freeze_model_params(exempt_submodule=exempt_submodule)
 
+        # Initialize the gradient manager if doing per-sample grad clipping
+        if self.per_sample_grad_clipping:
+            self.grad_manager.setup(
+                model=self.model, trainer=self.trainer, logger=self.logger
+            )
+            self._identify_confidence_params()
+
     def _freeze_model_params(self, exempt_submodule: list[torch.nn.Module]):
         """Freeze all model parameters excluding those specified in exempt_submodule."""
         for param in self.model.parameters():
@@ -100,6 +137,28 @@ class OpenFold3AllAtom(ModelRunner):
         for layer in exempt_submodule:
             for param in layer.parameters():
                 param.requires_grad = True
+
+    def _identify_confidence_params(self):
+        """
+        Identifies which parameters belong to confidence heads.
+        """
+        confidence_modules_prefixes = [
+            "aux_heads.pairformer_embedding",
+            "aux_heads.pde",
+            "aux_heads.plddt",
+            "aux_heads.experimentally_resolved",
+            "aux_heads.pae",
+        ]
+
+        self.confidence_param_names = set()
+
+        for name, _ in self.model.named_parameters():
+            # Check if this param belongs to confidence module
+            is_confidence = any(
+                name.startswith(f"{prefix}.") for prefix in confidence_modules_prefixes
+            )
+            if is_confidence:
+                self.confidence_param_names.add(name)
 
     def reseed(self, seed):
         pl.seed_everything(seed)
@@ -111,14 +170,15 @@ class OpenFold3AllAtom(ModelRunner):
         #  Make consistent later
         # Initialize all training epoch metric objects
         train_losses = {
-            loss_name: MeanMetric(nan_strategy="warn") for loss_name in TRAIN_LOSSES
+            loss_name: MeanMetric(nan_strategy="warn", sync_on_compute=False)
+            for loss_name in TRAIN_LOSSES
         }
         self.train_losses = MetricCollection(
             train_losses, prefix="train/", postfix="_epoch"
         )
 
         train_metrics = {
-            metric_name: MeanMetric(nan_strategy="warn")
+            metric_name: MeanMetric(nan_strategy="warn", sync_on_compute=False)
             for metric_name in TRAIN_LOGGED_METRICS
         }
 
@@ -129,37 +189,22 @@ class OpenFold3AllAtom(ModelRunner):
 
         # Initialize all validation epoch metric objects
         val_losses = {
-            loss_name: MeanMetric(nan_strategy="warn") for loss_name in VAL_LOSSES
+            loss_name: MeanMetric(nan_strategy="warn", sync_on_compute=False)
+            for loss_name in VAL_LOSSES
         }
         self.val_losses = MetricCollection(val_losses, prefix="val/")
 
         val_metrics = {
-            metric_name: MeanMetric(nan_strategy="warn")
+            metric_name: MeanMetric(nan_strategy="warn", sync_on_compute=False)
             for metric_name in VAL_LOGGED_METRICS
         }
         val_metrics.update(
             {
-                metric_name: PearsonCorrCoef(num_outputs=1)
+                metric_name: PearsonCorrCoef(num_outputs=1, sync_on_compute=False)
                 for metric_name in CORRELATION_METRICS
             }
         )
         self.val_metrics = MetricCollection(val_metrics, prefix="val/")
-
-    def _init_metric_enabled_tracker(self):
-        """
-        Initialize map of enabled losses and metrics for logging. Losses default to
-        False because not all losses will be calculated for each stage of training.
-        The appropriate losses will be enabled after the first pass through the model.
-        """
-        loss_log_names = itertools.chain(
-            self.train_losses.keys(), self.val_losses.keys()
-        )
-        metric_log_names = itertools.chain(
-            self.train_metrics.keys(), self.val_metrics.keys()
-        )
-        metric_enabled = {loss_name: False for loss_name in loss_log_names}
-        metric_enabled.update({metric_name: True for metric_name in metric_log_names})
-        self.metric_enabled = metric_enabled
 
     def _update_epoch_metric(
         self,
@@ -180,18 +225,15 @@ class OpenFold3AllAtom(ModelRunner):
             metric_collection:
                 MetricCollection object containing the metric to update
         """
-        if metric_log_name not in self.metric_enabled:
+
+        if metric_log_name not in metric_collection.keys():  # noqa: SIM118
             raise ValueError(
                 f"Metric {metric_log_name} is not being tracked and will "
                 f"not appear in epoch metrics. Please add it to "
                 f"the {phase.upper()}_LOSSES or METRICS constants."
             )
 
-        if not self.metric_enabled[metric_log_name]:
-            self.metric_enabled[metric_log_name] = True
-
         metric_obj = metric_collection[metric_log_name]
-
         metric_value = (
             (metric_value,) if type(metric_value) is not tuple else metric_value
         )
@@ -252,7 +294,9 @@ class OpenFold3AllAtom(ModelRunner):
 
             return metrics
 
-    def _log(self, loss_breakdown, batch, outputs, train=True):
+    def _log(
+        self, loss_breakdown, batch, outputs, train=True, log_train_step_metrics=True
+    ):
         phase = "train" if train else "val"
 
         metrics = self._get_metrics(batch, outputs, train=train)
@@ -271,7 +315,7 @@ class OpenFold3AllAtom(ModelRunner):
             )
 
             # Only log steps for training
-            if train:
+            if train and log_train_step_metrics:
                 self.log(
                     metric_log_name,
                     indiv_loss,
@@ -293,9 +337,8 @@ class OpenFold3AllAtom(ModelRunner):
                 metric_collection=metric_collection,
             )
 
-            # TODO: Maybe remove this extra logging
             # Only log steps for training
-            if train:
+            if train and log_train_step_metrics:
                 self.log(
                     f"{metric_log_name}_step",
                     metric_value,
@@ -305,10 +348,179 @@ class OpenFold3AllAtom(ModelRunner):
                     sync_dist=False,
                 )
 
-    def training_step(self, batch, batch_idx):
-        example_feat = next(
-            iter(v for v in batch.values() if isinstance(v, torch.Tensor))
+    def _is_opt_step_ready(self, batch_idx: int) -> bool:
+        """
+        Checks if the optimizer step should be performed.
+        Used in manual mode.
+        """
+        if self.per_sample_grad_clipping:
+            accum_steps = self.grad_manager.accumulate_grad_batches
+        else:
+            accum_steps = self.trainer.accumulate_grad_batches
+
+        is_last_step_of_cycle = (batch_idx + 1) % accum_steps == 0
+        return is_last_step_of_cycle or self.trainer.is_last_batch
+
+    def _get_sample_disabled_param_names(self, loss_weights: dict) -> set | None:
+        """
+        Returns a list of confidence head parameters that should be disabled
+        when counting grads across ranks, else None.
+        """
+        confidence_loss_name = (
+            self.config.architecture.loss_module.confidence_loss_names
         )
+
+        total_conf_weight = sum(
+            loss_weights[name].item() for name in confidence_loss_name
+        )
+
+        is_valid_confidence_sample = total_conf_weight > 0
+
+        # Confidence losses valid are not valid for distillation samples or
+        # samples with resolution out-of-bounds
+        if not is_valid_confidence_sample:
+            # Return the pre-computed list of confidence param names
+            return self.confidence_param_names
+
+        # If no params are disabled, return None
+        return None
+
+    def _training_step_manual_clip(self, batch, batch_idx):
+        assert len(batch["pdb_id"]) == 1, (
+            "Currently only local batch size of 1 per GPU is supported."
+        )
+
+        if self.trainer.world_size > 1:
+            assert isinstance(self.trainer.strategy, DDPStrategy), (
+                "Per-sample gradient clipping is only supported with DDPStrategy."
+            )
+
+        example_feat = batch["token_mask"]
+        if self.ema.device != example_feat.device:
+            self.ema.to(example_feat.device)
+
+        if self.grad_manager.device != example_feat.device:
+            self.grad_manager.to(example_feat.device)
+
+        pdb_id = ", ".join(batch["pdb_id"])
+        preferred_chain_or_interface = batch["preferred_chain_or_interface"]
+        logging_info = {
+            "pdb_id": pdb_id,
+            "preferred_chain_or_interface": preferred_chain_or_interface,
+        }
+
+        logger.debug(
+            f"Started model forward pass for {pdb_id} with preferred chain or "
+            f"interface {preferred_chain_or_interface} on rank {self.global_rank} "
+            f"step {self.global_step}"
+        )
+
+        opt = self.optimizers()
+
+        # zero_grad() must be called on every micro-batch to ensure
+        # self.manual_backward() sets p.grad instead of adding to it
+        # when doing gradient accumulation.
+        # It's probably overkill to handle the clipping this exactly
+        # instead of just using the averaged microbatch, but I'll revisit
+        # that later if needed.
+        opt.zero_grad()
+
+        try:
+            # Only required when running in distributed mode
+            sync_context = (
+                self.trainer.model.no_sync()
+                if self.trainer.world_size > 1
+                else nullcontext()
+            )
+
+            # When using DDP, this disables the automatic sync that would happen on
+            # manual_backward and break the per-sample grad clipping
+            with sync_context:
+                # Run the model
+                batch, outputs = self.model(batch)
+
+                # Compute loss
+                loss, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
+
+                self.manual_backward(loss)
+
+                disabled_params = self._get_sample_disabled_param_names(
+                    loss_weights=batch["loss_weights"]
+                )
+                self.grad_manager.clip_and_accumulate(
+                    logging_info=logging_info, disabled_params=disabled_params
+                )
+
+            if self._is_opt_step_ready(batch_idx):
+                # Average and sync grads
+                self.grad_manager.sync_and_average_grads()
+
+                self.grad_manager.log_average_grad_norm()
+
+                opt.step()
+                self.lr_schedulers().step()
+
+                # Zero the grad accumulator
+                self.grad_manager.reset_accumulator()
+
+                # Log LR and step metrics only after the optimizer step
+                # to mimic logging behavior when using automatic optimization
+                if self.log_lr:
+                    self.log(
+                        "AlphaFoldLRScheduler",
+                        opt.param_groups[0]["lr"],
+                        on_step=True,
+                        on_epoch=False,
+                        logger=True,
+                        sync_dist=False,
+                    )
+
+                self._log(
+                    loss_breakdown,
+                    batch,
+                    outputs,
+                    train=True,
+                    log_train_step_metrics=True,
+                )
+
+                # Workaround for PL step logging issues. Avoids using
+                # `self.trainer.fit_loop.epoch_loop._batches_that_stepped` if this
+                # metric exists.
+                self.log(
+                    "step",
+                    self.global_step,
+                    on_step=True,
+                    on_epoch=False,
+                    logger=True,
+                    sync_dist=False,
+                )
+
+            else:
+                # Always update epoch metrics
+                self._log(
+                    loss_breakdown,
+                    batch,
+                    outputs,
+                    train=True,
+                    log_train_step_metrics=False,
+                )
+
+        except Exception:
+            logger.exception(
+                f"Train step failed with pdb id {pdb_id} with "
+                f"preferred chain or interface {preferred_chain_or_interface}"
+            )
+
+            # Clear grad accumulator on error
+            # Only really necessary if trainer is not reinitialized after exception
+            self.grad_manager.reset_accumulator()
+
+            raise
+
+        return loss
+
+    def _training_step(self, batch):
+        example_feat = batch["token_mask"]
         if self.ema.device != example_feat.device:
             self.ema.to(example_feat.device)
 
@@ -327,7 +539,6 @@ class OpenFold3AllAtom(ModelRunner):
             # Compute loss
             loss, loss_breakdown = self.loss(batch, outputs, _return_breakdown=True)
 
-            # Log it
             self._log(loss_breakdown, batch, outputs)
 
         except Exception:
@@ -339,18 +550,13 @@ class OpenFold3AllAtom(ModelRunner):
 
         return loss
 
+    def training_step(self, batch, batch_idx):
+        if self.per_sample_grad_clipping:
+            return self._training_step_manual_clip(batch=batch, batch_idx=batch_idx)
+
+        return self._training_step(batch=batch)
+
     def eval_step(self, batch, batch_idx):
-        # At the start of validation, load the EMA weights
-        if self.cached_weights is None:
-            # model.state_dict() contains references to model weights rather
-            # than copies. Therefore, we need to clone them before calling
-            # load_state_dict().
-            def clone_param(t):
-                return t.detach().clone()
-
-            self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
-            self.model.load_state_dict(self.ema.state_dict()["params"])
-
         pdb_id = batch["pdb_id"]
         is_repeated_sample = batch.get("repeated_sample")
         if is_repeated_sample:
@@ -378,58 +584,46 @@ class OpenFold3AllAtom(ModelRunner):
             logger.exception(f"Validation step failed with pdb id {', '.join(pdb_id)}")
             raise
 
-    def _save_train_dataset_state_to_datamodule(self):
-        self.trainer.datamodule.next_dataset_indices = (
-            self.trainer.train_dataloader.dataset.next_dataset_indices
+    def on_validation_epoch_start(self):
+        # At the start of validation, load the EMA weights
+
+        assert self.cached_weights is None
+
+        # model.state_dict() contains references to model weights rather
+        # than copies. Therefore, we need to clone them before calling
+        # load_state_dict().
+        self.cached_weights = tensor_tree_map(
+            lambda t: t.detach().clone(), self.model.state_dict()
         )
 
-    def _load_train_dataset_state_from_datamodule(self):
-        self.trainer.train_dataloader.dataset.next_dataset_indices = (
-            self.trainer.datamodule.next_dataset_indices
-        )
-
-    def on_train_start(self):
-        # Reload state from datamodule in case checkpoint has been used
-        self._load_train_dataset_state_from_datamodule()
-        if self.global_rank == 0:
-            logger.debug(
-                f"Train start, setting up "
-                f"{self.trainer.train_dataloader.dataset.next_dataset_indices=}"
-            )
-
-    def on_train_epoch_start(self):
-        # At the start of each virtual epoch we want to resample the set of
-        # datapoints to train on
-        self.trainer.train_dataloader.dataset.resample_epoch()
-        self._save_train_dataset_state_to_datamodule()
-        if self.global_rank == 0:
-            logger.debug(
-                "Sampled batch indices: "
-                f"{self.trainer.train_dataloader.dataset.indices=}"
-            )
-
-    @property
-    def deepspeed_is_initialized(self):
-        return deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
+        self.model.load_state_dict(self.ema.state_dict()["params"])
 
     def on_before_optimizer_step(self, *args, **kwargs):
-        """Logs the single-transition layer linear_out gradients.
+        """
+        Logs unclipped grad norm and gradients for the single-transition
+        linear_out layers. This logging can be enabled in config.settings.debug.
 
         These gradients can be associated with instabilities, so we're logging them on
         every single step (bypassing log_every_n_steps) for more accurate monitoring.
         """
         debug_settings = self.config.settings.debug
-        should_log_extra_metrics = debug_settings.log_extra_grad_metrics
-        is_logging_disabled = self.logger is None
-        has_frozen_params = self.config.settings.train_confidence_only
 
-        if is_logging_disabled or has_frozen_params or not should_log_extra_metrics:
+        # Transition layers included in this logging are frozen when
+        # training confidence only
+        should_log_extra_metrics = (
+            False
+            if self.config.settings.train_confidence_only
+            else debug_settings.log_extra_grad_metrics
+        )
+        should_log_grad_norm = debug_settings.log_grad_norm
+
+        if not should_log_extra_metrics and not should_log_grad_norm:
             return
 
-        single_transition_grads = {}
+        extra_grad_metrics = {}
 
         # Only rank zero will actually log the gradients
-        log_grad_metrics = self.trainer.is_global_zero
+        log_grad_metrics = self.trainer.is_global_zero and self.logger is not None
 
         # Only log 4 representative blocks to reduce overhead
         block_idxs = [0, 16, 32, 47]
@@ -439,41 +633,56 @@ class OpenFold3AllAtom(ModelRunner):
         # TODO: Set this to log-level INFO and configure per-module log-levels in a more
         # principled way
         timing_context = partial(PerformanceTimer, logger=logger, level=logging.WARNING)
+        log_timing = log_grad_metrics and debug_settings.profile_grad_logging
 
         context = (
             timing_context("Extra-gradient fetching and calculation")
-            if log_grad_metrics and debug_settings.profile_grad_logging
+            if log_timing
             else nullcontext()
         )
 
         with context:
-            for idx in block_idxs:
-                block = self.model.pairformer_stack.blocks[idx]
-                param = block.single_transition.linear_out.weight
+            if should_log_extra_metrics:
+                for idx in block_idxs:
+                    block = self.model.pairformer_stack.blocks[idx]
+                    param = block.single_transition.linear_out.weight
 
-                if self.deepspeed_is_initialized:
-                    # Needs to be called on every rank to avoid hanging
-                    # https://github.com/deepspeedai/DeepSpeed/issues/7117#issuecomment-2717974187
-                    grad = deepspeed.utils.safe_get_full_grad(param)
-                else:
-                    grad = param.grad
+                    if isinstance(self.trainer.strategy, DeepSpeedStrategy):
+                        # Needs to be called on every rank to avoid hanging
+                        # https://github.com/deepspeedai/DeepSpeed/issues/7117#issuecomment-2717974187
+                        grad = deepspeed.utils.safe_get_full_grad(param)
+                    else:
+                        grad = param.grad
 
-                assert not grad.requires_grad
+                    assert not grad.requires_grad
 
-                if log_grad_metrics:
-                    tag = (
-                        f"extra_gradients/model.pairformer_stack.blocks.{idx}."
-                        "single_transition.linear_out.weight"
-                    )
+                    if log_grad_metrics:
+                        tag = (
+                            f"extra_gradients/model.pairformer_stack.blocks.{idx}."
+                            "single_transition.linear_out.weight"
+                        )
 
-                    single_transition_grads[f"{tag}_norm"] = grad.norm().item()
-                    single_transition_grads[f"{tag}_max"] = grad.abs().max().item()
+                        extra_grad_metrics[f"{tag}_norm"] = grad.norm().item()
+                        extra_grad_metrics[f"{tag}_max"] = grad.abs().max().item()
+
+            if not self.per_sample_grad_clipping and should_log_grad_norm:
+                # Compute global grad norm for per-batch grad clipping
+                # Per sample clipping handles this logging in the grad manager
+                global_norm, _ = compute_global_norm(parameters=self.model.parameters())
+                extra_grad_metrics["extra_gradients/avg_unclipped_grad_norm"] = (
+                    global_norm.item()
+                )
 
         if log_grad_metrics:
-            with timing_context("Extra-gradient logging"):
+            context = (
+                timing_context("Extra-gradient logging")
+                if log_timing
+                else nullcontext()
+            )
+            with context:
                 # NOTE: This out-of-schedule logging might interact a bit weirdly with
                 # the WandB Step, so always plot against trainer/global_step
-                self.logger.log_metrics(single_transition_grads, step=self.global_step)
+                self.logger.log_metrics(extra_grad_metrics, step=self.global_step)
 
     def _log_epoch_metrics(
         self, metrics: MetricCollection, compute_model_selection: bool = False
@@ -485,17 +694,45 @@ class OpenFold3AllAtom(ModelRunner):
         """
         if not self.trainer.sanity_checking:
             # Sync and reduce metrics across ranks
+            # Done separately from compute() to get the sample counts
+            # so that only enabled metrics are logged
+            for metric in metrics.values():
+                metric.sync()
+                metric._should_unsync = False
+
             metrics_output = metrics.compute()
+
+            # Only log metrics that have been updated
+            enabled_metrics = {}
             for name, result in metrics_output.items():
-                # Only log metrics that have been updated
-                if self.metric_enabled.get(name):
+                metric_obj = metrics[name]
+                metric_type = type(metric_obj)
+
+                # Get the sample count attribute name (e.g., 'weight')
+                attr_name = METRIC_DENOMINATOR_ATTRS.get(metric_type)
+
+                if attr_name is None:
+                    raise NotImplementedError(
+                        f"Failed to get sample count for metric type "
+                        f"'{metric_type.__name__}'. Please add this metric "
+                        f"to the METRIC_DENOMINATOR_ATTRS constant."
+                    )
+
+                n_samples = getattr(metric_obj, attr_name).sum().item()
+                if n_samples > 0:
+                    enabled_metrics[name] = result
+
+            if self.per_sample_grad_clipping and self.logger is not None:
+                self.logger.log_metrics(enabled_metrics, step=self.global_step)
+            else:
+                for name, result in enabled_metrics.items():
                     self.log(
                         name,
                         result,
                         on_step=False,
                         on_epoch=True,
                         logger=True,
-                        sync_dist=False,  # Already synced in compute()
+                        sync_dist=False,  # Already synced
                     )
 
             if compute_model_selection:
@@ -504,22 +741,88 @@ class OpenFold3AllAtom(ModelRunner):
                     model_selection_weights=self.model_selection_weights,
                 )
 
-                self.log(
-                    "val/model_selection",
-                    model_selection,
-                    on_step=False,
-                    on_epoch=True,
-                    logger=True,
-                    sync_dist=False,
-                )
+                if self.per_sample_grad_clipping and self.logger is not None:
+                    self.logger.log_metrics(
+                        {"val/model_selection": model_selection}, step=self.global_step
+                    )
+                else:
+                    self.log(
+                        "val/model_selection",
+                        model_selection,
+                        on_step=False,
+                        on_epoch=True,
+                        logger=True,
+                        sync_dist=False,
+                    )
 
         # Reset metrics for next epoch
         metrics.reset()
+
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        """Called after optimizer.step(). Gradients are present and clipped."""
+
+        # Skip grad accumulation steps
+        if not self._is_opt_step_ready(batch_idx):
+            return
+
+        # EMA weight update
+        self.ema.update(self.model)
+
+        # Log the clipped step norm when not using per-sample gradient clipping
+        # In order to match the logging step of per-sample grad clipping,
+        # the step is shifted by 1
+        should_log_grad_norm = (
+            self.config.settings.debug.log_grad_norm and self.logger is not None
+        )
+        if (
+            not self.per_sample_grad_clipping
+            and should_log_grad_norm
+            and self.trainer.global_step > 0
+        ):
+            global_norm, _ = compute_global_norm(parameters=self.model.parameters())
+            self.logger.log_metrics(
+                {"extra_gradients/avg_clipped_grad_norm": global_norm.item()},
+                step=self.global_step - 1,
+            )
+
+    def _get_train_sampler(self):
+        dl = self.trainer.train_dataloader
+        # If PL uses multiple loaders, dl can be CombinedLoader etc.
+        # Handle the simple/common case first:
+        sampler = getattr(dl, "sampler", None)
+
+        # If it's a BatchSampler, the underlying sampler is sampler.sampler
+        if (
+            sampler is not None
+            and hasattr(sampler, "sampler")
+            and (hasattr(sampler, "batch_size") and hasattr(sampler, "drop_last"))
+        ):
+            # only unwrap if it looks like a BatchSampler wrapper
+            # (BatchSampler has .sampler and .batch_size, .drop_last)
+            sampler = sampler.sampler
+        return sampler
+
+    def on_train_epoch_start(self):
+        sampler = self._get_train_sampler()
+
+        logger.info(
+            f"Rank - {self.global_rank} starting epoch {self.trainer.current_epoch} "
+            f"sampler epoch: {sampler.epoch} "
+            f"global_step={self.trainer.global_step} "
+            f"next_dataset_indices={self.trainer.datamodule.next_dataset_indices}"
+        )
 
     def on_train_epoch_end(self):
         """Log aggregated epoch metrics for training."""
         self._log_epoch_metrics(metrics=self.train_losses)
         self._log_epoch_metrics(metrics=self.train_metrics)
+        sampler = self._get_train_sampler()
+        logger.info(
+            f"Rank - {self.global_rank} finished epoch {self.trainer.current_epoch} "
+            f"sampler epoch: {sampler.epoch} "
+            f"global_step={self.trainer.global_step} "
+            f"next_dataset_indices={self.trainer.datamodule.next_dataset_indices}"
+        )
 
     def on_validation_epoch_end(self):
         """Log aggregated epoch metrics for validation."""
@@ -539,21 +842,12 @@ class OpenFold3AllAtom(ModelRunner):
     def configure_optimizers(self) -> dict:
         optimizer_config = self.config.settings.optimizer
 
-        if deepspeed_is_installed and optimizer_config.use_deepspeed_adam:
-            optimizer = DeepSpeedCPUAdam(
-                self.parameters(),
-                lr=optimizer_config.learning_rate,
-                betas=(optimizer_config.beta1, optimizer_config.beta2),
-                eps=optimizer_config.eps,
-                adamw_mode=False,
-            )
-        else:
-            optimizer = torch.optim.Adam(
-                self.model.parameters(),
-                lr=optimizer_config.learning_rate,
-                betas=(optimizer_config.beta1, optimizer_config.beta2),
-                eps=optimizer_config.eps,
-            )
+        optimizer = torch.optim.Adam(
+            self.model.parameters(),
+            lr=optimizer_config.learning_rate,
+            betas=(optimizer_config.beta1, optimizer_config.beta2),
+            eps=optimizer_config.eps,
+        )
 
         if self.last_lr_step != -1:
             for group in optimizer.param_groups:

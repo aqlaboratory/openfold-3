@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,7 +28,7 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionEncoder,
 )
-from openfold3.core.model.primitives import Linear, normal_init_
+from openfold3.core.model.primitives import Linear
 from openfold3.core.utils.relpos import relpos_complex
 from openfold3.core.utils.tensor_utils import add
 
@@ -127,7 +127,6 @@ class InputEmbedderAllAtom(nn.Module):
         with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
             a, _, _, _ = self.atom_attn_enc(
                 batch=batch,
-                atom_mask=batch["atom_mask"],
                 use_high_precision_attention=use_high_precision_attention,
             )
 
@@ -219,6 +218,7 @@ class MSAModuleEmbedder(nn.Module):
             c_s_input, c_m, **linear_init_params.linear_s_input
         )
 
+    # TODO: Move this to the data pipeline
     @staticmethod
     def _subsample_main_msa(
         msa_feat: torch.Tensor,
@@ -569,18 +569,23 @@ class FourierEmbedding(nn.Module):
     Implements AF3 Algorithm 22.
     """
 
-    def __init__(self, c: int):
+    def __init__(self, c: int, seed: int = 42):
         """
         Args:
             c:
                 Embedding dimension
+            seed:
+                Random seed for initialization
         """
         super().__init__()
-        w = torch.empty((c, 1))
+        generator = torch.Generator()
+        generator.manual_seed(seed)
+
+        w = torch.empty(c)
         b = torch.empty(c)
 
-        normal_init_(w)
-        normal_init_(b)
+        torch.nn.init.normal_(w, generator=generator)
+        torch.nn.init.uniform_(b, generator=generator)
 
         self.register_buffer("w", w)
         self.register_buffer("b", b)
@@ -593,5 +598,5 @@ class FourierEmbedding(nn.Module):
         Returns:
             [*, c] Embedding
         """
-        x = nn.functional.linear(x, self.w, self.b)
+        x = x * self.w + self.b
         return torch.cos(2 * torch.pi * x)

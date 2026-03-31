@@ -81,38 +81,6 @@ from openfold3.core.utils.logging_utils import ContextInjectingFilter
     ),
 )
 @click.option(
-    "--precrop-n-chains",
-    type=int,
-    default=20,
-    help=(
-        "The number of chains to keep in the precropping step. If the structure has "
-        "less than N chains, all of them are kept."
-    ),
-)
-@click.option(
-    "--precrop-ignore-ligands-below",
-    type=float,
-    default=6,
-    help=(
-        "Ligand chains with fewer atoms than this value will be ignored in the N-chain "
-        "counter for precropping, and included based on proximity to the selected "
-        "chains. Set this to inf to ignore all ligands from the chain budget."
-    ),
-)
-@click.option(
-    "--precrop-disable-rna",
-    is_flag=True,
-    help=(
-        "Whether to disable the N-chain precropping for structures that contain RNA."
-    ),
-)
-@click.option(
-    "--random-seed",
-    type=int,
-    default=None,
-    help="Seed for reproducibility in large-assembly subsetting.",
-)
-@click.option(
     "--log-level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
     default="WARNING",
@@ -133,10 +101,6 @@ def main(
     max_polymer_chains: int = 1000,
     num_workers: int | None = None,
     chunksize: int = 50,
-    precrop_n_chains: int = 20,
-    precrop_disable_rna: bool = False,
-    precrop_ignore_ligands_below: int = 6,
-    random_seed: int | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     early_stop: int | None = None,
 ) -> None:
@@ -146,11 +110,6 @@ def main(
     metadata JSON and individual FASTA files for all structures.
     """
     # TODO: Add better docstring
-
-    # Casting this to int if it is one is cleaner
-    if precrop_ignore_ligands_below.is_integer():
-        precrop_ignore_ligands_below = int(precrop_ignore_ligands_below)
-
     log_level = getattr(logging, log_level.upper())
     log_file = out_dir / "preprocess_pdb_of3.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -202,10 +161,6 @@ def main(
             num_workers=num_workers,
             chunksize=chunksize,
             output_formats=output_format,
-            precrop_n_chains=precrop_n_chains,
-            precrop_disable_rna=precrop_disable_rna,
-            precrop_ignore_ligands_below=precrop_ignore_ligands_below,
-            random_seed=random_seed,
             log_queue=log_queue,
             log_level=log_level,
             early_stop=early_stop,

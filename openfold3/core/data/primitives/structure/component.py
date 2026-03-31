@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,7 +22,6 @@ from typing import Literal, NamedTuple, TypeAlias
 import biotite.structure as struc
 import gemmi
 import numpy as np
-import requests
 from biotite.structure import AtomArray, BondType, info
 from biotite.structure.io.pdbx import CIFFile
 from pdbeccdutils.core import ccd_reader
@@ -423,7 +422,7 @@ def mol_from_pdbeccdutils_component(
         mol.RemoveConformer(1)
     else:
         # Get PDB ID of the structure that model coordinates are taken from
-        model_pdb_id = cif_block.find_value("pdbx_model_coordinates_db_code")
+        model_pdb_id = cif_block.find_value("_chem_comp.pdbx_model_coordinates_db_code")
         if model_pdb_id is None:
             model_pdb_id = "?"
         mol.SetProp("model_pdb_id", model_pdb_id)
@@ -489,10 +488,11 @@ def mol_from_atomarray(atom_array: AtomArray) -> AnnotatedMol:
     conf = Chem.Conformer(atom_array.array_length())
     for idx, atom in enumerate(atom_array):
         element = atom.element.capitalize()
-        atomic_number = PERIODIC_TABLE.GetAtomicNumber(element)
 
         if element == "X":
             element = "*"
+
+        atomic_number = PERIODIC_TABLE.GetAtomicNumber(element)
 
         new_atom = Chem.Atom(atomic_number)
         new_atom.SetFormalCharge(int(atom.charge.item()))
@@ -595,61 +595,6 @@ def assign_component_ids_from_metadata(
         component_view_iter_from_metadata(atom_array, per_chain_metadata), start=1
     ):
         component_view.component_id[:] = id
-
-
-def get_ranking_fit(pdb_id):
-    url = "https://data.rcsb.org/graphql"  # RCSB PDB's GraphQL API endpoint
-
-    # Define the query as a multi-line string with a variable for pdb_id
-    query = """
-    query GetRankingFit($pdb_id: String!) {
-    entry(entry_id: $pdb_id) {
-        nonpolymer_entities {
-        rcsb_nonpolymer_entity_container_identifiers {
-            nonpolymer_comp_id
-        }
-        nonpolymer_entity_instances {
-            rcsb_id
-            rcsb_nonpolymer_instance_validation_score {
-            ranking_model_fit
-            }
-        }
-        }
-    }
-    }
-    """
-
-    # Prepare the request with the pdb_id as a variable
-    variables = {"pdb_id": pdb_id}
-
-    # Make the request to the GraphQL endpoint using the variables
-    response = requests.post(url, json={"query": query, "variables": variables})
-
-    # Make the request to the GraphQL endpoint
-    # response = requests.post(url, json={"query": query})
-
-    # Check if the request was successful
-    if response.status_code == 200:
-        # Parse the JSON response
-        data = response.json()
-        extracted_data = {}
-
-        # Loop through each nonpolymer entity and its instances
-        if data["data"]["entry"]["nonpolymer_entities"]:
-            for entity in data["data"]["entry"]["nonpolymer_entities"]:
-                for instance in entity["nonpolymer_entity_instances"]:
-                    rcsb_id = instance["rcsb_id"]
-                    ranking_model_fit = instance[
-                        "rcsb_nonpolymer_instance_validation_score"
-                    ][0]["ranking_model_fit"]
-                    extracted_data[rcsb_id] = ranking_model_fit
-            data = extracted_data
-        else:
-            data = {}
-    else:
-        data = {}
-
-    return data
 
 
 # TODO: find better place for this function

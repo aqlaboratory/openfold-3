@@ -1,7 +1,6 @@
 experiment_settings:
   mode: train
-  output_dir: ./test_train_output 
-  seed: 1272025
+  output_dir: ./test_train_output
   restart_checkpoint_path: last
 
 data_module_args:
@@ -37,7 +36,13 @@ checkpoint_config:
 
 model_update:
   presets: 
-    - train 
+    - train
+  custom:
+    architecture:
+      shared:
+        use_confidence_emb_prob: 0.8
+        diffusion:
+          use_conditioning_prob: 0.8
 
 dataset_configs:
   train:
@@ -50,11 +55,15 @@ dataset_configs:
           n_templates: 4
           take_top_k: false
         crop:
-          token_budget: 384
-          crop_weights:
-            contiguous: 0.2
-            spatial: 0.4
-            spatial_interface: 0.4
+          token_crop:
+            enabled: true
+            token_budget: 384
+            crop_weights:
+              contiguous: 0.2
+              spatial: 0.4
+              spatial_interface: 0.4
+          chain_crop:
+            enabled: true
 
     long-monomer-distillation:
       dataset_class: ProteinMonomerDataset
@@ -66,15 +75,18 @@ dataset_configs:
           take_top_k: false
         sample_in_order: true
         crop:
-          token_budget: 384
-          crop_weights:
-            contiguous: 0.25
-            spatial: 0.75
-            spatial_interface: 0.0
+          token_crop:
+            enabled: true
+            token_budget: 384
+            crop_weights:
+              contiguous: 0.25
+              spatial: 0.75
+              spatial_interface: 0.0
         loss:
           loss_weights:
             experimentally_resolved: 0.0
             plddt: 0.0
+            pae: 0.0
             pde: 0.0
 
     short-monomer-distillation:
@@ -87,15 +99,18 @@ dataset_configs:
           take_top_k: false
         sample_in_order: true
         crop:
-          token_budget: 384
-          crop_weights:
-            contiguous: 0.25
-            spatial: 0.75
-            spatial_interface: 0.0
+          token_crop:
+            enabled: true
+            token_budget: 384
+            crop_weights:
+              contiguous: 0.25
+              spatial: 0.75
+              spatial_interface: 0.0
         loss:
           loss_weights:
             experimentally_resolved: 0.0
             plddt: 0.0
+            pae: 0.0
             pde: 0.0
 
     disordered-pdb:
@@ -108,15 +123,40 @@ dataset_configs:
           take_top_k: false
         disable_non_protein_diffusion_weights: true
         crop:
-          token_budget: 384
-          crop_weights:
-            contiguous: 0.2
-            spatial: 0.4
-            spatial_interface: 0.4
+          token_crop:
+            enabled: true
+            token_budget: 384
+            crop_weights:
+              contiguous: 0.2
+              spatial: 0.4
+              spatial_interface: 0.4
+          chain_crop:
+            enabled: true
         loss:
           loss_weights:
             experimentally_resolved: 0.0
             plddt: 0.0
+            pae: 0.0
+            pde: 0.0
+
+    RNA-monomer-distillation:
+      dataset_class: RNAMonomerDataset
+      weight: 0.05
+      config:
+        debug_mode: true
+        crop:
+          token_crop:
+            enabled: true
+            token_budget: 384
+            crop_weights:
+              contiguous: 0.25
+              spatial: 0.75
+              spatial_interface: 0.0
+        loss:
+          loss_weights:
+            experimentally_resolved: 0.0
+            plddt: 0.0
+            pae: 0.0
             pde: 0.0
 
   validation:
@@ -124,79 +164,97 @@ dataset_configs:
       dataset_class: ValidationPDBDataset
       config:
         debug_mode: true
+        msa:
+          subsample_main: false
         template:
           n_templates: 4
           take_top_k: true
+        crop:
+          token_crop:
+            enabled: false
 
 dataset_paths:
   weighted-pdb:
-    alignments_directory: none 
-    alignment_db_directory: none 
-    alignment_array_directory: /path/ 
-    dataset_cache_file: /path/ 
-    target_structures_directory: /path 
+    alignments_directory: none
+    alignment_db_directory: none
+    alignment_array_directory: /shared/openfold3/pdb_training_set/alignment_arrays
+    dataset_cache_file: /shared/openfold3/pdb_training_set/dataset_caches/training_cache_with_templates.json
+    target_structures_directory: /shared/openfold3/pdb_training_set/preprocessed_pdb_data/standard/structure_files
     target_structure_file_format: npz
-    reference_molecule_directory: /path/ 
-    template_cache_directory: /path/ 
-    template_structure_array_directory: /path/ 
+    reference_molecule_directory: /shared/openfold3/pdb_training_set/preprocessed_pdb_data/standard/reference_mols
+    template_cache_directory: /shared/openfold3/pdb_training_set/templates/train_template_cache
+    template_structure_array_directory: /shared/openfold3/pdb_training_set/templates/template_structure_arrays
     template_structures_directory: none
-    template_file_format: pkl
-    ccd_file: /path 
+    template_file_format: npz
+    ccd_file: null
 
   long-monomer-distillation:
-    alignments_directory: none 
-    alignment_db_directory: none 
-    alignment_array_directory: /path/ 
-    dataset_cache_file: /path/ 
-    target_structures_directory: /path 
+    alignments_directory: null
+    alignment_db_directory: null
+    alignment_array_directory: /shared/openfold3/monomer_distillation_sets_v2/long_monomers/preprocessed
+    target_structures_directory: /shared/openfold3/monomer_distillation_sets_v2/long_monomers/preprocessed
     target_structure_file_format: npz
-    reference_molecule_directory: /path/ 
-    template_cache_directory: /path/ 
-    template_structure_array_directory: /path/ 
-    template_structures_directory: none
-    template_file_format: pkl
-    ccd_file: /path 
-    use_roda_monomer_format: True
+    dataset_cache_file: /shared/openfold3/monomer_distillation_sets_v2/long_monomers/long_monomer_lmdb_2025_12_09_13mss_regen_with_templates
+    reference_molecule_directory: /shared/openfold3/monomer_distillation_sets_v2/shared/reference_mols
+    template_cache_directory: /shared/openfold3/monomer_distillation_sets_v2/long_monomers/preprocessed
+    template_structure_array_directory: /shared/openfold3/pdb_training_set/templates/template_structure_arrays
+    template_structures_directory: null
+    template_file_format: npz
+    ccd_file: null
+    use_roda_monomer_format: true
 
   short-monomer-distillation:
-    alignments_directory: none 
-    alignment_db_directory: none 
-    alignment_array_directory: /path/ 
-    dataset_cache_file: /path/ 
-    target_structures_directory: /path 
+    alignments_directory: null
+    alignment_db_directory: null
+    alignment_array_directory: /shared/openfold3/monomer_distillation_sets_v2/short_monomers/preprocessed
+    target_structures_directory: /shared/openfold3/monomer_distillation_sets_v2/short_monomers/preprocessed
     target_structure_file_format: npz
-    reference_molecule_directory: /path/ 
-    template_cache_directory: /path/ 
-    template_structure_array_directory: /path/ 
-    template_structures_directory: none
-    template_file_format: pkl
-    ccd_file: /path 
-    use_roda_monomer_format: True
+    dataset_cache_file: /shared/openfold3/monomer_distillation_sets_v2/short_monomers/short_monomer_cache_2025_11_25_with_templates.json
+    reference_molecule_directory: /shared/openfold3/monomer_distillation_sets_v2/shared/reference_mols
+    template_cache_directory: /shared/openfold3/monomer_distillation_sets_v2/short_monomers/preprocessed
+    template_structure_array_directory: /shared/openfold3/pdb_training_set/templates/template_structure_arrays
+    template_structures_directory: null
+    template_file_format: npz
+    ccd_file: null
+    use_roda_monomer_format: true
 
   disordered-pdb:
-    alignments_directory: none 
-    alignment_db_directory: none 
-    alignment_array_directory: /path/ 
-    dataset_cache_file: /path/ 
-    target_structures_directory: /path 
+    alignments_directory: none
+    alignment_db_directory: none
+    alignment_array_directory: /shared/openfold3/pdb_training_set/alignment_arrays
+    dataset_cache_file: /shared/openfold3/pdb_training_set/dataset_caches/disordered_cache_with_templates.json
+    target_structures_directory: /shared/openfold3/pdb_training_set/preprocessed_pdb_data/disordered/structure_files
     target_structure_file_format: npz
-    reference_molecule_directory: /path/ 
-    template_cache_directory: /path/ 
-    template_structure_array_directory: /path/ 
+    reference_molecule_directory: /shared/openfold3/pdb_training_set/preprocessed_pdb_data/standard/reference_mols
+    template_cache_directory: /shared/openfold3/pdb_training_set/templates/train_template_cache
+    template_structure_array_directory: /shared/openfold3/pdb_training_set/templates/template_structure_arrays
     template_structures_directory: none
-    template_file_format: pkl
-    ccd_file: /path
+    template_file_format: npz
+    ccd_file: null
+
+  RNA-monomer-distillation:
+    alignments_directory: null
+    alignment_db_directory: null
+    alignment_array_directory: /shared/openfold3/rna_distillation_set/rna_monomer_preprocessed_cache
+    target_structures_directory: /shared/openfold3/rna_distillation_set/rna_monomer_preprocessed_cache
+    target_structure_file_format: npz
+    dataset_cache_file: /shared/openfold3/rna_distillation_set/training_cache_RNA_monomer.json
+    reference_molecule_directory: /shared/openfold3/rna_distillation_set/reference_mols
+    template_structures_directory: null
+    template_file_format: npz
+    ccd_file: null
+    use_roda_monomer_format: true
 
   val-weighted-pdb:
-    alignments_directory: none 
-    alignment_db_directory: none 
-    alignment_array_directory: /path/ 
-    dataset_cache_file: /path/ 
-    target_structures_directory: /path 
+    alignments_directory: none
+    alignment_db_directory: none
+    alignment_array_directory: /shared/openfold3/pdb_training_set/alignment_arrays
+    dataset_cache_file: /shared/openfold3/pdb_training_set/dataset_caches/validation_cache_with_templates.json
+    target_structures_directory: /shared/openfold3/pdb_training_set/preprocessed_pdb_data/standard/structure_files
     target_structure_file_format: npz
-    reference_molecule_directory: /path/ 
-    template_cache_directory: /path/ 
-    template_structure_array_directory: /path/ 
+    reference_molecule_directory: /shared/openfold3/pdb_training_set/preprocessed_pdb_data/standard/reference_mols
+    template_cache_directory: /shared/openfold3/pdb_training_set/templates/val_template_cache
+    template_structure_array_directory: /shared/openfold3/pdb_training_set/templates/template_structure_arrays
     template_structures_directory: none
-    template_file_format: pkl
-    ccd_file: /path 
+    template_file_format: npz
+    ccd_file: null

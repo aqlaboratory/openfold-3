@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atom_attention_block_utils import (
+    convert_pair_rep_to_blocks,
     convert_single_rep_to_blocks,
-    convert_trunk_pair_rep_to_blocks,
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
@@ -139,7 +139,10 @@ class RefAtomFeatureEmbedder(nn.Module):
             atom_mask=batch["atom_mask"],
         )
         v_l, v_m, _ = convert_single_rep_to_blocks(
-            ql=batch["ref_space_uid"].unsqueeze(-1), n_query=n_query, n_key=n_key
+            ql=batch["ref_space_uid"].unsqueeze(-1),
+            n_query=n_query,
+            n_key=n_key,
+            atom_mask=batch["atom_mask"],
         )
 
         # dlm: [*, N_blocks, N_query, N_key, 3]
@@ -249,7 +252,7 @@ class NoisyPositionEmbedder(nn.Module):
 
         # Broadcast trunk pair representation into atom pair conditioning
         zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
-        zij_trunk = convert_trunk_pair_rep_to_blocks(
+        zij_trunk = convert_pair_rep_to_blocks(
             batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
         )
         plm = plm + zij_trunk
@@ -471,7 +474,6 @@ class AtomAttentionEncoder(nn.Module):
     def forward(
         self,
         batch: TensorDict,
-        atom_mask: torch.Tensor,
         rl: torch.Tensor | None = None,
         si_trunk: torch.Tensor | None = None,
         zij_trunk: torch.Tensor | None = None,
@@ -494,8 +496,6 @@ class AtomAttentionEncoder(nn.Module):
                         and residue index in the reference conformer
                     - "token_mask": [*, N_token] token mask
                     - "num_atoms_per_token": [*, N_token] Number of atoms per token
-            atom_mask:
-                [*, N_atom] Atom mask
             rl:
                 [*, N_atom, 3] Noisy atom positions (optional)
             si_trunk:
@@ -515,6 +515,8 @@ class AtomAttentionEncoder(nn.Module):
                 [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair representation
                 Note: Converted to block format ahead of time due to reduce memory cost
         """
+        atom_mask = batch["atom_mask"]  # Padding mask
+
         atom_feat_args = (
             batch,
             rl,
@@ -643,7 +645,6 @@ class AtomAttentionDecoder(nn.Module):
     def forward(
         self,
         batch: TensorDict,
-        atom_mask: torch.Tensor,
         ai: torch.Tensor,
         ql: torch.Tensor,
         cl: torch.Tensor,
@@ -656,8 +657,6 @@ class AtomAttentionDecoder(nn.Module):
                 Input feature dictionary. Features used in this function:
                     - "token_mask": [*, N_token] Token mask
                     - "num_atoms_per_token": [*, N_token] Number of atoms per token
-            atom_mask:
-                [*, N_atom] Atom mask
             ai:
                 [*, N_token, c_token] Token representation
             ql:
@@ -688,7 +687,7 @@ class AtomAttentionDecoder(nn.Module):
             a=ql,
             s=cl,
             z=plm,
-            mask=atom_mask,
+            mask=batch["atom_mask"],  # Padding mask
             use_high_precision_attention=use_high_precision_attention,
         )
 

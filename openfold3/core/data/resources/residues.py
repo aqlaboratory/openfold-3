@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -311,7 +311,7 @@ MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3 = {
 MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1 = {
     MoleculeType.PROTEIN: "X",
     MoleculeType.RNA: "N",
-    MoleculeType.DNA: "DN",
+    MoleculeType.DNA: "N",
     MoleculeType.LIGAND: "X",
 }
 

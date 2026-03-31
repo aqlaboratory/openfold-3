@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -60,6 +60,7 @@ class TestDiffusionConditioning(unittest.TestCase):
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
+            use_conditioning=True,
         )
 
         self.assertTrue(si.shape == (batch_size, n_token, c_s))
@@ -108,6 +109,7 @@ class TestDiffusionConditioning(unittest.TestCase):
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
+            use_conditioning=True,
         )
 
         self.assertTrue(si.shape == (batch_size, n_sample, n_token, c_s))
@@ -155,6 +157,7 @@ class TestDiffusionConditioning(unittest.TestCase):
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
+            use_conditioning=True,
         )
 
         self.assertTrue(si.shape == (batch_size, 1, n_token, c_s))

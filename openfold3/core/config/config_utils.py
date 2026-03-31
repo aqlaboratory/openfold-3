@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -51,7 +51,7 @@ def load_json(path: Path | str) -> dict[str, Any]:
 
 def _ensure_list(value: Any) -> Any:
     if not isinstance(value, list):
-        logging.info("Single value: {value} will be converted to a list")
+        logging.info(f"Single value: {value} will be converted to a list")
         return [value]
     else:
         return value
@@ -83,6 +83,23 @@ def _convert_molecule_type(value: Any) -> Any:
             return None
     elif isinstance(value, list):
         return [_convert_molecule_type(v) for v in value]
+
+
+def deep_update(base_dict: dict, update_dict: dict) -> dict:
+    """
+    Recursively updates base_dict with update_dict. If a key exists
+    in update_dict but not base_dict, it is added to base_dict.
+    """
+    for key, value in update_dict.items():
+        if (
+            key in base_dict
+            and isinstance(base_dict[key], dict)
+            and isinstance(value, dict)
+        ):
+            deep_update(base_dict[key], value)
+        else:
+            base_dict[key] = value
+    return base_dict
 
 
 def is_path_none(value: str | Path | None) -> Path | None:

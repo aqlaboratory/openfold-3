@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,6 +37,7 @@ def process_template_structures_of3(
     atom_array: AtomArray,
     n_templates: int,
     take_top_k: bool,
+    min_n_tokens_per_chain: int,
     template_cache_directory: Path | None,
     assembly_data: dict[str, dict[str, Any]],
     template_structures_directory: Path | None,
@@ -60,6 +61,9 @@ def process_template_structures_of3(
             e-value) n_templates are taken.
         take_top_k (bool):
             Whether to take the top K templates (True) or sample randomly (False).
+        min_n_tokens_per_chain (int):
+            The minimum number of tokens a chain has to have for it to get template
+            features.
         template_cache_directory (Path | None):
             The directory where the template cache is stored during training. For
             inference, full paths to template cache entries are provided in the
@@ -100,6 +104,11 @@ def process_template_structures_of3(
     # logic if becomes a bottleneck
     template_slices = {}
     for chain_id in protein_chain_ids:
+        atom_array_query_chain = atom_array[atom_array.chain_id == chain_id]
+        # No templates if < 5 tokens in the chain (and crop during training)
+        if len(np.unique(atom_array_query_chain.token_id)) < min_n_tokens_per_chain:
+            continue
+
         # Sample templates and fetch their data from the cache
         sampled_template_data = sample_templates(
             assembly_data=assembly_data,
@@ -119,7 +128,7 @@ def process_template_structures_of3(
             template_structure_array_directory=template_structure_array_directory,
             template_file_format=template_file_format,
             ccd=ccd,
-            atom_array_query_chain=atom_array[atom_array.chain_id == chain_id],
+            atom_array_query_chain=atom_array_query_chain,
         )
 
     return TemplateSliceCollection(template_slices=template_slices)

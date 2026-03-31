@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -236,6 +236,114 @@ def bond_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     return loss
 
 
+def bond_loss_sparse(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
+    """
+    Implements AF3 Equation 5. Avoids the creation of the full pairwise distance matrix.
+    Args:
+        x:
+            [*, N_atom, 3] Atom positions
+        batch:
+            Feature dictionary
+        eps:
+            Small constant for stability
+    Returns:
+        [*] Auxiliary loss for bonded ligands
+    """
+    x_orig = x
+    batch_dims = x.shape[:-2]
+
+    def flatten_batch_dims(tensor):
+        if not batch_dims:
+            return tensor
+        return tensor.reshape(-1, *tensor.shape[len(batch_dims) :])
+
+    def expand_sample_dim(t: torch.tensor) -> torch.tensor:
+        feat_dims = t.shape[2:]
+        t = t.expand(*batch_dims, *((-1,) * len(feat_dims)))
+        return t
+
+    # Flatten all tensors to have a single batch dimension
+    x = flatten_batch_dims(x)
+    x_gt = flatten_batch_dims(
+        expand_sample_dim(batch["ground_truth"]["atom_positions"])
+    )
+    atom_mask_gt = flatten_batch_dims(
+        expand_sample_dim(batch["ground_truth"]["atom_resolved_mask"])
+    )
+
+    # Construct polymer-ligand per-token bond mask
+    # [*, N_token, N_token]
+    is_polymer = batch["is_protein"] + batch["is_dna"] + batch["is_rna"]
+    token_bond_mask = batch["token_bonds"] * (
+        is_polymer[..., None, :] * batch["is_ligand"][..., None]
+    )
+
+    # [*, N_atom, N_atom]
+    atom_bond_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=token_bond_mask,
+        token_dim=-2,
+    )
+    atom_bond_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=atom_bond_mask.transpose(-1, -2),
+        token_dim=-2,
+    )
+    atom_bond_mask = atom_bond_mask.transpose(-1, -2)
+
+    mask = (
+        atom_bond_mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
+    ).bool()
+    mask = flatten_batch_dims(mask)
+
+    # Find the indices of the valid bonds
+    # bond_indices will be a tensor of shape [num_bonds, 3]
+    # with columns [flat_batch_idx, atom_idx_i, atom_idx_j]
+    bond_indices = torch.nonzero(mask, as_tuple=False)
+
+    # Handle the case where there are no valid bonds
+    if bond_indices.shape[0] == 0:
+        # Add a zero-valued sum of x so that x remains part of the computation graph
+        # Since this loss never runs without other diffusion losses enabled it's
+        # not strictly necessary to do this.
+        zero_loss = torch.zeros(batch_dims, device=x.device, dtype=x.dtype)
+        return zero_loss + (x_orig.sum() * 0.0)
+
+    flat_batch_indices, atom_indices_i, atom_indices_j = bond_indices.unbind(-1)
+
+    # Use the sparse indices to gather the coordinates of bonded atoms
+    # [num_bonds, 3]
+    x_i = x[flat_batch_indices, atom_indices_i]
+    x_j = x[flat_batch_indices, atom_indices_j]
+    x_gt_i = x_gt[flat_batch_indices, atom_indices_i]
+    x_gt_j = x_gt[flat_batch_indices, atom_indices_j]
+
+    # Compute pairwise distances
+    dx = torch.sqrt(eps + torch.sum((x_i - x_j) ** 2, dim=-1))
+    dx_gt = torch.sqrt(eps + torch.sum((x_gt_i - x_gt_j) ** 2, dim=-1))
+
+    squared_error = (dx - dx_gt) ** 2
+
+    # Sum the errors per sample
+    flat_batch_size = x.shape[0]
+    sum_sq_err_per_sample = torch.zeros(flat_batch_size, device=x.device, dtype=x.dtype)
+    sum_sq_err_per_sample.scatter_add_(0, flat_batch_indices, squared_error)
+
+    # Count the number of bonds per sample
+    bonds_per_sample = torch.bincount(flat_batch_indices, minlength=flat_batch_size)
+
+    # Compute the final polymer-ligand bond loss
+    loss = sum_sq_err_per_sample / (bonds_per_sample + eps)
+
+    # Reshape loss back to original batch dims [B, N_sample]
+    if batch_dims:
+        loss = loss.view(batch_dims)
+
+    return loss
+
+
 def smooth_lddt_loss(
     x: torch.Tensor, batch: dict, loss_token_mask: torch.Tensor, eps: float
 ) -> torch.Tensor:
@@ -350,6 +458,7 @@ def diffusion_loss(
     ligand_weight: float = 10.0,
     eps: float = 1e-8,
     chunk_size: int | None = None,
+    use_sparse_loss: bool | None = False,
     **kwargs,
 ) -> [torch.Tensor, dict]:
     """
@@ -375,6 +484,8 @@ def diffusion_loss(
         chunk_size:
             Chunk size over sample dimension for large loss computation
             for smooth lddt and bond loss. Defaults to no chunking.
+        use_sparse_loss:
+            Whether to use sparse loss. Currently only implemented for bond_loss.
     Returns:
         mean_loss:
             Diffusion loss
@@ -411,9 +522,10 @@ def diffusion_loss(
 
     l_bond = 0.0
     l_smooth_lddt = 0.0
+    bond_loss_fn = bond_loss if not use_sparse_loss else bond_loss_sparse
     if chunk_size is None:
         if bond_weight.any():
-            l_bond = bond_loss(x=x, batch=batch, eps=eps)
+            l_bond = bond_loss_fn(x=x, batch=batch, eps=eps)
             loss_breakdown["bond"] = l_bond.detach().clone().mean(dim=-1)
 
         if smooth_lddt_weight.any():
@@ -426,7 +538,7 @@ def diffusion_loss(
     else:
         if bond_weight.any():
             l_bond = run_low_mem_loss_fn(
-                loss_fn=bond_loss,
+                loss_fn=bond_loss_fn,
                 x=x,
                 kwargs={"batch": batch, "eps": eps},
                 chunk_size=chunk_size,

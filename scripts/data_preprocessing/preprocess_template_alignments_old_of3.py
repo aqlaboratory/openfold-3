@@ -14,7 +14,7 @@ import click
 from openfold3.core.data.io.s3 import parse_s3_config
 from openfold3.core.data.pipelines.preprocessing.template import (
     create_template_cache_of3,
-    create_template_seq_cache_of3,
+    create_template_precache_of3,
     filter_template_cache_of3,
 )
 
@@ -51,9 +51,18 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     ),
 )
 @click.option(
-    "--template_cache_directory",
+    "--template_structures_filename",
+    default="{pdb}",
+    required=False,
+    help=(
+        "Template structure filename with {pdb} placeholder. For RCSB nextgen, use "
+        "pdb_0000{pdb}_xyz-enrich."
+    ),
+)
+@click.option(
+    "--output_directory",
     required=True,
-    help="Filepath to where the template cache should be saved.",
+    help="Filepath to where the output cache entries and logs should be saved.",
     type=click.Path(
         exists=False,
         file_okay=False,
@@ -89,18 +98,10 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 )
 @click.option(
     "--template_file_format",
-    required=True,
+    required=False,
     help="File format for the template structures.",
     type=str,
-)
-@click.option(
-    "--query_seq_load_logic",
-    required=True,
-    help=(
-        "Whether to load the query sequences associated with structures from fasta "
-        "or structure files."
-    ),
-    type=click.Choice(["fasta", "structure"], case_sensitive=True),
+    default="cif",
 )
 @click.option(
     "--single_moltype",
@@ -185,19 +186,31 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     default=None,
 )
 @click.option(
+    "--compute_precache",
+    default=False,
+    type=bool,
+    help=("Whether to compute the precache."),
+)
+@click.option(
+    "--compute_full_cache",
+    default=False,
+    type=bool,
+    help=(
+        "Whether to compute the full unfiltered template cache. False if the full "
+        "template cache has already been created."
+    ),
+)
+@click.option(
+    "--compute_filtered_cache",
+    default=False,
+    type=bool,
+    help=("Whether to compute the filtered template cache from the full cache"),
+)
+@click.option(
     "--log_level",
     default="WARNING",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=True),
     help="Set the logging level",
-)
-@click.option(
-    "--filter_only",
-    default=False,
-    type=bool,
-    help=(
-        "Whether to filter an existing template cache. True if the full template "
-        "cache has already been created."
-    ),
 )
 @click.option(
     "--log_to_file", default=True, type=bool, help="Enable logging to a file."
@@ -217,12 +230,12 @@ def main(
     template_alignment_directory: Path,
     template_alignment_filename: str,
     template_structures_directory: Path,
-    template_cache_directory: Path,
+    template_structures_filename: str,
+    output_directory: Path,
     query_structures_directory: Path,
     query_structures_filename: str,
     query_file_format: str,
     template_file_format: str,
-    query_seq_load_logic: str,
     single_moltype: str | None,
     num_workers: int,
     dataset_cache_file: Path,
@@ -232,8 +245,10 @@ def main(
     is_core_train: bool,
     max_release_date: str,
     min_release_date_diff: int,
+    compute_precache: bool,
+    compute_full_cache: bool,
+    compute_filtered_cache: bool,
     log_level: str,
-    filter_only: bool,
     log_to_file: bool,
     log_to_console: bool,
     s3_client_config: str | None,
@@ -247,8 +262,12 @@ def main(
             Filename for the template alignments. Typically hmm_output.sto.
         template_structures_directory (Path):
             Directory containing the template structures.
-        template_cache_directory (Path):
-            Filepath to where the template cache should be saved.
+        template_structure_filename (str):
+            Template structure filename with {pdb} placeholder. For RCSB nextgen, use
+            pdb_0000{pdb}_xyz-enrich.cif
+        output_directory (Path):
+            Filepath to where the output template cache entries and logs should be
+            saved.
         query_structures_directory (Path):
             Directory containing the sanitized query structures used for training or
             inference.
@@ -258,9 +277,6 @@ def main(
             File format for the query structures.
         template_file_format (str):
             File format for the template structures.
-        query_seq_load_logic (str):
-            Whether to load the query sequences associated with structures from fasta or
-            structure files.
         single_moltype (str | None):
             Constant molecule type to use if all query structures contain the same
             molecule type. Needed if the input dataset cache is missing the per-chain
@@ -290,6 +306,13 @@ def main(
         min_release_date_diff (int):
             Minimum number of days required for the template to be released before a
             query structure. Used for core training sets.
+        compute_precache (bool):
+            Whether to compute the precache.
+        compute_full_cache (bool):
+            Whether to compute the full unfiltered template cache. False if the full
+            template cache has already been created.
+        compute_filtered_cache (bool):
+            Whether to compute the filtered template cache from the full cache.
         log_level (str):
             Logging level.
         filter_only (bool):
@@ -325,62 +348,99 @@ def main(
             " specified."
         )
 
+    if "{pdb}" not in template_structures_filename:
+        raise ValueError("template_structures_filename must contain '{pdb}'")
+
     # Run
-    if not filter_only:
+    template_precache_dir = output_directory / Path("template_precache")
+    template_precache_log_dir = output_directory / Path("template_precache_logs")
+    if compute_precache:
+        print("1/3: Creating the template sequence cache.")
         logging.info("1/3: Creating the template sequence cache.")
-        create_template_seq_cache_of3(
+        template_precache_dir.mkdir(parents=True, exist_ok=True)
+        template_precache_log_dir.mkdir(parents=True, exist_ok=True)
+        create_template_precache_of3(
             template_structures_directory=template_structures_directory,
-            template_cache_directory=template_cache_directory,
+            template_structures_filename=template_structures_filename,
+            template_precache_dir=template_precache_dir,
             template_file_format=template_file_format,
             num_workers=num_workers,
             log_level=log_level,
             log_to_file=log_to_file,
             log_to_console=log_to_console,
-            log_dir=template_cache_directory.parent / Path("template_seq_logs"),
+            log_dir=template_precache_log_dir,
+        )
+    else:
+        print(
+            "Skipping template precache generation. Using existing precache "
+            f"from {template_precache_dir}."
+        )
+        logging.info(
+            "Skipping template precache generation. Using existing precache "
+            f"from {template_precache_dir}."
         )
 
+    template_cache_dir = output_directory / Path("template_cache")
+    template_cache_log_dir = output_directory / Path("template_cache_logs")
+    if compute_full_cache:
+        print("2/3: Creating the template cache.")
         logging.info("2/3: Creating the template cache.")
+        template_cache_dir.mkdir(parents=True, exist_ok=True)
+        template_cache_log_dir.mkdir(parents=True, exist_ok=True)
         create_template_cache_of3(
             dataset_cache_file=dataset_cache_file,
             template_alignment_directory=template_alignment_directory,
             template_alignment_filename=template_alignment_filename,
             template_structures_directory=template_structures_directory,
-            template_cache_directory=template_cache_directory,
+            template_cache_dir=template_cache_dir,
+            template_precache_dir=template_precache_dir,
             query_structures_directory=query_structures_directory,
             max_templates_construct=max_templates_construct,
             query_structures_filename=query_structures_filename,
             query_file_format=query_file_format,
-            query_seq_load_logic=query_seq_load_logic,
             single_moltype=single_moltype,
             num_workers=num_workers,
             log_level=log_level,
             log_to_file=log_to_file,
             log_to_console=log_to_console,
-            log_dir=template_cache_directory.parent / "template_construct_logs",
+            log_dir=template_cache_log_dir,
             s3_client_config=s3_client_config,
         )
     else:
+        print(
+            "Skipping template cache generation. Using existing cache "
+            f"from {template_cache_dir}."
+        )
         logging.info(
             "Skipping template cache generation. Using existing cache "
-            f"from {template_cache_directory}."
+            f"from {template_cache_dir}."
         )
 
-    logging.info("3/3: Filtering the template cache.")
-    filter_template_cache_of3(
-        dataset_cache_file=dataset_cache_file,
-        updated_dataset_cache_file=updated_dataset_cache_file,
-        template_cache_directory=template_cache_directory,
-        max_templates_filter=max_templates_filter,
-        single_moltype=single_moltype,
-        is_core_train=is_core_train,
-        num_workers=num_workers,
-        log_level=log_level,
-        log_to_file=log_to_file,
-        log_to_console=log_to_console,
-        log_dir=template_cache_directory.parent / "template_filter_logs",
-        max_release_date=max_release_date,
-        min_release_date_diff=min_release_date_diff,
+    template_cache_filtered_log_dir = output_directory / Path(
+        "template_cache_filtered_logs"
     )
+    if compute_filtered_cache:
+        print("3/3: Filtering the template cache.")
+        logging.info("3/3: Filtering the template cache.")
+        template_cache_filtered_log_dir.mkdir(parents=True, exist_ok=True)
+        filter_template_cache_of3(
+            dataset_cache_file=dataset_cache_file,
+            updated_dataset_cache_file=updated_dataset_cache_file,
+            template_cache_dir=template_cache_dir,
+            max_templates_filter=max_templates_filter,
+            single_moltype=single_moltype,
+            is_core_train=is_core_train,
+            num_workers=num_workers,
+            log_level=log_level,
+            log_to_file=log_to_file,
+            log_to_console=log_to_console,
+            log_dir=template_cache_filtered_log_dir,
+            max_release_date=max_release_date,
+            min_release_date_diff=min_release_date_diff,
+        )
+    else:
+        print("Skipping template cache filtering.")
+        logging.info("Skipping template cache filtering.")
 
 
 if __name__ == "__main__":

@@ -40,10 +40,9 @@ pl_trainer_args:
 # ModelUpdate: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/project_entry.py#L28
 # Custom model settings and presets
 model_update:  
-  presets:   # [train | predict | low_mem | pae_enabled]
+  presets:   # [train | predict | low_mem ]
     - predict
     - low_mem
-    - pae_enabled
   custom: {}
 
 # Checkpoint path: [default: $HOME/.openfold3/of3_ft3_v1.pt]
@@ -88,6 +87,7 @@ dataset_config_kwargs:
       rnacentral_hits: 10000
       nt_hits: 10000
       concat_cfdb_uniref100_filtered: 10000000
+      mmseqs_colabfold: 16384
       colabfold_main: 16384
       colabfold_paired: 8192
     msas_to_pair:
@@ -103,6 +103,7 @@ dataset_config_kwargs:
       - rnacentral_hits
       - nt_hits
       - concat_cfdb_uniref100_filtered
+      - mmseqs_colabfold
       - colabfold_main
     paired_msa_order:
       - colabfold_paired
@@ -117,7 +118,7 @@ dataset_config_kwargs:
 # OutputWriterSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141
 # Configure the output formats / content
 output_writing_settings: 
-  structure_format: cif  [cif | pdb]
+  structure_format: cif  [cif | pdb | cif.gz]
   full_confidence_output_format: json [json | npz]
   write_features: false
   write_latent_outputs: false

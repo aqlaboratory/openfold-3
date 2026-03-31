@@ -1,0 +1,32 @@
+{
+   "N": {
+        "conformer_gen_strategy": "default",
+        "fallback_conformer_pdb_id": null,
+        "canonical_smiles": "C1[C@@H]([C@@H]([C@H](O1)COP(=O)(O)O)O)O",
+        "set_fallback_to_nan": false
+    },
+    "A": {
+	"conformer_gen_strategy": "default",
+        "fallback_conformer_pdb_id": null,
+        "canonical_smiles": "c1nc(c2c(n1)n(cn2)[C@H]3[C@@H]([C@@H]([C@H](O3)COP(=O)(O)O)O)O)N",
+        "set_fallback_to_nan": false  
+    },
+    "C": {
+	"conformer_gen_strategy": "default",
+        "fallback_conformer_pdb_id": null,
+        "canonical_smiles": "C1=CN(C(=O)N=C1N)[C@H]2[C@@H]([C@@H]([C@H](O2)COP(=O)(O)O)O)O",
+        "set_fallback_to_nan": false  
+    },
+    "G":{
+	"conformer_gen_strategy": "default",
+        "fallback_conformer_pdb_id": null,
+        "canonical_smiles": "c1nc2c(n1[C@H]3[C@@H]([C@@H]([C@H](O3)COP(=O)(O)O)O)O)N=C(NC2=O)N",
+        "set_fallback_to_nan": false
+    },
+    "U": {
+        "conformer_gen_strategy": "default",
+        "fallback_conformer_pdb_id": null,
+        "canonical_smiles": "C1=CN(C(=O)NC1=O)[C@H]2[C@@H]([C@@H]([C@H](O2)COP(=O)(O)O)O)O",
+        "set_fallback_to_nan": false
+    }
+}

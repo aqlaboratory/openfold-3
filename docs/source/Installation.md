@@ -12,13 +12,13 @@ It is also recommended to use [Mamba](https://mamba.readthedocs.io/en/latest/) t
 
 ### Installation via pip and mamba (recommended) 
 
-1. Create a fresh mamba environment with python. Python versions 3.10 - 3.13 are supported
+0. [Optional] Create a fresh mamba environment with python. Python versions 3.10 - 3.13 are supported
 
 ```bash
-mamba create -n of3-pip-Oct24-server python=3.13 
+mamba create -n openfold3 python=3.13 
 ```
 
-2. Install openfold3 the pypi server:
+1. Install openfold3 the pypi server:
 
 ```bash
 pip install openfold3
@@ -30,13 +30,34 @@ to install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, us
 pip install openfold3[cuequivariance]
 ```
 
-3. Install `kalign2` using mamba.
+### Environment variables
 
-```bash
-mamba install kalign2 -c bioconda
-```
+OpenFold may need a few environment variables set so CUDA, compilation, and JIT-built extensions can be found correctly. 
+
+- `CUDA_HOME` should point to the CUDA installation. On many HPC clusters you will this can be set by loading the appropriate toolchain using environment modules, for example `module load cuda`.  If you do not set this you will likely get a `No such file or directory: '/usr/local/cuda/bin/nvcc'` error. 
+- `CUTLASS_PATH` will need to be set for most systems. If you do not set this you will get Deepspeed related errors such as `Error: Unable to JIT load the evoformer_attn op`. Generally this can be set using 
+    ```bash
+    # Start your environment which as openfold3 installed
+    source .venv/bin/activate
+    # Set CUTLASS_PATH using the resolved path  
+    export CUTLASS_PATH=$(python - << 'PY'
+    import cutlass_library, pathlib
+    print(pathlib.Path(cutlass_library.__file__).resolve().parent.joinpath("source"))
+    PY
+    )
+    ```
+- `LD_LIBRARY_PATH` may need to be set to the matching CUDA directories. How to set this will depend on the system. 
+    - Example: `export LD_LIBRARY_PATH="$CUDA_HOME/targets/x86_64-linux/lib:${LD_LIBRARY_PATH:-}"`
+    - You can often run `find "$CUDA_HOME" -name 'libcurand.so*' 2>/dev/null` to find the CUDA layout of your system. 
+
+- If you get a `/usr/bin/ld: cannot find -lcurand` error, this usually means the CUDA math libraries (which include `libcurand`) are not on your library search path. You may need to add the appropriate CUDA library directory to  `LIBRARY_PATH`. 
+    - Example: `export LIBRARY_PATH="$(echo "$CUDA_HOME" | sed 's|/cuda/|/math_libs/|')/targets/sbsa-linux/lib:${LIBRARY_PATH:-}"`
+
+
 
 ### OpenFold3 Docker Image
+
+#### Dockerhub
 
 The OpenFold3 Docker Image is now available on Docker Hub: [openfoldconsortium/openfold3](https://hub.docker.com/repository/docker/openfoldconsortium/openfold3/general)
 
@@ -44,6 +65,40 @@ To get the latest stable version, you can use the following command
 
 ```bash
 docker pull openfoldconsortium/openfold3:stable
+```
+
+#### GitHub Container Registry (GHCR)
+
+You can download the openfold3 docker image from GHCR, you'll need to install 'gh-cli' first, instructions [here](https://github.com/cli/cli/blob/trunk/docs/install_linux.md). 
+
+You'll need to authenticate with GitHub, make sure you request the `read:packages` scope. 
+
+```bash
+gh auth login --scopes read:packages
+```
+
+Verify that login succeeded and scope is assigned 
+
+```bash
+gh auth status 
+github.com
+  ✓ Logged in to github.com account ******* (/home/ubuntu/.config/gh/hosts.yml)
+  - Active account: true
+  - Git operations protocol: ssh
+  - Token: gho_************************************
+  - Token scopes: 'admin:public_key', 'gist', 'read:org', 'read:packages', 'repo'
+```
+
+Let's inject the GitHub token into the docker config. Note this will expire. 
+
+```bash
+gh auth token | docker login ghcr.io -u $(gh api user --jq .login) --password-stdin
+```
+
+Pull the image itself 
+
+```bash
+docker pull ghcr.io/aqlaboratory/openfold-3/openfold3-docker:0.4.0
 ```
 
 ### Building the OpenFold3 Docker Image 
@@ -54,7 +109,7 @@ If you would like to build an OpenFold docker image locally, we provide a docker
 docker build -f Dockerfile -t openfold-docker .
 ```
 
-(openfold3-parameters)=
+(setup-openfold3-parameters)=
 ## Downloading OpenFold3 model parameters
 
 On the first inference run, default model parameters will be downloaded to the `$HOME/.openfold3`. To customize your checkpoint download path, you use one of the following options:
@@ -70,27 +125,23 @@ setup_openfold
 This script will:
 - Create an `$OPENFOLD_CACHE` environment [Optional, default: `~/.openfold3`]
 - Setup a directory for OpenFold3 model parameters [default: `~/.openfold3`]
-    - Writes the path to `$OPENFOLD_CACHE/ckpt_path` 
-- Download the model parameters, if the parameter file does not already exist 
+    - Writes the path to `$OPENFOLD_CACHE/ckpt_root` 
+- Download the model parameters, if the parameter file does not already exist. You will have the option to download one set of parameters or all parameters. See {doc}`parameters_reference` for more information on available parameters. 
 - Download and setup the [Chemical Component Dictionary (CCD)](https://www.wwpdb.org/data/ccd) with [Biotite](https://www.biotite-python.org/latest/apidoc/biotite.structure.info.get_ccd.html)
-- Optionally runs an inference integration test on two samples, without MSA alignments (~5 min on A100)
+- Optionally run an inference integration test on two samples, without MSA alignments (~5 min on A100)
     - N.B. To run the integration tests, `pytest` must be installed. 
 
 
-### Downloading the model parameters manually
+**Downloading the model parameters manually**
 
-The model parameters (~2GB) for the trained OpenFold3 model can be downloaded from [our AWS RODA bucket](https://registry.opendata.aws/openfold/) with the following script:
-
-```bash
-./openfold3/scripts/download_openfold_params.sh
-```
-
-By default, these weights will be downloaded to `~/.openfold3/`. 
-You can customize the download directory by providing your own download directory as follows.
+If preferred, the model parameters (~2GB) for the trained OpenFold3 model can be downloaded from [our AWS RODA bucket](https://registry.opendata.aws/openfold/) using the AWS CLI as follows:
 
 ```bash
-./scripts/download_openfold_params.sh --download_dir=<target-dir>
+aws s3 cp s3://openfold/staging/of3-p2-155k.pt <dst_path> --no-sign-request
 ```
+
+To use these checkpoints with OpenFold3, it is then necessary to pass in the full path to the parameters through the command line arguments, e.g. `--inference_ckpt_path`. See {ref}`Inference instructions <default-inference>` for more details. 
+
 
 ### Setting OpenFold3 Cache environment variable
 You can optionally set your OpenFold3 Cache path as an environment variable:
@@ -100,15 +151,6 @@ export OPENFOLD_CACHE=`/<custom-dir>/.openfold3/`
 ```
 
 This can be used to provide some default paths for model parameters (see section below).
-
-### TL;DR: Where does OpenFold3 look for model parameters? 
-
-OpenFold3 looks for parameters in the following order:
-1. Use `inference_ckpt_path` that the user provides either as a command line argument or in the `experiment_settings.inference_ckpt_path` section in `runner.yml`
-2. If the `$OPENFOLD_CACHE` value is set, either in the `runner.yml` under `experiment_settings.cache_path`, `$OPENFOLD_CACHE/ckpt_root` will be used
-    - If no `$OPENFOLD_CACHE/ckpt_root` file is set, will attempt to download the parameters to `$OPENFOLD_CACHE` (and write `ckpt_root` file storing the cache)
-3. If no `$OPENFOLD_CACHE` value is set, attempts to download the parameters to `~/.openfold3`.
-
 
 ## Running OpenFold Tests
 

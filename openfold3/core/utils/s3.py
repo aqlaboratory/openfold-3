@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import logging
 from pathlib import Path
 
 import boto3
+import tqdm
 from awscrt import checksums
 from botocore import UNSIGNED
 from botocore.config import Config
@@ -27,7 +28,10 @@ logger = logging.getLogger(__name__)
 
 
 def _get_s3_client():
-    return boto3.client("s3", config=Config(signature_version=UNSIGNED))
+    return boto3.client(
+        "s3",
+        config=Config(signature_version=UNSIGNED, connect_timeout=10, read_timeout=60),
+    )
 
 
 def get_s3_checksum(bucket: str, key: str) -> str | None:
@@ -44,8 +48,16 @@ def get_s3_checksum(bucket: str, key: str) -> str | None:
 def download_s3_file(bucket: str, key: str, local_path: Path) -> None:
     """Download a file from a public S3 bucket to a local path."""
     local_path.parent.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Downloading s3://{bucket}/{key} to {local_path}...")
-    _get_s3_client().download_file(bucket, key, str(local_path))
+    client = _get_s3_client()
+    file_size = client.head_object(Bucket=bucket, Key=key)["ContentLength"]
+    file_size_gb = file_size / (1024**3)
+    logger.info(
+        f"Downloading s3://{bucket}/{key} ({file_size_gb:.2f} GB) to {local_path}..."
+    )
+    with tqdm.tqdm(
+        total=file_size, unit="B", unit_scale=True, desc=local_path.name
+    ) as pbar:
+        client.download_file(bucket, key, str(local_path), Callback=pbar.update)
     logger.info("Download complete.")
 
 

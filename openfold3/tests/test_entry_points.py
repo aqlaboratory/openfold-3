@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ import ml_collections as mlc
 import pytest
 from pytorch_lightning.loggers import WandbLogger
 
+from openfold3 import setup_openfold
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModuleConfig
 from openfold3.entry_points.experiment_runner import (
@@ -32,8 +33,14 @@ from openfold3.entry_points.experiment_runner import (
     TrainingExperimentRunner,
     WandbHandler,
 )
+from openfold3.entry_points.parameters import (
+    CHECKPOINT_ROOT_FILENAME,
+    DEFAULT_CHECKPOINT_NAME,
+    LEGACY_CHECKPOINTS,
+    OPENFOLD_MODEL_CHECKPOINT_REGISTRY,
+    CheckpointEntry,
+)
 from openfold3.entry_points.validator import (
-    CHECKPOINT_NAME,
     InferenceExperimentConfig,
     TrainingExperimentConfig,
     TrainingExperimentSettings,
@@ -56,6 +63,11 @@ def _create_fake_file(path: Path) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write("dummy content")
+
+
+def _fake_download_s3_file(unused_bucket: str, unused_key: str, local_path: Path):
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    local_path.touch()
 
 
 class TestTrainingExperiment:
@@ -89,7 +101,11 @@ class TestTrainingExperiment:
                         config:
                             debug_mode: true
                             crop:
-                                token_budget: 640 
+                                token_crop:
+                                    token_budget: 640 
+                                chain_crop:
+                                    enabled: true
+                                    n_chains: 25
                             loss:
                                 bond: 4.0
                                 smooth_lddt: 0.0
@@ -172,7 +188,9 @@ class TestTrainingExperiment:
 
         weighted_pdb_spec = expt_runner.data_module_config.datasets[0]
         assert weighted_pdb_spec.weight == 1
-        assert weighted_pdb_spec.config.crop.token_budget == 640
+        assert weighted_pdb_spec.config.crop.token_crop.token_budget == 640
+        assert weighted_pdb_spec.config.crop.chain_crop.enabled is True
+        assert weighted_pdb_spec.config.crop.chain_crop.n_chains == 25
 
     @pytest.mark.parametrize("pl_checkpoint_option", [None, "last", "hpc", "registry"])
     def test_pl_checkpoint_load_options(self, pl_checkpoint_option):
@@ -261,39 +279,6 @@ class TestModelUpdate:
         # Verify settings from model_update section are also applied
         assert model_config.architecture.shared.num_recycles == 1
 
-    def test_pae_disabled_if_preset_not_selected(self, tmp_path, dummy_ckpt_file):
-        """Test pae not set if only predict preset specified experiment runner."""
-        test_yaml_str = textwrap.dedent("""\
-            model_update:
-              presets: 
-                - predict
-        """)
-        test_yaml_file = tmp_path / "runner.yml"
-        test_yaml_file.write_text(test_yaml_str)
-        expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=dummy_ckpt_file,
-            **config_utils.load_yaml(test_yaml_file),
-        )
-        expt_runner = InferenceExperimentRunner(expt_config)
-        assert not expt_runner.pae_enabled, "Expected pae_head not to be enabled."
-
-    def test_pae_enabled(self, tmp_path, dummy_ckpt_file):
-        """Test pae enabled updates experiment runner."""
-        test_yaml_str = textwrap.dedent("""\
-            model_update:
-              presets: 
-                - predict
-                - pae_enabled
-        """)
-        test_yaml_file = tmp_path / "runner.yml"
-        test_yaml_file.write_text(test_yaml_str)
-        expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=dummy_ckpt_file,
-            **config_utils.load_yaml(test_yaml_file),
-        )
-        expt_runner = InferenceExperimentRunner(expt_config)
-        assert expt_runner.pae_enabled
-
     def test_low_mem_model_config_preset(self, tmp_path, dummy_ckpt_file):
         test_dummy_file = tmp_path / "test.json"
         test_dummy_file.write_text("test")
@@ -330,6 +315,14 @@ class TestModelUpdate:
 
         # test existing setting in experiment runner is not overwritten
         assert not model_cfg.settings.memory.eval.use_lma
+
+    def test_model_update_with_pae_enabled_triggers_warning(self):
+        with patch(
+            "openfold3.projects.of3_all_atom.project_entry.logger"
+        ) as mock_logger:
+            ModelUpdate.model_validate({"presets": ["predict", "pae_enabled"]})
+        warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
+        assert any("model preset is deprecated" in msg for msg in warning_messages)
 
 
 class DummyWandbExperiment:
@@ -512,14 +505,60 @@ class TestInferenceCheckpointLoading:
         assert expt_config.inference_ckpt_path == dummy_ckpt_file
 
     def test_inference_ckpt_path_defaults(self, tmp_path):
-        with patch(
-            "openfold3.entry_points.validator._maybe_download_parameters",
-            side_effect=_create_fake_file,
+        with (
+            patch("builtins.input", return_value="yes"),
+            patch(
+                "openfold3.entry_points.parameters.download_s3_file",
+                side_effect=_fake_download_s3_file,
+            ),
         ):
             expt_config = InferenceExperimentConfig.model_validate(
                 {"cache_path": tmp_path}
             )
-        assert expt_config.inference_ckpt_path == tmp_path / CHECKPOINT_NAME
+
+        expected_ckpt_path = (
+            tmp_path
+            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[DEFAULT_CHECKPOINT_NAME].file_name
+        )
+        assert expt_config.inference_ckpt_name == DEFAULT_CHECKPOINT_NAME
+        assert expt_config.inference_ckpt_path == expected_ckpt_path
+        assert expt_config.inference_ckpt_path.exists()
+
+    def test_loads_selected_ckpt_name(self, tmp_path):
+        # Introduce a dummy checkpoint into the registry to test if it can be selected
+        selected_ckpt_name = "dummy_ckpt"
+        with (
+            patch.dict(
+                "openfold3.entry_points.parameters.OPENFOLD_MODEL_CHECKPOINT_REGISTRY",
+                {
+                    "dummy_ckpt": CheckpointEntry(
+                        file_name="dummy_checkpoint.pt", version_compatibility=">0.3.0"
+                    )
+                },
+            ),
+            patch("builtins.input", return_value="yes"),
+            patch(
+                "openfold3.entry_points.parameters.download_s3_file",
+                side_effect=_fake_download_s3_file,
+            ),
+        ):
+            expt_config = InferenceExperimentConfig.model_validate(
+                {"cache_path": tmp_path, "inference_ckpt_name": selected_ckpt_name}
+            )
+
+        expected_ckpt_path = tmp_path / "dummy_checkpoint.pt"
+        assert expt_config.inference_ckpt_name == selected_ckpt_name
+        assert expt_config.inference_ckpt_path == expected_ckpt_path
+        assert expected_ckpt_path.exists()
+
+    def test_checkpoint_version_compatibility(self):
+        # Check that loading old `openfold3-p1` raises version compatibiility error
+        with pytest.raises(
+            ValueError, match="Selected checkpoint openfold3-p1 is not compatible"
+        ):
+            InferenceExperimentConfig.model_validate(
+                {"inference_ckpt_name": "openfold3-p1"}
+            )
 
 
 class TestTemplatePreprocessorSettings:
@@ -575,7 +614,7 @@ class TestRemoveQuerySetDuplicates:
 
         return tmp_path
 
-    def test_remove_duplicates(self, dummy_output_path):
+    def test_remove_duplicates(self, dummy_ckpt_file, dummy_output_path):
         input_query_set = InferenceQuerySet.model_validate(
             {
                 "queries": {
@@ -611,7 +650,10 @@ class TestRemoveQuerySetDuplicates:
         )
 
         experiment_config = InferenceExperimentConfig.model_validate(
-            {"experiment_settings": {"seeds": [42, 43]}}
+            {
+                "experiment_settings": {"seeds": [42, 43]},
+                "inference_ckpt_path": dummy_ckpt_file,
+            }
         )
         expt_runner = InferenceExperimentRunner(
             experiment_config, num_diffusion_samples=2, output_dir=dummy_output_path
@@ -622,3 +664,64 @@ class TestRemoveQuerySetDuplicates:
         )
 
         assert set(deduplicated_set.queries.keys()) == set(["query_2", "query_3"])
+
+
+class TestSetupOpenFold:
+    def test_fresh_parameter_default_download(self, tmp_path):
+        inputs = iter(
+            [
+                str(tmp_path),  # Set cache directory
+                "",  # Use default (cache) directory for params directory
+                "1",  # download choice: default checkpoint only
+                "no",  # skip integration tests
+            ]
+        )
+
+        with (
+            patch("builtins.input", side_effect=inputs),
+            patch(
+                "openfold3.setup_openfold.download_s3_file",
+                side_effect=_fake_download_s3_file,
+            ),
+        ):
+            setup_openfold.main()
+
+        # Check that the checkpoint root file exists and has the expected path
+        assert (tmp_path / CHECKPOINT_ROOT_FILENAME).exists()
+        assert (tmp_path / CHECKPOINT_ROOT_FILENAME).read_text() == str(tmp_path)
+        # Check that dummy checkpoint file has been installed correctly
+        assert (
+            tmp_path
+            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[DEFAULT_CHECKPOINT_NAME].file_name
+        ).exists()
+
+    def test_fresh_parameter_download_all(self, tmp_path):
+        inputs = iter(
+            [
+                str(tmp_path),  # Set cache directory
+                "",  # Use default (cache) directory for params directory
+                "2",  # download choice: all parameters
+                "no",  # skip integration tests
+            ]
+        )
+
+        with (
+            patch("builtins.input", side_effect=inputs),
+            patch(
+                "openfold3.setup_openfold.download_s3_file",
+                side_effect=_fake_download_s3_file,
+            ),
+        ):
+            setup_openfold.main()
+
+        # Check that the checkpoint root file exists and has the expected path
+        assert (tmp_path / CHECKPOINT_ROOT_FILENAME).exists()
+        assert (tmp_path / CHECKPOINT_ROOT_FILENAME).read_text() == str(tmp_path)
+
+        expected_checkpoints = list(
+            set(OPENFOLD_MODEL_CHECKPOINT_REGISTRY.keys()) - set(LEGACY_CHECKPOINTS)
+        )
+        for ckpt_name in expected_checkpoints:
+            assert (
+                tmp_path / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[ckpt_name].file_name
+            ).exists()

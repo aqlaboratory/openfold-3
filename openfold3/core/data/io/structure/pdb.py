@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 from pathlib import Path
 
 import numpy as np
-from biotite.structure.io import pdb
+from biotite.structure.io import pdb, pdbx
 
 from openfold3.core.data.io.s3 import open_local_or_s3
 from openfold3.core.data.io.structure.cif import (
@@ -113,6 +113,67 @@ def parse_protein_monomer_pdb_tmp(
     atom_array = remove_std_residue_terminal_atoms(atom_array)
 
     return ParsedStructure(pdb_file, atom_array)
+
+
+# TODO: refactor with PDB reader below as it currently only supports monomers
+def parse_RNA_monomer_pdb_tmp(
+    file_path: Path | str,
+    include_bonds: bool = True,
+    extra_fields: list | None = None,
+    s3_profile: str | None = None,
+):
+    """Temporary function to parse a RNA monomer from a cif file.
+
+    Args:
+        file_path (Path | str): _description_
+        include_bonds (bool, optional): _description_. Defaults to True.
+        extra_fields (list | None, optional): _description_. Defaults to None.
+
+    Returns:
+        ParsedStructure : _description_
+    """
+
+    ## no label fields in pdb files
+    with open_local_or_s3(file_path, profile=s3_profile) as f:
+        cif_file = pdbx.CIFFile.read(f)
+
+    extra_fields_preset = [
+        "occupancy",
+        "charge",
+    ]
+
+    if extra_fields:
+        extra_fields = extra_fields_preset + extra_fields
+    else:
+        extra_fields = extra_fields_preset
+
+    parser_args = {
+        "pdbx_file": cif_file,
+        "model": 1,
+        "altloc": "first",
+        "include_bonds": include_bonds,
+        "extra_fields": extra_fields,
+    }
+    atom_array = pdbx.get_structure(
+        **parser_args,
+    )
+
+    ## manually assign th entity and molecule type ids;
+    ## monomers are all "single chain", so should have the same entity id,
+    ## everything is a single asym, and sym id should be 1(identity)
+    chain_ids = np.array([1] * len(atom_array), dtype=int)
+    molecule_type_ids = np.array([MoleculeType.RNA] * len(atom_array), dtype=int)
+    entity_ids = np.array([1] * len(atom_array), dtype=int)
+
+    atom_array.set_annotation("chain_id", chain_ids)
+    atom_array.set_annotation("molecule_type_id", molecule_type_ids)
+    atom_array.set_annotation("entity_id", entity_ids)
+
+    # Clean up structure
+    atom_array = remove_hydrogens(atom_array)
+    atom_array = remove_std_residue_terminal_atoms(atom_array)
+
+    return ParsedStructure(cif_file, atom_array)
 
 
 # TODO: check if extending existing primitives used below to support AF2 is ok

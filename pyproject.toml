@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openfold3"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
   "awscli",
   "awscrt",
@@ -22,7 +22,7 @@ dependencies = [
   "ml-collections",
   "mkl",
   "aria2",
-  "biotite >=1.1.0, <1.3",
+  "biotite",
   "rdkit",
   "boto3",
   "memory_profiler",
@@ -34,6 +34,7 @@ dependencies = [
   # For cutlass >=4, import library is cutlass_cppgen, but deepspeed is
   # currently using cutlass.
   "nvidia-cutlass <4",
+  "kalign-python",
 
   # additional pins
 
@@ -73,6 +74,7 @@ test = [
   "pytest-benchmark",
   "pytest-regressions",
   "debugpy",
+  "pytest-recording",
 ]
 
 [project.optional-dependencies]

@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -168,10 +168,7 @@ class ExperimentRunner(ABC):
 
     @cached_property
     def lightning_data_module(self):
-        return DataModule(
-            self.data_module_config,
-            world_size=self.world_size,
-        )
+        return DataModule(self.data_module_config)
 
     ###############
     # Distributed properties
@@ -227,12 +224,7 @@ class ExperimentRunner(ABC):
                 ),
                 timeout=self.pl_trainer_args.distributed_timeout,
             )
-
-            _use_deepspeed_adam = (
-                self.model_config.settings.optimizer.use_deepspeed_adam
-            )
-            if not _use_deepspeed_adam:
-                _strategy.config["zero_force_ds_cpu_optimizer"] = False
+            _strategy.config["zero_force_ds_cpu_optimizer"] = False
 
             return _strategy
 
@@ -277,9 +269,6 @@ class ExperimentRunner(ABC):
                 "strategy": self.strategy,
                 "callbacks": self.callbacks,
                 "logger": self.loggers,
-                # If DeepSpeed is enabled, these values will be passed to the DS config
-                "gradient_clip_val": self.model_config.settings.gradient_clipping,
-                "gradient_clip_algorithm": "norm",
             }
         )
 
@@ -309,7 +298,7 @@ class ExperimentRunner(ABC):
         else:
             raise ValueError(
                 f"""Invalid mode argument: {self.mode}. Choose one of "
-                "'train', 'test', 'predict', 'profile'."""
+                "'train', 'test', 'predict', 'eval'."""
             )
 
         return target_method(
@@ -341,6 +330,8 @@ class TrainingExperimentRunner(ExperimentRunner):
         self.logging_config = experiment_config.logging_config
         self.checkpoint_config = experiment_config.checkpoint_config
 
+        self.update_trainer_config()
+
     def setup(self) -> None:
         """Set up the experiment environment.
 
@@ -349,12 +340,55 @@ class TrainingExperimentRunner(ExperimentRunner):
         """
         super().setup()
         self._setup_logger()
-        self._set_random_seed()
         if self.use_wandb:
             self._wandb_setup()
 
         if self.do_manual_ckpt_loading:
             self.manual_load_checkpoint()
+
+    def update_trainer_config(self):
+        """
+        Update trainer configuration based on model settings.
+        This handles gradient clipping and accumulation settings.
+        """
+        if self.model_config.settings.gradient_clipping.per_sample_clipping:
+            # The training step with per-sample gradient clipping handles this
+            # internally PL does not support manual optimization with
+            # accumulate_grad_batches
+            if self.pl_trainer_args.accumulate_grad_batches > 1:
+                # If set in trainer args, move to model config and set to 1 in trainer
+                pl_accum_grad_batches = self.pl_trainer_args.accumulate_grad_batches
+                self.model_config.update(
+                    {
+                        "settings": {
+                            "manual_optimization": {
+                                "accumulate_grad_batches": pl_accum_grad_batches
+                            }
+                        }
+                    }
+                )
+                self.pl_trainer_args.accumulate_grad_batches = 1
+
+            # Disable the `LearningRateMonitor` callback, logging is handled
+            # manually in the training step
+            if self.logging_config.log_lr and self.use_wandb:
+                self.model_config.update(
+                    {"settings": {"manual_optimization": {"log_lr": True}}}
+                )
+                self.logging_config.log_lr = False
+
+        else:
+            # If not doing per-sample grad clipping, set the clipping value in
+            # the trainer args to be handled by PL
+            clip_val = self.model_config.settings.gradient_clipping.clip_val
+
+            # If DeepSpeed is enabled, these values will be passed to the DS config
+            self.pl_trainer_args.gradient_clip_val = clip_val
+            self.pl_trainer_args.gradient_clip_algorithm = "norm"
+
+        # Update distributed sync seed used in the model
+        # Currently used to sync the number of recycles across ranks
+        self.model_config.update({"architecture": {"shared": {"sync_seed": self.seed}}})
 
     @cached_property
     def data_module_config(self) -> DataModuleConfig:
@@ -380,12 +414,14 @@ class TrainingExperimentRunner(ExperimentRunner):
         # If resuming from existing wandb run, do not manually load checkpoint
         if self.resume_existing_run:
             return False
-        return self.ckpt_load_settings.manual_checkpoint_loading
+        do_manual = self.ckpt_load_settings.manual_checkpoint_loading
+        logger.info(f"Manual checkpoint loading: {do_manual}")
+        return do_manual
 
     def manual_load_checkpoint(self):
         init_from_ema_weights = self.ckpt_load_settings.init_from_ema_weights
         ckpt = load_checkpoint(Path(self.restart_checkpoint_path))
-        state_dict = get_state_dict_from_checkpoint(
+        state_dict, ema = get_state_dict_from_checkpoint(
             ckpt, init_from_ema_weights=init_from_ema_weights
         )
 
@@ -393,7 +429,18 @@ class TrainingExperimentRunner(ExperimentRunner):
         self.lightning_module.load_state_dict(
             state_dict, strict=self.ckpt_load_settings.strict_loading
         )
-        self.lightning_module.ema.load_state_dict(ckpt["ema"])
+
+        self.lightning_module.ema.load_state_dict(ema)
+
+        configured_ema_decay = self.model_config.settings.ema.decay
+        loaded_ema_decay = self.lightning_module.ema.decay
+        if configured_ema_decay != loaded_ema_decay:
+            logger.info(
+                "Overriding checkpoint EMA decay (%s) with config EMA decay (%s).",
+                loaded_ema_decay,
+                configured_ema_decay,
+            )
+        self.lightning_module.ema.decay = configured_ema_decay
 
         if self.ckpt_load_settings.restore_lr_scheduler:
             last_global_step = int(ckpt["global_step"])
@@ -464,30 +511,6 @@ class TrainingExperimentRunner(ExperimentRunner):
         log_filepath = self.log_dir / "console_logs.log"
         logging.basicConfig(filename=log_filepath, level=log_level, filemode="w")
 
-    def _set_random_seed(self) -> None:
-        """Set the random seed for reproducibility."""
-
-        seed = self.seed
-        if seed is None and self.is_distributed:
-            raise ValueError("For distributed training, seed must be specified")
-
-        if not isinstance(seed, int):
-            raise ValueError(
-                f"seed={seed} must be an integer. Please provide a valid seed."
-            )
-
-        logger.info(f"Running with seed: {seed}")
-
-        # The datamodule is reseeded with the data_seed, and the model will be
-        # reseeded per rank with the RankSpecificSeedCallback, so most of the
-        # seed_everything() initialization does not matter. This does still
-        # seed the distributed sampler, which will otherwise default to seed 0.
-        pl.seed_everything(seed, workers=True)
-
-        update_dict = {"architecture": {"shared": {"sync_seed": seed}}}
-
-        self.model_config.update(update_dict)
-
     @cached_property
     def loggers(self):
         """Retrieve the list of loggers to be used in the experiment."""
@@ -513,7 +536,7 @@ class TrainingExperimentRunner(ExperimentRunner):
 
 
 class InferenceExperimentRunner(ExperimentRunner):
-    """Training experiment builder."""
+    """Inference experiment builder."""
 
     def __init__(
         self,
@@ -591,10 +614,6 @@ class InferenceExperimentRunner(ExperimentRunner):
     def use_templates(self) -> bool:
         return self.experiment_config.experiment_settings.use_templates
 
-    @cached_property
-    def pae_enabled(self) -> bool:
-        return self.model_config.architecture.heads.pae.enabled
-
     def remove_completed_queries_from_query_set(self, inference_query_set):
         """Returns a new inference query set with previously completed runs removed."""
 
@@ -618,7 +637,7 @@ class InferenceExperimentRunner(ExperimentRunner):
                 completed_structures.append(query_id)
 
         logger.info(
-            "Skipping existing structures is enabled.Will skip "
+            "Skipping existing structures is enabled. Will skip "
             f"the following {len(completed_structures)} structures:"
             f" {completed_structures}"
         )
@@ -634,6 +653,23 @@ class InferenceExperimentRunner(ExperimentRunner):
 
         return deduplicated_inference_set
 
+    def _warn_on_missing_version_tensor_in_load_statedict(
+        self, state_dict: dict
+    ) -> None:
+        """Load state dict, warning if only version_tensor is missing."""
+        try:
+            self.lightning_module.load_state_dict(state_dict, strict=True)
+        except RuntimeError as e:
+            if 'Missing key(s) in state_dict: "model.version_tensor".' in str(e):
+                logger.warning(
+                    "No version_tensor is found for this checkpoint."
+                    "Assuming the user knows checkpoints are parameters are compatible,"
+                    " continuing..."
+                )
+                self.lightning_module.load_state_dict(state_dict, strict=False)
+            else:
+                raise
+
     def setup(self) -> None:
         """Set up environment and load checkpoints."""
         super().setup()
@@ -641,8 +677,8 @@ class InferenceExperimentRunner(ExperimentRunner):
         self._log_model_config()
         logger.info(f"Loading weights from {self.ckpt_path}")
         ckpt = load_checkpoint(self.ckpt_path)
-        state_dict = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
-        self.lightning_module.load_state_dict(state_dict, strict=True)
+        state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
+        self._warn_on_missing_version_tensor_in_load_statedict(state_dict)
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
@@ -669,7 +705,6 @@ class InferenceExperimentRunner(ExperimentRunner):
         _callbacks = [
             OF3OutputWriter(
                 output_dir=self.output_dir,
-                pae_enabled=self.pae_enabled,
                 **self.output_writer_settings.model_dump(),
             ),
             PredictTimer(self.output_dir),
@@ -696,7 +731,6 @@ class InferenceExperimentRunner(ExperimentRunner):
     def lightning_data_module(self):
         return InferenceDataModule(
             self.data_module_config,
-            world_size=self.world_size,
             use_msa_server=self.use_msa_server,
             use_templates=self.use_templates,
             msa_computation_settings=self.experiment_config.msa_computation_settings,
@@ -817,7 +851,12 @@ class WandbHandler:
 
     @cached_property
     def run_exists(self) -> bool:
-        wandb_ckpt_dir = Path(self.output_dir) / wandb.run.project / wandb.run.id
+        wandb_ckpt_dir = (
+            Path(self.output_dir)
+            / self.wandb_args.project
+            / self.wandb_args.id
+            / "checkpoints"
+        )
         return wandb_ckpt_dir.is_dir() and any(wandb_ckpt_dir.iterdir())
 
     def store_configs(

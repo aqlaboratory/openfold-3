@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,15 +12,140 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, field
+from itertools import combinations, combinations_with_replacement
+from typing import Literal
 
 import torch
 
+from openfold3.core.data.resources.lists import (
+    AB_AG_CHAIN_PAIR_TYPES,
+    AB_AG_CHAIN_TYPES,
+)
+from openfold3.core.data.resources.token_atom_constants import BACKBONE_ATOMS
 from openfold3.core.metrics.confidence import compute_plddt
 from openfold3.core.metrics.rasa import compute_rasa_batch
-from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
-from openfold3.core.utils.geometry.kabsch_alignment import kabsch_align
+from openfold3.core.utils.atomize_utils import (
+    aggregate_atom_feat_to_tokens_nd,
+    broadcast_token_feat_to_atoms,
+)
+from openfold3.core.utils.geometry.kabsch_alignment import (
+    apply_transformation,
+    get_optimal_transformation,
+    kabsch_align,
+)
 from openfold3.core.utils.tensor_utils import tensor_tree_map
+
+
+def select_inter_filter_mask(
+    inter_mask_atomized: torch.Tensor, mol_type_mask: torch.Tensor, out_shape: list
+) -> torch.Tensor:
+    """
+    Due to MAX INT limit with masked select, we need to select from the
+    inter_mask_atomized mask for each sample independently and then stack
+    them together.
+
+    Args:
+        inter_mask_atomized:
+            [*, N_atom, N_atom] Pairwise filter for inter-chain computations
+        mol_type_mask:
+            [*, N_atom, N_atom] Boolean mask for molecule type to select from
+            inter_mask_atomized
+        out_shape:
+            Shape of output tensor
+    Returns:
+        Inter-chain mask per sample filtered by molecule type
+    """
+    n_samples = inter_mask_atomized.shape[-3]
+
+    inter_mask_filtered = []
+    for i in range(n_samples):
+        inter_mask_filtered_chunk = torch.masked_select(
+            inter_mask_atomized[:, i], mol_type_mask[:, i]
+        ).reshape(out_shape)
+        inter_mask_filtered.append(inter_mask_filtered_chunk)
+
+    return torch.stack(inter_mask_filtered, dim=-3)
+
+
+def _get_atom_name_mask(
+    ref_atom_name_chars: torch.Tensor, names: list[str]
+) -> torch.Tensor:
+    """
+    ref_atom_name_chars: tensor with shape [..., Natom, 4, 64], one-hot per char.
+    names: list of atom names (e.g., ["CA"] or ["P", "OP1", "OP2"]).
+
+    Returns:
+        Boolean mask with shape [..., Natom], True where name matches any in `names`.
+    """
+    # Convert one-hot to code indices [..., Natom, 4]
+    codes = ref_atom_name_chars.argmax(dim=-1)
+
+    # Build target code rows for the names, right-padded to 4
+    def name_to_codes(n: str) -> torch.Tensor:
+        s = n.ljust(4)[:4]
+        return torch.tensor(
+            [ord(c) - 32 for c in s], device=codes.device, dtype=codes.dtype
+        )
+
+    # [M, 4]
+    targets = torch.stack([name_to_codes(n) for n in names], dim=0)
+
+    # Flatten leading dims so we can broadcast cleanly
+    leading = codes.shape[:-2]
+    N = codes.shape[-2]
+    # [B*, N, 4]
+    codes2 = codes.reshape(-1, N, 4)
+
+    # Compare every atom against every target name
+    # [B*, N, M, 4]
+    eq = codes2.unsqueeze(2) == targets.unsqueeze(0)
+    # [B*, N]
+    match_any = eq.all(dim=-1).any(dim=-1)
+
+    # Restore original leading dims
+    return match_any.reshape(*leading, N)
+
+
+def _spread_contacts(
+    is_contact_atom: torch.Tensor,
+    atom_to_res_id: torch.Tensor,
+) -> torch.Tensor:
+    """
+    For each atom, mark True if *any* atom in the same residue has a contact.
+    Returns a [B,S,N] bool mask aligned with `is_contact_atom`.
+
+    is_contact_atom: torch.Tensor [*, N_atoms]
+    atom_to_res_id: torch.Tensor [*, N_atoms]
+    """
+    if is_contact_atom.shape != atom_to_res_id.shape:
+        raise ValueError(
+            f"Shape mismatch: is_contact_atom {is_contact_atom.shape} vs "
+            f"atom_to_res_id {atom_to_res_id.shape}"
+        )
+
+    bs = is_contact_atom.shape[:-1]
+    idx = atom_to_res_id.long()
+
+    # +1 because residue ids start at 1 (slot 0 remains unused)
+    max_res_id = int(idx.max().item()) + 1
+    per_res_any = torch.zeros(
+        bs + (max_res_id,), dtype=torch.int32, device=is_contact_atom.device
+    )
+
+    # Reduce with AMAX over atoms per residue
+    per_res_any.scatter_reduce_(
+        dim=-1,
+        index=idx,
+        src=is_contact_atom.to(torch.int32),
+        reduce="amax",
+        include_self=False,
+    )
+
+    # Map residue-level flag back to each atom
+    mask_atoms = per_res_any.gather(-1, idx) > 0
+    return mask_atoms
 
 
 def gdt(p1, p2, mask, cutoffs):
@@ -77,35 +202,60 @@ def rmsd(
     return rmsd
 
 
-def select_inter_filter_mask(
-    inter_mask_atomized: torch.Tensor, mol_type_mask: torch.Tensor, out_shape: list
-) -> torch.Tensor:
+def drmsd(
+    pair_dist_pred_pos: torch.Tensor,
+    pair_dist_gt_pos: torch.Tensor,
+    all_atom_mask: torch.Tensor,
+    asym_id: torch.Tensor,
+    eps: float | None = 1e-10,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Due to MAX INT limit with masked select, we need to select from the
-    inter_mask_atomized mask for each sample independently and then stack
-    them together.
+    Computes drmsds from pair distances
 
     Args:
-        inter_mask_atomized:
-            [*, N_atom, N_atom] Pairwise filter for inter-chain computations
-        mol_type_mask:
-            [*, N_atom] Boolean mask for molecule type to select from
-            inter_mask_atomized
-        out_shape:
-            Shape of output tensor
+        pair_dist_pred_pos: predicted coordinates [*, n_atom, n_atom]
+        pair_dist_gt_pos: gt coordinates [*, n_atom, n_atom]
+        all_atom_mask: atom mask [*, n_atom]
+        asym_id: atomized asym_id feature [*, n_atom]
+        eps: epsilon
     Returns:
-        Inter-chain mask per sample filtered by molecule type
+        intra_drmsd: drmsd within chains
+        inter_drmsd: drmsd across chains
+
+    Note:
+        returns None if inter_drmsd is invalid (ie. single chain)
     """
-    n_samples = inter_mask_atomized.shape[-3]
+    # Calculate squared distance differences
+    drmsd = pair_dist_pred_pos - pair_dist_gt_pos
+    drmsd = drmsd**2
 
-    inter_mask_filtered = []
-    for i in range(n_samples):
-        inter_mask_filtered_chunk = torch.masked_select(
-            inter_mask_atomized[:, i], mol_type_mask[:, i]
-        ).reshape(out_shape)
-        inter_mask_filtered.append(inter_mask_filtered_chunk)
+    # Apply mask and exclude diagonal
+    mask = all_atom_mask[..., None] * all_atom_mask[..., None, :]
+    mask = mask * (1.0 - torch.eye(mask.shape[-1], device=all_atom_mask.device))
 
-    return torch.stack(inter_mask_filtered, dim=-3)
+    # Create intra and inter chain masks
+    intra_mask = torch.where(asym_id[..., None] == asym_id[..., None, :], 1, 0).bool()
+    inter_mask = ~intra_mask
+
+    intra_drmsd = None
+    intra_mask = intra_mask * mask
+    if torch.any(intra_mask):
+        intra_drmsd = drmsd * intra_mask
+        intra_drmsd = torch.sum(intra_drmsd, dim=(-1, -2))
+        n_intra = torch.sum(intra_mask, dim=(-1, -2)) + eps
+        intra_drmsd = intra_drmsd * (1 / n_intra)
+        intra_drmsd = torch.sqrt(intra_drmsd)
+
+    inter_drmsd = None
+    inter_mask = inter_mask * mask
+    if torch.any(inter_mask):
+        inter_drmsd = drmsd * inter_mask
+        inter_drmsd = torch.sum(inter_drmsd, dim=(-1, -2))
+        n_inter = torch.sum(inter_mask, dim=(-1, -2)) + eps
+        inter_drmsd = inter_drmsd * (1 / n_inter)
+        inter_drmsd = torch.sqrt(inter_drmsd)
+
+    return intra_drmsd, inter_drmsd
 
 
 def lddt(
@@ -120,31 +270,42 @@ def lddt(
     eps: float | None = 1e-10,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Calculates lddt scores from pair distances
-    Compute on all atoms within the same chain_type (protein, ligand, rna, dna)
+    Calculates lddt scores from pair distances.
+
+    Performs a disjoint calculation on within-chain and cross-chain distances.
 
     Args:
-        pair_dist_pred_pos: pairwise distance of prediction [*, n_atom, n_atom]
-        pair_dist_gt_pos: pairwise distance of gt [*, n_atom, n_atom]
-        all_atom_mask: atom level mask [*, n_atom]
-        intra_mask_filter:[*, n_atom] filter for intra chain computations
-        inter_mask_filter: [*, n_atom, n_atom] pairwise interaction filter
-        asym_id: atomized asym_id feature [*, n_atom]
-        threshold: a list of thresholds to apply for lddt computation
-            - Standard values: [0.5, 1., 2., 4.]
-            - lddt_uha (for ligands): [0.25, 0.5, 0.75, 1.]
-        cutoff: distance cutoff (aka. inclusion radius)
-            - Nucleic Acids (DNA/RNA) 30.
-            - Other biomolecules (Protein/Ligands) 15.
-        eps: epsilon
+        pair_dist_pred_pos:
+            Pairwise distance of prediction [*, n_atom, n_atom]
+        pair_dist_gt_pos:
+            Pairwise distance of gt [*, n_atom, n_atom]
+        all_atom_mask:
+            Atom level mask (typically for subsetting the calculation to atoms that are
+            resolved in the GT) [*, n_atom]
+        intra_mask_filter: [*, n_atom]
+            Filter for intra chain computations
+        inter_mask_filter: [*, n_atom, n_atom]
+            Filter for inter chain computations
+        asym_id:
+            Atomized asym_id feature [*, n_atom]
+        threshold:
+            A list of thresholds to apply for lddt computation - Standard values: [0.5,
+            1., 2., 4.] - lddt_uha (for ligands): [0.25, 0.5, 0.75, 1.]
+        cutoff:
+            distance cutoff (aka. inclusion radius) - Nucleic Acids (DNA/RNA) 30. -
+            Other biomolecules (Protein/Ligands) 15.
+        eps:
+            Constant for numerical stability.
 
     Returns:
-        intra_score: intra lddt scores [*]
-        inter_score: inter lddt scores [*]
+        intra_score:
+            intra lddt scores [*]
+        inter_score:
+            inter lddt scores [*]
 
     Note:
-        returns None for inter_score if inter_lddt invalid
-        (ie. single chain, no atom pair within cutoff)
+        returns None for inter_score if inter_lddt invalid (ie. single chain, no atom
+        pair within cutoff)
     """
     # create a mask
     n_atom = pair_dist_gt_pos.shape[-2]
@@ -201,20 +362,30 @@ def interface_lddt(
     eps: float | None = 1e-10,
 ) -> torch.Tensor:
     """
-    Calculates interface_lddt (ilddt) score between two different molecules
+    Calculates interface_lddt (ilddt) score between two different molecules.
+
+    Note that, unlike the lddt function, this function uses as inputs the flat 3D
+    coordinate tensors, not the pairwise distances between coordinates
 
     Args:
-        all_atom_pred_pos_1: predicted protein coordinates [*, n_atom1, 3]
-        all_atom_pred_pos_2: predicted interacting molecule coordinates [*, n_atom2, 3]
-        all_atom_gt_pos_1: gt protein coordinates [*, n_atom1, 3]
-        all_atom_gt_pos_2: gt interacting molecule coordinates  [*, n_atom2, 3]
-        all_atom_mask1: protein atom mask [*, n_atom1]
-        all_atom_mask2: interacting molecule atom maks [*, n_atom2]
-        filter_mask: [*, n_atom1, n_atom2] pairwise filter for atom types
-        cutoff: distance cutoff
-            - Nucleic Acids (DNA/RNA) 30.
-            - Others(Protein/Ligands) 15.
-        eps: epsilon
+        all_atom_pred_pos_1:
+            predicted protein coordinates [*, n_atom1, 3]
+        all_atom_pred_pos_2:
+            predicted interacting molecule coordinates [*, n_atom2, 3]
+        all_atom_gt_pos_1:
+            gt protein coordinates [*, n_atom1, 3]
+        all_atom_gt_pos_2:
+            gt interacting molecule coordinates  [*, n_atom2, 3]
+        all_atom_mask1:
+            protein atom mask [*, n_atom1]
+        all_atom_mask2:
+            interacting molecule atom maks [*, n_atom2]
+        filter_mask:
+            pairwise filter for atom types [*, n_atom1, n_atom2]
+        cutoff:
+            distance cutoff - Nucleic Acids (DNA/RNA) 30. - Others(Protein/Ligands) 15.
+        eps:
+            Constant for numerical stability.
 
     Returns:
         scores: ilddt scores [*]
@@ -261,60 +432,530 @@ def interface_lddt(
     return score
 
 
-def drmsd(
-    pair_dist_pred_pos: torch.Tensor,
-    pair_dist_gt_pos: torch.Tensor,
-    all_atom_mask: torch.Tensor,
-    asym_id: torch.Tensor,
-    eps: float | None = 1e-10,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Computes drmsds from pair distances
+def fnat(contacts_gt: torch.Tensor, contacts_pred: torch.Tensor) -> torch.Tensor:
+    """Calculates the fraction of GT contacts reproduced in the prediction.
 
     Args:
-        pair_dist_pred_pos: predicted coordinates [*, n_atom, n_atom]
-        pair_dist_gt_pos: gt coordinates [*, n_atom, n_atom]
-        all_atom_mask: atom mask [*, n_atom]
-        asym_id: atomized asym_id feature [*, n_atom]
-        eps: epsilon
+         contacts_gt (torch.Tensor):
+              Contacts in the ground truth structure [*, N, N].
+         contacts_pred (torch.Tensor):
+              Contacts in the predicted structure [*, N, N].
+
     Returns:
-        intra_drmsd: drmsd within chains
-        inter_drmsd: drmsd across chains
-
-    Note:
-        returns None if inter_drmsd is invalid (ie. single chain)
+         torch.Tensor:
+                Fraction of native contacts reproduced [*].
     """
-    # Calculate squared distance differences
-    drmsd = pair_dist_pred_pos - pair_dist_gt_pos
-    drmsd = drmsd**2
+    contacts_nat = contacts_gt.sum(dim=(-2, -1))
+    contacts_nat_recovered = (contacts_gt & contacts_pred).sum(dim=(-2, -1))
+    fnat = contacts_nat_recovered.to(torch.float32) / torch.clamp(contacts_nat, min=1.0)
+    return fnat
 
-    # Apply mask and exclude diagonal
-    mask = all_atom_mask[..., None] * all_atom_mask[..., None, :]
-    mask = mask * (1.0 - torch.eye(mask.shape[-1], device=all_atom_mask.device))
 
-    # Create intra and inter chain masks
-    intra_mask = torch.where(asym_id[..., None] == asym_id[..., None, :], 1, 0).bool()
-    inter_mask = ~intra_mask
+@dataclass
+class DockQResult:
+    """DockQ results class.
 
-    intra_drmsd = None
-    intra_mask = intra_mask * mask
-    if torch.any(intra_mask):
-        intra_drmsd = drmsd * intra_mask
-        intra_drmsd = torch.sum(intra_drmsd, dim=(-1, -2))
-        n_intra = torch.sum(intra_mask, dim=(-1, -2)) + eps
-        intra_drmsd = intra_drmsd * (1 / n_intra)
-        intra_drmsd = torch.sqrt(intra_drmsd)
+    Attributes:
+        chain_pair_to_dockq:
+            Chain ID pairs to DockQ score [*].
+        chain_pair_to_moltype:
+            Chain ID pairs to molecule types.
+        chain_pair_to_n_contacts:
+            Chain ID pairs to number of residue pairs in contact at the FNAT threshold.
+        chain_pair_to_n_if_res:
+            Chain ID pairs to number of contacting residues at the FNAT threshold.
+    """
 
-    inter_drmsd = None
-    inter_mask = inter_mask * mask
-    if torch.any(inter_mask):
-        inter_drmsd = drmsd * inter_mask
-        inter_drmsd = torch.sum(inter_drmsd, dim=(-1, -2))
-        n_inter = torch.sum(inter_mask, dim=(-1, -2)) + eps
-        inter_drmsd = inter_drmsd * (1 / n_inter)
-        inter_drmsd = torch.sqrt(inter_drmsd)
+    chain_pair_to_dockq: dict = field(default_factory=dict)
+    chain_pair_to_moltype: dict = field(default_factory=dict)
+    chain_pair_to_n_contacts: dict = field(default_factory=dict)
+    chain_pair_to_n_if_res: dict = field(default_factory=dict)
 
-    return intra_drmsd, inter_drmsd
+    def iter_pairs(
+        self,
+    ) -> Iterator[
+        tuple[
+            tuple[int, int], torch.Tensor, tuple[str, str], torch.Tensor, torch.Tensor
+        ]
+    ]:
+        """
+        Yields (chain_pair, dockq, moltype, n_contacts, n_if_res).
+        """
+        keys = self.chain_pair_to_dockq.keys()
+        # Check that all dicts have identical keys:
+        if not (
+            keys
+            == self.chain_pair_to_moltype.keys()
+            == self.chain_pair_to_n_contacts.keys()
+            == self.chain_pair_to_n_if_res.keys()
+        ):
+            raise ValueError("DockQResult keys don't match.")
+
+        for cp in keys:
+            yield (
+                cp,
+                self.chain_pair_to_dockq[cp],
+                self.chain_pair_to_moltype[cp],
+                self.chain_pair_to_n_contacts[cp],
+                self.chain_pair_to_n_if_res[cp],
+            )
+
+
+def dockq(
+    pred_coords: torch.Tensor,
+    gt_coords: torch.Tensor,
+    all_atom_mask: torch.Tensor,
+    asym_id_atomized: torch.Tensor,
+    res_id_atomized: torch.Tensor,
+    ref_atom_name_chars_atomized: torch.Tensor,
+    inter_filter_atomized: torch.Tensor,
+    is_protein_atomized: torch.Tensor,
+    is_rna_atomized: torch.Tensor,
+    is_dna_atomized: torch.Tensor,
+    d_fnat: float = 5.0,
+    d_irmsd: float = 10.0,
+    d1: float = 8.5,
+    d2: float = 1.5,
+) -> DockQResult:
+    """Calculates per-interface DockQ scores, separately for each diffusion sample.
+
+    Only batch size=1 implemented.
+
+    Args:
+        pred_coords (torch.Tensor):
+            Predicted coordinates of the complex [B, S, N_atom, 3].
+        gt_coords (torch.Tensor):
+            Ground truth coordinates of the complex [B, S, N_atom, 3].
+        all_atom_mask (torch.Tensor):
+            Atom mask for unresolved atoms [B, S, N_atom].
+        asym_id_atomized (torch.Tensor):
+            Per-atom asym IDs [B, S, N_atom].
+        res_id_atomized (torch.Tensor):
+            Per-atom residue IDs [B, S, N_atom].
+        ref_atom_name_chars_atomized (torch.Tensor):
+            Per-atom atom names in the AF3-stype encoding [B, S, N_atom, 4, 64].
+        inter_filter_atomized (torch.Tensor):
+            Precomputed mask for which atom pairs to consider in the calculation [B, S,
+            N_atom, N_atom].
+        is_protein_atomized (torch.Tensor):
+            Per-atom protein mask [B, S, N_atom].
+        is_rna_atomized (torch.Tensor):
+            Per-atom RNA mask [B, S, N_atom].
+        is_dna_atomized (torch.Tensor):
+            Per-atom DNA mask [B, S, N_atom].
+        d_fnat (float, optional):
+            Contact threshold for FNAT calculation. Defaults to 5.0.
+        d_irmsd (float, optional):
+            Contact threshold for iRMSD calculation. Defaults to 10.0.
+        d1 (float, optional):
+            DockQ d1 parameter. Defaults to 8.5.
+        d2 (float, optional):
+            DockQ d2 parameter. Defaults to 1.5.
+
+    Raises:
+        NotImplementedError:
+            If batch size is > 1.
+
+    Returns:
+        DockQResult:
+            Per-interface and per-diffusion-sample DockQ scores and associated metadata
+            [B].
+    """
+    bs = asym_id_atomized.shape[:-1]
+    n = asym_id_atomized.shape[-1:]
+    dockq_result = DockQResult()
+    moltypes = ["protein", "rna", "dna"]
+    chain_id_to_moltype = {}
+
+    is_polymer_atomized = is_protein_atomized + is_rna_atomized + is_dna_atomized
+    chain_id_polymer = torch.unique(
+        asym_id_atomized[all_atom_mask.bool() & is_polymer_atomized.bool()]
+    ).to(torch.int32)
+
+    for moltype_mask_atomized, moltype in zip(
+        [is_protein_atomized, is_rna_atomized, is_dna_atomized], moltypes
+    ):
+        asym_id_moltype_atomized = asym_id_atomized[all_atom_mask.bool()][
+            moltype_mask_atomized[all_atom_mask.bool()]
+        ]
+        if torch.any(asym_id_moltype_atomized):
+            chain_ids = torch.unique(asym_id_moltype_atomized).to(torch.int32)
+            for chain_id in chain_ids:
+                chain_id_to_moltype[chain_id.item()] = moltype
+
+    is_backbone = _get_atom_name_mask(ref_atom_name_chars_atomized, BACKBONE_ATOMS)
+    if inter_filter_atomized is None:
+        inter_filter_atomized = torch.ones(
+            bs + n + n, dtype=torch.bool, device=asym_id_atomized.device
+        )
+
+    if (len(bs) > 0) and (bs[0] > 1):
+        raise NotImplementedError("DockQ for batch size > 1 not implemented.")
+    for ci, cj in combinations(chain_id_polymer, 2):
+        for sample_idx in range(bs[-1]):
+            # Chain masks
+            is_ci = (asym_id_atomized[..., sample_idx, :] == ci) & all_atom_mask[
+                ..., sample_idx, :
+            ].bool()
+            is_cj = (asym_id_atomized[..., sample_idx, :] == cj) & all_atom_mask[
+                ..., sample_idx, :
+            ].bool()
+
+            ni_value = torch.unique(torch.sum(is_ci, axis=-1))
+            nj_value = torch.unique(torch.sum(is_cj, axis=-1))
+            # Skip if no valid atoms or inconsistent number of atoms across samples for
+            # the same chain
+            if torch.all(ni_value == 0) or torch.all(nj_value == 0):
+                continue
+
+            chain_id_pair = (ci.item(), cj.item(), sample_idx)
+
+            # batch size > 1 not supported, so can just take the first sample's chain
+            # mask
+            atom_id_i = torch.where(is_ci[0])[0]
+            atom_id_j = torch.where(is_cj[0])[0]
+
+            inter_filter_atomized_ij = (
+                inter_filter_atomized[..., sample_idx, :, :]
+                .index_select(-2, atom_id_i)
+                .index_select(-1, atom_id_j)
+            )
+
+            # Skip if no metrics are needed for this interface
+            if (
+                (inter_filter_atomized_ij.shape[-1] == 0)
+                or (inter_filter_atomized_ij.shape[-2] == 0)
+                or torch.all(torch.sum(inter_filter_atomized_ij, dim=[-1, -2]) == 0)
+            ):
+                continue
+
+            # homo-multimers can cause some unexpected errors
+            try:
+                gt_coords_i = gt_coords[..., sample_idx, :, :][is_ci].view(
+                    bs[:-1] + (ni_value.item(), 3)
+                )
+                gt_coords_j = gt_coords[..., sample_idx, :, :][is_cj].view(
+                    bs[:-1] + (nj_value.item(), 3)
+                )
+                pred_coords_i = pred_coords[..., sample_idx, :, :][is_ci].view(
+                    bs[:-1] + (ni_value.item(), 3)
+                )
+                pred_coords_j = pred_coords[..., sample_idx, :, :][is_cj].view(
+                    bs[:-1] + (nj_value.item(), 3)
+                )
+                is_backbone_i = is_backbone[..., sample_idx, :][is_ci].view(
+                    bs[:-1] + (ni_value.item(),)
+                )
+                is_backbone_j = is_backbone[..., sample_idx, :][is_cj].view(
+                    bs[:-1] + (nj_value.item(),)
+                )
+            except RuntimeError as e:
+                print(
+                    f"DockQ Error: Failed to extract per-chain features for chains {ci}"
+                    f" and {cj}:\n{e}"
+                )
+                continue
+
+            d_gt_ij_squared = torch.sum(
+                (gt_coords_i.unsqueeze(-2) - gt_coords_j.unsqueeze(-3)) ** 2, dim=-1
+            )
+            contacts_gt_d_fnat_atomized = (
+                d_gt_ij_squared < d_fnat**2
+            ) & inter_filter_atomized_ij
+
+            # Skip if no valid contacts
+            if not torch.any(contacts_gt_d_fnat_atomized):
+                continue
+
+            d_pred_ij_squared = torch.sum(
+                (pred_coords_i.unsqueeze(-2) - pred_coords_j.unsqueeze(-3)) ** 2, dim=-1
+            )
+            contacts_pred_d_fnat_atomized = (
+                d_pred_ij_squared < d_fnat**2
+            ) & inter_filter_atomized_ij
+
+            res_id_i = res_id_atomized[..., sample_idx, :][is_ci].view(bs[:-1] + (-1,))
+            res_id_j = res_id_atomized[..., sample_idx, :][is_cj].view(bs[:-1] + (-1,))
+
+            # FNAT
+            # Aggregate atom-wise to residue-wise contacts [*, ni, nj] -> [* ri, rj]
+            contacts_gt_d_fnat_res = aggregate_atom_feat_to_tokens_nd(
+                atom_feat=contacts_gt_d_fnat_atomized,
+                atom_dims=[-2, -1],
+                atom_to_token_index_list=[res_id_i, res_id_j],
+                aggregate_fn="any",
+            )
+            contacts_pred_d_fnat_res = aggregate_atom_feat_to_tokens_nd(
+                atom_feat=contacts_pred_d_fnat_atomized,
+                atom_dims=[-2, -1],
+                atom_to_token_index_list=[res_id_i, res_id_j],
+                aggregate_fn="any",
+            )
+
+            contacts_nat = contacts_gt_d_fnat_res.sum(dim=(-2, -1))
+            contacts_nat_recovered = (
+                contacts_gt_d_fnat_res & contacts_pred_d_fnat_res
+            ).sum(dim=(-2, -1))
+            fnat = contacts_nat_recovered.to(torch.float32) / torch.clamp(
+                contacts_nat, min=1.0
+            )
+
+            # Add contact data
+            dockq_result.chain_pair_to_n_contacts[chain_id_pair] = torch.sum(
+                contacts_gt_d_fnat_res, dim=[-1, -2]
+            )
+            dockq_result.chain_pair_to_n_if_res[chain_id_pair] = torch.sum(
+                torch.sum(contacts_gt_d_fnat_res, dim=-1) > 0, dim=-1
+            ) + torch.sum(torch.sum(contacts_gt_d_fnat_res, dim=-2) > 0, dim=-1)
+
+            del [
+                contacts_gt_d_fnat_atomized,
+                contacts_pred_d_fnat_atomized,
+                contacts_gt_d_fnat_res,
+                contacts_pred_d_fnat_res,
+            ]
+
+            # lRMSD
+            rec_idx = 0 if ni_value.item() >= nj_value.item() else 1
+            lig_idx = 1 - rec_idx
+            gt_coords_rec, gt_coords_lig = (
+                (gt_coords_i, gt_coords_j)[rec_idx],
+                (gt_coords_i, gt_coords_j)[lig_idx],
+            )
+            pred_coords_rec, pred_coords_lig = (
+                (pred_coords_i, pred_coords_j)[rec_idx],
+                (pred_coords_i, pred_coords_j)[lig_idx],
+            )
+            is_backbone_rc, is_backbone_lig = (
+                (is_backbone_i, is_backbone_j)[rec_idx],
+                (is_backbone_i, is_backbone_j)[lig_idx],
+            )
+
+            gt_coords_rec_bb = gt_coords_rec[is_backbone_rc].view(bs[:-1] + (-1, 3))
+            gt_coords_lig_bb = gt_coords_lig[is_backbone_lig].view(bs[:-1] + (-1, 3))
+            pred_coords_rec_bb = pred_coords_rec[is_backbone_rc].view(bs[:-1] + (-1, 3))
+            pred_coords_lig_bb = pred_coords_lig[is_backbone_lig].view(
+                bs[:-1] + (-1, 3)
+            )
+
+            rec_transform = get_optimal_transformation(
+                mobile_positions=pred_coords_rec_bb,
+                target_positions=gt_coords_rec_bb,
+                positions_mask=torch.ones(
+                    pred_coords_rec_bb.shape[:-1], device=pred_coords_rec_bb.device
+                ),
+            )
+            pred_coords_lig_bb_transformed = apply_transformation(
+                pred_coords_lig_bb, rec_transform
+            )
+
+            lrmsd_score = torch.sqrt(
+                torch.mean(
+                    torch.sum(
+                        (gt_coords_lig_bb - pred_coords_lig_bb_transformed) ** 2,
+                        dim=-1,
+                    ),
+                    dim=-1,
+                )
+            )
+
+            # iRMSD
+            # Get all atoms that belong to an interface residue at d_irmsd
+            contacts_gt_d_irmsd_atomized = (
+                d_gt_ij_squared < d_irmsd**2
+            ) & inter_filter_atomized_ij
+            is_contact_gt_d_irmsd_atomized_i = (
+                torch.sum(contacts_gt_d_irmsd_atomized, axis=-1) > 0
+            )
+            is_contact_gt_d_irmsd_atomized_j = (
+                torch.sum(contacts_gt_d_irmsd_atomized, axis=-2) > 0
+            )
+            is_contact_gt_d_irmsd_atomized_i = _spread_contacts(
+                is_contact_atom=is_contact_gt_d_irmsd_atomized_i,
+                atom_to_res_id=res_id_i,
+            )
+            is_contact_gt_d_irmsd_atomized_j = _spread_contacts(
+                is_contact_atom=is_contact_gt_d_irmsd_atomized_j,
+                atom_to_res_id=res_id_j,
+            )
+            # Get backbone coordinates of interface residues
+            is_contact_bb_i = is_backbone_i & is_contact_gt_d_irmsd_atomized_i
+            is_contact_bb_j = is_backbone_j & is_contact_gt_d_irmsd_atomized_j
+
+            # Skip if no interface backbone atoms
+            if (is_contact_bb_i.sum() == 0) or (is_contact_bb_j.sum() == 0):
+                continue
+
+            gt_coords_if_i_bb = gt_coords_i[is_contact_bb_i].view(bs[:-1] + (-1, 3))
+            gt_coords_if_j_bb = gt_coords_j[is_contact_bb_j].view(bs[:-1] + (-1, 3))
+            pred_coords_if_i_bb = pred_coords_i[is_contact_bb_i].view(bs[:-1] + (-1, 3))
+            pred_coords_if_j_bb = pred_coords_j[is_contact_bb_j].view(bs[:-1] + (-1, 3))
+
+            gt_coords_if_bb = torch.cat([gt_coords_if_i_bb, gt_coords_if_j_bb], dim=-2)
+            pred_coords_if_bb = torch.cat(
+                [pred_coords_if_i_bb, pred_coords_if_j_bb], dim=-2
+            )
+
+            if_transform = get_optimal_transformation(
+                mobile_positions=pred_coords_if_bb,
+                target_positions=gt_coords_if_bb,
+                positions_mask=torch.ones(
+                    pred_coords_if_bb.shape[:-1], device=pred_coords_if_bb.device
+                ),
+            )
+            pred_coords_if_bb_transformed = apply_transformation(
+                pred_coords_if_bb, if_transform
+            )
+
+            irmsd_score = torch.sqrt(
+                torch.mean(
+                    torch.sum(
+                        (gt_coords_if_bb - pred_coords_if_bb_transformed) ** 2, dim=-1
+                    ),
+                    dim=-1,
+                )
+            )
+
+            # DockQ
+            dockq_score = (
+                fnat
+                + (1.0 / (1.0 + (lrmsd_score / d1) ** 2)).view(bs[:-1])
+                + (1.0 / (1.0 + (irmsd_score / d2) ** 2)).view(bs[:-1])
+            ) / 3.0
+
+            dockq_result.chain_pair_to_moltype[chain_id_pair] = (
+                chain_id_to_moltype[ci.item()],
+                chain_id_to_moltype[cj.item()],
+            )
+            dockq_result.chain_pair_to_dockq[chain_id_pair] = dockq_score
+    return dockq_result
+
+
+def dockq_full_complex(
+    pred_coords: torch.Tensor,
+    gt_coords: torch.Tensor,
+    all_atom_mask: torch.Tensor,
+    asym_id_atomized: torch.Tensor,
+    res_id_atomized: torch.Tensor,
+    ref_atom_name_chars_atomized: torch.Tensor,
+    inter_filter_atomized: torch.Tensor,
+    is_protein_atomized: torch.Tensor,
+    is_rna_atomized: torch.Tensor,
+    is_dna_atomized: torch.Tensor,
+    d_fnat: float = 5.0,
+    d_irmsd: float = 10.0,
+    d1: float = 8.5,
+    d2: float = 1.5,
+    weight_by: Literal["n_contacts", "n_if_res"] = "n_contacts",
+    eps: float = 1e-10,
+) -> dict[str, torch.Tensor]:
+    """Computes whole-complex DockQ score averaged across all interfaces.
+
+    Returns both unweighted DockQ and DockQ weighted by either number of contacts or
+    number of interface residues, per molecule type pair.
+
+    Only batch size=1 implemented.
+
+    Note that this function averages values across diffision samples.
+
+    Args:
+        pred_coords (torch.Tensor):
+            Predicted coordinates of the complex [B, S, N_atom, 3].
+        gt_coords (torch.Tensor):
+            Ground truth coordinates of the complex [B, S, N_atom, 3].
+        all_atom_mask (torch.Tensor):
+            Atom mask for unresolved atoms [B, S, N_atom].
+        asym_id_atomized (torch.Tensor):
+            Per-atom asym IDs [B, S, N_atom].
+        res_id_atomized (torch.Tensor):
+            Per-atom residue IDs [B, S,, N_atom].
+        ref_atom_name_chars_atomized (torch.Tensor):
+            Per-atom atom names in the AF3-stype encoding [B, S, N_atom, 4, 64].
+        inter_filter_atomized (torch.Tensor):
+            Precomputed mask for which atom pairs to consider in the calculation [B, S,
+            N_atom, N_atom].
+        is_protein_atomized (torch.Tensor):
+            Per-atom protein mask [B, S, N_atom].
+        is_rna_atomized (torch.Tensor):
+            Per-atom RNA mask [B, S, N_atom].
+        is_dna_atomized (torch.Tensor):
+            Per-atom DNA mask [B, S, N_atom].
+        d_fnat (float, optional):
+            Contact threshold for FNAT calculation. Defaults to 5.0.
+        d_irmsd (float, optional):
+            Contact threshold for iRMSD calculation. Defaults to 10.0.
+        d1 (float, optional):
+            DockQ d1 parameter. Defaults to 8.5.
+        d2 (float, optional):
+            DockQ d2 parameter. Defaults to 1.5.
+        weight_by (Literal['n_contacts', 'n_if_res'], optional):
+            Metric to weight by. Defaults to "n_contacts".
+        eps (float):
+            Constant for numerical stability.
+
+    Returns:
+        dict[str, torch.Tensor]:
+            Molecule type pair to weighted and unweighted DockQ scores [B, 1].
+    """
+
+    dockq_result = dockq(
+        pred_coords=pred_coords,
+        gt_coords=gt_coords,
+        all_atom_mask=all_atom_mask,
+        asym_id_atomized=asym_id_atomized,
+        res_id_atomized=res_id_atomized,
+        ref_atom_name_chars_atomized=ref_atom_name_chars_atomized,
+        inter_filter_atomized=inter_filter_atomized,
+        is_protein_atomized=is_protein_atomized,
+        is_rna_atomized=is_rna_atomized,
+        is_dna_atomized=is_dna_atomized,
+        d_fnat=d_fnat,
+        d_irmsd=d_irmsd,
+        d1=d1,
+        d2=d2,
+    )
+
+    out = {}
+    n_sample = pred_coords.shape[-3]
+    moltype_pairs = list(combinations_with_replacement(["protein", "rna", "dna"], 2))
+    aggregate_items = ["dockq_scores", "n_contacts", "n_if_res"]
+    aggregator = {}
+
+    for _, dockq_scores, moltypes, n_contacts, n_if_res in dockq_result.iter_pairs():
+        if moltypes not in moltype_pairs:
+            moltypes = (moltypes[1], moltypes[0])
+        for i, iname in zip(
+            [dockq_scores, n_contacts, n_if_res], aggregate_items, strict=True
+        ):
+            if moltypes not in aggregator:
+                aggregator[moltypes] = {k: None for k in aggregate_items}
+            if aggregator[moltypes][iname] is None:
+                aggregator[moltypes][iname] = i.unsqueeze(-1)
+            else:
+                aggregator[moltypes][iname] = torch.cat(
+                    [aggregator[moltypes][iname], i.unsqueeze(-1)], dim=-1
+                )
+
+    for moltype_pair, metrics in aggregator.items():
+        dockq_scores = metrics["dockq_scores"]
+        dockq_scores_unweighted = torch.mean(dockq_scores, dim=-1)
+        weight_metric = metrics[weight_by]
+        weights = weight_metric / torch.clamp(
+            torch.sum(weight_metric, dim=-1, keepdim=True), min=eps
+        )
+        dockq_scores_weighted = torch.sum(dockq_scores * weights, dim=-1)
+
+        metric_name = f"dockq_{moltype_pair[0]}_{moltype_pair[1]}"
+
+        # Expand to have shape [B, S] for model selection
+        out[f"{metric_name}_uw"] = dockq_scores_unweighted.unsqueeze(-1).expand(
+            -1, n_sample
+        )
+        out[f"{metric_name}_w"] = dockq_scores_weighted.unsqueeze(-1).expand(
+            -1, n_sample
+        )
+
+    return out
 
 
 def get_protein_metrics(
@@ -416,6 +1057,129 @@ def get_protein_metrics(
     out["clash_intra_protein"] = intra_clash
     out["clash_inter_protein_protein"] = inter_clash
 
+    return out
+
+
+def get_ab_ag_metrics(
+    intra_ab_ag_type_atomized: torch.Tensor,
+    intra_ab_ag_type_atomized_filtered: torch.Tensor,
+    inter_ab_ag_type_atomized_filtered: torch.Tensor,
+    gt_coords: torch.Tensor,
+    pred_coords: torch.Tensor,
+    all_atom_mask: torch.Tensor,
+    asym_id_atomized: torch.Tensor,
+    eps: float = 1e-10,
+) -> dict[str, torch.Tensor]:
+    """Compute AB/AG metrics.
+
+    Args:
+        intra_ab_ag_type_atomized (torch.Tensor):
+            Per-atom int tensor of AB/AG chain types. [*, n_atom]
+        intra_ab_ag_type_atomized_filtered (torch.Tensor):
+            Per-atom int tensor of AB/AG chain types with the validation filter applied.
+            [*, n_atom]
+        inter_ab_ag_type_atomized_filtered (torch.Tensor):
+            Per-atom-pair int tensor of AB/AG chain pair types with the validation
+            filter applied. [*, n_atom, n_atom]
+        gt_coords (torch.Tensor):
+            Ground truth coordinates for the whole complex. [*, n_atom, 3]
+        pred_coords (torch.Tensor):
+            Predicted coordinates for the whole complex. [*, n_atom, 3]
+        all_atom_mask (torch.Tensor):
+            Atom level mask (typically for subsetting the calculation to atoms that are
+            resolved in the GT) [*, n_atom]
+        asym_id_atomized (torch.Tensor):
+            Per-atom int tensor of the asym ID for the chain each atom belongs to. [*,
+            n_atom]
+        eps (float, optional):
+            Constant for numerical stability. Defaults to 1e-10.
+
+    Returns:
+        dict[str, torch.Tensor]:
+            Chain lDDT scores for heavy, light and antigen chains. Chain pair lDDT
+            scores for pairwise combinations of these chain types.
+
+    """
+    out = {}
+
+    ab_ag_type_to_chain_id = {t: i for (i, t) in enumerate(AB_AG_CHAIN_TYPES, start=1)}
+    ab_ag_type_to_chain_id_pair = {
+        t: i for (i, t) in enumerate(AB_AG_CHAIN_PAIR_TYPES, start=1)
+    }
+    pred_coords_pair = torch.sqrt(
+        eps
+        + torch.sum(
+            (pred_coords.unsqueeze(-2) - pred_coords.unsqueeze(-3)) ** 2, dim=-1
+        )
+    )
+    gt_coords_pair = torch.sqrt(
+        eps
+        + torch.sum((gt_coords.unsqueeze(-2) - gt_coords.unsqueeze(-3)) ** 2, dim=-1)
+    )
+    # intra chain lddts
+    for t, i in ab_ag_type_to_chain_id.items():
+        intra_ab_ag_mask_atomized = intra_ab_ag_type_atomized_filtered == i
+        if torch.any(intra_ab_ag_mask_atomized):
+            out[f"lddt_intra_{t}"], _ = lddt(
+                pair_dist_pred_pos=pred_coords_pair,
+                pair_dist_gt_pos=gt_coords_pair,
+                all_atom_mask=all_atom_mask,
+                intra_mask_filter=intra_ab_ag_mask_atomized,
+                inter_mask_filter=torch.zeros_like(pred_coords_pair),
+                asym_id=asym_id_atomized,
+            )
+
+    # inter chain lddts
+    for t, ij in ab_ag_type_to_chain_id_pair.items():
+        ti, tj = t
+        inter_ab_ag_mask_atomized_ij = inter_ab_ag_type_atomized_filtered == ij
+        if torch.any(inter_ab_ag_mask_atomized_ij):
+            intra_ab_ag_type_atomized_i = (
+                intra_ab_ag_type_atomized == ab_ag_type_to_chain_id[ti]
+            )
+            intra_ab_ag_type_atomized_j = (
+                intra_ab_ag_type_atomized == ab_ag_type_to_chain_id[tj]
+            )
+
+            bs_i = intra_ab_ag_type_atomized_i.shape[:-1]
+            bs_j = intra_ab_ag_type_atomized_j.shape[:-1]
+
+            pred_coords_i = pred_coords[intra_ab_ag_type_atomized_i].view(
+                (bs_i) + (-1, 3)
+            )
+            pred_coords_j = pred_coords[intra_ab_ag_type_atomized_j].view(
+                (bs_j) + (-1, 3)
+            )
+            gt_coords_i = gt_coords[intra_ab_ag_type_atomized_i].view((bs_i) + (-1, 3))
+            gt_coords_j = gt_coords[intra_ab_ag_type_atomized_j].view((bs_j) + (-1, 3))
+            all_atom_mask_i = all_atom_mask[intra_ab_ag_type_atomized_i].view(
+                (bs_i) + (-1,)
+            )
+            all_atom_mask_j = all_atom_mask[intra_ab_ag_type_atomized_j].view(
+                (bs_j) + (-1,)
+            )
+
+            intra_ab_ag_type_atomized_pair = (
+                intra_ab_ag_type_atomized_i[..., None]
+                * intra_ab_ag_type_atomized_j[..., None, :]
+            )
+            inter_mask_atomized_subset = select_inter_filter_mask(
+                inter_mask_atomized=inter_ab_ag_mask_atomized_ij,
+                mol_type_mask=intra_ab_ag_type_atomized_pair,
+                out_shape=(
+                    bs_i[:-1] + (all_atom_mask_i.shape[-1], all_atom_mask_j.shape[-1])
+                ),
+            )
+
+            out[f"lddt_inter_{ti}_{tj}"] = interface_lddt(
+                all_atom_pred_pos_1=pred_coords_i,
+                all_atom_pred_pos_2=pred_coords_j,
+                all_atom_gt_pos_1=gt_coords_i,
+                all_atom_gt_pos_2=gt_coords_j,
+                all_atom_mask1=all_atom_mask_i,
+                all_atom_mask2=all_atom_mask_j,
+                filter_mask=inter_mask_atomized_subset,
+            )
     return out
 
 
@@ -1262,6 +2026,10 @@ def get_metrics(
             'gdt_ha': Global Distance Test (High Accuracy).
             'rasa':
                 Relative accessible surface area for proteins with unresolved residues.
+            'lddt_intra_{AB-AG chain types}': Intra-chain lDDT for atoms in AB heavy
+                chains, AB light chains or AG chains.
+            'lddt_inter_{AB-AG chain pair types}': Inter-chain lDDT between pairwise
+                combinations of AB-AG chain types.
 
     Note:
         if no appropriate substrates, no corresponding metrics will be included
@@ -1348,14 +2116,34 @@ def get_metrics(
     )
 
     # set up filters for validation metrics if present, otherwise pass ones
+    intra_mask_base = expand_sample_dim(atom_padding_mask)
+    inter_mask_base = expand_sample_dim(
+        atom_padding_mask[..., None] * atom_padding_mask[..., None, :]
+    )
     intra_filter_atomized = batch["ground_truth"].get(
-        "intra_filter_atomized", expand_sample_dim(atom_padding_mask)
+        "intra_filter_atomized", intra_mask_base
     )
     inter_filter_atomized = batch["ground_truth"].get(
         "inter_filter_atomized",
-        expand_sample_dim(
-            atom_padding_mask[..., None] * atom_padding_mask[..., None, :]
-        ),
+        inter_mask_base,
+    )
+
+    # Set up AB/AG filters for validation
+    intra_ab_ag_type_atomized = batch["ground_truth"].get("intra_ab_ag_type_atomized")
+    if intra_ab_ag_type_atomized is not None:
+        intra_ab_ag_type_atomized = expand_sample_dim(intra_ab_ag_type_atomized)
+    else:
+        intra_ab_ag_type_atomized = torch.zeros_like(intra_mask_base)
+    intra_ab_ag_type_atomized_filtered = (
+        intra_ab_ag_type_atomized * intra_filter_atomized.to(torch.int32)
+    )
+    inter_ab_ag_type_atomized = batch["ground_truth"].get("inter_ab_ag_type_atomized")
+    if inter_ab_ag_type_atomized is not None:
+        inter_ab_ag_type_atomized = expand_sample_dim(inter_ab_ag_type_atomized)
+    else:
+        inter_ab_ag_type_atomized = torch.zeros_like(inter_mask_base)
+    inter_ab_ag_type_atomized_filtered = (
+        inter_ab_ag_type_atomized * inter_filter_atomized.to(torch.int32)
     )
 
     if torch.any(is_protein_atomized):
@@ -1482,6 +2270,53 @@ def get_metrics(
             # otherwise NaN is returned
             if not torch.isnan(rasa).any():
                 metrics["rasa"] = rasa
+
+        # Compute AB/AG metrics
+        ab_ag_metrics = get_ab_ag_metrics(
+            intra_ab_ag_type_atomized=intra_ab_ag_type_atomized,
+            intra_ab_ag_type_atomized_filtered=intra_ab_ag_type_atomized_filtered,
+            inter_ab_ag_type_atomized_filtered=inter_ab_ag_type_atomized_filtered,
+            gt_coords=gt_coords,
+            pred_coords=pred_coords,
+            all_atom_mask=all_atom_mask,
+            asym_id_atomized=asym_id_atomized,
+        )
+        metrics = metrics | ab_ag_metrics
+
+        # Only compute DockQ if there are at least 2 polymer chains
+        if (
+            len(
+                torch.unique(
+                    asym_id_atomized[
+                        all_atom_mask.bool() & (~is_ligand_atomized.bool())
+                    ]
+                ).to(torch.int32)
+            )
+            > 1
+        ):
+            res_id_atomized = expand_sample_dim(
+                broadcast_token_feat_to_atoms(
+                    token_mask=token_mask,
+                    num_atoms_per_token=num_atoms_per_token,
+                    token_feat=batch["residue_index"],
+                )
+            )
+            ref_atom_name_chars_atomized = expand_sample_dim(
+                batch["ref_atom_name_chars"]
+            )
+            dockq_metrics = dockq_full_complex(
+                pred_coords=pred_coords,
+                gt_coords=gt_coords,
+                all_atom_mask=all_atom_mask,
+                asym_id_atomized=asym_id_atomized,
+                res_id_atomized=res_id_atomized,
+                ref_atom_name_chars_atomized=ref_atom_name_chars_atomized,
+                inter_filter_atomized=inter_filter_atomized,
+                is_protein_atomized=is_protein_atomized,
+                is_rna_atomized=is_rna_atomized,
+                is_dna_atomized=is_dna_atomized,
+            )
+            metrics = metrics | dockq_metrics
 
     valid_metrics = {
         name: value for name, value in metrics.items() if value is not None

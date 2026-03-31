@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -516,11 +516,6 @@ class PerResidueLDDTAllAtom(nn.Module):
         batch_dims = s.shape[:-2]
         n_token = s.shape[-2]
 
-        # Flatten batch dims
-        max_atom_per_token_mask = max_atom_per_token_mask.reshape(
-            -1, n_token * self.max_atoms_per_token
-        )
-
         # [*, N_token, max_atoms_per_token * c_out]
         logits = self.linear(self.layer_norm(s))
 
@@ -587,11 +582,6 @@ class ExperimentallyResolvedHeadAllAtom(nn.Module):
         """
         batch_dims = s.shape[:-2]
         n_token = s.shape[-2]
-
-        # Flatten batch dims
-        max_atom_per_token_mask = max_atom_per_token_mask.reshape(
-            -1, n_token * self.max_atoms_per_token
-        )
 
         # [*, N_token, max_atoms_per_token * c_out]
         logits = self.linear(self.layer_norm(s))

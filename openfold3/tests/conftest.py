@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 from biotite.structure import AtomArray
 
+from openfold3.core.data.primitives.structure.component import BiotiteCCDWrapper
 from openfold3.setup_openfold import setup_biotite_ccd
 
 
@@ -54,7 +55,24 @@ def mse_ala_atom_array():
     return atom_array
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--skip-ccd-update",
+        action="store_true",
+        default=False,
+        help="Skip downloading/verifying the Biotite CCD file",
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
-def ensure_biotite_ccd():
+def ensure_biotite_ccd(request):
     """Download CCD file before any tests run (once per test session)."""
+    if request.config.getoption("--skip-ccd-update"):
+        return
     setup_biotite_ccd(ccd_path=biotite.setup_ccd.OUTPUT_CCD, force_download=False)
+
+
+@pytest.fixture(scope="session")
+def biotite_ccd_wrapper():
+    """Cache CCD wrapper fixture for tests that need it."""
+    return BiotiteCCDWrapper()

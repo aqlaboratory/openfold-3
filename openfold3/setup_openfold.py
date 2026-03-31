@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,13 +21,18 @@ Downloads model parameters and runs verification tests.
 import importlib.util
 import logging
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 import biotite.setup_ccd
 
 from openfold3.core.utils.s3 import download_s3_file, s3_file_matches_local
+from openfold3.entry_points.parameters import (
+    DEFAULT_CHECKPOINT_NAME,
+    LEGACY_CHECKPOINTS,
+    OPENFOLD_MODEL_CHECKPOINT_REGISTRY,
+    download_model_parameters,
+)
 
 S3_BUCKET = "openfold3-data"
 S3_KEY = "components.bcif"
@@ -35,21 +40,6 @@ S3_KEY = "components.bcif"
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
-
-
-def setup_conda_commands():
-    """Check if running in a conda environment."""
-    logger.info("Setting up conda shell environment...")
-
-    if not os.environ.get("CONDA_PREFIX"):
-        logger.error("Error: This script must be run from within a conda environment.")
-        logger.error("Please activate your conda environment first:")
-        logger.error("  conda activate your_env_name")
-        sys.exit(1)
-
-    logger.info(
-        f"Running in conda environment: {os.path.basename(os.environ['CONDA_PREFIX'])}"
-    )
 
 
 def setup_openfold_cache() -> tuple[Path, Path]:
@@ -72,31 +62,6 @@ def setup_openfold_cache() -> tuple[Path, Path]:
 
     os.environ["OPENFOLD_CACHE"] = str(openfold_cache)
 
-    # Set conda environment variable
-    try:
-        subprocess.run(
-            [
-                "conda",
-                "env",
-                "config",
-                "vars",
-                "set",
-                f"OPENFOLD_CACHE={openfold_cache}",
-            ],
-            check=True,
-            capture_output=True,
-        )
-        logger.info(f"OPENFOLD_CACHE set to: {openfold_cache}")
-        logger.info(
-            "Variable will persist when you reactivate: "
-            f"conda activate {os.path.basename(os.environ['CONDA_PREFIX'])}"
-        )
-    except subprocess.CalledProcessError:
-        logger.warning(
-            "Warning: Could not set OPENFOLD_CACHE in conda environment config"
-        )
-        logger.warning("Variable is set for current session only")
-
     return openfold_cache, ckpt_root_file
 
 
@@ -106,7 +71,11 @@ def setup_param_directory(
     """Check and set up the parameter directory."""
 
     # Check if parameters have already been downloaded
-    if ckpt_root_file.exists():
+    ckpt_path = ckpt_root_file.read_text().strip() if ckpt_root_file.exists() else None
+    checkpoint_file_name = OPENFOLD_MODEL_CHECKPOINT_REGISTRY[
+        DEFAULT_CHECKPOINT_NAME
+    ].file_name
+    if ckpt_path and (Path(ckpt_path) / checkpoint_file_name).exists():
         existing_path = Path(ckpt_root_file.read_text().strip())
         logger.info(
             f"OpenFold3 parameters may already be installed at: {existing_path}"
@@ -162,19 +131,51 @@ def setup_param_directory(
 
 
 def download_parameters(param_dir) -> None:
-    """Perform the download using the download script."""
+    """Perform the parameter download."""
+    # Exclude incompatible checkpoints:
+    all_checkpoints = [
+        name
+        for name in OPENFOLD_MODEL_CHECKPOINT_REGISTRY
+        if name not in LEGACY_CHECKPOINTS
+    ]
+
+    logger.info("Select parameters to download:")
+    logger.info(f"1) Download only the default checkpoint ({DEFAULT_CHECKPOINT_NAME})")
+    logger.info(f"2) Download all parameters ({', '.join(all_checkpoints)}) (default)")
+    logger.info("3) Download a specific parameter by name")
+
+    choice = input("Enter your choice (1/2/3, default: 1): ").strip() or "1"
+
     logger.info("Starting parameter download...")
 
-    # Get the directory where this script is located
-    script_dir = Path(__file__).parent / "scripts"
-    download_script = script_dir / "download_openfold3_params.sh"
-
-    result = subprocess.run(
-        ["bash", str(download_script), f"--download_dir={param_dir}"], check=False
-    )
-
-    if result.returncode != 0:
-        logger.error("Download failed. Exiting.")
+    if choice == "1":
+        download_model_parameters(
+            Path(param_dir),
+            DEFAULT_CHECKPOINT_NAME,
+            force_download=True,
+            skip_confirmation=True,
+        )
+    elif choice == "2":
+        for name in all_checkpoints:
+            download_model_parameters(
+                Path(param_dir), name, force_download=True, skip_confirmation=True
+            )
+    elif choice == "3":
+        print("\nAvailable parameters:")
+        for name in all_checkpoints:
+            print(f"\n  - {name}")
+        param_name = input("Enter parameter name: ").strip()
+        if param_name not in OPENFOLD_MODEL_CHECKPOINT_REGISTRY:
+            logger.error(
+                f"Unknown parameter name '{param_name}'. "
+                f"Available parameter names are: {', '.join(all_checkpoints)}"
+            )
+            sys.exit(1)
+        download_model_parameters(
+            Path(param_dir), param_name, force_download=True, skip_confirmation=True
+        )
+    else:
+        logger.error("Invalid choice. Exiting.")
         sys.exit(1)
 
     logger.info("Download completed successfully.")
@@ -227,6 +228,7 @@ def run_integration_tests() -> None:
             Path(__file__).parent / "tests/test_inference_full.py",
             "-m",
             "inference_verification",
+            "--skip-ccd-update",
         ]
     )
 
@@ -239,23 +241,20 @@ def run_integration_tests() -> None:
 
 def main():
     """Main execution."""
-    # Step 1: Set up conda environment
-    setup_conda_commands()
-
-    # Step 2: Set up OpenFold cache directory
+    # Step 1: Set up OpenFold cache directory
     openfold_cache, ckpt_root_file = setup_openfold_cache()
 
-    # Step 3: Set up checkpoint directory
+    # Step 2: Set up checkpoint directory
     param_dir, should_download = setup_param_directory(openfold_cache, ckpt_root_file)
 
-    # Step 4: Perform download if needed
+    # Step 3: Perform download if needed
     if should_download:
         download_parameters(param_dir)
 
-    # Step 5: Setup CCD with biotite
+    # Step 4: Setup CCD with biotite
     setup_biotite_ccd(ccd_path=biotite.setup_ccd.OUTPUT_CCD, force_download=False)
 
-    # Step 6: Run tests (always run regardless of download status)
+    # Step 5: Run tests (always run regardless of download status)
     run_integration_tests()
 
 

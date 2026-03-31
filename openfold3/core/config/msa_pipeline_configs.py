@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,6 +14,7 @@
 
 from typing import Annotated
 
+from biotite.structure import AtomArray
 from pydantic import BaseModel, BeforeValidator, DirectoryPath, FilePath
 
 from openfold3.core.config.config_utils import (
@@ -30,7 +31,7 @@ class MsaChainDataTrain(BaseModel):
     """Training input for a single chain in the MSA sample processor pipeline."""
 
     molecule_type: Annotated[MoleculeType, BeforeValidator(_convert_molecule_type)]
-    alignment_representative_id: str
+    alignment_representative_id: str | None
 
 
 class MsaChainDataInference(BaseModel):
@@ -54,6 +55,7 @@ class MsaSampleProcessorInputTrain(BaseModel):
     def create_from_dataset_cache_entry(
         cls,
         dataset_cache_entry: DatasetChainData,
+        atom_array: AtomArray,
         default_moltype: MoleculeType | None = None,
         default_alignment_representative_id: str | None = None,
     ):
@@ -72,6 +74,13 @@ class MsaSampleProcessorInputTrain(BaseModel):
                 molecule_type=molecule_type,
                 alignment_representative_id=alignment_representative_id,
             )
+
+        # Subset to chains present in the cropped atom array
+        msa_chain_data = {
+            cid: cdata
+            for cid, cdata in msa_chain_data.items()
+            if cid in sorted(set(atom_array.chain_id.tolist()))
+        }
         return cls(msa_chain_data=msa_chain_data)
 
 

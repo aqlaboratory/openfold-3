@@ -26,8 +26,8 @@ Defines overall experiment parameters, including execution mode and seed configu
 - `log_dir` *(Path | None)*: Directory for logs (default: `null`)
 - `seeds` *(int | list[int])*: Starting seed or list of random seeds for inference (default: `[42]`)
 - `num_seeds` *(int | None)*: Number of seeds to generate if only a starting seed is provided (default: `null`)
-- `use_msa_server` *(bool)*: Whether to use ColabFold MSA server (default: `false`)
-- `use_templates` *(bool)*: Whether to use template structures (default: `false`)
+- `use_msa_server` *(bool)*: Whether to use ColabFold MSA server (default: `true`)
+- `use_templates` *(bool)*: Whether to use template structures (default: `true`)
 - `skip_existing` *(bool)*: Skip results that already exist (default: `false`)
 
 **Example**:
@@ -81,7 +81,6 @@ Specifies model presets and custom architecture modifications.
 - `presets` *(list[str])*: List of model presets to apply (default: `[]`)
   - `predict`: Inference configuration (required for inference)
   - `low_mem`: Low memory mode for large structures
-  - `pae_enabled`: Enable Predicted Aligned Error (PAE) head
 - `custom` *(dict)*: Custom model configuration overrides (default: `{}`)
 
 **Example**:
@@ -89,7 +88,6 @@ Specifies model presets and custom architecture modifications.
 model_update:
   presets:
     - predict
-    - pae_enabled
     - low_mem
   custom: {}
 ```
@@ -104,6 +102,9 @@ model_update:
 - `inference_ckpt_path` *(Path | None)*: Path to model checkpoint file (`.pt` file)
   - Default: `$HOME/.openfold3/of3_ft3_v1.pt`
   - Will download parameters if not present
+- `inference_ckpt_name` *(str | None)*: Name of the model checkpoint to use.
+  - Default: `openfold3_p2_v1`
+  - Must be a key in `OPENFOLD_MODEL_CHECKPOINT_REGISTRY`(https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/parameters.py#L29)
 - `cache_path` *(Path | None)*: Directory for storing cached model parameters
   - Default: `$HOME/.openfold3/`
 
@@ -130,6 +131,10 @@ data_module_args:
 ```
 
 ---
+### 3.X Checkpoint Confiugration (`checkpoint_config`)
+
+Configures Checkpoint writing settings, which are passed to [pl.ModelCheckpoint callback](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.ModelCheckpoint.html). 
+
 
 ### 3.6. Dataset Config Kwargs (`dataset_config_kwargs`)
 
@@ -178,6 +183,7 @@ Controls template structure processing.
 **All Options**:
 - `n_templates` *(int)*: Number of templates to use (default: `4`)
 - `take_top_k` *(bool)*: Use top K templates by quality (default: `false`)
+- `min_n_tokens_per_chain` *(int)*: Minimum number of tokens a chain has to have for it to get template features (default: `4`)
 - `distogram` *(TemplateDistogramSettings)*: Distogram binning settings
   - `min_bin` *(float)*: Minimum distance bin (default: `3.25`)
   - `max_bin` *(float)*: Maximum distance bin (default: `50.75`)
@@ -200,10 +206,11 @@ Configures the format of output files.
 **Pydantic Model**: [`OutputWritingSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141)
 
 **All Options**:
-- `structure_format` *(Literal["pdb", "cif"])*: Output format (default: `cif`)
+- `structure_format` *(Literal["pdb", "cif", "cif.gz"])*: Output format (default: `cif`)
 - `full_confidence_output_format` *(Literal["json", "npz"])*: Confidence output format (default: `json`)
 - `write_features` *(bool)*: Write intermediate features (default: `false`)
 - `write_latent_outputs` *(bool)*: Write model intermediate outputs (default: `false`)
+- `write_full_confidence_scores` *(bool)*: Write full confidence scores, e.g. PAE, PDE, PLDDT (default: `true`)
 
 **Example**:
 ```yaml

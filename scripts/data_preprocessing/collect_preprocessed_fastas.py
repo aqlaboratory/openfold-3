@@ -33,7 +33,18 @@ logging.basicConfig(
     default=False,
     help="If set, only retain one entry per unique sequence.",
 )
-def main(preprocessed_dir: Path, out_file: Path, uniquify: bool = False):
+@click.option(
+    "--verbose-header",
+    is_flag=True,
+    default=False,
+    help="If set, include detailed metadata in FASTA headers.",
+)
+def main(
+    preprocessed_dir: Path,
+    out_file: Path,
+    uniquify: bool = False,
+    verbose_header: bool = False,
+):
     """
     Collects individual preprocessed FASTA files into a single multi-chain FASTA file.
 
@@ -69,16 +80,19 @@ def main(preprocessed_dir: Path, out_file: Path, uniquify: bool = False):
     for seq_id, seq in tqdm(id_to_seq.items(), desc="Creating new headers"):
         pdb_id, chain_id = seq_id.split("_")
 
-        entry_data = structure_cache[pdb_id]
-        chain_data = entry_data.chains[chain_id]
+        if verbose_header:
+            entry_data = structure_cache[pdb_id]
+            chain_data = entry_data.chains[chain_id]
 
-        molecule_type_str = MoleculeType(chain_data.molecule_type).name
+            molecule_type_str = MoleculeType(chain_data.molecule_type).name
 
-        header = (
-            f"{pdb_id}, renum_asym={chain_id}, auth_asym={chain_data.auth_asym_id}, "
-            f"label_asym={chain_data.label_asym_id}, "
-            f"mol_type={molecule_type_str}, date={entry_data.release_date}"
-        )
+            header = (
+                f"{pdb_id}, renum_asym={chain_id}, auth_asym={chain_data.auth_asym_id},"
+                f" label_asym={chain_data.label_asym_id},"
+                f" mol_type={molecule_type_str}, date={entry_data.release_date}"
+            )
+        else:
+            header = f"{pdb_id}_{chain_id}"
 
         header_to_seq[header] = seq
 

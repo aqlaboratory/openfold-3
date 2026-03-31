@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,13 +17,13 @@ import os
 import random
 import warnings
 from datetime import timedelta
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any, Literal
 
-import boto3
-import botocore
-from botocore.config import Config as botocoreConfig
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
 from pydantic import BaseModel, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
@@ -31,6 +31,13 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
 )
 from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
+from openfold3.entry_points.parameters import (
+    DEFAULT_CACHE_PATH,
+    DEFAULT_CHECKPOINT_NAME,
+    OPENFOLD_MODEL_CHECKPOINT_REGISTRY,
+    download_model_parameters,
+    get_default_checkpoint_dir,
+)
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetConfigKwargs,
     TrainingDatasetPaths,
@@ -40,51 +47,40 @@ from openfold3.projects.of3_all_atom.project_entry import ModelUpdate
 logger = logging.getLogger(__name__)
 
 ValidModeType = Literal["train", "predict", "eval", "test"]
-DEFAULT_CACHE_PATH = Path("~/.openfold3/").expanduser()
-CHECKPOINT_ROOT_FILENAME = "ckpt_root"
-CHECKPOINT_NAME = "of3_ft3_v1.pt"
-
-
-def _maybe_download_parameters(target_path: Path) -> None:
-    """Checks if OpenFold parameters are present, and downloads them if not."""
-    openfold_bucket = "openfold"
-    checkpoint_path = f"openfold3_params/{CHECKPOINT_NAME}"
-
-    if target_path.exists():
-        return
-
-    s3 = boto3.client("s3", config=botocoreConfig(signature_version=botocore.UNSIGNED))
-
-    try:
-        # Get file size
-        response = s3.head_object(Bucket=openfold_bucket, Key=checkpoint_path)
-        size_bytes = response["ContentLength"]
-        size_gb = size_bytes / (1024**3)
-
-        # Ask for confirmation with file size
-        confirm = input(
-            f"Download {checkpoint_path} ({size_gb:.2f} GB) "
-            f"from s3://{openfold_bucket} to {target_path}? (yes/no): "
-        )
-
-        if confirm.lower() in ["yes", "y"]:
-            logger.info(f"Downloading to {target_path}...")
-            s3.download_file(openfold_bucket, checkpoint_path, target_path)
-            logger.info("Download complete!")
-        else:
-            logger.warning("Download cancelled")
-
-    except Exception as e:
-        print(f"Error: {e}")
 
 
 class CheckpointConfig(BaseModel):
     """Settings for training checkpoint writing."""
 
+    monitor: str | None = None
+    mode: str | None = "min"
     every_n_epochs: int = 1
     auto_insert_metric_name: bool = False
+    filename: str | None = None
+    enable_version_counter: bool = True
     save_last: bool = True
     save_top_k: int = -1
+    every_n_train_steps: int | None = None
+    save_on_train_epoch_end: bool | None = None
+    train_time_interval: Any | None = None
+
+    @model_validator(mode="after")
+    def validate_checkpoint_settings(self):
+        if self.every_n_train_steps not in (None, 0):
+            raise ValueError(
+                "Mid-epoch checkpointing is not allowed: set "
+                "checkpoint_config.every_n_train_steps to null. "
+                "Use every_n_epochs in the checkpoint callback "
+                "config for epoch-boundary checkpointing."
+            )
+        if self.train_time_interval not in (None, 0, "", False):
+            raise ValueError(
+                "Mid-epoch checkpointing is not allowed: set "
+                "checkpoint_config.train_time_interval to null. "
+                "Use every_n_epochs in the checkpoint callback "
+                "config for epoch-boundary checkpointing."
+            )
+        return self
 
 
 class WandbConfig(BaseModel):
@@ -131,11 +127,27 @@ class PlTrainerArgs(BaseModel):
     log_every_n_steps: int = 1
     enable_checkpointing: bool = True
     enable_model_summary: bool = False
+    accumulate_grad_batches: int = 1
+    gradient_clip_val: int | float | None = None
+    gradient_clip_algorithm: str | None = None
 
     # Extra arguments that are not passed directly to pl.Trainer
     deepspeed_config_path: Path | None = None
     distributed_timeout: timedelta | None = default_pg_timeout
     mpi_plugin: bool = False
+
+    use_distributed_sampler: bool = True
+
+    @model_validator(mode="after")
+    def validate_distributed_sampler_settings(self):
+        if self.use_distributed_sampler is False:
+            warnings.warn(
+                "pl_trainer_args.use_distributed_sampler is set to False. "
+                "Note that this arg is currently being ignored as we always use "
+                "the OF3DistributedSampler for training.",
+                stacklevel=2,
+            )
+        return self
 
 
 class OutputWritingSettings(BaseModel):
@@ -144,10 +156,11 @@ class OutputWritingSettings(BaseModel):
     Used by OF3OutputWriter in openfold3.core.runners.writer
     """
 
-    structure_format: Literal["pdb", "cif"] = "cif"
+    structure_format: Literal["pdb", "cif", "cif.gz"] = "cif"
     full_confidence_output_format: Literal["json", "npz"] = "json"
     write_features: bool = False
     write_latent_outputs: bool = False
+    write_full_confidence_scores: bool = True
 
 
 class ExperimentSettings(BaseModel):
@@ -304,6 +317,12 @@ class TrainingExperimentConfig(ExperimentConfig):
         """
         model_seed = self.experiment_settings.seed
         data_seed = self.data_module_args.data_seed
+        world_size = self.pl_trainer_args.devices * self.pl_trainer_args.num_nodes
+
+        # TODO: Currently this will never be true because 42 is the default seed.
+        #  Revisit after removing the default seed value for training and inference
+        if model_seed is None and world_size > 1:
+            raise ValueError("For distributed training, seed must be specified")
 
         if data_seed is None:
             self.data_module_args.data_seed = model_seed
@@ -349,13 +368,14 @@ class InferenceExperimentConfig(ExperimentConfig):
 
     # pydantic model setting to prevent extra fields in main experiment config
     model_config = PydanticConfigDict(extra="forbid")
-    # Required inputs for performing inference
     inference_ckpt_path: Path | None = None
+    inference_ckpt_name: str | None = None
+
     # default location to look for parameters if no ckpt_path is given
     cache_path: Path | None = None
 
     experiment_settings: InferenceExperimentSettings = InferenceExperimentSettings()
-    model_update: ModelUpdate = ModelUpdate(presets=["predict", "pae_enabled"])
+    model_update: ModelUpdate = ModelUpdate(presets=["predict"])
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
@@ -375,31 +395,73 @@ class InferenceExperimentConfig(ExperimentConfig):
         return data
 
     @model_validator(mode="after")
-    def _try_default_ckpt_path(self):
-        if (
-            isinstance(self.inference_ckpt_path, Path)
-            and self.inference_ckpt_path.exists()
-        ):
-            return self
-        elif self.inference_ckpt_path is None:
-            # Try using path set in cache
-            path_to_ckpt = self.cache_path / CHECKPOINT_ROOT_FILENAME
-            if path_to_ckpt.exists():
-                with open(path_to_ckpt) as f:
-                    param_dir = f.read().strip()
-                    self.inference_ckpt_path = Path(param_dir) / CHECKPOINT_NAME
-            # If not set, write pararms to default dictionary
-            else:
-                param_dir = self.cache_path
-                logger.info("Storing path to OpenFold parameters in %s", path_to_ckpt)
-                with open(path_to_ckpt, "w") as f:
-                    f.write(str(param_dir))
-                self.inference_ckpt_path = param_dir / CHECKPOINT_NAME
-            _maybe_download_parameters(self.inference_ckpt_path)
-        else:
+    def validate_ckpt_settings(self):
+        """Validates inference_ckpt_path and inference_ckpt name settings."""
+        # Prioritize using checkpoint path when set
+        if isinstance(self.inference_ckpt_path, Path):
+            if self.inference_ckpt_path.exists():
+                return self
             raise ValueError(
                 f"Provided checkpoint path {self.inference_ckpt_path} does not exist"
             )
+
+        elif self.inference_ckpt_name is not None:
+            # validate checkpoint name is in registry
+            if self.inference_ckpt_name not in OPENFOLD_MODEL_CHECKPOINT_REGISTRY:
+                raise ValueError(
+                    f"inference_ckpt_name {self.inference_ckpt_name} not found in "
+                    "checkpoint registry. Please select from "
+                    f"{list(OPENFOLD_MODEL_CHECKPOINT_REGISTRY.keys())}."
+                )
+
+            # validate checkpoint name is compatible with current version
+            current_openfold3_version = Version(version("openfold3"))
+            allowed_versions = SpecifierSet(
+                OPENFOLD_MODEL_CHECKPOINT_REGISTRY[
+                    self.inference_ckpt_name
+                ].version_compatibility
+            )
+            if current_openfold3_version not in allowed_versions:
+                raise ValueError(
+                    f"Selected checkpoint {self.inference_ckpt_name} is not compatible"
+                    "with the currently installed OpenFold3 version"
+                    f"{current_openfold3_version}. Allowed versions for this "
+                    f"checkpoint are {allowed_versions}."
+                )
+        else:
+            logger.info(
+                "No inference_ckpt_path or inference_ckpt_name provided, "
+                "selecting default checkpoint."
+            )
+            self.inference_ckpt_name = DEFAULT_CHECKPOINT_NAME
+        return self
+
+    @model_validator(mode="after")
+    def _try_default_ckpt_path(self):
+        """Attempt to use and/or download default checkpoint.
+
+        This function will:
+        1) Attempt to find the checkpoints in the path specified by
+           `cache_path` / `CHECKPOINT_ROOT_FILENAME`,
+        2) If not found, attempt to download the specified checkpoint name
+        (self.inference_ckpt_name to `cache_path` and write the checkpoint root file.
+        3) Set the inference_ckpt_path to the found or downloaded checkpoint path.
+        """
+        # Skip ckpt selection if ckpt is previously specified
+        if self.inference_ckpt_path is not None:
+            return self
+
+        param_dir = get_default_checkpoint_dir(cache_path=self.cache_path)
+        path_to_ckpt = (
+            param_dir
+            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[self.inference_ckpt_name].file_name
+        )
+
+        if not path_to_ckpt.exists():
+            download_model_parameters(param_dir, self.inference_ckpt_name)
+
+        self.inference_ckpt_path = path_to_ckpt
+
         return self
 
     @model_validator(mode="after")
@@ -423,7 +485,7 @@ class InferenceExperimentConfig(ExperimentConfig):
             if self.template_preprocessor_settings.ccd_file_path is not None:
                 warnings.warn(
                     "Overwriting ccd_file_path in template_preprocessor_settings with "
-                    "dataset_config_kwargs.ccd_file_path. We recommend specifying"
+                    "dataset_config_kwargs.ccd_file_path. We recommend specifying "
                     "ccd_file_path only in dataset_config_kwargs.",
                     stacklevel=2,
                 )

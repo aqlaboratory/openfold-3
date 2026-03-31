@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -41,7 +41,6 @@ from openfold3.core.data.pipelines.featurization.msa import (
     MsaFeaturizerOF3Config,
 )
 from openfold3.core.data.pipelines.featurization.structure import (
-    TOKEN_DIM_INDEX_MAP,
     featurize_structure_of3,
 )
 from openfold3.core.data.pipelines.featurization.template import (
@@ -207,7 +206,6 @@ class InferenceDataset(Dataset):
         target_structure_features = featurize_structure_of3(
             atom_array=atom_array,
             n_tokens=n_tokens,
-            token_dim_index_map=TOKEN_DIM_INDEX_MAP,
             is_gt=False,
             add_perm_features=False,
         )
@@ -259,6 +257,7 @@ class InferenceDataset(Dataset):
             atom_array=atom_array,
             n_templates=self.template_settings.n_templates,
             take_top_k=self.template_settings.take_top_k,
+            min_n_tokens_per_chain=self.template_settings.min_n_tokens_per_chain,
             template_cache_directory=None,
             assembly_data=assembly_data,
             template_structures_directory=self.template_preprocessor_settings.structure_directory,
@@ -269,6 +268,7 @@ class InferenceDataset(Dataset):
 
         # Featurization
         template_features = featurize_template_structures_of3(
+            atom_array=atom_array,
             template_slice_collection=template_slice_collection,
             n_templates=self.template_settings.n_templates,
             n_tokens=n_tokens,

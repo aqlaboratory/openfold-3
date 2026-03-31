@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,15 @@ metrics for logging.
 ###################################
 # Losses
 ###################################
+
+from itertools import combinations_with_replacement
+
+from torchmetrics import MeanMetric, PearsonCorrCoef
+
+from openfold3.core.data.resources.lists import (
+    AB_AG_CHAIN_PAIR_TYPES,
+    AB_AG_CHAIN_TYPES,
+)
 
 CONFIDENCE_LOSSES = [
     "plddt_loss",
@@ -148,6 +157,20 @@ VAL_EXTRA_METRICS = [
     "plddt_dna",
     "plddt_rna",
     "plddt_complex",
+    *[f"lddt_intra_{t}" for t in AB_AG_CHAIN_TYPES],
+    *[f"lddt_inter_{ti}_{tj}" for (ti, tj) in AB_AG_CHAIN_PAIR_TYPES],
+    *[
+        f"dockq_{moltype_pair[0]}_{moltype_pair[1]}_uw"
+        for moltype_pair in list(
+            combinations_with_replacement(["protein", "rna", "dna"], 2)
+        )
+    ],
+    *[
+        f"dockq_{moltype_pair[0]}_{moltype_pair[1]}_w"
+        for moltype_pair in list(
+            combinations_with_replacement(["protein", "rna", "dna"], 2)
+        )
+    ],
 ]
 
 VAL_LOGGED_METRICS = [
@@ -168,6 +191,7 @@ METRICS_MAXIMIZE = [
     "lddt",
     "plddt",
     "rasa",
+    "dockq",
 ]
 
 METRICS_MINIMIZE = [
@@ -175,3 +199,8 @@ METRICS_MINIMIZE = [
     "drmsd",
     "rmsd",
 ]
+
+METRIC_DENOMINATOR_ATTRS = {
+    MeanMetric: "weight",
+    PearsonCorrCoef: "n_total",
+}

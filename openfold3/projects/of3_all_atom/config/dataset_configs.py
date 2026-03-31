@@ -1,4 +1,4 @@
-# Copyright 2025 AlQuraishi Laboratory
+# Copyright 2026 AlQuraishi Laboratory
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ These fields are parsed by the DataModule to create the appropriate Dataset clas
 
 """
 
-from pathlib import Path
+import warnings
 from typing import Any
 
 from pydantic import (
@@ -40,17 +40,25 @@ from pydantic import (
     model_validator,
 )
 from pydantic import ConfigDict as PydanticConfigDict
+from pydantic_core import PydanticUndefined
 
-from openfold3.core.config.config_utils import DirectoryPathOrNone, FilePathOrNone
+from openfold3.core.config.config_utils import (
+    DirectoryPathOrNone,
+    FilePathOrNone,
+    deep_update,
+)
 from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
 )
 from openfold3.projects.of3_all_atom.config.dataset_config_components import (
+    ChainCropSettings,
     CropSettings,
+    CropWeights,
     LossConfig,
     MSASettings,
     TemplateSettings,
+    TokenCropSettings,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
@@ -75,35 +83,60 @@ class TrainingDatasetPaths(BaseModel):
     use_roda_monomer_format: bool = False
 
     @model_validator(mode="after")
-    def _validate_paths(self):
-        def _validate_exactly_one_path_exists(
-            group_name: str, path_values: list[Path | None]
-        ):
-            which_paths_exist = [p is not None for p in path_values]
-            if sum(which_paths_exist) != 1:
-                existing_paths = [
-                    p for p, b in zip(path_values, which_paths_exist, strict=True) if b
-                ]
-                raise ValueError(
-                    f"Exactly one path in set of {group_name} should exist."
-                    f"Found {existing_paths} exist."
-                )
+    def _validate_alignment_paths(self):
+        path_values = [
+            self.alignments_directory,
+            self.alignment_db_directory,
+            self.alignment_array_directory,
+        ]
+        existing_paths = [p for p in path_values if p is not None]
+        if len(existing_paths) != 1:
+            raise ValueError(
+                f"Exactly one path in set of alignment paths should exist."
+                f" Found {existing_paths} exist."
+            )
+        return self
 
-        _validate_exactly_one_path_exists(
-            "alignment paths",
-            [
-                self.alignments_directory,
-                self.alignment_db_directory,
-                self.alignment_array_directory,
-            ],
-        )
-        _validate_exactly_one_path_exists(
-            "template_paths",
-            [
-                self.template_structures_directory,
-                self.template_structure_array_directory,
-            ],
-        )
+    @model_validator(mode="after")
+    def _validate_template_paths(self):
+        if (
+            self.template_structures_directory is not None
+            and self.template_structure_array_directory is not None
+        ):
+            raise ValueError(
+                "Only one template path should be provided. "
+                f"Found {self.template_structures_directory} "
+                f"and {self.template_structure_array_directory}."
+            )
+
+        if (
+            self.template_structures_directory is None
+            and self.template_structure_array_directory is None
+        ):
+            warnings.warn(
+                "No template paths provided. "
+                "Templates will not be used for this dataset.",
+                stacklevel=2,
+            )
+
+        if (
+            self.template_structures_directory is not None
+            and self.template_file_format not in ["cif", "pdb"]
+        ):
+            raise ValueError(
+                f"template_file_format must be one of: cif, pdb. "
+                f"Got: {self.template_file_format}"
+            )
+
+        if (
+            self.template_structure_array_directory is not None
+            and self.template_file_format not in ["pkl", "npz"]
+        ):
+            raise ValueError(
+                f"template_file_format must be one of: pkl, npz. "
+                f"Got: {self.template_file_format}"
+            )
+
         return self
 
 
@@ -132,7 +165,38 @@ class DefaultDatasetConfigSection(BaseModel):
     dataset_paths: TrainingDatasetPaths
     msa: MSASettings = MSASettings()
     template: TemplateSettings = TemplateSettings()
+    crop: CropSettings = CropSettings()
     loss: LossConfig = LossConfig()
+
+    @model_validator(mode="before")
+    @classmethod
+    def merge_partial_update_with_defaults(cls, data: dict) -> dict:
+        """
+        Intercepts the user dataset config updates. If a field is provided in `data`
+        but the class also has a default set for it, merge the data into the default
+        instead of replacing it. This allows partial updates to nested config sections.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        for field_name, field_info in cls.model_fields.items():
+            # Apply for nested updates
+            if field_name in data and isinstance(data[field_name], dict):
+                # Get default value
+                default_val = None
+                if field_info.default_factory is not None:
+                    default_val = field_info.default_factory()
+                elif field_info.default is not PydanticUndefined:
+                    default_val = field_info.default
+
+                if isinstance(default_val, BaseModel):
+                    default_dict = default_val.model_dump()
+
+                    # Merge and update default values with user provided data
+                    merged = deep_update(default_dict, data[field_name])
+                    data[field_name] = merged
+
+        return data
 
 
 class DatasetConfigRegistry:
@@ -170,7 +234,9 @@ def register_dataset_config(name: str) -> None:
 
 @register_dataset_config("WeightedPDBDataset")
 class WeightedPDBConfig(DefaultDatasetConfigSection):
-    crop: CropSettings = CropSettings()
+    crop: CropSettings = CropSettings(
+        chain_crop=ChainCropSettings(enabled=True),
+    )
     sample_weights: dict = {
         "a_prot": 3.0,
         "a_nuc": 3.0,
@@ -184,11 +250,39 @@ class WeightedPDBConfig(DefaultDatasetConfigSection):
 class ProteinMonomerConfig(DefaultDatasetConfigSection):
     sample_in_order: bool = True
     crop: CropSettings = CropSettings(
-        crop_weights={
-            "contiguous": 0.25,
-            "spatial": 0.75,
-            "spatial_interface": 0.0,
+        token_crop=TokenCropSettings(
+            crop_weights=CropWeights(
+                contiguous=0.25,
+                spatial=0.75,
+                spatial_interface=0.0,
+            )
+        )
+    )
+    loss: LossConfig = LossConfig(
+        loss_weights={
+            "bond": 0.0,
+            "smooth_lddt": 4.0,
+            "mse": 4.0,
+            "distogram": 3e-2,
+            # These losses are zero for the protein_monomer_distillation set
+            "experimentally_resolved": 0.0,
+            "plddt": 0.0,
+            "pae": 0.0,
+            "pde": 0.0,
         }
+    )
+
+
+@register_dataset_config("RNAMonomerDataset")
+class RNAMonomerConfig(DefaultDatasetConfigSection):
+    crop: CropSettings = CropSettings(
+        token_crop=TokenCropSettings(
+            crop_weights=CropWeights(
+                contiguous=0.25,
+                spatial=0.75,
+                spatial_interface=0.0,
+            )
+        )
     )
     loss: LossConfig = LossConfig(
         loss_weights={
@@ -207,6 +301,9 @@ class ProteinMonomerConfig(DefaultDatasetConfigSection):
 
 @register_dataset_config("DisorderedPDBDataset")
 class DisorderedPDBConfig(DefaultDatasetConfigSection):
+    crop: CropSettings = CropSettings(
+        chain_crop=ChainCropSettings(enabled=True),
+    )
     sample_weights: dict = {
         "a_prot": 3.0,
         "a_nuc": 3.0,
@@ -214,7 +311,6 @@ class DisorderedPDBConfig(DefaultDatasetConfigSection):
         "w_chain": 0.5,
         "w_interface": 1.0,
     }
-    crop: CropSettings = CropSettings()
     disable_non_protein_diffusion_weights: bool = True
     loss: LossConfig = LossConfig(
         loss_weights={
@@ -233,6 +329,8 @@ class DisorderedPDBConfig(DefaultDatasetConfigSection):
 
 @register_dataset_config("ValidationPDBDataset")
 class ValidationPDBConfig(DefaultDatasetConfigSection):
+    crop: CropSettings = CropSettings(token_crop=TokenCropSettings(enabled=False))
+    msa: MSASettings = MSASettings(subsample_main=False)
     template: TemplateSettings = TemplateSettings(take_top_k=True)
 
 
@@ -271,7 +369,7 @@ class InferenceDatasetConfigKwargs(BaseModel):
     """Class to hold msa and template kwargs for inference pipeline"""
 
     ccd_file_path: FilePathOrNone = None
-    msa: MSASettings = MSASettings()
+    msa: MSASettings = MSASettings(subsample_main=False)
     template: TemplateSettings = TemplateSettings(take_top_k=True)
 
 
