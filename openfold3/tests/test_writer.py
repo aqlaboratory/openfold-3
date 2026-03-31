@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gzip
 import json
 from pathlib import Path
 
@@ -55,7 +56,7 @@ def dummy_confidence_scores():
 class TestPredictionWriter:
     @pytest.mark.parametrize(
         "structure_format",
-        ["pdb", "cif"],
+        ["pdb", "cif", "cif.gz"],
         ids=lambda x: x,
     )
     def test_written_coordinates(self, tmp_path, structure_format):
@@ -92,6 +93,11 @@ class TestPredictionWriter:
             case "cif":
                 read_file = pdbx.CIFFile.read(tmp_file)
                 parsed_structure = pdbx.get_structure(read_file)
+
+            case "cif.gz":
+                with gzip.open(tmp_file, "rt") as f:
+                    read_file = pdbx.CIFFile.read(f)
+                    parsed_structure = pdbx.get_structure(read_file)
 
             case "pdb":
                 parsed_structure = pdb.PDBFile.read(tmp_file).get_structure()

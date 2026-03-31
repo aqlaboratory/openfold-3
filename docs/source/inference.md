@@ -363,6 +363,8 @@ Each seed produces `l` (number of diffusion samples) structure predictions, and 
 - `*_confidences.json`: Per-atom confidence scores:
 
   - `plddt`: Predicted Local Distance Difference Test
+  
+  - `pae`: Predicted Aligned Error 
 
   - `pde`: Predicted Distance Error
 
