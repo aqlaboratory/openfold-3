@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import biotite.setup_ccd
 import numpy as np
 import pytest
@@ -76,3 +78,9 @@ def ensure_biotite_ccd(request):
 def biotite_ccd_wrapper():
     """Cache CCD wrapper fixture for tests that need it."""
     return BiotiteCCDWrapper()
+
+
+@pytest.fixture(scope="module")
+def original_datadir(request: pytest.FixtureRequest) -> Path:
+    """Redirect pytest-regressions snapshot storage to test_data/snapshots/."""
+    return Path(__file__).parent / "test_data" / "snapshots" / Path(request.path).stem
