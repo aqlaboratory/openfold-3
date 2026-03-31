@@ -53,7 +53,7 @@ class TestDiffusionLoss(unittest.TestCase):
         gt_atom_mask = torch.ones((1, 55))
         gt_atom_positions = torch.randn((1, 55, 3))
 
-        return {
+        batch = {
             "token_mask": token_mask,
             "restype": restype,
             "num_atoms_per_token": num_atoms_per_token,
@@ -75,6 +75,12 @@ class TestDiffusionLoss(unittest.TestCase):
                 "mse": torch.Tensor([1.0]),
             },
         }
+
+        # Insert singleton sample dim to match production layout.
+        # In production, model.py:662 does this before calling loss functions:
+        #   batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+        return batch
 
     def test_weighted_rigid_align(self):
         batch_size = consts.batch_size
@@ -107,6 +113,7 @@ class TestDiffusionLoss(unittest.TestCase):
         batch = self.setup_features()
         batch_size = batch["ground_truth"]["atom_resolved_mask"].shape[0]
 
+        # batch tensors have [bs, 1, ...] layout from setup_features()
         x = centre_random_augmentation(
             xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
             atom_mask=batch["ground_truth"]["atom_resolved_mask"],
@@ -127,8 +134,9 @@ class TestDiffusionLoss(unittest.TestCase):
         self.assertTrue((mse_unmasked < 1e-5).all())
 
         # Check when token mask has some zeros
+        # batch["is_protein"] is [bs, 1, N_token]; mask the first 2 tokens
         mostly_zeros_mask = torch.zeros_like(batch["is_protein"])
-        mostly_zeros_mask[:, :2] = 1
+        mostly_zeros_mask[:, :, :2] = 1
 
         mse_masked = mse_loss(
             x=x,
@@ -139,7 +147,10 @@ class TestDiffusionLoss(unittest.TestCase):
             ligand_weight=ligand_weight,
             eps=consts.eps,
         )
-        assert torch.equal(torch.nonzero(mse_masked), torch.nonzero(mostly_zeros_mask))
+        # mse_masked is [bs, N_sample]; mostly_zeros_mask is [bs, 1, N_token].
+        # Check that the loss is nonzero where the mask is nonzero and differs
+        # from the unmasked version.
+        assert torch.all(mse_masked != 0)
         assert torch.all(torch.not_equal(mse_masked, mse_unmasked))
 
     def test_bond_loss(self):
@@ -158,6 +169,22 @@ class TestDiffusionLoss(unittest.TestCase):
         self.assertTrue(loss.shape == (batch_size, n_sample))
         self.assertTrue((loss < 1e-5).all())
 
+    def test_bond_loss_sparse(self):
+        n_sample = 2
+
+        batch = self.setup_features()
+        batch_size = batch["ground_truth"]["atom_resolved_mask"].shape[0]
+
+        x = centre_random_augmentation(
+            xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["ground_truth"]["atom_resolved_mask"],
+        )
+
+        loss = bond_loss_sparse(x=x, batch=batch, eps=consts.eps)
+
+        self.assertTrue(loss.shape == (batch_size, n_sample))
+        self.assertTrue((loss < 1e-5).all())
+
     def test_bond_loss_sparse_matches_dense(self):
         """Verify bond_loss_sparse produces the same output as bond_loss."""
         n_sample = 2
@@ -168,15 +195,8 @@ class TestDiffusionLoss(unittest.TestCase):
         x = batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1))
         x = x + torch.randn_like(x) * 0.5
 
-        # bond_loss (dense) works without the sample dim in batch — it
-        # broadcasts x_gt [bs, N_atom, 3] against x [bs, N_sample, N_atom, 3].
         loss_dense = bond_loss(x=x, batch=batch, eps=consts.eps)
-
-        # bond_loss_sparse requires the singleton sample dim in batch tensors,
-        # matching what model.py:662 does before calling the loss:
-        #   batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
-        batch_with_sample_dim = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
-        loss_sparse = bond_loss_sparse(x=x, batch=batch_with_sample_dim, eps=consts.eps)
+        loss_sparse = bond_loss_sparse(x=x, batch=batch, eps=consts.eps)
 
         self.assertEqual(loss_dense.shape, loss_sparse.shape)
         self.assertTrue(
@@ -218,25 +238,28 @@ class TestDiffusionLoss(unittest.TestCase):
         gt_positions = torch.randn((1, n_atom, 3), device=device)
         gt_mask = torch.ones((1, n_atom), device=device)
 
-        batch = {
-            "token_mask": token_mask,
-            "num_atoms_per_token": num_atoms_per_token,
-            "start_atom_index": start_atom_index,
-            "is_protein": is_protein,
-            "is_rna": is_rna,
-            "is_dna": is_dna,
-            "is_ligand": is_ligand,
-            "token_bonds": token_bonds,
-            "ground_truth": {
-                "atom_resolved_mask": gt_mask,
-                "atom_positions": gt_positions,
+        batch = tensor_tree_map(
+            lambda t: t.unsqueeze(1),
+            {
+                "token_mask": token_mask,
+                "num_atoms_per_token": num_atoms_per_token,
+                "start_atom_index": start_atom_index,
+                "is_protein": is_protein,
+                "is_rna": is_rna,
+                "is_dna": is_dna,
+                "is_ligand": is_ligand,
+                "token_bonds": token_bonds,
+                "ground_truth": {
+                    "atom_resolved_mask": gt_mask,
+                    "atom_positions": gt_positions,
+                },
             },
-        }
+        )
 
         x = gt_positions.unsqueeze(1).expand(-1, n_sample, -1, -1).clone()
         x = x + torch.randn_like(x) * 0.5
 
-        # Measure dense (works without sample dim in batch)
+        # Measure dense
         torch.cuda.reset_peak_memory_stats(device)
         torch.cuda.synchronize()
         _ = bond_loss(x=x, batch=batch, eps=1e-8)
@@ -246,11 +269,10 @@ class TestDiffusionLoss(unittest.TestCase):
         # Free intermediates
         torch.cuda.empty_cache()
 
-        # Measure sparse (needs singleton sample dim, matching model.py:662)
-        batch_with_sample_dim = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+        # Measure sparse
         torch.cuda.reset_peak_memory_stats(device)
         torch.cuda.synchronize()
-        _ = bond_loss_sparse(x=x, batch=batch_with_sample_dim, eps=1e-8)
+        _ = bond_loss_sparse(x=x, batch=batch, eps=1e-8)
         torch.cuda.synchronize()
         peak_sparse = torch.cuda.max_memory_allocated(device)
 
@@ -295,13 +317,14 @@ class TestDiffusionLoss(unittest.TestCase):
         self.assertTrue((torch.abs(loss - gt_loss) < 1e-5).all())
 
         # Check when token mask has some zeros
+        # batch["is_protein"] is [bs, 1, N_token]; mask the first 2 tokens
         mostly_zeros_mask = torch.zeros_like(batch["is_protein"])
-        mostly_zeros_mask[:, :2] = 1
+        mostly_zeros_mask[:, :, :2] = 1
         loss_masked = smooth_lddt_loss(
             x=x, batch=batch, loss_token_mask=mostly_zeros_mask, eps=1e-8
         )
 
-        assert torch.equal(torch.nonzero(loss_masked), torch.nonzero(mostly_zeros_mask))
+        assert torch.all(loss_masked != 0)
         assert torch.all(torch.not_equal(loss_masked, loss))
 
     def _test_diffusion_loss(self, batch):
