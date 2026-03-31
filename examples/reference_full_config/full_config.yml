@@ -118,7 +118,7 @@ dataset_config_kwargs:
 # OutputWriterSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141
 # Configure the output formats / content
 output_writing_settings: 
-  structure_format: cif  [cif | pdb]
+  structure_format: cif  [cif | pdb | cif.gz]
   full_confidence_output_format: json [json | npz]
   write_features: false
   write_latent_outputs: false

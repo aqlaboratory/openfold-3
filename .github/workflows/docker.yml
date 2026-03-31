@@ -74,7 +74,7 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@dde548f1603e003959483c86c72ec03454216f9c
+        uses: docker/metadata-action@11079342065fb7d2c3b37cb799ab6ecc01ad1bb2
         with:
           images: |
             name=ghcr.io/${{ github.repository }}/openfold3-docker
