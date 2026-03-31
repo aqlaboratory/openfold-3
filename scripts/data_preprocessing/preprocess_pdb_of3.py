@@ -49,7 +49,7 @@ from openfold3.core.utils.logging_utils import ContextInjectingFilter
 @click.option(
     "--max-polymer-chains",
     type=int,
-    default=None,
+    default=1000,
     help=(
         "The maximum number of polymer chains in the first bioassembly after which a "
         "structure is skipped by the parser."
