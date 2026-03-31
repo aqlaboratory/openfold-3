@@ -109,7 +109,6 @@ class PairFormerBlock(nn.Module):
             c_z=c_z,
             c_hidden=c_hidden_pair_bias,
             no_heads=no_heads_pair_bias,
-            use_ada_layer_norm=False,
             gating=True,
             inf=inf,
             linear_init_params=linear_init_params.att_pair_bias,
@@ -191,7 +190,6 @@ class PairFormerBlock(nn.Module):
             self.attn_pair_bias(
                 a=s,
                 z=z,
-                s=None,
                 mask=single_mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
