@@ -280,7 +280,8 @@ def create_main(
     for rep_id, chain_data in msa_array_collection.rep_id_to_main_msa.items():
         chain_data = msa_array_collection.rep_id_to_main_msa[rep_id]
 
-        dropped = [k for k in chain_data if k not in aln_order]
+        # Check for unread MSAs, excluding paired ones
+        dropped = [k for k in chain_data if k not in aln_order and k != "uniprot_hits"]
         if dropped:
             logger.warning(
                 "MSA keys %s dropped for rep_id '%s' (not in aln_order)",
