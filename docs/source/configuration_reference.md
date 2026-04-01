@@ -81,7 +81,6 @@ Specifies model presets and custom architecture modifications.
 - `presets` *(list[str])*: List of model presets to apply (default: `[]`)
   - `predict`: Inference configuration (required for inference)
   - `low_mem`: Low memory mode for large structures
-  - `pae_enabled`: Enable Predicted Aligned Error (PAE) head
 - `custom` *(dict)*: Custom model configuration overrides (default: `{}`)
 
 **Example**:
@@ -89,7 +88,6 @@ Specifies model presets and custom architecture modifications.
 model_update:
   presets:
     - predict
-    - pae_enabled
     - low_mem
   custom: {}
 ```
@@ -133,6 +131,10 @@ data_module_args:
 ```
 
 ---
+### 3.X Checkpoint Confiugration (`checkpoint_config`)
+
+Configures Checkpoint writing settings, which are passed to [pl.ModelCheckpoint callback](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.ModelCheckpoint.html). 
+
 
 ### 3.6. Dataset Config Kwargs (`dataset_config_kwargs`)
 
@@ -204,10 +206,11 @@ Configures the format of output files.
 **Pydantic Model**: [`OutputWritingSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141)
 
 **All Options**:
-- `structure_format` *(Literal["pdb", "cif"])*: Output format (default: `cif`)
+- `structure_format` *(Literal["pdb", "cif", "cif.gz"])*: Output format (default: `cif`)
 - `full_confidence_output_format` *(Literal["json", "npz"])*: Confidence output format (default: `json`)
 - `write_features` *(bool)*: Write intermediate features (default: `false`)
 - `write_latent_outputs` *(bool)*: Write model intermediate outputs (default: `false`)
+- `write_full_confidence_scores` *(bool)*: Write full confidence scores, e.g. PAE, PDE, PLDDT (default: `true`)
 
 **Example**:
 ```yaml
