@@ -17,12 +17,6 @@ predict:
           confidence_heads: true
           token_cutoff: 2800
 
-pae_enabled:
-  architecture:
-    heads:
-      pae: 
-        enabled: True
-
 low_mem:
   settings:
     clear_cache_between_steps: True

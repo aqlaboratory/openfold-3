@@ -27,7 +27,6 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import NamedTuple
 
-import requests
 from tqdm import tqdm
 
 from openfold3.core.data.io.dataset_cache import read_datacache
@@ -60,6 +59,7 @@ from openfold3.core.data.resources.lists import (
     LIGAND_EXCLUSION_LIST,
 )
 from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.core.data.tools.rscb import get_model_ranking_fit
 
 logger = logging.getLogger(__name__)
 
@@ -853,83 +853,6 @@ def set_nan_fallback_conformer_flag(
             metadata.set_fallback_to_nan = False
 
     return None
-
-
-# TODO: Do this in preprocessing instead to avoid it going out-of-sync with the data?
-def get_model_ranking_fit(pdb_id):
-    """Fetches the model ranking fit entries for all ligands of a single PDB-ID.
-
-    Uses the PDB GraphQL API to fetch the model ranking fit values for all ligands in a
-    single PDB entry. Note that this function will always fetch from the newest version
-    of the PDB and can therefore occasionally give incorrect results for old datasets
-    whose structures have been updated since.
-    """
-    url = "https://data.rcsb.org/graphql"  # RCSB PDB's GraphQL API endpoint
-
-    query = """
-    query GetRankingFit($pdb_id: String!) {
-        entry(entry_id: $pdb_id) {
-            nonpolymer_entities {
-                nonpolymer_entity_instances {
-                    rcsb_id
-                    rcsb_nonpolymer_instance_validation_score {
-                        ranking_model_fit
-                    }
-                }
-            }
-        }
-    }
-    """
-
-    # Prepare the request with the pdb_id as a variable
-    variables = {"pdb_id": pdb_id}
-
-    # Make the request to the GraphQL endpoint using the variables
-    response = requests.post(url, json={"query": query, "variables": variables})
-
-    # Check if the request was successful
-    if response.status_code == 200:
-        try:
-            # Parse the JSON response
-            data = response.json()
-
-            # Safely navigate through data
-            entry_data = data.get("data", {}).get("entry", {})
-            if not entry_data:
-                return {}
-
-            extracted_data = {}
-
-            # Check for nonpolymer_entities
-            nonpolymer_entities = entry_data.get("nonpolymer_entities", [])
-
-            if nonpolymer_entities:
-                for entity in nonpolymer_entities:
-                    for instance in entity.get("nonpolymer_entity_instances", []):
-                        rcsb_id = instance.get("rcsb_id")
-                        validation_score = instance.get(
-                            "rcsb_nonpolymer_instance_validation_score"
-                        )
-
-                        if (
-                            validation_score
-                            and isinstance(validation_score, list)
-                            and validation_score[0]
-                        ):
-                            ranking_model_fit = validation_score[0].get(
-                                "ranking_model_fit"
-                            )
-                            if ranking_model_fit is not None:
-                                extracted_data[rcsb_id] = ranking_model_fit
-
-            return extracted_data
-
-        except (KeyError, TypeError, ValueError) as e:
-            print(f"Error processing response for {pdb_id}: {e}")
-            return {}
-    else:
-        print(f"Request failed with status code {response.status_code}")
-        return {}
 
 
 def assign_ligand_model_fits(

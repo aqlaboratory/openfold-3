@@ -323,6 +323,29 @@ def get_asym_id_to_canonical_seq_dict(
     }
 
 
+def get_author_to_label_chain_ids(
+    label_to_author: dict[str, str],
+) -> dict[str, list[str]]:
+    """Get a mapping from author (pdb_strand_id) chain ID to label asym_ids.
+
+    Multiple label asym_ids can map to the same author chain ID for homomeric
+    chains.  The returned lists are sorted by label asym_id for determinism.
+
+    Args:
+        label_to_author:
+            Dictionary mapping label asym IDs to author chain IDs.
+
+    Returns:
+        A dictionary mapping author chain IDs to sorted lists of label asym IDs.
+    """
+    author_to_labels: dict[str, list[str]] = defaultdict(list)
+    for label, author in label_to_author.items():
+        author_to_labels[author].append(label)
+    for labels in author_to_labels.values():
+        labels.sort()
+    return dict(author_to_labels)
+
+
 def get_entity_to_three_letter_codes_dict(cif_data: CIFBlock) -> dict[int, list[str]]:
     """Get a dictionary mapping entity IDs to their three-letter-code sequences.
 
