@@ -19,6 +19,7 @@ procedures of different models.
 
 # TODO: organize this file so that we separate components for creating the metadata
 # cache for each dataset
+import itertools
 import json
 import logging
 import multiprocessing as mp
@@ -561,6 +562,16 @@ def preprocess_structure_and_write_outputs_of3(
     return structure_metadata_dict, ref_mol_metadata_dict
 
 
+class _BatchWrapper:
+    """Wraps a callable to process a batch of items."""
+
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, batch):
+        return [self.func(item) for item in batch]
+
+
 class _OF3PreprocessingWrapper:
     """Wrapper class that fills in all the constant arguments and adds logging.
 
@@ -661,6 +672,9 @@ def preprocess_cif_dir_of3(
     log_queue: mp.queues.Queue | None = None,
     log_level: int = logging.WARNING,
     early_stop: int | None = None,
+    maxtasksperchild: int | None = None,
+    max_pool_retries: int = 10,
+    stall_timeout: int = 600,
 ) -> None:
     """Preprocesses a directory of PDB files following the AlphaFold3 SI.
 
@@ -699,6 +713,14 @@ def preprocess_cif_dir_of3(
             The logging level to use for the workers. Default is WARNING.
         early_stop:
             Stop after processing this many CIFs. Only used for debugging.
+        maxtasksperchild:
+            Number of tasks a worker process handles before being replaced. Lower
+            values free memory more aggressively but add respawn overhead.
+        max_pool_retries:
+            Maximum number of times to restart the worker pool after a crash.
+        stall_timeout:
+            Seconds to wait for a result before assuming the pool is deadlocked
+            (e.g. from a killed worker) and restarting it.
     """
     logger.debug("Reading CCD file")
     ccd = CIFFile.read(ccd_path)
@@ -775,34 +797,109 @@ def preprocess_cif_dir_of3(
                 "Multiprocessing should be used with a logging queue specified."
             )
 
-        # Process all structures in parallel
-        with mp.Pool(
-            num_workers,
-            initializer=setup_worker_logging,
-            initargs=(log_queue, "openfold3", log_level, ["pdb_id"]),
-        ) as pool:
-            for i, (structure_metadata_dict, ref_mol_metadata_dict) in enumerate(
-                tqdm(
-                    pool.imap_unordered(
-                        wrapped_preprocessing_func,
-                        zip(cif_files, cif_output_dirs, strict=True),
-                        chunksize=chunksize,
-                    ),
-                    total=len(cif_files),
-                    desc="Processing structures",
-                    unit="structure",
-                )
-            ):
-                update_output_dicts(structure_metadata_dict, ref_mol_metadata_dict)
+        # Retry loop: if a worker is killed (e.g. OOM), detect the resulting
+        # deadlock via stall_timeout and restart the pool with remaining items.
+        all_items = list(zip(cif_files, cif_output_dirs, strict=True))
+        # Manual chunking so imap_unordered returns an IMapUnorderedIterator
+        # (supports .next(timeout)) instead of a plain generator (chunksize>1).
+        batched_func = _BatchWrapper(wrapped_preprocessing_func)
 
-                # Periodically save the output dict to avoid losing data in case of a
-                # crash
-                if i % 1000 == 0:
-                    with open(out_dir / "metadata.json", "w") as f:
-                        json.dump(output_dict, f, indent=4, default=encode_numpy_types)
+        for attempt in range(max_pool_retries):
+            remaining = [
+                (f, d)
+                for f, d in all_items
+                if f.stem not in output_dict["structure_data"]
+            ]
+            if not remaining:
+                break
+
+            if attempt > 0:
+                logger.warning(
+                    f"Pool restart (attempt {attempt + 1}/{max_pool_retries}): "
+                    f"{len(remaining)}/{len(all_items)} structures remaining"
+                )
+
+            try:
+                batches = list(itertools.batched(remaining, chunksize))
+
+                with mp.Pool(
+                    num_workers,
+                    initializer=setup_worker_logging,
+                    initargs=(log_queue, "openfold3", log_level, ["pdb_id"]),
+                    maxtasksperchild=maxtasksperchild,
+                ) as pool:
+                    result_iter = pool.imap_unordered(
+                        batched_func, batches, chunksize=1
+                    )
+                    i = 0
+                    with tqdm(
+                        total=len(remaining),
+                        desc="Processing structures",
+                        unit="structure",
+                    ) as pbar:
+                        while True:
+                            try:
+                                batch_results = result_iter.next(timeout=stall_timeout)
+                            except StopIteration:
+                                break
+                            except mp.TimeoutError:
+                                pool.terminate()
+                                raise RuntimeError(
+                                    f"No results received for "
+                                    f"{stall_timeout}s, pool is likely "
+                                    "deadlocked from a killed worker"
+                                ) from None
+
+                            for (
+                                structure_metadata_dict,
+                                ref_mol_metadata_dict,
+                            ) in batch_results:
+                                pbar.update(1)
+                                update_output_dicts(
+                                    structure_metadata_dict,
+                                    ref_mol_metadata_dict,
+                                )
+                                i += 1
+
+                            if i % 1000 == 0:
+                                with open(out_dir / "metadata.json", "w") as f:
+                                    json.dump(
+                                        output_dict,
+                                        f,
+                                        indent=4,
+                                        default=encode_numpy_types,
+                                    )
+            except Exception:
+                logger.exception("Worker pool crashed")
+                with open(out_dir / "metadata.json", "w") as f:
+                    json.dump(output_dict, f, indent=4, default=encode_numpy_types)
+                continue
+            else:
+                break  # Completed successfully
+        else:
+            logger.error(
+                f"Worker pool failed after {max_pool_retries} attempts. "
+                f"Results are incomplete."
+            )
 
     with open(out_dir / "metadata.json", "w") as f:
         json.dump(output_dict, f, indent=4, default=encode_numpy_types)
+
+    # Log summary
+    n_total = len(output_dict["structure_data"])
+    n_failed = 0
+    n_skipped = 0
+    for v in output_dict["structure_data"].values():
+        status = v.get("status", "") if isinstance(v, dict) else ""
+        if status == "failed":
+            n_failed += 1
+        elif status.startswith("skipped"):
+            n_skipped += 1
+    n_succeeded = n_total - n_failed - n_skipped
+    logger.info(
+        f"Preprocessing complete: {n_succeeded}/{n_total} succeeded, "
+        f"{n_skipped} skipped, {n_failed} failed."
+    )
 
 
 # ---- protein monomer preprocessing pipelines ----
