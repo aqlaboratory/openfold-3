@@ -804,6 +804,9 @@ def preprocess_cif_dir_of3(
         # (supports .next(timeout)) instead of a plain generator (chunksize>1).
         batched_func = _BatchWrapper(wrapped_preprocessing_func)
 
+        retry_chunksize = chunksize
+        retry_num_workers = num_workers
+
         for attempt in range(max_pool_retries):
             remaining = [
                 (f, d)
@@ -814,16 +817,19 @@ def preprocess_cif_dir_of3(
                 break
 
             if attempt > 0:
+                retry_chunksize = max(1, retry_chunksize // 2)
+                retry_num_workers = max(1, retry_num_workers // 2)
                 logger.warning(
                     f"Pool restart (attempt {attempt + 1}/{max_pool_retries}): "
-                    f"{len(remaining)}/{len(all_items)} structures remaining"
+                    f"{len(remaining)}/{len(all_items)} structures remaining, "
+                    f"num_workers={retry_num_workers}, chunksize={retry_chunksize}"
                 )
 
             try:
-                batches = list(itertools.batched(remaining, chunksize))
+                batches = list(itertools.batched(remaining, retry_chunksize))
 
                 with mp.Pool(
-                    num_workers,
+                    retry_num_workers,
                     initializer=setup_worker_logging,
                     initargs=(log_queue, "openfold3", log_level, ["pdb_id"]),
                     maxtasksperchild=maxtasksperchild,
