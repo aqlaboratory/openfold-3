@@ -82,36 +82,34 @@ class PairformerEmbedding(nn.Module):
         zij: torch.Tensor,
         x_pred: torch.Tensor,
     ):
-        orig_dtype = zij.dtype
-        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
-            # si projection to zij
-            zij = (
-                zij
-                + self.linear_i(si_input.unsqueeze(-2))
-                + self.linear_j(si_input.unsqueeze(-3))
-            )
+        # si projection to zij
+        zij = (
+            zij
+            + self.linear_i(si_input.unsqueeze(-2))
+            + self.linear_j(si_input.unsqueeze(-3))
+        )
 
-            # Embed pair distances of representative atoms
-            bins = torch.linspace(
-                self.min_bin,
-                self.max_bin,
-                self.no_bin,
-                device=zij.device,
-                dtype=zij.dtype,
-            )
-            squared_bins = bins**2
-            upper = torch.cat(
-                [squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1
-            )
-            dij = torch.sum(
-                (x_pred[..., None, :] - x_pred[..., None, :, :]) ** 2,
-                dim=-1,
-                keepdims=True,
-            )
-            dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
-            zij = zij + self.linear_distance(dij)
+        # Embed pair distances of representative atoms
+        bins = torch.linspace(
+            self.min_bin,
+            self.max_bin,
+            self.no_bin,
+            device=zij.device,
+            dtype=zij.dtype,
+        )
+        squared_bins = bins**2
+        upper = torch.cat(
+            [squared_bins[1:], squared_bins.new_tensor([self.inf])], dim=-1
+        )
+        dij = torch.sum(
+            (x_pred[..., None, :] - x_pred[..., None, :, :]) ** 2,
+            dim=-1,
+            keepdims=True,
+        )
+        dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
+        zij = zij + self.linear_distance(dij)
 
-        return zij.to(dtype=orig_dtype)
+        return zij
 
     def per_sample_pairformer_emb(
         self,
@@ -128,6 +126,7 @@ class PairformerEmbedding(nn.Module):
         inplace_safe: bool = False,
         offload_inference: bool = False,
         _mask_trans: bool = True,
+        pairformer_dtype: torch.dtype = torch.float32,
     ):
         batch_dims = x_pred.shape[:-2]
         no_samples = x_pred.shape[-3]
@@ -147,18 +146,19 @@ class PairformerEmbedding(nn.Module):
                 si_input=si_input, zij=zij, x_pred=x_pred[:, i : i + 1]
             )
 
-            si_chunk, zij_chunk = self.pairformer_stack(
-                si.clone(),  # Avoid inplace ops on si
-                zij_chunk,
-                single_mask,
-                pair_mask,
-                chunk_size=chunk_size,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                use_lma=use_lma,
-                inplace_safe=inplace_safe,
-                _mask_trans=_mask_trans,
-            )
+            with torch.amp.autocast(device_type="cuda", dtype=pairformer_dtype):
+                si_chunk, zij_chunk = self.pairformer_stack(
+                    si.clone(),  # Avoid inplace ops on si
+                    zij_chunk,
+                    single_mask,
+                    pair_mask,
+                    chunk_size=chunk_size,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                    use_lma=use_lma,
+                    inplace_safe=inplace_safe,
+                    _mask_trans=_mask_trans,
+                )
 
             if offload_inference:
                 assert sys.getrefcount(si_chunk) == 2
@@ -186,6 +186,7 @@ class PairformerEmbedding(nn.Module):
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
+        pairformer_dtype: torch.dtype = torch.float32,
     ):
         zij = self.embed_zij(si_input=si_input, zij=zij, x_pred=x_pred)
 
@@ -213,18 +214,19 @@ class PairformerEmbedding(nn.Module):
         if use_kernels and si.shape[0] > 1:
             chunk_size = None
 
-        si, zij = self.pairformer_stack(
-            si,
-            zij,
-            single_mask,
-            pair_mask,
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-            use_lma=use_lma,
-            inplace_safe=inplace_safe,
-            _mask_trans=_mask_trans,
-        )
+        with torch.amp.autocast(device_type="cuda", dtype=pairformer_dtype):
+            si, zij = self.pairformer_stack(
+                si,
+                zij,
+                single_mask,
+                pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
 
         si = reshape_outputs(x=si, feat_dims=si.shape[-2:])
         zij = reshape_outputs(x=zij, feat_dims=zij.shape[-3:])
@@ -247,6 +249,7 @@ class PairformerEmbedding(nn.Module):
         offload_inference: bool = False,
         _mask_trans: bool = True,
         apply_per_sample: bool = False,
+        pairformer_dtype: torch.dtype = torch.float32,
     ):
         """
         Args:
@@ -307,6 +310,7 @@ class PairformerEmbedding(nn.Module):
                 inplace_safe=inplace_safe,
                 offload_inference=offload_inference,
                 _mask_trans=_mask_trans,
+                pairformer_dtype=pairformer_dtype,
             )
         else:
             si, zij = self.pairformer_emb(
@@ -322,6 +326,7 @@ class PairformerEmbedding(nn.Module):
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
+                pairformer_dtype=pairformer_dtype,
             )
 
         return si, zij

@@ -112,13 +112,13 @@ def _attention(
         key (shape [*, H, K, C_hidden]): key tensor
         value (shape [*, H, V, C_hidden]): value tensor
         biases : list of bias tensors
-        use_high_precision: Whether to use high precision up until
-            and including softmax
+        use_high_precision: Whether to use high precision
 
     Returns:
         shape [*, H, V, C_hidden]: attention output
     """
-    attn_dtype = torch.float32 if use_high_precision else query.dtype
+    in_dtype = query.dtype
+    attn_dtype = torch.float32 if use_high_precision else in_dtype
     with torch.amp.autocast("cuda", dtype=attn_dtype):
         # Generate attention scores
         scores = torch.einsum("...qc, ...kc->...qk", query, key)
@@ -130,10 +130,10 @@ def _attention(
         # Normalize the scores
         scores = softmax_no_cast(scores, dim=-1)
 
-    # Multiply scores by values
-    attention = torch.einsum("...qk, ...kc->...qc", scores.to(dtype=value.dtype), value)
+        # Multiply scores by values
+        attention = torch.einsum("...qk, ...kc->...qc", scores, value)
 
-    return attention
+    return attention.to(dtype=in_dtype)
 
 
 @torch.jit.ignore
@@ -338,9 +338,8 @@ class Attention(nn.Module):
             lma_kv_chunk_size:
                 Key/Value chunk size (for LMA)
             use_high_precision:
-                Whether to use high precision up until and including softmax.
-                This requires using the default implementation and cannot be
-                used with the above kernel options.
+                Whether to use high precision.This requires using the default
+                implementation and cannot be used with the above kernel options.
         Returns
             [*, Q, C_q] attention update
         """
