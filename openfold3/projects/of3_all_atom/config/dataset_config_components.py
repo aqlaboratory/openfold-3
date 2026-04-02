@@ -90,7 +90,7 @@ class MSASettings(BaseModel):
         "nt_hits": 10000,
         "nucleotide_collection_hits": 10000,
         "concat_cfdb_uniref100_filtered": 10000000,
-        "mmseqs_colabfold": 16384,
+        "mmseqs_colabfold": 10000000,
         "colabfold_main": 16384,
         "colabfold_paired": 8192,
     }
