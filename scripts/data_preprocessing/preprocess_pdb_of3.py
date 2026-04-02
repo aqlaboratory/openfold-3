@@ -173,6 +173,7 @@ def main(
 
     # Set up main logger
     main_logger = logging.getLogger("openfold3")
+    main_logger.setLevel(log_level)
     main_logger.addHandler(stream_handler)
     main_logger.addHandler(file_handler)
 
