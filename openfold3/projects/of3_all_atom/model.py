@@ -296,8 +296,8 @@ class OpenFold3(nn.Module):
                 s, z = self.pairformer_stack(
                     s=s,
                     z=z,
-                    single_mask=token_mask.to(dtype=z.dtype),
-                    pair_mask=pair_mask.to(dtype=s.dtype),
+                    single_mask=token_mask.to(dtype=s.dtype),
+                    pair_mask=pair_mask.to(dtype=z.dtype),
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
                     use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,

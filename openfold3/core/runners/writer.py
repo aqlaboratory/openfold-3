@@ -73,19 +73,19 @@ class OF3OutputWriter(BasePredictionWriter):
     def __init__(
         self,
         output_dir: Path,
-        pae_enabled: bool = False,
         structure_format: str = "pdb",
         full_confidence_output_format: str = "json",
         write_features: bool = False,
         write_latent_outputs: bool = False,
+        write_full_confidence_scores: bool = True,
     ):
         super().__init__(write_interval="batch")
         self.output_dir = output_dir
-        self.pae_enabled = pae_enabled
         self.structure_format = structure_format
         self.full_confidence_format = full_confidence_output_format
         self.write_features = write_features
         self.write_latent_outputs = write_latent_outputs
+        self.write_full_confidence_scores = write_full_confidence_scores
 
         # Track successfully predicted samples
         self.success_count = 0
@@ -179,13 +179,13 @@ class OF3OutputWriter(BasePredictionWriter):
         plddt = confidence_scores["plddt"]
         pde = confidence_scores["pde"]
         gpde = confidence_scores["gpde"]
+        pae = confidence_scores["pae"]
         aggregated_confidence_scores = {"avg_plddt": np.mean(plddt), "gpde": gpde}
 
-        if self.pae_enabled:
-            logger.info("Recording PAE confidence outputs")
-            aggregated_confidence_scores |= self.get_pae_confidence_scores(
-                confidence_scores, atom_array
-            )
+        logger.info("Recording PAE confidence outputs")
+        aggregated_confidence_scores |= self.get_pae_confidence_scores(
+            confidence_scores, atom_array
+        )
 
         out_file_agg = Path(f"{output_prefix}_confidences_aggregated.json")
         out_file_agg.write_text(
@@ -193,20 +193,21 @@ class OF3OutputWriter(BasePredictionWriter):
         )
 
         # Full confidence scores
-        full_confidence_scores = {"plddt": plddt, "pde": pde}
-        out_fmt = self.full_confidence_format
-        out_file_full = Path(f"{output_prefix}_confidences.{out_fmt}")
+        if self.write_full_confidence_scores is True:
+            full_confidence_scores = {"plddt": plddt, "pde": pde, "pae": pae}
+            out_fmt = self.full_confidence_format
+            out_file_full = Path(f"{output_prefix}_confidences.{out_fmt}")
 
-        if out_fmt == "json":
-            out_file_full.write_text(
-                json.dumps(
-                    full_confidence_scores,
-                    indent=4,
-                    cls=NumpyEncoder,
+            if out_fmt == "json":
+                out_file_full.write_text(
+                    json.dumps(
+                        full_confidence_scores,
+                        indent=4,
+                        cls=NumpyEncoder,
+                    )
                 )
-            )
-        elif out_fmt == "npz":
-            np.savez_compressed(out_file_full, **full_confidence_scores)
+            elif out_fmt == "npz":
+                np.savez_compressed(out_file_full, **full_confidence_scores)
 
     def write_all_outputs(self, batch: dict, outputs: dict, confidence_scores: dict):
         """Writes all outputs for a given batch."""

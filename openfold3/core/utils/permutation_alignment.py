@@ -668,6 +668,18 @@ def find_greedy_optimal_mol_permutation(
             )
 
             # Stack to [N_sym, N, 3] and [N_sym, N] respectively
+            instance_sizes = [t.shape[0] for t in gt_coords_entity_split]
+            if len(set(instance_sizes)) > 1:
+                raise ValueError(
+                    f"Entity {entity_id} has symmetric instances with "
+                    f"different token counts: {instance_sizes}. These chains "
+                    f"were identified as symmetry-equivalent but have different "
+                    f"numbers of tokens. A common cause is the biotite sym_id "
+                    f"annotation having mixed values (0 for resolved, -1 for "
+                    f"unresolved atoms) within a residue, which causes "
+                    f"get_residue_starts() to split it into multiple tokens."
+                )
+
             gt_coords_entity_split = torch.stack(gt_coords_entity_split)
             gt_resolved_mask_entity_split = torch.stack(gt_resolved_mask_entity_split)
 
@@ -1318,6 +1330,28 @@ def update_gt_position_features(
         )[0]
         inter_filter_atomized = inter_filter_atomized.transpose(-1, -2)
         updated_ground_truth_features["inter_filter_atomized"] = inter_filter_atomized
+
+    intra_ab_ag_type_atomized = ground_truth_features.get("intra_ab_ag_type_atomized")
+    if intra_ab_ag_type_atomized is not None:
+        intra_ab_ag_type_atomized = permute_gt_atom_features(
+            [intra_ab_ag_type_atomized], gt_atom_indexes
+        )[0]
+        updated_ground_truth_features["intra_ab_ag_type_atomized"] = (
+            intra_ab_ag_type_atomized
+        )
+
+    inter_ab_ag_type_atomized = ground_truth_features.get("inter_ab_ag_type_atomized")
+    if inter_ab_ag_type_atomized is not None:
+        inter_ab_ag_type_atomized = permute_gt_atom_features(
+            [inter_ab_ag_type_atomized], gt_atom_indexes
+        )[0]
+        inter_ab_ag_type_atomized = permute_gt_atom_features(
+            [inter_ab_ag_type_atomized.transpose(-1, -2)], gt_atom_indexes
+        )[0]
+        inter_ab_ag_type_atomized = inter_ab_ag_type_atomized.transpose(-1, -2)
+        updated_ground_truth_features["inter_ab_ag_type_atomized"] = (
+            inter_ab_ag_type_atomized
+        )
 
     return updated_ground_truth_features
 

@@ -14,6 +14,7 @@
 
 """This module contains SampleProcessingPipelines for MSA features."""
 
+import logging
 from collections.abc import Sequence
 from functools import partial
 
@@ -51,6 +52,8 @@ from openfold3.core.data.primitives.sequence.msa import (
     sort_subsample_paired_row_ids,
 )
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
+
+logger = logging.getLogger(__name__)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-query")
@@ -277,6 +280,15 @@ def create_main(
     for rep_id, chain_data in msa_array_collection.rep_id_to_main_msa.items():
         chain_data = msa_array_collection.rep_id_to_main_msa[rep_id]
 
+        # Check for unread MSAs, excluding paired ones
+        dropped = [k for k in chain_data if k not in aln_order and k != "uniprot_hits"]
+        if dropped:
+            logger.warning(
+                "MSA keys %s dropped for rep_id '%s' (not in aln_order)",
+                dropped,
+                rep_id,
+            )
+
         # Get MSAs forming the main MSA and deletion matrices from all non-UniProt MSAs
         main_msa_redundant = np.concatenate(
             [chain_data[aln].msa for aln in aln_order if aln in chain_data],
@@ -286,6 +298,20 @@ def create_main(
             [chain_data[aln].deletion_matrix for aln in aln_order if aln in chain_data],
             axis=0,
         )
+
+        # Deduplicate within the main MSA
+        main_view = main_msa_redundant.view(
+            np.dtype(
+                (
+                    np.void,
+                    main_msa_redundant.dtype.itemsize * main_msa_redundant.shape[1],
+                )
+            )
+        )
+        _, unique_idx = np.unique(main_view, return_index=True)
+        unique_idx.sort()  # preserve original order
+        main_msa_redundant = main_msa_redundant[unique_idx, :]
+        main_deletion_matrix_redundant = main_deletion_matrix_redundant[unique_idx, :]
 
         # Get paired MSAs if any and deduplicate
         if len(chain_id_to_paired_msa) > 0:

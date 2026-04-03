@@ -1,0 +1,44 @@
+interactions:
+- request:
+    body: '{"query": "\nquery($ids: [String!]!) {\n  entries(entry_ids: $ids) {\n    rcsb_id\n    polymer_entities
+      {\n      rcsb_polymer_entity_container_identifiers {\n        asym_ids\n        auth_asym_ids\n      }\n    }\n  }\n}\n",
+      "variables": {"ids": ["1rnb"]}}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '257'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - python-requests/2.32.5
+    method: POST
+    uri: https://data.rcsb.org/graphql
+  response:
+    body:
+      string: '{"data":{"entries":[{"rcsb_id":"1RNB","polymer_entities":[{"rcsb_polymer_entity_container_identifiers":{"asym_ids":["B"],"auth_asym_ids":["A"]}},{"rcsb_polymer_entity_container_identifiers":{"asym_ids":["A"],"auth_asym_ids":["C"]}}]}]}}'
+    headers:
+      access-control-allow-headers:
+      - X-Requested-With,Content-Type,Authorization,rcsb-analytics-traffic-origin,rcsb-analytics-traffic-stage
+      access-control-allow-methods:
+      - GET, OPTIONS, HEAD, PUT, POST
+      access-control-allow-origin:
+      - '*'
+      alt-svc:
+      - h3=":443";ma=60;
+      content-length:
+      - '236'
+      content-type:
+      - application/json;charset=UTF-8
+      date:
+      - Wed, 25 Mar 2026 12:23:16 GMT
+      strict-transport-security:
+      - max-age=16000000; includeSubDomains; preload;
+    status:
+      code: 200
+      message: OK
+version: 1

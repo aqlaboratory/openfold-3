@@ -54,9 +54,9 @@ class PairformerEmbedding(nn.Module):
                 different from SI. Previous AF2 implementation utilized these values
                 for bins.
             max_bin:
-                Maximum value for bin (20.75). ibid
+                Maximum value for bin (50.75). ibid
             no_bin:
-                Number of bins (15). ibid
+                Number of bins (39). ibid
             inf:
                 Inf (1e8). ibid
             linear_init_params:
