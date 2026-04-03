@@ -377,13 +377,11 @@ def set_spatial_interface_crop_mask(
     if len(set(atom_array.chain_id)) > 1:
         # When an interface pair is sampled, restrict to the actual pairwise
         # interface between those two chains; otherwise find interface atoms
-        # between the preferred chain(s) and all other chains
+        # between the preferred chain and all other chains
         if is_interface(preferred_chain_or_interface):
-            preferred_interface_token_center_atoms = (
-                get_pairwise_interface_atoms(
-                    preferred_token_center_atoms,
-                    caller_name="Spatial interface crop",
-                )
+            preferred_interface_token_center_atoms = get_pairwise_interface_atoms(
+                preferred_token_center_atoms,
+                caller_name="Spatial interface crop",
             )
         else:
             preferred_interface_token_center_atoms = (
