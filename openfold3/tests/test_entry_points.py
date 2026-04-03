@@ -680,6 +680,10 @@ class TestSetupOpenFold:
         with (
             patch("builtins.input", side_effect=inputs),
             patch(
+                "openfold3.entry_points.parameters.download_s3_file",
+                side_effect=_fake_download_s3_file,
+            ),
+            patch(
                 "openfold3.setup_openfold.download_s3_file",
                 side_effect=_fake_download_s3_file,
             ),
@@ -707,6 +711,10 @@ class TestSetupOpenFold:
 
         with (
             patch("builtins.input", side_effect=inputs),
+            patch(
+                "openfold3.entry_points.parameters.download_s3_file",
+                side_effect=_fake_download_s3_file,
+            ),
             patch(
                 "openfold3.setup_openfold.download_s3_file",
                 side_effect=_fake_download_s3_file,
