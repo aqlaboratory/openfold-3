@@ -91,20 +91,14 @@ def crop_chainwise(
         )
     )
 
-    # 3) If interface is given, take random reference atom from that specific interface
-    #    region, otherwise take random atom from chain
-    if isinstance(preferred_chain_or_interface, list):
-        preferred_token_center_atoms_int = get_interface_atoms(
-            atom_array=preferred_token_center_atoms,
+    # 3) If an interface pair is sampled, restrict reference atom candidates to the
+    #    actual pairwise interface between those two chains
+    if is_interface(preferred_chain_or_interface):
+        preferred_token_center_atoms = get_pairwise_interface_atoms(
+            preferred_token_center_atoms,
             distance_threshold=interface_distance_threshold,
+            caller_name="Chain crop",
         )
-        if len(preferred_token_center_atoms_int) == 0:
-            logger.warning(
-                "Chain crop: No interface token center atoms found in the preferred "
-                "interface, falling back to all preferred token center atoms."
-            )
-        else:
-            preferred_token_center_atoms = preferred_token_center_atoms_int
 
     reference_atom = np.random.choice(preferred_token_center_atoms)
 
@@ -245,6 +239,58 @@ def set_contiguous_crop_mask(atom_array: AtomArray, token_budget: int) -> None:
     remove_atom_indices(atom_array)
 
 
+def is_interface(
+    preferred_chain_or_interface: str | list[str, str] | None,
+) -> bool:
+    """Check whether preferred_chain_or_interface denotes a two-chain interface."""
+    return (
+        isinstance(preferred_chain_or_interface, list)
+        and len(preferred_chain_or_interface) == 2
+    )
+
+
+def get_pairwise_interface_atoms(
+    preferred_token_center_atoms: AtomArray,
+    distance_threshold: float = 15.0,
+    caller_name: str = "",
+) -> AtomArray:
+    """Restrict token center atoms to those at the pairwise interface of two chains.
+
+    Given token center atoms belonging to exactly two chains (a sampled interface
+    pair), returns only the atoms that are within ``distance_threshold`` of an atom
+    on the other chain.  Falls back to all input atoms with a warning if no
+    cross-chain contacts are found.
+
+    This implements the "interface-biased" crop center selection: when a chain pair
+    is sampled, the crop center should come from the actual contact region between
+    those two chains rather than from anywhere on either chain.
+
+    Args:
+        preferred_token_center_atoms:
+            Token center atoms from the two chains forming the interface.
+        distance_threshold:
+            Distance in Å for defining interface contacts. Defaults to 15.0.
+        caller_name:
+            Name of the calling function, used in the fallback warning.
+
+    Returns:
+        AtomArray of interface-restricted token center atoms, or the original
+        ``preferred_token_center_atoms`` if no interface atoms are found.
+    """
+    interface_atoms = get_interface_atoms(
+        atom_array=preferred_token_center_atoms,
+        distance_threshold=distance_threshold,
+    )
+    if len(interface_atoms) > 0:
+        return interface_atoms
+
+    logger.warning(
+        f"{caller_name}: No interface atoms found between the two preferred "
+        "chains, falling back to all preferred token center atoms."
+    )
+    return preferred_token_center_atoms
+
+
 def set_spatial_crop_mask(
     atom_array: AtomArray,
     token_budget: int,
@@ -276,6 +322,14 @@ def set_spatial_crop_mask(
             atom_array, preferred_chain_or_interface, caller_name="Token spatial crop"
         )
     )
+
+    # When an interface pair is sampled, restrict the crop center to atoms at the
+    # actual pairwise interface between those two chains
+    if is_interface(preferred_chain_or_interface):
+        preferred_token_center_atoms = get_pairwise_interface_atoms(
+            preferred_token_center_atoms,
+            caller_name="Spatial crop",
+        )
 
     # Get reference atom
     reference_atom = np.random.choice(preferred_token_center_atoms)
@@ -321,10 +375,20 @@ def set_spatial_interface_crop_mask(
     )
 
     if len(set(atom_array.chain_id)) > 1:
-        # Find interface token center atoms
-        preferred_interface_token_center_atoms = get_query_interface_token_center_atoms(
-            preferred_token_center_atoms, token_center_atoms
-        )
+        # When an interface pair is sampled, restrict to the actual pairwise
+        # interface between those two chains; otherwise find interface atoms
+        # between the preferred chain and all other chains
+        if is_interface(preferred_chain_or_interface):
+            preferred_interface_token_center_atoms = get_pairwise_interface_atoms(
+                preferred_token_center_atoms,
+                caller_name="Spatial interface crop",
+            )
+        else:
+            preferred_interface_token_center_atoms = (
+                get_query_interface_token_center_atoms(
+                    preferred_token_center_atoms, token_center_atoms
+                )
+            )
 
         if len(preferred_interface_token_center_atoms) == 0:
             logger.warning(
