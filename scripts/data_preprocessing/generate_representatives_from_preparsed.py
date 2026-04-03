@@ -102,14 +102,19 @@ def process_single_npz(
                 status = "WARN"
                 reason = f"Missing expected {moltype} DB keys: {sorted(missing)}"
 
-            # Query sequence = row 0 of each MSA; verify consistency across DBs
+            # Query sequence = row 0 of each MSA; normalize and verify across DBs
             query_seqs = {}
             total_msa_depth = 0
+            any_gaps = False
             for db_key in matched:
                 msa_array = data[db_key].item()["msa"]
                 total_msa_depth += msa_array.shape[0]
                 if msa_array.shape[0] > 0:
-                    query_seqs[db_key] = "".join(msa_array[0])
+                    raw = "".join(msa_array[0]).upper()
+                    if "-" in raw:
+                        any_gaps = True
+                        raw = raw.replace("-", "")
+                    query_seqs[db_key] = raw
                 del msa_array  # free large array eagerly
 
         if not query_seqs:
@@ -132,11 +137,10 @@ def process_single_npz(
 
         raw_query = next(iter(unique_queries))
 
-        if "-" in raw_query:
+        if any_gaps:
             gap_msg = "Gap characters found in query sequence"
             reason = f"{reason}; {gap_msg}" if reason else gap_msg
             status = "WARN"
-            raw_query = raw_query.replace("-", "")
 
         if not raw_query:
             return _fail(
