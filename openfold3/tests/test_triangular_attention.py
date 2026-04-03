@@ -23,12 +23,7 @@ from openfold3.tests.config import consts
 # biased by z[i, k]. False would transpose internally for the
 # "ending node" variant (columns attend to columns).
 @pytest.mark.parametrize("starting", [True, False])
-def test_shape(starting, ndarrays_regression):
-    # NOTE: seeding may need further work — torch.manual_seed controls both
-    # the random input and the module's weight init. If init changes upstream,
-    # regenerate snapshots with: pytest --force-regen
-    torch.manual_seed(123)
-
+def test_shape(starting, seeded_rng, ndarrays_regression):
     # c_z: pair representation channel dim (128 in production)
     c_z = consts.c_z
     # c: attention hidden dim (production uses 32; smaller here for speed)

@@ -1,9 +1,12 @@
+import random
 from pathlib import Path
 
 import biotite.setup_ccd
 import numpy as np
 import pytest
+import torch
 from biotite.structure import AtomArray
+from torch.random import fork_rng
 
 from openfold3.core.data.primitives.structure.component import BiotiteCCDWrapper
 from openfold3.setup_openfold import setup_biotite_ccd
@@ -84,3 +87,21 @@ def biotite_ccd_wrapper():
 def original_datadir(request: pytest.FixtureRequest) -> Path:
     """Redirect pytest-regressions snapshot storage to test_data/snapshots/."""
     return Path(__file__).parent / "test_data" / "snapshots" / Path(request.path).stem
+
+
+@pytest.fixture()
+def seeded_rng():
+    """Isolate all RNG state (torch, numpy, python) for the duration of a test.
+
+    Uses torch.random.fork_rng() to save/restore torch (+CUDA) state, and
+    manually saves/restores numpy and python random state.
+    """
+    py_state = random.getstate()
+    np_state = np.random.get_state()
+    with fork_rng():
+        torch.manual_seed(123)
+        random.seed(123)
+        np.random.seed(123)
+        yield
+    random.setstate(py_state)
+    np.random.set_state(np_state)

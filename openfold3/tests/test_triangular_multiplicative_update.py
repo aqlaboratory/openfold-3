@@ -37,9 +37,7 @@ def _make_module(c_z, c):
     return TriangleMultiplicationOutgoing(c_z, c)
 
 
-def test_shape(ndarrays_regression):
-    torch.manual_seed(123)
-
+def test_shape(seeded_rng, ndarrays_regression):
     # c_z: pair representation channel dim (128 in production)
     c_z = consts.c_z
     # c: hidden projection dim (production uses ~128; smaller here for speed)
