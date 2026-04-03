@@ -32,8 +32,9 @@ from tqdm import tqdm
 
 from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.io.sequence.fasta import (
+    SeqMoltype,
     consolidate_preprocessed_fastas,
-    get_chain_id_to_seq_from_fasta,
+    parse_representatives_fasta,
 )
 from openfold3.core.data.primitives.caches.format import (
     ChainData,
@@ -459,43 +460,36 @@ def build_provisional_clustered_val_dataset_cache(
 
 
 def map_chains_to_representatives(
-    query_seq_dict: dict[str, str], repr_seq_dict: dict[str, str]
-) -> dict[str, str]:
+    query_chain_entries: dict[str, SeqMoltype],
+    repr_entries: dict[str, SeqMoltype],
+) -> dict[str, str | None]:
     """Maps chains to their representative chains.
 
-    This takes in a dictionary of query IDs and sequences and a similar dictionary of
-    representative IDs and sequences and maps the query chains to a representative with
-    the same sequence. This information is necessary for the training cache as MSA
-    databases are usually deduplicated.
+    This takes in a dictionary of query IDs and (sequence, moltype) pairs and a similar
+    dictionary of representative IDs and (sequence, moltype) pairs, and maps the query
+    chains to a representative with the same sequence and moltype. This information is
+    necessary for the training cache as MSA databases are usually deduplicated.
 
     Args:
-        query_seq_dict:
-            Dictionary mapping chain IDs to sequences.
-        repr_seq_dict:
-            Dictionary mapping chain IDs to sequences.
+        query_chain_entries:
+            Dictionary mapping chain IDs to SeqMoltype entries.
+        repr_entries:
+            Dictionary mapping representative IDs to SeqMoltype entries.
 
     Returns:
         Dictionary mapping query chain IDs to representative chain IDs.
     """
+    repr_lookup = {entry: rep_id for rep_id, entry in repr_entries.items()}
 
-    # Convert to seq -> chain mapping for easier lookup
-    repr_seq_to_chain = {seq: chain for chain, seq in repr_seq_dict.items()}
-
-    query_to_repr = {}
-
-    # Map each query chain to its representative
-    for query_chain, query_seq in query_seq_dict.items():
-        repr_chain = repr_seq_to_chain.get(query_seq)
-
-        query_to_repr[query_chain] = repr_chain
-
-    return query_to_repr
+    return {
+        chain: repr_lookup.get(entry) for chain, entry in query_chain_entries.items()
+    }
 
 
 def add_chain_representatives(
     structure_cache: ClusteredDatasetStructureDataCache,
     query_chain_to_seq: dict[str, str],
-    repr_chain_to_seq: dict[str, str],
+    repr_entries: dict[str, SeqMoltype],
 ) -> None:
     """Add alignment representatives to the structure metadata cache.
 
@@ -503,21 +497,29 @@ def add_chain_representatives(
     in-place under a new "alignment_representative_id" key for each chain.
 
     Args:
-        cache:
+        structure_cache:
             The structure metadata cache to update.
         query_chain_to_seq:
-            Dictionary mapping query chain IDs to sequences.
-        repr_chain_to_seq:
-            Dictionary mapping representative chain IDs to sequences.
+            Dictionary mapping query chain IDs (``{pdb_id}_{chain_id}``) to sequences.
+        repr_entries:
+            Dictionary mapping representative IDs to SeqMoltype entries, as
+            returned by ``parse_representatives_fasta``.
     """
+    query_chain_entries: dict[str, SeqMoltype] = {}
+    for pdb_id, metadata in structure_cache.items():
+        for chain_id, chain_metadata in metadata.chains.items():
+            key = f"{pdb_id}_{chain_id}"
+            if key in query_chain_to_seq:
+                moltype = chain_metadata.molecule_type.name.lower()
+                query_chain_entries[key] = SeqMoltype(query_chain_to_seq[key], moltype)
+
     query_chains_to_repr_chains = map_chains_to_representatives(
-        query_chain_to_seq, repr_chain_to_seq
+        query_chain_entries, repr_entries
     )
 
     for pdb_id, metadata in structure_cache.items():
         for chain_id, chain_metadata in metadata.chains.items():
             repr_id = query_chains_to_repr_chains.get(f"{pdb_id}_{chain_id}")
-
             chain_metadata.alignment_representative_id = repr_id
 
 
@@ -612,8 +614,8 @@ def add_and_filter_alignment_representatives(
         The filtered cache, or the filtered cache and the unmatched entries if
         return_no_repr is True.
     """
-    repr_chain_to_seq = get_chain_id_to_seq_from_fasta(alignment_representatives_fasta)
-    add_chain_representatives(structure_cache, query_chain_to_seq, repr_chain_to_seq)
+    repr_entries = parse_representatives_fasta(alignment_representatives_fasta)
+    add_chain_representatives(structure_cache, query_chain_to_seq, repr_entries)
 
     if return_no_repr:
         structure_cache, unmatched_entries = filter_no_alignment_representative(
