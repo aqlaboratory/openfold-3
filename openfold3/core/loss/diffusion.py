@@ -203,7 +203,6 @@ def bond_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     )
 
     # Construct polymer-ligand per-token bond mask
-    # TODO: double check this
     # [*, N_token, N_token]
     is_polymer = batch["is_protein"] + batch["is_dna"] + batch["is_rna"]
     bond_mask = batch["token_bonds"] * (
@@ -259,29 +258,19 @@ def bond_loss_sparse(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
 
     def expand_sample_dim(t: torch.tensor) -> torch.tensor:
         """Expand a tensor's singleton sample dim to match batch_dims.
-
-        By the time bond_loss_sparse is called, all batch tensors already have
-        a singleton sample dim at position 1 (inserted by model.py:662 via
-        tensor_tree_map(lambda t: t.unsqueeze(1), batch)). This helper expands
-        that singleton to match the full sample count in batch_dims.
+        All batch tensors already have a singleton sample dim at position 1.
 
         Args:
-            t: Tensor of shape [bs, 1, *feat].
-               e.g. [bs, 1, N_atom, 3] for positions,
-                    [bs, 1, N_atom] for masks,
-                    [bs, 1, N_atom, N_atom] for pairwise masks.
+            t: Tensor of shape [bs, 1, *feat]
 
         Returns:
-            Tensor of shape [bs, N_sample, *feat].
-               e.g. [bs, N_sample, N_atom, 3] for positions,
-                    [bs, N_sample, N_atom] for masks.
+            Tensor of shape [bs, N_sample, *feat]
         """
         feat_dims = t.shape[2:]
         t = t.expand(*batch_dims, *((-1,) * len(feat_dims)))
         return t
 
     # Flatten all tensors to have a single batch dimension.
-    # All batch tensors already have [bs, 1, ...] from model.py:662.
     # expand_sample_dim tiles the singleton to N_sample, then flatten collapses.
     # x: [bs, N_sample, N_atom, 3] -> [bs*N_sample, N_atom, 3]
     x = flatten_batch_dims(x)
@@ -295,14 +284,14 @@ def bond_loss_sparse(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     )
 
     # Construct polymer-ligand per-token bond mask
-    # [bs, N_token, N_token]
+    # [bs, 1, N_token, N_token]
     is_polymer = batch["is_protein"] + batch["is_dna"] + batch["is_rna"]
     token_bond_mask = batch["token_bonds"] * (
         is_polymer[..., None, :] * batch["is_ligand"][..., None]
     )
 
     # Broadcast token-level bond mask to atom-level
-    # [bs, N_atom, N_atom]
+    # [bs, 1, N_atom, N_atom]
     atom_bond_mask = broadcast_token_feat_to_atoms(
         token_mask=batch["token_mask"],
         num_atoms_per_token=batch["num_atoms_per_token"],
@@ -315,24 +304,7 @@ def bond_loss_sparse(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
         token_feat=atom_bond_mask.transpose(-1, -2),
         token_dim=-2,
     )
-    atom_bond_mask = atom_bond_mask.transpose(-1, -2)  # [bs, 1, N_atom, N_atom]
-
-    # BUG FIX: The original code left atom_bond_mask as [bs, 1, N_atom, N_atom]
-    # (unflattened) and multiplied it with the already-flattened atom_mask_gt
-    # [bs*N_sample, N_atom]. For bs=1, this worked by accident because
-    # [1, 1, N, N] broadcasts with [N_sample, N, N] correctly. For bs>1,
-    # [bs, 1, N, N] broadcasts with [bs*N_sample, N, N] to the wrong shape
-    # [bs, bs*N_sample, N, N]. Fix: expand+flatten atom_bond_mask first.
-    #
-    # The original code then called flatten_batch_dims(mask) on the result,
-    # which was also incorrect — it double-flattened the mask, collapsing it
-    # from 3D to 2D when bs>1.
-    #
-    # Original (broken for bs>1):
-    #   mask = (
-    #       atom_bond_mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
-    #   ).bool()
-    #   mask = flatten_batch_dims(mask)
+    atom_bond_mask = atom_bond_mask.transpose(-1, -2)
 
     # atom_bond_mask: [bs, 1, N_atom, N_atom] -> [bs, N_sample, N_atom, N_atom]
     #                 -> [bs*N_sample, N_atom, N_atom]
