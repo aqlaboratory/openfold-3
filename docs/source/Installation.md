@@ -54,6 +54,7 @@ We provide the following environments:
 
 For more information, including rationale, tips and tricks, see [Modern Conda Environments with Pixi](./modern-conda-environments-with-pixi.md).
 
+(installation-environment-variables)=
 ### Environment variables
 
 > **Note:** This may need a revision given the pixi managed envs above (JD).

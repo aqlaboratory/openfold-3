@@ -142,7 +142,6 @@ class TestPredictionWriter:
     def test_full_confidence_scores_written(
         self, tmp_path, output_fmt, dummy_confidence_scores
     ):
-
         self.write_confidence_scores(
             tmp_path, output_fmt, True, dummy_confidence_scores
         )

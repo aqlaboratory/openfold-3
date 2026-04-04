@@ -130,7 +130,7 @@ msa_computation_settings:
   server_user_agent: openfold
   server_url: https://api.colabfold.com/
   save_mappings: true
-  msa_output_directory: <tmp-dir>/of3_colabfold_msas/ 
+  msa_output_directory: <tmp-dir>/of3-of-<user>/colabfold_msas/ 
   cleanup_msa_dir: true
 
 # TemplatePreprocessorSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py#L1459
@@ -152,11 +152,11 @@ template_preprocessor_settings:
   create_logs: false
   n_processes: 1
   chunksize: 1
-  structure_directory: <tmp-dir>/of3_template_data/template_structures
+  structure_directory: <tmp-dir>/of3-of-<user>/template_data/template_structures
   structure_file_format: cif
-  output_directory: <tmp-dir>/of3_template_data
+  output_directory: <tmp-dir>/of3-of-<user>/template_data
   precache_directory: null
   structure_array_directory: null
-  cache_directory: <tmp-dir>/of3_template_data/template_cache
+  cache_directory: <tmp-dir>/of3-of-<user>/template_data/template_cache
   log_directory: null
   ccd_file_path: null

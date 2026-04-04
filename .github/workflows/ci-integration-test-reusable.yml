@@ -1,0 +1,127 @@
+name: Reusable Docker Test for running heavy test loads
+
+on:
+  # Can only be called by another workflow, not directly by the user
+  workflow_call:
+    inputs:
+      build_mode:
+        description: 'Build mode: "lock" for reproducible builds, "yaml" for flexible dev builds'
+        required: true
+        type: string
+      cuda_base_image_tag:
+        description: 'CUDA base image tag (e.g., 12.2.2-cudnn8-devel-ubuntu22.04)'
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/openfold3-docker
+
+jobs:
+  start-aws-runner:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      mapping: ${{ steps.aws-start.outputs.mapping }}
+      instances: ${{ steps.aws-start.outputs.instances }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
+          aws-region: us-east-1
+      - name: Create cloud runner
+        id: aws-start
+        uses: omsf/start-aws-gha-runner@v1.1.1
+        with:
+          aws_image_id: ami-00839c71d8f6096b4  # Deep Learning Base AMI with Single CUDA (Ubuntu 22.04)
+          aws_instance_type: "g5.4xlarge" # A10G 64 GB 
+          aws_home_dir: /home/ubuntu
+          aws_root_device_size: 200
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+  test-openfold-docker:
+    runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
+    needs:
+      - start-aws-runner
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: test
+          push: true
+          build-args: |
+            CUDA_BASE_IMAGE_TAG=${{ inputs.cuda_base_image_tag }}
+            BUILD_MODE=${{ inputs.build_mode }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-${{ inputs.cuda_base_image_tag }}-${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-${{ inputs.cuda_base_image_tag }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-${{ inputs.cuda_base_image_tag }},mode=max
+      
+      - name: Create parameter cache directory
+        run: mkdir -p ~/.openfold3
+
+      - name: Cache download of parameters 
+        id: cache-openfold_parameters
+        uses: actions/cache@v4
+        with:
+          path: ~/.openfold3/
+          key: shared-params_of3
+          restore-keys: |
+            shared-params_of3
+    
+      - name: Install AWS CLI and Download OpenFold parameters
+        if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
+        run: |
+          echo "Cache miss: Downloading OpenFold parameters..."
+          aws s3 cp s3://openfold3-data/openfold3-parameters/of3-p2-155k.pt ~/.openfold3/ --no-sign-request
+      
+      - name: Run integration test
+        run: |
+          docker run --gpus all\
+            -v ${{ github.workspace }}:/opt/openfold3 \
+            -v ~/.openfold3:/root/.openfold3 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-${{ inputs.cuda_base_image_tag }}-${{ github.sha }} \
+            pytest -x openfold3/tests/ -m slow -vvv
+
+  stop-aws-runner:
+    runs-on: ubuntu-latest
+    permissions:
+        id-token: write
+        contents: read
+    needs:
+      - start-aws-runner
+      - test-openfold-docker
+    if: ${{ always() }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
+          aws-region: us-east-1
+      - name: Stop instances
+        uses: omsf/stop-aws-gha-runner@v1.0.0
+        with:
+          instance_mapping: ${{ needs.start-aws-runner.outputs.mapping }}
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
