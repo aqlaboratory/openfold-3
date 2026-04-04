@@ -37,13 +37,13 @@ def _make_module(c_z, c):
     return TriangleMultiplicationOutgoing(c_z, c)
 
 
-def test_shape(seeded_rng, ndarrays_regression):
+def test_shape(device, seeded_rng, ndarrays_regression):
     # c_z: pair representation channel dim (128 in production)
     c_z = consts.c_z
     # c: hidden projection dim (production uses ~128; smaller here for speed)
     c = 11
 
-    tm = _make_module(c_z, c)
+    tm = _make_module(c_z, c).to(device)
     # Reinitialize all params to non-trivial values (some layers may be
     # zero-initialized by default for residual identity at init)
     for p in tm.parameters():
@@ -54,9 +54,9 @@ def test_shape(seeded_rng, ndarrays_regression):
     batch_size = consts.batch_size
 
     # Pair representation: [batch, N_residues, N_residues, C_z]
-    x = torch.rand((batch_size, n_res, n_res, c_z))
+    x = torch.rand((batch_size, n_res, n_res, c_z), device=device)
     # Binary mask: which residue pairs are valid
-    mask = torch.randint(0, 2, size=(batch_size, n_res, n_res))
+    mask = torch.randint(0, 2, size=(batch_size, n_res, n_res), device=device)
     shape_before = x.shape
     with torch.no_grad():
         x = tm(x, mask)
@@ -71,8 +71,12 @@ def test_shape(seeded_rng, ndarrays_regression):
     )
 
     # Snapshot regression: output must be numerically identical across runs.
+    # CUDA tolerances are looser to accommodate hardware-level differences.
     # Regenerate with: pytest --force-regen
+    tolerances = (
+        dict(atol=1e-5, rtol=1e-4) if device == "cuda" else dict(atol=1e-6, rtol=1e-5)
+    )
     ndarrays_regression.check(
         {"output": x.cpu().numpy()},
-        default_tolerance=dict(atol=1e-6, rtol=1e-5),
+        default_tolerance=tolerances,
     )

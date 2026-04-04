@@ -23,7 +23,7 @@ from openfold3.tests.config import consts
 # biased by z[i, k]. False would transpose internally for the
 # "ending node" variant (columns attend to columns).
 @pytest.mark.parametrize("starting", [True, False])
-def test_shape(starting, seeded_rng, ndarrays_regression):
+def test_shape(starting, device, seeded_rng, ndarrays_regression):
     # c_z: pair representation channel dim (128 in production)
     c_z = consts.c_z
     # c: attention hidden dim (production uses 32; smaller here for speed)
@@ -35,7 +35,7 @@ def test_shape(starting, seeded_rng, ndarrays_regression):
         c,
         no_heads,
         starting=starting,
-    )
+    ).to(device)
     # AlphaFold initializes the output projection to zero (so residual blocks
     # start as identity). Reinitialize all params so the test exercises the
     # actual computation and produces non-trivial output.
@@ -47,7 +47,7 @@ def test_shape(starting, seeded_rng, ndarrays_regression):
     n_res = consts.n_res
 
     # Pair representation: [batch, N_residues, N_residues, C_z]
-    x = torch.rand((batch_size, n_res, n_res, c_z))
+    x = torch.rand((batch_size, n_res, n_res, c_z), device=device)
     shape_before = x.shape
     # chunk_size=None -> no memory-saving chunking, full attention in one pass
     with torch.no_grad():
@@ -63,8 +63,12 @@ def test_shape(starting, seeded_rng, ndarrays_regression):
     )
 
     # Snapshot regression: output must be numerically identical across runs.
+    # CUDA tolerances are looser to accommodate hardware-level differences.
     # Regenerate with: pytest --force-regen
+    tolerances = (
+        dict(atol=1e-5, rtol=1e-4) if device == "cuda" else dict(atol=1e-6, rtol=1e-5)
+    )
     ndarrays_regression.check(
         {"output": x.cpu().numpy()},
-        default_tolerance=dict(atol=1e-6, rtol=1e-5),
+        default_tolerance=tolerances,
     )
