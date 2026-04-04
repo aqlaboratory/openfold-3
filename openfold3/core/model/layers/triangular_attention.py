@@ -103,6 +103,7 @@ class TriangleAttention(nn.Module):
         self,
         x: torch.Tensor,
         mask: torch.Tensor | None = None,
+        transpose_bias: bool = False,
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
@@ -113,6 +114,30 @@ class TriangleAttention(nn.Module):
         Args:
             x:
                 [*, I, J, C_in] input tensor (e.g. the pair representation)
+            mask:
+                [*, N_token, N_token] Pair mask
+            transpose_bias:
+                Whether to transpose the pairwise bias, which would otherwise match the
+                input tensor. In practice this is used for Triangle Attention from the
+                end node, where the input is transposed prior to calling this function.
+                The bias would retain the ordering of the original un-transposed
+                input tensor.
+            chunk_size:
+                Inference-time subbatch size. Acts as a minimum if
+                self.tune_chunk_size is True
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed memory efficient kernel.
+                Mutually exclusive with use_lma.
+            use_cueq_triangle_kernels:
+                Whether to use cuEquivariance triangle multiplicative
+                update kernel and attention kernel. When both this and
+                use_deepspeed_evo_attention are True, the cuEquivariance
+                kernel is only used for triangle attention
+            use_lma:
+                Whether to use low-memory attention during inference.
+                Mutually exclusive with use_deepspeed_evo_attention.
+            inplace_safe:
+                Whether inplace operations can be performed
         Returns:
             [*, I, J, C_in] output tensor
         """
@@ -134,7 +159,10 @@ class TriangleAttention(nn.Module):
         mask_bias = (self.inf * (mask - 1))[..., :, None, None, :]
 
         # [*, H, I, J]
-        triangle_bias = permute_final_dims(self.linear_z(x), (2, 0, 1))
+        if transpose_bias:
+            triangle_bias = permute_final_dims(self.linear_z(x), (2, 1, 0))
+        else:
+            triangle_bias = permute_final_dims(self.linear_z(x), (2, 0, 1))
 
         # [*, 1, H, I, J]
         triangle_bias = triangle_bias.unsqueeze(-4)

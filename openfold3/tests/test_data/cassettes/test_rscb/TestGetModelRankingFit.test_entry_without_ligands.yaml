@@ -1,0 +1,46 @@
+interactions:
+- request:
+    body: '{"query": "\nquery GetRankingFit($pdb_id: String!) {\n    entry(entry_id:
+      $pdb_id) {\n        nonpolymer_entities {\n            nonpolymer_entity_instances
+      {\n                rcsb_id\n                rcsb_nonpolymer_instance_validation_score
+      {\n                    ranking_model_fit\n                }\n            }\n        }\n    }\n}\n",
+      "variables": {"pdb_id": "1rnb"}}'
+    headers:
+      Accept:
+      - '*/*'
+      Accept-Encoding:
+      - gzip, deflate, br, zstd
+      Connection:
+      - keep-alive
+      Content-Length:
+      - '375'
+      Content-Type:
+      - application/json
+      User-Agent:
+      - python-requests/2.32.5
+    method: POST
+    uri: https://data.rcsb.org/graphql
+  response:
+    body:
+      string: '{"data":{"entry":{"nonpolymer_entities":[{"nonpolymer_entity_instances":[{"rcsb_id":"1RNB.C","rcsb_nonpolymer_instance_validation_score":[{"ranking_model_fit":null}]}]}]}}}'
+    headers:
+      access-control-allow-headers:
+      - X-Requested-With,Content-Type,Authorization,rcsb-analytics-traffic-origin,rcsb-analytics-traffic-stage
+      access-control-allow-methods:
+      - GET, OPTIONS, HEAD, PUT, POST
+      access-control-allow-origin:
+      - '*'
+      alt-svc:
+      - h3=":443";ma=60;
+      content-length:
+      - '172'
+      content-type:
+      - application/json;charset=UTF-8
+      date:
+      - Wed, 25 Mar 2026 12:23:16 GMT
+      strict-transport-security:
+      - max-age=16000000; includeSubDomains; preload;
+    status:
+      code: 200
+      message: OK
+version: 1

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests to check handling of colabofold MSA data."""
+"""Tests for the ColabFold MSA server module."""
 
 import json
 import textwrap
@@ -34,6 +34,7 @@ from openfold3.core.data.tools.colabfold_msa_server import (
     collect_colabfold_msa_data,
     get_sequence_hash,
     preprocess_colabfold_msas,
+    remap_colabfold_template_chain_ids,
 )
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
@@ -43,6 +44,52 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
+
+_MOCK_FETCH_TARGET = (
+    "openfold3.core.data.tools.colabfold_msa_server.fetch_label_to_author_chain_ids"
+)
+_MOCK_QUERY_TARGET = (
+    "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server"
+)
+
+# Realistic label->author mappings for test PDB entries.
+# 1RNB: label B -> author A (protein), label A -> author C (DNA)
+# 4PQX: identity mapping
+_MOCK_LABEL_TO_AUTHOR = {
+    "1rnb": {"A": "C", "B": "A"},
+    "4pqx": {"A": "A"},
+    "test": {"A": "A", "B": "B", "C": "C"},
+}
+
+
+def _mock_fetch_label_to_author(pdb_ids):
+    """Return mock label->author mappings for known test PDB IDs."""
+    return {pid: _MOCK_LABEL_TO_AUTHOR.get(pid, {}) for pid in pdb_ids}
+
+
+def _make_m8_dataframe(template_ids: list[str], m_index: int = 101) -> pd.DataFrame:
+    """Build a minimal m8-format DataFrame for testing.
+
+    See docs/source/template_how_to.md § 1.1.3 for the m8 column spec.
+    """
+    n = len(template_ids)
+    return pd.DataFrame(
+        {
+            0: [m_index] * n,
+            1: template_ids,
+            2: [0.98] * n,
+            3: [100] * n,
+            4: [1] * n,
+            5: [0] * n,
+            6: [1] * n,
+            7: [100] * n,
+            8: [1] * n,
+            9: [100] * n,
+            10: [1e-10] * n,
+            11: [100] * n,
+            12: ["100M"] * n,
+        }
+    )
 
 
 @pytest.fixture
@@ -92,6 +139,47 @@ class TestColabfoldMapping:
         order1 = ["AAAA", "BBBB"]
         order2 = ["BBBB", "AAAA"]
         assert ComplexGroup(order1).rep_id == ComplexGroup(order2).rep_id
+
+
+class TestRemapColabfoldTemplateChainIds:
+    """Tests for remap_colabfold_template_chain_ids (RCSB calls mocked)."""
+
+    @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
+    def test_remap_author_to_label(self, _mock_fetch):
+        """1rnb_A (author) should be remapped to 1rnb_B (label)."""
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=_make_m8_dataframe(["1rnb_A", "4pqx_A"]),
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        assert "rep1" in result
+        remapped_ids = result["rep1"][1].tolist()
+        assert remapped_ids[0] == "1rnb_B"
+        assert remapped_ids[1] == "4pqx_A"
+
+    @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
+    def test_unknown_author_chain_raises(self, _mock_fetch):
+        """When the author chain ID isn't in the API response, raise."""
+        with pytest.raises(RuntimeError, match="Author chain Z not found in 1rnb"):
+            remap_colabfold_template_chain_ids(
+                template_alignments=_make_m8_dataframe(["1rnb_Z"]),
+                m_with_templates={101},
+                rep_ids=["rep1"],
+                rep_id_to_m={"rep1": 101},
+            )
+
+    def test_skips_rep_without_templates(self):
+        """Rep IDs not in m_with_templates should be skipped (no fetch needed)."""
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=_make_m8_dataframe(["1rnb_A"]),
+            m_with_templates={999},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        assert len(result) == 0
 
 
 class TestColabFoldQueryRunner:
@@ -145,10 +233,12 @@ class TestColabFoldQueryRunner:
         # Create an empty file (0 bytes)
         (raw_main_dir / "pdb70.m8").touch()
 
-    @patch("openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server")
+    @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
+    @patch(_MOCK_QUERY_TARGET)
     def test_runner_on_multimer_example(
         self,
         mock_query,
+        _mock_chain_map,
         tmp_path,
         multimer_query_set,
         multimer_sequences,
@@ -180,16 +270,15 @@ class TestColabFoldQueryRunner:
             assert (expected_unpaired_dir / f).exists()
             assert (expected_paired_dir / f).exists()
 
-    @patch(
-        "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server",
-        side_effect=_construct_dummy_a3m,
-    )
+    @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
+    @patch(_MOCK_QUERY_TARGET, side_effect=_construct_dummy_a3m)
     @pytest.mark.parametrize(
         "msa_file_format", ["a3m", "npz"], ids=lambda fmt: f"format={fmt}"
     )
     def test_msa_generation_on_multiple_queries_with_same_name(
         self,
         mock_query,
+        _mock_chain_map,
         tmp_path,
         msa_file_format,
     ):
@@ -259,16 +348,15 @@ class TestColabFoldQueryRunner:
             f"Unexpected MSA path in augmented query set: {paths_in_augmented[0]}"
         )
 
-    @patch(
-        "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server",
-        side_effect=_construct_dummy_a3m,
-    )
+    @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
+    @patch(_MOCK_QUERY_TARGET, side_effect=_construct_dummy_a3m)
     @pytest.mark.parametrize(
         "msa_file_format", ["a3m", "npz"], ids=lambda fmt: f"{fmt}"
     )
     def test_features_on_multiple_queries_with_same_name(
         self,
         mock_query,
+        _mock_chain_map,
         tmp_path,
         msa_file_format,
     ):
@@ -325,10 +413,7 @@ class TestColabFoldQueryRunner:
                 "Expected all test sequences to be present in the mapping file"
             )
 
-    @patch(
-        "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server",
-        side_effect=_construct_dummy_a3m,
-    )
+    @patch(_MOCK_QUERY_TARGET, side_effect=_construct_dummy_a3m)
     def test_empty_m8_file_handling(
         self,
         mock_query,
@@ -404,7 +489,7 @@ class TestMsaComputationSettings:
     def test_cli_output_dir_overrides_config(self, tmp_path):
         """Test that CLI output directory overrides config file setting."""
         test_yaml_str = textwrap.dedent("""\
-            msa_file_format: a3m 
+            msa_file_format: a3m
             server_user_agent: test-agent
             server_url: https://dummy.url
         """)
@@ -423,7 +508,7 @@ class TestMsaComputationSettings:
     def test_cli_output_dir_conflict_raises(self, tmp_path):
         """Test that conflict between CLI and config output dirs raises ValueError."""
         test_yaml_str = textwrap.dedent(f"""\
-            msa_file_format: a3m 
+            msa_file_format: a3m
             msa_output_directory: {tmp_path / "other_dir"}
         """)
         test_yaml_file = tmp_path / "runner.yml"

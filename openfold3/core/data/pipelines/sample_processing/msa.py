@@ -14,6 +14,7 @@
 
 """This module contains SampleProcessingPipelines for MSA features."""
 
+import logging
 from collections.abc import Sequence
 from functools import partial
 
@@ -51,6 +52,8 @@ from openfold3.core.data.primitives.sequence.msa import (
     sort_subsample_paired_row_ids,
 )
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
+
+logger = logging.getLogger(__name__)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-msa-proc-create-query")
@@ -277,6 +280,15 @@ def create_main(
     for rep_id, chain_data in msa_array_collection.rep_id_to_main_msa.items():
         chain_data = msa_array_collection.rep_id_to_main_msa[rep_id]
 
+        # Check for unread MSAs, excluding paired ones
+        dropped = [k for k in chain_data if k not in aln_order and k != "uniprot_hits"]
+        if dropped:
+            logger.warning(
+                "MSA keys %s dropped for rep_id '%s' (not in aln_order)",
+                dropped,
+                rep_id,
+            )
+
         # Get MSAs forming the main MSA and deletion matrices from all non-UniProt MSAs
         main_msa_redundant = np.concatenate(
             [chain_data[aln].msa for aln in aln_order if aln in chain_data],
@@ -360,13 +372,16 @@ def create_main(
             # No main MSA or limit exhausted
             if n_rows_main_msa == 0 or n_rows_main_msa_lim == 0:
                 idx = np.empty((0,), dtype=int)
-            # Subsample otherwise
+            # Otherwise subsample from full effective depth, then truncate to budget
             else:
-                k = np.random.randint(1, min(n_rows_main_msa, n_rows_main_msa_lim) + 1)
+                k = np.random.randint(1, n_rows_main_msa + 1)
                 idx = np.random.choice(n_rows_main_msa, size=k, replace=False)
 
             if keep_subsampled_order:
                 idx.sort()
+
+            # Truncate to budget
+            idx = idx[:n_rows_main_msa_lim]
         else:
             # Keep up to the limit
             idx = np.arange(min(n_rows_main_msa, n_rows_main_msa_lim))

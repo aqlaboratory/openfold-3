@@ -73,6 +73,7 @@ test = [
   "pytest-cov",
   "pytest-benchmark",
   "debugpy",
+  "pytest-recording",
 ]
 
 [project.optional-dependencies]
