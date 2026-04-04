@@ -847,6 +847,9 @@ def set_nan_fallback_conformer_flag(
 
         model_pdb_id = metadata.fallback_conformer_pdb_id
 
+        if model_pdb_id is not None:
+            model_pdb_id = model_pdb_id.lower()
+
         if model_pdb_id is None:
             # Conservatively force NaN if PDB-ID of deposited coords unknown
             logger.warning(
