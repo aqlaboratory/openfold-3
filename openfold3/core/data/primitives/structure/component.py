@@ -155,8 +155,8 @@ def get_component_info(atom_array: AtomArray) -> PDBComponentInfo:
             AtomArray containing the structure to extract components from.
 
     Returns:
-        A PDBComponents named tuple containing categorized components of the PDB
-        structure. See PDBComponents for more information.
+        A PDBComponentInfo named tuple containing categorized components of the PDB
+        structure. See PDBComponentInfo for more information.
     """
     residue_components = set()
     standard_ligands_to_chain = defaultdict(list)
