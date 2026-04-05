@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -124,6 +125,7 @@ class PairformerEmbedding(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         offload_inference: bool = False,
@@ -155,6 +157,7 @@ class PairformerEmbedding(nn.Module):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -183,6 +186,7 @@ class PairformerEmbedding(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -209,7 +213,11 @@ class PairformerEmbedding(nn.Module):
         # in the DS kernel. To avoid this, chunk tuning is disabled in this case.
         # TODO: cuEq seems to fail comparison unit tests with the same settings,
         #  disable for now and verify behavior
-        use_kernels = use_deepspeed_evo_attention or use_cueq_triangle_kernels
+        use_kernels = (
+            use_deepspeed_evo_attention
+            or use_cueq_triangle_kernels
+            or use_triton_triangle_kernels
+        )
         if use_kernels and si.shape[0] > 1:
             chunk_size = None
 
@@ -221,6 +229,7 @@ class PairformerEmbedding(nn.Module):
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
@@ -242,6 +251,7 @@ class PairformerEmbedding(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         offload_inference: bool = False,
@@ -303,6 +313,7 @@ class PairformerEmbedding(nn.Module):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 offload_inference=offload_inference,
@@ -319,6 +330,7 @@ class PairformerEmbedding(nn.Module):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,

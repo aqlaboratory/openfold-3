@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -97,6 +98,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         offload_inference: bool = False,
@@ -127,6 +129,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_cueq_triangle_kernels:
                 Whether to use cuEq triangle attention kernel.
                 Mutually exclusive with use_lma
+            use_triton_triangle_kernels:
+                Whether to use Triton triangle attention kernel.
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
@@ -203,6 +207,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             offload_inference=offload_inference,

@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -122,6 +123,7 @@ class DiffusionTransformerBlock(nn.Module):
         mask: torch.Tensor | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -138,6 +140,8 @@ class DiffusionTransformerBlock(nn.Module):
                 [*, N] Mask for token-level embedding
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
+            use_triton_triangle_kernels:
+                Whether to use Triton triangle attention kernel
             use_lma:
                 Whether to use LMA
             use_high_precision_attention:
@@ -155,6 +159,7 @@ class DiffusionTransformerBlock(nn.Module):
                 mask=mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
             )
@@ -273,6 +278,7 @@ class DiffusionTransformer(nn.Module):
         mask: torch.Tensor | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -291,6 +297,8 @@ class DiffusionTransformer(nn.Module):
                 Whether to use DeepSpeed Evo Attention kernel
             use_cueq_triangle_kernels:
                 Whether to use cuEq triangle kernels
+            use_triton_triangle_kernels:
+                Whether to use Triton triangle attention kernel
             use_lma:
                 Whether to use LMA
             use_high_precision_attention:
@@ -310,6 +318,7 @@ class DiffusionTransformer(nn.Module):
                 mask=mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,

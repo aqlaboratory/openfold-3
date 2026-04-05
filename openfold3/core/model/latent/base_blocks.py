@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -206,6 +207,7 @@ class MSABlock(nn.Module, ABC):
         transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -310,6 +312,7 @@ class PairBlock(nn.Module):
         pair_mask: torch.Tensor,
         inplace_safe: bool,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
     ) -> torch.Tensor:
         """Perform the outgoing and incoming triangular multiplicative updates."""
         inplace_safe = inplace_safe and (not use_cueq_triangle_kernels)
@@ -325,6 +328,7 @@ class PairBlock(nn.Module):
             inplace_safe=inplace_safe,
             _add_with_inplace=True,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
         )
         if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)
@@ -342,6 +346,7 @@ class PairBlock(nn.Module):
             inplace_safe=inplace_safe,
             _add_with_inplace=True,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
         )
         if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)
@@ -357,8 +362,9 @@ class PairBlock(nn.Module):
         pair_mask: torch.Tensor,
         use_deepspeed_evo_attention: bool,
         use_cueq_triangle_kernels: bool,
-        use_lma: bool,
-        inplace_safe: bool,
+        use_triton_triangle_kernels: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
     ) -> torch.Tensor:
         """Perform the starting and ending triangular attention layers."""
         z = add(
@@ -370,6 +376,7 @@ class PairBlock(nn.Module):
                     chunk_size=_attn_chunk_size,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                    use_triton_triangle_kernels=use_triton_triangle_kernels,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                 )
@@ -392,6 +399,7 @@ class PairBlock(nn.Module):
                     chunk_size=_attn_chunk_size,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                    use_triton_triangle_kernels=use_triton_triangle_kernels,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                 )
@@ -412,6 +420,7 @@ class PairBlock(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -455,6 +464,7 @@ class PairBlock(nn.Module):
             pair_mask=pair_mask,
             inplace_safe=inplace_safe,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
         )
 
         z = self.tri_att_start_end(
@@ -463,6 +473,7 @@ class PairBlock(nn.Module):
             pair_mask=pair_mask,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
         )

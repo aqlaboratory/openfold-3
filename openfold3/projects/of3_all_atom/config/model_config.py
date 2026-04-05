@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,10 +14,14 @@
 # limitations under the License.
 
 import ml_collections as mlc
+import torch
 
 from openfold3.projects.of3_all_atom.config import (
     linear_init_config as lin_init,
 )
+
+# Detect AMD/ROCm hardware. On ROCm, use Triton kernels; on CUDA, use DeepSpeed.
+_is_rocm = torch.version.hip is not None
 
 # Hidden dimensions
 c_s = mlc.FieldReference(384, field_type=int)
@@ -94,6 +99,9 @@ model_config = mlc.ConfigDict(
                     # exclusive with use_lma.
                     "use_deepspeed_evo_attention": False,
                     "use_cueq_triangle_kernels": False,
+                    # Use Triton-based memory-efficient attention kernel. Mutually
+                    # exclusive with use_deepspeed_evo_attention and use_lma.
+                    "use_triton_triangle_kernels": False,
                     # Use Staats & Rabe's low-memory attention algorithm. Mutually
                     # exclusive with use_deepspeed_evo_attention.
                     "use_lma": False,
@@ -104,8 +112,9 @@ model_config = mlc.ConfigDict(
                 },
                 "eval": {
                     "chunk_size": None,
-                    "use_deepspeed_evo_attention": True,
+                    "use_deepspeed_evo_attention": not _is_rocm,
                     "use_cueq_triangle_kernels": False,
+                    "use_triton_triangle_kernels": _is_rocm,
                     "use_lma": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,

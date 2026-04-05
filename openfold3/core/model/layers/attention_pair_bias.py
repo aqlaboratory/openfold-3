@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -172,6 +173,7 @@ class AttentionPairBias(nn.Module):
         mask: torch.Tensor | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
@@ -188,6 +190,8 @@ class AttentionPairBias(nn.Module):
                 [*, N] Mask for token or atom-level embedding
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
+            use_triton_triangle_kernels:
+                Whether to use Triton triangle attention kernel
             use_lma:
                 Whether to use LMA
             use_high_precision_attention:
@@ -204,7 +208,9 @@ class AttentionPairBias(nn.Module):
         #  Current reshape function only expects missing batch dim
         batch_dims = a.shape[:-2]
         reshape_for_ds_kernel = (
-            use_deepspeed_evo_attention or use_cueq_triangle_kernels
+            use_deepspeed_evo_attention
+            or use_cueq_triangle_kernels
+            or use_triton_triangle_kernels
         ) and len(batch_dims) == 1
         if reshape_for_ds_kernel:
             a = a.unsqueeze(1)
@@ -216,6 +222,7 @@ class AttentionPairBias(nn.Module):
             biases=biases,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             use_high_precision=use_high_precision_attention,
         )
@@ -375,6 +382,7 @@ class CrossAttentionPairBias(nn.Module):
         mask: torch.Tensor | None = None,
         use_high_precision_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -419,6 +427,7 @@ class CrossAttentionPairBias(nn.Module):
             biases=biases,
             use_high_precision=use_high_precision_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
         )
 
         # Convert back to unpadded and flattened atom representation

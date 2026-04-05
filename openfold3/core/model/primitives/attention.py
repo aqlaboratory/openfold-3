@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
 #
@@ -47,6 +48,13 @@ if deepspeed_is_installed:
 if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
+try:
+    from openfold3.core.kernels.triton.evoformer import TritonEvoformer
+except ImportError:
+    TritonEvoformer = None
+
+TRITON_AVAILABLE = TritonEvoformer is not None
+
 cueq_is_installed = is_cuequivariance_available()
 if cueq_is_installed:
     from cuequivariance_ops_torch.triangle_attention import (
@@ -70,6 +78,28 @@ if cueq_is_installed:
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
+
+# Cache of all-zero pair-bias tensors used when the Triton kernel requires a pair_bias
+# argument but the caller has none (e.g. MSA column attention). Keyed by
+# (device_str, dtype, B, H, L) so tensors are never reused across incompatible shapes.
+_ZERO_PAIR_BIAS_CACHE: dict = {}
+
+
+def _get_zero_pair_bias(
+    device: torch.device, dtype: torch.dtype, B: int, H: int, L: int
+) -> torch.Tensor:
+    """Return a cached [B, 1, H, L, L] zero tensor, allocating only on first call"""
+    key = (str(device), dtype, int(B), int(H), int(L))
+    t = _ZERO_PAIR_BIAS_CACHE.get(key)
+    if t is None or t.shape != (B, 1, H, L, L):
+        t = torch.zeros((B, 1, H, L, L), device=device, dtype=dtype)
+        _ZERO_PAIR_BIAS_CACHE[key] = t
+    return t
+
+
+def clear_zero_pair_bias_cache():
+    """Clear the cached zero pair-bias tensors."""
+    _ZERO_PAIR_BIAS_CACHE.clear()
 
 
 @torch.jit.ignore
@@ -309,6 +339,7 @@ class Attention(nn.Module):
         biases: list[torch.Tensor] | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
@@ -329,6 +360,9 @@ class Attention(nn.Module):
             use_cueq_triangle_kernels:
                 whether to use cuequivariance triangle kernels. Mutually
                 exclusive with use_lma
+            use_triton_triangle_kernels:
+                Whether to use Triton-based memory-efficient attention kernel.
+                Mutually exclusive with other kernel options.
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
                 none of the "use_<...>" flags are True, a stock PyTorch
@@ -364,8 +398,13 @@ class Attention(nn.Module):
         if use_deepspeed_evo_attention and q_x.shape[-2] <= 16:
             use_deepspeed_evo_attention = False
 
+        if use_triton_triangle_kernels and q_x.shape[-2] <= 16:
+            use_triton_triangle_kernels = False
+
         attn_options = [
-            use_deepspeed_evo_attention or use_cueq_triangle_kernels,
+            use_deepspeed_evo_attention
+            or use_cueq_triangle_kernels
+            or use_triton_triangle_kernels,
             use_lma,
             use_high_precision,
         ]
@@ -375,11 +414,15 @@ class Attention(nn.Module):
         if biases is None:
             biases = []
 
-        # DeepSpeed attention kernel and cuequivariance kernel apply scaling internally
+        # DeepSpeed, cuequivariance, and Triton kernels apply scaling internally
         q, k, v = self._prep_qkv(
             q_x,
             kv_x,
-            apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels),
+            apply_scale=not (
+                use_deepspeed_evo_attention
+                or use_cueq_triangle_kernels
+                or use_triton_triangle_kernels
+            ),
         )
 
         # cuequivariance kernel takes precedence over use_deepspeed_evo_attention
@@ -398,6 +441,15 @@ class Attention(nn.Module):
                     "provide up to two bias terms"
                 )
             o = _deepspeed_evo_attn(q, k, v, biases)
+        elif use_triton_triangle_kernels:
+            if not TRITON_AVAILABLE or TritonEvoformer is None:
+                raise RuntimeError(
+                    "Triton kernels requested (use_triton_triangle_kernels=True) "
+                    "but openfold3.core.kernels.triton is not available. "
+                    "Ensure the package is installed with Triton support."
+                )
+            o = _triton_evo_attn(q, k, v, biases)
+
         elif use_lma:
             biases = [
                 b.expand(b.shape[:-2] + (q_x.shape[-2],) + (kv_x.shape[-2],))
@@ -558,6 +610,73 @@ def _deepspeed_evo_attn(
     # Convert back to original shape and dtype
     o = o.reshape(orig_shape).to(dtype=orig_dtype)
 
+    return o
+
+
+@torch.compiler.disable
+def _triton_evo_attn(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    biases: list[torch.Tensor],
+):
+    """
+    Compute attention using the Triton EvoformerAttention kernel.
+
+    Args:
+        q:
+            [*, H, Q, C_hidden] query data
+        k:
+            [*, H, K, C_hidden] key data
+        v:
+            [*, H, V, C_hidden] value data
+        biases:
+            List of biases that broadcast to [*, H, Q, K]
+    """
+
+    def reshape_dims(x):
+        no_batch_dims = len(x.shape[:-3])
+        if no_batch_dims < 2:
+            return x.reshape(*((1,) * (2 - no_batch_dims) + x.shape))
+        if no_batch_dims > 2:
+            return x.reshape(*((x.shape[0], -1) + x.shape[-3:]))
+        return x
+
+    # [*, Q/K, H, C_hidden]
+    q = q.transpose(-2, -3)
+    k = k.transpose(-2, -3)
+    v = v.transpose(-2, -3)
+
+    # Reshape to [B, N_seq, N_res, H, C_hidden] as required by the kernel.
+    orig_shape = q.shape
+    if len(orig_shape[:-3]) != 2:
+        q = reshape_dims(q)
+        k = reshape_dims(k)
+        v = reshape_dims(v)
+        biases = [reshape_dims(b) for b in biases]
+
+    # When there is no pair bias (e.g. MSA column attention), pass a zero tensor
+    # and set HAS_PAIR_BIAS=False so the kernel skips all pair_bias loads.
+    has_pair_bias = len(biases) == 2
+    if not has_pair_bias:
+        Batch, N_seq, N_res, Head, Dim = q.shape
+        biases.append(_get_zero_pair_bias(q.device, q.dtype, Batch, Head, N_res))
+
+    # Kernel requires fp16 or bf16; cast if needed.
+    orig_dtype = q.dtype
+    if orig_dtype not in [torch.bfloat16, torch.float16]:
+        o = TritonEvoformer(
+            q.to(dtype=torch.bfloat16),
+            k.to(dtype=torch.bfloat16),
+            v.to(dtype=torch.bfloat16),
+            biases[0].to(dtype=torch.bfloat16),
+            biases[1].to(dtype=torch.bfloat16),
+            has_pair_bias,
+        ).to(dtype=orig_dtype)
+    else:
+        o = TritonEvoformer(q, k, v, biases[0], biases[1], has_pair_bias)
+
+    o = o.reshape(orig_shape)
     return o
 
 

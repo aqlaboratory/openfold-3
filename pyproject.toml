@@ -91,6 +91,12 @@ cuequivariance = [
   "cuequivariance-torch>=0.6.1",
   "torch>=2.7",
 ]
+rocm = [
+  # Enables the ROCm-compatible Triton kernels bundled in openfold3
+  # ROCm Triton is bundled with the ROCm PyTorch wheels — install torch first:
+  #   pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
+  #   pip install openfold3[rocm]
+]
 
 [tool.setuptools]
 include-package-data = true

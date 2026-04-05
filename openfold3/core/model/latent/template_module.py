@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
 #
@@ -116,10 +117,11 @@ class TemplatePairBlock(PairBlock):
         chunk_size: int | None,
         use_deepspeed_evo_attention: bool,
         use_cueq_triangle_kernels: bool,
-        use_lma: bool,
-        inplace_safe: bool,
-        _mask_trans: bool,
-        _attn_chunk_size: int | None,
+        use_triton_triangle_kernels: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        _mask_trans: bool = True,
+        _attn_chunk_size: int | None = None,
     ):
         """
         Helper function to process exactly one template slice.
@@ -128,11 +130,17 @@ class TemplatePairBlock(PairBlock):
         # t: [1, N, N, C]
         if self.tri_mul_first:
             t = self.tri_att_start_end(
-                z=self.tri_mul_out_in(z=t, pair_mask=mask, inplace_safe=inplace_safe),
+                z=self.tri_mul_out_in(
+                    z=t,
+                    pair_mask=mask,
+                    inplace_safe=inplace_safe,
+                    use_triton_triangle_kernels=use_triton_triangle_kernels,
+                ),
                 _attn_chunk_size=_attn_chunk_size,
                 pair_mask=mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
             )
@@ -144,11 +152,13 @@ class TemplatePairBlock(PairBlock):
                     pair_mask=mask,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                    use_triton_triangle_kernels=use_triton_triangle_kernels,
                     use_lma=use_lma,
                     inplace_safe=inplace_safe,
                 ),
                 pair_mask=mask,
                 inplace_safe=inplace_safe,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
             )
 
         t = add(
@@ -170,6 +180,7 @@ class TemplatePairBlock(PairBlock):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -186,6 +197,8 @@ class TemplatePairBlock(PairBlock):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma.
+            use_triton_triangle_kernels:
+                Whether to use Triton triangle attention kernel.
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
@@ -212,6 +225,7 @@ class TemplatePairBlock(PairBlock):
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
@@ -350,6 +364,7 @@ class TemplatePairStack(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -361,6 +376,7 @@ class TemplatePairStack(nn.Module):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -404,6 +420,7 @@ class TemplatePairStack(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -419,6 +436,8 @@ class TemplatePairStack(nn.Module):
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
                 Mutually exclusive with use_lma.
+            use_triton_triangle_kernels:
+                Whether to use Triton triangle attention kernel.
             use_lma:
                 Whether to use low-memory attention during inference.
                 Mutually exclusive with use_deepspeed_evo_attention.
@@ -441,6 +460,7 @@ class TemplatePairStack(nn.Module):
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
@@ -491,6 +511,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         _mask_trans: bool = True,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
     ) -> torch.Tensor:
@@ -534,6 +555,7 @@ class TemplateEmbedderAllAtom(nn.Module):
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
