@@ -442,6 +442,7 @@ class DataModule(pl.LightningDataModule):
             prefetch_factor = self.prefetch_factor
 
         persistent_workers = self.persistent_workers and num_workers > 0
+        prefetch_factor = prefetch_factor if num_workers > 0 else None
         multiprocessing_context = (
             self.multiprocessing_context if num_workers > 0 else None
         )
