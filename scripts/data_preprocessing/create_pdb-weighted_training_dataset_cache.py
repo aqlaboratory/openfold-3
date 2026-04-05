@@ -168,6 +168,10 @@ def main(
         file_handler = logging.FileHandler(log_file, mode="w")
         logger.addHandler(file_handler)
 
+    # Default max_conformer_release_date to max_release_date
+    if max_conformer_release_date is None and parsed_max_release_date is not None:
+        max_conformer_release_date = max_release_date
+
     filter_dict = {
         "max_release_date": parsed_max_release_date,
         "max_resolution": max_resolution,
