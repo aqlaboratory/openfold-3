@@ -104,12 +104,13 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     ),
 )
 @click.option(
-    "--missing-alignment-log",
-    type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
+    "--alignment-log-dir",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
     default=None,
     help=(
-        "If this is specified, writes all entries without an alignment representative "
-        "to the specified log file."
+        "If specified, write alignment diagnostic logs to this directory: "
+        "missing_alignment_repr.json (unmatched chains) and "
+        "fuzzy_alignment_matches.json (chains matched via fuzzy RNA matching)."
     ),
 )
 @click.option(
@@ -175,7 +176,7 @@ def main(
     max_resolution: float = 4.5,
     max_polymer_chains: int = 1000,
     allow_missing_alignment: bool = False,
-    missing_alignment_log: Path | None = None,
+    alignment_log_dir: Path | None = None,
     max_tokens_initial: int = 2560,
     max_tokens_final: int = 2048,
     ranking_fit_threshold: float = 0.5,
@@ -219,9 +220,9 @@ def main(
             If True, allow entries where not every RNA and protein sequence matches to
             an alignment representative in the alignment_representatives_fasta.
             Otherwise skip these entries.
-        missing_alignment_log (Path | None):
-            If not None, write all entries with missing alignment representatives to an
-            additional log file.
+        alignment_log_dir (Path | None):
+            If not None, write alignment diagnostic logs (missing representatives
+            and fuzzy matches) to this directory.
         log_level (Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL]):
             Set the logging level.
         log_file (Path | None):
@@ -253,7 +254,7 @@ def main(
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
         filter_missing_alignment=not allow_missing_alignment,
-        missing_alignment_log=missing_alignment_log,
+        alignment_log_dir=alignment_log_dir,
         max_tokens_initial=max_tokens_initial,
         max_tokens_final=max_tokens_final,
         ranking_fit_threshold=ranking_fit_threshold,

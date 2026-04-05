@@ -91,12 +91,13 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_weighted import (
     ),
 )
 @click.option(
-    "--missing-alignment-log",
-    type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
+    "--alignment-log-dir",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
     default=None,
     help=(
-        "If this is specified, writes all entries without an alignment representative "
-        "to the specified log file."
+        "If specified, write alignment diagnostic logs to this directory: "
+        "missing_alignment_repr.json (unmatched chains) and "
+        "fuzzy_alignment_matches.json (chains matched via fuzzy RNA matching)."
     ),
 )
 @click.option(
@@ -122,7 +123,7 @@ def main(
     max_resolution: float | None = None,
     max_polymer_chains: int | None = None,
     allow_missing_alignment: bool = False,
-    missing_alignment_log: Path | None = None,
+    alignment_log_dir: Path | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     log_file: Path | None = None,
 ) -> None:
@@ -193,7 +194,7 @@ def main(
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
         filter_missing_alignment=not allow_missing_alignment,
-        missing_alignment_log=missing_alignment_log,
+        alignment_log_dir=alignment_log_dir,
     )
 
 
