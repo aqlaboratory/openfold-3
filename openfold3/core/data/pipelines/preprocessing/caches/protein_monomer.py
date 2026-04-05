@@ -121,6 +121,7 @@ def create_protein_monomer_dataset_cache_of3(
             fallback_conformer_pdb_id=ref_mol_data["fallback_conformer_pdb_id"],
             canonical_smiles=ref_mol_data["canonical_smiles"],
             set_fallback_to_nan=ref_mol_data["set_fallback_to_nan"],
+            fallback_conformer_source=ref_mol_data.get("fallback_conformer_source"),
         )
 
     # Create dataset cache

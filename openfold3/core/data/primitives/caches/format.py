@@ -388,6 +388,7 @@ class PreprocessingReferenceMoleculeData:
     fallback_conformer_pdb_id: str | None
     canonical_smiles: str
     residue_count: int  # TODO: Remove this from after-preprocessing caches except Val
+    fallback_conformer_source: str | None = None
 
 
 PreprocessingReferenceMoleculeCache: TypeAlias = dict[
@@ -686,6 +687,7 @@ class DatasetReferenceMoleculeData:
     fallback_conformer_pdb_id: str | None
     canonical_smiles: str
     set_fallback_to_nan: bool
+    fallback_conformer_source: str | None = None
 
 
 DictOrLMDBDict: TypeAlias = dict[K, V] | LMDBDict[K, V]
@@ -878,7 +880,7 @@ class ValidationDatasetReferenceMoleculeData(DatasetReferenceMoleculeData):
     """Reference molecule data for validation set."""
 
     # Adds the following field:
-    residue_count: int
+    residue_count: int = 1
 
 
 # --- Dataset caches ---
