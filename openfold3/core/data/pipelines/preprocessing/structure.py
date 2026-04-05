@@ -89,6 +89,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
     remove_waters,
 )
 from openfold3.core.data.primitives.structure.component import (
+    AnnotatedMol,
     get_component_info,
     get_reference_molecule_metadata,
     mol_from_atomarray,
@@ -270,21 +271,52 @@ def extract_chain_and_interface_metadata_of3(
     return metadata_dict
 
 
+def _process_component(
+    mol_id: str,
+    mol: AnnotatedMol,
+    residue_count: int,
+    sdf_out_dir: Path,
+) -> dict:
+    """Creates conformer metadata and writes SDF for a single component.
+
+    Args:
+        mol_id: Component identifier (CCD code or "{pdb_id}_{entity_id}")
+        mol: RDKit Mol object for the component
+        residue_count: Number of residues in the component
+        sdf_out_dir: Directory to write the reference molecule SDF file to
+
+    Returns:
+        Dictionary containing the reference molecule metadata.
+    """
+    mol, conformer_strategy, fallback_source = resolve_and_format_fallback_conformer(
+        mol
+    )
+    metadata = get_reference_molecule_metadata(
+        mol, conformer_strategy, residue_count, fallback_source
+    )
+    write_annotated_sdf(mol, sdf_out_dir / f"{mol_id}.sdf")
+    return metadata
+
+
 def extract_component_data_of3(
     atom_array: AtomArray,
     ccd: CIFFile,
     pdb_id: str,
     sdf_out_dir: Path,
     skip_components: set | SharedSet | None = None,
-) -> tuple[dict, dict]:
+) -> tuple[dict, dict, set]:
     """Extracts component data from a structure.
 
-    This extraxts all "components" from a structure, which are standard residues,
+    This extracts all "components" from a structure, which are standard residues,
     standard ligands, and non-standard (multi-residue or any ligand that can not be
     represented by a single CCD code) ligands. For each unique component, an RDKit
     reference molecule is created alongside a fallback conformer that is either computed
     using RDKit's reference conformer generation (see AF3 SI 2.8), or taken from the
     "ideal" or "model" CCD coordinates.
+
+    Residue component failures are treated as hard errors. Ligand component failures
+    (either during mol creation or conformer generation) are caught and the affected
+    ligand chains are returned for removal from the structure.
 
     Args:
         atom_array:
@@ -308,11 +340,12 @@ def extract_component_data_of3(
                 - "conformer_gen_strategy": The strategy used to generate the conformer
                 - "fallback_conformer_pdb_id": The PDB ID of the fallback conformer
                 - "canonical_smiles": The canonical SMILES of the component
+            - A set of chain IDs whose ligands failed processing and should be
+                removed from the structure.
     """
     if skip_components is None:
         skip_components = set()
 
-    # Instantiate output dicts
     chain_to_component_id = {}
     reference_mol_metadata = {}
 
@@ -334,61 +367,65 @@ def extract_component_data_of3(
         for entity, rescount in non_std_ligands_to_rescount.items()
     }
 
-    all_ligands_to_chains = {**std_ligands_to_chains, **non_std_ligands_to_chains}
+    # --- Residue components (no try/except for hard fail) ---
+    processed_residue_ids = set()
+    for ccd_id in residue_components:
+        if ccd_id in skip_components:
+            continue
 
-    # Track which ligand chain corresponds to which ligand ID
-    for mol_id, chains in all_ligands_to_chains.items():
-        for chain in chains:
-            chain_to_component_id[chain] = mol_id
-
-    # Create a ccd_id: rdkit Mol mapping for all components, so that we can run
-    # conformer generation jointly
-    all_component_mols = {}
-
-    # Start with standard components
-    std_ligand_ccd_ids = list(std_ligands_to_chains.keys())
-    std_component_ccd_ids = std_ligand_ccd_ids + residue_components
-    std_component_ccd_ids = [
-        c for c in std_component_ccd_ids if c not in skip_components
-    ]
-
-    for ccd_id in std_component_ccd_ids:
         mol = mol_from_ccd_entry(ccd_id, ccd)
-        all_component_mols[ccd_id] = mol
-
-    # Add non-standard ligands
-    non_std_ligand_ids = list(non_std_ligands_to_chains.keys())
-    # (NOTE: non-std ligands are not shared between structures so this should not be
-    # strictly needed)
-    non_std_ligand_ids = [c for c in non_std_ligand_ids if c not in skip_components]
-
-    for mol_id in non_std_ligand_ids:
-        # Compute molecule by arbitrarily taking the first chain (all should be the same
-        # if entity ID is the same)
-        entity_id = int(mol_id.split("_")[-1])
-        entity_atom_array = atom_array[atom_array.entity_id == entity_id]
-        first_ligand = entity_atom_array[
-            entity_atom_array.chain_id == all_ligands_to_chains[mol_id][0]
-        ]
-        mol = mol_from_atomarray(first_ligand)
-        all_component_mols[mol_id] = mol
-
-    # Generate conformer metadata for all components and write SDF files with reference
-    # conformer coordinates
-    for mol_id, mol in all_component_mols.items():
-        residue_count = non_std_ligands_to_rescount.get(mol_id, 1)
-        mol, conformer_strategy, fallback_source = (
-            resolve_and_format_fallback_conformer(mol)
+        reference_mol_metadata[ccd_id] = _process_component(
+            ccd_id, mol, residue_count=1, sdf_out_dir=sdf_out_dir
         )
-        reference_mol_metadata[mol_id] = get_reference_molecule_metadata(
-            mol, conformer_strategy, residue_count, fallback_source
-        )
+        processed_residue_ids.add(ccd_id)
 
-        # Write SDF file
-        sdf_out_path = sdf_out_dir / f"{mol_id}.sdf"
-        write_annotated_sdf(mol, sdf_out_path)
+    # --- Ligand components (skip on failure) ---
+    all_ligands_to_chains = {**std_ligands_to_chains, **non_std_ligands_to_chains}
+    skipped_ligand_chains = set()
 
-    return chain_to_component_id, reference_mol_metadata
+    for mol_id, chains in all_ligands_to_chains.items():
+        # Per-structure chain mapping (not committed immediately in case of ligand
+        # failure below)
+        chain_to_component_id_update = {chain: mol_id for chain in chains}
+
+        # If mol was already processed before we only need the chain mapping
+        if mol_id in skip_components or mol_id in processed_residue_ids:
+            chain_to_component_id.update(chain_to_component_id_update)
+            continue
+
+        # Build conformer metadata
+        try:
+            # Create mol
+            if mol_id in std_ligands_to_chains:
+                mol = mol_from_ccd_entry(mol_id, ccd)
+                residue_count = 1
+            else:
+                # Build multi-residue ligand into a single mol (only taking first chain
+                # for entity as all should be the same)
+                entity_id = int(mol_id.split("_")[-1])
+                first_ligand = atom_array[
+                    (atom_array.entity_id == entity_id)
+                    & (atom_array.chain_id == chains[0])
+                ]
+                mol = mol_from_atomarray(first_ligand)
+                residue_count = non_std_ligands_to_rescount[mol_id]
+
+            # Generate conformer and metadata
+            reference_mol_metadata[mol_id] = _process_component(
+                mol_id, mol, residue_count, sdf_out_dir
+            )
+            # Update chain mapping only after successful processing
+            chain_to_component_id.update(chain_to_component_id_update)
+        except Exception:
+            logger.warning(
+                f"Skipping ligand '{mol_id}' (chains {chains}) due to "
+                f"failed component processing.",
+                exc_info=True,
+            )
+            skipped_ligand_chains.update(chains)
+            continue
+
+    return chain_to_component_id, reference_mol_metadata, skipped_ligand_chains
 
 
 def preprocess_structure_and_write_outputs_of3(
@@ -516,16 +553,31 @@ def preprocess_structure_and_write_outputs_of3(
             }
         }, {}
 
-    chain_int_metadata_dict = extract_chain_and_interface_metadata_of3(
-        atom_array, cif_data
+    chain_to_ligand_ids, ref_mol_metadata_dict, skipped_chains = (
+        extract_component_data_of3(
+            atom_array,
+            ccd,
+            pdb_id,
+            reference_mol_out_dir,
+            skip_components=skip_components,
+        )
     )
 
-    chain_to_ligand_ids, ref_mol_metadata_dict = extract_component_data_of3(
-        atom_array,
-        ccd,
-        pdb_id,
-        reference_mol_out_dir,
-        skip_components=skip_components,
+    # Remove chains whose ligands failed processing
+    if skipped_chains:
+        atom_array = atom_array[~np.isin(atom_array.chain_id, list(skipped_chains))]
+
+    if len(atom_array) == 0:
+        return {
+            pdb_id: {
+                "release_date": release_date,
+                "status": "skipped: no atoms left after removing failed ligands",
+            }
+        }, {}
+
+    # Extract metadata after ligand removal so it reflects the final structure
+    chain_int_metadata_dict = extract_chain_and_interface_metadata_of3(
+        atom_array, cif_data
     )
 
     # Add chain-to-ligand-ID mapping to metadata
@@ -815,6 +867,12 @@ def preprocess_cif_dir_of3(
             ]
             if not remaining:
                 break
+
+            # Sync processed_mol_ids with what actually made it into
+            # output_dict, so that retried structures re-emit metadata for
+            # molecules whose earlier results were lost in a pool crash.
+            processed_mol_ids.clear()
+            processed_mol_ids.update(output_dict["reference_molecule_data"].keys())
 
             if attempt > 0:
                 retry_chunksize = max(1, retry_chunksize // 2)
