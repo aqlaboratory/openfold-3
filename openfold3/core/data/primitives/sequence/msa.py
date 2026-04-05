@@ -59,6 +59,10 @@ class MsaArray:
         default_factory=pd.DataFrame
     )
 
+    def __post_init__(self):
+        # Normalize to uppercase since the residue alphabet is uppercase-only.
+        self.msa = np.char.upper(self.msa)
+
     def __len__(self):
         return self.msa.shape[0]
 
