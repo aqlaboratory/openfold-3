@@ -14,7 +14,6 @@
 
 """IO functions to read and write metadata and dataset caches."""
 
-import contextlib
 import json
 import math
 import re
@@ -107,9 +106,7 @@ def convert_dataclass_to_dict(dataclass: Any) -> dict:
     return datacache_dict
 
 
-def write_datacache_to_json(
-    datacache: "DataCacheType", output: Path | IO[str]
-) -> None:
+def write_datacache_to_json(datacache: "DataCacheType", output: Path | IO[str]) -> None:
     """Writes a DataCache dataclass to JSON.
 
     This ignores any private fields (those starting with an underscore) in the
@@ -124,9 +121,11 @@ def write_datacache_to_json(
     """
     datacache_dict = convert_dataclass_to_dict(datacache)
 
-    context_manager = open(output, "w") if isinstance(output, Path) else contextlib.nullcontext(output)
-    with context_manager as file:
-        json.dump(datacache_dict, file, indent=4, allow_nan=False)
+    if isinstance(output, Path):
+        with open(output, "w") as f:
+            json.dump(datacache_dict, f, indent=4, allow_nan=False)
+    else:
+        json.dump(datacache_dict, output, indent=4, allow_nan=False)
 
 
 def _read_datacache_file(datacache_path: Path) -> "DataCacheType":

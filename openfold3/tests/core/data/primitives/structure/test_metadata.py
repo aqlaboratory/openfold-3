@@ -61,26 +61,32 @@ def _cif_block(categories: dict[str, dict[str, list[str]]]) -> CIFBlock:
             id="reflns-third-priority",
         ),
         pytest.param(
-            _cif_block({
-                "refine": {"ls_d_res_high": ["1.8"]},
-                "em_3d_reconstruction": {"resolution": ["3.0"]},
-            }),
+            _cif_block(
+                {
+                    "refine": {"ls_d_res_high": ["1.8"]},
+                    "em_3d_reconstruction": {"resolution": ["3.0"]},
+                }
+            ),
             1.8,
             id="refine-takes-precedence-over-em",
         ),
         pytest.param(
-            _cif_block({
-                "refine": {"ls_d_res_high": ["?"]},
-                "em_3d_reconstruction": {"resolution": ["3.0"]},
-            }),
+            _cif_block(
+                {
+                    "refine": {"ls_d_res_high": ["?"]},
+                    "em_3d_reconstruction": {"resolution": ["3.0"]},
+                }
+            ),
             3.0,
             id="question-mark-skipped-falls-through",
         ),
         pytest.param(
-            _cif_block({
-                "refine": {"ls_d_res_high": ["."]},
-                "reflns": {"d_resolution_high": ["5.5"]},
-            }),
+            _cif_block(
+                {
+                    "refine": {"ls_d_res_high": ["."]},
+                    "reflns": {"d_resolution_high": ["5.5"]},
+                }
+            ),
             5.5,
             id="dot-skipped-falls-through",
         ),
@@ -90,10 +96,12 @@ def _cif_block(categories: dict[str, dict[str, list[str]]]) -> CIFBlock:
             id="no-categories-returns-none",
         ),
         pytest.param(
-            _cif_block({
-                "refine": {"ls_d_res_high": ["?"]},
-                "em_3d_reconstruction": {"resolution": ["."]},
-            }),
+            _cif_block(
+                {
+                    "refine": {"ls_d_res_high": ["?"]},
+                    "em_3d_reconstruction": {"resolution": ["."]},
+                }
+            ),
             None,
             id="all-missing-markers-returns-none",
         ),

@@ -6,7 +6,10 @@ from io import StringIO
 
 import pytest
 
-from openfold3.core.data.io.dataset_cache import _encode_datacache_types, write_datacache_to_json
+from openfold3.core.data.io.dataset_cache import (
+    _encode_datacache_types,
+    write_datacache_to_json,
+)
 from openfold3.core.data.resources.residues import MoleculeType
 
 
