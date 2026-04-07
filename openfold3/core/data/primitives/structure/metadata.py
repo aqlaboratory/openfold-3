@@ -101,11 +101,11 @@ def get_resolution(cif_data: CIFBlock) -> float | None:
         ("reflns", "d_resolution_high"),
     ]
 
-    for key in keys_to_check:
+    for parent_key, child_key in keys_to_check:
         try:
             # as_array() because very rare structures can have multiple resolutions
             # (e.g. 7TX3)
-            resolution = cif_data[key[0]][key[1]].as_array()[0].item()
+            resolution = cif_data[parent_key][child_key].as_array()[0].item()
 
             # Try next if not specified
             if resolution in {"?", "."}:

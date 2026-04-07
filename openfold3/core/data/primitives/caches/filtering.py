@@ -212,7 +212,7 @@ def filter_by_resolution(
         The filtered cache.
     """
     if ignore_nmr:
-        nmr_methods = ("SOLID-STATE NMR", "SOLUTION NMR")
+        nmr_methods = {"SOLID-STATE NMR", "SOLUTION NMR"}
         structure_cache = {
             pdb_id: metadata
             for pdb_id, metadata in structure_cache.items()
