@@ -216,7 +216,10 @@ def filter_by_resolution(
         structure_cache = {
             pdb_id: metadata
             for pdb_id, metadata in structure_cache.items()
-            if (metadata.resolution is not None and metadata.resolution <= max_resolution)
+            if (
+                metadata.resolution is not None
+                and metadata.resolution <= max_resolution
+            )
             or metadata.experimental_method in nmr_methods
         }
     else:
