@@ -5,10 +5,23 @@ from pathlib import Path
 PLACEHOLDER_PATH = "placeholder"
 
 
+def _resolve_cutlass_path():
+    """Resolve CUTLASS_PATH from the nvidia-cutlass pip package."""
+    try:
+        import cutlass_library
+
+        return str(Path(cutlass_library.__file__).resolve().parent / "source")
+    except ImportError:
+        return PLACEHOLDER_PATH
+
+
 def prep_deepspeed():
-    # deepspeed requires the envvar set, but doesn't care about value
+    # deepspeed uses CUTLASS_PATH for -I include paths during JIT compilation,
+    # so it must point to the actual cutlass source directory (not a placeholder).
     # if already set (i.e. local cutlass setup), retain existing value
-    os.environ["CUTLASS_PATH"] = os.environ.get("CUTLASS_PATH", PLACEHOLDER_PATH)
+    os.environ["CUTLASS_PATH"] = (
+        os.environ.get("CUTLASS_PATH") or _resolve_cutlass_path()
+    )
 
 
 def prep_cutlass():
