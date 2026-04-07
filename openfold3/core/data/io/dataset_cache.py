@@ -15,6 +15,7 @@
 """IO functions to read and write metadata and dataset caches."""
 
 import json
+import math
 import re
 from dataclasses import asdict
 from datetime import date
@@ -34,7 +35,9 @@ if TYPE_CHECKING:
 
 def encode_datacache_types(obj: object) -> object:
     """Encoder for any non-standard types encountered in DataCache objects."""
-    if isinstance(obj, date):
+    if isinstance(obj, float) and math.isnan(obj):
+        return None
+    elif isinstance(obj, date):
         return obj.isoformat()
     elif isinstance(obj, MoleculeType):
         return obj.name
@@ -122,7 +125,7 @@ def write_datacache_to_json(datacache: "DataCacheType", output_path: Path) -> Pa
     datacache_dict = convert_dataclass_to_dict(datacache)
 
     with open(output_path, "w") as f:
-        json.dump(datacache_dict, f, indent=4)
+        json.dump(datacache_dict, f, indent=4, allow_nan=False)
 
 
 def _read_datacache_file(datacache_path: Path) -> "DataCacheType":
