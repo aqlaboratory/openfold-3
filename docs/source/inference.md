@@ -197,6 +197,7 @@ We provide several example runner files in our [examples directory](https://gith
 - Using low memory settings
 - Customizing output formats
 - Enabling cuEquivariance kernels
+- Enabling AMD ROCm Triton kernels
 - Saving MSA and Template processing outputs
 - And more
 
@@ -297,6 +298,36 @@ model_update:
 
 ---
 
+#### 🔴 AMD ROCm Inference with Triton Kernels
+
+On AMD GPUs, OpenFold3 can use native Triton kernels for the Evoformer attention and TriangleMultiplicativeUpdate layers instead of the default CUDA-specific kernels.
+
+First, install PyTorch for ROCm and openfold3 (see [Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md)).
+Then enable the Triton kernels in your `runner.yml` using the provided [`triton.yml`](https://github.com/aqlaboratory/openfold-3/blob/main/examples/example_runner_yamls/triton.yml) example:
+
+```yaml
+model_update:
+  presets:
+    - predict
+  custom:
+    settings:
+      memory:
+        eval:
+          use_triton_triangle_kernels: true
+          use_deepspeed_evo_attention: false
+          use_cueq_triangle_kernels: false
+```
+
+```bash
+run_openfold predict \
+    --query-json /path/to/query.json \
+    --output-dir /path/to/output/ \
+    --runner-yaml examples/example_runner_yamls/triton.yml
+```
+
+> **Note on first-run compilation**: Triton JIT-compiles kernels on first use and caches them to `~/.triton/cache`. The compilation is a one-time cost per unique sequence length per machine; subsequent runs at the same length incur no overhead.
+
+---
 
 ### 3.4 Customized ColabFold MSA Server Settings Using `runner.yml` 
 

@@ -62,6 +62,7 @@ Repository = "https://github.com/aqlaboratory/openfold-3"
 [project.scripts]
 run_openfold="openfold3.run_openfold:cli"
 setup_openfold="openfold3.setup_openfold:main"
+validate-openfold3-rocm="openfold3.entry_points.validate_rocm:main"
 
 [dependency-groups]
 test = [
@@ -90,12 +91,6 @@ cuequivariance = [
   "cuequivariance-ops-torch-cu12>=0.6.1",
   "cuequivariance-torch>=0.6.1",
   "torch>=2.7",
-]
-rocm = [
-  # Enables the ROCm-compatible Triton kernels bundled in openfold3
-  # ROCm Triton is bundled with the ROCm PyTorch wheels — install torch first:
-  #   pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
-  #   pip install openfold3[rocm]
 ]
 
 [tool.setuptools]

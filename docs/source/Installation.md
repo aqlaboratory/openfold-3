@@ -30,6 +30,19 @@ to install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, us
 pip install openfold3[cuequivariance]
 ```
 
+To use AMD ROCm-compatible Triton kernels, first install the ROCm PyTorch wheel (which bundles ROCm Triton), then install openfold3:
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
+pip install openfold3
+```
+
+After installation, verify your ROCm environment is correctly configured:
+
+```bash
+validate-openfold3-rocm
+```
+
 (installation-environment-variables)=
 ### Environment variables
 
