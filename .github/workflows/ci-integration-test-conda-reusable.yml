@@ -67,7 +67,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: docker/Dockerfile
+          file: docker/Dockerfile.conda
           target: test
           push: true
           build-args: |
@@ -75,8 +75,8 @@ jobs:
             BUILD_MODE=${{ inputs.build_mode }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-${{ inputs.cuda_base_image_tag }}-${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-${{ inputs.cuda_base_image_tag }}
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-${{ inputs.cuda_base_image_tag }},mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-conda-${{ inputs.cuda_base_image_tag }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-conda-${{ inputs.cuda_base_image_tag }},mode=max
       
       - name: Create parameter cache directory
         run: mkdir -p ~/.openfold3

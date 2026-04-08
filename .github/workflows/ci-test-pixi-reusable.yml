@@ -1,0 +1,132 @@
+name: Reusable Docker Test (Pixi)
+
+on:
+  # Can only be called by another workflow, not directly by the user
+  workflow_call:
+    inputs:
+      pixi_env:
+        description: 'Pixi environment name (e.g., openfold3-cuda12, openfold3-cuda13)'
+        required: true
+        type: string
+      base_image:
+        description: 'Base Docker image'
+        required: false
+        type: string
+        default: 'ubuntu:22.04'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/openfold3-docker
+
+jobs:
+  start-aws-runner:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      mapping: ${{ steps.aws-start.outputs.mapping }}
+      instances: ${{ steps.aws-start.outputs.instances }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
+          aws-region: us-east-1
+      - name: Create cloud runner
+        id: aws-start
+        uses: omsf/start-aws-gha-runner@v1.1.1
+        with:
+          aws_image_id: ami-0754c6e75b3b97dcd  # Deep Learning AMI Neuron (Ubuntu 22.04)
+          aws_instance_type: t3.2xlarge
+          aws_home_dir: /home/ubuntu
+          aws_root_device_size: 200
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+  test-openfold-docker-pixi:
+    runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
+    needs:
+      - start-aws-runner
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile.pixi
+          target: test
+          push: true
+          build-args: |
+            PIXI_ENV=${{ inputs.pixi_env }}
+            BASE_IMAGE=${{ inputs.base_image }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }},mode=max
+
+      - name: Run unit tests
+        run: |
+          docker run \
+            -v ${{ github.workspace }}:/opt/openfold3 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
+            pytest openfold3/tests -vvv -n auto --cov=openfold3 --cov-report=xml --cov-report=term
+
+      - name: Debug - List files and find coverage
+        if: always()
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo "=== Files in workspace root ==="
+          ls -la ${{ github.workspace }}
+          echo "=== Looking for coverage files ==="
+          find ${{ github.workspace }} -name "coverage.xml" -o -name ".coverage" 2>/dev/null || echo "No coverage files found"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage-report-pixi-${{ inputs.pixi_env }}
+          path: |
+            coverage.xml
+            .coverage
+          include-hidden-files: true
+          retention-days: 30
+
+  stop-aws-runner:
+    runs-on: ubuntu-latest
+    permissions:
+        id-token: write
+        contents: read
+    needs:
+      - start-aws-runner
+      - test-openfold-docker-pixi
+    if: ${{ always() }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
+          aws-region: us-east-1
+      - name: Stop instances
+        uses: omsf/stop-aws-gha-runner@v1.0.0
+        with:
+          instance_mapping: ${{ needs.start-aws-runner.outputs.mapping }}
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}

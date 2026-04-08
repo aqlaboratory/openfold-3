@@ -119,6 +119,7 @@ def convert_datacache_to_lmdb(
                 transaction.put(key_bytes, val_bytes)
 
         lmdb_env.close()
+        del lmdb_env
 
     elif mode == "iterative":
         # TODO add logic to iteratively read the cache with ijson and write to LMDB
