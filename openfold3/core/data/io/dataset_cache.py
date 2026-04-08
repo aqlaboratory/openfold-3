@@ -188,14 +188,14 @@ def read_datacache(
 
     elif datacache_path.is_dir():
         # Assumed to be an lmdb dir
-        lmdb_env = lmdb.open(
-            str(datacache_path), readonly=True, lock=False, subdir=True
-        )
-        type_key = "_type".encode(str_encoding)
-        with lmdb_env.begin() as txn:
+        with (
+            lmdb.open(
+                str(datacache_path), readonly=True, lock=False, subdir=True
+            ) as lmdb_env,
+            lmdb_env.begin() as txn,
+        ):
+            type_key = "_type".encode(str_encoding)
             dataset_cache_type = json.loads(txn.get(type_key).decode(str_encoding))
-        lmdb_env.close()
-        del lmdb_env
 
         if not dataset_cache_type:
             raise ValueError("No type found for this directory.")

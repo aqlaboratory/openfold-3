@@ -70,9 +70,10 @@ def convert_datacache_to_lmdb(
     if mode == "single-read":
         dataset_cache = read_datacache(dataset_cache_file_or_obj)
 
-        lmdb_env = lmdb.open(str(lmdb_directory), map_size=map_size, subdir=True)
-
-        with lmdb_env.begin(write=True) as transaction:
+        with (
+            lmdb.open(str(lmdb_directory), map_size=map_size, subdir=True) as lmdb_env,
+            lmdb_env.begin(write=True) as transaction,
+        ):
             print("1/4: Adding _type to the LMDB.")
             transaction.put(
                 b"_type",
@@ -117,9 +118,6 @@ def convert_datacache_to_lmdb(
                         reference_molecule_data_encoding
                     )
                 transaction.put(key_bytes, val_bytes)
-
-        lmdb_env.close()
-        del lmdb_env
 
     elif mode == "iterative":
         # TODO add logic to iteratively read the cache with ijson and write to LMDB
