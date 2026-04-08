@@ -1,10 +1,157 @@
+from __future__ import annotations
+
+import json
+import platform
+import random
+import warnings
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
 import biotite.setup_ccd
 import numpy as np
 import pytest
+import torch
 from biotite.structure import AtomArray
+from torch.random import fork_rng
 
 from openfold3.core.data.primitives.structure.component import BiotiteCCDWrapper
 from openfold3.setup_openfold import setup_biotite_ccd
+
+# ---------------------------------------------------------------------------
+# Device fixture: parametrize tests to run on both CPU and CUDA
+# ---------------------------------------------------------------------------
+
+_DEVICES = [
+    pytest.param("cpu", id="cpu"),
+    pytest.param(
+        "cuda",
+        id="cuda",
+        marks=pytest.mark.skipif(
+            not torch.cuda.is_available(), reason="CUDA not available"
+        ),
+    ),
+]
+
+
+@pytest.fixture(params=_DEVICES)
+def device(request) -> str:
+    """Yield 'cpu' or 'cuda'; CUDA tests are auto-skipped when no GPU."""
+    return request.param
+
+
+# ---------------------------------------------------------------------------
+# CUDA determinism: ensure reproducible results on the same hardware
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _cuda_deterministic(request):
+    """Enable deterministic CUDA ops for tests that use the ``device`` fixture."""
+    if "device" not in request.fixturenames:
+        yield
+        return
+
+    dev = request.getfixturevalue("device")
+    if dev != "cuda":
+        yield
+        return
+
+    orig_deterministic = torch.backends.cudnn.deterministic
+    orig_benchmark = torch.backends.cudnn.benchmark
+    orig_det_algos = torch.are_deterministic_algorithms_enabled()
+
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.use_deterministic_algorithms(True)
+    yield
+
+    torch.backends.cudnn.deterministic = orig_deterministic
+    torch.backends.cudnn.benchmark = orig_benchmark
+    torch.use_deterministic_algorithms(orig_det_algos)
+
+
+# ---------------------------------------------------------------------------
+# Snapshot environment metadata
+# ---------------------------------------------------------------------------
+
+_SNAPSHOT_ENV_FILE = "_snapshot_env.json"
+
+
+@dataclass(frozen=True)
+class SnapshotEnv:
+    """Environment info relevant to snapshot reproducibility."""
+
+    torch_version: str
+    python_version: str
+    cuda_version: str | None = None
+    cudnn_version: str | None = None
+    gpu_name: str | None = None
+
+    @classmethod
+    def current(cls) -> SnapshotEnv:
+        cuda_kwargs = {}
+        if torch.cuda.is_available():
+            cuda_kwargs = dict(
+                cuda_version=torch.version.cuda,
+                cudnn_version=str(torch.backends.cudnn.version()),
+                gpu_name=torch.cuda.get_device_name(0),
+            )
+        return cls(
+            torch_version=torch.__version__,
+            python_version=platform.python_version(),
+            **cuda_kwargs,
+        )
+
+    @classmethod
+    def from_json(cls, path: Path) -> SnapshotEnv:
+        data = json.loads(path.read_text())
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+    def to_json(self, path: Path) -> None:
+        path.write_text(json.dumps(asdict(self), indent=2) + "\n")
+
+    def mismatches(self, other: SnapshotEnv) -> list[str]:
+        result = []
+        for field in ("torch_version", "cuda_version", "cudnn_version", "gpu_name"):
+            stored = getattr(self, field)
+            current = getattr(other, field)
+            if stored is not None and current is not None and stored != current:
+                result.append(f"  {field}: stored={stored}, current={current}")
+        return result
+
+
+def _check_snapshot_env(snapshot_dir: Path) -> None:
+    """Warn if the current environment differs from the one that generated snapshots."""
+    env_file = snapshot_dir / _SNAPSHOT_ENV_FILE
+    if not env_file.exists():
+        return
+
+    stored = SnapshotEnv.from_json(env_file)
+    mismatches = stored.mismatches(SnapshotEnv.current())
+
+    if mismatches:
+        warnings.warn(
+            f"Snapshot environment mismatch in {snapshot_dir.name}/:\n"
+            + "\n".join(mismatches)
+            + "\nSnapshot tests may fail. Regenerate with: pytest --force-regen",
+            stacklevel=2,
+        )
+
+
+def _write_snapshot_env(snapshot_dir: Path) -> None:
+    """Write current environment metadata alongside snapshots."""
+    SnapshotEnv.current().to_json(snapshot_dir / _SNAPSHOT_ENV_FILE)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """After ``--force-regen``, write environment metadata to snapshot dirs."""
+    if not session.config.getoption("force_regen", default=False):
+        return
+    snapshots_root = Path(__file__).parent / "test_data" / "snapshots"
+    if snapshots_root.exists():
+        for subdir in snapshots_root.iterdir():
+            if subdir.is_dir() and any(subdir.glob("*.npz")):
+                _write_snapshot_env(subdir)
 
 
 @pytest.fixture
@@ -76,3 +223,31 @@ def ensure_biotite_ccd(request):
 def biotite_ccd_wrapper():
     """Cache CCD wrapper fixture for tests that need it."""
     return BiotiteCCDWrapper()
+
+
+@pytest.fixture(scope="module")
+def original_datadir(request: pytest.FixtureRequest) -> Path:
+    """Redirect pytest-regressions snapshot storage to test_data/snapshots/."""
+    datadir = (
+        Path(__file__).parent / "test_data" / "snapshots" / Path(request.path).stem
+    )
+    _check_snapshot_env(datadir)
+    return datadir
+
+
+@pytest.fixture()
+def seeded_rng():
+    """Isolate all RNG state (torch, numpy, python) for the duration of a test.
+
+    Uses torch.random.fork_rng() to save/restore torch (+CUDA) state, and
+    manually saves/restores numpy and python random state.
+    """
+    py_state = random.getstate()
+    np_state = np.random.get_state()
+    with fork_rng():
+        torch.manual_seed(123)
+        random.seed(123)
+        np.random.seed(123)
+        yield
+    random.setstate(py_state)
+    np.random.set_state(np_state)

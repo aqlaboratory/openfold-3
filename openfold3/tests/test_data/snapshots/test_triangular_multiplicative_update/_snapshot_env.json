@@ -1,0 +1,7 @@
+{
+  "torch_version": "2.10.0+cu130",
+  "python_version": "3.13.12",
+  "cuda_version": "13.0",
+  "cudnn_version": "91501",
+  "gpu_name": "NVIDIA GB10"
+}
