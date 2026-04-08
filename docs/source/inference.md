@@ -73,7 +73,7 @@ Coming soon:
 
 ## 2. Pre-requisites
 
-- OpenFold3 Conda Environment. See [OpenFold3 Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md) for instructions on how to build this environment.
+- OpenFold3 Environment. See [OpenFold3 Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md) for instructions on how to build this environment (for both Conda and Pixi).
 - OpenFold3 Model Parameters. See {ref}`OpenFold3 Setup <setup-openfold3-parameters>` for an easy option to download model parameters.
 
 

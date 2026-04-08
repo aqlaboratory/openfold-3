@@ -10,27 +10,7 @@ OpenFold3 inference requires a system with a GPU with a minimum of CUDA 12.1 and
 It is also recommended to use [Mamba](https://mamba.readthedocs.io/en/latest/) to install some of the packages.
 
 
-### Installation via pip and mamba (recommended) 
-
-0. [Optional] Create a fresh mamba environment with python. Python versions 3.10 - 3.13 are supported
-
-```bash
-mamba create -n openfold3 python=3.13 
-```
-
-1. Install openfold3 the pypi server:
-
-```bash
-pip install openfold3
-```
-
-to install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, use: 
-
-```bash
-pip install openfold3[cuequivariance]
-```
-
-### Modern conda environments with pixi
+### Modern conda environments with pixi (recommended)
 
 OpenFold3 can now be installed in conda environments with [pixi](https://pixi.prefix.dev/latest/index.html).
 
@@ -53,6 +33,27 @@ We provide the following environments:
  - openfold3-cuda12 and openfold-cuda13 (linux-64, linux-aarch64) 
 
 For more information, including rationale, tips and tricks, see [Modern Conda Environments with Pixi](./modern-conda-environments-with-pixi.md).
+
+
+### Installation via pip and mamba (deprecated Q2-2026) 
+
+0. [Optional] Create a fresh mamba environment with python. Python versions 3.10 - 3.13 are supported
+
+```bash
+mamba create -n openfold3 python=3.13 
+```
+
+1. Install openfold3 the pypi server:
+
+```bash
+pip install openfold3
+```
+
+to install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, use: 
+
+```bash
+pip install openfold3[cuequivariance]
+```
 
 (installation-environment-variables)=
 ### Environment variables
