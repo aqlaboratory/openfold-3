@@ -14,7 +14,7 @@ For our reproduction of AlphaFold2, please refer to the original [OpenFold repos
 A technical description of our most recent model version, OpenFold3-preview2, is available [here](https://portal.openfold.omsf.io/reports/of3p2_technical_report.pdf).
 
 ## Documentation
-Please visit our [portal](https://portal.openfold.omsf.io/reports/of3p2_technical_report.pdf) and [full documentation](https://openfold-3.readthedocs.io/en/latest/) for instructions on running model training and inference.
+Please visit our [portal](https://portal.openfold.omsf.io) and [full documentation](https://openfold-3.readthedocs.io/en/latest/) for instructions on running model training and inference.
 
 ## Datasets
 We provide the full training data for reproducing OpenFold3-preview, including our reproduction of the MGnify-based 13M-sequence distillation dataset described in the AlphaFold3 paper. For more details about dataset access, please refer to [our portal](https://portal.openfold.omsf.io/datasets).

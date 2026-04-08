@@ -30,6 +30,7 @@ to install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, us
 pip install openfold3[cuequivariance]
 ```
 
+(installation-environment-variables)=
 ### Environment variables
 
 OpenFold may need a few environment variables set so CUDA, compilation, and JIT-built extensions can be found correctly. 

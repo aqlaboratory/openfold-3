@@ -76,7 +76,7 @@ def get_release_date(cif_data: CIFBlock) -> datetime:
     return min(release_dates)
 
 
-def get_resolution(cif_data: CIFBlock) -> float:
+def get_resolution(cif_data: CIFBlock) -> float | None:
     """Get the resolution of the structure.
 
     The resolution is obtained by sequentially checking the following data items:
@@ -85,7 +85,7 @@ def get_resolution(cif_data: CIFBlock) -> float:
     - reflns.d_resolution_high
 
     and returning the first one that is found. If none of the above data items are
-    found, the function returns NaN.
+    found, the function returns None.
 
     Args:
         cif_data:
@@ -93,7 +93,7 @@ def get_resolution(cif_data: CIFBlock) -> float:
             requires one prior level of indexing into the CIFFile, (see `get_cif_block`)
 
     Returns:
-        The resolution of the structure.
+        The resolution of the structure, or None if not available.
     """
     keys_to_check = [
         ("refine", "ls_d_res_high"),
@@ -101,14 +101,14 @@ def get_resolution(cif_data: CIFBlock) -> float:
         ("reflns", "d_resolution_high"),
     ]
 
-    for key in keys_to_check:
+    for parent_key, child_key in keys_to_check:
         try:
             # as_array() because very rare structures can have multiple resolutions
             # (e.g. 7TX3)
-            resolution = cif_data[key[0]][key[1]].as_array()[0].item()
+            resolution = cif_data[parent_key][child_key].as_array()[0].item()
 
             # Try next if not specified
-            if resolution in ("?", "."):
+            if resolution in {"?", "."}:
                 continue
 
             # If successful, convert to float and return
@@ -119,9 +119,8 @@ def get_resolution(cif_data: CIFBlock) -> float:
         except KeyError:
             continue
     else:
-        resolution = float("nan")
+        return None
 
-    # dev-only: TODO remove
     assert isinstance(resolution, float), "Resolution is not a float"
 
     return resolution

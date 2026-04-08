@@ -830,7 +830,7 @@ class ClusteredDatasetStructureData:
     """Structure data with clusters and added metadata."""
 
     release_date: datetime.date
-    resolution: float
+    resolution: float | None
     chains: dict[str, ClusteredDatasetChainData]
     interfaces: dict[str, ClusteredDatasetInterfaceData]
 
@@ -840,7 +840,7 @@ class ValidationDatasetStructureData:
     """Structure data wrapper for validation set."""
 
     release_date: datetime.date
-    resolution: float
+    resolution: float | None
     token_count: int
     chains: dict[str, ValidationDatasetChainData]
     interfaces: dict[str, ClusteredDatasetInterfaceData]

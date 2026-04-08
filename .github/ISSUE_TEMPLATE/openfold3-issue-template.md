@@ -12,6 +12,8 @@ Thank you for taking the time to file a bug report. Please help us help you. Pro
 
 OpenFold3 has documentation available at https://openfold-3.readthedocs.io/en/latest/ with several how-to guides. Check there to see if your question might already be answered.
 
+Please refer to our [contribution guide](https://openfold-3.readthedocs.io/en/latest/contributing.html) for more details. In particular, all issues should be opened directly by a human, and issues that do not meet this policy may be closed without review.
+
 PLEASE DELETE THIS SECTION AFTER YOU HAVE READ IT
 -----------------------------------------
 
