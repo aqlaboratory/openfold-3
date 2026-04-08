@@ -81,8 +81,6 @@ docker build \
     -t openfold-docker:devel-locked .
 ```
 
-For Blackwell image build, see [Build_instructions_blackwell.md](Build_instructions_blackwell.md)
-
 ## cuEquivariance Support
 
 [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) provides accelerated kernels for `triangle_multiplicative_update` and `triangle_attention` operations that can speed up inference and training.
