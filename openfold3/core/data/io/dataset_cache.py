@@ -15,11 +15,12 @@
 """IO functions to read and write metadata and dataset caches."""
 
 import json
+import math
 import re
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias
+from typing import IO, TYPE_CHECKING, Any, Literal, TypeAlias
 
 import lmdb
 
@@ -32,9 +33,11 @@ if TYPE_CHECKING:
     from openfold3.core.data.primitives.caches.format import DataCacheType
 
 
-def encode_datacache_types(obj: object) -> object:
+def _encode_datacache_types(obj: object) -> object:
     """Encoder for any non-standard types encountered in DataCache objects."""
-    if isinstance(obj, date):
+    if isinstance(obj, float) and math.isnan(obj):
+        return None
+    elif isinstance(obj, date):
         return obj.isoformat()
     elif isinstance(obj, MoleculeType):
         return obj.name
@@ -59,7 +62,7 @@ def format_nested_dict_for_json(data: dict) -> dict:
         if isinstance(value, dict):
             format_nested_dict_for_json(value)
         else:
-            converted_obj = encode_datacache_types(value)
+            converted_obj = _encode_datacache_types(value)
             data[item] = converted_obj
 
     return data
@@ -103,8 +106,8 @@ def convert_dataclass_to_dict(dataclass: Any) -> dict:
     return datacache_dict
 
 
-def write_datacache_to_json(datacache: "DataCacheType", output_path: Path) -> Path:
-    """Writes a DataCache dataclass to a JSON file.
+def write_datacache_to_json(datacache: "DataCacheType", output: Path | IO[str]) -> None:
+    """Writes a DataCache dataclass to JSON.
 
     This ignores any private fields (those starting with an underscore) in the
     dataclass, and adds the specialized "_type" attribute which is necessary for
@@ -112,17 +115,17 @@ def write_datacache_to_json(datacache: "DataCacheType", output_path: Path) -> Pa
 
     Args:
         datacache:
-            DataCache dataclass to be written to a JSON file.
-        output_path:
-            Path to the output JSON file.
-
-    Returns:
-        Full path to the output JSON file.
+            DataCache dataclass to be written to JSON.
+        output:
+            Path to the output JSON file, or a writable text buffer.
     """
     datacache_dict = convert_dataclass_to_dict(datacache)
 
-    with open(output_path, "w") as f:
-        json.dump(datacache_dict, f, indent=4)
+    if isinstance(output, Path):
+        with open(output, "w") as f:
+            json.dump(datacache_dict, f, indent=4, allow_nan=False)
+    else:
+        json.dump(datacache_dict, output, indent=4, allow_nan=False)
 
 
 def _read_datacache_file(datacache_path: Path) -> "DataCacheType":
