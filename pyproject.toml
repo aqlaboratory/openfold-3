@@ -1,11 +1,11 @@
 [build-system]
 # torch used at build needs to match the one at runtime
-requires = ["setuptools", "wheel"]
+requires = ["setuptools", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "openfold3"
-version = "0.4.1"
+dynamic = ["version"]
 dependencies = [
   "awscli",
   "awscrt",
@@ -93,6 +93,9 @@ cuequivariance = [
   "cuequivariance-torch>=0.6.1",
   "torch>=2.7",
 ]
+
+[tool.setuptools_scm]
+fallback_version = "0.0.0"
 
 [tool.setuptools]
 include-package-data = true
