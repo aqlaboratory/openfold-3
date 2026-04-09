@@ -76,7 +76,7 @@ jobs:
 
       - name: Extract metadata for conda image
         id: meta-conda
-        uses: docker/metadata-action@54262e8fce11c7b5496f28398368170da45de7e7
+        uses: docker/metadata-action@c3b064c6d7c32446d6bc214ea075f1caad2de35a
         with:
           images: |
             name=ghcr.io/${{ github.repository }}/openfold3-docker
