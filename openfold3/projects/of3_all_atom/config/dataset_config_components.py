@@ -112,7 +112,7 @@ class MSASettings(BaseModel):
         "dummy",  # aln containing only query; used for MSA-free inference
     ]
     subsample_main: bool = True
-    keep_subsampled_order: bool = False
+    keep_subsampled_order: bool = True
     paired_msa_order: list = ["colabfold_paired"]
 
 

@@ -385,10 +385,10 @@ class ValidationPDBDataset(BaseOF3Dataset):
         sample_data["features"]["ground_truth"].update(
             self.get_ab_ag_features(pdb_id, sample_data)
         )
-        sample_data["features"]["atom_array"] = sample_data["atom_array"]
-
+        if return_atom_arrays:
+            sample_data["features"]["atom_array"] = sample_data["atom_array"]
         # Remove atom arrays if they are not needed
-        if not return_atom_arrays:
+        else:
             del sample_data["atom_array"]
             del sample_data["atom_array_gt"]
             del sample_data["atom_array_cropped"]

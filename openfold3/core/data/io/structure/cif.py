@@ -190,7 +190,7 @@ def parse_mmcif(
     }
 
     # Check if the CIF file contains bioassembly information
-    if expand_bioassembly & ("pdbx_struct_assembly_gen" not in cif_data):
+    if expand_bioassembly and ("pdbx_struct_assembly_gen" not in cif_data):
         logger.warning(
             "No bioassembly information found in the CIF file, "
             "falling back to parsing the asymmetric unit."
@@ -435,7 +435,8 @@ def write_structure(
 
         case _:
             raise NotImplementedError(
-                "Only .cif, .bcif, and .pkl formats are supported"
+                "Only .npz, .pkl, .cif, .bcif, and .pdb formats are currently "
+                "supported."
             )
 
 

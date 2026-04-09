@@ -18,6 +18,7 @@ import functools
 import itertools
 import logging
 import random
+import string
 from collections import defaultdict
 from collections.abc import Container
 from concurrent.futures import ThreadPoolExecutor
@@ -31,8 +32,9 @@ from tqdm import tqdm
 
 from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.io.sequence.fasta import (
+    SeqMoltype,
     consolidate_preprocessed_fastas,
-    get_chain_id_to_seq_from_fasta,
+    parse_representatives_fasta,
 )
 from openfold3.core.data.primitives.caches.format import (
     ChainData,
@@ -58,7 +60,7 @@ from openfold3.core.data.resources.lists import (
     IONS,
     LIGAND_EXCLUSION_LIST,
 )
-from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.core.data.resources.residues import STANDARD_RNA_RESIDUES, MoleculeType
 from openfold3.core.data.tools.rscb import get_model_ranking_fit
 
 logger = logging.getLogger(__name__)
@@ -357,6 +359,7 @@ def build_provisional_clustered_dataset_cache(
             fallback_conformer_pdb_id=ref_mol_data.fallback_conformer_pdb_id,
             canonical_smiles=ref_mol_data.canonical_smiles,
             set_fallback_to_nan=False,
+            fallback_conformer_source=ref_mol_data.fallback_conformer_source,
         )
 
     new_dataset_cache = ClusteredDatasetCache(
@@ -446,6 +449,7 @@ def build_provisional_clustered_val_dataset_cache(
             canonical_smiles=ref_mol_data.canonical_smiles,
             residue_count=ref_mol_data.residue_count,
             set_fallback_to_nan=False,
+            fallback_conformer_source=ref_mol_data.fallback_conformer_source,
         )
 
     new_dataset_cache = ValidationDatasetCache(
@@ -457,66 +461,143 @@ def build_provisional_clustered_val_dataset_cache(
 
 
 def map_chains_to_representatives(
-    query_seq_dict: dict[str, str], repr_seq_dict: dict[str, str]
-) -> dict[str, str]:
+    query_chain_entries: dict[str, SeqMoltype],
+    repr_entries: dict[str, SeqMoltype],
+    rna_convert_x_to_n: bool = True,
+    rna_fuzzy_match: bool = True,
+) -> tuple[dict[str, str | None], dict[str, dict[str, str]]]:
     """Maps chains to their representative chains.
 
-    This takes in a dictionary of query IDs and sequences and a similar dictionary of
-    representative IDs and sequences and maps the query chains to a representative with
-    the same sequence. This information is necessary for the training cache as MSA
-    databases are usually deduplicated.
+    This takes in a dictionary of query IDs and (sequence, moltype) pairs and a similar
+    dictionary of representative IDs and (sequence, moltype) pairs, and maps the query
+    chains to a representative with the same sequence and moltype. This information is
+    necessary for the training cache as MSA databases are usually deduplicated.
+
+    Matching is done in up to two passes:
+
+    1. Exact match (after optional X→N normalization for RNA sequences).
+    2. Fuzzy match for remaining unmatched RNA sequences: all noncanonical
+       residues (anything not in {A, G, C, U, N}) in the query are replaced
+       with N before a second lookup against the representative sequences.
 
     Args:
-        query_seq_dict:
-            Dictionary mapping chain IDs to sequences.
-        repr_seq_dict:
-            Dictionary mapping chain IDs to sequences.
+        query_chain_entries:
+            Dictionary mapping chain IDs to SeqMoltype entries.
+        repr_entries:
+            Dictionary mapping representative IDs to SeqMoltype entries.
+        rna_convert_x_to_n:
+            If True, replace ``X`` with ``N`` in RNA sequences of both query and
+            representative entries before matching. This handles the common case
+            where unknown residues are encoded as ``X`` in one source and ``N``
+            in another. Default is True.
+        rna_fuzzy_match:
+            If True, perform a second matching pass for unmatched RNA query
+            chains where all noncanonical residues are converted to ``N``. This
+            handles cases where modified RNA residues (e.g. in tRNA) are
+            represented differently in query vs. representative sequences.
+            Default is True.
 
     Returns:
-        Dictionary mapping query chain IDs to representative chain IDs.
+        A tuple of:
+        - Dictionary mapping query chain IDs to representative chain IDs.
+          Unmatched chains map to ``None``.
+        - Dictionary of fuzzy match details keyed by query chain ID, where each
+          entry contains ``original_query_sequence``, ``molecule_type``,
+          ``fuzzy_query_sequence``, ``repr_id``, and ``repr_sequence``.
     """
+    # Save originals before normalization (for fuzzy match logging)
+    original_query_entries = query_chain_entries
 
-    # Convert to seq -> chain mapping for easier lookup
-    repr_seq_to_chain = {seq: chain for chain, seq in repr_seq_dict.items()}
+    # Normalize X→N in RNA sequences for both query and repr entries
+    if rna_convert_x_to_n:
+        query_chain_entries = {
+            key: SeqMoltype(entry.sequence.replace("X", "N"), entry.moltype)
+            if entry.moltype == "rna"
+            else entry
+            for key, entry in query_chain_entries.items()
+        }
+        repr_entries = {
+            key: SeqMoltype(entry.sequence.replace("X", "N"), entry.moltype)
+            if entry.moltype == "rna"
+            else entry
+            for key, entry in repr_entries.items()
+        }
 
-    query_to_repr = {}
+    repr_lookup = {entry: rep_id for rep_id, entry in repr_entries.items()}
 
-    # Map each query chain to its representative
-    for query_chain, query_seq in query_seq_dict.items():
-        repr_chain = repr_seq_to_chain.get(query_seq)
+    # Pass 1: Direct matches
+    query_to_repr = {
+        chain: repr_lookup.get(entry) for chain, entry in query_chain_entries.items()
+    }
 
-        query_to_repr[query_chain] = repr_chain
+    # Pass 2: Fuzzy matching — convert all noncanonical RNA residues to N
+    fuzzy_match_info: dict[str, dict[str, str]] = {}
+    if rna_fuzzy_match:
+        non_canonical_chars = set(string.ascii_uppercase) - set(STANDARD_RNA_RESIDUES)
+        conversion_table = str.maketrans(
+            {char: "N" for char in non_canonical_chars},
+        )
 
-    return query_to_repr
+        for query_id, entry in query_chain_entries.items():
+            if entry.moltype == "rna" and query_to_repr[query_id] is None:
+                fuzzy_seq = entry.sequence.translate(conversion_table)
+                repr_id = repr_lookup.get(SeqMoltype(fuzzy_seq, entry.moltype))
+                if repr_id is not None:
+                    query_to_repr[query_id] = repr_id
+                    fuzzy_match_info[query_id] = {
+                        "original_query_sequence": original_query_entries[
+                            query_id
+                        ].sequence,
+                        "molecule_type": entry.moltype,
+                        "fuzzy_query_sequence": fuzzy_seq,
+                        "repr_id": repr_id,
+                        "repr_sequence": repr_entries[repr_id].sequence,
+                    }
+
+    return query_to_repr, fuzzy_match_info
 
 
 def add_chain_representatives(
     structure_cache: ClusteredDatasetStructureDataCache,
     query_chain_to_seq: dict[str, str],
-    repr_chain_to_seq: dict[str, str],
-) -> None:
+    repr_entries: dict[str, SeqMoltype],
+) -> dict[str, dict[str, str]]:
     """Add alignment representatives to the structure metadata cache.
 
     Will find the representative chain for each query chain and add it to the cache
     in-place under a new "alignment_representative_id" key for each chain.
 
     Args:
-        cache:
+        structure_cache:
             The structure metadata cache to update.
         query_chain_to_seq:
-            Dictionary mapping query chain IDs to sequences.
-        repr_chain_to_seq:
-            Dictionary mapping representative chain IDs to sequences.
+            Dictionary mapping query chain IDs (``{pdb_id}_{chain_id}``) to sequences.
+        repr_entries:
+            Dictionary mapping representative IDs to SeqMoltype entries, as
+            returned by ``parse_representatives_fasta``.
+
+    Returns:
+        Dictionary of fuzzy match details keyed by query chain ID (see
+        :func:`map_chains_to_representatives`).
     """
-    query_chains_to_repr_chains = map_chains_to_representatives(
-        query_chain_to_seq, repr_chain_to_seq
+    query_chain_entries: dict[str, SeqMoltype] = {}
+    for pdb_id, metadata in structure_cache.items():
+        for chain_id, chain_metadata in metadata.chains.items():
+            key = f"{pdb_id}_{chain_id}"
+            if key in query_chain_to_seq:
+                moltype = chain_metadata.molecule_type.name.lower()
+                query_chain_entries[key] = SeqMoltype(query_chain_to_seq[key], moltype)
+
+    query_chains_to_repr_chains, fuzzy_match_info = map_chains_to_representatives(
+        query_chain_entries, repr_entries, rna_convert_x_to_n=True, rna_fuzzy_match=True
     )
 
     for pdb_id, metadata in structure_cache.items():
         for chain_id, chain_metadata in metadata.chains.items():
             repr_id = query_chains_to_repr_chains.get(f"{pdb_id}_{chain_id}")
-
             chain_metadata.alignment_representative_id = repr_id
+
+    return fuzzy_match_info
 
 
 def filter_no_alignment_representative(
@@ -584,8 +665,12 @@ def add_and_filter_alignment_representatives(
     alignment_representatives_fasta: Path,
     return_no_repr=False,
 ) -> (
-    ClusteredDatasetStructureDataCache
-    | tuple[ClusteredDatasetStructureDataCache, dict[str, ClusteredDatasetChainData]]
+    tuple[ClusteredDatasetStructureDataCache, dict[str, dict[str, str]]]
+    | tuple[
+        ClusteredDatasetStructureDataCache,
+        dict[str, dict[str, ClusteredDatasetChainData]],
+        dict[str, dict[str, str]],
+    ]
 ):
     """Adds alignment representatives to cache and filters out entries without any.
 
@@ -594,33 +679,35 @@ def add_and_filter_alignment_representatives(
     without alignment representatives are removed from the cache.
 
     Args:
-        cache:
+        structure_cache:
             The structure metadata cache to update.
-        alignment_representatives_fasta:
-            Path to the FASTA file containing alignment representatives.
         query_chain_to_seq:
             Dictionary mapping query chain IDs to sequences.
+        alignment_representatives_fasta:
+            Path to the FASTA file containing alignment representatives.
         return_no_repr:
             If True, also return a dictionary of unmatched entries, formatted as:
-            pdb_id: chain_metadata
-
+            ``{pdb_id: {chain_id: chain_metadata}}``.
             Default is False.
 
     Returns:
-        The filtered cache, or the filtered cache and the unmatched entries if
-        return_no_repr is True.
+        A tuple of ``(filtered_cache, fuzzy_match_info)`` or, if
+        *return_no_repr* is True,
+        ``(filtered_cache, unmatched_entries, fuzzy_match_info)``.
     """
-    repr_chain_to_seq = get_chain_id_to_seq_from_fasta(alignment_representatives_fasta)
-    add_chain_representatives(structure_cache, query_chain_to_seq, repr_chain_to_seq)
+    repr_entries = parse_representatives_fasta(alignment_representatives_fasta)
+    fuzzy_match_info = add_chain_representatives(
+        structure_cache, query_chain_to_seq, repr_entries
+    )
 
     if return_no_repr:
         structure_cache, unmatched_entries = filter_no_alignment_representative(
             structure_cache, return_no_repr=True
         )
-        return structure_cache, unmatched_entries
+        return structure_cache, unmatched_entries, fuzzy_match_info
     else:
         structure_cache = filter_no_alignment_representative(structure_cache)
-        return structure_cache
+        return structure_cache, fuzzy_match_info
 
 
 def get_all_cache_chains(
@@ -807,7 +894,7 @@ def get_mol_id_to_smiles(
 
 
 def set_nan_fallback_conformer_flag(
-    pdb_id_to_release_date: dict[str, date | str],
+    pdb_id_to_release_date: dict[str, date | None],
     reference_mol_cache: DatasetReferenceMoleculeCache,
     max_model_pdb_release_date: date | str,
 ) -> None:
@@ -815,16 +902,17 @@ def set_nan_fallback_conformer_flag(
 
     Based on AF3 SI 2.8, fallback conformers derived from PDB coordinates cannot be used
     if the corresponding PDB model was released after the training cutoff. This function
-    introduces a new key "set_fallback_to_nan" in the reference molecule cache, which is
-    set to True for these cases and will be read in the model dataloading pipeline.
+    sets "set_fallback_to_nan" in the reference molecule cache to True for these cases,
+    which will be read in the model dataloading pipeline.
 
     Args:
-        structure_cache:
-            The structure metadata cache.
+        pdb_id_to_release_date:
+            Mapping of PDB IDs to their release dates. Should be built from the full
+            preprocessing metadata cache (before any filtering).
         reference_mol_cache:
             The reference molecule metadata cache.
-        max_pdb_date:
-            The maximum PDB release date for structures in the training set. PDB IDs
+        max_model_pdb_release_date:
+            The maximum PDB release date for CCD model conformer sources. PDB IDs
             released after this date will have their fallback conformer set to NaN.
 
     """
@@ -834,17 +922,39 @@ def set_nan_fallback_conformer_flag(
         ).date()
 
     for ref_mol_id, metadata in reference_mol_cache.items():
-        # Check if the fallback conformer should be NaN
+        # Only CCD model conformers carry PDB leakage risk — all other sources
+        # (rdkit, ccd-ideal, all-nan) are safe regardless of release dates
+        if metadata.fallback_conformer_source != "ccd-model":
+            metadata.set_fallback_to_nan = False
+            continue
+
         model_pdb_id = metadata.fallback_conformer_pdb_id
 
+        if model_pdb_id is not None:
+            model_pdb_id = model_pdb_id.lower()
+
         if model_pdb_id is None:
-            continue
+            # Conservatively force NaN if PDB-ID of deposited coords unknown
+            logger.warning(
+                f"CCD model conformer for molecule {ref_mol_id} has no associated "
+                "PDB ID, forcing NaN fallback conformer."
+            )
+            metadata.set_fallback_to_nan = True
 
         elif model_pdb_id not in pdb_id_to_release_date:
             logger.warning(
-                f"Fallback fonformer PDB ID {model_pdb_id} not found in cache, for "
+                f"Fallback conformer PDB ID {model_pdb_id} not found in cache, for "
                 f"molecule {ref_mol_id}, forcing NaN fallback conformer."
             )
+            metadata.set_fallback_to_nan = True
+
+        elif pdb_id_to_release_date[model_pdb_id] is None:
+            logger.warning(
+                f"Release date for fallback conformer PDB ID {model_pdb_id} not found "
+                f"in cache, for molecule {ref_mol_id}, forcing NaN fallback conformer."
+            )
+            metadata.set_fallback_to_nan = True
+
         # Check if the PDB ID's release date is after the cutoff
         elif pdb_id_to_release_date[model_pdb_id] > max_model_pdb_release_date:
             logger.debug(f"Setting fallback conformer to NaN for {ref_mol_id}.")

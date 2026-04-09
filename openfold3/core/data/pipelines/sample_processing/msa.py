@@ -372,13 +372,16 @@ def create_main(
             # No main MSA or limit exhausted
             if n_rows_main_msa == 0 or n_rows_main_msa_lim == 0:
                 idx = np.empty((0,), dtype=int)
-            # Subsample otherwise
+            # Otherwise subsample from full effective depth, then truncate to budget
             else:
-                k = np.random.randint(1, min(n_rows_main_msa, n_rows_main_msa_lim) + 1)
+                k = np.random.randint(1, n_rows_main_msa + 1)
                 idx = np.random.choice(n_rows_main_msa, size=k, replace=False)
 
             if keep_subsampled_order:
                 idx.sort()
+
+            # Truncate to budget
+            idx = idx[:n_rows_main_msa_lim]
         else:
             # Keep up to the limit
             idx = np.arange(min(n_rows_main_msa, n_rows_main_msa_lim))

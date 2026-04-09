@@ -49,7 +49,7 @@ from openfold3.core.utils.logging_utils import ContextInjectingFilter
 @click.option(
     "--max-polymer-chains",
     type=int,
-    default=None,
+    default=1000,
     help=(
         "The maximum number of polymer chains in the first bioassembly after which a "
         "structure is skipped by the parser."
@@ -92,6 +92,30 @@ from openfold3.core.utils.logging_utils import ContextInjectingFilter
     default=None,
     help="Stop after processing this many CIFs. Only used for debugging.",
 )
+@click.option(
+    "--maxtasksperchild",
+    type=int,
+    default=None,
+    help=(
+        "Number of tasks a worker handles before being replaced. Lower values "
+        "free memory more aggressively but add respawn overhead."
+    ),
+)
+@click.option(
+    "--max-pool-retries",
+    type=int,
+    default=10,
+    help="Maximum number of times to restart the worker pool after a crash.",
+)
+@click.option(
+    "--stall-timeout",
+    type=int,
+    default=600,
+    help=(
+        "Seconds to wait for a result before assuming the pool is deadlocked "
+        "(e.g. from a killed worker) and restarting it."
+    ),
+)
 def main(
     cif_dir: Path,
     ccd_path: Path,
@@ -103,6 +127,9 @@ def main(
     chunksize: int = 50,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     early_stop: int | None = None,
+    maxtasksperchild: int | None = None,
+    max_pool_retries: int = 10,
+    stall_timeout: int = 600,
 ) -> None:
     """Preprocesses a directory of mmCIF files for use in AlphaFold3.
 
@@ -146,6 +173,7 @@ def main(
 
     # Set up main logger
     main_logger = logging.getLogger("openfold3")
+    main_logger.setLevel(log_level)
     main_logger.addHandler(stream_handler)
     main_logger.addHandler(file_handler)
 
@@ -164,6 +192,9 @@ def main(
             log_queue=log_queue,
             log_level=log_level,
             early_stop=early_stop,
+            maxtasksperchild=maxtasksperchild,
+            max_pool_retries=max_pool_retries,
+            stall_timeout=stall_timeout,
         )
     finally:
         # Stop the listener
