@@ -693,12 +693,22 @@ def remap_colabfold_template_chain_ids(
             entry_id, author_chain_id = template_id.split("_")
 
             author_to_label = author_to_label_maps.get(entry_id, {})
-            if author_chain_id not in author_to_label:
+            if not author_to_label:
+                # No RCSB chain mapping at all (e.g. obsolete/removed PDB).
+                # Fall back to using the author chain ID as the label chain ID.
+                logger.warning(
+                    f"No RCSB chain mapping found for {entry_id}. "
+                    f"This entry may be obsolete. Falling back to "
+                    f"author chain ID '{author_chain_id}' as label chain ID."
+                )
+                label_chain_id = author_chain_id
+            elif author_chain_id not in author_to_label:
                 raise RuntimeError(
                     f"Author chain {author_chain_id} not found in {entry_id}. "
                     f"Available author chains: {sorted(author_to_label.keys())}"
                 )
-            label_chain_id = author_to_label[author_chain_id][0]
+            else:
+                label_chain_id = author_to_label[author_chain_id][0]
 
             remapped_ids.append(f"{entry_id}_{label_chain_id}")
 
