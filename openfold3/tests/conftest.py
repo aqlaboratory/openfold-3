@@ -1,10 +1,18 @@
 import biotite.setup_ccd
 import numpy as np
 import pytest
+import torch
 from biotite.structure import AtomArray
 
 from openfold3.core.data.primitives.structure.component import BiotiteCCDWrapper
 from openfold3.setup_openfold import setup_biotite_ccd
+
+
+@pytest.fixture(scope="session", autouse=True)
+def rocm_blas_setup():
+    """On ROCm/HIP backends, prefer rocBLAS over hipBLASLt."""
+    if torch.cuda.is_available() and torch.version.hip is not None:
+        torch.backends.cuda.preferred_blas_library("cublas")
 
 
 @pytest.fixture
