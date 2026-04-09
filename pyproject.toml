@@ -61,6 +61,7 @@ optional-dependencies.dev = [
     "pytest-xdist",
     "pytest-cov",
     "pytest-benchmark",
+    "pytest-regressions",
     "ruff",
     "pre-commit",
 
@@ -91,6 +92,7 @@ test = [
     "pytest-xdist",
     "pytest-cov",
     "pytest-benchmark",
+    "pytest-regressions",
     "pytest-recording",
     "debugpy",
 ]
