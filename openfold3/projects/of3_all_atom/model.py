@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -239,6 +240,7 @@ class OpenFold3(nn.Module):
                         chunk_size=mode_mem_settings.chunk_size,
                         _mask_trans=True,
                         use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
                         use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                         use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
@@ -269,6 +271,7 @@ class OpenFold3(nn.Module):
                         chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                         use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
                         use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                         use_lma=mode_mem_settings.use_lma,
                         _mask_trans=True,
@@ -284,6 +287,7 @@ class OpenFold3(nn.Module):
                         chunk_size=mode_mem_settings.chunk_size,
                         transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                         use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                        use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
                         use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                         use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
@@ -300,6 +304,7 @@ class OpenFold3(nn.Module):
                     pair_mask=pair_mask.to(dtype=s.dtype),
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                    use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
                     use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                     use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,
@@ -388,6 +393,7 @@ class OpenFold3(nn.Module):
                 use_conditioning=True,
                 chunk_size=mode_mem_settings.chunk_size,
                 use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
                 use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                 use_lma=mode_mem_settings.use_lma,
                 _mask_trans=True,
@@ -412,6 +418,7 @@ class OpenFold3(nn.Module):
                     use_zij_trunk_embedding=use_trunk_embedding,
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                    use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
                     use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                     use_lma=mode_mem_settings.use_lma,
                     inplace_safe=inplace_safe,

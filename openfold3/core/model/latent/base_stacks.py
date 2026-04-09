@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
 #
@@ -84,6 +85,7 @@ class MSAStack(nn.Module, ABC):
         transition_ckpt_chunk_size: int | None,
         use_deepspeed_evo_attention: bool,
         use_cueq_triangle_kernels: bool,
+        use_triton_triangle_kernels: bool,
         use_lma: bool,
         msa_mask: torch.Tensor | None,
         pair_mask: torch.Tensor | None,
@@ -106,6 +108,7 @@ class MSAStack(nn.Module, ABC):
                 transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -181,6 +184,7 @@ class MSAStack(nn.Module, ABC):
         transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         _mask_trans: bool = True,
     ):
@@ -195,6 +199,7 @@ class MSAStack(nn.Module, ABC):
             transition_ckpt_chunk_size=transition_ckpt_chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             msa_mask=msa_mask,
             pair_mask=pair_mask,
@@ -227,6 +232,7 @@ class MSAStack(nn.Module, ABC):
         transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -269,6 +275,7 @@ class MSAStack(nn.Module, ABC):
             transition_ckpt_chunk_size=transition_ckpt_chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             msa_mask=msa_mask,
             pair_mask=pair_mask,

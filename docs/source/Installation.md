@@ -55,6 +55,19 @@ to install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, us
 pip install openfold3[cuequivariance]
 ```
 
+To use AMD ROCm-compatible Triton kernels, first install the ROCm PyTorch wheel (which bundles ROCm Triton), then install openfold3:
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
+pip install openfold3
+```
+
+After installation, verify your ROCm environment is correctly configured:
+
+```bash
+validate-openfold3-rocm
+```
+
 (installation-environment-variables)=
 ### Environment variables
 
@@ -125,7 +138,7 @@ gh auth token | docker login ghcr.io -u $(gh api user --jq .login) --password-st
 Pull the image itself 
 
 ```bash
-docker pull ghcr.io/aqlaboratory/openfold-3/openfold3-docker:0.4.0
+docker pull ghcr.io/aqlaboratory/openfold-3/openfold3-docker:0.4.1
 ```
 
 ### Building the OpenFold3 Docker Image 

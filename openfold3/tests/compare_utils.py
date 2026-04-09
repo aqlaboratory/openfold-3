@@ -20,14 +20,21 @@ import torch
 from openfold3.core.kernels.cueq_utils import is_cuequivariance_available
 
 
+def skip_if_rocm():
+    is_rocm = torch.cuda.is_available() and torch.version.hip is not None
+    return unittest.skipIf(is_rocm, "Not supported on ROCm/HIP")
+
+
 def skip_unless_ds4s_installed():
     deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
     ds4s_is_installed = (
         deepspeed_is_installed
         and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
     )
+    is_rocm = torch.cuda.is_available() and torch.version.hip is not None
     return unittest.skipUnless(
-        ds4s_is_installed, "Requires DeepSpeed with version ≥ 0.10.4"
+        ds4s_is_installed and not is_rocm,
+        "Requires DeepSpeed with version ≥ 0.10.4 (not supported on ROCm/HIP)",
     )
 
 

@@ -154,6 +154,13 @@ def pytest_sessionfinish(session, exitstatus):
                 _write_snapshot_env(subdir)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def rocm_blas_setup():
+    """On ROCm/HIP backends, prefer rocBLAS over hipBLASLt."""
+    if torch.cuda.is_available() and torch.version.hip is not None:
+        torch.backends.cuda.preferred_blas_library("cublas")
+
+
 @pytest.fixture
 def dummy_atom_array():
     # Create dummy atom array

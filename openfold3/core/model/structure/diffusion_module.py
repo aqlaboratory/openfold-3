@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -176,6 +177,7 @@ class DiffusionModule(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -206,6 +208,8 @@ class DiffusionModule(nn.Module):
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
+            use_triton_triangle_kernels:
+                Whether to use Triton triangle attention kernel
             use_lma:
                 Whether to use LMA
             use_high_precision_attention:
@@ -248,6 +252,7 @@ class DiffusionModule(nn.Module):
             mask=token_mask,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             use_high_precision_attention=use_high_precision_attention,
             _mask_trans=_mask_trans,
@@ -324,6 +329,7 @@ class SampleDiffusion(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -348,6 +354,8 @@ class SampleDiffusion(nn.Module):
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
+            use_triton_triangle_kernels:
+                Whether to use Triton triangle attention kernel
             use_lma:
                 Whether to use LMA
             use_high_precision_attention:
@@ -394,6 +402,7 @@ class SampleDiffusion(nn.Module):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,

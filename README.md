@@ -110,7 +110,7 @@ If you use OpenFold3-preview in your research, please cite the following:
   title = {OpenFold3-preview},
   author = {{The OpenFold3 Team}},
   year = {2025},
-  version = {0.4.0},
+  version = {0.4.1},
   doi = {10.5281/zenodo.19001000},
   url = {https://github.com/aqlaboratory/openfold-3},
   abstract = {OpenFold3-preview is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's AlphaFold3, developed by the AlQuraishi Lab at Columbia University and the OpenFold consortium.}
