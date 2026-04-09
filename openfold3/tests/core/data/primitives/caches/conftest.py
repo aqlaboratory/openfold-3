@@ -57,6 +57,7 @@ def lmdb_cache(tmp_path, json_cache):
     convert_datacache_to_lmdb(json_cache, lmdb_dir, map_size=2 * (1024**2))
     return read_datacache(lmdb_dir)
 
+
 @pytest.fixture()
 def lmdb_dir(tmp_path, json_cache):
     """Convert the JSON cache to LMDB, return the LMDB directory path."""

@@ -6,7 +6,6 @@ from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.primitives.caches.lmdb import LMDBDict
 
 
-
 class TestReadDatacacheLMDB:
     def test_type_peek_env_cleaned_up(self, lmdb_dir):
         """read_datacache opens a short-lived env to peek at _type, then closes it.

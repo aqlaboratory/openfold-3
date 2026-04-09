@@ -30,11 +30,25 @@ class TestDatasetCacheFromLMDB:
     @pytest.mark.parametrize(
         ("field", "key", "attr", "expected"),
         [
-            ("structure_data", "test0", "chains.0.alignment_representative_id", "test_id0"),
-            ("structure_data", "test1", "chains.0.alignment_representative_id", "test_id1"),
+            (
+                "structure_data",
+                "test0",
+                "chains.0.alignment_representative_id",
+                "test_id0",
+            ),
+            (
+                "structure_data",
+                "test1",
+                "chains.0.alignment_representative_id",
+                "test_id1",
+            ),
             ("reference_molecule_data", "ALA", "canonical_smiles", "C[C@H](N)C(=O)O"),
         ],
-        ids=["structure_data-test0", "structure_data-test1", "reference_molecule_data-ALA"],
+        ids=[
+            "structure_data-test0",
+            "structure_data-test1",
+            "reference_molecule_data-ALA",
+        ],
     )
     def test_from_lmdb_lazy_read(self, lmdb_cache, field, key, attr, expected):
         """Individual key lookups should return correct data through the live env."""

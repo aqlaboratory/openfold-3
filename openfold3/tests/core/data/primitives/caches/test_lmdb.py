@@ -18,11 +18,10 @@ import json
 
 import lmdb
 import pytest
+from conftest import TEST_DATASET_CONFIG
 
 from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.primitives.caches.lmdb import convert_datacache_to_lmdb
-
-from conftest import TEST_DATASET_CONFIG
 
 
 class TestLMDBDict:
@@ -59,13 +58,12 @@ class TestConvertDatacacheToLMDB:
         lmdb_dir = tmp_path / "lmdb"
         convert_datacache_to_lmdb(json_cache, lmdb_dir, map_size=2 * (1024**2))
 
-        with lmdb.open(str(lmdb_dir), readonly=True, lock=False, subdir=True) as env:
-            with env.begin() as txn, txn.cursor() as cursor:
-                keys = {
-                    k.decode()
-                    for k, _ in cursor
-                    if k.decode().startswith(prefix)
-                }
+        with (
+            lmdb.open(str(lmdb_dir), readonly=True, lock=False, subdir=True) as env,
+            env.begin() as txn,
+            txn.cursor() as cursor,
+        ):
+            keys = {k.decode() for k, _ in cursor if k.decode().startswith(prefix)}
         assert keys == expected_keys
 
     def test_metadata_keys_written(self, tmp_path, json_cache):
@@ -73,10 +71,12 @@ class TestConvertDatacacheToLMDB:
         lmdb_dir = tmp_path / "lmdb"
         convert_datacache_to_lmdb(json_cache, lmdb_dir, map_size=2 * (1024**2))
 
-        with lmdb.open(str(lmdb_dir), readonly=True, lock=False, subdir=True) as env:
-            with env.begin() as txn:
-                _type = json.loads(txn.get(b"_type").decode())
-                name = json.loads(txn.get(b"name").decode())
+        with (
+            lmdb.open(str(lmdb_dir), readonly=True, lock=False, subdir=True) as env,
+            env.begin() as txn,
+        ):
+            _type = json.loads(txn.get(b"_type").decode())
+            name = json.loads(txn.get(b"name").decode())
 
         assert _type == TEST_DATASET_CONFIG["_type"]
         assert name == TEST_DATASET_CONFIG["name"]
