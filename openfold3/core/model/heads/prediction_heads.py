@@ -141,6 +141,7 @@ class PairformerEmbedding(nn.Module):
             zij.expand(*(batch_dims + zij.shape[-3:])), device=device
         )
 
+        in_dtype = zij.dtype
         for i in range(no_samples):
             zij_chunk = self.embed_zij(
                 si_input=si_input, zij=zij, x_pred=x_pred[:, i : i + 1]
@@ -170,7 +171,7 @@ class PairformerEmbedding(nn.Module):
             del si_chunk, zij_chunk
 
         # If offloading, do not return to device for now and let caller handle it
-        return si_out, zij_out
+        return si_out.to(dtype=in_dtype), zij_out.to(dtype=in_dtype)
 
     def pairformer_emb(
         self,
@@ -214,6 +215,7 @@ class PairformerEmbedding(nn.Module):
         if use_kernels and si.shape[0] > 1:
             chunk_size = None
 
+        in_dtype = zij.dtype
         with torch.amp.autocast(device_type="cuda", dtype=pairformer_dtype):
             si, zij = self.pairformer_stack(
                 si,
@@ -231,7 +233,7 @@ class PairformerEmbedding(nn.Module):
         si = reshape_outputs(x=si, feat_dims=si.shape[-2:])
         zij = reshape_outputs(x=zij, feat_dims=zij.shape[-3:])
 
-        return si, zij
+        return si.to(dtype=in_dtype), zij.to(dtype=in_dtype)
 
     def forward(
         self,
