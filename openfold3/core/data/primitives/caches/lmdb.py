@@ -123,6 +123,8 @@ def convert_datacache_to_lmdb(
         # TODO add logic to iteratively read the cache with ijson and write to LMDB
         # should be useful for super large caches
         raise NotImplementedError("Iterative mode is not yet implemented.")
+    else:
+        raise ValueError(f"Invalid mode: {mode}. Must be 'single-read' or 'iterative'.")
 
 
 class LMDBDict(Mapping[K, V], Generic[K, V]):
