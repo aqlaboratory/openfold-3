@@ -27,9 +27,6 @@ urls.Documentation = "https://openfold-3.readthedocs.io/en/latest/"
 urls.Repository = "https://github.com/aqlaboratory/openfold-3"
 urls.Issues = "https://github.com/aqlaboratory/openfold-3/issues"
 
-scripts.run_openfold = "openfold3.run_openfold:cli"
-scripts.setup_openfold = "openfold3.setup_openfold:main"
-
 requires-python = ">=3.10"
 dependencies = [
     "numpy",
