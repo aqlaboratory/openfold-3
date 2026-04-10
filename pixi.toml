@@ -270,7 +270,6 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   setuptools = "<82"
 
   [feature.pytorch-pypi-rocm7.pypi-dependencies]
-  pytorch-lightning = "*"
   torch = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
   triton-rocm = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
 
