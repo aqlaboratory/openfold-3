@@ -101,6 +101,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         inplace_safe: bool = False,
         offload_inference: bool = False,
         _mask_trans: bool = True,
+        pairformer_dtype: torch.dtype = torch.float32,
     ):
         """
         Args:
@@ -208,6 +209,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             offload_inference=offload_inference,
             _mask_trans=_mask_trans,
             apply_per_sample=apply_per_sample,
+            pairformer_dtype=pairformer_dtype,
         )
 
         # Get atom mask padded to MAX_ATOMS_PER_TOKEN
