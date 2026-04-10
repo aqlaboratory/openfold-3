@@ -185,6 +185,8 @@ class PairFormerBlock(nn.Module):
             _attn_chunk_size=_attn_chunk_size,
         )
 
+        # TODO: Disabling cueq here for now, want to confirm why this is disabled
+        #  for rollout attention pair bias but not here
         s = add(
             s,
             self.attn_pair_bias(
@@ -192,7 +194,7 @@ class PairFormerBlock(nn.Module):
                 z=z,
                 mask=single_mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_cueq_triangle_kernels=False,
                 use_lma=use_lma,
             ),
             inplace=inplace_safe,
