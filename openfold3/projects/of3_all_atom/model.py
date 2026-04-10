@@ -383,6 +383,7 @@ class OpenFold3(nn.Module):
             use_conditioning = (
                 use_trunk_embedding if self.shared.sync_rollout_use_emb else True
             )
+            # TODO: Removed kernels here for now, re-evaluate safety/correctness
             atom_positions_predicted = self.sample_diffusion(
                 batch=batch,
                 si_input=si_input,
@@ -392,9 +393,7 @@ class OpenFold3(nn.Module):
                 no_rollout_samples=no_rollout_samples,
                 use_conditioning=use_conditioning,
                 chunk_size=mode_mem_settings.chunk_size,
-                use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
-                use_lma=mode_mem_settings.use_lma,
+                use_high_precision_attention=True,
                 _mask_trans=True,
             )
 
