@@ -408,7 +408,7 @@ class OpenFold3(nn.Module):
 
         # Capture dtype before entering fp32 context for the pairformer
         pairformer_dtype = (
-            torch.get_autocast_gpu_dtype()
+            torch.get_autocast_dtype("cuda")
             if torch.is_autocast_enabled()
             else torch.float32
         )
