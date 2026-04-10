@@ -147,10 +147,11 @@ class OpenFold3Loss(nn.Module):
             and self.config.per_sample_atom_cutoff is not None
             and num_atoms > self.config.per_sample_atom_cutoff
         )
-        if not torch.is_grad_enabled() and apply_per_sample:
-            loss, loss_breakdown = self.loss_chunked(batch, output)
-        else:
-            loss, loss_breakdown = self.loss(batch, output)
+        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+            if not torch.is_grad_enabled() and apply_per_sample:
+                loss, loss_breakdown = self.loss_chunked(batch, output)
+            else:
+                loss, loss_breakdown = self.loss(batch, output)
 
         if not _return_breakdown:
             return loss
