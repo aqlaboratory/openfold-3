@@ -61,7 +61,8 @@ class MsaArray:
 
     def __post_init__(self):
         # Normalize to uppercase since the residue alphabet is uppercase-only.
-        self.msa = np.char.upper(self.msa)
+        if np.strings.islower(self.msa).any():
+            self.msa = np.strings.upper(self.msa)
 
     def __len__(self):
         return self.msa.shape[0]
