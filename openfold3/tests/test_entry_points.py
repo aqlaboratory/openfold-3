@@ -678,6 +678,7 @@ class TestSetupOpenFold:
         )
 
         with (
+            patch.dict(os.environ),
             patch("builtins.input", side_effect=inputs),
             patch(
                 "openfold3.entry_points.parameters.download_s3_file",
@@ -710,6 +711,7 @@ class TestSetupOpenFold:
         )
 
         with (
+            patch.dict(os.environ),
             patch("builtins.input", side_effect=inputs),
             patch(
                 "openfold3.entry_points.parameters.download_s3_file",
