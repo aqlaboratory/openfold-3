@@ -15,6 +15,7 @@
 """Helper functions to test the lmdb dict"""
 
 import json
+import os
 
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
@@ -66,7 +67,11 @@ class TestLMDBDict:
 
         # Create LMDB
         test_lmdb_dir = tmp_path / "test_lmdb"
-        map_size = 20 * 1024
+        # LMDB requires map_size aligned to the OS page size. On systems with
+        # large pages (e.g. 64KB on aarch64/GH200), a small fixed value can be
+        # below the minimum usable size, causing MDB_MAP_FULL on writes.
+        page_size = os.sysconf("SC_PAGESIZE")
+        map_size = max(20 * 1024, page_size * 5)
         convert_datacache_to_lmdb(test_config_json, test_lmdb_dir, map_size)
 
         # read lmdb
