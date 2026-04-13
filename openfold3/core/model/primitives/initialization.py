@@ -16,18 +16,11 @@
 """Initialization functions for network parameters."""
 
 import math
+from functools import lru_cache
 
-import numpy as np
 import torch
 from scipy.stats import truncnorm
 from torch import nn
-
-
-def _prod(nums):
-    out = 1
-    for n in nums:
-        out = out * n
-    return out
 
 
 def _calculate_fan(linear_weight_shape, fan="fan_in"):
@@ -45,18 +38,26 @@ def _calculate_fan(linear_weight_shape, fan="fan_in"):
     return f
 
 
+@lru_cache
+def _cached_truncnorm_std(a, b, loc, scale):
+    return truncnorm.std(a, b, loc, scale)
+
+
 def trunc_normal_init_(weights, scale=1.0, fan="fan_in"):
-    shape = weights.shape
-    f = _calculate_fan(shape, fan)
+    f = _calculate_fan(weights.shape, fan)
+
     scale = scale / max(1, f)
-    a = -2
-    b = 2
-    std = math.sqrt(scale) / truncnorm.std(a=a, b=b, loc=0, scale=1)
-    size = _prod(shape)
-    samples = truncnorm.rvs(a=a, b=b, loc=0, scale=std, size=size)
-    samples = np.reshape(samples, shape)
+    # truncnorm.std is always 0.8796256610342398
+    std = math.sqrt(scale) / _cached_truncnorm_std(a=-2, b=2, loc=0, scale=1)
+
     with torch.no_grad():
-        weights.copy_(torch.tensor(samples, device=weights.device))
+        nn.init.trunc_normal_(
+            weights,
+            mean=0.0,
+            std=std,
+            a=-2.0 * std,
+            b=2.0 * std,
+        )
 
 
 def lecun_normal_init_(weights):
