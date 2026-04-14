@@ -485,6 +485,46 @@ class TestColabFoldQueryRunner:
                 )
 
 
+class TestRemapObsoletePdb:
+    """Regression test for GitHub issue #170.
+
+    When ColabFold returns a template hit for an obsolete PDB (e.g. 7QE7),
+    the RCSB API returns no chain mapping.  The function should warn and
+    fall back to using the author chain ID as the label chain ID, rather
+    than crashing the entire run.
+    """
+
+    @staticmethod
+    def _mock_fetch_excluding_obsolete(pdb_ids):
+        """Simulate RCSB not returning data for obsolete PDB entries."""
+        known = {
+            "4pqx": {"A": "A"},
+        }
+        # Obsolete PDB "7qe7" is intentionally absent from known
+        return {pid: known[pid] for pid in pdb_ids if pid in known}
+
+    @patch(_MOCK_FETCH_TARGET)
+    def test_obsolete_pdb_falls_back(self, mock_fetch):
+        """Obsolete PDB with no RCSB mapping falls back to author chain ID."""
+        mock_fetch.side_effect = self._mock_fetch_excluding_obsolete
+
+        # Template hits include an obsolete PDB entry (7qe7)
+        df = _make_m8_dataframe(["7qe7_A", "4pqx_A"])
+
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=df,
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        remapped_ids = result["rep1"][1].tolist()
+        # Obsolete entry falls back to author chain ID
+        assert remapped_ids[0] == "7qe7_A"
+        # Non-obsolete entry is remapped normally
+        assert remapped_ids[1] == "4pqx_A"
+
+
 class TestMsaComputationSettings:
     def test_cli_output_dir_overrides_config(self, tmp_path):
         """Test that CLI output directory overrides config file setting."""

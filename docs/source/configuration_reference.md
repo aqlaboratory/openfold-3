@@ -208,6 +208,7 @@ Configures the format of output files.
 **All Options**:
 - `structure_format` *(Literal["pdb", "cif", "cif.gz"])*: Output format (default: `cif`)
 - `full_confidence_output_format` *(Literal["json", "npz"])*: Confidence output format (default: `json`)
+- `full_confidence_output_dtype` *(Literal["float32", "float16"])*: Data type for confidence scores when using npz format (default: `float16`)
 - `write_features` *(bool)*: Write intermediate features (default: `false`)
 - `write_latent_outputs` *(bool)*: Write model intermediate outputs (default: `false`)
 - `write_full_confidence_scores` *(bool)*: Write full confidence scores, e.g. PAE, PDE, PLDDT (default: `true`)

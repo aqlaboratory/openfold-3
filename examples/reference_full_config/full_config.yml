@@ -117,11 +117,13 @@ dataset_config_kwargs:
 
 # OutputWriterSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141
 # Configure the output formats / content
-output_writing_settings: 
+output_writer_settings: 
   structure_format: cif  [cif | pdb | cif.gz]
   full_confidence_output_format: json [json | npz]
+  full_confidence_output_dtype: float16 [float32 | float16]
   write_features: false
   write_latent_outputs: false
+  write_full_confidence_scores: true
 
 # MSAComputationSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py#L904
 # Configure MSA server settings for colabfold 

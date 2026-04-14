@@ -1,11 +1,11 @@
 [build-system]
 # torch used at build needs to match the one at runtime
-requires = ["setuptools", "wheel"]
+requires = ["setuptools", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "openfold3"
-version = "0.4.1"
+dynamic = ["version"]
 authors = [
     { name = "OpenFold Team", email = "support@openfold.io" }
 ]
@@ -99,6 +99,9 @@ test = [
     "debugpy",
 ]
 
+
+[tool.setuptools_scm]
+fallback_version = "0.4.1-dev"
 
 [tool.setuptools]
 include-package-data = true
