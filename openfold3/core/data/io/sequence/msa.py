@@ -207,6 +207,8 @@ def parse_stockholm(
 
     # Embed in numpy array
     msa = _msa_list_to_np(msa)
+    # Handle legacy NPZ files that may have lowercase letters in the MSA
+    msa = np.strings.upper(msa)
     deletion_matrix = np.array(deletion_matrix)
     metadata = list(name_to_sequence.keys())
 
@@ -374,7 +376,8 @@ def parse_msas_preparsed(
                         stacklevel=2,
                     )
                 msas[k] = MsaArray(
-                    msa=unpacked_msas["msa"],
+                    # Handle legacy NPZ files that may have lowercase letters in the MSA
+                    msa=np.strings.upper(unpacked_msas["msa"]),
                     deletion_matrix=unpacked_msas["deletion_matrix"],
                     metadata=unpacked_msas["metadata"],
                 )
