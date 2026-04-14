@@ -48,7 +48,7 @@ def trunc_normal_init_(weights, scale=1.0, fan="fan_in"):
 
     scale = scale / max(1, f)
     # truncnorm.std is always 0.8796256610342398
-    std = math.sqrt(scale) / _cached_truncnorm_std(a=-2, b=2, loc=0, scale=1)
+    std = float(math.sqrt(scale) / _cached_truncnorm_std(a=-2, b=2, loc=0, scale=1))
 
     with torch.no_grad():
         nn.init.trunc_normal_(
