@@ -319,33 +319,40 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 # --- CuEquivariance
 # https://developer.nvidia.com/cuequivariance#section-get-started
 #
-# Problems (2026/01/13)
-# --------------------
+# Notes
+# -----
 # 1) Missing conda packages for cuequivariance kernels
 #    In CF we have cuequivariance and cuequivariance-torch
 #    At the moment the optimized kernels are not distributed in conda-forge
 #     * cuequivariance-ops-torch-cu12
-#   There are no sources and LICENSE does not allow to redistribute wheels, so not very CF friednly.
+#   There are no sources and LICENSE does not allow to redistribute wheels, so not very CF friendly.
 #   This install some other libs from pypi:
-#     * cuequivarance-ops-cu12
+#     * cuequivariance-ops-cu12
 #     * nvidia-cublas-cu12
 #   With cublas being the problematic one - also packaged in CF but not clobbering
 #   We would need to also package this in conda-forge
 #   See also: https://github.com/NVIDIA/cuEquivariance/issues/218
 #
-# 2) Tests fail with cuequivariance >=0.8, need to assess + pinning in the meantime
-# 2.1) No aarch wheel for cuequivariance-ops-torch-cu13 <0.8
-#
 
 [feature.cuequivariance-cuda12.target.linux-64.pypi-dependencies]
-cuequivariance = "<0.8"
-cuequivariance-torch = "<0.8"
-cuequivariance-ops-torch-cu12 = "<0.8"
+cuequivariance = ">=0.8"
+cuequivariance-torch = ">=0.8"
+cuequivariance-ops-torch-cu12 = ">=0.8"
+
+[feature.cuequivariance-cuda12.target.linux-aarch64.pypi-dependencies]
+cuequivariance = ">=0.8"
+cuequivariance-torch = ">=0.8"
+cuequivariance-ops-torch-cu12 = ">=0.8"
 
 [feature.cuequivariance-cuda13.target.linux-64.pypi-dependencies]
-cuequivariance = "<0.8"
-cuequivariance-torch = "<0.8"
-cuequivariance-ops-torch-cu13 = "<0.8"
+cuequivariance = ">=0.8"
+cuequivariance-torch = ">=0.8"
+cuequivariance-ops-torch-cu13 = ">=0.8"
+
+[feature.cuequivariance-cuda13.target.linux-aarch64.pypi-dependencies]
+cuequivariance = ">=0.8"
+cuequivariance-torch = ">=0.8"
+cuequivariance-ops-torch-cu13 = ">=0.8"
 
 # --- Tasks
 

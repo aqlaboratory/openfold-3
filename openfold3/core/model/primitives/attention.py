@@ -746,40 +746,69 @@ def _cueq_triangle_attn(q, k, v, biases, scale):
     )
     mask_bias, triangle_bias = biases
 
-    ##VS: the cueq attn kernel only allows up to 5 input dimensions:
-    ## (batch,*,n_head, *,c_hidden); batch here denotes multiple
-    ## structures in a single fwd pass; while this is fine for the
-    ## pairformer, in the template module we have
-    ## inputs of shape (batch, n_tmpl, n_res,n_head, n_res, c_in)
-    ## so therefore we need to reshape the input to remove the
-    ## extra batch dimension, then reshape it back to the original
+    # cuequivariance triangle_attention expects 5D inputs:
+    #   q/k/v: (B, N, H, S, D)
+    #   bias:  (B, 1, H, S_qo, S_kv)   — N must be 1
+    #   mask:  (B, N, 1, 1, S_kv)
+    #
+    # Inputs arrive here in one of three shapes depending on call path:
+    #   6D — template module: (batch, n_tmpl, N, H, S, D)  → collapse to 5D
+    #   5D — standard pairformer: already correct
+    #   4D — after chunk_layer flattens batch dims: (chunk, H, S, D) → promote to 5D
+
+    # 6D → 5D: merge the (batch, n_tmpl) dims into a single batch dim.
     if len(q.shape) > 5:
         assert len(q.shape) == 6, (
             "max number of dimensions for CUEQ triangle attention kernel is 6"
         )
         is_batched_input = True
-        batch, n_tmpl, n_res, n_head, c_hidden = q.shape[:5]
+        batch, n_tmpl = q.shape[:2]
+        # q: (batch, n_tmpl, N, H, S, D) → (batch*n_tmpl, N, H, S, D)
         q = q.view(batch * n_tmpl, *q.shape[2:])
         k = k.view(batch * n_tmpl, *k.shape[2:])
         v = v.view(batch * n_tmpl, *v.shape[2:])
+        # mask_bias: (batch, n_tmpl, N, 1, 1, S) → (batch*n_tmpl, N, 1, 1, S)
         mask_bias = mask_bias.view(batch * n_tmpl, *mask_bias.shape[2:])
+        # triangle_bias: (batch, n_tmpl, 1, H, S, S) → (batch*n_tmpl, 1, H, S, S)
         triangle_bias = triangle_bias.view(batch * n_tmpl, *triangle_bias.shape[2:])
-    ##VS: The mask for the triangle attention kernel needs to be a
-    ## boolean mask - the default mask is an additive mask, where
-    ## 0 means no masking and -inf means masking. so we need to
-    ## convert this to a boolean mask where positions to keep are
-    ## True, and positions to mask are False.
+
+    # 4D → 5D: chunk_layer flattens batch dims and slices into chunks.
+    # Promote to 5D with N=1 so each chunk entry is an independent batch item.
+    # cuequivariance >=0.8 requires bias shape (B, 1, H, Q, K) with exact
+    # batch match — no implicit broadcasting.
+    is_chunked_input = len(q.shape) == 4
+    if is_chunked_input:
+        # q: (chunk, H, S, D) → (chunk, 1, H, S, D)
+        q = q.unsqueeze(1)
+        k = k.unsqueeze(1)
+        v = v.unsqueeze(1)
+        # mask_bias: (chunk, 1, 1, S) → (chunk, 1, 1, 1, S)
+        mask_bias = mask_bias.unsqueeze(1)
+        # triangle_bias: (chunk, H, S, S) → (chunk, 1, H, S, S)
+        #   or: (1, H, S, S) → (1, 1, H, S, S) when chunk_layer kept B=1
+        triangle_bias = triangle_bias.unsqueeze(1)
+        # chunk_layer skips expanding bias when all its batch dims are 1,
+        # so bias may have B=1 while q has B=chunk. Expand to match.
+        if triangle_bias.shape[0] != q.shape[0]:
+            # (1, 1, H, S, S) → (chunk, 1, H, S, S)
+            triangle_bias = triangle_bias.expand(q.shape[0], *triangle_bias.shape[1:])
+        if mask_bias.shape[0] != q.shape[0]:
+            mask_bias = mask_bias.expand(q.shape[0], *mask_bias.shape[1:])
+
+    # Convert additive mask (0 = keep, -inf = mask) to boolean (True = keep).
     if mask_bias.dtype != torch.bool:
         mask_bias = mask_bias == 0
 
+    # At this point all tensors are 5D with the shapes expected by the kernel.
     o = triangle_attention(q, k, v, bias=triangle_bias, mask=mask_bias, scale=scale)
 
-    if len(q.shape) == 4:
-        ##VS: There's a bug in cueq where if the input is missing the batch dim
-        ## the outputs adds it in and so we need to remove it here
-        o = o.squeeze(0)
+    # Undo the promotions in reverse order.
+    if is_chunked_input:
+        # (chunk, 1, H, S, D) → (chunk, H, S, D)
+        o = o.squeeze(1)
 
     if is_batched_input:
+        # (batch*n_tmpl, N, H, S, D) → (batch, n_tmpl, N, H, S, D)
         o = o.view(batch, n_tmpl, *o.shape[1:])
 
     o = o.transpose(-2, -3)
