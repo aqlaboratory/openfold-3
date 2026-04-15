@@ -59,6 +59,20 @@ class MsaArray:
         default_factory=pd.DataFrame
     )
 
+    @classmethod
+    def from_parsed(
+        cls,
+        msa: np.ndarray,
+        deletion_matrix: np.ndarray,
+        metadata: pd.DataFrame | list | np.ndarray | None = None,
+    ) -> MsaArray:
+        """Construct from externally parsed MSA data, normalizing to uppercase."""
+        return cls(
+            msa=np.strings.upper(msa),
+            deletion_matrix=deletion_matrix,
+            metadata=metadata if metadata is not None else pd.DataFrame(),
+        )
+
     def __len__(self):
         return self.msa.shape[0]
 

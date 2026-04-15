@@ -38,6 +38,55 @@ def _make_msa_array(
 
 
 # ---------------------------------------------------------------------------
+# from_parsed
+# ---------------------------------------------------------------------------
+
+
+class TestFromParsed:
+    @pytest.mark.parametrize(
+        "sequences,expected_upper",
+        [
+            pytest.param(
+                ["ACG", "A-G"],
+                [list("ACG"), list("A-G")],
+                id="already_uppercase",
+            ),
+            pytest.param(
+                ["acg", "a-g"],
+                [list("ACG"), list("A-G")],
+                id="all_lowercase",
+            ),
+            pytest.param(
+                ["aCg", "A-g"],
+                [list("ACG"), list("A-G")],
+                id="mixed_case",
+            ),
+        ],
+    )
+    def test_normalizes_to_uppercase(self, sequences, expected_upper):
+        msa = np.array([list(seq) for seq in sequences])
+        deletion_matrix = np.zeros(msa.shape, dtype=int)
+        result = MsaArray.from_parsed(msa=msa, deletion_matrix=deletion_matrix)
+        np.testing.assert_array_equal(result.msa, np.array(expected_upper))
+
+    def test_default_metadata_is_empty_dataframe(self):
+        msa = np.array([list("ACG")])
+        result = MsaArray.from_parsed(
+            msa=msa, deletion_matrix=np.zeros_like(msa, dtype=int)
+        )
+        assert isinstance(result.metadata, pd.DataFrame)
+        assert result.metadata.empty
+
+    def test_preserves_provided_metadata(self):
+        msa = np.array([list("ACG"), list("A-G")])
+        meta = ["seq1", "seq2"]
+        result = MsaArray.from_parsed(
+            msa=msa, deletion_matrix=np.zeros_like(msa, dtype=int), metadata=meta
+        )
+        assert result.metadata == meta
+
+
+# ---------------------------------------------------------------------------
 # __len__
 # ---------------------------------------------------------------------------
 
