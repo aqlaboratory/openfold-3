@@ -15661,8 +15661,8 @@ packages:
   requires_python: '>=3'
 - pypi: ./
   name: openfold3
-  version: 0.4.0
-  sha256: 053d279b1edc0207895d6e620e8b95be477dafc94568dc2a5b83cef7d927eb07
+  version: 0.4.2.dev37+gbc7badc30
+  sha256: 4e10728e8d0f21ed3cf105f35eb66feaaef7fc81e6923c16e41afcd2d2116178
   requires_dist:
   - numpy
   - scipy
