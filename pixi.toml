@@ -153,9 +153,6 @@ python = "<3.14"
 [feature.openfold3-editable-full.pypi-dependencies]
 openfold3 = { path = ".", editable = true, extras = ["deepspeed", "dev"] }
 
-#[feature.kalign.pypi-dependencies]
-#kalign-python = "*"
-
 [feature.not-in-pypi.target.linux.dependencies]
 hmmer = "*"
 hhsuite = "*"
