@@ -64,7 +64,12 @@ class TestPredictionWriter:
         ["pdb", "cif", "cif.gz"],
         ids=lambda x: x,
     )
-    def test_written_coordinates(self, tmp_path, structure_format):
+    @pytest.mark.parametrize(
+        "file_prefix",
+        ["file_name", "file.name.with.dots", "file.name.with.cif.and.dots"],
+        ids=["simple", "dotted_query_id", "dotted_query_id_with_cif_extension"],
+    )
+    def test_written_coordinates(self, tmp_path, structure_format, file_prefix):
         atom1 = structure.Atom([1, 2, 3], chain_id="A")
         atom2 = structure.Atom([2, 3, 4], chain_id="A")
         atom3 = structure.Atom([3, 4, 5], chain_id="B")
@@ -89,7 +94,7 @@ class TestPredictionWriter:
             structure_format=structure_format,
             full_confidence_output_format="json",
         )
-        tmp_file = tmp_path / f"TEST.{structure_format}"
+        tmp_file = tmp_path / f"{file_prefix}.{structure_format}"
         output_writer.write_structure_prediction(
             atom_array, new_coords, dummy_plddt, tmp_file, False
         )
