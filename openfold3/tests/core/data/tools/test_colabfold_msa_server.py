@@ -160,15 +160,35 @@ class TestRemapColabfoldTemplateChainIds:
         assert remapped_ids[1] == "4pqx_A"
 
     @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
-    def test_unknown_author_chain_raises(self, _mock_fetch):
-        """When the author chain ID isn't in the API response, raise."""
-        with pytest.raises(RuntimeError, match="Author chain Z not found in 1rnb"):
-            remap_colabfold_template_chain_ids(
-                template_alignments=_make_m8_dataframe(["1rnb_Z"]),
-                m_with_templates={101},
-                rep_ids=["rep1"],
-                rep_id_to_m={"rep1": 101},
-            )
+    def test_unknown_author_chain_skipped(self, _mock_fetch):
+        """When the author chain ID isn't in the API response, skip that template."""
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=_make_m8_dataframe(["1rnb_Z"]),
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        assert "rep1" in result
+        # The template with unmappable chain Z should be dropped
+        assert len(result["rep1"]) == 0
+
+    @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
+    def test_unknown_chain_drops_only_bad_rows(self, _mock_fetch):
+        """Valid templates are kept; only unmappable ones are dropped."""
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=_make_m8_dataframe(["1rnb_A", "1rnb_Z", "4pqx_A"]),
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        assert "rep1" in result
+        remapped_ids = result["rep1"][1].tolist()
+        # 1rnb_Z dropped, 1rnb_A remapped to 1rnb_B, 4pqx_A kept
+        assert len(remapped_ids) == 2
+        assert remapped_ids[0] == "1rnb_B"
+        assert remapped_ids[1] == "4pqx_A"
 
     def test_skips_rep_without_templates(self):
         """Rep IDs not in m_with_templates should be skipped (no fetch needed)."""
