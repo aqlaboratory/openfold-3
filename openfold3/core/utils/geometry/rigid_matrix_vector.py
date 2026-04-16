@@ -163,7 +163,7 @@ class Rigid3Array:
         return cls.from_array(array)
 
     @classmethod
-    def from_array4x4(cls, array: torch.tensor) -> Rigid3Array:
+    def from_array4x4(cls, array: torch.Tensor) -> Rigid3Array:
         """Construct Rigid3Array from homogeneous 4x4 array."""
         rotation = rotation_matrix.Rot3Array(
             array[..., 0, 0],

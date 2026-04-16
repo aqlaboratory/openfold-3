@@ -25,9 +25,9 @@ from openfold3.core.utils.geometry import rigid_matrix_vector, rotation_matrix, 
 def assert_rotation_matrix_equal(
     matrix1: rotation_matrix.Rot3Array, matrix2: rotation_matrix.Rot3Array
 ):
-    for field in dataclasses.fields(rotation_matrix.Rot3Array):
-        field = field.name
-        assert torch.equal(getattr(matrix1, field), getattr(matrix2, field))
+    for f in dataclasses.fields(rotation_matrix.Rot3Array):
+        name = f.name
+        assert torch.equal(getattr(matrix1, name), getattr(matrix2, name))
 
 
 def assert_rotation_matrix_close(

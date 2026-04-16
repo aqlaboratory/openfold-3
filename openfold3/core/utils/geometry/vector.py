@@ -106,11 +106,11 @@ class Vec3Array:
         new_z = self.x * other.y - self.y * other.x
         return Vec3Array(new_x, new_y, new_z)
 
-    def dot(self, other: Vec3Array) -> Float:
+    def dot(self, other: Vec3Array) -> torch.Tensor:
         """Compute dot product between 'self' and 'other'."""
         return self.x * other.x + self.y * other.y + self.z * other.z
 
-    def norm(self, epsilon: float = 1e-6) -> Float:
+    def norm(self, epsilon: float = 1e-6) -> torch.Tensor:
         """Compute Norm of Vec3Array, clipped to epsilon."""
         # To avoid NaN on the backward pass, we must use maximum before the sqrt
         norm2 = self.dot(self)
@@ -180,7 +180,7 @@ class Vec3Array:
 
 def square_euclidean_distance(
     vec1: Vec3Array, vec2: Vec3Array, epsilon: float = 1e-6
-) -> Float:
+) -> torch.Tensor:
     """Computes square of euclidean distance between 'vec1' and 'vec2'.
 
     Args:
@@ -200,15 +200,15 @@ def square_euclidean_distance(
     return distance
 
 
-def dot(vector1: Vec3Array, vector2: Vec3Array) -> Float:
+def dot(vector1: Vec3Array, vector2: Vec3Array) -> torch.Tensor:
     return vector1.dot(vector2)
 
 
-def cross(vector1: Vec3Array, vector2: Vec3Array) -> Float:
+def cross(vector1: Vec3Array, vector2: Vec3Array) -> Vec3Array:
     return vector1.cross(vector2)
 
 
-def norm(vector: Vec3Array, epsilon: float = 1e-6) -> Float:
+def norm(vector: Vec3Array, epsilon: float = 1e-6) -> torch.Tensor:
     return vector.norm(epsilon)
 
 
@@ -218,7 +218,7 @@ def normalized(vector: Vec3Array, epsilon: float = 1e-6) -> Vec3Array:
 
 def euclidean_distance(
     vec1: Vec3Array, vec2: Vec3Array, epsilon: float = 1e-6
-) -> Float:
+) -> torch.Tensor:
     """Computes euclidean distance between 'vec1' and 'vec2'.
 
     Args:
@@ -236,7 +236,9 @@ def euclidean_distance(
     return distance
 
 
-def dihedral_angle(a: Vec3Array, b: Vec3Array, c: Vec3Array, d: Vec3Array) -> Float:
+def dihedral_angle(
+    a: Vec3Array, b: Vec3Array, c: Vec3Array, d: Vec3Array
+) -> torch.Tensor:
     """Computes torsion angle for a quadruple of points.
 
     For points (a, b, c, d), this is the angle between the planes defined by
