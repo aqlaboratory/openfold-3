@@ -14,11 +14,16 @@
 
 """Tests for MsaArray class."""
 
+import string
+
 import numpy as np
 import pandas as pd
 import pytest
 
-from openfold3.core.data.primitives.sequence.msa import MsaArray
+from openfold3.core.data.primitives.sequence.msa import (
+    MsaArray,
+    _uppercase_ascii_inplace,
+)
 
 
 def _make_msa_array(
@@ -84,6 +89,42 @@ class TestFromParsed:
             msa=msa, deletion_matrix=np.zeros_like(msa, dtype=int), metadata=meta
         )
         assert result.metadata == meta
+
+
+# ---------------------------------------------------------------------------
+# _uppercase_ascii_inplace
+# ---------------------------------------------------------------------------
+
+
+class TestUppercaseAsciiInplace:
+    def test_mutates_input(self):
+        arr = np.array([list("acg"), list("a-g")])
+        _uppercase_ascii_inplace(arr)
+        np.testing.assert_array_equal(arr, np.array([list("ACG"), list("A-G")]))
+
+    def test_printable_ascii_contract(self):
+        # np.char.upper agrees with us on ASCII, so use it as an oracle over
+        # string.printable (letters, digits, punctuation, whitespace).
+        arr = np.array(list(string.printable))
+        expected = np.char.upper(arr)
+        _uppercase_ascii_inplace(arr)
+        np.testing.assert_array_equal(arr, expected)
+
+    def test_empty_array(self):
+        arr = np.empty((0, 0), dtype="<U1")
+        _uppercase_ascii_inplace(arr)
+        assert arr.shape == (0, 0)
+
+    @pytest.mark.parametrize(
+        "bad_array",
+        [
+            pytest.param(np.array([["ab", "cd"]]), id="wider_unicode_U2"),
+            pytest.param(np.zeros((2, 2), dtype=np.int32), id="non_string_int32"),
+        ],
+    )
+    def test_non_u1_dtype_raises(self, bad_array):
+        with pytest.raises(ValueError, match="<U1"):
+            _uppercase_ascii_inplace(bad_array)
 
 
 # ---------------------------------------------------------------------------
