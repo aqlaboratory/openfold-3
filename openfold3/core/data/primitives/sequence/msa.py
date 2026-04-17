@@ -67,8 +67,11 @@ class MsaArray:
         metadata: pd.DataFrame | list | np.ndarray | None = None,
     ) -> MsaArray:
         """Construct from externally parsed MSA data, normalizing to uppercase."""
+        if np.strings.islower(msa).any():
+            msa = np.strings.upper(msa)
+
         return cls(
-            msa=np.strings.upper(msa),
+            msa=msa,
             deletion_matrix=deletion_matrix,
             metadata=metadata if metadata is not None else pd.DataFrame(),
         )
