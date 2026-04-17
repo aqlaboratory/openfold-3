@@ -21,6 +21,7 @@ from typing import Literal
 
 import numpy as np
 import torch
+import re
 import torch.distributed as dist
 from biotite import structure
 from pytorch_lightning.callbacks import BasePredictionWriter
@@ -130,6 +131,70 @@ class OF3OutputWriter(BasePredictionWriter):
             make_ost_compatible=make_ost_compatible,
         )
 
+    @staticmethod
+    def _renumber_atom_array(
+        atom_array: structure.AtomArray,
+        custom_residue_ids: list[str]
+    ) -> structure.AtomArray:
+        """
+        Applies custom residue numbering to the Biotite AtomArray using the 
+        list of string IDs provided by the user (via the feature dict).
+
+        It handles the splitting of complex PDB IDs (e.g., '102A' -> res_id=102, 
+        ins_code='A') and maps them from residue-level to atom-level annotations.
+        """
+        
+        # Get indices where each residue starts in the AtomArray (e.g., [0, 2, 4, 6, 8]).
+        residue_start_indices = structure.get_residue_starts(atom_array)
+        
+        # Initialize new annotation arrays for all atoms.
+        arr_len = len(atom_array)
+        
+        # IMPORTANT: Initializing with zeros is acceptable, as all elements 
+        # must be overwritten by the loop for a successful renumbering.
+        new_res_id = np.zeros(arr_len, dtype=np.int32) 
+        new_ins_code = np.full(arr_len, '', dtype=object) 
+
+        # Pre-calculate end indices for slicing. The end index of residue N is
+        # the start index of residue N+1, or the total array length for the last residue.
+        # Example: [0, 2, 4, 6, 8] -> [2, 4, 6, 8, 10]
+        end_indices = np.append(
+            residue_start_indices[1:], 
+            arr_len                    
+        )
+        
+        # Iterate over all residue start indices (i is the residue index, not atom index).
+        for i in range(len(residue_start_indices)):
+            
+            if i >= len(custom_residue_ids):
+                # Safety break: Should be prevented by featurizer
+                break
+            
+            # Start and End indices for the atom array slice corresponding to this residue.
+            start_index = residue_start_indices[i] 
+            end_index = end_indices[i]             
+            
+            res_id_str = custom_residue_ids[i]
+            
+            # Parse the string ID to separate number and insertion code.
+            # (\d+) captures digits (res_id), ([A-Z]?) captures optional char (ins_code)
+            match = re.match(r"(\d+)([A-Z]?)", res_id_str)
+            if match:
+                num = int(match.group(1))
+                code = match.group(2) if match.group(2) else ''
+            else:
+                num, code = 0, ''
+            
+            # Apply the new res_id and ins_code to all atoms in this residue range
+            new_res_id[start_index:end_index] = num
+            new_ins_code[start_index:end_index] = code
+            
+        # Overwrite the AtomArray annotations.
+        atom_array.set_annotation("res_id", new_res_id)
+        atom_array.set_annotation("ins_code", new_ins_code)
+        
+        return atom_array
+    
     def get_pae_confidence_scores(self, confidence_scores, atom_array):
         pae_confidence_scores = {}
         single_value_keys = [
@@ -236,6 +301,9 @@ class OF3OutputWriter(BasePredictionWriter):
         batch_size = len(batch["atom_array"])
         sample_size = outputs["atom_positions_predicted"].shape[1]
 
+        # Get custom residue IDs for the entire batch
+        custom_residue_ids_all = batch.get("custom_residue_ids", None)
+
         # Iterate over all predictions in the batch
         for b in range(batch_size):
             seed = batch["seed"][b]
@@ -249,6 +317,21 @@ class OF3OutputWriter(BasePredictionWriter):
                 outputs["atom_positions_predicted"][b].cpu().float().numpy()
             )
             confidence_scores_batch = _take_batch_dim(confidence_scores, b)
+
+            # Get the custom IDs list for the current batch entry (list[str] or None)
+            custom_residue_ids_sample = (
+                custom_residue_ids_all[b]
+                if custom_residue_ids_all is not None and custom_residue_ids_all[b] is not None
+                else None
+            )
+
+            # Apply custom residue numbering as a post-processing step
+            if custom_residue_ids_sample is not None:
+                # Modify AtomArray with custom residue numbers before writing.
+                atom_array_batch = self._renumber_atom_array(
+                    atom_array=atom_array_batch,
+                    custom_residue_ids=custom_residue_ids_sample
+                )
 
             # Iterate over all diffusion samples
             for s in range(sample_size):

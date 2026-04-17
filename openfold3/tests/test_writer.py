@@ -23,6 +23,22 @@ from biotite.structure.io import pdb, pdbx
 
 from openfold3.core.runners.writer import OF3OutputWriter
 
+def _create_mock_atom_array(residue_ids: list[str], chain_id="A") -> AtomArray:
+    seq_len = len(residue_ids)
+    n_atoms = seq_len * 4
+    atom_array = structure.AtomArray(n_atoms)
+
+    for i in range(seq_len):
+        for j in range(4):
+            atom_index = i * 4 + j
+            atom_array.res_id[atom_index] = i + 1
+            atom_array.ins_code[atom_index] = ''
+            atom_array.chain_id[atom_index] = chain_id
+            atom_array.atom_name[atom_index] = ['N', 'CA', 'C', 'O'][j]
+            atom_array.res_name[atom_index] = 'ALA'
+
+    return atom_array
+
 
 @pytest.fixture(params=[np.float16, np.float32])
 def dummy_confidence_scores(request):
@@ -225,3 +241,87 @@ class TestPredictionWriter:
 
         assert writer.failed_count == 1
         assert writer.success_count == 0
+
+    def test_renumber_atom_array_with_insertion_codes(self):
+        """Tests OF3OutputWriter._renumber_atom_array to ensure it correctly 
+        parses and applies custom residue IDs, including insertion codes (e.g., '101A').
+        """
+
+        n_residues = 5
+        atoms_per_residue = 2
+        n_atoms = n_residues * atoms_per_residue
+
+        atom_array_template = structure.AtomArray(n_atoms)
+        atom_array_template.res_id = np.repeat(np.arange(1, n_residues + 1), atoms_per_residue)
+        atom_array_template.chain_id = np.repeat(['C'], n_atoms)
+        
+        atom_array = atom_array_template.copy()
+
+        custom_ids = ['100', '101A', '102', '103B', '104']
+        
+        renumbered_array = OF3OutputWriter._renumber_atom_array(
+            atom_array=atom_array,
+            custom_residue_ids=custom_ids
+        )
+        
+        expected_res_id = np.repeat([100, 101, 102, 103, 104], atoms_per_residue)
+        np.testing.assert_array_equal(renumbered_array.res_id, expected_res_id)
+        
+        expected_ins_code = np.array(['', '', 'A', 'A', '', '', 'B', 'B', '', ''], dtype=object)
+        assert np.array_equal(renumbered_array.ins_code, expected_ins_code)
+        
+        atom_array_short = atom_array_template.copy()
+        custom_ids_short = ['10', '11'] 
+
+        renumbered_array_short = OF3OutputWriter._renumber_atom_array(
+            atom_array=atom_array_short,
+            custom_residue_ids=custom_ids_short
+        )
+        
+        expected_res_id_short = np.repeat([10, 11, 0, 0, 0], atoms_per_residue)
+        np.testing.assert_array_equal(renumbered_array_short.res_id, expected_res_id_short)
+
+
+    def test_end_to_end_custom_ids_write(self, tmp_path):
+            """Ověřuje celý tok zápisu custom ID (včetně inzerčních kódů) do mmCIF souboru."""
+            
+            custom_residue_ids = ["1", "2A", "3", "4"] 
+
+            preprocessed_atom_array = _create_mock_atom_array(custom_residue_ids)
+            
+            mock_batch = {
+                "query_id": "test_query_custom_ids",
+                "atom_array": preprocessed_atom_array,
+                "custom_residue_ids": [custom_residue_ids],
+                "plddt": np.repeat(np.array([0.9, 0.8, 0.7, 0.6]), 4)
+            }
+
+            
+            output_writer = OF3OutputWriter(
+                output_dir=tmp_path,
+                pae_enabled=False,
+                structure_format="cif", 
+                full_confidence_output_format="json",
+            )
+            
+            output_writer.on_predict_batch_end(
+                trainer=None,
+                pl_module=None,
+                outputs={}, 
+                batch=mock_batch,
+                batch_idx=0,
+            )
+
+            written_path = tmp_path / "test_query_custom_ids" / "test_query_custom_ids.cif"
+            assert written_path.exists()
+            
+            written_atom_array = pdbx.CIFFile.read(written_path).get_structure()
+            
+            expected_res_id = np.array([1, 2, 3, 4]) 
+            expected_ins_code = np.array(['', 'A', '', ''], dtype=object)
+
+            expanded_expected_res_id = np.repeat(expected_res_id, 4) 
+            expanded_expected_ins_code = np.repeat(expected_ins_code, 4)
+
+            np.testing.assert_array_equal(written_atom_array.res_id, expanded_expected_res_id)
+            assert np.array_equal(written_atom_array.ins_code, expanded_expected_ins_code)
