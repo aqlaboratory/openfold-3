@@ -15,14 +15,20 @@
 """Integration test for inference
 
 Runs two small inference queries without msa or templates.
+
+Can be run directly:
+    python -m pytest openfold3/tests/test_inference_full.py  (dev)
+    python openfold3/tests/test_inference_full.py            (validation)
+    python -m unittest openfold3.tests.test_inference_full   (validation)
 """
 
 import logging
 import os
+import tempfile
 import textwrap
+import unittest
+from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from openfold3.core.config import config_utils
 from openfold3.entry_points.experiment_runner import InferenceExperimentRunner
@@ -33,8 +39,6 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 from openfold3.tests.compare_utils import skip_unless_cuda_available
-
-pytestmark = [pytest.mark.inference_verification, pytest.mark.slow]
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -79,72 +83,87 @@ protein_and_ligand_query = InferenceQuerySet.model_validate(
 
 inference_test_yaml_str = textwrap.dedent("""\
     model_update:
-      presets: 
+      presets:
         - predict
         - low_mem
       custom:
         settings:
           memory:
             eval:
-              use_deepspeed_evo_attention: false 
+              use_deepspeed_evo_attention: false
     """)
 
 
 @skip_unless_cuda_available()
-@pytest.mark.parametrize("query_set", [protein_only_query, protein_and_ligand_query])
-def test_inference_run(tmp_path, query_set):
-    # Set up runner args
-    runner_yaml = tmp_path / "runner_config.yaml"
-    runner_yaml.write_text(inference_test_yaml_str)
+class TestInferenceRun(unittest.TestCase):
+    def _run_inference(self, query_set):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
 
-    # Trigger validation logic to replace the cache path
-    with patch("builtins.input", return_value="no"):
-        experiment_config = InferenceExperimentConfig(
-            **config_utils.load_yaml(runner_yaml)
-        )
-    expt_runner = InferenceExperimentRunner(
-        experiment_config,
-        num_diffusion_samples=1,
-        output_dir=tmp_path,
-        use_msa_server=True,
-        use_templates=True,
-    )
-    try:
-        expt_runner.setup()
-    except ValueError as e:
-        # If called from setup script, fail the test
-        if "is not a valid file or directory" in str(e):
-            if os.environ.get("OPENFOLD_SETUP_SCRIPT") == "1":
-                pytest.fail(
-                    "No checkpoint files found after running setup script. "
-                    "Please check that the download completed successfully."
+            runner_yaml = tmp_path / "runner_config.yaml"
+            runner_yaml.write_text(inference_test_yaml_str)
+
+            with patch("builtins.input", return_value="no"):
+                experiment_config = InferenceExperimentConfig(
+                    **config_utils.load_yaml(runner_yaml)
                 )
-            else:
-                logger.warning(
-                    "No checkpoint files found, skipping for now. "
-                    "Please use scripts/setup_openfold3.sh to download the weights."
+            expt_runner = InferenceExperimentRunner(
+                experiment_config,
+                num_diffusion_samples=1,
+                output_dir=tmp_path,
+                use_msa_server=True,
+                use_templates=True,
+            )
+            try:
+                expt_runner.setup()
+            except ValueError as e:
+                if "is not a valid file or directory" in str(e):
+                    if os.environ.get("OPENFOLD_SETUP_SCRIPT") == "1":
+                        self.fail(
+                            "No checkpoint files found after running setup script. "
+                            "Please check that the download completed successfully."
+                        )
+                    else:
+                        logger.warning(
+                            "No checkpoint files found, skipping for now. "
+                            "Please use scripts/setup_openfold3.sh to download the weights."
+                        )
+                        raise unittest.SkipTest(
+                            "No checkpoint files available"
+                        ) from None
+                else:
+                    raise e from e
+
+            expt_runner.run(query_set)
+            expt_runner.cleanup()
+
+            err_log_dir = tmp_path / "logs"
+            if err_log_dir.exists():
+                raise RuntimeError(
+                    f"Found error logs in  directory {err_log_dir}, "
+                    "check for errors in inference."
                 )
-                pytest.skip("No checkpoint files available")
-        else:
-            raise
 
-    expt_runner.run(query_set)
-    expt_runner.cleanup()
+            logging.info(f"Checking output contents at {tmp_path}")
+            expected_output_dir = tmp_path / "query1" / "seed_42"
+            expected_files = [
+                "query1_seed_42_sample_1_confidences.json",
+                "query1_seed_42_sample_1_confidences_aggregated.json",
+                "query1_seed_42_sample_1_model.cif",
+                "timing.json",
+            ]
+            for f in expected_files:
+                self.assertTrue(
+                    (expected_output_dir / f).exists(),
+                    f"Expected output file not found: {expected_output_dir / f}",
+                )
 
-    err_log_dir = tmp_path / "logs"
-    if err_log_dir.exists():
-        raise RuntimeError(
-            f"Found error logs in  directory {err_log_dir}, "
-            "check for errors in inference."
-        )
+    def test_protein_only(self):
+        self._run_inference(protein_only_query)
 
-    logging.info(f"Checking output contents at {tmp_path}")
-    expected_output_dir = tmp_path / "query1" / "seed_42"
-    expected_files = [
-        "query1_seed_42_sample_1_confidences.json",
-        "query1_seed_42_sample_1_confidences_aggregated.json",
-        "query1_seed_42_sample_1_model.cif",
-        "timing.json",
-    ]
-    for f in expected_files:
-        assert (expected_output_dir / f).exists()
+    def test_protein_and_ligand(self):
+        self._run_inference(protein_and_ligand_query)
+
+
+if __name__ == "__main__":
+    unittest.main()
