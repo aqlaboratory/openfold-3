@@ -62,12 +62,14 @@ class TestPredictionWriter:
     @pytest.mark.parametrize(
         "structure_format",
         ["pdb", "cif", "cif.gz"],
-        ids=lambda x: x,
     )
     @pytest.mark.parametrize(
         "file_prefix",
-        ["file_name", "file.name.with.dots", "file.name.with.cif.and.dots"],
-        ids=["simple", "dotted_query_id", "dotted_query_id_with_cif_extension"],
+        [
+            pytest.param("file_name", id="simple"),
+            pytest.param("file.name.with.dots", id="dotted_query_id"),
+            pytest.param("file.name.with.cif.and.dots", id="dotted_query_id_with_cif_extension"),
+        ],
     )
     def test_written_coordinates(self, tmp_path, structure_format, file_prefix):
         atom1 = structure.Atom([1, 2, 3], chain_id="A")
@@ -150,7 +152,7 @@ class TestPredictionWriter:
             confidence_scores, atom_array, output_prefix
         )
 
-    @pytest.mark.parametrize("output_fmt", ["json", "npz"], ids=lambda x: x)
+    @pytest.mark.parametrize("output_fmt", ["json", "npz"])
     def test_full_confidence_scores_written(
         self, tmp_path, output_fmt, dummy_confidence_scores
     ):
