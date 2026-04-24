@@ -1,12 +1,12 @@
-name: Run integration tests with docker image 
+name: Run integration tests with docker image
 
 on:
   schedule:
-    - cron: '0 0 * * *' # every daily at 00:00 UTC
+    - cron: '0 3 * * *' # daily at 03:00 UTC
   workflow_dispatch:
 
 jobs:
-  test:
+  test-conda:
     permissions:
       id-token: write
       contents: read
@@ -17,10 +17,28 @@ jobs:
           - cuda_base_image_tag: "12.1.1-cudnn8-devel-ubuntu22.04"
             build_mode: "yaml"
     concurrency:
-      group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}-${{ matrix.cuda_base_image_tag }}
+      group: ${{ github.workflow }}-conda-${{ github.head_ref || github.ref }}-${{ matrix.cuda_base_image_tag }}
       cancel-in-progress: true
-    uses: ./.github/workflows/ci-integration-test-reusable.yml
+    uses: ./.github/workflows/ci-integration-test-conda-reusable.yml
     with:
       cuda_base_image_tag: ${{ matrix.cuda_base_image_tag }}
       build_mode: ${{ matrix.build_mode }}
+    secrets: inherit
+
+  test-pixi:
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - pixi_env: "openfold3-cuda12"
+          - pixi_env: "openfold3-cuda13"
+    concurrency:
+      group: ${{ github.workflow }}-pixi-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/ci-integration-test-pixi-reusable.yml
+    with:
+      pixi_env: ${{ matrix.pixi_env }}
     secrets: inherit

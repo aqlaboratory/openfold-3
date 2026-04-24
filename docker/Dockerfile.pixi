@@ -1,0 +1,115 @@
+# Pixi-based multi-stage build for OpenFold-3
+#
+# This Dockerfile uses pixi to manage all dependencies including CUDA toolkit,
+# cuDNN, CUTLASS, and PyTorch from conda-forge. No nvidia/cuda base image needed.
+#
+# Build args:
+#   BASE_IMAGE   - Base Docker image (default: ubuntu:22.04)
+#   PIXI_VERSION - Pixi version to install (default: v0.65.0)
+#   PIXI_ENV     - Pixi environment name (default: openfold3-cuda12)
+#
+# Example:
+#   docker build -f docker/Dockerfile.pixi --target test -t openfold3:pixi-test .
+#   docker build -f docker/Dockerfile.pixi --build-arg PIXI_ENV=openfold3-cuda13 --target test -t openfold3:pixi-test-cuda13 .
+
+ARG BASE_IMAGE=ubuntu:22.04
+
+# === Builder stage: install pixi and resolve environment ===
+FROM ${BASE_IMAGE} AS builder
+
+ARG PIXI_VERSION=v0.65.0
+ARG PIXI_ENV=openfold3-cuda12
+
+# Install minimal system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    libaio-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pixi
+RUN curl -fsSL https://pixi.sh/install.sh | PIXI_VERSION=${PIXI_VERSION} bash
+ENV PATH="/root/.pixi/bin:${PATH}"
+
+# Copy only manifest and lock file first (cache-friendly: expensive pixi install
+# only re-runs when dependencies change, not when source code changes)
+# Use /opt/pixi-project as the pixi project root — separate from the source mount
+# at /opt/openfold3, so CI volume mounts don't shadow the .pixi directory.
+WORKDIR /opt/pixi-project
+COPY pixi.toml pixi.lock pyproject.toml ./
+COPY openfold3/__init__.py ./openfold3/
+
+# Bypass GPU detection during build — pixi's cuda12/cuda13 features declare
+# system-requirements.cuda which would fail without a GPU driver present.
+# Extract the CUDA feature name from PIXI_ENV (e.g., "openfold3-cuda12" -> "cuda12")
+# and look up its system-requirements.cuda value from pixi.toml.
+RUN CUDA_FEATURE=$(echo "${PIXI_ENV}" | grep -oP 'cuda\d+') && \
+    if [ -n "${CUDA_FEATURE}" ]; then \
+        CUDA_VERSION=$(grep -A1 "\[feature\.${CUDA_FEATURE}\.system-requirements\]" pixi.toml \
+            | grep -oP 'cuda\s*=\s*"\K[^"]+') && \
+        export CONDA_OVERRIDE_CUDA="${CUDA_VERSION}"; \
+    fi && \
+    pixi install --frozen -e ${PIXI_ENV}
+
+# === Devel stage: lean runtime image with pixi activation ===
+FROM ${BASE_IMAGE} AS devel
+
+ARG PIXI_VERSION=v0.65.0
+ARG PIXI_ENV=openfold3-cuda12
+
+# Install runtime system dependencies
+# libaio-dev is needed for DeepSpeed async I/O extension compilation at runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    libaio-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pixi (needed for shell-hook activation)
+RUN curl -fsSL https://pixi.sh/install.sh | PIXI_VERSION=${PIXI_VERSION} bash
+ENV PATH="/root/.pixi/bin:${PATH}"
+
+# Copy the pixi project (manifest + resolved environment) to /opt/pixi-project
+# This is separate from /opt/openfold3 so CI volume mounts don't shadow the env.
+WORKDIR /opt/pixi-project
+COPY pixi.toml pixi.lock pyproject.toml ./
+COPY --from=builder /opt/pixi-project/.pixi/envs/${PIXI_ENV} ./.pixi/envs/${PIXI_ENV}
+
+# Create cache directories referenced by pixi activation env vars
+# (TRITON_CACHE_DIR, TORCH_EXTENSIONS_DIR — see pixi.toml deepspeed-build feature)
+RUN mkdir -p ./.pixi/envs/${PIXI_ENV}/caches/triton \
+             ./.pixi/envs/${PIXI_ENV}/caches/torch_extensions
+
+# Generate activation script — this sets all env vars from pixi.toml features
+# (CUTLASS_PATH, TRITON_PTXAS_PATH, TRITON_CACHE_DIR, TORCH_EXTENSIONS_DIR, etc.)
+RUN CUDA_FEATURE=$(echo "${PIXI_ENV}" | grep -oP 'cuda\d+') && \
+    if [ -n "${CUDA_FEATURE}" ]; then \
+        CUDA_VERSION=$(grep -A1 "\[feature\.${CUDA_FEATURE}\.system-requirements\]" pixi.toml \
+            | grep -oP 'cuda\s*=\s*"\K[^"]+') && \
+        export CONDA_OVERRIDE_CUDA="${CUDA_VERSION}"; \
+    fi && \
+    pixi shell-hook -e ${PIXI_ENV} -s bash > /opt/activate.sh
+
+# These env vars are not managed by pixi activation
+ENV KMP_AFFINITY=none
+ENV TORCH_CUDA_ARCH_LIST="8.0;8.6;9.0"
+
+# Set up activation for interactive shells
+RUN echo "source /opt/activate.sh" >> /root/.bashrc
+
+# Copy the full source tree to /opt/openfold3 (the working directory for the app)
+WORKDIR /opt/openfold3
+COPY . /opt/openfold3
+
+# Install the package in the activated environment
+RUN bash -c "source /opt/activate.sh && pip install --no-deps --editable ."
+
+# Entrypoint wrapper: activate the pixi environment before running any command
+ENTRYPOINT ["/bin/bash", "-c", "source /opt/activate.sh && exec \"$@\"", "--"]
+
+# === Test stage: extends devel (test deps already included in pixi env) ===
+FROM devel AS test
+# The openfold3-cuda12/cuda13 environments already include the "tests" feature
+# which provides pytest, pytest-xdist, pytest-cov, pytest-benchmark, and ruff.
+# No additional installation needed.
+WORKDIR /opt/openfold3

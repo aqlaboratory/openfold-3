@@ -1,4 +1,4 @@
-name: Reusable Docker Test for running heavy test loads
+name: Reusable Docker Test
 
 on:
   # Can only be called by another workflow, not directly by the user
@@ -36,8 +36,8 @@ jobs:
         id: aws-start
         uses: omsf/start-aws-gha-runner@v1.1.1
         with:
-          aws_image_id: ami-00839c71d8f6096b4  # Deep Learning Base AMI with Single CUDA (Ubuntu 22.04)
-          aws_instance_type: "g5.4xlarge" # A10G 64 GB 
+          aws_image_id: ami-0754c6e75b3b97dcd  # Deep Learning AMI Neuron (Ubuntu 22.04)
+          aws_instance_type: t3.2xlarge
           aws_home_dir: /home/ubuntu
           aws_root_device_size: 200
         env:
@@ -52,6 +52,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v6
+        with: 
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -67,7 +69,7 @@ jobs:
         uses: docker/build-push-action@v7.1.0
         with:
           context: .
-          file: docker/Dockerfile
+          file: docker/Dockerfile.conda
           target: test
           push: true
           build-args: |
@@ -75,34 +77,36 @@ jobs:
             BUILD_MODE=${{ inputs.build_mode }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-${{ inputs.cuda_base_image_tag }}-${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-${{ inputs.cuda_base_image_tag }}
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-${{ inputs.cuda_base_image_tag }},mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-conda-${{ inputs.cuda_base_image_tag }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-conda-${{ inputs.cuda_base_image_tag }},mode=max
       
-      - name: Create parameter cache directory
-        run: mkdir -p ~/.openfold3
-
-      - name: Cache download of parameters 
-        id: cache-openfold_parameters
-        uses: actions/cache@v5
-        with:
-          path: ~/.openfold3/
-          key: shared-params_of3
-          restore-keys: |
-            shared-params_of3
-    
-      - name: Install AWS CLI and Download OpenFold parameters
-        if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
+      - name: Run unit tests
         run: |
-          echo "Cache miss: Downloading OpenFold parameters..."
-          aws s3 cp s3://openfold3-data/openfold3-parameters/of3-p2-155k.pt ~/.openfold3/ --no-sign-request
-      
-      - name: Run integration test
-        run: |
-          docker run --gpus all\
+          docker run \
             -v ${{ github.workspace }}:/opt/openfold3 \
-            -v ~/.openfold3:/root/.openfold3 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-${{ inputs.cuda_base_image_tag }}-${{ github.sha }} \
-            pytest -x openfold3/tests/ -m slow -vvv
+            pytest openfold3/tests -vvv -n auto --cov=openfold3 --cov-report=xml --cov-report=term
+
+      - name: Debug - List files and find coverage
+        if: always()
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo "=== Files in workspace root ==="
+          ls -la ${{ github.workspace }}
+          echo "=== Looking for coverage files ==="
+          find ${{ github.workspace }} -name "coverage.xml" -o -name ".coverage" 2>/dev/null || echo "No coverage files found"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage-report-${{ inputs.build_mode }}-${{ inputs.cuda_base_image_tag }}
+          path: |
+            coverage.xml
+            .coverage
+          include-hidden-files: true
+          retention-days: 30
 
   stop-aws-runner:
     runs-on: ubuntu-latest

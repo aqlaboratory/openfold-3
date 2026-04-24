@@ -6,93 +6,99 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "openfold3"
 dynamic = ["version"]
-dependencies = [
-  "awscli",
-  "awscrt",
-  "torch",# ==2.5.1",
-  "pytorch-lightning >=2.1",
-  "numpy",
-  "pandas",
-  "PyYAML",
-  "requests",
-  "scipy",
-  "tqdm",
-  "typing-extensions",
-  "wandb",
-  "ml-collections",
-  "mkl",
-  "aria2",
-  "biotite",
-  "rdkit",
-  "boto3",
-  "memory_profiler",
-  "func_timeout",
-  "lmdb", # == 1.6  # This verison might be required to avoid Error during training
-  "ijson",
-  "deepspeed",
-  "pdbeccdutils",
-  # For cutlass >=4, import library is cutlass_cppgen, but deepspeed is
-  # currently using cutlass.
-  "nvidia-cutlass <4",
-  "kalign-python",
-
-  # additional pins
-
-  # Pinned cutlass <4 calls from cuda.__version__, which was removed when
-  # cuda-python went fully metapackage
-  "cuda-python <12.9.1",
-]
 authors = [
-  {name = "OpenFold Team", email = "support@openfold.io" }
+    { name = "OpenFold Team", email = "support@openfold.io" }
 ]
 description = "OpenFold's Biological Structure Prediction Model based on DeepMind's AlphaFold 3"
 readme = "README.md"
-requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+urls.Homepage = "https://openfold.io/"
+urls.Documentation = "https://openfold-3.readthedocs.io/en/latest/"
+urls.Repository = "https://github.com/aqlaboratory/openfold-3"
+urls.Issues = "https://github.com/aqlaboratory/openfold-3/issues"
 
-[project.urls]
-Repository = "https://github.com/aqlaboratory/openfold-3"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pandas",
+    "torch", # ==2.5.1",
+    "ml-collections",
+    "pytorch-lightning >=2.1",
+    "biotite",
+    "rdkit",
+    "pdbeccdutils",
+    "kalign-python",
+    "requests",
+    "awscli",
+    "awscrt",
+    "boto3",
+    "PyYAML",
+    "ijson",
+    "memory_profiler",
+    "wandb",
+    "func_timeout",
+    "tqdm",
+    "typing-extensions",
+    "lmdb", # == 1.6  # This verison might be required to avoid Error during training
+]
+
+optional-dependencies.dev = [
+    "pytest",
+    "pytest-xdist",
+    "pytest-cov",
+    "pytest-benchmark",
+    "pytest-regressions",
+    "ruff",
+    "pre-commit",
+
+    # used for documentation
+    "sphinx",
+    "myst-parser",
+    "furo"
+]
+optional-dependencies.cuequivariance = [
+    "cuequivariance>=0.6.1,<0.8",
+    "cuequivariance-ops-torch-cu12>=0.6.1,<0.8",
+    "cuequivariance-torch>=0.6.1,<0.8",
+    "torch>=2.7",
+]
+optional-dependencies.deepspeed = [
+    "deepspeed>=0.18.7",
+]
 
 [project.scripts]
 run_openfold="openfold3.run_openfold:cli"
 setup_openfold="openfold3.setup_openfold:main"
 validate-openfold3-rocm="openfold3.entry_points.validate_rocm:main"
 
+# Let's take a decision if these are optional-dependencies or dependency-groups
+# See: https://github.com/astral-sh/uv/issues/9011
+# Leaving here to not break ongoing docker revamp efforts
 [dependency-groups]
 test = [
-  "pytest",
-  "ruff",
-  "awscli",
-  "aria2",
-  "pytest-xdist",
-  "pytest-cov",
-  "pytest-benchmark",
-  "pytest-regressions",
-  "debugpy",
-  "pytest-recording",
+    "pytest",
+    "ruff",
+    "awscli",
+    "aria2",
+    "pytest-xdist",
+    "pytest-cov",
+    "pytest-benchmark",
+    "pytest-regressions",
+    "pytest-recording",
+    "debugpy",
 ]
 
-[project.optional-dependencies]
-dev = [
-  "pytest",
-  "ruff",
-  # used for documentation
-  "sphinx",
-  "myst-parser",
-  "furo"
-]
-cuequivariance = [
-  "cuequivariance>=0.6.1",
-  "cuequivariance-ops-torch-cu12>=0.6.1",
-  "cuequivariance-torch>=0.6.1",
-  "torch>=2.7",
-]
 
 [tool.setuptools_scm]
 fallback_version = "0.4.1-dev"
@@ -102,13 +108,13 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["openfold3*", "scripts*"] 
+include = ["openfold3*", "scripts*"]
 
 [tool.setuptools.package-data]
 openfold3 = [
-  "projects/*/config/*.yml",
-  "tests/test_data/**/*",
-  "scripts/*.sh"
+    "projects/*/config/*.yml",
+    "tests/test_data/**/*",
+    "scripts/*.sh"
 ]
 
 # much of the cibuildwheel config taken from benfred/implicit

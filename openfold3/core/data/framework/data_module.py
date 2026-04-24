@@ -42,6 +42,9 @@ and highlight where you currently are in the process:
 import dataclasses
 import enum
 import logging
+import multiprocessing
+import platform
+import sys
 import warnings
 from functools import partial
 from typing import Any
@@ -153,8 +156,81 @@ class DataModuleConfig(BaseModel):
     batch_size: int = 1
     num_workers: int = 0
     num_workers_validation: int = 0
+    multiprocessing_context: str = "openfold-default"
     data_seed: int = 42
     epoch_len: int = 1
+
+    @staticmethod
+    def safe_multiprocessing_context(
+        multiprocessing_context: str | None, num_workers: int
+    ) -> str | None:
+        """
+        Returns multiprocessing start methods with safer/sensible defaults:
+          - fork when using MPS
+          - forkserver for linux, matching the new 3.14 default
+          - default otherwise
+
+        For general info on risks and defaults across platforms
+        and python versions see:
+          https://docs.pytorch.org/docs/stable/data.html#torch.utils.data.DataLoader
+          https://docs.pytorch.org/docs/stable/notes/multiprocessing.html#multiprocessing-poison-fork-note
+          https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
+        """
+
+        # Do not bother if not using multiprocessing
+        if num_workers == 0:
+            return None
+
+        # Set safe defaults
+        if multiprocessing_context == "openfold-default":
+            # Use fork to create processes when using MPS. See:
+            #  - https://github.com/pytorch/pytorch/issues/70344
+            #  - https://github.com/pytorch/pytorch/issues/87688
+            if platform.system() == "Darwin" and torch.backends.mps.is_available():
+                return "fork"
+
+            # Use forkserver in linux
+            # Backports the new python 3.14 default in previous python versions.
+            # An alternative for further safety would be "spawn". Avoid "fork".
+            # See: https://github.com/python/cpython/issues/84559
+            if platform.system() == "Linux":
+                return "forkserver"
+
+            # Use the platform default otherwise - "spawn" at the time of writing
+            return multiprocessing.get_start_method()
+
+        # Warn about unsafe defaults
+        else:
+            if (
+                platform.system() == "Darwin"
+                and torch.backends.mps.is_available()
+                and multiprocessing_context != "fork"
+            ):
+                logger.warning(
+                    "Using multiprocessing context "
+                    f"{multiprocessing_context} on MPS may cause "
+                    "issues. Consider using 'fork' or "
+                    "'openfold-default' (which resolves to "
+                    "'fork' on MPS).",
+                    stacklevel=2,
+                )
+            if platform.system() == "Linux":
+                dangerous_start_method = (
+                    multiprocessing_context == "fork"
+                    or multiprocessing_context is None
+                    and sys.version_info < (3, 14)
+                )
+                if dangerous_start_method:
+                    logger.warning(
+                        "Using 'fork' multiprocessing context "
+                        "in linux may cause issues. Consider "
+                        "using 'spawn', 'forkserver' or "
+                        "'openfold-default' (which resolves to "
+                        "'forkserver' on linux).",
+                        stacklevel=2,
+                    )
+
+        return multiprocessing_context
 
 
 class DataModule(pl.LightningDataModule):
@@ -167,6 +243,7 @@ class DataModule(pl.LightningDataModule):
         self.batch_size = data_module_config.batch_size
         self.num_workers = data_module_config.num_workers
         self.num_workers_validation = data_module_config.num_workers_validation
+        self.multiprocessing_context = data_module_config.multiprocessing_context
         self.data_seed = data_module_config.data_seed
         self.next_data_seed = data_module_config.data_seed
         self.epoch_len = data_module_config.epoch_len
@@ -433,8 +510,17 @@ class DataModule(pl.LightningDataModule):
         # instead of pl.seed_everything(workers=True), so this function is
         # passed explicitly here.
         worker_init_fn = partial(pl_worker_init_function, rank=self.global_rank)
+
+        # Set a sensible default for multiprocesssing start method
+        # depending on platform and python version.
+        multiprocessing_context = DataModuleConfig.safe_multiprocessing_context(
+            self.multiprocessing_context, num_workers
+        )
+
         logger.debug(
-            f"Creating {mode} dataloader: num_workers={num_workers}, "
+            f"Creating {mode} dataloader: "
+            f"num_workers={num_workers}, "
+            f"multiprocessing_context={multiprocessing_context}, "
             f"rank={self.global_rank}."
         )
         return DataLoader(
@@ -445,6 +531,7 @@ class DataModule(pl.LightningDataModule):
             collate_fn=openfold_batch_collator,
             generator=self.generators[mode],
             worker_init_fn=worker_init_fn,
+            multiprocessing_context=multiprocessing_context,
         )
 
     def train_dataloader(self) -> DataLoader:

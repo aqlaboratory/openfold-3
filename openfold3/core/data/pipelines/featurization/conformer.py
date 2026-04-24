@@ -108,6 +108,11 @@ def featurize_reference_conformers_of3(
             coords = conf.GetAtomPosition(atom.GetIdx())
             mol_ref_mask.append(int(atom.GetBoolProp("annot_used_atom_mask")))
             mol_ref_pos.append(coords)
+            # Some PyPI installations crash here due to
+            # ABI mismatch between RDKit and PyTorch
+            # Leaving a quick fix commented (beware, moving into slow python land)
+            # Remove if nobody else hits the problem
+            # mol_ref_pos.append([coords.x, coords.y, coords.z])
 
             # Atom elements (0-indexed)
             element_symbol = atom.GetSymbol()

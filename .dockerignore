@@ -4,6 +4,8 @@
 # Allow specific files
 !CITATION.cff
 !LICENSE
+!pixi.toml
+!pixi.lock
 !pyproject.toml
 !README.md
 

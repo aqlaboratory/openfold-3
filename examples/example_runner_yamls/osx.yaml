@@ -1,0 +1,13 @@
+model_update:
+  presets: 
+    - "predict"
+    # - "low_mem"  # for lower memory systems
+  custom:
+    settings:
+      memory:
+        eval:
+          # otherwise the current default is wrongly to use deepspeed, even if not available
+          use_deepspeed_evo_attention: false
+
+data_module_args:
+  num_workers: 1

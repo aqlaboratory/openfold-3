@@ -28,21 +28,21 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner 
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
           aws-region: us-east-1
       - name: Create cloud runner
         id: aws-start
         uses: omsf/start-aws-gha-runner@v1.1.1
         with:
           aws_image_id: ami-0754c6e75b3b97dcd  # Deep Learning AMI Neuron (Ubuntu 22.04)
-          aws_instance_type: trn1.2xlarge 
+          aws_instance_type: trn1.2xlarge
           aws_home_dir: /home/ubuntu
           aws_root_device_size: 200
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
 
   push-to-registry:
-    name: Push Docker image to registries
+    name: Push Docker images to registries
     runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
     needs:
       - start-aws-runner
@@ -72,35 +72,70 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
+      # --- Conda image ---
+
+      - name: Extract metadata for conda image
+        id: meta-conda
         uses: docker/metadata-action@a7807070e67ad478bd5f672f499303a151742e53
         with:
           images: |
             name=ghcr.io/${{ github.repository }}/openfold3-docker
             name=openfoldconsortium/openfold3,enable=${{ github.repository == 'aqlaboratory/openfold-3' }}
           tags: |
-            type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
-            type=raw,value=${{ inputs.additional_tags }},enable=${{ inputs.additional_tags != '' && github.event_name == 'workflow_dispatch' }}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ inputs.version }}-conda,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=${{ inputs.additional_tags }}-conda,enable=${{ inputs.additional_tags != '' && github.event_name == 'workflow_dispatch' }}
+            type=semver,pattern={{major}}.{{minor}}-conda
 
-      - name: Build and push Docker image
-        id: push
+      - name: Build and push conda image
+        id: push-conda
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f
         with:
           context: .
-          file: docker/Dockerfile
+          file: docker/Dockerfile.conda
           target: devel
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-conda.outputs.tags }}
+          labels: ${{ steps.meta-conda.outputs.labels }}
 
-      - name: Generate artifact attestation
+      - name: Generate artifact attestation (conda)
         if: github.repository == 'aqlaboratory/openfold-3'
         uses: actions/attest-build-provenance@v4
         with:
           subject-name: index.docker.io/openfoldconsortium/openfold3
-          subject-digest: ${{ steps.push.outputs.digest }}
+          subject-digest: ${{ steps.push-conda.outputs.digest }}
+          push-to-registry: true
+
+      # --- Pixi image ---
+
+      - name: Extract metadata for pixi image
+        id: meta-pixi
+        uses: docker/metadata-action@54262e8fce11c7b5496f28398368170da45de7e7
+        with:
+          images: |
+            name=ghcr.io/${{ github.repository }}/openfold3-docker
+            name=openfoldconsortium/openfold3,enable=${{ github.repository == 'aqlaboratory/openfold-3' }}
+          tags: |
+            type=raw,value=${{ inputs.version }}-pixi,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=${{ inputs.additional_tags }}-pixi,enable=${{ inputs.additional_tags != '' && github.event_name == 'workflow_dispatch' }}
+            type=semver,pattern={{major}}.{{minor}}-pixi
+
+      - name: Build and push pixi image
+        id: push-pixi
+        uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294
+        with:
+          context: .
+          file: docker/Dockerfile.pixi
+          target: devel
+          push: true
+          tags: ${{ steps.meta-pixi.outputs.tags }}
+          labels: ${{ steps.meta-pixi.outputs.labels }}
+
+      - name: Generate artifact attestation (pixi)
+        if: github.repository == 'aqlaboratory/openfold-3'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: index.docker.io/openfoldconsortium/openfold3
+          subject-digest: ${{ steps.push-pixi.outputs.digest }}
           push-to-registry: true
 
   stop-aws-runner:
@@ -110,13 +145,13 @@ jobs:
         contents: read
     needs:
       - start-aws-runner
-      - push-to-registry 
+      - push-to-registry
     if: ${{ always() }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner 
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
           aws-region: us-east-1
       - name: Stop instances
         uses: omsf/stop-aws-gha-runner@v1.0.0

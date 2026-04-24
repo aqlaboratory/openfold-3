@@ -10,7 +10,32 @@ OpenFold3 inference requires a system with a GPU with a minimum of CUDA 12.1 and
 It is also recommended to use [Mamba](https://mamba.readthedocs.io/en/latest/) to install some of the packages.
 
 
-### Installation via pip and mamba (recommended) 
+### Modern conda environments with pixi (recommended)
+
+OpenFold3 can now be installed in conda environments with [pixi](https://pixi.prefix.dev/latest/index.html).
+
+First [install pixi](https://pixi.prefix.dev/latest/installation/)
+
+```shell
+# Do this once and enjoy pixi for all your future projects!
+curl -fsSL https://pixi.sh/install.sh | sh
+# Then restart your shell and optionally install pixi completions
+```
+
+You can simply run openfold in one of the provided environments with pixi:
+```shell
+pixi run -e openfold3-cpu setup_openfold
+pixi run -e openfold3-cpu run_openfold
+```
+
+We provide the following environments:
+ - openfold3-cpu (linux-64, linux-aarch64, osx-64,osx-arm64)
+ - openfold3-cuda12 and openfold-cuda13 (linux-64, linux-aarch64) 
+
+For more information, including rationale, tips and tricks, see [Modern Conda Environments with Pixi](./modern-conda-environments-with-pixi.md).
+
+
+### Installation via pip and mamba (deprecated Q2-2026) 
 
 0. [Optional] Create a fresh mamba environment with python. Python versions 3.10 - 3.13 are supported
 
@@ -46,6 +71,8 @@ validate-openfold3-rocm
 (installation-environment-variables)=
 ### Environment variables
 
+> **Note:** This may need a revision given the pixi managed envs above (JD).
+
 OpenFold may need a few environment variables set so CUDA, compilation, and JIT-built extensions can be found correctly. 
 
 - `CUDA_HOME` should point to the CUDA installation. On many HPC clusters you will this can be set by loading the appropriate toolchain using environment modules, for example `module load cuda`.  If you do not set this you will likely get a `No such file or directory: '/usr/local/cuda/bin/nvcc'` error. 
@@ -66,7 +93,6 @@ OpenFold may need a few environment variables set so CUDA, compilation, and JIT-
 
 - If you get a `/usr/bin/ld: cannot find -lcurand` error, this usually means the CUDA math libraries (which include `libcurand`) are not on your library search path. You may need to add the appropriate CUDA library directory to  `LIBRARY_PATH`. 
     - Example: `export LIBRARY_PATH="$(echo "$CUDA_HOME" | sed 's|/cuda/|/math_libs/|')/targets/sbsa-linux/lib:${LIBRARY_PATH:-}"`
-
 
 
 ### OpenFold3 Docker Image
