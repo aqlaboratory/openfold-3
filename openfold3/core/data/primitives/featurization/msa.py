@@ -17,6 +17,7 @@
 import dataclasses
 
 import numpy as np
+import pandas as pd
 from biotite.structure import AtomArray
 
 from openfold3.core.data.primitives.featurization.structure import (
@@ -105,26 +106,37 @@ def vstack_pad_msa_arrays(
         tuple[MsaArray, np.ndarray]:
             The vertically stacked MSA array and the mask for the MSA.
     """
-    # Query
-    msa_array_vstack = msa_array_collection.chain_id_to_query_seq[chain_id]
+    # Collect sections (query → paired → main). Pre-allocating the final padded
+    # arrays and filling sections directly avoids 3 intermediate concatenations
+    # plus pandas/object-array metadata churn that gets discarded by pad() anyway.
+    query = msa_array_collection.chain_id_to_query_seq[chain_id]
+    row_counts = msa_array_collection.row_counts
+    target_length = row_counts.n_rows_total
 
-    # Paired MSA
-    if msa_array_collection.row_counts.n_rows_paired_subsampled > 0:
-        msa_array_vstack = msa_array_vstack.concatenate(
-            msa_array_collection.chain_id_to_paired_msa[chain_id], axis=0
-        )
+    parts = [query]
+    if row_counts.n_rows_paired_subsampled > 0:
+        parts.append(msa_array_collection.chain_id_to_paired_msa[chain_id])
+    if len(row_counts.n_rows_main_subsampled) > 0:
+        parts.append(msa_array_collection.chain_id_to_main_msa[chain_id])
 
-    # Main MSA
-    if len(msa_array_collection.row_counts.n_rows_main_subsampled) > 0:
-        msa_array_vstack = msa_array_vstack.concatenate(
-            msa_array_collection.chain_id_to_main_msa[chain_id],
-            axis=0,
-        )
+    n_cols = query.msa.shape[1]
+    del_cols = query.deletion_matrix.shape[1]
 
-    # Pad bottom of stacked MSA to max(1 + n paired + n main) across all chains
-    # and use padding to also create MSA mask for the chain
-    msa_array_vstack, msa_array_vstack_mask = msa_array_vstack.pad(
-        target_length=msa_array_collection.row_counts.n_rows_total, axis=0
+    padded_msa = np.full((target_length, n_cols), "-", dtype=query.msa.dtype)
+    padded_del = np.zeros((target_length, del_cols), dtype=query.deletion_matrix.dtype)
+
+    offset = 0
+    for p in parts:
+        n = p.msa.shape[0]
+        padded_msa[offset : offset + n] = p.msa
+        padded_del[offset : offset + n] = p.deletion_matrix
+        offset += n
+
+    msa_array_vstack_mask = np.ones(padded_msa.shape, dtype=int)
+    msa_array_vstack_mask[offset:] = 0
+
+    msa_array_vstack = MsaArray(
+        msa=padded_msa, deletion_matrix=padded_del, metadata=pd.DataFrame()
     )
 
     return msa_array_vstack, msa_array_vstack_mask

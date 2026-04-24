@@ -17,9 +17,10 @@
 from collections.abc import Generator
 
 import biotite.structure as struc
-import networkx as nx
 import numpy as np
 from biotite.structure.info import link_type
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import connected_components
 
 
 def construct_atom_array(atoms: list[struc.Atom]) -> struc.AtomArray:
@@ -58,6 +59,32 @@ def construct_atom_array(atoms: list[struc.Atom]) -> struc.AtomArray:
     return array
 
 
+def components_from_edges(n_nodes: int, edges: np.ndarray) -> list[np.ndarray]:
+    """Compute connected components from an (E, 2) edge array.
+
+    Builds a symmetric sparse adjacency matrix and runs scipy's
+    `connected_components`. Singletons are handled natively since the matrix
+    shape is fixed at `n_nodes`. Output is sorted: each component's indices
+    are ascending; components are ordered by their first atom index.
+    """
+    if edges.size > 0:
+        rows = np.concatenate((edges[:, 0], edges[:, 1]))
+        cols = np.concatenate((edges[:, 1], edges[:, 0]))
+        data = np.ones(rows.shape[0], dtype=np.int8)
+        adj = csr_matrix((data, (rows, cols)), shape=(n_nodes, n_nodes))
+    else:
+        adj = csr_matrix((n_nodes, n_nodes), dtype=np.int8)
+
+    _, labels = connected_components(adj, directed=False)
+
+    # Stable sort on labels preserves ascending node-index order within each group.
+    order = np.argsort(labels, kind="stable")
+    split_points = np.flatnonzero(np.diff(labels[order])) + 1
+    components = np.split(order, split_points)
+    components.sort(key=lambda x: x[0])
+    return components
+
+
 def get_molecule_indices(atom_array: struc.AtomArray) -> list[np.ndarray]:
     """Alternative implementation of Biotite's get_molecule_indices.
 
@@ -73,23 +100,9 @@ def get_molecule_indices(atom_array: struc.AtomArray) -> list[np.ndarray]:
     else:
         raise TypeError(f"Expected an 'AtomArray', not '{type(atom_array).__name__}'")
 
-    g = bonds.as_graph()
-
-    # Add any atoms that are not in the BondList as single-atom components
-    all_atoms = np.arange(len(atom_array))
-    atoms_in_graph = np.unique(list(g.nodes))
-    singleton_components = np.setdiff1d(all_atoms, atoms_in_graph)
-    singleton_components_formatted = [np.array([atom]) for atom in singleton_components]
-
-    # Add connected components and sort each by internal atom index
-    connected_components = nx.connected_components(g)
-    connected_components_formatted = [np.sort(list(c)) for c in connected_components]
-
-    # Combine indices and do outer sort on first atom index
-    all_components = singleton_components_formatted + connected_components_formatted
-    all_components_sorted = sorted(all_components, key=lambda x: x[0])
-
-    return all_components_sorted
+    n_atoms = len(atom_array)
+    bond_pairs = bonds.as_array()[:, :2].astype(np.int64, copy=False)
+    return components_from_edges(n_atoms, bond_pairs)
 
 
 def molecule_iter(

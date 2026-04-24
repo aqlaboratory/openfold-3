@@ -22,7 +22,7 @@ from typing import NamedTuple
 
 import networkx as nx
 import numpy as np
-from biotite.structure import AtomArray, BondList, chain_iter, get_chain_starts
+from biotite.structure import AtomArray, chain_iter, get_chain_starts
 
 import openfold3.core.data.resources.patches as patch
 from openfold3.core.data.pipelines.sample_processing.conformer import (
@@ -182,29 +182,25 @@ def chain_connected_molecule_iter(
         AtomArray:
             AtomArray slice corresponding to a unique molecule.
     """
-    # This creates a subarray that only copies the BondList but keeps pointers to the
-    # other annotations for efficiency
-    atom_array_pseudo_copy = atom_array[:]
     n_atoms = len(atom_array)
 
-    # For every chain, connect an artificial root atom to every other atom in the chain
+    # Real bonds as (E, 2) int array
+    if atom_array.bonds is not None:
+        real_edges = atom_array.bonds.as_array()[:, :2].astype(np.int64, copy=False)
+    else:
+        real_edges = np.empty((0, 2), dtype=np.int64)
+
+    # Chain-star "virtual" edges: connect each atom to its chain's first atom.
+    # This is transitively equivalent to "every chain is a single component" and
+    # avoids building/merging a biotite BondList from n_atoms fake bonds, which
+    # is the dominant cost of the previous implementation.
     chain_starts = get_chain_starts(atom_array, add_exclusive_stop=True)
-    root_atoms = chain_starts[:-1]
-    root_atom_repeated = np.repeat(root_atoms, np.diff(chain_starts))
+    chain_root_per_atom = np.repeat(chain_starts[:-1], np.diff(chain_starts))
+    chain_edges = np.column_stack((chain_root_per_atom, np.arange(n_atoms)))
 
-    # Like [(0, 0), (0, 1), ..., (N, N), (N, N+1), ...]
-    root_atom_bond_pairs = np.column_stack((root_atom_repeated, np.arange(n_atoms)))
+    edges = np.concatenate((real_edges, chain_edges))
 
-    # Add the artificial bonds to the pseudo-copy, which will keep the original bond
-    # list unaffected
-    chain_connected_bond_list = BondList(n_atoms, bonds=root_atom_bond_pairs)
-    atom_array_pseudo_copy.bonds = atom_array_pseudo_copy.bonds.merge(
-        chain_connected_bond_list
-    )
-
-    # Yield molecule slices from the original AtomArray which won't have the
-    # pseudo-bonds added
-    for molecule_indices in patch.get_molecule_indices(atom_array_pseudo_copy):
+    for molecule_indices in patch.components_from_edges(n_atoms, edges):
         yield atom_array[molecule_indices]
 
 
