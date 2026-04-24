@@ -40,6 +40,7 @@ class ConformerGenerationError(ValueError):
 def compute_conformer(
     mol: Mol,
     use_random_coord_init: bool = False,
+    use_small_ring_torsions: bool = False,
     remove_hs: bool = True,
     timeout: float | None = 30.0,
 ) -> tuple[Mol, int]:
@@ -56,6 +57,10 @@ def compute_conformer(
         use_random_coord_init:
             Whether to initialize the conformer generation with random coordinates
             (recommended for failure cases or large molecules)
+        use_small_ring_torsions:
+            Whether to use the knowledge-based small-ring torsion terms in ETKDGv3.
+            Recommended for macrocycles and fused-ring systems (e.g. porphyrins with
+            metal dative bonds like heme) where the default ETKDGv3 smoothing fails.
         remove_hs:
             Whether to remove hydrogens from the molecule after conformer generation.
             The function automatically adds hydrogens before conformer generation.
@@ -85,6 +90,9 @@ def compute_conformer(
 
     if use_random_coord_init:
         strategy.useRandomCoords = True
+
+    if use_small_ring_torsions:
+        strategy.useSmallRingTorsions = True
 
     strategy.clearConfs = False
     # RDKit always seems to start from some internal seed instead of a truly random seed
@@ -118,13 +126,17 @@ def multistrategy_compute_conformer(
     remove_hs: bool = True,
     timeout_standard: float | None = None,
     timeout_rand_init: float | None = None,
-) -> tuple[Mol, int, Literal["default", "random_init"]]:
+    timeout_small_ring: float | None = None,
+) -> tuple[Mol, int, Literal["default", "random_init", "small_ring_rand_init"]]:
     """Computes 3D coordinates for a molecule trying different initializations.
 
     Tries to compute 3D coordinates for a molecule using the standard RDKit ETKDGv3
     strategy. If this fails or times out, it falls back to using a different
-    initialization for ETKDGv3 with random starting coordinates. If this also fails
-    or times out, a `ConformerGenerationError` is raised.
+    initialization for ETKDGv3 with random starting coordinates. If this also fails or
+    times out, it falls back to ETKDGv3 with random coordinates and knowledge-based
+    small-ring torsion terms, which rescues macrocycles and fused ring systems (e.g.
+    porphyrins with metal dative bonds like heme) that the default smoothing cannot
+    handle. If all three attempts fail, a `ConformerGenerationError` is raised.
 
     Args:
         mol:
@@ -137,14 +149,18 @@ def multistrategy_compute_conformer(
         timeout_rand_init:
             The maximum time in seconds to allow for conformer generation with random
             initialization. The default is None, where no timeout is set.
+        timeout_small_ring:
+            The maximum time in seconds to allow for conformer generation with random
+            initialization and small-ring torsion terms. The default is None, where no
+            timeout is set.
     Returns:
         mol:
             The molecule for which the 3D coordinates should be computed.
         conformer ID:
             The ID of the conformer that was generated.
         strategy:
-            The strategy that was used for conformer generation. Either "default" or
-            "random_init".
+            The strategy that was used for conformer generation. One of "default",
+            "random_init", or "small_ring_rand_init".
     """
     smiles = Chem.MolToSmiles(mol)
 
@@ -173,9 +189,28 @@ def multistrategy_compute_conformer(
         except (ConformerGenerationError, FunctionTimedOut) as e:
             logger.warning(
                 "Exception when trying conformer generation with random "
-                + f"initialization for {smiles}: {e}"
+                + f"initialization for {smiles}: {e}, trying small-ring torsions"
             )
-            raise ConformerGenerationError("Failed to generate 3D coordinates") from e
+
+            # Try random coordinates + small-ring torsions as final fallback
+            try:
+                mol, conf_id = compute_conformer(
+                    mol,
+                    use_random_coord_init=True,
+                    use_small_ring_torsions=True,
+                    remove_hs=remove_hs,
+                    timeout=timeout_small_ring,
+                )
+            except (ConformerGenerationError, FunctionTimedOut) as e:
+                logger.warning(
+                    "Exception when trying conformer generation with random "
+                    + f"initialization and small-ring torsions for {smiles}: {e}"
+                )
+                raise ConformerGenerationError(
+                    "Failed to generate 3D coordinates"
+                ) from e
+            else:
+                success_strategy = "small_ring_rand_init"
         else:
             success_strategy = "random_init"
     else:
@@ -249,9 +284,78 @@ def replace_nan_coords_with_zeros(mol: Mol) -> None:
                 conf.SetAtomPosition(atom_id, (0, 0, 0))
 
 
+def compute_single_conformer_with_fallback(
+    mol: Mol,
+    remove_hs: bool = True,
+    timeout_standard: float | None = None,
+    timeout_rand_init: float | None = None,
+    timeout_small_ring: float | None = None,
+) -> tuple[
+    Mol, Literal["default", "random_init", "small_ring_rand_init", "use_fallback"]
+]:
+    """Computes a single conformer, falling back to stored coordinates on failure.
+
+    Runs `multistrategy_compute_conformer` and, if all RDKit embedding strategies fail,
+    falls back to the first conformer already stored on the mol (e.g. the CCD "Ideal"
+    conformer). If no stored conformer is available, falls back to an all-NaN conformer
+    of the correct size. The returned mol always has exactly one conformer.
+
+    Args:
+        mol:
+            The molecule for which the 3D coordinates should be computed. If embedding
+            fails, the first already-stored conformer is used as a fallback.
+        remove_hs:
+            Whether to remove hydrogens from the molecule after conformer generation.
+        timeout_standard:
+            Timeout in seconds for the standard ETKDGv3 attempt. None disables.
+        timeout_rand_init:
+            Timeout in seconds for the ETKDGv3 + random-coords attempt. None disables.
+        timeout_small_ring:
+            Timeout in seconds for the ETKDGv3 + random-coords + small-ring-torsions
+            attempt. None disables.
+
+    Returns:
+        mol:
+            The molecule with exactly one conformer set.
+        strategy:
+            The strategy that produced the returned conformer:
+                - "default": The standard ETKDGv3 strategy.
+                - "random_init": ETKDGv3 with random-coord initialization.
+                - "small_ring_rand_init": ETKDGv3 with random-coord initialization and
+                  knowledge-based small-ring torsion terms.
+                - "use_fallback": Embedding failed and the stored fallback conformer
+                  (or an all-NaN conformer if none was stored) is being used.
+    """
+    try:
+        mol, conf_id, strategy = multistrategy_compute_conformer(
+            mol,
+            remove_hs=remove_hs,
+            timeout_standard=timeout_standard,
+            timeout_rand_init=timeout_rand_init,
+            timeout_small_ring=timeout_small_ring,
+        )
+        conf = mol.GetConformer(conf_id)
+    except ConformerGenerationError:
+        strategy = "use_fallback"
+        # Try to use first stored conformer
+        try:
+            conf = next(mol.GetConformers())
+        # If no stored conformer, use all-NaN conformer
+        except StopIteration:
+            conf = get_allnan_conformer(mol)
+
+    # Remove all other conformers
+    mol = set_single_conformer(mol, conf)
+
+    return mol, strategy
+
+
 def resolve_and_format_fallback_conformer(
     mol: Mol,
-) -> tuple[AnnotatedMol, Literal["default", "random_init", "use_fallback"]]:
+) -> tuple[
+    AnnotatedMol,
+    Literal["default", "random_init", "small_ring_rand_init", "use_fallback"],
+]:
     """Retains a single "fallback conformer" in the molecule.
 
     The purpose of this function is two-fold: The first is to set a single set of
@@ -289,27 +393,19 @@ def resolve_and_format_fallback_conformer(
             during featurization:
                 - "default": The standard ETKDGv3 strategy
                 - "random_init": The ETKDGv3 strategy with random initialization
+                - "small_ring_rand_init": ETKDGv3 with random initialization and
+                  small-ring torsion terms.
                 - "use_fallback": Conformer generation is not possible and the stored
                   fallback conformer should be used.
     """
     # TODO: Expose timeouts as arguments
-    # Test if conformer generation is possible
-    try:
-        mol, conf_id, strategy = multistrategy_compute_conformer(
-            mol, remove_hs=True, timeout_standard=300, timeout_rand_init=300
-        )
-        conf = mol.GetConformer(conf_id)
-    except ConformerGenerationError:
-        strategy = "use_fallback"
-        # Try to use first stored conformer
-        try:
-            conf = next(mol.GetConformers())
-        # If no stored conformer, use all-NaN conformer
-        except StopIteration:
-            conf = get_allnan_conformer(mol)
-
-    # Remove all other conformers
-    mol = set_single_conformer(mol, conf)
+    mol, strategy = compute_single_conformer_with_fallback(
+        mol,
+        remove_hs=True,
+        timeout_standard=300,
+        timeout_rand_init=300,
+        timeout_small_ring=300,
+    )
 
     # Add atom-wise mask of valid atoms in "annot_used_atom_mask" property
     mol = add_conformer_atom_mask(mol)

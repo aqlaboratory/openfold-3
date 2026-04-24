@@ -34,7 +34,7 @@ from openfold3.core.data.pipelines.sample_processing.conformer import (
 from openfold3.core.data.primitives.structure.cleanup import remove_hydrogens
 from openfold3.core.data.primitives.structure.component import set_atomwise_annotation
 from openfold3.core.data.primitives.structure.conformer import (
-    multistrategy_compute_conformer,
+    compute_single_conformer_with_fallback,
 )
 from openfold3.core.data.resources.residues import (
     DNA_RESTYPE_1TO3,
@@ -208,10 +208,12 @@ def processed_reference_molecule_from_atom_array(
     else:
         atom_mask = np.ones(len(atom_array), dtype=bool)
 
-    # Convert to RDKit mol
+    # Convert to RDKit mol. We keep the CCD-provided Ideal conformer on the mol so that
+    # `processed_reference_molecule_from_mol` can fall back to it if on-the-fly
+    # embedding fails (e.g. for heme-like macrocycles that RDKit's ETKDGv3
+    # cannot embed).
     mol = to_mol(atom_array, kekulize=True)
     Chem.SanitizeMol(mol)
-    mol.RemoveConformer(0)
 
     return processed_reference_molecule_from_mol(
         mol=mol,
@@ -247,11 +249,21 @@ def processed_reference_molecule_from_mol(
     """
     # Compute conformer (note that we call this before creating the annotations, as this
     # function will remove all hydrogens in the input mol and can therefore change the
-    # mask length)
-    mol, conf_id, _ = multistrategy_compute_conformer(
-        mol, remove_hs=True, timeout_standard=120, timeout_rand_init=120
+    # mask length). If embedding fails but the input mol carries a stored conformer
+    # (e.g. the CCD Ideal), we use that as a fallback instead of crashing the pipeline.
+    mol, strategy = compute_single_conformer_with_fallback(
+        mol,
+        remove_hs=True,
+        timeout_standard=120,
+        timeout_rand_init=120,
+        timeout_small_ring=120,
     )
-    assert conf_id == 0
+    if strategy == "use_fallback":
+        logger.warning(
+            "Conformer generation failed for %s; using stored fallback conformer "
+            "(or all-NaN if none was available).",
+            Chem.MolToSmiles(mol),
+        )
 
     # Assume all atoms are in the structure if no special mask is given
     if atom_mask is None:
@@ -445,6 +457,45 @@ def structure_with_ref_mol_from_mol(
     )
 
 
+def _copy_processed_reference_molecule(
+    prm: ProcessedReferenceMolecule,
+) -> ProcessedReferenceMolecule:
+    """Returns a defensive copy of a ProcessedReferenceMolecule.
+
+    Used to shield cached factory outputs from accidental downstream mutation.
+    """
+    return ProcessedReferenceMolecule(
+        mol=Chem.Mol(prm.mol),
+        in_crop_mask=prm.in_crop_mask.copy(),
+        component_id=prm.component_id,
+        permutations=(
+            [p.copy() for p in prm.permutations]
+            if prm.permutations is not None
+            else None
+        ),
+    )
+
+
+@lru_cache(maxsize=256)
+def _cached_processed_reference_molecule_from_ccd_code(
+    ccd_code: str,
+) -> ProcessedReferenceMolecule:
+    """Cached factory for a ProcessedReferenceMolecule from a CCD code.
+
+    Conformer generation is the expensive step; caching avoids repeating it for
+    identical cofactors appearing multiple times in a structure (e.g. heme in
+    hemoglobin, which has four HEM chains) or across queries in a batch. Callers
+    must not mutate the returned object — use `_copy_processed_reference_molecule`.
+    """
+    atom_array = atom_array_from_ccd_code(
+        ccd_code,
+        chain_id="A",
+        res_id=1,
+        molecule_type=MoleculeType.LIGAND,
+    )
+    return processed_reference_molecule_from_atom_array(atom_array)
+
+
 def structure_with_ref_mol_from_ccd_code(
     ccd_code: str,
     chain_id: str,
@@ -463,7 +514,7 @@ def structure_with_ref_mol_from_ccd_code(
             reference molecule. The residue ID will be set to 1.
     """
 
-    # Build ligand AtomArray
+    # Build ligand AtomArray (cheap, depends on chain_id)
     atom_array = atom_array_from_ccd_code(
         ccd_code,
         chain_id=chain_id,
@@ -471,8 +522,11 @@ def structure_with_ref_mol_from_ccd_code(
         molecule_type=MoleculeType.LIGAND,
     )
 
-    # Get processed reference molecule
-    proc_ref_mol = processed_reference_molecule_from_atom_array(atom_array)
+    # Get processed reference molecule from cache (expensive step — conformer
+    # generation — runs only once per unique CCD code).
+    proc_ref_mol = _copy_processed_reference_molecule(
+        _cached_processed_reference_molecule_from_ccd_code(ccd_code)
+    )
 
     # Force coordinates to 0 for consistency
     atom_array.coord[:] = 0.0
@@ -480,6 +534,20 @@ def structure_with_ref_mol_from_ccd_code(
     return StructureWithReferenceMolecules(
         atom_array=atom_array, processed_reference_mols=[proc_ref_mol]
     )
+
+
+@lru_cache(maxsize=256)
+def _cached_processed_reference_molecule_from_smiles(
+    smiles: str,
+) -> ProcessedReferenceMolecule:
+    """Cached factory for a ProcessedReferenceMolecule from a SMILES string.
+
+    Conformer generation is the expensive step; caching avoids repeating it for
+    identical ligands appearing multiple times. Callers must not mutate the
+    returned object — use `_copy_processed_reference_molecule`.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    return processed_reference_molecule_from_mol(mol)
 
 
 def structure_with_ref_mol_from_smiles(
@@ -503,12 +571,24 @@ def structure_with_ref_mol_from_smiles(
             reference molecule. The residue ID will be set to 1. Atom names of the
             molecule will be set to follow the pattern C1, C2, N1, N2, etc.
     """
-    mol = Chem.MolFromSmiles(smiles)
+    # Get processed reference molecule from cache (expensive step — conformer
+    # generation — runs only once per unique SMILES).
+    proc_ref_mol = _copy_processed_reference_molecule(
+        _cached_processed_reference_molecule_from_smiles(smiles)
+    )
 
-    return structure_with_ref_mol_from_mol(
-        mol,
-        chain_id=chain_id,
-        res_name=res_name,
+    mol = proc_ref_mol.mol
+    atom_names = [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
+
+    atom_array = atom_array_from_mol(
+        mol, atom_names=atom_names, chain_id=chain_id, res_name=res_name
+    )
+
+    # Force coordinates to 0 for consistency
+    atom_array.coord[:] = 0.0
+
+    return StructureWithReferenceMolecules(
+        atom_array=atom_array, processed_reference_mols=[proc_ref_mol]
     )
 
 

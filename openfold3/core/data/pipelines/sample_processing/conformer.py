@@ -85,7 +85,9 @@ class ProcessedReferenceMolecule:
 def get_processed_reference_conformer(
     mol: Mol,
     mol_atom_array: AtomArrayView | AtomArray,
-    preferred_confgen_strategy: Literal["default", "random_init", "use_fallback"],
+    preferred_confgen_strategy: Literal[
+        "default", "random_init", "small_ring_rand_init", "use_fallback"
+    ],
     set_fallback_to_nan: bool = False,
     max_permutations: int = 1_000,
 ) -> ProcessedReferenceMolecule:
@@ -198,6 +200,17 @@ def get_processed_reference_conformer(
                 # because this was already tried previously in preprocessing if
                 # random_init was chosen.
                 mol, conf_id = compute_conformer(mol, use_random_coord_init=True)
+                conf = mol.GetConformer(conf_id)
+            elif preferred_confgen_strategy == "small_ring_rand_init":
+                # Try with random init + small-ring torsions, then use fallback. We do
+                # not use the default or random_init strategies here as fallbacks
+                # because both were already tried previously in preprocessing if
+                # small_ring_rand_init was chosen.
+                mol, conf_id = compute_conformer(
+                    mol,
+                    use_random_coord_init=True,
+                    use_small_ring_torsions=True,
+                )
                 conf = mol.GetConformer(conf_id)
             else:
                 raise ValueError(
