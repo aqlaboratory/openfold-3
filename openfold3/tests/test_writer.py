@@ -68,7 +68,9 @@ class TestPredictionWriter:
         [
             pytest.param("file_name", id="simple"),
             pytest.param("file.name.with.dots", id="dotted_query_id"),
-            pytest.param("file.name.with.cif.and.dots", id="dotted_query_id_with_cif_extension"),
+            pytest.param(
+                "file.name.with.cif.and.dots", id="dotted_query_id_with_cif_extension"
+            ),
         ],
     )
     def test_written_coordinates(self, tmp_path, structure_format, file_prefix):
