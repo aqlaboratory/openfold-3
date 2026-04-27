@@ -23,8 +23,9 @@ from typing import NamedTuple
 import networkx as nx
 import numpy as np
 from biotite.structure import AtomArray, chain_iter, get_chain_starts
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import connected_components
 
-import openfold3.core.data.resources.patches as patch
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
 )
@@ -169,6 +170,55 @@ class PrecursorMolGroupID(NamedTuple):
     mol_len: int
 
 
+def connected_components_from_edges(
+    n_nodes: int, edges: np.ndarray
+) -> list[np.ndarray]:
+    """Compute connected components from an (E, 2) edge array.
+
+    Builds a sparse adjacency matrix and runs scipy's `connected_components`
+    with directed=False, which treats edges as undirected (no need to
+    pre-symmetrize). Singletons are handled natively since the matrix shape
+    is fixed at `n_nodes`.
+
+    Args:
+        n_nodes (int):
+            Total number of nodes in the graph. Any node index in `[0, n_nodes)`
+            that does not appear in `edges` is returned as its own singleton
+            component.
+        edges (np.ndarray):
+            Integer array of shape `(E, 2)` listing undirected edges as
+            `(node_a, node_b)` pairs. May be empty.
+
+    Returns:
+        list[np.ndarray]:
+            One 1-D int array per connected component. Indices within each
+            component are ascending; components are ordered by their first
+            node index.
+    """
+    if edges.size == 0:
+        return [np.array([i]) for i in range(n_nodes)]
+
+    data = np.ones(edges.shape[0], dtype=np.int8)
+    adj = csr_matrix((data, (edges[:, 0], edges[:, 1])), shape=(n_nodes, n_nodes))
+
+    _, labels = connected_components(adj, directed=False)
+
+    # Group node indices by their component label, then order components by
+    # their first node:
+    #   1. argsort(labels) groups nodes that share a label into contiguous runs.
+    #      `kind="stable"` preserves original ascending node order within each run.
+    #   2. diff(labels[order]) is non-zero exactly at the boundary between two
+    #      different labels, so flatnonzero(...) + 1 gives the split offsets.
+    #   3. np.split slices `order` at those boundaries into one array per
+    #      component, each already in ascending node-index order.
+    #   4. Final sort by first node index orders the components themselves.
+    order = np.argsort(labels, kind="stable")
+    split_points = np.flatnonzero(np.diff(labels[order])) + 1
+    components = np.split(order, split_points)
+    components.sort(key=lambda x: x[0])
+    return components
+
+
 def chain_connected_molecule_iter(
     atom_array: AtomArray,
 ) -> Generator[AtomArray, None, None]:
@@ -200,7 +250,7 @@ def chain_connected_molecule_iter(
 
     edges = np.concatenate((real_edges, chain_edges))
 
-    for molecule_indices in patch.connected_components_from_edges(n_atoms, edges):
+    for molecule_indices in connected_components_from_edges(n_atoms, edges):
         yield atom_array[molecule_indices]
 
 
