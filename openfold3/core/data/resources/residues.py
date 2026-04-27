@@ -361,9 +361,9 @@ def map_str_array_to_idx_array(
     # ASCII character only the low byte is set, so we take a strided view into
     # just the low byte of each cell and gather directly. The byte-view trick
     # requires last-axis contiguity (stride == itemsize); ascontiguousarray is a
-    # no-op on already-contiguous input. Any non-ASCII codepoint would fold mod
-    # 256, but such bytes are not in the residue alphabet and map to the LUT's
-    # default unknown_idx.
+    # no-op on already-contiguous input.
+    # Note: Non-ASCII codepoints fold mod 256, this is safe because MSAs are ASCII
+    # by spec and codepoints 128-255 land in the unknown half of the LUT.
     msa_array = np.ascontiguousarray(msa_array)
     low_bytes = msa_array.view(np.uint8).reshape(msa_array.shape + (4,))[..., 0]
     return lut[low_bytes]
@@ -378,9 +378,7 @@ def _get_residue_idx_lut(molecule_type: MoleculeType) -> np.ndarray:
     """
     residues_pos_map = MOLECULE_TYPE_TO_RESIDUES_POS_MAP[molecule_type]
     unknown_idx = residues_pos_map[MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1[molecule_type]]
-    # STANDARD_RESIDUES_WITH_GAP_1 has ~30 entries so indices fit in int16.
-    # Using int16 (vs the source int64) cuts the gather's output write bandwidth 4x;
-    # downstream callers either auto-cast on assignment or promote in arithmetic.
+    # int16 keeps the output buffer narrow (alphabet ~30 entries)
     lut = np.full(256, unknown_idx, dtype=np.int16)
     for residue, idx in residues_pos_map.items():
         lut[ord(residue)] = idx

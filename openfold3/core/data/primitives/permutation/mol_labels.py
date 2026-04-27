@@ -200,7 +200,7 @@ def chain_connected_molecule_iter(
 
     edges = np.concatenate((real_edges, chain_edges))
 
-    for molecule_indices in patch.components_from_edges(n_atoms, edges):
+    for molecule_indices in patch.connected_components_from_edges(n_atoms, edges):
         yield atom_array[molecule_indices]
 
 

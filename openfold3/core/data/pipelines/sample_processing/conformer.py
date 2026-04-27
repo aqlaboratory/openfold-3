@@ -189,7 +189,7 @@ def get_processed_reference_conformer(
                 # default should not fail because we already tried the strategy in
                 # preprocessing)
                 mol, conf_id, _ = multistrategy_compute_conformer(
-                    mol, remove_hs=True, timeout_standard=10.0, timeout_rand_init=10.0
+                    mol, remove_hs=True, timeout_standard=10, timeout_rand_init=10
                 )
                 conf = mol.GetConformer(conf_id)
             elif preferred_confgen_strategy == "random_init":
@@ -198,7 +198,7 @@ def get_processed_reference_conformer(
                 # because this was already tried previously in preprocessing if
                 # random_init was chosen.
                 mol, conf_id = compute_conformer(
-                    mol, use_random_coord_init=True, timeout=10.0
+                    mol, use_random_coord_init=True, timeout=10
                 )
                 conf = mol.GetConformer(conf_id)
             else:

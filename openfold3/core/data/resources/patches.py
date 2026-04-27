@@ -59,25 +59,48 @@ def construct_atom_array(atoms: list[struc.Atom]) -> struc.AtomArray:
     return array
 
 
-def components_from_edges(n_nodes: int, edges: np.ndarray) -> list[np.ndarray]:
+def connected_components_from_edges(
+    n_nodes: int, edges: np.ndarray
+) -> list[np.ndarray]:
     """Compute connected components from an (E, 2) edge array.
 
-    Builds a symmetric sparse adjacency matrix and runs scipy's
-    `connected_components`. Singletons are handled natively since the matrix
-    shape is fixed at `n_nodes`. Output is sorted: each component's indices
-    are ascending; components are ordered by their first atom index.
+    Builds a sparse adjacency matrix and runs scipy's `connected_components`
+    with directed=False, which treats edges as undirected (no need to
+    pre-symmetrize). Singletons are handled natively since the matrix shape
+    is fixed at `n_nodes`.
+
+    Args:
+        n_nodes (int):
+            Total number of nodes in the graph. Any node index in `[0, n_nodes)`
+            that does not appear in `edges` is returned as its own singleton
+            component.
+        edges (np.ndarray):
+            Integer array of shape `(E, 2)` listing undirected edges as
+            `(node_a, node_b)` pairs. May be empty.
+
+    Returns:
+        list[np.ndarray]:
+            One 1-D int array per connected component. Indices within each
+            component are ascending; components are ordered by their first
+            node index.
     """
-    if edges.size > 0:
-        rows = np.concatenate((edges[:, 0], edges[:, 1]))
-        cols = np.concatenate((edges[:, 1], edges[:, 0]))
-        data = np.ones(rows.shape[0], dtype=np.int8)
-        adj = csr_matrix((data, (rows, cols)), shape=(n_nodes, n_nodes))
-    else:
-        adj = csr_matrix((n_nodes, n_nodes), dtype=np.int8)
+    if edges.size == 0:
+        return [np.array([i]) for i in range(n_nodes)]
+
+    data = np.ones(edges.shape[0], dtype=np.int8)
+    adj = csr_matrix((data, (edges[:, 0], edges[:, 1])), shape=(n_nodes, n_nodes))
 
     _, labels = connected_components(adj, directed=False)
 
-    # Stable sort on labels preserves ascending node-index order within each group.
+    # Group node indices by their component label, then order components by
+    # their first node:
+    #   1. argsort(labels) groups nodes that share a label into contiguous runs.
+    #      `kind="stable"` preserves original ascending node order within each run.
+    #   2. diff(labels[order]) is non-zero exactly at the boundary between two
+    #      different labels, so flatnonzero(...) + 1 gives the split offsets.
+    #   3. np.split slices `order` at those boundaries into one array per
+    #      component, each already in ascending node-index order.
+    #   4. Final sort by first node index orders the components themselves.
     order = np.argsort(labels, kind="stable")
     split_points = np.flatnonzero(np.diff(labels[order])) + 1
     components = np.split(order, split_points)
@@ -102,7 +125,7 @@ def get_molecule_indices(atom_array: struc.AtomArray) -> list[np.ndarray]:
 
     n_atoms = len(atom_array)
     bond_pairs = bonds.as_array()[:, :2].astype(np.int64, copy=False)
-    return components_from_edges(n_atoms, bond_pairs)
+    return connected_components_from_edges(n_atoms, bond_pairs)
 
 
 def molecule_iter(

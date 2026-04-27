@@ -299,9 +299,7 @@ def create_main(
             axis=0,
         )
 
-        # Deduplicate within the main MSA via hash-based pandas unique (O(N));
-        # drop_duplicates on a default RangeIndex preserves first-occurrence order,
-        # so the resulting indices are already sorted ascending.
+        # Deduplicate within the main MSA
         main_view = main_msa_redundant.view(
             np.dtype(
                 (
@@ -309,8 +307,9 @@ def create_main(
                     main_msa_redundant.dtype.itemsize * main_msa_redundant.shape[1],
                 )
             )
-        ).ravel()
-        unique_idx = pd.Series(main_view).drop_duplicates().index.to_numpy()
+        )
+        _, unique_idx = np.unique(main_view, return_index=True)
+        unique_idx.sort()  # preserve original order
         main_msa_redundant = main_msa_redundant[unique_idx, :]
         main_deletion_matrix_redundant = main_deletion_matrix_redundant[unique_idx, :]
 
@@ -324,16 +323,14 @@ def create_main(
 
             # 1) Convert each 2D array into a 1D "structured" view of type void This
             # way, each row is treated as one item.
-            arr_view = arr.view(
-                np.dtype((np.void, arr.dtype.itemsize * arr.shape[1]))
-            ).ravel()
+            arr_view = arr.view(np.dtype((np.void, arr.dtype.itemsize * arr.shape[1])))
             paired_view = paired_arr.view(
                 np.dtype((np.void, paired_arr.dtype.itemsize * paired_arr.shape[1]))
-            ).ravel()
+            )
 
-            # 2) Vectorized membership check on 1-D void views; negate for "unique".
-            # (pandas.isin lacks a void-dtype signature, so stick with np.isin here.)
-            is_unique = ~np.isin(arr_view, paired_view)
+            # 2) Vectorized membership check: is row in paired_msa? ~np.isin(...)
+            # inverts the boolean array, so True -> "unique" row
+            is_unique = np.squeeze(~np.isin(arr_view, paired_view), axis=-1)
 
             # Apply filtering with the boolean mask
             filtered_msa = main_msa_redundant[is_unique, :]
