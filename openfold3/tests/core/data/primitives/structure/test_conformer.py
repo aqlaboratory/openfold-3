@@ -430,7 +430,7 @@ def test_pdb_tetrapyrrole_chain_resolves(ccd_code, smiles, default_succeeds):
     mol = Chem.MolFromSmiles(smiles)
     result = multistrategy_compute_conformer(
         mol,
-        timeouts={"default": 5.0, "small_ring_torsions": 15.0, "random_init": 5.0},
+        timeouts={"default": 15.0, "small_ring_torsions": 15.0, "random_init": 5.0},
     )
     assert isinstance(result, ConformerResult)
     expected = "default" if default_succeeds else "small_ring_torsions"

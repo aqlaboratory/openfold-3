@@ -224,6 +224,15 @@ def pytest_addoption(parser):
     )
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "platform_dependent_snapshot: snapshot values for this module depend "
+        "on GPU backend (kernel numerics); store under "
+        "test_data/snapshots/<stem>/<platform>/ instead of <stem>/.",
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def ensure_biotite_ccd(request):
     """Download CCD file before any tests run (once per test session)."""
@@ -240,16 +249,17 @@ def biotite_ccd_wrapper():
 
 @pytest.fixture(scope="module")
 def original_datadir(request: pytest.FixtureRequest) -> Path:
-    """Redirect pytest-regressions snapshot storage to test_data/snapshots/<platform>/."""
-    datadir = (
-        Path(__file__).parent
-        / "test_data"
-        / "snapshots"
-        / Path(request.path).stem
-        / _snapshot_platform()
-    )
-    _check_snapshot_env(datadir)
-    return datadir
+    """Redirect pytest-regressions snapshot storage to test_data/snapshots/<stem>/.
+
+    Modules whose snapshots depend on GPU backend (kernel numerics) opt in to a
+    `<platform>/` subdir by setting ``pytestmark = pytest.mark.platform_dependent_snapshot``;
+    everything else (the data pipeline, CPU-deterministic) stores under <stem>/ directly.
+    """
+    base = Path(__file__).parent / "test_data" / "snapshots" / Path(request.path).stem
+    if request.node.get_closest_marker("platform_dependent_snapshot") is not None:
+        base = base / _snapshot_platform()
+        _check_snapshot_env(base)
+    return base
 
 
 @pytest.fixture()
