@@ -133,6 +133,14 @@ openfold3-cuda13-pypi = { no-default-feature = true, features = [
     "openfold3-editable-full",
     "tests"
 ] }
+openfold3-rocm7 = { no-default-feature = true, features = [
+    "python",
+    "openfold3-cpu",
+    "pytorch-pypi-rocm7",
+    "not-in-pypi",
+    "openfold3-editable",
+    "tests", 
+] }
 
 # Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
 # N.B. at the moment all these are editable installs
@@ -249,6 +257,18 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu129" }
 [feature.pytorch-pypi-cuda13.pypi-dependencies]
 pytorch-lightning = "*"
 torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
+
+[feature.pytorch-pypi-rocm7]
+
+  platforms = ["linux-64"]
+
+  [feature.pytorch-pypi-rocm7.dependencies]
+  # torch 2.11.0+rocm7.2 requires setuptools<82
+  setuptools = "<82"
+
+  [feature.pytorch-pypi-rocm7.pypi-dependencies]
+  torch = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
+  triton-rocm = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
 
 [feature.cuda12]
 

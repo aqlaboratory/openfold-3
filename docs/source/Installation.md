@@ -31,6 +31,7 @@ pixi run -e openfold3-cpu run_openfold
 We provide the following environments:
  - openfold3-cpu (linux-64, linux-aarch64, osx-64,osx-arm64)
  - openfold3-cuda12 and openfold-cuda13 (linux-64, linux-aarch64) 
+ - openfold3-rocm7 (linux-64)
 
 For more information, including rationale, tips and tricks, see [Modern Conda Environments with Pixi](./modern-conda-environments-with-pixi.md).
 

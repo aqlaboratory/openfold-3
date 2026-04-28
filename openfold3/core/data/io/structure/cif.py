@@ -326,7 +326,9 @@ def write_structure(
     if isinstance(output_path, str):
         output_path = Path(output_path)
 
-    suffix = "".join(output_path.suffixes)  # to handle .cif.gz
+    suffix = output_path.suffix
+    if suffix == ".gz" and output_path.stem.endswith(".cif"):
+        suffix = ".cif.gz"
 
     match suffix:
         case ".npz":

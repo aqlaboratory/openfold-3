@@ -65,7 +65,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build and push test image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v7.1.0
         with:
           context: .
           file: docker/Dockerfile.pixi
@@ -84,7 +84,7 @@ jobs:
 
       - name: Cache download of parameters
         id: cache-openfold_parameters
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.openfold3/
           key: shared-params_of3
