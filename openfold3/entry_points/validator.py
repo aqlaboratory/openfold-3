@@ -158,6 +158,7 @@ class OutputWritingSettings(BaseModel):
 
     structure_format: Literal["pdb", "cif", "cif.gz"] = "cif"
     full_confidence_output_format: Literal["json", "npz"] = "json"
+    full_confidence_output_dtype: Literal["float16", "float32"] = "float16"
     write_features: bool = False
     write_latent_outputs: bool = False
     write_full_confidence_scores: bool = True
@@ -421,10 +422,14 @@ class InferenceExperimentConfig(ExperimentConfig):
                     self.inference_ckpt_name
                 ].version_compatibility
             )
-            if current_openfold3_version not in allowed_versions:
+            # Use prereleases=True so that dev versions (e.g. 0.4.1.dev0
+            # from setuptools_scm) are not excluded by the specifier check.
+            if not allowed_versions.contains(
+                current_openfold3_version, prereleases=True
+            ):
                 raise ValueError(
-                    f"Selected checkpoint {self.inference_ckpt_name} is not compatible"
-                    "with the currently installed OpenFold3 version"
+                    f"Selected checkpoint {self.inference_ckpt_name} is not compatible "
+                    "with the currently installed OpenFold3 version "
                     f"{current_openfold3_version}. Allowed versions for this "
                     f"checkpoint are {allowed_versions}."
                 )

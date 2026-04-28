@@ -1,3 +1,16 @@
+# Copyright 2026 AlQuraishi Laboratory
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Tests for the is_dir (LMDB) branch of read_datacache."""
 
 import pytest
@@ -8,11 +21,10 @@ from openfold3.core.data.primitives.caches.lmdb import LMDBDict
 
 class TestReadDatacacheLMDB:
     def test_type_peek_env_cleaned_up(self, lmdb_dir):
-        """read_datacache opens a short-lived env to peek at _type, then closes it.
+        """read_datacache should return a cache with a live _lmdb_env.
 
-        If the peek env leaked, from_lmdb's lmdb.open on the same directory
-        would raise "already open in this process".  A successful return
-        proves the peek env was closed by the context manager.
+        If the internal type-peek env leaked, lmdb.open in from_lmdb would
+        raise 'already open in this process'.
         """
         cache = read_datacache(lmdb_dir)
         assert cache._lmdb_env is not None

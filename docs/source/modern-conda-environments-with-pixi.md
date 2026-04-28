@@ -4,7 +4,7 @@ Pixi is a modern tool that allows for much faster environment building over cond
 
 Key terms when working with pixi
 - an "environment", it's a group of "features", an example environment is `openfold3-cuda13-pypi`
-- a "feature" is a group of packages/dependancies (either from conda or pypi)
+- a "feature" is a group of packages/dependencies (either from conda or pypi)
 - each environment is then composed from one or more features 
 
 Here is an overview diagram showing the various environments and features currently available. 

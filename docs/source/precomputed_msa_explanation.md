@@ -2,6 +2,10 @@
 
 Here, we aim to provide additional explanations for the inner workings of the MSA components of the OF3 inference pipeline. If you need step-by-step instructions on how to generate MSAs using our OF3-style pipeline, refer to our {doc}`MSA Generation <precomputed_msa_generation_how_to>` document. If you need a guide on how to interface MSAs with the inference pipeline, go to the {doc}`Precomputed MSA How-To Guide <precomputed_msa_how_to>`.
 
+The following diagram provides a high-level overview of the MSA processing pipeline. Per-chain alignments from each sequence database (UniRef90, UniProt, ColabFold DB, MGnify) are combined by vertical concatenation into a single MSA block, capped at 16k sequences. Cross-chain pairing based on species information is then applied to produce the paired MSA rows. The combined MSA is then sampled down to the target size \[L_i, nJ\], where L_i is the token count (sequence length) of the i-th chain and nJ is the number of sampled MSA rows. During the forward pass, the [`MSAModuleEmbedder`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/model/feature_embedders/input_embedders.py#L171) (AF3 Algorithm 8) further subsamples 1024 random rows from this MSA per recycle (controlled by `max_subsampled_all_msa`).
+
+![MSA Pipeline Overview](../imgs/msa-pipeline-diagram.png)
+
 Specifically, we detail:
 
 1. {ref}`MSA Input Feature Components <1-msa-input-feature-components>` 

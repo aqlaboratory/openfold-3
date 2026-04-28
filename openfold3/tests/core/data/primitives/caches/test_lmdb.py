@@ -42,8 +42,11 @@ class TestConvertDatacacheToLMDB:
         convert_datacache_to_lmdb(json_cache, lmdb_dir, map_size=2 * (1024**2))
 
         # Would raise "already open in this process" if the write env leaked
-        env = lmdb.open(str(lmdb_dir), readonly=True, lock=False, subdir=True)
-        env.close()
+        try:
+            env = lmdb.open(str(lmdb_dir), readonly=True, lock=False, subdir=True)
+            env.close()
+        except lmdb.Error as exc:
+            pytest.fail(f"lmdb env was not closed after write — re-open raised: {exc}")
 
     @pytest.mark.parametrize(
         ("prefix", "expected_keys"),

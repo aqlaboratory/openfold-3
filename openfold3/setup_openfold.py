@@ -18,7 +18,6 @@ Setup script for OpenFold3 parameters.
 Downloads model parameters and runs verification tests.
 """
 
-import importlib.util
 import logging
 import os
 import sys
@@ -207,30 +206,23 @@ def run_integration_tests() -> None:
         return
 
     logger.info("Running integration tests...")
-    pytest_is_installed = importlib.util.find_spec("pytest")
-    if not pytest_is_installed:
-        logger.error("Pytest is required to run integration tests.")
-        logger.error(
-            "Please install pytest e.g. `pip install pytest` and rerun the script."
-        )
-        return
 
     # Set environment variables for tests
     os.environ["OPENFOLD_SETUP_SCRIPT"] = "1"
-    import pytest
+    import unittest
 
-    exit_code = pytest.main(
-        [
-            "-v",
-            "--rootdir",
-            str(Path(__file__).parent),
-            "--log-cli-level=WARNING",
-            Path(__file__).parent / "tests/test_inference_full.py",
-            "-m",
-            "inference_verification",
-            "--skip-ccd-update",
-        ]
-    )
+    root_logger = logging.getLogger()
+    original_level = root_logger.level
+    try:
+        root_logger.setLevel(logging.WARNING)
+        program = unittest.main(
+            module="openfold3.tests.test_inference_full",
+            exit=False,
+            verbosity=2,
+        )
+    finally:
+        root_logger.setLevel(original_level)
+    exit_code = 0 if program.result.wasSuccessful() else 1
 
     if exit_code != 0:
         logger.error("Integration tests failed. Please check the output above.")

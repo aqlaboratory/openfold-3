@@ -160,15 +160,35 @@ class TestRemapColabfoldTemplateChainIds:
         assert remapped_ids[1] == "4pqx_A"
 
     @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
-    def test_unknown_author_chain_raises(self, _mock_fetch):
-        """When the author chain ID isn't in the API response, raise."""
-        with pytest.raises(RuntimeError, match="Author chain Z not found in 1rnb"):
-            remap_colabfold_template_chain_ids(
-                template_alignments=_make_m8_dataframe(["1rnb_Z"]),
-                m_with_templates={101},
-                rep_ids=["rep1"],
-                rep_id_to_m={"rep1": 101},
-            )
+    def test_unknown_author_chain_skipped(self, _mock_fetch):
+        """When the author chain ID isn't in the API response, skip that template."""
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=_make_m8_dataframe(["1rnb_Z"]),
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        assert "rep1" in result
+        # The template with unmappable chain Z should be dropped
+        assert len(result["rep1"]) == 0
+
+    @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
+    def test_unknown_chain_drops_only_bad_rows(self, _mock_fetch):
+        """Valid templates are kept; only unmappable ones are dropped."""
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=_make_m8_dataframe(["1rnb_A", "1rnb_Z", "4pqx_A"]),
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        assert "rep1" in result
+        remapped_ids = result["rep1"][1].tolist()
+        # 1rnb_Z dropped, 1rnb_A remapped to 1rnb_B, 4pqx_A kept
+        assert len(remapped_ids) == 2
+        assert remapped_ids[0] == "1rnb_B"
+        assert remapped_ids[1] == "4pqx_A"
 
     def test_skips_rep_without_templates(self):
         """Rep IDs not in m_with_templates should be skipped (no fetch needed)."""
@@ -483,6 +503,46 @@ class TestColabFoldQueryRunner:
                     f"{chain.chain_ids} of query {query_name} when template file"
                     f"is empty, but got {chain.template_entry_chain_ids}"
                 )
+
+
+class TestRemapObsoletePdb:
+    """Regression test for GitHub issue #170.
+
+    When ColabFold returns a template hit for an obsolete PDB (e.g. 7QE7),
+    the RCSB API returns no chain mapping.  The function should warn and
+    fall back to using the author chain ID as the label chain ID, rather
+    than crashing the entire run.
+    """
+
+    @staticmethod
+    def _mock_fetch_excluding_obsolete(pdb_ids):
+        """Simulate RCSB not returning data for obsolete PDB entries."""
+        known = {
+            "4pqx": {"A": "A"},
+        }
+        # Obsolete PDB "7qe7" is intentionally absent from known
+        return {pid: known[pid] for pid in pdb_ids if pid in known}
+
+    @patch(_MOCK_FETCH_TARGET)
+    def test_obsolete_pdb_falls_back(self, mock_fetch):
+        """Obsolete PDB with no RCSB mapping falls back to author chain ID."""
+        mock_fetch.side_effect = self._mock_fetch_excluding_obsolete
+
+        # Template hits include an obsolete PDB entry (7qe7)
+        df = _make_m8_dataframe(["7qe7_A", "4pqx_A"])
+
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=df,
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        remapped_ids = result["rep1"][1].tolist()
+        # Obsolete entry falls back to author chain ID
+        assert remapped_ids[0] == "7qe7_A"
+        # Non-obsolete entry is remapped normally
+        assert remapped_ids[1] == "4pqx_A"
 
 
 class TestMsaComputationSettings:
