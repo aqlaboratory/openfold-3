@@ -189,12 +189,12 @@ def multistrategy_compute_conformer(
 
     # Validate `start_from` and locate it in the chain.
     _get_strategy(start_from)
-    chain_start = next(
+    iter_start = next(
         i for i, s in enumerate(CONFORMER_STRATEGIES) if s.name == start_from
     )
 
     last_exc: Exception | None = None
-    for strat in CONFORMER_STRATEGIES[chain_start:]:
+    for strat in CONFORMER_STRATEGIES[iter_start:]:
         try:
             mol_out, conf_id = _compute_conformer(
                 mol,
