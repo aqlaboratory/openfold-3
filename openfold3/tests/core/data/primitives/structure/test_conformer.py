@@ -434,7 +434,15 @@ def test_pdb_tetrapyrrole_default_strategy_outcome(ccd_code, smiles, default_suc
 
 
 @pytest.mark.parametrize(("ccd_code", "smiles", "default_succeeds"), _PDB_TETRAPYRROLES)
-def test_pdb_tetrapyrrole_small_ring_torsions_succeeds(ccd_code, smiles, _):
+def test_pdb_tetrapyrrole_small_ring_torsions_succeeds(
+    ccd_code,
+    smiles,
+    default_succeeds,
+):
+    del (
+        ccd_code,
+        default_succeeds,
+    )  # unused since small_ring_torsions should succeed for all cases
     mol = Chem.MolFromSmiles(smiles)
     mol_out, conf_id = _compute_conformer(
         mol, use_small_ring_torsions=True, timeout=15.0
