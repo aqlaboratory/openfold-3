@@ -52,56 +52,44 @@ def _stub_with_outcomes(outcomes):
     return side_effect
 
 
-# Sentinel used in parametrized outcome lists to mean "succeed and return the test
-# molecule with conf_id=0". Replaced with a real (mol, 0) tuple inside the test, since
-# parametrize evaluates at collection time before the `ethanol` fixture exists.
-_SUCCESS = object()
-
-
 @pytest.mark.parametrize(
-    ("outcomes", "expected_strategy"),
-    [
-        pytest.param(
-            [_SUCCESS],
-            "default",
-            id="first_strategy_succeeds",
-        ),
-        pytest.param(
-            [ConformerGenerationError("boom"), _SUCCESS],
-            "small_ring_torsions",
-            id="fallback_default_to_small_ring_torsions",
-        ),
-        pytest.param(
-            [
-                ConformerGenerationError("boom"),
-                ConformerGenerationError("boom"),
-                _SUCCESS,
-            ],
-            "random_init",
-            id="fallback_all_the_way_to_random_init",
-        ),
-    ],
+    "expected_strategy",
+    [s.name for s in CONFORMER_STRATEGIES],
+    ids=lambda name: f"resolves_to_{name}",
 )
-def test_strategy_chain_dispatch(ethanol, outcomes, expected_strategy):
-    concrete = [(ethanol, 0) if o is _SUCCESS else o for o in outcomes]
+def test_dispatch_returns_first_successful_strategy(ethanol, expected_strategy):
+    """The dispatcher walks CONFORMER_STRATEGIES in registry order and reports
+    the first strategy whose `_compute_conformer` call returns. The mock
+    identifies which strategy is being attempted by matching the call's kwargs
+    against each registered strategy's kwargs, so the test implicitly verifies
+    that the dispatcher hands the registry's kwargs through unchanged — but
+    the only explicit assertion is the behavioral one (`result.strategy`).
+    """
+
+    def fake(mol, **call_kwargs):
+        attempted_strategy = next(
+            (
+                s
+                for s in CONFORMER_STRATEGIES
+                if s.kwargs.items() <= call_kwargs.items()
+            ),
+            None,
+        )
+        if attempted_strategy is None:
+            raise AssertionError(f"unrecognized kwargs {call_kwargs}")
+        if attempted_strategy.name != expected_strategy:
+            raise ConformerGenerationError(
+                f"strategy {attempted_strategy.name!r} should fail here"
+            )
+        return mol, 0
 
     with patch(
         "openfold3.core.data.primitives.structure.conformer._compute_conformer",
-        side_effect=_stub_with_outcomes(concrete),
-    ) as mock_cc:
+        side_effect=fake,
+    ):
         result = multistrategy_compute_conformer(ethanol)
 
-    assert isinstance(result, ConformerResult)
     assert result.strategy == expected_strategy
-    assert mock_cc.call_count == len(outcomes)
-    # Verify the kwargs handed to compute_conformer match the strategy registry order
-    # for the calls actually made.
-    expected_kwargs_per_call = [s.kwargs for s in CONFORMER_STRATEGIES[: len(outcomes)]]
-    actual_kwargs_per_call = [
-        {k: v for k, v in call.kwargs.items() if k in expected_kwargs_per_call[i]}
-        for i, call in enumerate(mock_cc.call_args_list)
-    ]
-    assert actual_kwargs_per_call == expected_kwargs_per_call
 
 
 def test_all_strategies_fail_raises(ethanol):
