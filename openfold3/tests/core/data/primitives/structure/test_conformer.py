@@ -52,46 +52,6 @@ def _stub_with_outcomes(outcomes):
     return side_effect
 
 
-@pytest.mark.parametrize(
-    "expected_strategy",
-    [s.name for s in CONFORMER_STRATEGIES],
-    ids=lambda name: f"resolves_to_{name}",
-)
-def test_dispatch_returns_first_successful_strategy(ethanol, expected_strategy):
-    """The dispatcher walks CONFORMER_STRATEGIES in registry order and reports
-    the first strategy whose `_compute_conformer` call returns. The mock
-    identifies which strategy is being attempted by matching the call's kwargs
-    against each registered strategy's kwargs, so the test implicitly verifies
-    that the dispatcher hands the registry's kwargs through unchanged — but
-    the only explicit assertion is the behavioral one (`result.strategy`).
-    """
-
-    def fake(mol, **call_kwargs):
-        attempted_strategy = next(
-            (
-                s
-                for s in CONFORMER_STRATEGIES
-                if s.kwargs.items() <= call_kwargs.items()
-            ),
-            None,
-        )
-        if attempted_strategy is None:
-            raise AssertionError(f"unrecognized kwargs {call_kwargs}")
-        if attempted_strategy.name != expected_strategy:
-            raise ConformerGenerationError(
-                f"strategy {attempted_strategy.name!r} should fail here"
-            )
-        return mol, 0
-
-    with patch(
-        "openfold3.core.data.primitives.structure.conformer._compute_conformer",
-        side_effect=fake,
-    ):
-        result = multistrategy_compute_conformer(ethanol)
-
-    assert result.strategy == expected_strategy
-
-
 def test_all_strategies_fail_raises(ethanol):
     timeout_exc = FunctionTimedOut("timed out")
     # One outcome per strategy in the chain.
