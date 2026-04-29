@@ -229,9 +229,11 @@ def test_compute_conformer_snapshot(
 
     ndarrays_regression.check(
         {"coords": coords},
-        # ETKDGv3 is deterministic given a fixed seed, but cross-platform / cross-RDKit
-        # numerics can drift at the 1e-5 level — give it some headroom.
-        default_tolerance=dict(atol=1e-3, rtol=1e-3),
+        # ETKDGv3 is deterministic for a fixed seed within one RDKit build, but
+        # numerics drift across RDKit minor versions and CPU archs (aarch64 vs
+        # x86_64). Observed drift on paracetamol is ~1.5e-3 Å; give it headroom
+        # while staying ≪ chemistry scale (~0.1 Å) to still catch real regressions.
+        default_tolerance=dict(atol=5e-3, rtol=5e-3),
     )
 
 
