@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import dataclasses
+from typing import NamedTuple
 from unittest.mock import patch
 
 import numpy as np
@@ -358,36 +359,59 @@ def test_compute_conformer_small_ring_torsions_flag_propagates(
 
 _DEFAULT_FAILURE_EXCEPTIONS = (ConformerGenerationError, FunctionTimedOut)
 
+
+class _TetrapyrroleCase(NamedTuple):
+    ccd_code: str
+    smiles: str
+    default_succeeds: bool
+
+
 _PDB_TETRAPYRROLES = [
     pytest.param(
-        "HEM",
-        "Cc1c2n3c(c1CCC(=O)O)C=C4C(=C(C5=[N]4[Fe]36[N]7=C(C=C8N6C(=C5)C(=C8C)"
-        "C=C)C(=C(C7=C2)C)C=C)C)CCC(=O)O",
-        False,
+        *_TetrapyrroleCase(
+            ccd_code="HEM",
+            smiles=(
+                "Cc1c2n3c(c1CCC(=O)O)C=C4C(=C(C5=[N]4[Fe]36[N]7=C(C=C8N6C(=C5)"
+                "C(=C8C)C=C)C(=C(C7=C2)C)C=C)C)CCC(=O)O"
+            ),
+            default_succeeds=False,
+        ),
         id="hem_fe_porphyrin",
     ),
     pytest.param(
-        "CLA",
-        "CCC1=C(C2=Cc3c(c(c4n3[Mg]56[N]2=C1C=C7N5C8=C([C@H](C(=O)C8=C7C)"
-        "C(=O)OC)C9=[N]6C(=C4)[C@H]([C@@H]9CCC(=O)OC/C=C(\\C)/CCC[C@H](C)"
-        "CCC[C@H](C)CCCC(C)C)C)C)C=C)C",
-        True,
+        *_TetrapyrroleCase(
+            ccd_code="CLA",
+            smiles=(
+                "CCC1=C(C2=Cc3c(c(c4n3[Mg]56[N]2=C1C=C7N5C8=C([C@H](C(=O)C8=C7C)"
+                "C(=O)OC)C9=[N]6C(=C4)[C@H]([C@@H]9CCC(=O)OC/C=C(\\C)/CCC[C@H](C)"
+                "CCC[C@H](C)CCCC(C)C)C)C)C=C)C"
+            ),
+            default_succeeds=True,
+        ),
         id="cla_chlorophyll_a",
     ),
     pytest.param(
-        "CHL",
-        "CCC1=C(c2cc3c(c(c4n3[Mg]56[n+]2c1cc7n5c8c(c9[n+]6c(c4)"
-        "C(C9CCC(=O)OC/C=C(\\C)/CCC[C@H](C)CCC[C@H](C)CCCC(C)C)C)"
-        "[C@H](C(=O)c8c7C)C(=O)OC)C)C=C)C=O",
-        True,
+        *_TetrapyrroleCase(
+            ccd_code="CHL",
+            smiles=(
+                "CCC1=C(c2cc3c(c(c4n3[Mg]56[n+]2c1cc7n5c8c(c9[n+]6c(c4)"
+                "C(C9CCC(=O)OC/C=C(\\C)/CCC[C@H](C)CCC[C@H](C)CCCC(C)C)C)"
+                "[C@H](C(=O)c8c7C)C(=O)OC)C)C=C)C=O"
+            ),
+            default_succeeds=True,
+        ),
         id="chl_chlorophyll_b",
     ),
     pytest.param(
-        "BCL",
-        "CC[C@@H]1[C@H](C2=CC3=C(C(=C4[N-]3[Mg+2]56[N]2=C1C=C7[N-]5C8="
-        "C([C@H](C(=O)C8=C7C)C(=O)OC)C9=[N]6C(=C4)[C@H]([C@@H]9CCC(=O)OC"
-        "/C=C(\\C)/CCC[C@H](C)CCC[C@H](C)CCCC(C)C)C)C)C(=O)C)C",
-        True,
+        *_TetrapyrroleCase(
+            ccd_code="BCL",
+            smiles=(
+                "CC[C@@H]1[C@H](C2=CC3=C(C(=C4[N-]3[Mg+2]56[N]2=C1C=C7[N-]5C8="
+                "C([C@H](C(=O)C8=C7C)C(=O)OC)C9=[N]6C(=C4)[C@H]([C@@H]9CCC(=O)OC"
+                "/C=C(\\C)/CCC[C@H](C)CCC[C@H](C)CCCC(C)C)C)C)C(=O)C)C"
+            ),
+            default_succeeds=True,
+        ),
         id="bcl_bacteriochlorophyll_a",
     ),
 ]
@@ -410,10 +434,7 @@ def test_pdb_tetrapyrrole_default_strategy_outcome(ccd_code, smiles, default_suc
 
 
 @pytest.mark.parametrize(("ccd_code", "smiles", "default_succeeds"), _PDB_TETRAPYRROLES)
-def test_pdb_tetrapyrrole_small_ring_torsions_succeeds(
-    ccd_code, smiles, default_succeeds
-):
-    del default_succeeds  # claim under test is universal across the parametrize set
+def test_pdb_tetrapyrrole_small_ring_torsions_succeeds(ccd_code, smiles, _):
     mol = Chem.MolFromSmiles(smiles)
     mol_out, conf_id = _compute_conformer(
         mol, use_small_ring_torsions=True, timeout=15.0
