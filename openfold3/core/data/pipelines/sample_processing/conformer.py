@@ -35,7 +35,6 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 from openfold3.core.data.primitives.structure.conformer import (
     ConformerGenerationError,
     add_conformer_atom_mask,
-    compute_conformer,
     get_allnan_conformer,
     get_cropped_permutations,
     get_name_match_argsort,
@@ -181,32 +180,25 @@ def get_processed_reference_conformer(
 
     ## Overwrite the fallback conformer with a new conformer if possible
     if preferred_confgen_strategy != "use_fallback":
-        # If the new conformer generation fails, the below code is skipped and the
-        # fallback conformer is used
+        # `start_from` slices the strategy chain so that earlier strategies — which
+        # already failed in preprocessing for this molecule — aren't retried, while
+        # later strategies remain available as additional safety nets. If every
+        # remaining strategy fails or times out, suppress() lets the stored fallback
+        # conformer stand.
         with contextlib.suppress(ConformerGenerationError, FunctionTimedOut):
-            if preferred_confgen_strategy == "default":
-                # Try with default, then use random init, then use fallback (technically
-                # default should not fail because we already tried the strategy in
-                # preprocessing)
-                mol, conf_id, _ = multistrategy_compute_conformer(
-                    mol, remove_hs=True, timeout_standard=30.0, timeout_rand_init=30.0
-                )
-                conf = mol.GetConformer(conf_id)
-            elif preferred_confgen_strategy == "random_init":
-                # Try with random init, then use fallback (technically this also should
-                # not fail). We do not use the default strategy here as a fallback
-                # because this was already tried previously in preprocessing if
-                # random_init was chosen.
-                mol, conf_id = compute_conformer(mol, use_random_coord_init=True)
-                conf = mol.GetConformer(conf_id)
-            else:
-                raise ValueError(
-                    f"Conformer generation strategy '{preferred_confgen_strategy}' "
-                    f"is not supported."
-                )
-
-            # Set the single conformer
-            mol = set_single_conformer(mol, conf)
+            result = multistrategy_compute_conformer(
+                mol,
+                remove_hs=True,
+                start_from=preferred_confgen_strategy,
+                timeouts={
+                    "default": 30.0,
+                    "small_ring_torsions": 30.0,
+                    "random_init": 30.0,
+                },
+            )
+            mol = set_single_conformer(
+                result.mol, result.mol.GetConformer(result.conf_id)
+            )
 
             # Adjust the non-NaN mask (will be all-True because conformer generation
             # worked)

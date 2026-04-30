@@ -441,6 +441,10 @@ def triton_linear(
     Returns:
         Output tensor [..., N]
     """
+    weight = weight.to(x.dtype)
+    if bias is not None:
+        bias = bias.to(x.dtype)
+
     input_shape = x.shape
     K = input_shape[-1]
     M = x.numel() // K
@@ -507,6 +511,10 @@ def triton_linear_fused(
     Returns:
         Output tensor [..., N]
     """
+    weight = weight.to(x.dtype)
+    if bias is not None:
+        bias = bias.to(x.dtype)
+
     input_shape = x.shape
     K = input_shape[-1]
     M = x.numel() // K

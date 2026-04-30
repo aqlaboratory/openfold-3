@@ -248,9 +248,10 @@ def processed_reference_molecule_from_mol(
     # Compute conformer (note that we call this before creating the annotations, as this
     # function will remove all hydrogens in the input mol and can therefore change the
     # mask length)
-    mol, conf_id, _ = multistrategy_compute_conformer(
-        mol, remove_hs=True, timeout_standard=120, timeout_rand_init=120
+    result = multistrategy_compute_conformer(
+        mol, remove_hs=True, timeouts={"default": 120, "random_init": 120}
     )
+    mol, conf_id = result.mol, result.conf_id
     assert conf_id == 0
 
     # Assume all atoms are in the structure if no special mask is given

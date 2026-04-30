@@ -33,6 +33,7 @@ from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 from biotite.structure.io.pdbx import CIFFile
 from func_timeout import func_timeout
+from func_timeout.exceptions import FunctionTimedOut
 from pydantic import (
     BaseModel,
     BeforeValidator,
@@ -1537,6 +1538,9 @@ class TemplatePreprocessorSettings(BaseModel):
             Number of processes to use template preprocessing.
         chunksize (int):
             Number of tasks per worker in multiprocessing.
+        preprocess_timeout (int):
+                Maximum time in seconds allowed for preprocessing templates for a
+                single query chain. Defaults to 60.
         structure_directory (DirectoryPath):
             Directory containing raw template structures or where template structures
             are to be downloaded.
@@ -1577,6 +1581,7 @@ class TemplatePreprocessorSettings(BaseModel):
     create_logs: bool = False
     n_processes: int = 1
     chunksize: int = 1
+    preprocess_timeout: int = 60
 
     structure_directory: Path | None = None
     structure_file_format: str = "cif"
@@ -1669,6 +1674,7 @@ class TemplatePreprocessor:
         self.create_logs = config.create_logs
         self.n_processes = config.n_processes
         self.chunksize = config.chunksize
+        self.preprocess_timeout = config.preprocess_timeout
 
         self.structure_directory = config.structure_directory
         self.structure_file_format = config.structure_file_format
@@ -1789,7 +1795,18 @@ class TemplatePreprocessor:
         input_data: TemplatePreprocessorInputTrain | TemplatePreprocessorInputInference,
     ) -> None:
         try:
-            func_timeout(60, self._preprocess_templates_for_query, args=(input_data,))
+            func_timeout(
+                self.preprocess_timeout,
+                self._preprocess_templates_for_query,
+                args=(input_data,),
+            )
+        except FunctionTimedOut:
+            print(
+                f"\n Template preprocessing TIMED OUT after {self.preprocess_timeout}s "
+                f"for {input_data.aln_path}.\n"
+                f"Skipping templates for this query chain.\n"
+                f"Hint: increase the timeout with --preprocess-timeout <seconds>\n"
+            )
         except Exception as e:
             print(
                 f"Failed to preprocess template alignment "
@@ -2115,6 +2132,7 @@ class TemplatePrecachePreprocessor:
         self.moltypes = config.moltypes
         self.n_processes = config.n_processes
         self.chunksize = config.chunksize
+        self.preprocess_timeout = config.preprocess_timeout
 
         self.structure_directory = config.structure_directory
         self.structure_file_format = config.structure_file_format

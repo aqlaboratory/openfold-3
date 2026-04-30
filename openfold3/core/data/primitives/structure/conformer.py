@@ -15,6 +15,7 @@
 import logging
 import random
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from typing import Literal
 
 import numpy as np
@@ -37,9 +38,44 @@ class ConformerGenerationError(ValueError):
     pass
 
 
-def compute_conformer(
+@dataclass(frozen=True)
+class ConformerStrategy:
+    """A single conformer-generation strategy.
+
+    The `name` is persisted as `conformer_gen_strategy` in the preprocessing cache
+    (see `PreprocessingReferenceMoleculeData`); do not rename existing entries.
+    """
+
+    name: str
+    kwargs: dict = field(default_factory=dict)
+    default_timeout: float | None = None
+
+
+CONFORMER_STRATEGIES: tuple[ConformerStrategy, ...] = (
+    ConformerStrategy("default", {"use_random_coord_init": False}),
+    ConformerStrategy("small_ring_torsions", {"use_small_ring_torsions": True}),
+    ConformerStrategy("random_init", {"use_random_coord_init": True}),
+)
+
+
+@dataclass(frozen=True)
+class ConformerResult:
+    mol: Mol
+    conf_id: int
+    strategy: str
+
+
+def _get_strategy(name: str) -> ConformerStrategy:
+    strat = next((s for s in CONFORMER_STRATEGIES if s.name == name), None)
+    if strat is None:
+        raise ValueError(f"Unknown conformer strategy: {name!r}")
+    return strat
+
+
+def _compute_conformer(
     mol: Mol,
     use_random_coord_init: bool = False,
+    use_small_ring_torsions: bool = False,
     remove_hs: bool = True,
     timeout: float | None = 30.0,
 ) -> tuple[Mol, int]:
@@ -56,6 +92,10 @@ def compute_conformer(
         use_random_coord_init:
             Whether to initialize the conformer generation with random coordinates
             (recommended for failure cases or large molecules)
+        use_small_ring_torsions:
+            Whether to enable RDKit's small-ring-torsion potentials. Helpful for
+            macrocycles and fused-ring systems (e.g. porphyrins / heme) where the
+            default ETKDGv3 torsion preferences fail to embed.
         remove_hs:
             Whether to remove hydrogens from the molecule after conformer generation.
             The function automatically adds hydrogens before conformer generation.
@@ -86,22 +126,22 @@ def compute_conformer(
     if use_random_coord_init:
         strategy.useRandomCoords = True
 
+    if use_small_ring_torsions:
+        strategy.useSmallRingTorsions = True
+
     strategy.clearConfs = False
     # RDKit always seems to start from some internal seed instead of a truly random seed
     # initialization if no seed is given, so we set a random seed here
     strategy.randomSeed = random.randint(0, 10**9)
 
     # Disable overly verbose conformer generation warnings
-    blocker = rdBase.BlockLogs()
-
-    if timeout is not None:
-        conf_id = func_timeout(
-            timeout=timeout, func=AllChem.EmbedMolecule, args=(mol, strategy)
-        )
-    else:
-        conf_id = AllChem.EmbedMolecule(mol, strategy)
-
-    del blocker
+    with rdBase.BlockLogs():
+        if timeout:
+            conf_id = func_timeout(
+                timeout=timeout, func=AllChem.EmbedMolecule, args=(mol, strategy)
+            )
+        else:
+            conf_id = AllChem.EmbedMolecule(mol, strategy)
 
     if remove_hs:
         mol = safe_remove_all_hs(mol)
@@ -115,73 +155,62 @@ def compute_conformer(
 # TODO: could improve warning handling of this to send less UFFTYPER warnings
 def multistrategy_compute_conformer(
     mol: Mol,
+    *,
     remove_hs: bool = True,
-    timeout_standard: float | None = None,
-    timeout_rand_init: float | None = None,
-) -> tuple[Mol, int, Literal["default", "random_init"]]:
-    """Computes 3D coordinates for a molecule trying different initializations.
+    start_from: str = "default",
+    timeouts: dict[str, float | None] | None = None,
+) -> ConformerResult:
+    """Computes 3D coordinates for a molecule trying different strategies in order.
 
-    Tries to compute 3D coordinates for a molecule using the standard RDKit ETKDGv3
-    strategy. If this fails or times out, it falls back to using a different
-    initialization for ETKDGv3 with random starting coordinates. If this also fails
-    or times out, a `ConformerGenerationError` is raised.
+    Iterates over `CONFORMER_STRATEGIES` starting at `start_from`, returning the first
+    strategy that succeeds. If every strategy from `start_from` onward fails or times
+    out, a `ConformerGenerationError` is raised.
 
     Args:
         mol:
             The molecule for which the 3D coordinates should be computed.
         remove_hs:
             Whether to remove hydrogens from the molecule after conformer generation.
-        timeout_standard:
-            The maximum time in seconds to allow for conformer generation with the
-            standard strategy. The default is None, where no timeout is set.
-        timeout_rand_init:
-            The maximum time in seconds to allow for conformer generation with random
-            initialization. The default is None, where no timeout is set.
+        start_from:
+            The name of the strategy at which to begin the chain. Strategies that come
+            before it in `CONFORMER_STRATEGIES` are skipped. Defaults to the first
+            strategy ("default").
+        timeouts:
+            Optional per-strategy timeout overrides keyed by strategy name. A value of
+            `None` disables the timeout for that strategy. Strategies with no entry
+            here fall back to their `default_timeout`.
+
     Returns:
-        mol:
-            The molecule for which the 3D coordinates should be computed.
-        conformer ID:
-            The ID of the conformer that was generated.
-        strategy:
-            The strategy that was used for conformer generation. Either "default" or
-            "random_init".
+        A `ConformerResult` carrying the molecule, the generated conformer's id, and
+        the name of the strategy that succeeded.
     """
+    timeouts = timeouts or {}
     smiles = Chem.MolToSmiles(mol)
 
-    # Try standard ETKDGv3 strategy first
-    try:
-        mol, conf_id = compute_conformer(
-            mol,
-            use_random_coord_init=False,
-            remove_hs=remove_hs,
-            timeout=timeout_standard,
-        )
-    except (ConformerGenerationError, FunctionTimedOut) as e:
-        logger.warning(
-            f"Exception when trying standard conformer generation for {smiles}: {e}, "
-            + "trying random initialization"
-        )
+    # Validate `start_from` and locate it in the chain.
+    _get_strategy(start_from)
+    iter_start = next(
+        i for i, s in enumerate(CONFORMER_STRATEGIES) if s.name == start_from
+    )
 
-        # Try random coordinates as fallback
+    last_exc: Exception | None = None
+    for strat in CONFORMER_STRATEGIES[iter_start:]:
         try:
-            mol, conf_id = compute_conformer(
+            mol_out, conf_id = _compute_conformer(
                 mol,
-                use_random_coord_init=True,
                 remove_hs=remove_hs,
-                timeout=timeout_rand_init,
+                timeout=timeouts.get(strat.name, strat.default_timeout),
+                **strat.kwargs,
             )
         except (ConformerGenerationError, FunctionTimedOut) as e:
             logger.warning(
-                "Exception when trying conformer generation with random "
-                + f"initialization for {smiles}: {e}"
+                f"Conformer strategy {strat.name!r} failed for {smiles}: {e}"
             )
-            raise ConformerGenerationError("Failed to generate 3D coordinates") from e
-        else:
-            success_strategy = "random_init"
-    else:
-        success_strategy = "default"
+            last_exc = e
+            continue
+        return ConformerResult(mol=mol_out, conf_id=conf_id, strategy=strat.name)
 
-    return mol, conf_id, success_strategy
+    raise ConformerGenerationError("Failed to generate 3D coordinates") from last_exc
 
 
 def add_conformer_atom_mask(mol: Mol) -> AnnotatedMol:
@@ -295,10 +324,12 @@ def resolve_and_format_fallback_conformer(
     # TODO: Expose timeouts as arguments
     # Test if conformer generation is possible
     try:
-        mol, conf_id, strategy = multistrategy_compute_conformer(
-            mol, remove_hs=True, timeout_standard=300, timeout_rand_init=300
+        result = multistrategy_compute_conformer(
+            mol, remove_hs=True, timeouts={"default": 300, "random_init": 300}
         )
-        conf = mol.GetConformer(conf_id)
+        mol = result.mol
+        strategy = result.strategy
+        conf = mol.GetConformer(result.conf_id)
     except ConformerGenerationError:
         strategy = "use_fallback"
         # Try to use first stored conformer

@@ -16,3 +16,10 @@ cutlass/
 
 # User-specific pre-commit settings
 .pre-commit-config.yaml
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+# uv environments
+.venv/

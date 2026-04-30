@@ -18,6 +18,8 @@ import torch
 from openfold3.core.model.layers.triangular_attention import TriangleAttention
 from openfold3.tests.config import consts
 
+pytestmark = pytest.mark.platform_dependent_snapshot
+
 
 # starting=True -> "starting node" variant: rows attend to rows,
 # biased by z[i, k]. False would transpose internally for the

@@ -14,6 +14,7 @@
 
 import re
 
+import pytest
 import torch
 
 from openfold3.core.model.layers.triangular_multiplicative_update import (
@@ -21,6 +22,8 @@ from openfold3.core.model.layers.triangular_multiplicative_update import (
     TriangleMultiplicationOutgoing,
 )
 from openfold3.tests.config import consts
+
+pytestmark = pytest.mark.platform_dependent_snapshot
 
 # Updates pair representation z[i,j] by projecting to two gated vectors (a, b),
 # contracting along a shared dimension (outgoing vs incoming), then projecting

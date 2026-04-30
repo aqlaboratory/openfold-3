@@ -138,6 +138,11 @@ def _check_snapshot_env(snapshot_dir: Path) -> None:
         )
 
 
+def _snapshot_platform() -> str:
+    """Return 'rocm' when running on an AMD GPU, 'nvidia' otherwise."""
+    return "rocm" if torch.version.hip is not None else "nvidia"
+
+
 def _write_snapshot_env(snapshot_dir: Path) -> None:
     """Write current environment metadata alongside snapshots."""
     SnapshotEnv.current().to_json(snapshot_dir / _SNAPSHOT_ENV_FILE)
@@ -150,8 +155,9 @@ def pytest_sessionfinish(session, exitstatus):
     snapshots_root = Path(__file__).parent / "test_data" / "snapshots"
     if snapshots_root.exists():
         for subdir in snapshots_root.iterdir():
-            if subdir.is_dir() and any(subdir.glob("*.npz")):
-                _write_snapshot_env(subdir)
+            platform_dir = subdir / _snapshot_platform()
+            if platform_dir.is_dir() and any(platform_dir.glob("*.npz")):
+                _write_snapshot_env(platform_dir)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -218,6 +224,15 @@ def pytest_addoption(parser):
     )
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "platform_dependent_snapshot: snapshot values for this module depend "
+        "on GPU backend (kernel numerics); store under "
+        "test_data/snapshots/<stem>/<platform>/ instead of <stem>/.",
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def ensure_biotite_ccd(request):
     """Download CCD file before any tests run (once per test session)."""
@@ -234,12 +249,17 @@ def biotite_ccd_wrapper():
 
 @pytest.fixture(scope="module")
 def original_datadir(request: pytest.FixtureRequest) -> Path:
-    """Redirect pytest-regressions snapshot storage to test_data/snapshots/."""
-    datadir = (
-        Path(__file__).parent / "test_data" / "snapshots" / Path(request.path).stem
-    )
-    _check_snapshot_env(datadir)
-    return datadir
+    """Redirect pytest-regressions snapshot storage to test_data/snapshots/<stem>/.
+
+    Modules whose snapshots depend on GPU backend (kernel numerics) opt in to a
+    `<platform>/` subdir by setting ``pytestmark = pytest.mark.platform_dependent_snapshot``;
+    everything else (the data pipeline, CPU-deterministic) stores under <stem>/ directly.
+    """
+    base = Path(__file__).parent / "test_data" / "snapshots" / Path(request.path).stem
+    if request.node.get_closest_marker("platform_dependent_snapshot") is not None:
+        base = base / _snapshot_platform()
+        _check_snapshot_env(base)
+    return base
 
 
 @pytest.fixture()

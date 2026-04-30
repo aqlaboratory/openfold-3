@@ -686,10 +686,11 @@ def remap_colabfold_template_chain_ids(
         for entry_id, l2a in label_to_author_maps.items()
     }
 
-    # Remap chain IDs
+    # Remap chain IDs, dropping rows whose author chain ID cannot be resolved
     for top_n in per_rep.values():
         remapped_ids = []
-        for template_id in top_n[1]:
+        rows_to_drop: list[int] = []
+        for idx, template_id in zip(top_n.index, top_n[1]):
             entry_id, author_chain_id = template_id.split("_")
 
             author_to_label = author_to_label_maps.get(entry_id, {})
@@ -703,15 +704,22 @@ def remap_colabfold_template_chain_ids(
                 )
                 label_chain_id = author_chain_id
             elif author_chain_id not in author_to_label:
-                raise RuntimeError(
-                    f"Author chain {author_chain_id} not found in {entry_id}. "
-                    f"Available author chains: {sorted(author_to_label.keys())}"
+                logger.warning(
+                    f"Skipping template {template_id}: author chain "
+                    f"{author_chain_id} not found in {entry_id}. "
+                    f"Available author chains: "
+                    f"{sorted(author_to_label.keys())}"
                 )
+                rows_to_drop.append(idx)
+                continue
             else:
                 label_chain_id = author_to_label[author_chain_id][0]
 
             remapped_ids.append(f"{entry_id}_{label_chain_id}")
 
+        if rows_to_drop:
+            top_n.drop(index=rows_to_drop, inplace=True)
+            top_n.reset_index(drop=True, inplace=True)
         top_n[1] = remapped_ids
 
     return per_rep

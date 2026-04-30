@@ -410,6 +410,7 @@ class DatasetCache:
 
     _registered = False
     _format_validated: bool = False
+    _lmdb_env = None  # set by from_lmdb; LMDB forbids multiple opens per directory
 
     # TODO: update parsers for this base class
     @classmethod
@@ -538,11 +539,13 @@ class DatasetCache:
                 lmdb_env, str_encoding, reference_molecule_data_encoding
             )
 
-            return cls(
-                name=name,
-                structure_data=structure_data,
-                reference_molecule_data=reference_molecule_data,
-            )
+        instance = cls(
+            name=name,
+            structure_data=structure_data,
+            reference_molecule_data=reference_molecule_data,
+        )
+        instance._lmdb_env = lmdb_env
+        return instance
 
     def _parse_type_lmdb(
         transaction: lmdb.Transaction, str_encoding: Literal["utf-8", "pkl"]

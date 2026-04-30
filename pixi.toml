@@ -1,0 +1,482 @@
+#
+# This is a pixi (https://pixi.sh) manifest to manage environments for OpenFold-3.
+# TL;DR:
+#   pixi run run_openfold
+#
+# Installing pixi
+# ---------------
+# If you have not pixi installed, please follow the instructions here:
+#   https://pixi.sh/latest/installation/
+# Which in linux boils down to run:
+#   curl -fsSL https://pixi.sh/install.sh | sh
+# Optionally, please install shell completions.
+# Then restart your shell.
+#
+# Platforms and hardware support
+# ------------------------------
+# We support linux-64, linux-aarch64, osx-64 and osx-arm64 platforms and provide the following environments:
+#   - default: an environment to maintain the rest of environments
+#   - openfold3-cpu: base environment without CUDA, to enable developing without GPU
+#   - openfold3-cuda12 and openfold-cuda13: environments with cuda, deepspeed and cuequivariance
+#   - openfold3-cuda12-pypi and openfold-cuda13-pypi: environments with python and cuda from conda,
+#                                                     everything else from pypi
+#                                                     keeping the environments as sane and consistent as possible
+#                                                     (useful if requiring deps not yet in conda-forge)
+#
+# The current environments pass all inference tests available in each platform.
+# (aarch64 and osx-64 are untested at the moment).
+# The GPU versions work at least from NVIDIA Ampere to Blackwell microarchitectures
+# +---------------+------------+------------+------------+------------+
+# | Linux         | x64        | x64        | aarch64    | aarch64    |
+# |               | conda      | pypi       | conda      | pypi       |
+# +---------------+------------+------------+------------+------------+
+# | A100 cuda12   | works      | works      | to test    | to test    |
+# | A100 cuda13   | works      | works      | to test    | to test    |
+# | H100 cuda12   | to test    | to test    | to test    | to test    |
+# | H100 cuda13   | to test    | to test    | to test    | to test    |
+# | B300 cuda12   | works      | works      | to test    | to test    |
+# | B300 cuda13   | works      | works      | to test    | to test    |
+# | GB10 cuda12   | n/a        | n/a        | works      | works      |
+# | GB10 cuda13   | n/a        | n/a        | works      | works      |
+# | CPU           | works      | n/a        | to test    | n/a        |
+# +---------------+------------+------------+------------+------------+
+#    * works = "works for me"
+#    * to test = "have not tried yet, but environment resolves"
+#
+# Using the environments
+# ----------------------
+# Change to the openfold-3 directory and run any command using the pixi shim.
+#   pixi run -e openfold3-cuda12 pytest -v .
+#   pixi run run_openfold
+#
+# If you want to run out of the openfold-3 environment, there are multiple options:
+#  use `pixi shell` to allow running out of the directory and saving prefixing with "pixi run".
+#  use detached environments or specify a different manifest location
+#  hold tight for pixi's environment registry feature: https://github.com/prefix-dev/pixi/pull/5277
+#
+# If you prefer to use conda, the environments can be exported to regular conda YAMLs:
+#   pixi run export-conda openfold3-cuda12 linux-64
+#   pixi run export-conda-all
+# Note that at the moment this does not export environment variable definitions
+# which we use for isolating deepspeed extension building.
+#
+# Also conda-lock files can be exported
+#   pixi run export-conda openfold3-cuda12
+#   pixi run export-conda-all
+# Note that all environment variables (skip cutlass detection and deepspeed build isolation)
+# need to be setup manually for these environments. We hope that soon we will be able
+# to export the whole environment variable setup together with these conda environments.
+#
+
+[workspace]
+name = "openfold3"
+authors = ["OpenFold Team <support@openfold.io>"]
+channels = ["conda-forge", "bioconda"]
+platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
+version = "0.4.0"
+
+# as we use task.default-environment
+# hoping for environment markers to also come to conda dependencies, as it would help simplifying this toml
+# https://github.com/prefix-dev/pixi/blob/main/CHANGELOG.md#-highlights-1
+requires-pixi = ">=0.64"
+
+# --- Environments
+
+[environments]
+default = { features = [ "python", "pixi-to-conda-lock" ] }
+openfold3-cpu = { no-default-feature = true, features = [
+    "python",
+    "openfold3-cpu",
+    "pytorch-conda",
+    "openfold3-editable",
+    "tests"
+] }
+openfold3-cuda12 = { no-default-feature = true, features = [
+    "python",
+    "openfold3-cpu",
+    "cuda12",
+    "pytorch-conda-cuda",
+    "deepspeed",
+    "deepspeed-build",
+    "cuequivariance-cuda12",
+    "openfold3-editable",
+    "tests"
+] }
+openfold3-cuda13 = { no-default-feature = true, features = [
+    "python",
+    "openfold3-cpu",
+    "cuda13",
+    "pytorch-conda-cuda",
+    "deepspeed",
+    "deepspeed-build",
+    "cuequivariance-cuda13",
+    "openfold3-editable",
+    "tests"
+] }
+openfold3-cuda12-pypi = { no-default-feature = true, features = [
+    "python",
+    "cuda12",
+    "pytorch-pypi-cuda12",
+    "not-in-pypi",
+    "deepspeed-build",
+    "cuequivariance-cuda12",
+    "openfold3-editable-full",
+    "tests"
+] }
+openfold3-cuda13-pypi = { no-default-feature = true, features = [
+    "python",
+    "cuda13",
+    "pytorch-pypi-cuda13",
+    "not-in-pypi",
+    "deepspeed-build",
+    "cuequivariance-cuda13",
+    "openfold3-editable-full",
+    "tests"
+] }
+openfold3-rocm7 = { no-default-feature = true, features = [
+    "python",
+    "openfold3-cpu",
+    "pytorch-pypi-rocm7",
+    "not-in-pypi",
+    "openfold3-editable",
+    "tests", 
+] }
+
+# Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
+# N.B. at the moment all these are editable installs
+
+# --- CPU dependencies (excluding torch-related)
+
+# --- OpenFold3 in editable mode
+# The goal here would be to avoid getting anything installed from pypi in this step.
+# We should be able to provide envs with non-editable installs (e.g., prod vs devel)
+
+[feature.openfold3-editable.pypi-dependencies]
+openfold3 = { path = ".", editable = true }
+
+[feature.openfold3-editable-full.target.linux.dependencies]
+# No compatible wheels for cuequivariance<0.8, python 3.14 and linux-aarch64
+python = "<3.14"
+
+[feature.openfold3-editable-full.pypi-dependencies]
+openfold3 = { path = ".", editable = true, extras = ["deepspeed", "dev"] }
+
+[feature.not-in-pypi.target.linux.dependencies]
+hmmer = "*"
+hhsuite = "*"
+# func_timeout does not get resolved by pixi from pypi if running pixi in osx
+#   see: https://pypi.org/project/func-timeout/#description
+# if we remove this, we fail to solve the environment with:
+#   Error:   × failed to solve the pypi requirements of environment 'openfold3-cuda12-pypi' for platform 'linux-aarch64'
+#    ╰─▶ build dispatch initialization failed: there is no compatible Python interpreter for 'osx-arm64'
+func_timeout = "*"
+
+
+[feature.python.dependencies]
+python = "*"
+# Enable evil post-modifications, also pixi-to-conda-lock
+# (pixi joint pypi/conda resolution is too good and does not allow sometimes necessary evil)
+pip = "*"
+
+
+[feature.openfold3-cpu.dependencies]
+
+# Explicit basics that could get anyway installed
+numpy = "*"
+scipy = "*"
+pandas = "*"
+
+# --- More ML
+ml-collections = "*"
+
+# --- Handling molecules
+rdkit = "*"
+biotite = ">=1.6"
+pdbeccdutils = "*"
+
+# --- Bioinformatics & Workflows
+hmmer = "*"
+hhsuite = "*"
+snakemake = "*"
+
+# --- Misc
+pyyaml = "*"
+ijson = "*"
+memory_profiler = "*"
+wandb = "*"
+func_timeout = "*"
+tqdm = "*"
+typing-extensions = "*"
+# python-lmdb from conda-forge is broken on aarch64/Python 3.13
+# (cpython backend: undefined symbol pthread_atfork; cffi fallback: missing build sources)
+# Use the PyPI package instead, which ships a working pre-compiled extension.
+# python-lmdb = "*"
+
+# --- Downloading stuff
+requests = "*"
+awscli = "*"
+awscrt = "*"
+boto3 = "*"
+aria2 = "*"
+
+# --- Testing
+pytest = "*"
+pytest-xdist = "*"
+pytest-cov = "*"
+pytest-benchmark = "*"
+pytest-regressions = "*"
+
+# --- Dev and documentation optionals
+# We do not put on a feature to avoid combinatorial explosion.
+ruff = "*"
+sphinx = "*"
+myst-parser = "*"
+furo = "*"
+pre-commit = "*"
+
+[feature.openfold3-cpu.pypi-dependencies]
+lmdb = "*"
+
+[feature.openfold3-cpu.target.linux-64.dependencies]
+mkl = "*"
+
+# --- Pytorch & Cuda
+
+[feature.pytorch-conda-cuda.dependencies]
+pytorch-lightning = "*"
+pytorch-gpu = "*"
+
+[feature.pytorch-conda.dependencies]
+pytorch-lightning = "*"
+pytorch = "*"
+
+[feature.pytorch-pypi-cuda12.pypi-dependencies]
+pytorch-lightning = "*"
+torch = { version = "*", index = "https://download.pytorch.org/whl/cu129" }
+
+[feature.pytorch-pypi-cuda13.pypi-dependencies]
+pytorch-lightning = "*"
+torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
+
+[feature.pytorch-pypi-rocm7]
+
+  platforms = ["linux-64"]
+
+  [feature.pytorch-pypi-rocm7.dependencies]
+  # torch 2.11.0+rocm7.2 requires setuptools<82
+  setuptools = "<82"
+
+  [feature.pytorch-pypi-rocm7.pypi-dependencies]
+  torch = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
+  triton-rocm = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
+
+[feature.cuda12]
+
+  platforms = ["linux-64", "linux-aarch64"]
+
+  [feature.cuda12.system-requirements]
+  cuda = "12.0"
+
+  [feature.cuda12.dependencies]
+  cuda-version = ">=12,<13"
+
+  [feature.cuda12.activation]
+  env.TRITON_PTXAS_PATH = "$CONDA_PREFIX/bin/ptxas"
+  env.TRITON_PTXAS_BLACKWELL_PATH = "$TRITON_PTXAS_PATH"
+
+[feature.cuda13]
+
+  platforms = ["linux-64", "linux-aarch64"]
+
+  [feature.cuda13.system-requirements]
+  cuda = "13.0"
+
+  [feature.cuda13.dependencies]
+  cuda-version = ">=13,<14"
+
+  [feature.cuda13.activation]
+  env.TRITON_PTXAS_PATH = "$CONDA_PREFIX/bin/ptxas"
+  env.TRITON_PTXAS_BLACKWELL_PATH = "$TRITON_PTXAS_PATH"
+
+
+# --- DeepSpeed
+
+[feature.deepspeed]
+
+  # N.B. aarch64 is not officially supported (yet), but seems to be working (for OF3-used primitives at least)
+  platforms = ["linux-64", "linux-aarch64"]
+
+  # aarch64 is not built in CF, so at the moment installing from sdist and crossing fingers
+  [feature.deepspeed.target.linux-64.dependencies]
+  deepspeed = ">=0.18.7"
+  [feature.deepspeed.target.linux-aarch64.pypi-dependencies]
+  deepspeed = ">=0.18.7"
+
+  [feature.deepspeed-build.dependencies]
+  # These are only needed to build local extensions the first time
+  # Think on whether we want to delete them afterward and how it would play with the user
+  ninja = "*"
+  cutlass = "*"
+  cuda-minimal-build = "*"
+  libcusparse-dev = "*"
+  libcublas-dev = "*"
+  libcusolver-dev = "*"
+  libcurand-dev = "*"
+
+  [feature.deepspeed-build.activation]
+  # Trick deepspeed - we could also point to $CONDA_PREFIX
+  env.CUTLASS_PATH = "DS_IGNORE_CUTLASS_DETECTION"
+  # --- Isolating completely the environment, including built extensions
+  # Note that this might not play well with advanced users or people who do not want to recompile
+  # So we likely do not want to enforce it or document it well
+
+  # Change triton cache to be isolated
+  env.TRITON_CACHE_DIR = "$CONDA_PREFIX/caches/triton"
+  # Change torch extensions cache, used by deepspeed, to be isolated
+  env.TORCH_EXTENSIONS_DIR = "$CONDA_PREFIX/caches/torch_extensions"
+
+
+# --- CuEquivariance
+# https://developer.nvidia.com/cuequivariance#section-get-started
+#
+# Notes
+# -----
+# 1) Missing conda packages for cuequivariance kernels
+#    In CF we have cuequivariance and cuequivariance-torch
+#    At the moment the optimized kernels are not distributed in conda-forge
+#     * cuequivariance-ops-torch-cu12
+#   There are no sources and LICENSE does not allow to redistribute wheels, so not very CF friendly.
+#   This install some other libs from pypi:
+#     * cuequivariance-ops-cu12
+#     * nvidia-cublas-cu12
+#   With cublas being the problematic one - also packaged in CF but not clobbering
+#   We would need to also package this in conda-forge
+#   See also: https://github.com/NVIDIA/cuEquivariance/issues/218
+#
+
+[feature.cuequivariance-cuda12.target.linux-64.pypi-dependencies]
+cuequivariance = ">=0.8"
+cuequivariance-torch = ">=0.8"
+cuequivariance-ops-torch-cu12 = ">=0.8"
+
+[feature.cuequivariance-cuda12.target.linux-aarch64.pypi-dependencies]
+cuequivariance = ">=0.8"
+cuequivariance-torch = ">=0.8"
+cuequivariance-ops-torch-cu12 = ">=0.8"
+
+[feature.cuequivariance-cuda13.target.linux-64.pypi-dependencies]
+cuequivariance = ">=0.8"
+cuequivariance-torch = ">=0.8"
+cuequivariance-ops-torch-cu13 = ">=0.8"
+
+[feature.cuequivariance-cuda13.target.linux-aarch64.pypi-dependencies]
+cuequivariance = ">=0.8"
+cuequivariance-torch = ">=0.8"
+cuequivariance-ops-torch-cu13 = ">=0.8"
+
+# --- Tasks
+
+[feature.pixi-to-conda-lock.pypi-dependencies]
+pixi-to-conda-lock = ">=0.4.3"
+# we were hitting a bug for all environments that bring pytorch from pytorch indices
+# see https://github.com/basnijholt/pixi-to-conda-lock/pull/12
+
+
+[tasks]
+
+export-conda.args = [
+    { "arg" = "environment", "default" = "openfold3-cpu" },
+    { "arg" = "platform", "default" = "linux-64" },
+]
+export-conda.cmd = [
+    "echo",
+    "# Pixi generated this environment, please do not edit manually.",
+    ">$PIXI_PROJECT_ROOT/environments/{{ environment }}_{{ platform }}.yml",
+    "&&",
+    "pixi",
+    "workspace",
+    "export",
+    "conda-environment",
+    "--environment",
+    "{{ environment }}",
+    "--platform",
+    "{{ platform }}",
+    ">>$PIXI_PROJECT_ROOT/environments/{{ environment }}_{{ platform }}.yml",
+]
+
+export-conda-all.depends-on = [
+    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "osx-arm64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "osx-arm64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12-pypi" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12-pypi" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12-pypi" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda12-pypi" }, { platform = "osx-arm64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13" }, { platform = "osx-arm64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13-pypi" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13-pypi" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13-pypi" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-cuda13-pypi" }, { platform = "osx-arm64" } ]},
+]
+
+export-conda-lock.args = [
+    { "arg" = "environment", "default" = "openfold3-cpu" },
+]
+export-conda-lock.cmd = [
+    "pixi-to-conda-lock",
+    "$PIXI_PROJECT_ROOT/pixi.lock",
+    "--output",
+    "$PIXI_PROJECT_ROOT/environments",
+    "--environment",
+    "{{ environment }}"
+    # For this one I feel we need pixi.lock to contain variables and pixi-to-conda-lock to support
+    # (or maybe for pixi-to-conda-lock to read from pixi.toml instead)
+]
+
+export-conda-lock-all.depends-on = [
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cpu" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12-pypi" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13-pypi" } ]},
+]
+
+
+# Running a task on an environment will not work unless the task is defined in one of its features.
+# See: https://github.com/prefix-dev/pixi/issues/5380
+[feature.tests]
+tasks.test.cmd = [
+    "mkdir",
+    "-p",
+    "$PIXI_PROJECT_ROOT/test-results/{{ pixi.environment.name }}_{{ pixi.platform }}",
+    "&&",
+    "python",
+    "-m",
+    "pytest",
+    "-v",
+    ".",
+    "&>$PIXI_PROJECT_ROOT/test-results/{{ pixi.environment.name }}_{{ pixi.platform }}/tests_{{ pixi.environment.name }}_{{ pixi.platform }}.log"
+]
+
+# This workspace is massive and pushes makes pixi push the limits of the system
+# This is an example update command which should work regardless of user OSX setup
+tasks.safe-but-slow-update.cmd = [
+    "pixi",
+    "update",
+    # This and --tls-no-verify can help with SSL struggles in corporate environments
+    "--tls-root-certs",
+    "all",
+    # These can help avoiding running out of system resources (e.g., file handles in osx, greedy pixi...)
+    "--concurrent-downloads",
+    "20",
+    "--concurrent-solves",
+    "4"
+]

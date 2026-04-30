@@ -268,6 +268,7 @@ Configures template structure preprocessing and filtering.
 - `create_logs` *(bool)*: Create preprocessing logs (default: `false`)
 - `n_processes` *(int)*: Number of preprocessing processes (default: `1`)
 - `chunksize` *(int)*: Tasks per worker in multiprocessing (default: `1`)
+- `preprocess_timeout` *(int)*: Maximum preprocessing time in seconds (default: `60`)
 - `structure_directory` *(Path | None)*: Directory for template structures (default: `null`)
 - `structure_file_format` *(str)*: File format of structures - `cif` or `pdb` (default: `cif`)
 - `output_directory` *(Path | None)*: Output directory for templates (default: `null`)

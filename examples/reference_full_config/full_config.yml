@@ -154,6 +154,7 @@ template_preprocessor_settings:
   create_logs: false
   n_processes: 1
   chunksize: 1
+  preprocess_timeout: 60
   structure_directory: <tmp-dir>/of3-of-<user>/template_data/template_structures
   structure_file_format: cif
   output_directory: <tmp-dir>/of3-of-<user>/template_data
