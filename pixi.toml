@@ -243,19 +243,19 @@ mkl = "*"
 # --- Pytorch & Cuda
 
 [feature.pytorch-conda-cuda.dependencies]
-pytorch-lightning = "*"
+pytorch-lightning = "<=2.6.1"
 pytorch-gpu = "*"
 
 [feature.pytorch-conda.dependencies]
-pytorch-lightning = "*"
+pytorch-lightning = "<=2.6.1"
 pytorch = "*"
 
 [feature.pytorch-pypi-cuda12.pypi-dependencies]
-pytorch-lightning = "*"
+pytorch-lightning = "<=2.6.1"
 torch = { version = "*", index = "https://download.pytorch.org/whl/cu129" }
 
 [feature.pytorch-pypi-cuda13.pypi-dependencies]
-pytorch-lightning = "*"
+pytorch-lightning = "<=2.6.1"
 torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
 [feature.pytorch-pypi-rocm7]
