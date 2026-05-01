@@ -14,6 +14,7 @@
 
 """Residue constants."""
 
+import functools
 from enum import IntEnum
 
 import numpy as np
@@ -352,26 +353,36 @@ def map_str_array_to_idx_array(
         np.ndarray[int]:
             Integer MSA array.
     """
-    # Create container with full gap indices
-    msa_idx = np.full(
-        msa_array.shape,
-        np.where(np.array(STANDARD_RESIDUES_WITH_GAP_1) == "-")[0].item(),
-        dtype=MOLECULE_TYPE_TO_RESIDUES_POS[molecule_type].dtype,
-    )
-    # For each residue in the molecule type's alphabet, replace the corresponding
-    # positions with their index
-    for residue, idx in MOLECULE_TYPE_TO_RESIDUES_POS_MAP[molecule_type].items():
-        # Replace all but the gap positions
-        if residue != "-":
-            msa_idx[msa_array == residue] = idx
-    # Replace positions not in the molecule type's alphabet with the unknown index
-    msa_idx[~np.isin(msa_array, MOLECULE_TYPE_TO_RESIDUES_1[molecule_type])] = (
-        MOLECULE_TYPE_TO_RESIDUES_POS_MAP[molecule_type][
-            MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1[molecule_type]
-        ]
-    )
+    if msa_array.dtype != np.dtype("<U1"):
+        raise ValueError(f"expected <U1 ndarray, got dtype={msa_array.dtype!r}")
 
-    return msa_idx
+    lut = _get_residue_idx_lut(molecule_type)
+    # <U1 stores one UTF-32 codepoint (4 bytes, little-endian) per cell. For any
+    # ASCII character only the low byte is set, so we take a strided view into
+    # just the low byte of each cell and gather directly. The byte-view trick
+    # requires last-axis contiguity (stride == itemsize); ascontiguousarray is a
+    # no-op on already-contiguous input.
+    # Note: Non-ASCII codepoints fold mod 256, this is safe because MSAs are ASCII
+    # by spec and codepoints 128-255 land in the unknown half of the LUT.
+    msa_array = np.ascontiguousarray(msa_array)
+    low_bytes = msa_array.view(np.uint8).reshape(msa_array.shape + (4,))[..., 0]
+    return lut[low_bytes]
+
+
+@functools.cache
+def _get_residue_idx_lut(molecule_type: MoleculeType) -> np.ndarray:
+    """Builds a 256-entry codepoint -> residue-idx lookup table for a molecule type.
+
+    Default is the unknown-residue index; entries for every character in the molecule's
+    alphabet (including "-") are set to their corresponding global index.
+    """
+    residues_pos_map = MOLECULE_TYPE_TO_RESIDUES_POS_MAP[molecule_type]
+    unknown_idx = residues_pos_map[MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_1[molecule_type]]
+    # int16 keeps the output buffer narrow (alphabet ~30 entries)
+    lut = np.full(256, unknown_idx, dtype=np.int16)
+    for residue, idx in residues_pos_map.items():
+        lut[ord(residue)] = idx
+    return lut
 
 
 @np.vectorize

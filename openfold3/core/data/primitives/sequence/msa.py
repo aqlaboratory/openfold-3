@@ -711,32 +711,18 @@ def cap_seqs_per_species(msa: MsaArray, max_seq_per_species: int) -> MsaArray:
             "MsaArray metadata must contain species_id column to cap sequences per "
             "species."
         )
-
-    groups = []
-    for _, block in metadata.groupby("species_id", sort=False):
-        block_length = min(len(block), max_seq_per_species)
-        rows = block.index[:block_length]
-        groups.append(
-            MsaArray(
-                msa=msa.msa[rows + 1],
-                deletion_matrix=msa.deletion_matrix[rows + 1],
-                metadata=metadata.iloc[rows].reset_index(drop=True),
-            )
-        )
-    if not groups:
+    if len(metadata) == 0:
         raise ValueError("No sequences found in MsaArray to cap per species.")
-    filtered_msa_array = MsaArray.multi_concatenate(groups, axis=0)
-    # Pre-concatenate the query sequence and deletion matrix which doesn't have metadata
-    return MsaArray.multi_concatenate(
-        [
-            MsaArray(
-                msa=msa.msa[0:1, :],
-                deletion_matrix=msa.deletion_matrix[0:1, :],
-                metadata=pd.DataFrame(),
-            ),
-            filtered_msa_array,
-        ],
-        axis=0,
+
+    within_group = metadata.groupby("species_id", sort=False).cumcount().to_numpy()
+    kept = np.flatnonzero(within_group < max_seq_per_species)
+
+    # +1 offset because row 0 of msa/deletion_matrix is the query (no metadata row)
+    msa_rows = np.concatenate(([0], kept + 1))
+    return MsaArray(
+        msa=msa.msa[msa_rows],
+        deletion_matrix=msa.deletion_matrix[msa_rows],
+        metadata=metadata.iloc[kept].reset_index(drop=True),
     )
 
 
