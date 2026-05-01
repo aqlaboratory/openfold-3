@@ -37,6 +37,24 @@ from openfold3.core.data.resources.residues import (
 logger = logging.getLogger(__name__)
 
 
+def _uppercase_ascii_inplace(msa: np.ndarray) -> None:
+    """In-place uppercase ASCII a-z in a <U1 array.
+
+    ~13x faster than np.char.upper / np.strings.upper by skipping Unicode
+    case folding: views the <U1 buffer as uint32 codepoints and flips the
+    ASCII case bit. Non-ASCII codepoints pass through unchanged.
+    """
+    # view(np.uint32) reads bytes as native-endian, so byte order must match.
+    if msa.dtype != np.dtype("<U1"):
+        raise ValueError(f"expected <U1 ndarray, got dtype={msa.dtype!r}")
+    # Reinterpret each <U1 cell (one UTF-32 codepoint, 4 bytes) as a uint32.
+    codes = msa.view(np.uint32)
+    # ASCII 'a'..'z' and 'A'..'Z' differ by exactly 32, so subtracting 32
+    # uppercases lowercase letters and leaves the rest untouched.
+    lowercase = (codes >= ord("a")) & (codes <= ord("z"))
+    codes[lowercase] -= 32
+
+
 @dataclasses.dataclass(frozen=False)
 class MsaArray:
     """Class representing a parsed MSA file.
@@ -59,10 +77,21 @@ class MsaArray:
         default_factory=pd.DataFrame
     )
 
-    def __post_init__(self):
-        # Normalize to uppercase since the residue alphabet is uppercase-only.
-        if np.strings.islower(self.msa).any():
-            self.msa = np.strings.upper(self.msa)
+    @classmethod
+    def from_parsed(
+        cls,
+        msa: np.ndarray,
+        deletion_matrix: np.ndarray,
+        metadata: pd.DataFrame | list | np.ndarray | None = None,
+    ) -> MsaArray:
+        """Construct from externally parsed MSA data, normalizing to uppercase."""
+        msa = msa.copy()
+        _uppercase_ascii_inplace(msa)
+        return cls(
+            msa=msa,
+            deletion_matrix=deletion_matrix,
+            metadata=metadata if metadata is not None else pd.DataFrame(),
+        )
 
     def __len__(self):
         return self.msa.shape[0]
@@ -682,32 +711,18 @@ def cap_seqs_per_species(msa: MsaArray, max_seq_per_species: int) -> MsaArray:
             "MsaArray metadata must contain species_id column to cap sequences per "
             "species."
         )
-
-    groups = []
-    for _, block in metadata.groupby("species_id", sort=False):
-        block_length = min(len(block), max_seq_per_species)
-        rows = block.index[:block_length]
-        groups.append(
-            MsaArray(
-                msa=msa.msa[rows + 1],
-                deletion_matrix=msa.deletion_matrix[rows + 1],
-                metadata=metadata.iloc[rows].reset_index(drop=True),
-            )
-        )
-    if not groups:
+    if len(metadata) == 0:
         raise ValueError("No sequences found in MsaArray to cap per species.")
-    filtered_msa_array = MsaArray.multi_concatenate(groups, axis=0)
-    # Pre-concatenate the query sequence and deletion matrix which doesn't have metadata
-    return MsaArray.multi_concatenate(
-        [
-            MsaArray(
-                msa=msa.msa[0:1, :],
-                deletion_matrix=msa.deletion_matrix[0:1, :],
-                metadata=pd.DataFrame(),
-            ),
-            filtered_msa_array,
-        ],
-        axis=0,
+
+    within_group = metadata.groupby("species_id", sort=False).cumcount().to_numpy()
+    kept = np.flatnonzero(within_group < max_seq_per_species)
+
+    # +1 offset because row 0 of msa/deletion_matrix is the query (no metadata row)
+    msa_rows = np.concatenate(([0], kept + 1))
+    return MsaArray(
+        msa=msa.msa[msa_rows],
+        deletion_matrix=msa.deletion_matrix[msa_rows],
+        metadata=metadata.iloc[kept].reset_index(drop=True),
     )
 
 

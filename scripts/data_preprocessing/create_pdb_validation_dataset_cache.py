@@ -55,7 +55,7 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     "--max-release-date",
     type=str,
     required=True,
-    default="2023-01-13",
+    default="2023-01-12",
     help="Maximum release date for included structures, formatted as 'YYYY-MM-DD'.",
 )
 @click.option(
@@ -170,7 +170,7 @@ def main(
     alignment_representatives_fasta: Path,
     output_path: Path,
     dataset_name: str,
-    max_release_date: str = "2023-01-13",
+    max_release_date: str = "2023-01-12",
     min_release_date: str = "2021-10-01",
     max_conformer_release_date: str | None = None,
     max_resolution: float = 4.5,
