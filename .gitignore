@@ -16,3 +16,6 @@ cutlass/
 
 # User-specific pre-commit settings
 .pre-commit-config.yaml
+
+# Virtual environment
+.venv
