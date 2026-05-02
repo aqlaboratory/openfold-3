@@ -9,11 +9,10 @@ import torch
 
 from openfold3.core.utils.geometry.rotation_matrix import Rot3Array
 from openfold3.core.utils.geometry.vector import Vec3Array
-
-from .helpers import rot_x as _rot_x
-from .helpers import rot_y as _rot_y
-from .helpers import rot_z as _rot_z
-from .helpers import v as _v
+from openfold3.tests.utils.geometry.helpers import rot_x as _rot_x
+from openfold3.tests.utils.geometry.helpers import rot_y as _rot_y
+from openfold3.tests.utils.geometry.helpers import rot_z as _rot_z
+from openfold3.tests.utils.geometry.helpers import v as _v
 
 # ===================================================================
 # Construction & conversion

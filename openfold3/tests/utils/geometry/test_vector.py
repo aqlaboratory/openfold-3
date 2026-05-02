@@ -17,9 +17,8 @@ from openfold3.core.utils.geometry.vector import (
     normalized,
     square_euclidean_distance,
 )
-
-from .helpers import v as _v
-from .helpers import vb as _vb
+from openfold3.tests.utils.geometry.helpers import v as _v
+from openfold3.tests.utils.geometry.helpers import vb as _vb
 
 # ===================================================================
 # Construction & round-trip
