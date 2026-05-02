@@ -31,6 +31,7 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
 )
+from openfold3.core.model.latent.base_blocks import PairBlock
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.checkpointing import checkpoint_blocks, checkpoint_section
 from openfold3.core.utils.chunk_utils import (
@@ -39,8 +40,6 @@ from openfold3.core.utils.chunk_utils import (
     ChunkSizeTuner,
 )
 from openfold3.core.utils.tensor_utils import add
-
-from .base_blocks import PairBlock
 
 
 # TODO: Make arguments match PairBlock

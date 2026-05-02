@@ -22,11 +22,13 @@ import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
+from openfold3.core.model.layers.attention_pair_bias import (
+    AttentionPairBias,
+    CrossAttentionPairBias,
+)
+from openfold3.core.model.layers.transition import ConditionedTransitionBlock
 from openfold3.core.model.primitives import LayerNorm
 from openfold3.core.utils.checkpointing import checkpoint_blocks
-
-from .attention_pair_bias import AttentionPairBias, CrossAttentionPairBias
-from .transition import ConditionedTransitionBlock
 
 
 class DiffusionTransformerBlock(nn.Module):

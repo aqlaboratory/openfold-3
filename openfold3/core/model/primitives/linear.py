@@ -21,7 +21,7 @@ from collections.abc import Callable
 import torch
 import torch.nn as nn
 
-from .initialization import (
+from openfold3.core.model.primitives.initialization import (
     final_init_,
     gating_init_,
     glorot_uniform_init_,
