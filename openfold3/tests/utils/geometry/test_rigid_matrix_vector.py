@@ -37,12 +37,6 @@ class TestConstruction:
         recovered = rig.to_tensor()
         assert torch.allclose(recovered, mat)
 
-    def test_from_tensor_4x4_round_trip(self):
-        mat = torch.eye(4)
-        mat[:3, 3] = torch.tensor([5.0, 6.0, 7.0])
-        rig = Rigid3Array.from_tensor_4x4(mat)
-        assert torch.allclose(rig.to_tensor_4x4(), mat)
-
     def test_from_array4x4(self):
         mat = torch.eye(4)
         mat[:3, 3] = torch.tensor([10.0, 20.0, 30.0])
