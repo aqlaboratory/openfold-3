@@ -263,6 +263,19 @@ class TestScalarMultiply:
         result = r * torch.tensor(0.0)
         assert torch.allclose(result.to_tensor(), torch.zeros(3, 3))
 
+    def test_mul_by_pi(self):
+        r = _rot_z(math.pi / 4)
+        result = r * torch.tensor(math.pi)
+        s = math.pi / math.sqrt(2)
+        expected_tensor = torch.tensor(
+            [
+                [s, -s, 0.0],
+                [s, s, 0.0],
+                [0.0, 0.0, math.pi],
+            ]
+        )
+        assert torch.allclose(result.to_tensor(), expected_tensor, atol=1e-6)
+
 
 # ===================================================================
 # Batched operations

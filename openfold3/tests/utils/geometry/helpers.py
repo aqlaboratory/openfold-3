@@ -10,6 +10,8 @@ from openfold3.core.utils.geometry.rigid_matrix_vector import Rigid3Array
 from openfold3.core.utils.geometry.rotation_matrix import Rot3Array
 from openfold3.core.utils.geometry.vector import Vec3Array
 
+_Translation = tuple[float, float, float]
+
 
 def v(x: float, y: float, z: float) -> Vec3Array:
     """Build a scalar Vec3Array from three floats."""
@@ -68,6 +70,6 @@ def rot_z(theta: float) -> Rot3Array:
     )
 
 
-def rigid(rot: Rot3Array, tx: float, ty: float, tz: float) -> Rigid3Array:
+def rigid(rot: Rot3Array, translation: _Translation) -> Rigid3Array:
     """Build a Rigid3Array from a rotation and a translation triple."""
-    return Rigid3Array(rot, v(tx, ty, tz))
+    return Rigid3Array(rot, v(*translation))

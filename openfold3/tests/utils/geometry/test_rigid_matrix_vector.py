@@ -46,7 +46,7 @@ class TestConstruction:
         )
 
     def test_to_tensor_has_homogeneous_row(self):
-        rig = _rigid(_rot_z(0.5), 1.0, 2.0, 3.0)
+        rig = _rigid(_rot_z(0.5), (1.0, 2.0, 3.0))
         mat = rig.to_tensor()
         assert mat.shape == (4, 4)
         assert torch.allclose(mat[3, :], torch.tensor([0.0, 0.0, 0.0, 1.0]))
@@ -77,25 +77,25 @@ class TestProperties:
 
 _APPLY_CASES = [
     pytest.param(
-        _rigid(Rot3Array.identity((), "cpu"), 1, 0, 0),
+        _rigid(Rot3Array.identity((), "cpu"), (1, 0, 0)),
         _v(0, 0, 0),
         _v(1, 0, 0),
         id="pure-translation-x",
     ),
     pytest.param(
-        _rigid(Rot3Array.identity((), "cpu"), 0, 5, 0),
+        _rigid(Rot3Array.identity((), "cpu"), (0, 5, 0)),
         _v(1, 2, 3),
         _v(1, 7, 3),
         id="translate-y-by-5",
     ),
     pytest.param(
-        _rigid(_rot_z(math.pi / 2), 0, 0, 0),
+        _rigid(_rot_z(math.pi / 2), (0, 0, 0)),
         _v(1, 0, 0),
         _v(0, 1, 0),
         id="pure-90z-rotation",
     ),
     pytest.param(
-        _rigid(_rot_z(math.pi / 2), 10, 0, 0),
+        _rigid(_rot_z(math.pi / 2), (10, 0, 0)),
         _v(1, 0, 0),
         _v(10, 1, 0),
         id="rotate-90z-then-translate",
@@ -111,7 +111,7 @@ class TestApplyToPoint:
 
     def test_apply_tensor_interface(self):
         """apply() accepts a raw [..., 3] tensor and returns one."""
-        rig = _rigid(Rot3Array.identity((), "cpu"), 1, 2, 3)
+        rig = _rigid(Rot3Array.identity((), "cpu"), (1, 2, 3))
         point = torch.tensor([0.0, 0.0, 0.0])
         result = rig.apply(point)
         assert torch.allclose(result, torch.tensor([1.0, 2.0, 3.0]))
@@ -133,17 +133,17 @@ class TestApplyInverse:
         "rig,point",
         [
             pytest.param(
-                _rigid(Rot3Array.identity((), "cpu"), 1, 2, 3),
+                _rigid(Rot3Array.identity((), "cpu"), (1, 2, 3)),
                 _v(5, 6, 7),
                 id="pure-translation",
             ),
             pytest.param(
-                _rigid(_rot_z(math.pi / 4), 0, 0, 0),
+                _rigid(_rot_z(math.pi / 4), (0, 0, 0)),
                 _v(1, 0, 0),
                 id="pure-rotation-45z",
             ),
             pytest.param(
-                _rigid(_rot_x(math.pi / 3), 10, 20, 30),
+                _rigid(_rot_x(math.pi / 3), (10, 20, 30)),
                 _v(1, 2, 3),
                 id="rotation-and-translation",
             ),
@@ -156,7 +156,7 @@ class TestApplyInverse:
 
     def test_invert_apply_tensor_interface(self):
         """invert_apply() accepts a raw [..., 3] tensor and returns one."""
-        rig = _rigid(Rot3Array.identity((), "cpu"), 1, 2, 3)
+        rig = _rigid(Rot3Array.identity((), "cpu"), (1, 2, 3))
         point = torch.tensor([1.0, 2.0, 3.0])
         result = rig.invert_apply(point)
         assert torch.allclose(result, torch.tensor([0.0, 0.0, 0.0]), atol=1e-5)
@@ -176,15 +176,15 @@ class TestInverse:
                 id="identity",
             ),
             pytest.param(
-                _rigid(Rot3Array.identity((), "cpu"), 1, 2, 3),
+                _rigid(Rot3Array.identity((), "cpu"), (1, 2, 3)),
                 id="pure-translation",
             ),
             pytest.param(
-                _rigid(_rot_z(math.pi / 2), 0, 0, 0),
+                _rigid(_rot_z(math.pi / 2), (0, 0, 0)),
                 id="pure-rotation",
             ),
             pytest.param(
-                _rigid(_rot_z(0.7), 5, -3, 8),
+                _rigid(_rot_z(0.7), (5, -3, 8)),
                 id="general-transform",
             ),
         ],
@@ -199,7 +199,7 @@ class TestInverse:
         )
 
     def test_inverse_of_pure_translation(self):
-        rig = _rigid(Rot3Array.identity((), "cpu"), 1, 2, 3)
+        rig = _rigid(Rot3Array.identity((), "cpu"), (1, 2, 3))
         inv = rig.inverse()
         assert torch.allclose(
             inv.translation.to_tensor(), torch.tensor([-1.0, -2.0, -3.0])
@@ -212,23 +212,23 @@ class TestInverse:
 
 _COMPOSE_CASES = [
     pytest.param(
-        _rigid(Rot3Array.identity((), "cpu"), 1, 0, 0),
-        _rigid(Rot3Array.identity((), "cpu"), 0, 2, 0),
+        _rigid(Rot3Array.identity((), "cpu"), (1, 0, 0)),
+        _rigid(Rot3Array.identity((), "cpu"), (0, 2, 0)),
         _v(0, 0, 0),
         _v(1, 2, 0),
         id="two-translations-add",
     ),
     pytest.param(
-        _rigid(_rot_z(math.pi / 2), 0, 0, 0),
-        _rigid(Rot3Array.identity((), "cpu"), 1, 0, 0),
+        _rigid(_rot_z(math.pi / 2), (0, 0, 0)),
+        _rigid(Rot3Array.identity((), "cpu"), (1, 0, 0)),
         _v(0, 0, 0),
         # First translate (1,0,0), then rotate 90-Z -> (0,1,0)
         _v(0, 1, 0),
         id="rotate-after-translate",
     ),
     pytest.param(
-        _rigid(Rot3Array.identity((), "cpu"), 1, 0, 0),
-        _rigid(_rot_z(math.pi / 2), 0, 0, 0),
+        _rigid(Rot3Array.identity((), "cpu"), (1, 0, 0)),
+        _rigid(_rot_z(math.pi / 2), (0, 0, 0)),
         _v(1, 0, 0),
         # First rotate (1,0,0) -> (0,1,0), then translate by (1,0,0) -> (1,1,0)
         _v(1, 1, 0),
@@ -245,20 +245,20 @@ class TestComposition:
         assert torch.allclose(result.to_tensor(), expected.to_tensor(), atol=1e-5)
 
     def test_compose_method_matches_matmul(self):
-        a = _rigid(_rot_z(0.5), 1, 2, 3)
-        b = _rigid(_rot_x(0.3), 4, 5, 6)
+        a = _rigid(_rot_z(0.5), (1, 2, 3))
+        b = _rigid(_rot_x(0.3), (4, 5, 6))
         via_matmul = a @ b
         via_method = a.compose(b)
         assert torch.allclose(via_matmul.to_tensor(), via_method.to_tensor(), atol=1e-6)
 
     def test_identity_is_neutral(self):
-        rig = _rigid(_rot_z(1.0), 5, 10, 15)
+        rig = _rigid(_rot_z(1.0), (5, 10, 15))
         eye = Rigid3Array.identity((), device="cpu")
         assert torch.allclose((eye @ rig).to_tensor(), rig.to_tensor(), atol=1e-6)
         assert torch.allclose((rig @ eye).to_tensor(), rig.to_tensor(), atol=1e-6)
 
     def test_compose_rotation(self):
-        rig = _rigid(Rot3Array.identity((), "cpu"), 1, 2, 3)
+        rig = _rigid(Rot3Array.identity((), "cpu"), (1, 2, 3))
         rot = _rot_z(math.pi / 2)
         result = rig.compose_rotation(rot)
         # Translation is unchanged (cloned)
@@ -276,7 +276,7 @@ class TestComposition:
 
 class TestScaling:
     def test_scalar_mul(self):
-        rig = _rigid(Rot3Array.identity((), "cpu"), 1, 2, 3)
+        rig = _rigid(Rot3Array.identity((), "cpu"), (1, 2, 3))
         scaled = rig * torch.tensor(2.0)
         # Both rotation entries and translation scale
         assert torch.allclose(
@@ -284,7 +284,7 @@ class TestScaling:
         )
 
     def test_scale_translation(self):
-        rig = _rigid(_rot_z(math.pi / 4), 2, 4, 6)
+        rig = _rigid(_rot_z(math.pi / 4), (2, 4, 6))
         scaled = rig.scale_translation(0.5)
         # Rotation should be unchanged
         assert torch.allclose(scaled.rotation.to_tensor(), rig.rotation.to_tensor())
@@ -301,8 +301,8 @@ class TestScaling:
 
 class TestIndexing:
     def test_getitem(self):
-        a = _rigid(Rot3Array.identity((), "cpu"), 1, 0, 0)
-        b = _rigid(Rot3Array.identity((), "cpu"), 0, 2, 0)
+        a = _rigid(Rot3Array.identity((), "cpu"), (1, 0, 0))
+        b = _rigid(Rot3Array.identity((), "cpu"), (0, 2, 0))
         batch = Rigid3Array.cat(
             [
                 a.map_tensor_fn(lambda t: t.unsqueeze(0)),
