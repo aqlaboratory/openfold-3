@@ -772,10 +772,12 @@ def _cueq_triangle_attn(q, k, v, biases, scale):
         triangle_bias = triangle_bias.view(batch * n_tmpl, *triangle_bias.shape[2:])
 
     # 4D → 5D: chunk_layer flattens batch dims and slices into chunks.
+    # chunk_layer skips expanding bias when all its batch dims are 1,
+    # so bias may have B=1 while q has B=chunk. In this case, we're good - otherwise:
     # Promote to 5D with N=1 so each chunk entry is an independent batch item.
     # cuequivariance >=0.8 requires bias shape (B, 1, H, Q, K) with exact
     # batch match — no implicit broadcasting.
-    is_chunked_input = len(q.shape) == 4
+    is_chunked_input = len(q.shape) == 4 and triangle_bias.shape[0] > 1
     if is_chunked_input:
         # q: (chunk, H, S, D) → (chunk, 1, H, S, D)
         q = q.unsqueeze(1)
@@ -786,8 +788,7 @@ def _cueq_triangle_attn(q, k, v, biases, scale):
         # triangle_bias: (chunk, H, S, S) → (chunk, 1, H, S, S)
         #   or: (1, H, S, S) → (1, 1, H, S, S) when chunk_layer kept B=1
         triangle_bias = triangle_bias.unsqueeze(1)
-        # chunk_layer skips expanding bias when all its batch dims are 1,
-        # so bias may have B=1 while q has B=chunk. Expand to match.
+        # This should not happen. Just in case. Expand to match.
         if triangle_bias.shape[0] != q.shape[0]:
             # (1, 1, H, S, S) → (chunk, 1, H, S, S)
             triangle_bias = triangle_bias.expand(q.shape[0], *triangle_bias.shape[1:])
@@ -802,11 +803,14 @@ def _cueq_triangle_attn(q, k, v, biases, scale):
     o = triangle_attention(q, k, v, bias=triangle_bias, mask=mask_bias, scale=scale)
 
     # Undo the promotions in reverse order.
-    if is_chunked_input:
+    if len(q.shape) == 4:
+        ##VS: There's a bug in cueq where if the input is missing the batch dim
+        ## the outputs adds it in and so we need to remove it here
+        o = o.squeeze(0)
+    elif is_chunked_input:
         # (chunk, 1, H, S, D) → (chunk, H, S, D)
         o = o.squeeze(1)
-
-    if is_batched_input:
+    elif is_batched_input:
         # (batch*n_tmpl, N, H, S, D) → (batch, n_tmpl, N, H, S, D)
         o = o.view(batch, n_tmpl, *o.shape[1:])
 

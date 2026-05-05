@@ -7,41 +7,63 @@
 
 OpenFold3 inference requires a system with a GPU with a minimum of CUDA 12.1 and 32GB of memory. Most of our testing has been performed on A100s with 40GB of memory. 
 
-It is also recommended to use [Mamba](https://mamba.readthedocs.io/en/latest/) to install some of the packages.
-
 
 ### Modern conda environments with pixi (recommended)
 
-OpenFold3 can now be installed in conda environments with [pixi](https://pixi.prefix.dev/latest/index.html).
-
-First [install pixi](https://pixi.prefix.dev/latest/installation/)
+Although OpenFold3 can be installed directly with:
 
 ```shell
-# Do this once and enjoy pixi for all your future projects!
-curl -fsSL https://pixi.sh/install.sh | sh
-# Then restart your shell and optionally install pixi completions
+pip install openfold3
 ```
 
-You can simply run openfold in one of the provided environments with pixi:
+for a more reproducible and streamlined setup, especially when installing OpenFold3 with its full set of dependencies, we recommend using [pixi](https://pixi.prefix.dev/latest/index.html). Using pixi makes it easier to choose the right pre-configured environment for your hardware, such as CPU-only, NVIDIA CUDA, or AMD ROCm.
+
+First, install pixi by following the [official installation instructions](https://pixi.prefix.dev/latest/installation/):
+
+```shell
+# You only need to do this once, and then you can use pixi for future projects.
+curl -fsSL https://pixi.sh/install.sh | sh
+
+# Restart your shell after installation.
+# Optionally, you can also install shell completions for pixi.
+```
+
+Next, clone the OpenFold3 repository:
+
+```shell
+git clone git@github.com:aqlaboratory/openfold-3.git
+cd openfold-3
+```
+
+OpenFold3 includes several pre-configured pixi environments for different systems and hardware configurations.
+
+To set up and run OpenFold3 using the CPU environment, run:
+
 ```shell
 pixi run -e openfold3-cpu setup_openfold
 pixi run -e openfold3-cpu run_openfold
 ```
 
-We provide the following environments:
- - openfold3-cpu (linux-64, linux-aarch64, osx-64,osx-arm64)
- - openfold3-cuda12 and openfold-cuda13 (linux-64, linux-aarch64) 
- - openfold3-rocm7 (linux-64)
+Available pixi environments:
+
+| Environment        | Supported platforms                                | Description                                                          |
+| ------------------ | -------------------------------------------------- | -------------------------------------------------------------------- |
+| `openfold3-cpu`    | `linux-64`, `linux-aarch64`, `osx-64`, `osx-arm64` | CPU-only environment for running OpenFold3 without GPU acceleration. |
+| `openfold3-cuda12` | `linux-64`, `linux-aarch64`                        | NVIDIA GPU environment using CUDA 12.                                |
+| `openfold3-cuda13` | `linux-64`, `linux-aarch64`                        | NVIDIA GPU environment using CUDA 13.                                |
+| `openfold3-rocm7`  | `linux-64`                                         | AMD GPU environment using ROCm 7.                                    |
+
+Choose the environment that matches your system. For example, use `openfold3-cpu` for CPU-only installations, `openfold3-cuda12` or `openfold3-cuda13` for NVIDIA GPU systems, and `openfold3-rocm7` for AMD ROCm systems.
 
 For more information, including rationale, tips and tricks, see [Modern Conda Environments with Pixi](./modern-conda-environments-with-pixi.md).
 
 
-### Installation via pip and mamba (deprecated Q2-2026) 
+### Installation via pip
 
-0. [Optional] Create a fresh mamba environment with python. Python versions 3.10 - 3.13 are supported
+0. [Optional] Create a fresh environment with python. Python versions 3.10 - 3.13 are supported
 
 ```bash
-mamba create -n openfold3 python=3.13 
+conda create -n openfold3 python=3.13 
 ```
 
 1. Install openfold3 the pypi server:
@@ -63,7 +85,7 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip install openfold3
 ```
 
-After installation, verify your ROCm environment is correctly configured:
+For AMD system installation: After installation, verify your ROCm environment is correctly configured:
 
 ```bash
 validate-openfold3-rocm

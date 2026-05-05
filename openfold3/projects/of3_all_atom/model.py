@@ -49,6 +49,7 @@ MODEL_VERSION = torch.tensor([1, 0, 0], dtype=torch.float32)
 
 
 class OffloadModules(Enum):
+    TEMPLATE_MODULE = "template_module"
     MSA_MODULE = "msa_module"
     CONFIDENCE_HEADS = "confidence_heads"
 
@@ -197,6 +198,11 @@ class OpenFold3(nn.Module):
             module_name=OffloadModules.MSA_MODULE.value,
         )
 
+        offload_template_module = self._do_inference_offload(
+            seq_len=batch["token_mask"].shape[-1],
+            module_name=OffloadModules.TEMPLATE_MODULE.value,
+        )
+
         s_input, s_init, z_init = self.input_embedder(
             batch=batch,
             inplace_safe=inplace_safe,
@@ -244,6 +250,7 @@ class OpenFold3(nn.Module):
                         use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                         use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
+                        offload_inference=offload_template_module,
                     ),
                     inplace=inplace_safe,
                 )

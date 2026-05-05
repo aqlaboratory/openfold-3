@@ -21,6 +21,7 @@ These modules embed templates into pair embeddings. Note that this includes the 
 feature embedding functions in openfold3.core.model.feature_embedders.
 """
 
+import sys
 from functools import partial
 
 import torch
@@ -501,7 +502,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         )
         self.linear_t = Linear(config.c_t, config.c_z, **templ_init.linear_t)
 
-    def forward(
+    def _forward_offload(
         self,
         batch: dict,
         z: torch.Tensor,
@@ -539,17 +540,77 @@ class TemplateEmbedderAllAtom(nn.Module):
             t:
                 [*, N_token, N_token, C_z] Template embedding
         """
+        batch_dims = z.shape[:-3]
+        n_token = z.shape[-2]
+        out_device = z.device
+        n_templ = batch["template_restype"].shape[-3]
 
+        # [*, 1, N_token, N_token]
+        pair_mask = pair_mask[..., None, :, :].to(dtype=z.dtype)
+
+        t_out = torch.zeros(
+            (*batch_dims, n_templ, n_token, n_token, self.config.c_t), device="cpu"
+        )
+
+        for i in range(n_templ):
+            batch_templ = {}
+            for k, v in batch.items():
+                if isinstance(v, torch.Tensor) and k.startswith("template_"):
+                    batch_templ[k] = v[:, i : i + 1]
+                else:
+                    batch_templ[k] = v
+
+            # [*, N, N, C_t]
+            t = self.template_pair_embedder(
+                batch=batch_templ,
+                z=z,
+            )
+
+            # [*, N_templ, N_token, N_token, C_z]
+            t = self.template_pair_stack(
+                t,
+                pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
+
+            assert sys.getrefcount(t) == 2
+
+            t_out[..., i : i + 1, :, :, :] = t.cpu()
+
+            del t
+
+        del z
+
+        return t_out.to(device=out_device)
+
+    def _forward(
+        self,
+        batch: dict,
+        z: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: int | None = None,
+        _mask_trans: bool = True,
+        use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+    ) -> torch.Tensor:
         # [*, N_templ, N_token, N_token, C_t]
-        template_embeds = self.template_pair_embedder(batch, z)
-        n_templ = template_embeds.shape[-4]
+        t = self.template_pair_embedder(batch, z)
 
         # [*, 1, N_token, N_token]
         pair_mask = pair_mask[..., None, :, :].to(dtype=z.dtype)
 
         # [*, N_templ, N_token, N_token, C_z]
         t = self.template_pair_stack(
-            template_embeds,
+            t,
             pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
@@ -559,6 +620,80 @@ class TemplateEmbedderAllAtom(nn.Module):
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
         )
+
+        return t
+
+    def forward(
+        self,
+        batch: dict,
+        z: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: int | None = None,
+        _mask_trans: bool = True,
+        use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        offload_inference: bool = False,
+    ) -> torch.Tensor:
+        """
+        Args:
+            batch:
+                Input feature dictionary
+            z:
+                [*, N_token, N_token, C_z] Pair embedding
+            pair_mask:
+                [*, N_token, N_token] Pair mask
+            chunk_size:
+                Inference-time subbatch size.
+            _mask_trans:
+                Whether to mask the output of the transition layers
+            use_deepspeed_evo_attention:
+                Whether to use DeepSpeed memory efficient kernel.
+                Mutually exclusive with use_lma.
+            use_cueq_triangle_kernels:
+                Whether to use cuEq triangle kernels
+            use_lma:
+                Whether to use low-memory attention during inference.
+                Mutually exclusive with and use_deepspeed_evo_attention.
+            inplace_safe:
+                Whether inplace operations can be performed
+            offload_inference:
+                Whether to offload some computation to CPU
+
+        Returns:
+            t:
+                [*, N_token, N_token, C_z] Template embedding
+        """
+        n_templ = batch["template_restype"].shape[-3]
+
+        if offload_inference:
+            t = self._forward_offload(
+                batch=batch,
+                z=z,
+                pair_mask=pair_mask,
+                chunk_size=chunk_size,
+                _mask_trans=True,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+            )
+        else:
+            t = self._forward(
+                batch=batch,
+                z=z,
+                pair_mask=pair_mask,
+                chunk_size=chunk_size,
+                _mask_trans=True,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+            )
 
         # [*, N_token, N_token, C_z]
         t = torch.sum(t, dim=-4) / n_templ

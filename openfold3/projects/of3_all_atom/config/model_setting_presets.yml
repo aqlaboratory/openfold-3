@@ -25,6 +25,7 @@ low_mem:
         per_sample_token_cutoff: 0
         per_sample_atom_cutoff: 0
         offload_inference:
+          template_module: true
           msa_module: true
           confidence_heads: true
           token_cutoff: 0

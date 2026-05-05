@@ -124,6 +124,7 @@ model_config = mlc.ConfigDict(
                     "per_sample_atom_cutoff": per_sample_atom_cutoff,
                     "low_mem_validation": low_mem_validation,
                     "offload_inference": {
+                        "template_module": False,
                         "msa_module": False,
                         "confidence_heads": False,
                         "token_cutoff": None,

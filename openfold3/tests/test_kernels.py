@@ -436,11 +436,10 @@ class TestKernels(unittest.TestCase):
         """
         batch_size = consts.batch_size
         if chunk_size is not None and (
-            use_deepspeed_evo_attention
-            or use_cueq_triangle_kernels
-            or use_triton_triangle_kernels
+            use_deepspeed_evo_attention or use_triton_triangle_kernels
         ):
             # Chunk tuning is not supported with batch size > 1 for DeepSpeed kernel
+            # Triton kernel works with these shapes but has some numerical differences
             batch_size = 1
 
         n_res = 200  # Avoid cuEq seq len constraints
