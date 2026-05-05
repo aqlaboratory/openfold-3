@@ -187,16 +187,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         apply_per_sample = (
             not torch.is_grad_enabled()
             and num_samples > 1
-            and (
-                (self.per_sample_token_cutoff is not None
-                and repr_x_pred.shape[-2] > self.per_sample_token_cutoff)
-                # The optimized attention kernels do not support cross-sample
-                # chunking because it requires expanding the pair bias. For now
-                # we just always apply per sample if these kernels are in use.
-                or use_deepspeed_evo_attention
-                or use_cueq_triangle_kernels
-                or use_triton_triangle_kernels
-            )
+            and (self.per_sample_token_cutoff is not None
+            and repr_x_pred.shape[-2] > self.per_sample_token_cutoff)
         )
         out_device = atom_positions_predicted.device
 
