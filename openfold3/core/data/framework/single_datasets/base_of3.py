@@ -27,7 +27,6 @@ from openfold3.core.data.framework.single_datasets.abstract_single import (
     SingleDataset,
     register_dataset,
 )
-from openfold3.core.data.framework.single_datasets.dataset_utils import warm_lmdb_cache
 from openfold3.core.data.io.dataset_cache import read_datacache
 from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_reference_conformers_of3,
@@ -156,7 +155,6 @@ class BaseOF3Dataset(SingleDataset, ABC):
         # TODO: potentially expose the LMDB database encoding types
         self._dataset_cache_file = dataset_config.dataset_paths.dataset_cache_file
         self.dataset_cache = read_datacache(self._dataset_cache_file)
-        self.warm_cache()
 
         self.datapoint_cache = {}
 
@@ -179,11 +177,6 @@ class BaseOF3Dataset(SingleDataset, ABC):
         # Misc
         self.single_moltype = None
         self.debug_mode = dataset_config.debug_mode
-
-    def warm_cache(self) -> None:
-        """Warm the OS page cache for LMDB. No-op for JSON."""
-        if self._dataset_cache_file.is_dir():
-            warm_lmdb_cache(self._dataset_cache_file)
 
     @property
     def ccd(self):

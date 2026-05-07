@@ -15,9 +15,7 @@
 import copy
 import logging
 import os
-import time
 from itertools import cycle, islice
-from pathlib import Path
 
 import pandas as pd
 import torch
@@ -156,21 +154,3 @@ def getitem_debug_log(dataset_name: str = "") -> None:
         f"pid={os.getpid()} worker_id={worker_id} wi.seed={wi_seed} "
         f"wi.base_seed={wi_base_seed} torch.initial_seed={torch_seed}",
     )
-
-
-def warm_file_cache(file_path: Path) -> None:
-    """Sequentially read a file to warm the OS page cache."""
-    file_size_gb = file_path.stat().st_size / (1024**3)
-    logger.info(f"Warming page cache for {file_path} ({file_size_gb:.1f} GB)...")
-    t0 = time.monotonic()
-    chunk_size = 8 * 1024 * 1024
-    with open(file_path, "rb") as f:
-        while f.read(chunk_size):
-            pass
-    elapsed = time.monotonic() - t0
-    logger.info(f"Page cache warm complete in {elapsed:.1f}s")
-
-
-def warm_lmdb_cache(lmdb_directory: Path) -> None:
-    """Sequentially read the LMDB data file to warm the OS page cache."""
-    warm_file_cache(lmdb_directory / "data.mdb")
