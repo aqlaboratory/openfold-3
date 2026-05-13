@@ -20,7 +20,10 @@ import pytest  # noqa: F401  - used for pytest tmp fixture
 import torch
 
 from openfold3.core.config import config_utils
-from openfold3.core.utils.checkpoint_loading_utils import load_checkpoint
+from openfold3.core.utils.checkpoint_loading_utils import (
+    get_state_dict_from_checkpoint,
+    load_checkpoint,
+)
 from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
     TrainingExperimentRunner,
@@ -73,24 +76,24 @@ class TestOF3ModelCheckpointing:
                         loss_module:
                             diffusion:
                                 chunk_size: 16
-            
+
             dataset_configs:
                 train:
                     weighted-pdb:
-                        dataset_class: WeightedPDBDataset 
-                        weight: 1 
-                                        
+                        dataset_class: WeightedPDBDataset
+                        weight: 1
+
             dataset_paths:
                 weighted-pdb:
                     alignments_directory: null
                     alignment_db_directory: null
-                    alignment_array_directory: {tmp_path} 
-                    target_structures_directory: {tmp_path} 
+                    alignment_array_directory: {tmp_path}
+                    target_structures_directory: {tmp_path}
                     target_structure_file_format: npz
-                    dataset_cache_file: {test_dummy_file} 
-                    reference_molecule_directory: {tmp_path} 
-                    template_cache_directory: {tmp_path} 
-                    template_structure_array_directory: {tmp_path} 
+                    dataset_cache_file: {test_dummy_file}
+                    reference_molecule_directory: {tmp_path}
+                    template_cache_directory: {tmp_path}
+                    template_structure_array_directory: {tmp_path}
                     template_structures_directory: null
                     template_file_format: pkl
                     ccd_file: null
@@ -169,3 +172,32 @@ class TestOF3ModelCheckpointing:
         inference_runner = InferenceExperimentRunner(inference_config)
         with pytest.raises(RuntimeError):
             inference_runner.setup()
+
+    def test_inference_load_state_dict_benchmark_under_ten_seconds(
+        self, benchmark, default_ckpt_path
+    ):
+        """Guard against regressions in load_state_dict latency during setup."""
+        ckpt = load_checkpoint(default_ckpt_path)
+        state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
+        inference_config = InferenceExperimentConfig.model_validate(
+            {"inference_ckpt_path": default_ckpt_path}
+        )
+        inference_runner = InferenceExperimentRunner(inference_config)
+
+        def _load_state_dict():
+            inference_runner._warn_on_missing_version_tensor_in_load_statedict(
+                state_dict
+            )
+
+        benchmark.pedantic(
+            _load_state_dict,
+            rounds=1,
+            iterations=1,
+            warmup_rounds=0,
+        )
+        setup_seconds = benchmark.stats.stats.mean
+
+        assert setup_seconds < 10.0, (
+            f"InferenceExperimentRunner.lightning_module.load_state_dict path took {setup_seconds:.2f}s; "
+            "expected < 10.0s"
+        )
