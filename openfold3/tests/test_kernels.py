@@ -435,7 +435,6 @@ class TestKernels(unittest.TestCase):
           instead of a newly initialized block.
         """
         batch_size = consts.batch_size
-
         n_res = 200  # Avoid cuEq seq len constraints
         c_s = consts.c_s
         c_z = consts.c_z
@@ -718,10 +717,6 @@ class TestKernels(unittest.TestCase):
         Template Pair Stack.
         """
         batch_size = consts.batch_size
-        if chunk_size is not None:
-            # Chunking is not supported with batch size > 1 for optimized kernels
-            batch_size = 1
-
         n_templ = 3
         n_token = 200  # Avoid cuEq seq len constraints
 
