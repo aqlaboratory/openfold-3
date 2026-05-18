@@ -905,8 +905,20 @@ if _TRITON_AVAILABLE:
 
             BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN, DIM = Q.shape
 
-            assert res_mask.shape == (BATCH_SIZE, N_SEQ, 1, 1, SEQ_LEN), f"{tuple(res_mask.shape)} != {(BATCH_SIZE, N_SEQ, 1, 1, SEQ_LEN)}"
-            assert pair_bias.shape == (BATCH_SIZE, 1, HEAD, SEQ_LEN, SEQ_LEN), f"{tuple(pair_bias.shape)} != {(BATCH_SIZE, 1, HEAD, SEQ_LEN, SEQ_LEN)}"
+            assert res_mask.shape == (
+                BATCH_SIZE,
+                N_SEQ,
+                1,
+                1,
+                SEQ_LEN,
+            ), f"{tuple(res_mask.shape)} != {(BATCH_SIZE, N_SEQ, 1, 1, SEQ_LEN)}"
+            assert pair_bias.shape == (
+                BATCH_SIZE,
+                1,
+                HEAD,
+                SEQ_LEN,
+                SEQ_LEN,
+            ), f"{tuple(pair_bias.shape)} != {(BATCH_SIZE, 1, HEAD, SEQ_LEN, SEQ_LEN)}"
 
             softmax_scale = DIM**-0.5
             BLOCK_DIM = max(triton.next_power_of_2(DIM), 32)

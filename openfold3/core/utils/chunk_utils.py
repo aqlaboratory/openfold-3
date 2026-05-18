@@ -310,7 +310,7 @@ def _chunk_layer_broadcast(
     for chunk_slices in _plan_chunks(orig_batch_dims, chunk_size):
         # Slice every input by its own shape (broadcast dims stay size 1).
         chunks = tensor_tree_map(
-            lambda t: _slice_input_for_chunk(t, chunk_slices),
+            lambda t, cs=chunk_slices: _slice_input_for_chunk(t, cs),
             inputs,
         )
 
@@ -403,8 +403,9 @@ def chunk_layer(
     initial_dims = [shape[:no_batch_dims] for shape in _fetch_dims(inputs)]
     orig_batch_dims = tuple([max(s) for s in zip(*initial_dims, strict=True)])
 
-    # Check whether we need Validate broadcast compatibility (raises on incompatible dims) and decide
-    # whether we need the multi-dim broadcast path.
+    # Check whether we need Validate broadcast compatibility (raises on
+    # incompatible dims) and decide whether we need the multi-dim broadcast
+    # path.
     has_broadcast = _has_broadcast_batch_dims(initial_dims, orig_batch_dims)
 
     # When inputs have mixed batch shapes (broadcast), use the multi-dim
