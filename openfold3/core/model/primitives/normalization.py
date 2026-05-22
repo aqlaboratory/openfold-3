@@ -16,12 +16,15 @@
 
 """Normalization layers. Includes LayerNorm and AdaptiveLayerNorm."""
 
+import math
+
 import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives.linear import Linear
+from openfold3.core.utils.chunk_utils import chunk_layer
 from openfold3.core.utils.device_utils import autocast_device_type
 
 
@@ -60,21 +63,55 @@ class LayerNorm(nn.Module):
             with torch.amp.autocast(autocast_device_type(x), enabled=False):
                 weight = self.weight.float() if self.weight is not None else None
                 bias = self.bias.float() if self.bias is not None else None
-                out = nn.functional.layer_norm(
-                    input=x.float(),
-                    normalized_shape=self.c_in,
-                    weight=weight,
-                    bias=bias,
-                    eps=self.eps,
-                )
-            return out.to(dtype=d)
+                return self._layer_norm(x, weight, bias, upcast=True)
 
-        return nn.functional.layer_norm(
-            input=x,
-            normalized_shape=self.c_in,
-            weight=self.weight,
-            bias=self.bias,
-            eps=self.eps,
+        return self._layer_norm(x, self.weight, self.bias, upcast=False)
+
+    # There are at least two bugs in the Torch layer norm kernel for very
+    # large inputs:
+
+    # - A: https://github.com/pytorch/pytorch/issues/181555: when numel > 2^32
+    #   and the channel dimension is a multiple of 4 (so the vectorized kernel
+    #   is used) there is a uint32 overflow in the row offset. Fixed in
+    #   https://github.com/pytorch/pytorch/pull/181600, first released in torch
+    #   2.13.0.
+    # - B: https://github.com/pytorch/pytorch/issues/184826: when combined batch
+    #   dim is > 2^23 and the channel dimension is not a multiple of 4 (so the
+    #   non-vectorized kernel is used), on ROCm some outputs are never
+    #   addressed and are filled with garbage values. At batch dim of *exactly*
+    #   2^23, there's actually an "invalid configuration argument" error
+    #   instead of bad output. Fixed in
+    #   https://github.com/pytorch/pytorch/pull/186956, which is not in torch
+    #   2.13.0.
+
+    # We chunk over the leading (batch) dims to keep every kernel call below
+    # both cliffs: chunk_size < 2^23 AND chunk_size * C < 2^32.
+    _SAFE_NUMEL = 2**32 - 1
+    _SAFE_BATCH = 2**23 - 1
+
+    def _layer_norm(self, x, weight, bias, upcast):
+        # Upcasting per chunk avoids materializing a full fp32 copy of x
+        def _ln(x):
+            out = nn.functional.layer_norm(
+                input=x.float() if upcast else x,
+                normalized_shape=self.c_in,
+                weight=weight,
+                bias=bias,
+                eps=self.eps,
+            )
+            return out.to(dtype=x.dtype)
+
+        no_batch_dims = x.dim() - len(self.c_in)
+        per_slice_numel = math.prod(self.c_in)
+        flat_batch = x.numel() // per_slice_numel
+        max_chunk = min(self._SAFE_BATCH, self._SAFE_NUMEL // per_slice_numel)
+        if flat_batch <= max_chunk:
+            return _ln(x)
+        return chunk_layer(
+            _ln,
+            {"x": x},
+            chunk_size=max_chunk,
+            no_batch_dims=no_batch_dims,
         )
 
 
