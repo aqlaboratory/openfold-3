@@ -187,8 +187,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         apply_per_sample = (
             not torch.is_grad_enabled()
             and num_samples > 1
-            and self.per_sample_token_cutoff is not None
-            and repr_x_pred.shape[-2] > self.per_sample_token_cutoff
+            and (self.per_sample_token_cutoff is not None
+            and repr_x_pred.shape[-2] > self.per_sample_token_cutoff)
         )
         out_device = atom_positions_predicted.device
 

@@ -14,7 +14,7 @@
 
 import logging
 import math
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from functools import partial
 from typing import Any
 
@@ -209,6 +209,153 @@ def _chunk_slice(
     return torch.cat([s.view((-1,) + t.shape[no_batch_dims:]) for s in sliced_tensors])
 
 
+def _plan_chunks(
+    batch_dims: tuple[int, ...], chunk_size: int
+) -> Iterator[tuple[slice, ...]]:
+    """Yield row-major multi-dim slice tuples that tile ``batch_dims``.
+
+    Each yielded tuple is a per-dim ``slice`` selecting a contiguous region
+    (assuming row-major layout). The product of region sizes is at most
+    ``chunk_size``. Slices are emitted in row-major (last-dim-fastest) order and
+    together cover the full index space of ``batch_dims`` exactly once.
+
+    Packing rule: fill the innermost dim first. If the innermost dim fits
+    entirely within ``chunk_size``, pack as many positions of the next-outer
+    dim as fit; recurse outward. If it doesn't fit, split the innermost dim
+    into ``chunk_size``-sized pieces, with one outer position per chunk.
+    """
+    if not batch_dims:
+        yield ()
+        return
+
+    inner = batch_dims[-1]
+    outer = batch_dims[:-1]
+
+    if chunk_size >= inner:
+        # Innermost fits entirely; pack outer dims with remaining budget.
+        outer_budget = chunk_size // inner
+        if not outer:
+            # Only one dim; everything fits in one chunk.
+            yield (slice(0, inner),)
+            return
+        for outer_slices in _plan_chunks(outer, outer_budget):
+            yield outer_slices + (slice(0, inner),)
+    else:
+        # Innermost too big; one outer position per chunk, split inner.
+        for outer_slices in _plan_chunks(outer, 1):
+            for start in range(0, inner, chunk_size):
+                end = min(start + chunk_size, inner)
+                yield outer_slices + (slice(start, end),)
+
+
+def _assign_output_chunk(
+    out: Any, output_chunk: Any, slices: tuple[slice, ...], add_into_out: bool
+) -> None:
+    """Write ``output_chunk`` into ``out`` at the given multi-dim slice.
+
+    Handles output as a tensor, a tuple of tensors, or a (possibly nested)
+    dict of tensors / sub-dicts. ``slices`` is a tuple of slices applied to
+    the leading dims; trailing dims are taken whole automatically.
+    """
+    if isinstance(out, dict):
+        for k, v in out.items():
+            _assign_output_chunk(v, output_chunk[k], slices, add_into_out)
+    elif isinstance(out, tuple):
+        for x_out, x_chunk in zip(out, output_chunk, strict=True):
+            _assign_output_chunk(x_out, x_chunk, slices, add_into_out)
+    elif isinstance(out, torch.Tensor):
+        if add_into_out:
+            out[slices] += output_chunk
+        else:
+            out[slices] = output_chunk
+    else:
+        raise ValueError(f"Unsupported output type: {type(out).__name__}")
+
+
+def _slice_input_for_chunk(
+    t: torch.Tensor, chunk_slices: tuple[slice, ...]
+) -> torch.Tensor:
+    """Slice an input tensor according to a multi-dim chunk plan.
+
+    For each batch dim, if the input's size is 1 (broadcast), force ``[0:1]``
+    so the broadcast is preserved. Otherwise apply the planned slice. Trailing
+    non-batch dims are taken whole automatically (PyTorch fills missing
+    trailing slices).
+    """
+    per_dim_slices = tuple(
+        slice(0, 1) if t.shape[d] == 1 else planned
+        for d, planned in enumerate(chunk_slices)
+    )
+    return t[per_dim_slices]
+
+
+def _chunk_layer_broadcast(
+    layer: Callable,
+    inputs: dict[str, Any],
+    chunk_size: int,
+    no_batch_dims: int,
+    orig_batch_dims: tuple[int, ...],
+    _out: Any = None,
+    _add_into_out: bool = False,
+) -> Any:
+    """Multi-dim chunking that preserves broadcast batch dims.
+
+    Each iteration slices every input on its own per-dim shape: for dims where
+    the input is size-1 (broadcast), the slice is always ``[0:1]``; otherwise
+    the planned slice is used. Outputs are written into a buffer of shape
+    ``orig_batch_dims + trailing`` at the corresponding multi-dim slot.
+    """
+    out = _out
+
+    for chunk_slices in _plan_chunks(orig_batch_dims, chunk_size):
+        # Slice every input by its own shape (broadcast dims stay size 1).
+        chunks = tensor_tree_map(
+            lambda t, cs=chunk_slices: _slice_input_for_chunk(t, cs),
+            inputs,
+        )
+
+        output_chunk = layer(**chunks)
+
+        # Allocate output on first iteration.
+        if out is None:
+
+            def allocate(t):
+                return t.new_zeros(orig_batch_dims + t.shape[no_batch_dims:])
+
+            out = tensor_tree_map(allocate, output_chunk)
+
+        _assign_output_chunk(out, output_chunk, chunk_slices, _add_into_out)
+
+    return out
+
+
+def _has_broadcast_batch_dims(initial_dims: list, orig_batch_dims: tuple) -> bool:
+    """True if any input has a size-1 leading dim where another has size > 1.
+
+    When this is the case, flattening the batch dims would force materialization
+    of the broadcast input across the full flattened axis. Multi-dim chunking
+    (see ``_plan_chunks``) avoids that materialization by slicing each input on
+    its own shape.
+
+    Also validates that any per-input leading dim that doesn't match
+    ``orig_batch_dims`` is exactly 1. Anything else is broadcast-incompatible
+    and would silently produce wrong results, so we raise instead.
+    """
+    has_broadcast = False
+    for input_dims in initial_dims:
+        for d, full in zip(input_dims, orig_batch_dims, strict=True):
+            if d == full:
+                continue
+            if d == 1:
+                has_broadcast = True
+            else:
+                raise ValueError(
+                    f"Incompatible batch dims: input has size {d} where another "
+                    f"has size {full}; only 1 (broadcast) or matching sizes allowed."
+                )
+    return has_broadcast
+
+
 def chunk_layer(
     layer: Callable,
     inputs: dict[str, Any],
@@ -229,8 +376,12 @@ def chunk_layer(
         layer:
             The layer to be applied chunk-wise
         inputs:
-            A (non-nested) dictionary of keyworded inputs. All leaves must
-            be tensors and must share the same batch dimensions.
+            A (non-nested) dictionary of keyworded inputs. All leaves must be
+            tensors. Inputs may differ in their batch dimensions subject to
+            implicit broadcasting (e.g. one input has shape ``[B, N, ...]`` and
+            another has ``[B, 1, ...]``); the broadcast structure is preserved
+            through chunking instead of being materialized at the cost of
+            potentially less efficient chunk shapes.
         chunk_size:
             The number of sub-batches per chunk. If multiple batch
             dimensions are specified, a "sub-batch" is defined as a single
@@ -251,6 +402,24 @@ def chunk_layer(
 
     initial_dims = [shape[:no_batch_dims] for shape in _fetch_dims(inputs)]
     orig_batch_dims = tuple([max(s) for s in zip(*initial_dims, strict=True)])
+
+    # Check whether we need Validate broadcast compatibility (raises on
+    # incompatible dims) and decide whether we need the multi-dim broadcast
+    # path.
+    has_broadcast = _has_broadcast_batch_dims(initial_dims, orig_batch_dims)
+
+    # When inputs have mixed batch shapes (broadcast), use the multi-dim
+    # planner to preserve the broadcast through chunking.
+    if has_broadcast:
+        return _chunk_layer_broadcast(
+            layer=layer,
+            inputs=inputs,
+            chunk_size=chunk_size,
+            no_batch_dims=no_batch_dims,
+            orig_batch_dims=orig_batch_dims,
+            _out=_out,
+            _add_into_out=_add_into_out,
+        )
 
     def _prep_inputs(t):
         if not low_mem:
@@ -310,33 +479,9 @@ def chunk_layer(
             out = tensor_tree_map(allocate, output_chunk)
 
         # Put the chunk in its pre-allocated space
-        out_type = type(output_chunk)
-        if out_type is dict:
-
-            def assign(d1, d2):
-                for k, v in d1.items():
-                    if isinstance(v, dict):
-                        assign(v, d2[k])
-                    else:
-                        if _add_into_out:
-                            v[i : i + chunk_size] += d2[k]  # noqa: B023
-                        else:
-                            v[i : i + chunk_size] = d2[k]  # noqa: B023
-
-            assign(out, output_chunk)
-        elif out_type is tuple:
-            for x1, x2 in zip(out, output_chunk, strict=True):
-                if _add_into_out:
-                    x1[i : i + chunk_size] += x2
-                else:
-                    x1[i : i + chunk_size] = x2
-        elif out_type is torch.Tensor:
-            if _add_into_out:
-                out[i : i + chunk_size] += output_chunk
-            else:
-                out[i : i + chunk_size] = output_chunk
-        else:
-            raise ValueError("Not supported")
+        _assign_output_chunk(
+            out, output_chunk, (slice(i, i + chunk_size),), _add_into_out
+        )
 
         i += chunk_size
 

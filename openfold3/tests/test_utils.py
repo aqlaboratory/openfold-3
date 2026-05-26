@@ -18,7 +18,7 @@ import unittest
 import torch
 
 from openfold3.core.model.primitives import Linear
-from openfold3.core.utils.chunk_utils import _chunk_slice, chunk_layer
+from openfold3.core.utils.chunk_utils import _chunk_slice, _plan_chunks, chunk_layer
 from openfold3.core.utils.rigid_utils import (
     Rigid,
     Rotation,
@@ -196,3 +196,128 @@ class TestUtils(unittest.TestCase):
                 chunked_flattened = x_flat[i:j]
 
                 self.assertTrue(torch.all(chunked == chunked_flattened))
+
+    def _collect_plan(self, batch_dims, chunk_size):
+        return list(_plan_chunks(batch_dims, chunk_size))
+
+    def _slices_size(self, slices):
+        prod = 1
+        for s in slices:
+            prod *= s.stop - s.start
+        return prod
+
+    def test_plan_chunks_inner_fits_one_outer_per_chunk(self):
+        # (5, 76) cs=128: inner 76 fits, only 1 outer per chunk (152 > 128)
+        plan = self._collect_plan((5, 76), 128)
+        self.assertEqual(len(plan), 5)
+        for i, slices in enumerate(plan):
+            self.assertEqual(slices, (slice(i, i + 1), slice(0, 76)))
+
+    def test_plan_chunks_inner_split(self):
+        # (5, 76) cs=64: inner 76 > 64, split into [64, 12]; one outer at a time
+        plan = self._collect_plan((5, 76), 64)
+        self.assertEqual(len(plan), 10)
+        # First sample: [0:64], [64:76]
+        self.assertEqual(plan[0], (slice(0, 1), slice(0, 64)))
+        self.assertEqual(plan[1], (slice(0, 1), slice(64, 76)))
+        # Last sample
+        self.assertEqual(plan[-2], (slice(4, 5), slice(0, 64)))
+        self.assertEqual(plan[-1], (slice(4, 5), slice(64, 76)))
+
+    def test_plan_chunks_pack_outer(self):
+        # (5, 76) cs=256: inner 76 fits, 256//76 = 3 outer per chunk
+        plan = self._collect_plan((5, 76), 256)
+        self.assertEqual(len(plan), 2)
+        self.assertEqual(plan[0], (slice(0, 3), slice(0, 76)))
+        self.assertEqual(plan[1], (slice(3, 5), slice(0, 76)))
+
+    def test_plan_chunks_covers_index_space_exactly(self):
+        # For varied (batch_dims, chunk_size), ensure the plan tiles the full index space
+        # and each chunk's volume is <= chunk_size.
+        for batch_dims in [(5, 76), (2, 100), (3,), (4, 8, 5), (1, 50)]:
+            for cs in [16, 32, 64, 128, 256]:
+                with self.subTest(batch_dims=batch_dims, cs=cs):
+                    plan = self._collect_plan(batch_dims, cs)
+                    # Volume per chunk
+                    for slices in plan:
+                        self.assertLessEqual(self._slices_size(slices), cs)
+                    # Total covered = product(batch_dims)
+                    total = sum(self._slices_size(s) for s in plan)
+                    expected = 1
+                    for d in batch_dims:
+                        expected *= d
+                    self.assertEqual(total, expected)
+
+    def test_plan_chunks_chunk_size_larger_than_total(self):
+        # cs >= product(batch_dims): single chunk covering everything
+        plan = self._collect_plan((3, 4), 100)
+        self.assertEqual(len(plan), 1)
+        self.assertEqual(plan[0], (slice(0, 3), slice(0, 4)))
+
+    def test_plan_chunks_single_dim(self):
+        plan = self._collect_plan((10,), 4)
+        self.assertEqual(plan, [
+            (slice(0, 4),), (slice(4, 8),), (slice(8, 10),)
+        ])
+
+    def test_chunk_layer_rejects_incompatible_batch_dims(self):
+        # When two inputs have different sizes in the same batch dim and
+        # neither is 1, broadcasting is undefined; chunk_layer should error
+        # rather than silently producing wrong results.
+        a = torch.rand(5, 76, 4)
+        b = torch.rand(3, 76, 4)
+        with self.assertRaises(ValueError):
+            chunk_layer(
+                lambda a, b: a + b,
+                {"a": a, "b": b},
+                chunk_size=32,
+                no_batch_dims=2,
+            )
+
+    def test_chunk_layer_broadcast(self):
+        # B1*B2 isn't evenly divisble by any power of 2, so we can test the
+        # uneven chunk tail behavior.
+        B1, B2, N, C = 5, 76, 76, 4
+        a = torch.rand(B1, B2, N, C)
+        b = torch.rand(B1, 1, N, C)
+
+        def add_layer(a, b):
+            return a + b
+
+        unchunked = add_layer(a, b)
+
+        for cs in [32, 64, 128, 256]:
+            with self.subTest(chunk_size=cs):
+                chunked = chunk_layer(
+                    add_layer,
+                    {"a": a, "b": b},
+                    chunk_size=cs,
+                    no_batch_dims=2,
+                )
+                self.assertEqual(chunked.shape, unchunked.shape)
+                self.assertTrue(torch.allclose(chunked, unchunked))
+
+    def test_chunk_layer_broadcast_does_not_materialize(self):
+        B1, B2, N, C = 5, 76, 76, 4
+        a = torch.rand(B1, B2, N, C)
+        b = torch.rand(B1, 1, N, C)
+
+        seen_b_shapes = []
+
+        def spy(a, b):
+            seen_b_shapes.append(tuple(b.shape))
+            return a + b
+
+        chunk_layer(
+            spy,
+            {"a": a, "b": b},
+            chunk_size=128,
+            no_batch_dims=2,
+        )
+        # Every call's b must keep the broadcast `1` in its second dim.
+        self.assertGreater(len(seen_b_shapes), 0)
+        for shape in seen_b_shapes:
+            self.assertEqual(
+                shape[1], 1,
+                f"b was materialized along the broadcast dim: {shape}",
+            )
