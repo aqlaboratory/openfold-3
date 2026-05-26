@@ -399,19 +399,28 @@ class PredictedAlignedErrorHead(nn.Module):
     def _chunk(
         self,
         zij: torch.Tensor,
+        compute_device: torch.device | None = None,
     ) -> torch.Tensor:
+        # ``zij`` will be moved in slices to ``compute_device`` for the layer
+        # norm + linear, and the output logits will be moved afterwards to
+        # the original ``zij.device``
         zij_out = torch.zeros(
             (*zij.shape[:-1], self.c_out), device=zij.device, dtype=zij.dtype
         )
         no_samples = zij.shape[-4]
         for i in range(no_samples):
-            zij_out[..., i : i + 1, :, :, :] = self._compute_logits(
-                zij[..., i : i + 1, :, :, :]
-            )
+            slice_in = zij[..., i : i + 1, :, :, :].to(device=compute_device)
+            slice_out = self._compute_logits(slice_in).to(device=zij.device)
+            zij_out[..., i : i + 1, :, :, :] = slice_out
 
         return zij_out
 
-    def forward(self, zij, apply_per_sample: bool = False):
+    def forward(
+        self,
+        zij,
+        apply_per_sample: bool = False,
+        compute_device: torch.device | None = None,
+    ):
         """
         Args:
             zij:
@@ -421,14 +430,22 @@ class PredictedAlignedErrorHead(nn.Module):
                 This is a memory optimization which is only used during
                 validation/inference and will depend on the number of samples
                 in the full rollout.
+            compute_device:
+                Device on which to run computation. zij will be moved here
+                before doing any computation. When apply_per_sample is true,
+                each per-sample slice of ``zij`` is moved onto this device
+                separately for the computation and the output is moved to
+                ``zij.device`` before processing the next slice.
         Returns:
             logits:
                 [*, N, N, C_out] Logits
         """
         if apply_per_sample:
-            logits = self._chunk(zij=zij)
+            logits = self._chunk(zij=zij, compute_device=compute_device)
         else:
-            logits = self._compute_logits(zij=zij)
+            logits = self._compute_logits(zij=zij.to(device=compute_device)).to(
+                device=zij.device
+            )
 
         return logits
 
@@ -471,19 +488,25 @@ class PredictedDistanceErrorHead(nn.Module):
     def _chunk(
         self,
         zij: torch.Tensor,
+        compute_device: torch.device | None = None,
     ) -> torch.Tensor:
         zij_out = torch.zeros(
             (*zij.shape[:-1], self.c_out), device=zij.device, dtype=zij.dtype
         )
         no_samples = zij.shape[-4]
         for i in range(no_samples):
-            zij_out[..., i : i + 1, :, :, :] = self._compute_logits(
-                zij[..., i : i + 1, :, :, :]
-            )
+            slice_in = zij[..., i : i + 1, :, :, :].to(device=compute_device)
+            slice_out = self._compute_logits(slice_in).to(device=zij.device)
+            zij_out[..., i : i + 1, :, :, :] = slice_out
 
         return zij_out
 
-    def forward(self, zij, apply_per_sample: bool = False):
+    def forward(
+        self,
+        zij,
+        apply_per_sample: bool = False,
+        compute_device: torch.device | None = None,
+    ):
         """
         Args:
             zij:
@@ -493,14 +516,22 @@ class PredictedDistanceErrorHead(nn.Module):
                 This is a memory optimization which is only used during
                 validation/inference and will depend on the number of samples
                 in the full rollout.
+            compute_device:
+                Device on which to run computation. zij will be moved here
+                before doing any computation. When apply_per_sample is true,
+                each per-sample slice of ``zij`` is moved onto this device
+                separately for the computation and the output is moved to
+                ``zij.device`` before processing the next slice.
         Returns:
             logits:
                 [*, N, N, C_out] Logits
         """
         if apply_per_sample:
-            logits = self._chunk(zij=zij)
+            logits = self._chunk(zij=zij, compute_device=compute_device)
         else:
-            logits = self._compute_logits(zij=zij)
+            logits = self._compute_logits(zij=zij.to(device=compute_device)).to(
+                device=zij.device
+            )
 
         return logits
 
