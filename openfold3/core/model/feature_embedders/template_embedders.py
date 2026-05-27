@@ -102,14 +102,20 @@ class TemplatePairEmbedderAllAtom(nn.Module):
             *template_restype.shape[:-2], n_token, -1, -1
         )
 
+        # Build the accumulator from the first projection, then fold each
+        # subsequent linear in-place. Out of place adds (a = a + linear(x)) keep
+        # a, linear(x), and a+linear(x) all live during the addition; that's
+        # three [*, N_templ, N, N, C] tensors co-resident. add_ frees the new
+        # sum's separate tensor (it's written into a) so peak per step drops
+        # from 3x slice to ~2x slice.
         a = self.dgram_linear(template_distogram)
-        a = a + self.pseudo_beta_mask_linear(pseudo_beta_pair_mask)
-        a = a + self.aatype_linear_1(template_restype_ti.to(dtype=dtype))
-        a = a + self.aatype_linear_2(template_restype_tj.to(dtype=dtype))
-        a = a + self.x_linear(x[..., None])
-        a = a + self.y_linear(y[..., None])
-        a = a + self.z_linear(z[..., None])
-        a = a + self.backbone_mask_linear(backbone_frame_pair_mask)
+        a.add_(self.pseudo_beta_mask_linear(pseudo_beta_pair_mask))
+        a.add_(self.aatype_linear_1(template_restype_ti.to(dtype=dtype)))
+        a.add_(self.aatype_linear_2(template_restype_tj.to(dtype=dtype)))
+        a.add_(self.x_linear(x[..., None]))
+        a.add_(self.y_linear(y[..., None]))
+        a.add_(self.z_linear(z[..., None]))
+        a.add_(self.backbone_mask_linear(backbone_frame_pair_mask))
 
         return a
 
