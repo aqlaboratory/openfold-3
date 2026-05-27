@@ -167,6 +167,12 @@ class AuxiliaryHeadsAllAtom(nn.Module):
 
         # Distogram head: Main loop (Algorithm 1), line 17
         distogram_logits = self.distogram(z=zij)
+        # Under offload_inference, move distogram off GPU now; downstream
+        # confidence scoring consumes it once at the very end (gpde) and
+        # can pull it back on demand. Saves ~S*N^2*C_out*4 bytes of GPU
+        # peak during all of the per-pair-head compute that follows.
+        if offload_inference:
+            distogram_logits = distogram_logits.to(device="cpu")
         aux_out["distogram_logits"] = distogram_logits
 
         # Stop grad
@@ -257,8 +263,6 @@ class AuxiliaryHeadsAllAtom(nn.Module):
 
         del zij
 
-        aux_out = {
-            k: v.to(device=out_device, dtype=out_dtype) for k, v in aux_out.items()
-        }
+        aux_out = {k: v.to(dtype=out_dtype) for k, v in aux_out.items()}
 
         return aux_out
