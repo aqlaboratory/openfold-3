@@ -31,7 +31,6 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Query,
 )
 
-
 # ---------------------------------------------------------------------------
 # Schema validation tests
 # ---------------------------------------------------------------------------

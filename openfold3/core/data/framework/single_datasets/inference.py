@@ -307,7 +307,6 @@ class InferenceDataset(Dataset):
                     residue_number_offsets[chain_id] = offset
         features["residue_number_offsets"] = residue_number_offsets
 
-
         # Target structure and conformer features
         structure_features = self.create_structure_features(
             atom_array=preprocessed_atom_array,

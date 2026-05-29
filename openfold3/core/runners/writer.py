@@ -249,7 +249,7 @@ class OF3OutputWriter(BasePredictionWriter):
         # Extract per-batch residue number offsets (empty dict if not provided).
         # The dataloader may deliver this as a plain dict (batch_size=1) or a
         # list of dicts, so we normalise to a list here.
-        raw_offsets = batch.get("residue_number_offsets", None)
+        raw_offsets = batch.get("residue_number_offsets")
         if raw_offsets is None:
             all_residue_number_offsets = [{}] * batch_size
         elif isinstance(raw_offsets, list):
