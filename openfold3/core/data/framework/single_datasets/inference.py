@@ -298,6 +298,16 @@ class InferenceDataset(Dataset):
         features["atom_array"] = preprocessed_atom_array
         n_tokens = get_token_count(preprocessed_atom_array)
 
+        # Build per-chain residue number offsets from query
+        residue_number_offsets = {}
+        for chain in query.chains:
+            if chain.starting_residue_number is not None:
+                offset = chain.starting_residue_number - 1
+                for chain_id in chain.chain_ids:
+                    residue_number_offsets[chain_id] = offset
+        features["residue_number_offsets"] = residue_number_offsets
+
+
         # Target structure and conformer features
         structure_features = self.create_structure_features(
             atom_array=preprocessed_atom_array,

@@ -1,0 +1,16 @@
+{
+    "queries": {
+        "mature": {
+            "chains": [
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": [
+                        "A"
+                    ],
+                    "sequence": "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG",
+                    "starting_residue_number": 3
+                }
+            ]
+        }
+    }
+}

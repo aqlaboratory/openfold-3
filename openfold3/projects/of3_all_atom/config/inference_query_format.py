@@ -52,6 +52,7 @@ class Chain(BaseModel):
     chain_ids: Annotated[list[str], BeforeValidator(_ensure_list)]
     description: str | None = None
     sequence: str | None = None
+    starting_residue_number: int | None = None
     non_canonical_residues: (
         Annotated[dict[int, str], BeforeValidator(_cast_keys_to_int)] | None
     ) = None

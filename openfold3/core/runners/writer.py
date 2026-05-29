@@ -111,6 +111,7 @@ class OF3OutputWriter(BasePredictionWriter):
         plddt: np.ndarray,
         output_file: Path,
         make_ost_compatible: bool = True,
+        residue_number_offsets: dict[str, int] | None = None,
     ):
         """Writes predicted coordinates to atom_array and writes mmcif file to disk.
 
@@ -120,6 +121,13 @@ class OF3OutputWriter(BasePredictionWriter):
         # Set coordinates and plddt scores
         atom_array.coord = predicted_coords
         atom_array.set_annotation("b_factor", plddt)
+
+        # Apply custom residue numbering offsets
+        if residue_number_offsets:
+            atom_array = atom_array.copy()  # don't mutate shared array
+            for chain_id, offset in residue_number_offsets.items():
+                chain_mask = atom_array.chain_id == chain_id
+                atom_array.res_id[chain_mask] += offset
 
         # Write the output file
         logger.info(f"Writing predicted structure to {output_file}")
@@ -237,6 +245,19 @@ class OF3OutputWriter(BasePredictionWriter):
         sample_size = outputs["atom_positions_predicted"].shape[1]
 
         # Iterate over all predictions in the batch
+
+        # Extract per-batch residue number offsets (empty dict if not provided).
+        # The dataloader may deliver this as a plain dict (batch_size=1) or a
+        # list of dicts, so we normalise to a list here.
+        raw_offsets = batch.get("residue_number_offsets", None)
+        if raw_offsets is None:
+            all_residue_number_offsets = [{}] * batch_size
+        elif isinstance(raw_offsets, list):
+            all_residue_number_offsets = raw_offsets
+        else:
+            # Single dict (batch_size == 1 or not collated into a list)
+            all_residue_number_offsets = [raw_offsets]
+
         for b in range(batch_size):
             seed = batch["seed"][b]
             query_id = batch["query_id"][b]
@@ -245,6 +266,9 @@ class OF3OutputWriter(BasePredictionWriter):
 
             # Extract attributes for the current batch
             atom_array_batch = batch["atom_array"][b]
+
+            residue_number_offsets_batch = all_residue_number_offsets[b]
+
             predicted_coords_batch = (
                 outputs["atom_positions_predicted"][b].cpu().float().numpy()
             )
@@ -265,6 +289,7 @@ class OF3OutputWriter(BasePredictionWriter):
                     predicted_coords=predicted_coords_sample,
                     plddt=confidence_scores_sample["plddt"],
                     output_file=structure_file,
+                    residue_number_offsets=residue_number_offsets_batch,
                 )
 
                 # Save confidence metrics

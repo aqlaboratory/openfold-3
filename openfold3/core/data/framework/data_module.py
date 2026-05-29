@@ -728,11 +728,25 @@ def openfold_batch_collator(samples: list[dict[str, torch.Tensor]]):
         for sample in samples:
             ref_space_uid_to_perm_dicts.append(sample.pop("ref_space_uid_to_perm"))
 
+    # residue_number_offsets is a plain Python dict {chain_id: int} — not a tensor.
+    # It must be popped before pad_sequence runs and re-inserted afterwards,
+    # mirroring the same pattern used for ref_space_uid_to_perm above.
+    has_residue_number_offsets = "residue_number_offsets" in samples[0]
+
+    if has_residue_number_offsets:
+        residue_number_offsets_list = []
+        for sample in samples:
+            residue_number_offsets_list.append(sample.pop("residue_number_offsets"))
+
     samples = dict_multimap(pad_feat_fn, samples)
 
     # Add the ref_space_uid_to_perm back to the samples
     if has_ref_space_uid_to_perm:
         samples["ref_space_uid_to_perm"] = ref_space_uid_to_perm_dicts
+
+    # Add residue_number_offsets back to the samples
+    if has_residue_number_offsets:
+        samples["residue_number_offsets"] = residue_number_offsets_list
 
     if has_pdb_id:
         samples["pdb_id"] = pdb_ids

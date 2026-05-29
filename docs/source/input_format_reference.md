@@ -57,6 +57,7 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     "chain_ids": "A",
     "description": "Optional metadata example",
     "sequence": "PVLSCGEWQCL",
+    "starting_residue_number": 3,
     "use_msas": true,
     "use_main_msas": true,
     "use_paired_msas": true,
@@ -80,6 +81,11 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
 
   - `sequence` *(str, required)*
     - Amino acid sequence (1-letter codes), supporting standard residues, X (unknown), and U (selenocysteine).
+
+  - `starting_residue_number` *(int | null, optional, default = null)*
+    - A custom starting residue number for the chain. 
+    - If provided, the output structure's residue IDs will start from this number instead of 1. 
+    - Negative numbers are supported (e.g., for signal peptides).
 
   - `non_canonical_residues` *(dict, optional, default = null)*
     - A dictionary mapping residue indices (1-based) to non-canonical residue names.
