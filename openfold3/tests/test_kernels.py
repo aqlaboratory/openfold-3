@@ -19,8 +19,6 @@ attention kernel, DS4Sci_EvoformerAttention vs. a stock PyTorch attention
 implementation.
 """
 
-import unittest
-
 import pytest
 import torch
 from torch.nn import functional as F
@@ -49,7 +47,7 @@ torch.backends.cuda.preferred_blas_library("cublas")
 
 
 @compare_utils.skip_unless_cuda_available()
-class TestKernels(unittest.TestCase):
+class TestKernels:
     def _compare_attn_kernel_forward(
         self,
         use_deepspeed_evo_attention=False,
@@ -857,7 +855,3 @@ class TestKernels(unittest.TestCase):
             use_triton_triangle_kernels=True,
             dtype=torch.bfloat16,
         )
-
-
-if __name__ == "__main__":
-    unittest.main()
