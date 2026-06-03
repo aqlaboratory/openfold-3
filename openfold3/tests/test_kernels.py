@@ -100,7 +100,7 @@ class TestKernels(unittest.TestCase):
             ).cpu()
 
         err = torch.max(torch.abs(kernel_out - real_out))
-        self.assertTrue(err < eps, f"Error: {err}")
+        assert err < eps, f"Error: {err}"
 
     @compare_utils.skip_unless_ds4s_installed()
     def test_dsk_forward_bf16(self):
@@ -244,7 +244,7 @@ class TestKernels(unittest.TestCase):
         for i, item in enumerate(pairs):
             t_repro, t_gt = item
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
-            self.assertTrue(err < eps, f"Error item #{i}: {err}")
+            assert err < eps, f"Error item #{i}: {err}"
 
         # Compare the grads of model weights
         a_repro_params = dict(a_repro.named_parameters())
@@ -253,7 +253,7 @@ class TestKernels(unittest.TestCase):
             t_repro = a_repro_params[name]
             t_gt = a_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
-            self.assertTrue(err < eps, f"Error item {name}: {err}")
+            assert err < eps, f"Error item {name}: {err}"
 
     @compare_utils.skip_unless_ds4s_installed()
     def test_dsk_backward_bf16(self):
@@ -329,7 +329,7 @@ class TestKernels(unittest.TestCase):
             )
         err = torch.max(torch.abs(fwd_reg - fwd_cueq))
         eps = 2e-2
-        self.assertTrue(err < eps, f"Error: {err}")
+        assert err < eps, f"Error: {err}"
 
     @compare_utils.skip_unless_cueq_installed()
     def test_cueq_tri_mult_bwd(self):
@@ -406,7 +406,7 @@ class TestKernels(unittest.TestCase):
             t_repro = tm_repro_params[name]
             t_gt = tm_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
-            self.assertTrue(err < eps, f"Error item {name}: {err}")
+            assert err < eps, f"Error item {name}: {err}"
 
     def _initialize_model_weights(self, model):
         for module in model.modules():
