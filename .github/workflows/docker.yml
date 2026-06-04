@@ -76,7 +76,7 @@ jobs:
 
       - name: Extract metadata for conda image
         id: meta-conda
-        uses: docker/metadata-action@17e943b6741018cb076d01088a79f7a301f67b15
+        uses: docker/metadata-action@3caf19fbe3db1a1a6a8bdce189e09ac0ed35d513
         with:
           images: |
             name=ghcr.io/${{ github.repository }}/openfold3-docker
@@ -109,7 +109,7 @@ jobs:
 
       - name: Extract metadata for pixi image
         id: meta-pixi
-        uses: docker/metadata-action@17e943b6741018cb076d01088a79f7a301f67b15
+        uses: docker/metadata-action@3caf19fbe3db1a1a6a8bdce189e09ac0ed35d513
         with:
           images: |
             name=ghcr.io/${{ github.repository }}/openfold3-docker
