@@ -225,12 +225,12 @@ def align_msa_server(
     msa_computation_settings_yaml: Path | None = None,
 ):
     """Run MSA server alignment only with ColabFold MSA server.
-    
+
     Example command:
     python run_openfold.py align-msa-server \
         --query_json query_example.json \
         --output_dir output/msa_server_test \
-    
+
     More settings can be specified using the `msa_computation_settings_yaml` flag
     An example yaml file is provided in `examples/msa_server.yml`
     """

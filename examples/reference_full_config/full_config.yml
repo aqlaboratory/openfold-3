@@ -3,16 +3,16 @@
 # Most experiments do not require a runner.yml
 # When a runner.yml is used, it is not required to specify all configuration settings.
 
-# For typical usage, please refer to the example runner yamls in examples/example_runner_yamls/, 
-# instead of using this full configuration file. 
+# For typical usage, please refer to the example runner yamls in examples/example_runner_yamls/,
+# instead of using this full configuration file.
 
 #######################
 
 # ExperimentSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L247
-# Overall experiment settings 
+# Overall experiment settings
 experiment_settings:
   mode: predict [predict | train]
-  output_dir: ./ 
+  output_dir: ./
   log_dir: null
   seeds:
     - 42
@@ -23,7 +23,7 @@ experiment_settings:
 
 # PLTrainerArgs: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L121
 # Configuration settings for pytorch lightning
-pl_trainer_args:  
+pl_trainer_args:
   max_epochs: 1000
   accelerator: gpu
   precision: 32-true
@@ -39,7 +39,7 @@ pl_trainer_args:
 
 # ModelUpdate: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/project_entry.py#L28
 # Custom model settings and presets
-model_update:  
+model_update:
   presets:   # [train | predict | low_mem ]
     - predict
     - low_mem
@@ -52,8 +52,8 @@ inference_ckpt_path: $HOME/.openfold3/of3_ft3_v1.pt
 cache_path: $HOME/.openfold3
 
 # DataModuleArgs: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L110
-data_module_args: 
-  batch_size: 1  # Note: Not tested for batch sizes > 1 
+data_module_args:
+  batch_size: 1  # Note: Not tested for batch sizes > 1
   data_seed: 42
   num_workers: 10
   num_workers_validation: 4 # Change num workers for thread limited workflows
@@ -61,11 +61,11 @@ data_module_args:
 
 # DatasetConfigKwargs: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_configs.py#L270
 # Arguments for creating template and MSA features
-dataset_config_kwargs: 
+dataset_config_kwargs:
   ccd_file_path: null  # if null, uses CCD from Biotite
   # MSA Settings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py#L32
   # Use this section to customize parsing of MSAs into features, more information in docs/source/precomputed_msa_how_to.md
-  msa: 
+  msa:
     max_rows_paired: 8191
     max_rows: 16384
     subsample_with_bands: false
@@ -117,7 +117,7 @@ dataset_config_kwargs:
 
 # OutputWriterSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141
 # Configure the output formats / content
-output_writer_settings: 
+output_writer_settings:
   structure_format: cif  [cif | pdb | cif.gz]
   full_confidence_output_format: json [json | npz]
   full_confidence_output_dtype: float16 [float32 | float16]
@@ -126,18 +126,18 @@ output_writer_settings:
   write_full_confidence_scores: true
 
 # MSAComputationSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py#L904
-# Configure MSA server settings for colabfold 
-msa_computation_settings: 
+# Configure MSA server settings for colabfold
+msa_computation_settings:
   msa_file_format: npz
   server_user_agent: openfold
   server_url: https://api.colabfold.com/
   save_mappings: true
-  msa_output_directory: <tmp-dir>/of3-of-<user>/colabfold_msas/ 
+  msa_output_directory: <tmp-dir>/of3-of-<user>/colabfold_msas/
   cleanup_msa_dir: true
 
 # TemplatePreprocessorSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py#L1459
 # Configure template processing settings, more information in docs/source/template_how_to.md
-template_preprocessor_settings: 
+template_preprocessor_settings:
   mode: predict
   moltypes:
     - 0
