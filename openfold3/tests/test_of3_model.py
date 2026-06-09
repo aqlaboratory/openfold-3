@@ -206,6 +206,7 @@ class TestOF3Model:
             use_triton_triangle_kernels=is_rocm,
         )
 
+    @pytest.mark.slow
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     def test_shape_large_bf16_train(self):
