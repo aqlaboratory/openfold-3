@@ -29,6 +29,7 @@ import openfold3.core.model.primitives.initialization as initialization
 from openfold3 import setup_openfold
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModuleConfig
+from openfold3.core.utils.callbacks import MemorySnapshotCallback
 from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
     TrainingExperimentRunner,
@@ -441,6 +442,23 @@ class TestInferenceCommandLineSettings:
             expt_config, use_templates=use_templates_cli_arg
         )
         assert expt_runner.use_templates == use_templates_cli_arg
+
+    @pytest.mark.parametrize("record_memory_snapshot_cli_arg", [True, False])
+    def test_record_memory_snapshot_cli(
+        self, record_memory_snapshot_cli_arg, dummy_ckpt_file
+    ):
+        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
+        expt_runner = InferenceExperimentRunner(
+            expt_config, record_memory_snapshot=record_memory_snapshot_cli_arg
+        )
+        assert (
+            expt_config.experiment_settings.record_memory_snapshot
+            == record_memory_snapshot_cli_arg
+        )
+        has_callback = any(
+            isinstance(cb, MemorySnapshotCallback) for cb in expt_runner.callbacks
+        )
+        assert has_callback == record_memory_snapshot_cli_arg
 
     def test_seeding_from_num_seeds(self, dummy_ckpt_file):
         expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
