@@ -271,6 +271,7 @@ class InferenceExperimentSettings(ExperimentSettings):
     use_msa_server: bool = False
     use_templates: bool = False
     skip_existing: bool = False
+    record_memory_snapshot: bool = False
 
     @model_validator(mode="after")
     def generate_seeds(self):

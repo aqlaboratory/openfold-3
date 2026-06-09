@@ -86,6 +86,54 @@ class PredictTimer(pl.Callback):
             runtime_file.write_text(json.dumps(runtime_json, indent=4))
 
 
+class MemorySnapshotCallback(pl.Callback):
+    """Record peak GPU memory and dump a torch memory-history snapshot per batch.
+
+    Must be registered AFTER PredictTimer so the snapshot dump runs outside
+    the timer's measurement window in on_predict_batch_end.
+    """
+
+    def __init__(self, output_dir: Path):
+        super().__init__()
+        self.output_dir = Path(output_dir)
+
+    def on_predict_batch_start(
+        self, trainer, pl_module, batch, batch_idx, dataloader_idx: int = 0
+    ):
+        if not torch.cuda.is_available():
+            return
+        torch.cuda.reset_peak_memory_stats()
+        torch.cuda.memory._record_memory_history(
+            max_entries=10_000_000, enabled="all"
+        )
+
+    def on_predict_batch_end(
+        self,
+        trainer,
+        pl_module,
+        outputs,
+        batch,
+        batch_idx,
+        dataloader_idx=0,
+    ):
+        if not torch.cuda.is_available():
+            return
+        torch.cuda.synchronize()
+        peak_gib = torch.cuda.max_memory_allocated() / (1024**3)
+        logger.info(f"[memsnap] peak={peak_gib:.2f} GiB")
+        batch_size = len(batch["query_id"])
+        for b in range(batch_size):
+            seed = batch["seed"][b]
+            query_id = batch["query_id"][b]
+            snapshot_path = (
+                self.output_dir / query_id / f"seed_{seed}" / "mem_snapshot.pkl"
+            )
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            torch.cuda.memory._dump_snapshot(str(snapshot_path))
+            logger.info(f"[memsnap] wrote {snapshot_path}")
+        torch.cuda.memory._record_memory_history(enabled=None)
+
+
 def set_seed_for_rank(seed: int, rank: int) -> None:
     """
     Sets the seed for all relevant random number generators on a specific rank.

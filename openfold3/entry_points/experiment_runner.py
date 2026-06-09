@@ -44,6 +44,7 @@ from openfold3.core.data.framework.data_module import (
 from openfold3.core.runners.writer import OF3OutputWriter
 from openfold3.core.utils.callbacks import (
     LogInferenceQuerySet,
+    MemorySnapshotCallback,
     PredictTimer,
     RankSpecificSeedCallback,
 )
@@ -562,6 +563,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         use_msa_server: bool = False,
         use_templates: bool = False,
         output_dir: Path | None = None,
+        record_memory_snapshot: bool = False,
     ):
         super().__init__(experiment_config)
 
@@ -579,6 +581,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             output_dir,
             use_msa_server,
             use_templates,
+            record_memory_snapshot,
         )
 
     def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
@@ -609,6 +612,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         output_dir: Path | None,
         use_msa_server: bool = False,
         use_templates: bool = False,
+        record_memory_snapshot: bool = False,
     ):
         """Updates configuration given command line args."""
         if output_dir:
@@ -627,6 +631,9 @@ class InferenceExperimentRunner(ExperimentRunner):
 
         if use_templates:
             self.experiment_config.experiment_settings.use_templates = True
+
+        if record_memory_snapshot:
+            self.experiment_config.experiment_settings.record_memory_snapshot = True
 
     @cached_property
     def use_msa_server(self) -> bool:
@@ -732,6 +739,8 @@ class InferenceExperimentRunner(ExperimentRunner):
             PredictTimer(self.output_dir),
             LogInferenceQuerySet(self.output_dir),
         ]
+        if self.experiment_config.experiment_settings.record_memory_snapshot:
+            _callbacks.append(MemorySnapshotCallback(self.output_dir))
         return _callbacks
 
     @cached_property

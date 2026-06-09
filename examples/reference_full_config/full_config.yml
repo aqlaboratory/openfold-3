@@ -20,6 +20,7 @@ experiment_settings:
   use_msa_server: true
   use_templates: true
   skip_existing: false
+  record_memory_snapshot: false
 
 # PLTrainerArgs: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L121
 # Configuration settings for pytorch lightning

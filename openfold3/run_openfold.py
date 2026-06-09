@@ -146,6 +146,15 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     required=False,
     help="Output directory for writing results",
 )
+@click.option(
+    "--record-memory-snapshot",
+    "--record_memory_snapshot",
+    is_flag=True,
+    default=False,
+    help="Record a torch CUDA memory-history snapshot per predict batch to "
+    "<output_dir>/<query_id>/seed_<n>/mem_snapshot.pkl. Snapshots are large "
+    "(~1-1.5 GiB per batch for big sequences).",
+)
 def predict(
     query_json: Path,
     inference_ckpt_path: Path | None = None,
@@ -156,6 +165,7 @@ def predict(
     use_msa_server: bool = True,
     use_templates: bool = True,
     output_dir: Path | None = None,
+    record_memory_snapshot: bool = False,
 ):
     """Perform inference on a set of queries defined in the query_json."""
     _torch_gpu_setup()
@@ -185,6 +195,7 @@ def predict(
         use_msa_server,
         use_templates,
         output_dir,
+        record_memory_snapshot,
     )
 
     # Load inference query set
