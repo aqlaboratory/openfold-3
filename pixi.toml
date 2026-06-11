@@ -82,7 +82,11 @@ version = "0.4.0"
 #   as it would help simplifying this toml
 #   https://github.com/prefix-dev/pixi/blob/main/CHANGELOG.md#-highlights-1
 # - as our lockfiles are now v7
-requires-pixi = ">=0.68"
+# - as we will use cuda support in build
+requires-pixi = ">=0.70.2"
+
+# Playing with pixi build
+preview = ["pixi-build"]
 
 # --- Environments
 
@@ -93,6 +97,7 @@ openfold3-cpu = { no-default-feature = true, features = [
     "openfold3-cpu",
     "pytorch-conda",
     "openfold3-editable",
+    "openfold-kernels",
     "tests"
 ] }
 openfold3-cuda12 = { no-default-feature = true, features = [
@@ -104,6 +109,7 @@ openfold3-cuda12 = { no-default-feature = true, features = [
     "deepspeed-build",
     "cuequivariance-cuda12",
     "openfold3-editable",
+    "openfold-kernels",
     "tests"
 ] }
 openfold3-cuda13 = { no-default-feature = true, features = [
@@ -115,6 +121,7 @@ openfold3-cuda13 = { no-default-feature = true, features = [
     "deepspeed-build",
     "cuequivariance-cuda13",
     "openfold3-editable",
+    "openfold-kernels",
     "tests"
 ] }
 openfold3-cuda12-pypi = { no-default-feature = true, features = [
@@ -125,6 +132,7 @@ openfold3-cuda12-pypi = { no-default-feature = true, features = [
     "deepspeed-build",
     "cuequivariance-cuda12",
     "openfold3-editable-full",
+    "openfold-kernels",
     "tests"
 ] }
 openfold3-cuda13-pypi = { no-default-feature = true, features = [
@@ -135,6 +143,7 @@ openfold3-cuda13-pypi = { no-default-feature = true, features = [
     "deepspeed-build",
     "cuequivariance-cuda13",
     "openfold3-editable-full",
+    "openfold-kernels",
     "tests"
 ] }
 openfold3-rocm7 = { no-default-feature = true, features = [
@@ -143,7 +152,8 @@ openfold3-rocm7 = { no-default-feature = true, features = [
     "pytorch-pypi-rocm7",
     "not-in-pypi",
     "openfold3-editable",
-    "tests", 
+    "openfold-kernels",
+    "tests",
 ] }
 openfold3-msa = { no-default-feature = true, features = [
     "openfold3-msa",
@@ -297,6 +307,10 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   env.TRITON_PTXAS_PATH = "$CONDA_PREFIX/bin/ptxas"
   env.TRITON_PTXAS_BLACKWELL_PATH = "$TRITON_PTXAS_PATH"
 
+
+# --- Kernels
+[feature.openfold-kernels.dependencies]
+openfold-kernels = { path = "./packages/openfold-kernels" }
 
 # --- DeepSpeed
 
