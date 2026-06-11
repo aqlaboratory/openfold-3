@@ -1,0 +1,14 @@
+[package]
+name = "openfold-kernels"
+version = "0.1.0"
+
+[package.build]
+backend = { name = "pixi-build-python", version = "*" }
+
+[package.build-dependencies]
+
+[package.host-dependencies]
+python = ">=3.10"
+hatchling = "*"
+
+[package.run-dependencies]
