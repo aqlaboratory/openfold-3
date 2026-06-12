@@ -14,9 +14,8 @@
 # limitations under the License.
 
 """
-Unit tests to compare components of OpenFold run with the DeepSpeed memory-efficient
-attention kernel, DS4Sci_EvoformerAttention vs. a stock PyTorch attention
-implementation.
+Unit tests to compare components of OpenFold run with an optimized flash-style
+attention kernel vs. a stock PyTorch attention implementation.
 """
 
 import pytest
@@ -35,6 +34,7 @@ from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.tests.config import consts
+from openfold3.tests.custom_assert_utils import assert_close_nondegenerate
 from openfold3.tests.data_utils import (
     random_attention_inputs,
 )
@@ -46,6 +46,22 @@ pytestmark = [pytest.mark.slow]
 torch.backends.cuda.preferred_blas_library("cublas")
 
 
+_BASE_TOLS = {
+    torch.float64: 1e-6,
+    torch.float32: 1e-3,
+    torch.bfloat16: 1e-2,
+    torch.float16: 1e-2,
+}
+
+
+def get_tols(dtype, *, backward=False, atol=None, rtol=None):
+    if dtype not in _BASE_TOLS:
+        raise ValueError(f"Unsupported dtype {dtype}")
+    base = _BASE_TOLS[dtype] * (2 if backward else 1)
+    return atol if atol is not None else base, rtol if rtol is not None else base
+
+
+@pytest.mark.usefixtures("seeded_rng")
 @compare_utils.skip_unless_cuda_available()
 class TestKernels:
     def _compare_attn_kernel_forward(
@@ -54,16 +70,27 @@ class TestKernels:
         use_cueq_triangle_kernels=False,
         use_triton_triangle_kernels=False,
         dtype=torch.float32,
+        atol=None,
+        rtol=None,
     ):
-        """Compare attention with and without using DeepSpeed Evoformer kernel."""
+        """
+        Check a kernel's attention forward against reference.
+
+        The reference output is computed by the stock PyTorch attention in
+        float64, from the same inputs generated in ``dtype`` and upcast (so they
+        are exactly representable in ``dtype``). Comparing against float64
+        rather than against PyTorch in the same dtype avoids 'penalizing' the
+        kernel for the floating point error in the native PyTorch implementation.
+        """
         batch_size = consts.batch_size
         n_seq = 18
         n_res = 200  # Avoid cuEq seq len constraints
         c_hidden = 32
         no_heads = 4
-        eps = 2e-2
 
-        q, kv, mask, biases = random_attention_inputs(
+        atol, rtol = get_tols(dtype, atol=atol, rtol=rtol)
+
+        q, kv, _, (mask_bias, z_bias) = random_attention_inputs(
             batch_size=batch_size,
             n_seq=n_seq,
             n=n_res,
@@ -72,33 +99,36 @@ class TestKernels:
             dtype=dtype,
         )
 
-        a = Attention(
-            c_hidden,
-            c_hidden,
-            c_hidden,
-            c_hidden,
-            no_heads,
-        ).cuda()
-
-        # Change output params init for testing since they are initialized with 'final'
-        # init (zeros) Otherwise both will just return zero.
+        attn = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).cuda()
+        # Change output params init for testing since they are initialized with
+        # 'final' init (zeros), otherwise the output would just be zero.
         with torch.no_grad():
-            lecun_normal_init_(a.linear_g.weight)
-            lecun_normal_init_(a.linear_o.weight)
+            lecun_normal_init_(attn.linear_g.weight)
+            lecun_normal_init_(attn.linear_o.weight)
 
-            real_out = a(q, kv, biases=biases).cpu()
+        def forward(run_dtype, use_kernel):
+            a = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).to(
+                device="cuda", dtype=run_dtype
+            )
+            a.load_state_dict(
+                {k: v.to(run_dtype) for k, v in attn.state_dict().items()}
+            )
+            with torch.no_grad():
+                return a(
+                    q.to(run_dtype),
+                    kv.to(run_dtype),
+                    biases=[mask_bias.to(run_dtype), z_bias.to(run_dtype)],
+                    use_deepspeed_evo_attention=use_kernel
+                    and use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernels=use_kernel and use_cueq_triangle_kernels,
+                    use_triton_triangle_kernels=use_kernel
+                    and use_triton_triangle_kernels,
+                )
 
-            kernel_out = a(
-                q,
-                kv,
-                biases=biases,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                use_triton_triangle_kernels=use_triton_triangle_kernels,
-            ).cpu()
+        ref = forward(torch.float64, use_kernel=False)
+        kernel = forward(dtype, use_kernel=True)
 
-        err = torch.max(torch.abs(kernel_out - real_out))
-        assert err < eps, f"Error: {err}"
+        assert_close_nondegenerate(kernel.to(torch.float64), ref, atol=atol, rtol=rtol)
 
     @compare_utils.skip_unless_ds4s_installed()
     def test_dsk_forward_bf16(self):
@@ -141,9 +171,14 @@ class TestKernels:
 
     @compare_utils.skip_unless_triton_installed()
     def test_triton_forward_fp32(self):
+        # The Triton kernel currently downcasts to bf16 internally, so it needs
+        # the bf16-level tolerance even though the inputs are fp32.
+        atol, rtol = get_tols(torch.bfloat16)
         self._compare_attn_kernel_forward(
             use_triton_triangle_kernels=True,
             dtype=torch.float32,
+            atol=atol,
+            rtol=rtol,
         )
 
     def _compare_attn_kernel_backward(
@@ -152,106 +187,71 @@ class TestKernels:
         use_cueq_triangle_kernels=False,
         use_triton_triangle_kernels=False,
         dtype=torch.float32,
+        atol=None,
+        rtol=None,
     ):
         """
-        Compare backward pass for regular attention vs. DeepSpeed Evoformer kernel.
+        Check a kernel's attention backward against reference.
+
+        The reference gradients are computed by the stock PyTorch attention in
+        float64, from the same inputs generated in ``dtype`` and upcast (so
+        they are exactly representable in ``dtype``).
         """
         batch_size = consts.batch_size
         n_seq = 18
         n_res = 200  # Avoid cuEq seq len constraints
         c_hidden = 32
         no_heads = 4
-        eps = consts.eps
 
-        q, kv, _, biases = random_attention_inputs(
+        atol, rtol = get_tols(dtype, backward=True, atol=atol, rtol=rtol)
+
+        q, kv, _, (mask_bias, z_bias) = random_attention_inputs(
             batch_size=batch_size,
             n_seq=n_seq,
             n=n_res,
             no_heads=no_heads,
             c_hidden=c_hidden,
-            requires_grad=True,
             dtype=dtype,
         )
+        cotangent = torch.randn(
+            batch_size, n_seq, n_res, c_hidden, dtype=dtype, device="cuda"
+        )
 
-        attn = Attention(
-            c_hidden,
-            c_hidden,
-            c_hidden,
-            c_hidden,
-            no_heads,
-        ).cuda()
-
+        attn = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).cuda()
         with torch.no_grad():
             lecun_normal_init_(attn.linear_g.weight)
             lecun_normal_init_(attn.linear_o.weight)
 
-        def clone(t):
-            # Create new params, clone values
-            t = t.clone()
-            if t.requires_grad:
-                t.retain_grad()
-            return t
+        def grads(run_dtype, use_kernel):
+            a = Attention(c_hidden, c_hidden, c_hidden, c_hidden, no_heads).to(
+                device="cuda", dtype=run_dtype
+            )
+            a.load_state_dict(
+                {k: v.to(run_dtype) for k, v in attn.state_dict().items()}
+            )
+            q_in = q.to(run_dtype).clone().requires_grad_(True)
+            kv_in = kv.to(run_dtype).clone().requires_grad_(True)
+            z_bias_in = z_bias.to(run_dtype).clone().requires_grad_(True)
+            mask_bias_in = mask_bias.to(run_dtype)
+            out = a(
+                q_in,
+                kv_in,
+                biases=[mask_bias_in, z_bias_in],
+                use_deepspeed_evo_attention=use_kernel and use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_kernel and use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_kernel and use_triton_triangle_kernels,
+            )
+            loss = (out * cotangent.to(run_dtype)).sum()
+            loss.backward()
+            return {"q": q_in.grad, "kv": kv_in.grad, "bias": z_bias_in.grad}
 
-        def init_attn():
-            # Create new attention object with same initial weights
-            a_clone = Attention(
-                c_hidden,
-                c_hidden,
-                c_hidden,
-                c_hidden,
-                no_heads,
-            ).cuda()
+        ref = grads(torch.float64, use_kernel=False)
+        kernel = grads(dtype, use_kernel=True)
 
-            a_clone.load_state_dict(attn.state_dict())
-            return a_clone
-
-        # Clone param values and run attention with DS kernel
-        q_repro = clone(q)
-        kv_repro = clone(kv)
-        biases_repro = [clone(b) for b in biases]
-
-        a_repro = init_attn()
-        out_repro = a_repro(
-            q_repro,
-            kv_repro,
-            biases=biases_repro,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-            use_triton_triangle_kernels=use_triton_triangle_kernels,
-        )
-        loss_repro = torch.mean(out_repro)
-        loss_repro.backward()
-
-        q_gt = clone(q)
-        kv_gt = clone(kv)
-        biases_gt = [clone(b) for b in biases]
-
-        # Clone param values and run attention without DS kernel
-        a_gt = init_attn()
-        out_gt = a_gt(q_gt, kv_gt, biases=biases_gt)
-
-        loss_gt = torch.mean(out_gt)
-        loss_gt.backward()
-
-        # Compare the grads of attention inputs
-        pairs = zip(
-            [q_repro, kv_repro, biases_repro[1]],
-            [q_gt, kv_gt, biases_gt[1]],
-            strict=False,
-        )
-        for i, item in enumerate(pairs):
-            t_repro, t_gt = item
-            err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
-            assert err < eps, f"Error item #{i}: {err}"
-
-        # Compare the grads of model weights
-        a_repro_params = dict(a_repro.named_parameters())
-        a_gt_params = dict(a_gt.named_parameters())
-        for name in a_gt_params:
-            t_repro = a_repro_params[name]
-            t_gt = a_gt_params[name]
-            err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
-            assert err < eps, f"Error item {name}: {err}"
+        for name, ref_grad in ref.items():
+            assert_close_nondegenerate(
+                kernel[name].to(torch.float64), ref_grad, atol=atol, rtol=rtol
+            )
 
     @compare_utils.skip_unless_ds4s_installed()
     def test_dsk_backward_bf16(self):
@@ -290,6 +290,18 @@ class TestKernels:
         self._compare_attn_kernel_backward(
             use_triton_triangle_kernels=True,
             dtype=torch.bfloat16,
+        )
+
+    @compare_utils.skip_unless_triton_installed()
+    def test_triton_backward_fp32(self):
+        # The Triton kernel downcasts to bf16 internally, so it needs the
+        # bf16-level backward tolerance even though the inputs are fp32.
+        atol, rtol = get_tols(torch.bfloat16, backward=True)
+        self._compare_attn_kernel_backward(
+            use_triton_triangle_kernels=True,
+            dtype=torch.float32,
+            atol=atol,
+            rtol=rtol,
         )
 
     @compare_utils.skip_unless_cueq_installed()
