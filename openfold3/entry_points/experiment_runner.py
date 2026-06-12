@@ -250,19 +250,7 @@ class ExperimentRunner(ABC):
     @cached_property
     def callbacks(self):
         """Set up and return the list of callbacks."""
-        _callbacks = [SecondsPerIterationProgressBar()]
-
-        if self.memory_snapshot.enabled:
-            _callbacks.append(
-                MemorySnapshot(
-                    output_path=self.memory_snapshot.output_path,
-                    start_step=self.memory_snapshot.start_step,
-                    dump_on_oom=self.memory_snapshot.dump_on_oom,
-                    stacks=self.memory_snapshot.stacks,
-                )
-            )
-
-        return _callbacks
+        return [SecondsPerIterationProgressBar()]
 
     @cached_property
     def loggers(self):
@@ -576,6 +564,18 @@ class TrainingExperimentRunner(ExperimentRunner):
         if self.model_config.settings.debug.log_iteration_time:
             _callbacks.append(PredictTimer(output_dir=None))
 
+        # Registered after PredictTimer so the snapshot dump stays outside the
+        # timer's measurement window.
+        if self.memory_snapshot.enabled:
+            _callbacks.append(
+                MemorySnapshot(
+                    output_path=self.memory_snapshot.output_path,
+                    step=self.memory_snapshot.step,
+                    dump_on_oom=self.memory_snapshot.dump_on_oom,
+                    stacks=self.memory_snapshot.stacks,
+                )
+            )
+
         _log_lr = self.logging_config.log_lr
         if _log_lr and self.use_wandb:
             _callbacks.append(LearningRateMonitor(logging_interval="step"))
@@ -782,6 +782,19 @@ class InferenceExperimentRunner(ExperimentRunner):
                 LogInferenceQuerySet(self.output_dir),
             ]
         )
+
+        # Registered after PredictTimer so the snapshot dump stays outside the
+        # timer's measurement window.
+        if self.memory_snapshot.enabled:
+            _callbacks.append(
+                MemorySnapshot(
+                    output_path=self.memory_snapshot.output_path,
+                    step=self.memory_snapshot.step,
+                    dump_on_oom=self.memory_snapshot.dump_on_oom,
+                    stacks=self.memory_snapshot.stacks,
+                )
+            )
+
         return _callbacks
 
     @cached_property
