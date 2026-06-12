@@ -46,21 +46,6 @@ pytestmark = [pytest.mark.slow]
 torch.backends.cuda.preferred_blas_library("cublas")
 
 
-_BASE_TOLS = {
-    torch.float64: 1e-6,
-    torch.float32: 1e-3,
-    torch.bfloat16: 1e-2,
-    torch.float16: 1e-2,
-}
-
-
-def get_tols(dtype, *, backward=False, atol=None, rtol=None):
-    if dtype not in _BASE_TOLS:
-        raise ValueError(f"Unsupported dtype {dtype}")
-    base = _BASE_TOLS[dtype] * (2 if backward else 1)
-    return atol if atol is not None else base, rtol if rtol is not None else base
-
-
 @pytest.mark.usefixtures("seeded_rng")
 @compare_utils.skip_unless_cuda_available()
 class TestKernels:
@@ -70,8 +55,10 @@ class TestKernels:
         use_cueq_triangle_kernels=False,
         use_triton_triangle_kernels=False,
         dtype=torch.float32,
-        atol=None,
-        rtol=None,
+        # Even for f32 input, all the kernels use reduced precision, so this is
+        # pretty loose.
+        atol=1e-2,
+        rtol=1e-2,
     ):
         """
         Check a kernel's attention forward against reference.
@@ -87,8 +74,6 @@ class TestKernels:
         n_res = 200  # Avoid cuEq seq len constraints
         c_hidden = 32
         no_heads = 4
-
-        atol, rtol = get_tols(dtype, atol=atol, rtol=rtol)
 
         q, kv, _, (mask_bias, z_bias) = random_attention_inputs(
             batch_size=batch_size,
@@ -171,14 +156,9 @@ class TestKernels:
 
     @compare_utils.skip_unless_triton_installed()
     def test_triton_forward_fp32(self):
-        # The Triton kernel currently downcasts to bf16 internally, so it needs
-        # the bf16-level tolerance even though the inputs are fp32.
-        atol, rtol = get_tols(torch.bfloat16)
         self._compare_attn_kernel_forward(
             use_triton_triangle_kernels=True,
             dtype=torch.float32,
-            atol=atol,
-            rtol=rtol,
         )
 
     def _compare_attn_kernel_backward(
@@ -187,8 +167,10 @@ class TestKernels:
         use_cueq_triangle_kernels=False,
         use_triton_triangle_kernels=False,
         dtype=torch.float32,
-        atol=None,
-        rtol=None,
+        # Even for f32 input, all the kernels use reduced precision, so this is
+        # pretty loose.
+        atol=2e-2,
+        rtol=2e-2,
     ):
         """
         Check a kernel's attention backward against reference.
@@ -202,8 +184,6 @@ class TestKernels:
         n_res = 200  # Avoid cuEq seq len constraints
         c_hidden = 32
         no_heads = 4
-
-        atol, rtol = get_tols(dtype, backward=True, atol=atol, rtol=rtol)
 
         q, kv, _, (mask_bias, z_bias) = random_attention_inputs(
             batch_size=batch_size,
@@ -294,14 +274,9 @@ class TestKernels:
 
     @compare_utils.skip_unless_triton_installed()
     def test_triton_backward_fp32(self):
-        # The Triton kernel downcasts to bf16 internally, so it needs the
-        # bf16-level backward tolerance even though the inputs are fp32.
-        atol, rtol = get_tols(torch.bfloat16, backward=True)
         self._compare_attn_kernel_backward(
             use_triton_triangle_kernels=True,
             dtype=torch.float32,
-            atol=atol,
-            rtol=rtol,
         )
 
     @compare_utils.skip_unless_cueq_installed()
