@@ -29,8 +29,9 @@ notification to the maintainer instead of being recorded here.
 | 2026-06-10  | [27253274562](https://github.com/aqlaboratory/openfold-3/actions/runs/27253274562)             | `TestKernels::test_dsk_forward_bf16` (cuda12) | `CUDA error: CUDA-capable device(s) is/are busy or unavailable`        |
 | 2026-06-09  | [27183771604](https://github.com/aqlaboratory/openfold-3/actions/runs/27183771604)             | `TestKernels::test_dsk_forward_bf16`          | `CUDA error: CUDA-capable device(s) is/are busy or unavailable`        |
 | 2026-06-07  | [27082700605](https://github.com/aqlaboratory/openfold-3/actions/runs/27082700605)             | `TestKernels::test_dsk_forward_bf16`          | `CUDA error: CUDA-capable device(s) is/are busy or unavailable` (per user-supplied example) |
+| 2026-06-06  | [27052461098](https://github.com/aqlaboratory/openfold-3/actions/runs/27052461098)             | `TestKernels::test_dsk_forward_bf16` (cuda12) | `torch.AcceleratorError: CUDA error: CUDA-capable device(s) is/are busy or unavailable` (`cudaErrorDevicesUnavailable`) |
 
-> Earlier failures (2026-05-26 → 2026-06-06) are visible in the GitHub Actions
+> Earlier failures (2026-05-26 → 2026-06-05) are visible in the GitHub Actions
 > history but have not been individually triaged. Backfill on request.
 
 ## Weekly report
