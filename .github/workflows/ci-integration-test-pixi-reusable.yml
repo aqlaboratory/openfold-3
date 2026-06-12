@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: 'ubuntu:22.04'
+      gpu_smoke_image:
+        description: 'Small CUDA base image used by the pre-build GPU smoke check (only needs nvidia-smi).'
+        required: false
+        type: string
+        default: 'nvidia/cuda:12.4.1-base-ubuntu22.04'
 
 env:
   REGISTRY: ghcr.io
@@ -53,6 +58,30 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v6
+
+      # Fail fast if the AWS-provisioned GPU runner is bad. Roughly 100% of
+      # integration-test.yml failures over the last 7 days were
+      # `cudaErrorDevicesUnavailable` ("CUDA-capable device(s) is/are busy or
+      # unavailable") thrown at the first .cuda() allocation inside pytest --
+      # i.e. ~8 minutes into the job, after the docker image pull. Catching
+      # this here saves the image build/pull when the runner is unusable.
+      #
+      # Caveat: nvidia-smi exercises the NVML driver path, not the CUDA
+      # runtime, so it can miss edge cases where the driver is healthy but
+      # the CUDA runtime cannot create a context. The container check below
+      # additionally exercises the NVIDIA Container Runtime injection path,
+      # which is where most of our observed failures surface.
+      - name: GPU smoke check
+        env:
+          GPU_SMOKE_IMAGE: ${{ inputs.gpu_smoke_image }}
+        run: |
+          set -euo pipefail
+          echo "::group::Host nvidia-smi"
+          nvidia-smi
+          echo "::endgroup::"
+          echo "::group::Container GPU access (NVIDIA Container Runtime)"
+          docker run --rm --gpus all "$GPU_SMOKE_IMAGE" nvidia-smi
+          echo "::endgroup::"
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
