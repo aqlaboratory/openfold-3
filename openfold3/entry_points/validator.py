@@ -268,8 +268,8 @@ class InferenceExperimentSettings(ExperimentSettings):
     mode: ValidModeType = "predict"
     seeds: int | list[int] = [42]
     num_seeds: int | None = None
-    use_msa_server: bool = False
-    use_templates: bool = False
+    use_msa_server: bool = True
+    use_templates: bool = True
     skip_existing: bool = False
 
     @model_validator(mode="after")

@@ -129,15 +129,21 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     "--use-msa-server",
     "--use_msa_server",
     type=bool,
-    default=True,
-    help="Use ColabFold MSA server to perform alignments.",
+    default=None,
+    help=(
+        "Use ColabFold MSA server to perform alignments. If unset, the value from"
+        " the runner yaml (or config default) is used."
+    ),
 )
 @click.option(
     "--use-templates",
     "--use_templates",
     type=bool,
-    default=True,
-    help="Use ColabFold MSA server to perform template alignments.",
+    default=None,
+    help=(
+        "Whether to use templates for prediction. If unset, the value from the"
+        " runner yaml (or config default) is used."
+    ),
 )
 @click.option(
     "--output-dir",
@@ -153,8 +159,8 @@ def predict(
     num_diffusion_samples: int | None = None,
     num_model_seeds: int | None = None,
     runner_yaml: Path | None = None,
-    use_msa_server: bool = True,
-    use_templates: bool = True,
+    use_msa_server: bool | None = None,
+    use_templates: bool | None = None,
     output_dir: Path | None = None,
 ):
     """Perform inference on a set of queries defined in the query_json."""

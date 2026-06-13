@@ -99,7 +99,7 @@ The final OpenFold3 model is still in development, and we are actively working o
 If you encounter problems using OpenFold3-preview, feel free to create an issue! We also
 welcome pull requests from the community.
 
-In addition, we offer a [public Slack channel](https://join.slack.com/share/enQtMTA2ODc5MzU5NjYxNzktY2FjMjg5Y2NhNTJmMzExODIyNzkxNTZiMGYzZGVmOTY1ZDEyMWZiZTRjN2U1YTNlNjkxN2YyZDdlNzFmMGRiZQ) for discussions and questions around OpenFold3.
+In addition, we offer a [public Slack channel](https://join.slack.com/t/openfoldworkspace/shared_invite/zt-40rax5ape-96NkpN_EYgp5~vELu_IdQg) for discussions and questions around OpenFold3.
 
 ## Citing this Work
 

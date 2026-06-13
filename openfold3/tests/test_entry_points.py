@@ -18,6 +18,7 @@ import shutil
 import tempfile
 import textwrap
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
 
@@ -425,22 +426,87 @@ class TestWandbHandler(unittest.TestCase):
                     self.assertEqual(data, dummy_model_config.to_dict())
 
 
-class TestInferenceCommandLineSettings:
-    @pytest.mark.parametrize("use_msa_cli_arg", [True, False])
-    def test_use_msa_cli(self, use_msa_cli_arg, tmp_path, dummy_ckpt_file):
-        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
-        expt_runner = InferenceExperimentRunner(
-            expt_config, use_msa_server=use_msa_cli_arg
-        )
-        assert expt_runner.use_msa_server == use_msa_cli_arg
+@dataclass
+class FlagResolutionCase:
+    """One row of the use_templates / use_msa_server resolution matrix.
 
-    @pytest.mark.parametrize("use_templates_cli_arg", [True, False])
-    def test_use_templates_cli(self, use_templates_cli_arg, tmp_path, dummy_ckpt_file):
-        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
-        expt_runner = InferenceExperimentRunner(
-            expt_config, use_templates=use_templates_cli_arg
+    ``yaml`` and ``cli`` use ``None`` to mean "not provided" (field absent from
+    the runner yaml / flag omitted on the CLI), and ``True``/``False`` for an
+    explicit value. ``expected`` is the value the runner should resolve to.
+    """
+
+    yaml: bool | None
+    cli: bool | None
+    expected: bool
+
+
+# Resolution rule: the CLI arg wins when provided; otherwise the yaml value
+# wins; otherwise the config default (True). The two cases marked "BUG #250"
+# are the regressions this matrix guards against.
+_FLAG_RESOLUTION_CASES = [
+    pytest.param(
+        FlagResolutionCase(yaml=None, cli=None, expected=True),
+        id="yaml_unset+cli_omitted->default_on",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=None, cli=True, expected=True),
+        id="yaml_unset+cli_true->on",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=None, cli=False, expected=False),
+        id="yaml_unset+cli_false->off",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=True, cli=None, expected=True),
+        id="yaml_true+cli_omitted->on",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=True, cli=True, expected=True),
+        id="yaml_true+cli_true->on",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=True, cli=False, expected=False),
+        id="yaml_true+cli_false->off(BUG#250)",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=False, cli=None, expected=False),
+        id="yaml_false+cli_omitted->off(BUG#250)",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=False, cli=True, expected=True),
+        id="yaml_false+cli_true->on",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=False, cli=False, expected=False),
+        id="yaml_false+cli_false->off",
+    ),
+]
+
+
+class TestInferenceCommandLineSettings:
+    @pytest.mark.parametrize("setting", ["use_templates", "use_msa_server"])
+    @pytest.mark.parametrize("case", _FLAG_RESOLUTION_CASES)
+    def test_cli_and_yaml_resolution(self, setting, case, tmp_path, dummy_ckpt_file):
+        """CLI arg (when provided) overrides yaml; otherwise yaml/config default wins."""
+        runner_args = {}
+        if case.yaml is not None:
+            test_yaml_file = tmp_path / "runner.yml"
+            test_yaml_file.write_text(
+                textwrap.dedent(f"""\
+                    experiment_settings:
+                        {setting}: {str(case.yaml).lower()}
+                    """)
+            )
+            runner_args = config_utils.load_yaml(test_yaml_file)
+
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file, **runner_args
         )
-        assert expt_runner.use_templates == use_templates_cli_arg
+
+        cli_kwargs = {} if case.cli is None else {setting: case.cli}
+        expt_runner = InferenceExperimentRunner(expt_config, **cli_kwargs)
+
+        assert getattr(expt_runner, setting) is case.expected
 
     def test_seeding_from_num_seeds(self, dummy_ckpt_file):
         expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
