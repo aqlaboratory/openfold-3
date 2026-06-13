@@ -581,6 +581,85 @@ class TestTemplatePreprocessorSettings:
         ), "Expected structure directory to match config file setting"
 
 
+class TestInferenceCleanup:
+    def _make_runner(
+        self,
+        tmp_path: Path,
+        dummy_ckpt_file: Path,
+        *,
+        cleanup_msa_dir: bool,
+    ) -> InferenceExperimentRunner:
+        msa_output_dir = tmp_path / "msa_output"
+        log_dir = tmp_path / "logs"
+        template_dir = tmp_path / "templates"
+
+        expt_config = InferenceExperimentConfig.model_validate(
+            {
+                "inference_ckpt_path": dummy_ckpt_file,
+                "experiment_settings": {
+                    "output_dir": tmp_path,
+                    "log_dir": log_dir,
+                },
+                "msa_computation_settings": {
+                    "msa_output_directory": msa_output_dir,
+                    "cleanup_msa_dir": cleanup_msa_dir,
+                },
+                "template_preprocessor_settings": {
+                    "structure_directory": template_dir / "structure_files",
+                },
+            }
+        )
+        return InferenceExperimentRunner(
+            expt_config,
+            use_msa_server=True,
+            use_templates=False,
+        )
+
+    def test_cleanup_preserves_msa_output_when_disabled(
+        self, tmp_path: Path, dummy_ckpt_file: Path
+    ):
+        expt_runner = self._make_runner(
+            tmp_path, dummy_ckpt_file, cleanup_msa_dir=False
+        )
+        msa_output_dir = expt_runner.experiment_config.msa_computation_settings.msa_output_directory
+
+        for subdir in ("raw", "main", "paired"):
+            (msa_output_dir / subdir).mkdir(parents=True)
+
+        expt_runner.cleanup()
+
+        assert msa_output_dir.exists()
+        assert (msa_output_dir / "raw").exists()
+        assert (msa_output_dir / "main").exists()
+        assert (msa_output_dir / "paired").exists()
+
+    def test_cleanup_removes_msa_output_when_enabled(
+        self, tmp_path: Path, dummy_ckpt_file: Path
+    ):
+        expt_runner = self._make_runner(
+            tmp_path, dummy_ckpt_file, cleanup_msa_dir=True
+        )
+        msa_output_dir = expt_runner.experiment_config.msa_computation_settings.msa_output_directory
+        (msa_output_dir / "raw").mkdir(parents=True)
+
+        expt_runner.cleanup()
+
+        assert not msa_output_dir.exists()
+
+    def test_cleanup_removes_empty_log_dir(
+        self, tmp_path: Path, dummy_ckpt_file: Path
+    ):
+        expt_runner = self._make_runner(
+            tmp_path, dummy_ckpt_file, cleanup_msa_dir=False
+        )
+        log_dir = expt_runner.log_dir
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        expt_runner.cleanup()
+
+        assert not log_dir.exists()
+
+
 class TestRemoveQuerySetDuplicates:
     @pytest.fixture
     def dummy_output_path(self, tmp_path):

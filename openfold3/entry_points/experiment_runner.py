@@ -789,18 +789,10 @@ class InferenceExperimentRunner(ExperimentRunner):
         if self.use_msa_server and self.is_rank_zero:
             print("Cleaning up MSA directories...")
 
-            # Always remove raw directory
-            # TODO: Change to use ColabFoldQueryRunner.cleanup() when
-            # msa processing is performed in `prepare_data` lightning data hook
-            raw_colabfold_msa_path = (
+            msa_output_dir = (
                 self.experiment_config.msa_computation_settings.msa_output_directory
-                / "raw"
             )
-            self._maybe_remove_dir(raw_colabfold_msa_path)
             if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
-                msa_output_dir = (
-                    self.experiment_config.msa_computation_settings.msa_output_directory
-                )
                 logger.info(f"Removing MSA output directory: {msa_output_dir}")
                 self._maybe_remove_dir(msa_output_dir)
                 if self.use_templates:
