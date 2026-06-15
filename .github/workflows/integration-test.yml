@@ -9,11 +9,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Small CUDA base image used by the GPU smoke check in each reusable. To
-  # bump the runner AMI's GPU driver, change BOTH `gpu_smoke_image:` literals
-  # below (they should always match). The image only needs to ship
-  # `nvidia-smi` and be runnable under `--gpus all`, so the `-base` variant
-  # is enough.
   test-conda:
     permissions:
       id-token: write
@@ -31,7 +26,6 @@ jobs:
     with:
       cuda_base_image_tag: ${{ matrix.cuda_base_image_tag }}
       build_mode: ${{ matrix.build_mode }}
-      gpu_smoke_image: "nvidia/cuda:12.4.1-base-ubuntu22.04"
     secrets: inherit
 
   test-pixi:
@@ -50,5 +44,4 @@ jobs:
     uses: ./.github/workflows/ci-integration-test-pixi-reusable.yml
     with:
       pixi_env: ${{ matrix.pixi_env }}
-      gpu_smoke_image: "nvidia/cuda:12.4.1-base-ubuntu22.04"
     secrets: inherit

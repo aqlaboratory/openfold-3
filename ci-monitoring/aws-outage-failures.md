@@ -34,16 +34,22 @@ approximates the GPU instance time that a successful early-failure smoke
 check could save per outage — the AWS instance is alive across the whole
 window.
 
-| Date (UTC) | Run ID | Failed job | Time to fail | Signature |
+Each test matrix entry (`test-conda`, `test-pixi (cuda12)`, `test-pixi
+(cuda13)`) runs on its own AWS GPU runner, so multiple failures within a
+single run are independent events on different instances. Test jobs that
+were *cancelled* by matrix `fail-fast` (rather than failing on their own
+GPU) are omitted; they don't tell us whether that runner was healthy.
+
+| Date (UTC) | Run ID | Failed job(s) | Time to fail | Signature |
 | --- | --- | --- | --- | --- |
-| 2026-06-14 | [27488342368](https://github.com/aqlaboratory/openfold-3/actions/runs/27488342368) | test-pixi (cuda13) / test-openfold-docker-pixi | 4m 27s | `cudaErrorDevicesUnavailable` in `TestKernels::test_dsk_forward_bf16` |
-| 2026-06-13 | [27456584864](https://github.com/aqlaboratory/openfold-3/actions/runs/27456584864) | all three `start-aws-runner` jobs | 0m 09s | EC2 `InsufficientInstanceCapacity` for `g5.4xlarge` in `us-east-1` (no GPU runner ever provisioned) |
-| 2026-06-12 | [27394591508](https://github.com/aqlaboratory/openfold-3/actions/runs/27394591508) | test-pixi (cuda12) / test-openfold-docker-pixi | 4m 56s | `torch.AcceleratorError: cudaErrorDevicesUnavailable` |
-| 2026-06-11 | [27323934636](https://github.com/aqlaboratory/openfold-3/actions/runs/27323934636) | test-pixi (cuda13) / test-openfold-docker-pixi | 4m 28s | `CUDA-capable device(s) is/are busy or unavailable` |
-| 2026-06-10 | [27253274562](https://github.com/aqlaboratory/openfold-3/actions/runs/27253274562) | test-pixi (cuda12) / test-openfold-docker-pixi | 5m 04s | `CUDA-capable device(s) is/are busy or unavailable` |
-| 2026-06-09 | [27183771604](https://github.com/aqlaboratory/openfold-3/actions/runs/27183771604) | test-pixi (cuda13) / test-openfold-docker-pixi | 4m 27s | `CUDA-capable device(s) is/are busy or unavailable` |
-| 2026-06-07 | [27082700605](https://github.com/aqlaboratory/openfold-3/actions/runs/27082700605) | test-conda / test-openfold-docker | 5m 09s | `CUDA-capable device(s) is/are busy or unavailable` |
-| 2026-06-06 | [27052461098](https://github.com/aqlaboratory/openfold-3/actions/runs/27052461098) | test-pixi (cuda12) / test-openfold-docker-pixi | 5m 06s | `torch.AcceleratorError: cudaErrorDevicesUnavailable` |
+| 2026-06-14 | [27488342368](https://github.com/aqlaboratory/openfold-3/actions/runs/27488342368) | `test-pixi (cuda13)` | 4m 27s | `cudaErrorDevicesUnavailable` in `TestKernels::test_dsk_forward_bf16` |
+| 2026-06-13 | [27456584864](https://github.com/aqlaboratory/openfold-3/actions/runs/27456584864) | `start-aws-runner` × 3 (test-conda, test-pixi cuda12, test-pixi cuda13) | 0m 09s (all three) | EC2 `InsufficientInstanceCapacity` for `g5.4xlarge` in `us-east-1` (no GPU runner ever provisioned) |
+| 2026-06-12 | [27394591508](https://github.com/aqlaboratory/openfold-3/actions/runs/27394591508) | `test-pixi (cuda12)` | 4m 56s | `torch.AcceleratorError: cudaErrorDevicesUnavailable` |
+| 2026-06-11 | [27323934636](https://github.com/aqlaboratory/openfold-3/actions/runs/27323934636) | `test-pixi (cuda13)` | 4m 28s | `CUDA-capable device(s) is/are busy or unavailable` |
+| 2026-06-10 | [27253274562](https://github.com/aqlaboratory/openfold-3/actions/runs/27253274562) | `test-pixi (cuda12)` | 5m 04s | `CUDA-capable device(s) is/are busy or unavailable` |
+| 2026-06-09 | [27183771604](https://github.com/aqlaboratory/openfold-3/actions/runs/27183771604) | `test-pixi (cuda13)` | 4m 27s | `CUDA-capable device(s) is/are busy or unavailable` |
+| 2026-06-07 | [27082700605](https://github.com/aqlaboratory/openfold-3/actions/runs/27082700605) | `test-conda` | 5m 09s | `CUDA-capable device(s) is/are busy or unavailable` |
+| 2026-06-06 | [27052461098](https://github.com/aqlaboratory/openfold-3/actions/runs/27052461098) | `test-pixi (cuda12)` | 5m 06s | `torch.AcceleratorError: cudaErrorDevicesUnavailable` |
 
 > Earlier failures (2026-05-26 → 2026-06-05) are visible in the GitHub
 > Actions history but have not been individually triaged. Backfill on
@@ -56,9 +62,9 @@ The pre-build `GPU smoke check` step (host `nvidia-smi` + container
 branch on 2026-06-13. Tracking whether it catches the same outages the
 integration test catches:
 
-| Date (UTC) | Run | Smoke result | Test result | Effective? |
-| --- | --- | --- | --- | --- |
-| 2026-06-13 | [27456889723](https://github.com/aqlaboratory/openfold-3/actions/runs/27456889723) (feature branch `infra/add-smoketest-to-workflow`) | passed in 11s | failed at 5m 26s with `cudaErrorDevicesUnavailable` | **No** — NVML reported healthy but the CUDA runtime could not create a context (the caveat called out in the original PR). |
+| Date (UTC) | Run | Failed job(s) | Smoke result | Test result | Effective? |
+| --- | --- | --- | --- | --- | --- |
+| 2026-06-13 | [27456889723](https://github.com/aqlaboratory/openfold-3/actions/runs/27456889723) (feature branch `infra/add-smoketest-to-workflow`) | `test-conda`, `test-pixi (cuda13)` (sibling `test-pixi (cuda12)` passed) | passed in 11s on all three runners | `test-conda` failed at 5m 26s, `test-pixi (cuda13)` failed at 4m 27s — both with `cudaErrorDevicesUnavailable` | **No** — two of the three runners passed NVML/container smoke yet still hit the failure inside pytest. The CUDA-runtime context-creation path isn't exercised by `nvidia-smi`. |
 
 ### Cost/benefit as of 2026-06-15
 
