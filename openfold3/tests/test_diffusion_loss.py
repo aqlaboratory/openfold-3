@@ -14,6 +14,7 @@
 
 import unittest
 
+import pytest
 import torch
 import torch.nn.functional as F
 
@@ -22,6 +23,7 @@ from openfold3.core.loss.diffusion import (
     diffusion_loss,
     mse_loss,
     smooth_lddt_loss,
+    smooth_lddt_loss_ball_query,
     weighted_rigid_align,
 )
 from openfold3.core.model.structure.diffusion_module import centre_random_augmentation
@@ -29,6 +31,13 @@ from openfold3.tests.config import consts
 
 
 class TestDiffusionLoss(unittest.TestCase):
+    def to_device(self, obj, device):
+        if isinstance(obj, torch.Tensor):
+            return obj.to(device)
+        if isinstance(obj, dict):
+            return {key: self.to_device(value, device) for key, value in obj.items()}
+        return obj
+
     def setup_features(self):
         # Example: UNK UNK UNK ALA GLY/A A DT
         # NumAtoms: 1 1 1 5 4 22 21
@@ -193,6 +202,179 @@ class TestDiffusionLoss(unittest.TestCase):
         assert torch.equal(torch.nonzero(loss_masked), torch.nonzero(mostly_zeros_mask))
         assert torch.all(torch.not_equal(loss_masked, loss))
 
+    def test_smooth_lddt_ball_query_matches_dense(self):
+        if not torch.cuda.is_available():
+            pytest.skip("Ball-query smooth lDDT requires CUDA")
+
+        n_sample = 2
+        device = torch.device("cuda")
+
+        batch = self.to_device(self.setup_features(), device)
+        batch["ground_truth"]["atom_resolved_mask"][:, 0] = 0
+        x = centre_random_augmentation(
+            xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["ground_truth"]["atom_resolved_mask"],
+        )
+        top_k = x.shape[-2] - 1
+
+        all_ones_mask = torch.ones_like(batch["is_protein"])
+        dense = smooth_lddt_loss(
+            x=x, batch=batch, loss_token_mask=all_ones_mask, eps=consts.eps
+        )
+        ball_query = smooth_lddt_loss_ball_query(
+            x=x,
+            batch=batch,
+            loss_token_mask=all_ones_mask,
+            eps=consts.eps,
+            top_k=top_k,
+        )
+        torch.testing.assert_close(ball_query, dense, atol=1e-5, rtol=1e-5)
+
+        mostly_zeros_mask = torch.zeros_like(batch["is_protein"])
+        mostly_zeros_mask[:, :3] = 1
+        dense_masked = smooth_lddt_loss(
+            x=x, batch=batch, loss_token_mask=mostly_zeros_mask, eps=consts.eps
+        )
+        ball_query_masked = smooth_lddt_loss_ball_query(
+            x=x,
+            batch=batch,
+            loss_token_mask=mostly_zeros_mask,
+            eps=consts.eps,
+            top_k=top_k,
+        )
+        torch.testing.assert_close(
+            ball_query_masked, dense_masked, atol=1e-5, rtol=1e-5
+        )
+
+    def test_smooth_lddt_ball_query_requires_top_k(self):
+        if not torch.cuda.is_available():
+            pytest.skip("Ball-query smooth lDDT requires CUDA")
+
+        n_sample = 2
+        device = torch.device("cuda")
+
+        batch = self.to_device(self.setup_features(), device)
+        x = centre_random_augmentation(
+            xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["ground_truth"]["atom_resolved_mask"],
+        )
+        all_ones_mask = torch.ones_like(batch["is_protein"])
+
+        with pytest.raises(ValueError, match="smooth_lddt_top_k"):
+            smooth_lddt_loss_ball_query(
+                x=x,
+                batch=batch,
+                loss_token_mask=all_ones_mask,
+                eps=consts.eps,
+                top_k=None,
+            )
+
+    def test_smooth_lddt_ball_query_gradient_matches_dense(self):
+        # Ball-query backward uses atomicAdd in the CUDA kernel; tolerance is
+        # slightly looser than the forward-only matches_dense test.
+        if not torch.cuda.is_available():
+            pytest.skip("Ball-query smooth lDDT requires CUDA")
+
+        n_sample = 2
+        device = torch.device("cuda")
+
+        batch = self.to_device(self.setup_features(), device)
+        batch["ground_truth"]["atom_resolved_mask"][:, 0] = 0
+        x_base = centre_random_augmentation(
+            xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["ground_truth"]["atom_resolved_mask"],
+        )
+        all_ones_mask = torch.ones_like(batch["is_protein"])
+        top_k = x_base.shape[-2] - 1
+
+        x_dense = x_base.detach().clone().requires_grad_(True)
+        dense = smooth_lddt_loss(
+            x=x_dense, batch=batch, loss_token_mask=all_ones_mask, eps=consts.eps
+        )
+        dense.sum().backward()
+
+        x_bq = x_base.detach().clone().requires_grad_(True)
+        bq = smooth_lddt_loss_ball_query(
+            x=x_bq,
+            batch=batch,
+            loss_token_mask=all_ones_mask,
+            eps=consts.eps,
+            top_k=top_k,
+        )
+        bq.sum().backward()
+
+        torch.testing.assert_close(bq, dense, atol=1e-5, rtol=1e-5)
+        # Backward kernel uses atomicAdd; reduction order also differs from
+        # the dense [N,N] path. Tolerance is loosened accordingly.
+        torch.testing.assert_close(x_bq.grad, x_dense.grad, atol=1e-3, rtol=5e-3)
+
+    def test_smooth_lddt_ball_query_backward_runs_subsampled(self):
+        if not torch.cuda.is_available():
+            pytest.skip("Ball-query smooth lDDT requires CUDA")
+
+        device = torch.device("cuda")
+
+        batch = self.to_device(self.setup_features(), device)
+        x = batch["ground_truth"]["atom_positions"].clone()
+        x = x + 0.1 * torch.randn_like(x)
+        x.requires_grad_(True)
+        all_ones_mask = torch.ones_like(batch["is_protein"])
+
+        # top_k well below n_atom: reservoir sampling kicks in
+        loss = smooth_lddt_loss_ball_query(
+            x=x,
+            batch=batch,
+            loss_token_mask=all_ones_mask,
+            eps=consts.eps,
+            top_k=16,
+            seed=7,
+        )
+        loss.sum().backward()
+
+        assert x.grad is not None
+        assert torch.isfinite(x.grad).all()
+        assert x.grad.abs().sum() > 0
+
+    def test_smooth_lddt_ball_query_bf16_path(self):
+        if not torch.cuda.is_available():
+            pytest.skip("Ball-query smooth lDDT requires CUDA")
+
+        device = torch.device("cuda")
+
+        batch = self.to_device(self.setup_features(), device)
+        all_ones_mask = torch.ones_like(batch["is_protein"])
+        x = batch["ground_truth"]["atom_positions"].clone()
+        x = x + 0.05 * torch.randn_like(x)
+
+        x_fp = x.float().detach().clone().requires_grad_(True)
+        loss_fp = smooth_lddt_loss_ball_query(
+            x=x_fp,
+            batch=batch,
+            loss_token_mask=all_ones_mask,
+            eps=consts.eps,
+            top_k=x.shape[-2] - 1,
+            seed=0,
+        )
+        loss_fp.sum().backward()
+
+        x_bf = x.to(torch.bfloat16).detach().clone().requires_grad_(True)
+        loss_bf = smooth_lddt_loss_ball_query(
+            x=x_bf,
+            batch=batch,
+            loss_token_mask=all_ones_mask,
+            eps=consts.eps,
+            top_k=x.shape[-2] - 1,
+            seed=0,
+        )
+        loss_bf.sum().backward()
+
+        assert x_bf.grad.dtype == torch.bfloat16
+        # Forward and gradient should be close between bf16 and fp32 paths.
+        torch.testing.assert_close(
+            loss_bf.float(), loss_fp.float(), atol=5e-3, rtol=5e-3
+        )
+        torch.testing.assert_close(x_bf.grad.float(), x_fp.grad, atol=5e-2, rtol=5e-2)
+
     def _test_diffusion_loss(self, batch):
         n_sample = 2
         sigma_data = 16
@@ -228,6 +410,96 @@ class TestDiffusionLoss(unittest.TestCase):
             [True], dtype=torch.bool
         )
         self._test_diffusion_loss(batch)
+
+    def test_diffusion_loss_ball_query_matches_dense(self):
+        if not torch.cuda.is_available():
+            pytest.skip("Ball-query smooth lDDT requires CUDA")
+
+        n_sample = 2
+        sigma_data = 16
+        device = torch.device("cuda")
+
+        batch = self.to_device(self.setup_features(), device)
+        batch_size = batch["ground_truth"]["atom_resolved_mask"].shape[0]
+        x = centre_random_augmentation(
+            xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["ground_truth"]["atom_resolved_mask"],
+        )
+        t = sigma_data * torch.exp(-1.2 + 1.5 * torch.randn(batch_size, device=device))
+        top_k = x.shape[-2] - 1
+
+        dense_loss, dense_breakdown = diffusion_loss(
+            batch=batch,
+            x=x,
+            t=t,
+            sigma_data=sigma_data,
+            smooth_lddt_backend="dense",
+        )
+        ball_query_loss, ball_query_breakdown = diffusion_loss(
+            batch=batch,
+            x=x,
+            t=t,
+            sigma_data=sigma_data,
+            smooth_lddt_backend="ball_query",
+            smooth_lddt_top_k=top_k,
+        )
+
+        torch.testing.assert_close(ball_query_loss, dense_loss, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(
+            ball_query_breakdown["smooth_lddt_loss"],
+            dense_breakdown["smooth_lddt_loss"],
+            atol=1e-5,
+            rtol=1e-5,
+        )
+
+    def test_diffusion_loss_ball_query_rejects_chunking(self):
+        if not torch.cuda.is_available():
+            pytest.skip("Ball-query smooth lDDT requires CUDA")
+
+        n_sample = 2
+        sigma_data = 16
+        device = torch.device("cuda")
+
+        batch = self.to_device(self.setup_features(), device)
+        batch_size = batch["ground_truth"]["atom_resolved_mask"].shape[0]
+        x = centre_random_augmentation(
+            xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["ground_truth"]["atom_resolved_mask"],
+        )
+        t = sigma_data * torch.exp(-1.2 + 1.5 * torch.randn(batch_size, device=device))
+        top_k = x.shape[-2] - 1
+
+        with pytest.raises(ValueError, match="chunked loss execution"):
+            diffusion_loss(
+                batch=batch,
+                x=x,
+                t=t,
+                sigma_data=sigma_data,
+                chunk_size=1,
+                smooth_lddt_backend="ball_query",
+                smooth_lddt_top_k=top_k,
+            )
+
+    def test_diffusion_loss_rejects_unknown_smooth_lddt_backend(self):
+        n_sample = 2
+        sigma_data = 16
+
+        batch = self.setup_features()
+        batch_size = batch["ground_truth"]["atom_resolved_mask"].shape[0]
+        x = centre_random_augmentation(
+            xl=batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1)),
+            atom_mask=batch["ground_truth"]["atom_resolved_mask"],
+        )
+        t = sigma_data * torch.exp(-1.2 + 1.5 * torch.randn(batch_size))
+
+        with pytest.raises(ValueError, match="smooth_lddt_backend"):
+            diffusion_loss(
+                batch=batch,
+                x=x,
+                t=t,
+                sigma_data=sigma_data,
+                smooth_lddt_backend="unknown",
+            )
 
 
 if __name__ == "__main__":
