@@ -1,45 +1,91 @@
 # Integration-Test CI Failures Attributed to AWS GPU Outages
 
 This file is a running record of `integration-test.yml` workflow failures on
-`aqlaboratory/openfold-3` that were classified as AWS GPU unavailability
-(infrastructure outage), not OpenFold-3 code regressions. Maintained by the
-daily CI scan run from a Claude Code on the web scheduled trigger.
+`aqlaboratory/openfold-3` that were classified as AWS infrastructure outages
+(GPU unavailable, or AWS could not provision the EC2 instance at all), not
+OpenFold-3 code regressions. Maintained by the daily CI scan run from a
+Claude Code on the web scheduled trigger.
 
 ## How a failure is classified as an AWS outage
 
-A failed job is classified as an AWS GPU outage (and recorded here without
-sending a notification) if any of the following error signatures appear in the
-job logs:
+A failed job is classified as an AWS outage (and recorded here without
+sending a notification) if any of the following error signatures appear in
+the job logs:
 
-- `CUDA error: CUDA-capable device(s) is/are busy or unavailable`
-- `cudaErrorDevicesUnavailable`
-- `torch.AcceleratorError: CUDA error` accompanied by a device-busy message
-- `CUDA error: no CUDA-capable device is detected`
-- `CUDA driver` / `nvidia-smi` failures before any test code runs
-- `botocore.exceptions.ClientError: ... (InsufficientInstanceCapacity) when calling the RunInstances operation` — the `start-aws-gha-runner` action could not provision a GPU EC2 instance, so test code never ran
+- **GPU-busy (in the test job, after the runner is up)**:
+  - `CUDA error: CUDA-capable device(s) is/are busy or unavailable`
+  - `cudaErrorDevicesUnavailable`
+  - `torch.AcceleratorError: CUDA error` accompanied by a device-busy message
+  - `CUDA error: no CUDA-capable device is detected`
+  - `CUDA driver` / `nvidia-smi` failures before any test code runs
+- **EC2-capacity (in the `start-aws-runner` job)**:
+  - `botocore.exceptions.ClientError: ... (InsufficientInstanceCapacity) when calling the RunInstances operation` — `start-aws-gha-runner` could not provision the GPU EC2 instance, so test code never ran.
+  - Other `botocore.exceptions.ClientError` raised by `start-aws-gha-runner`
+    before any GitHub runner registers.
 
 Any other failure is treated as a potential code regression and surfaces a
 notification to the maintainer instead of being recorded here.
 
 ## Failures
 
-| Date (UTC)  | Run ID                                                                                         | Failed test(s)                                | Signature                                                              |
-| ----------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------- |
-| 2026-06-14  | [27488342368](https://github.com/aqlaboratory/openfold-3/actions/runs/27488342368)             | `TestKernels::test_dsk_forward_bf16` (cuda13) | `torch.AcceleratorError: CUDA error: CUDA-capable device(s) is/are busy or unavailable` (`cudaErrorDevicesUnavailable`) |
-| 2026-06-13  | [27456584864](https://github.com/aqlaboratory/openfold-3/actions/runs/27456584864)             | all 3 `start-aws-runner` jobs (cuda12, cuda13, conda 12.1) — no test code ran | `botocore.exceptions.ClientError: An error occurred (InsufficientInstanceCapacity) when calling the RunInstances operation (reached max retries: 4): Insufficient capacity.` (g5.4xlarge in us-east-1) |
-| 2026-06-12  | [27394591508](https://github.com/aqlaboratory/openfold-3/actions/runs/27394591508)             | `TestKernels::test_dsk_forward_bf16` (cuda12) | `torch.AcceleratorError: CUDA error: CUDA-capable device(s) is/are busy or unavailable` (`cudaErrorDevicesUnavailable`) |
-| 2026-06-11  | [27323934636](https://github.com/aqlaboratory/openfold-3/actions/runs/27323934636)             | `TestKernels::test_dsk_forward_bf16` (cuda13) | `CUDA error: CUDA-capable device(s) is/are busy or unavailable`        |
-| 2026-06-10  | [27253274562](https://github.com/aqlaboratory/openfold-3/actions/runs/27253274562)             | `TestKernels::test_dsk_forward_bf16` (cuda12) | `CUDA error: CUDA-capable device(s) is/are busy or unavailable`        |
-| 2026-06-09  | [27183771604](https://github.com/aqlaboratory/openfold-3/actions/runs/27183771604)             | `TestKernels::test_dsk_forward_bf16`          | `CUDA error: CUDA-capable device(s) is/are busy or unavailable`        |
-| 2026-06-07  | [27082700605](https://github.com/aqlaboratory/openfold-3/actions/runs/27082700605)             | `TestKernels::test_dsk_forward_bf16`          | `CUDA error: CUDA-capable device(s) is/are busy or unavailable` (per user-supplied example) |
-| 2026-06-06  | [27052461098](https://github.com/aqlaboratory/openfold-3/actions/runs/27052461098)             | `TestKernels::test_dsk_forward_bf16` (cuda12) | `torch.AcceleratorError: CUDA error: CUDA-capable device(s) is/are busy or unavailable` (`cudaErrorDevicesUnavailable`) |
+`Time to fail` = `failing step end` − `failing job start` (i.e. wall clock
+on the *failing* job only, excluding the `start-aws-runner` preamble). It
+approximates the GPU instance time that a successful early-failure smoke
+check could save per outage — the AWS instance is alive across the whole
+window.
 
-> Earlier failures (2026-05-26 → 2026-06-05) are visible in the GitHub Actions
-> history but have not been individually triaged. Backfill on request.
+| Date (UTC) | Run ID | Failed job | Time to fail | Signature |
+| --- | --- | --- | --- | --- |
+| 2026-06-14 | [27488342368](https://github.com/aqlaboratory/openfold-3/actions/runs/27488342368) | test-pixi (cuda13) / test-openfold-docker-pixi | 4m 27s | `cudaErrorDevicesUnavailable` in `TestKernels::test_dsk_forward_bf16` |
+| 2026-06-13 | [27456584864](https://github.com/aqlaboratory/openfold-3/actions/runs/27456584864) | all three `start-aws-runner` jobs | 0m 09s | EC2 `InsufficientInstanceCapacity` for `g5.4xlarge` in `us-east-1` (no GPU runner ever provisioned) |
+| 2026-06-12 | [27394591508](https://github.com/aqlaboratory/openfold-3/actions/runs/27394591508) | test-pixi (cuda12) / test-openfold-docker-pixi | 4m 56s | `torch.AcceleratorError: cudaErrorDevicesUnavailable` |
+| 2026-06-11 | [27323934636](https://github.com/aqlaboratory/openfold-3/actions/runs/27323934636) | test-pixi (cuda13) / test-openfold-docker-pixi | 4m 28s | `CUDA-capable device(s) is/are busy or unavailable` |
+| 2026-06-10 | [27253274562](https://github.com/aqlaboratory/openfold-3/actions/runs/27253274562) | test-pixi (cuda12) / test-openfold-docker-pixi | 5m 04s | `CUDA-capable device(s) is/are busy or unavailable` |
+| 2026-06-09 | [27183771604](https://github.com/aqlaboratory/openfold-3/actions/runs/27183771604) | test-pixi (cuda13) / test-openfold-docker-pixi | 4m 27s | `CUDA-capable device(s) is/are busy or unavailable` |
+| 2026-06-07 | [27082700605](https://github.com/aqlaboratory/openfold-3/actions/runs/27082700605) | test-conda / test-openfold-docker | 5m 09s | `CUDA-capable device(s) is/are busy or unavailable` |
+| 2026-06-06 | [27052461098](https://github.com/aqlaboratory/openfold-3/actions/runs/27052461098) | test-pixi (cuda12) / test-openfold-docker-pixi | 5m 06s | `torch.AcceleratorError: cudaErrorDevicesUnavailable` |
+
+> Earlier failures (2026-05-26 → 2026-06-05) are visible in the GitHub
+> Actions history but have not been individually triaged. Backfill on
+> request.
+
+## Smoke-test effectiveness (running record)
+
+The pre-build `GPU smoke check` step (host `nvidia-smi` + container
+`docker run --gpus all ... nvidia-smi`) was first exercised on a feature
+branch on 2026-06-13. Tracking whether it catches the same outages the
+integration test catches:
+
+| Date (UTC) | Run | Smoke result | Test result | Effective? |
+| --- | --- | --- | --- | --- |
+| 2026-06-13 | [27456889723](https://github.com/aqlaboratory/openfold-3/actions/runs/27456889723) (feature branch `infra/add-smoketest-to-workflow`) | passed in 11s | failed at 5m 26s with `cudaErrorDevicesUnavailable` | **No** — NVML reported healthy but the CUDA runtime could not create a context (the caveat called out in the original PR). |
+
+### Cost/benefit as of 2026-06-15
+
+- Per-outage **upper bound** on GPU time saved by a perfectly effective
+  smoke check: ~4m 30s – 5m 10s of the test job, plus avoided
+  `stop-aws-runner` ramp (which still runs either way, so net is just the
+  test-job window).
+- Smoke check **overhead** on every healthy run: ~11s × (number of test
+  jobs per run). At three test jobs/run × ~365 runs/year ≈ ~3.3 hours/year
+  of added wall time.
+- Observed smoke check **catch rate** so far: 0/1 (the one outage that hit
+  the smoke-enabled branch slipped past it).
+- Failure-mode coverage: smoke catches the *NVIDIA Container Runtime
+  injection / driver visibility* class of failure. It does not catch the
+  *CUDA runtime can't create a context* class, which is the class we have
+  actually been seeing. It also doesn't catch the EC2 capacity class
+  (which already fails fast in the runner-start job in ~10s, so no
+  intervention needed).
+
+Given the above, the smoke check as currently designed is probably not
+worth keeping unless we start seeing failures of the class it would
+catch. Revisit before/after the next planned AMI bump or AWS-runner
+action upgrade.
 
 ## Weekly report
 
-Ask "give me the weekly AWS-outage CI report" (or similar) and the assistant
-will read this file plus the last 7 days of `integration-test.yml` runs and
-produce a short summary: total runs, failed runs, share attributed to AWS
-outages, and any non-outage failures that surfaced.
+Ask "give me the weekly AWS-outage CI report" (or similar) and the
+assistant will read this file plus the last 7 days of `integration-test.yml`
+runs and produce a short summary: total runs, failed runs, share
+attributed to AWS outages, and any non-outage failures that surfaced.
