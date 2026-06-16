@@ -387,7 +387,6 @@ if _TRITON_AVAILABLE:
         dQ,
         dK,
         dV,
-        d_pair_bias,
         M,
         D,
         stride_batch,
@@ -401,10 +400,6 @@ if _TRITON_AVAILABLE:
         stride_mask_batch,
         stride_mask_msa,
         stride_mask_seq,
-        stride_d_pair_bias_batch,
-        stride_d_pair_bias_head,
-        stride_d_pair_bias_seq1,
-        stride_d_pair_bias_seq2,
         HEAD,
         N_SEQ,
         SEQ_LEN,
@@ -416,7 +411,7 @@ if _TRITON_AVAILABLE:
         BLOCK_SIZE_Q: tl.constexpr,
         BLOCK_SIZE_KV: tl.constexpr,
     ):
-        """Run the backward pass of the attention mechanism."""
+        """Attention backward pass: compute the query gradient dQ."""
         index_batch_msa_head = tl.program_id(1)
         index_batch_msa = index_batch_msa_head // HEAD
         index_head = index_batch_msa_head % HEAD
@@ -505,13 +500,6 @@ if _TRITON_AVAILABLE:
             + offs_kv[None, :] * stride_pair_bias_seq2
         )
 
-        d_pair_bias_block_ptr = (
-            d_pair_bias
-            + index_batch.to(tl.int64) * stride_d_pair_bias_batch
-            + index_head.to(tl.int64) * stride_d_pair_bias_head
-            + (offs_q[:, None] * stride_d_pair_bias_seq1)
-            + (offs_kv[None, :] * stride_d_pair_bias_seq2)
-        )
         res_mask_block_ptr = (
             res_mask
             + index_batch.to(tl.int64) * stride_mask_batch
@@ -593,14 +581,6 @@ if _TRITON_AVAILABLE:
 
             dP_block = tl.dot(dO_block, V_T_block).to(tl.float32)
             dS_block = P_block * (dP_block - Di[:, None])
-
-            # Update d_pair_bias atomic add with float32 precision
-            tl.atomic_add(
-                d_pair_bias_block_ptr,
-                dS_block,
-                mask=(offs_q[:, None] < SEQ_LEN)
-                & ((blk_idx * BLOCK_SIZE_KV + offs_kv)[None, :] < SEQ_LEN),
-            )
             dS_block = dS_block.to(K_T_block.dtype)
 
             dQ_block += softmax_scale * tl.dot(dS_block, tl.trans(K_T_block))
@@ -609,7 +589,6 @@ if _TRITON_AVAILABLE:
             kT_ptrs += BLOCK_SIZE_KV * stride_seq
             vT_ptrs += BLOCK_SIZE_KV * stride_seq
             pair_bias_block_ptr += BLOCK_SIZE_KV * stride_pair_bias_seq2
-            d_pair_bias_block_ptr += BLOCK_SIZE_KV * stride_d_pair_bias_seq2
             res_mask_block_ptr += BLOCK_SIZE_KV * stride_mask_seq
 
         dQ_block_ptrs = dQ + offs_q[:, None] * stride_seq + offs_dim[None, :]
@@ -671,7 +650,7 @@ if _TRITON_AVAILABLE:
         BLOCK_SIZE_Q: tl.constexpr,
         BLOCK_SIZE_KV: tl.constexpr,
     ):
-        """Run the backward pass of the attention mechanism."""
+        """Attention backward pass: compute the key and value gradients dK and dV."""
         index_batch_msa_head = tl.program_id(1)
         index_batch_msa = index_batch_msa_head // HEAD
         index_head = index_batch_msa_head % HEAD
@@ -878,6 +857,138 @@ if _TRITON_AVAILABLE:
                     mask=(offs_kv[:, None] < SEQ_LEN) & (offs_dim[None, :] < DIM),
                 )
 
+    @triton.jit
+    def _attn_bwd_dpair_bias(
+        Q,
+        K,
+        V,
+        res_mask,
+        pair_bias,
+        M,
+        D,
+        dO,
+        d_pair_bias,
+        softmax_scale,
+        stride_batch,
+        stride_msa,
+        stride_head,
+        stride_seq,
+        stride_pb_batch,
+        stride_pb_head,
+        stride_pb_seq1,
+        stride_pb_seq2,
+        stride_dpb_batch,
+        stride_dpb_head,
+        stride_dpb_seq1,
+        stride_dpb_seq2,
+        stride_mask_batch,
+        stride_mask_msa,
+        stride_mask_seq,
+        HEAD,
+        N_SEQ,
+        SEQ_LEN,
+        DIM: tl.constexpr,
+        BLOCK_DIM: tl.constexpr,
+        BLOCK_SIZE_Q: tl.constexpr,
+        BLOCK_SIZE_KV: tl.constexpr,
+    ):
+        """Attention backward pass: compute the pair_bias gradient.
+
+        d_pair_bias[b, h, q, kv] = sum over m of dS[b, m, h, q, kv], where dS is
+        the attention-score gradient and m indexes the (msa) batch dimension
+        that pair_bias is broadcast over. Each program owns one
+        (b, h, q_block, kv_block) tile, reduces over m internally, and writes
+        the tile with a single store. The score is recomputed from the saved
+        Q/K/V/M/D/dO.
+
+        d_pair_bias can alternatively be accumulated inside the dQ kernel with
+        tl.atomic_add, but since pair_bias is shared across m every program then
+        contends on the same elements; reducing over m within one program here
+        is much faster.
+        """
+        pid_q = tl.program_id(0)
+        pid_kv = tl.program_id(1)
+        pid_bh = tl.program_id(2)
+        index_batch = pid_bh // HEAD
+        index_head = pid_bh % HEAD
+
+        offs_q = pid_q * BLOCK_SIZE_Q + tl.arange(0, BLOCK_SIZE_Q)
+        offs_kv = pid_kv * BLOCK_SIZE_KV + tl.arange(0, BLOCK_SIZE_KV)
+        offs_dim = tl.arange(0, BLOCK_DIM)
+        mask_q = offs_q < SEQ_LEN
+        mask_kv = offs_kv < SEQ_LEN
+        mask_dim = offs_dim < DIM
+
+        # Cast indices to int64 to avoid int32 overflow for large sequences.
+        offset_batch_head = (
+            index_batch.to(tl.int64) * stride_batch
+            + index_head.to(tl.int64) * stride_head
+        )
+
+        # pair_bias tile is constant over the msa reduction.
+        pb_ptr = (
+            pair_bias
+            + index_batch.to(tl.int64) * stride_pb_batch
+            + index_head.to(tl.int64) * stride_pb_head
+            + offs_q[:, None] * stride_pb_seq1
+            + offs_kv[None, :] * stride_pb_seq2
+        )
+        pb = tl.load(pb_ptr, mask=mask_q[:, None] & mask_kv[None, :], other=0.0).to(
+            tl.float32
+        )
+
+        acc = tl.zeros([BLOCK_SIZE_Q, BLOCK_SIZE_KV], dtype=tl.float32)
+
+        for m in range(N_SEQ):
+            base = offset_batch_head + m.to(tl.int64) * stride_msa
+            Qb = tl.load(
+                Q + base + offs_q[:, None] * stride_seq + offs_dim[None, :],
+                mask=mask_q[:, None] & mask_dim[None, :],
+                other=0.0,
+            )
+            Kb = tl.load(
+                K + base + offs_kv[:, None] * stride_seq + offs_dim[None, :],
+                mask=mask_kv[:, None] & mask_dim[None, :],
+                other=0.0,
+            )
+            Vb = tl.load(
+                V + base + offs_kv[:, None] * stride_seq + offs_dim[None, :],
+                mask=mask_kv[:, None] & mask_dim[None, :],
+                other=0.0,
+            )
+            dOb = tl.load(
+                dO + base + offs_q[:, None] * stride_seq + offs_dim[None, :],
+                mask=mask_q[:, None] & mask_dim[None, :],
+                other=0.0,
+            )
+            md_base = ((index_batch * N_SEQ + m) * HEAD + index_head).to(
+                tl.int64
+            ) * SEQ_LEN
+            Mb = tl.load(M + md_base + offs_q, mask=mask_q, other=0.0)
+            Db = tl.load(D + md_base + offs_q, mask=mask_q, other=0.0)
+            rmask = tl.load(
+                res_mask
+                + index_batch.to(tl.int64) * stride_mask_batch
+                + m.to(tl.int64) * stride_mask_msa
+                + offs_kv * stride_mask_seq,
+                mask=mask_kv,
+                other=float("-inf"),
+            )
+
+            QK = tl.dot(Qb, tl.trans(Kb)) * softmax_scale + pb + rmask[None, :]
+            P = tl.math.exp(QK - Mb[:, None])
+            dP = tl.dot(dOb, tl.trans(Vb)).to(tl.float32)
+            acc += P * (dP - Db[:, None])
+
+        dpb_ptr = (
+            d_pair_bias
+            + index_batch.to(tl.int64) * stride_dpb_batch
+            + index_head.to(tl.int64) * stride_dpb_head
+            + offs_q[:, None] * stride_dpb_seq1
+            + offs_kv[None, :] * stride_dpb_seq2
+        )
+        tl.store(dpb_ptr, acc, mask=mask_q[:, None] & mask_kv[None, :])
+
     class EvoformerAttention(torch.autograd.Function):
         @staticmethod
         def forward(ctx, Q, K, V, res_mask, pair_bias, has_pair_bias=True):
@@ -1000,6 +1111,7 @@ if _TRITON_AVAILABLE:
             ctx.grid = grid
             ctx.softmax_scale = softmax_scale
             ctx.DIM = DIM
+            ctx.has_pair_bias = has_pair_bias
 
             O = O.transpose(-2, -3).contiguous()
 
@@ -1019,13 +1131,14 @@ if _TRITON_AVAILABLE:
             dK = torch.empty_like(K)
             dV = torch.empty_like(V)
 
-            BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN, DIM = dQ.shape
+            # Explicitly contiguous because pair_bias isn't necessarily, unlike
+            # QKV. Ensures the reduction kernel's tile stores stay coalesced.
+            # Zero because when has_pair_bias is false this is returned directly.
+            d_pair_bias = torch.zeros_like(
+                pair_bias, memory_format=torch.contiguous_format
+            )
 
-            d_pair_bias = torch.empty(
-                (BATCH_SIZE, 1, HEAD, SEQ_LEN, SEQ_LEN),
-                device=pair_bias.device,
-                dtype=torch.float32,
-            ).zero_()
+            BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN, DIM = dQ.shape
 
             BLOCK_DIM = max(triton.next_power_of_2(DIM), 32)
 
@@ -1104,7 +1217,6 @@ if _TRITON_AVAILABLE:
                 dQ=dQ,
                 dK=dK,
                 dV=dV,
-                d_pair_bias=d_pair_bias,
                 M=M,
                 D=D,
                 stride_batch=Q.stride(0),
@@ -1118,10 +1230,6 @@ if _TRITON_AVAILABLE:
                 stride_mask_batch=res_mask.stride(0),
                 stride_mask_msa=res_mask.stride(1),
                 stride_mask_seq=res_mask.stride(4),
-                stride_d_pair_bias_batch=d_pair_bias.stride(0),
-                stride_d_pair_bias_head=d_pair_bias.stride(2),
-                stride_d_pair_bias_seq1=d_pair_bias.stride(3),
-                stride_d_pair_bias_seq2=d_pair_bias.stride(4),
                 HEAD=HEAD,
                 N_SEQ=N_SEQ,
                 SEQ_LEN=SEQ_LEN,
@@ -1132,6 +1240,49 @@ if _TRITON_AVAILABLE:
                 num_warps=4,
                 num_stages=1,
             )
+
+            if ctx.has_pair_bias:
+                dpb_grid = lambda args: (  # noqa: E731
+                    triton.cdiv(SEQ_LEN, args["BLOCK_SIZE_Q"]),
+                    triton.cdiv(SEQ_LEN, args["BLOCK_SIZE_KV"]),
+                    BATCH_SIZE * HEAD,
+                )
+                _attn_bwd_dpair_bias[dpb_grid](
+                    Q=Q,
+                    K=K,
+                    V=V,
+                    res_mask=res_mask,
+                    pair_bias=pair_bias,
+                    M=M,
+                    D=D,
+                    dO=dO,
+                    d_pair_bias=d_pair_bias,
+                    softmax_scale=ctx.softmax_scale,
+                    stride_batch=Q.stride(0),
+                    stride_msa=Q.stride(1),
+                    stride_head=Q.stride(2),
+                    stride_seq=Q.stride(3),
+                    stride_pb_batch=pair_bias.stride(0),
+                    stride_pb_head=pair_bias.stride(2),
+                    stride_pb_seq1=pair_bias.stride(3),
+                    stride_pb_seq2=pair_bias.stride(4),
+                    stride_dpb_batch=d_pair_bias.stride(0),
+                    stride_dpb_head=d_pair_bias.stride(2),
+                    stride_dpb_seq1=d_pair_bias.stride(3),
+                    stride_dpb_seq2=d_pair_bias.stride(4),
+                    stride_mask_batch=res_mask.stride(0),
+                    stride_mask_msa=res_mask.stride(1),
+                    stride_mask_seq=res_mask.stride(4),
+                    HEAD=HEAD,
+                    N_SEQ=N_SEQ,
+                    SEQ_LEN=SEQ_LEN,
+                    DIM=ctx.DIM,
+                    BLOCK_DIM=BLOCK_DIM,
+                    BLOCK_SIZE_Q=64,
+                    BLOCK_SIZE_KV=64,
+                    num_warps=4,
+                    num_stages=1,
+                )
 
             dQ = dQ.transpose(-2, -3).contiguous()
             dK = dK.transpose(-2, -3).contiguous()
