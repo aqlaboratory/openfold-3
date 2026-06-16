@@ -26,6 +26,10 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import AdaLN, LayerNorm, Linear, SwiGLU
+from openfold3.core.model.primitives.fused_swiglu_transition import (
+    fused_swiglu_transition,
+    is_fused_swiglu_transition_enabled,
+)
 from openfold3.core.utils.checkpointing import checkpoint_section
 from openfold3.core.utils.chunk_utils import chunk_layer
 
@@ -265,6 +269,24 @@ class SwiGLUTransition(Transition):
         )
 
     def _transition(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        # Fused inference fast path: a single Triton kernel does
+        # LN -> SwiGLU -> linear_out -> *mask, keeping the [*, N, C_hidden]
+        # expansion in SRAM (never HBM). The dispatch checks eligibility
+        # (CUDA, no-grad, supported dims) and falls back to the eager math
+        # internally when ineligible. Off by default (env flag), so the
+        # default path runs the original eager body below unchanged.
+        if is_fused_swiglu_transition_enabled():
+            return fused_swiglu_transition(
+                x,
+                self.layer_norm.weight,
+                self.layer_norm.bias,
+                self.swiglu.linear_a.weight,
+                self.swiglu.linear_b.weight,
+                self.linear_out.weight,
+                mask=mask,
+                eps=self.layer_norm.eps,
+            )
+
         # [*, N, C_in]
         x = self.layer_norm(x)
 
@@ -276,6 +298,28 @@ class SwiGLUTransition(Transition):
         x = x * mask
 
         return x
+
+    def _transition_inplace(
+        self, x: torch.Tensor, mask: torch.Tensor, residual: torch.Tensor
+    ) -> torch.Tensor:
+        """Fused ``residual + transition(x)`` with in-place write into x.
+
+        Used by the in-place pair-transition path (Task 2); writes back into
+        ``x``'s storage when ``residual is x`` so no update tensor or
+        normalized copy is allocated. Returns the eager ``residual +
+        transition(x)`` when the fused path is unavailable.
+        """
+        return fused_swiglu_transition(
+            x,
+            self.layer_norm.weight,
+            self.layer_norm.bias,
+            self.swiglu.linear_a.weight,
+            self.swiglu.linear_b.weight,
+            self.linear_out.weight,
+            mask=mask,
+            eps=self.layer_norm.eps,
+            residual=residual,
+        )
 
 
 class ConditionedTransitionBlock(nn.Module):
