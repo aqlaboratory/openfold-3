@@ -42,6 +42,7 @@ GPU) are omitted; they don't tell us whether that runner was healthy.
 
 | Date (UTC) | Run ID | Failed job(s) | Time to fail | Signature |
 | --- | --- | --- | --- | --- |
+| 2026-06-16 | [27595142555](https://github.com/aqlaboratory/openfold-3/actions/runs/27595142555) | `test-conda` | 5m 24s | `CUDA-capable device(s) is/are busy or unavailable` in `TestKernels::test_dsk_forward_bf16` |
 | 2026-06-14 | [27488342368](https://github.com/aqlaboratory/openfold-3/actions/runs/27488342368) | `test-pixi (cuda13)` | 4m 27s | `cudaErrorDevicesUnavailable` in `TestKernels::test_dsk_forward_bf16` |
 | 2026-06-13 | [27456584864](https://github.com/aqlaboratory/openfold-3/actions/runs/27456584864) | `start-aws-runner` × 3 (test-conda, test-pixi cuda12, test-pixi cuda13) | 0m 09s (all three) | EC2 `InsufficientInstanceCapacity` for `g5.4xlarge` in `us-east-1` (no GPU runner ever provisioned) |
 | 2026-06-12 | [27394591508](https://github.com/aqlaboratory/openfold-3/actions/runs/27394591508) | `test-pixi (cuda12)` | 4m 56s | `torch.AcceleratorError: cudaErrorDevicesUnavailable` |
