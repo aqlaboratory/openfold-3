@@ -114,6 +114,47 @@ def broadcast_token_feat_to_atoms(
     return atom_feat
 
 
+# by Liang Hong <lhong22@cse.cuhk.edu.hk>: static-shape gather used to
+# broadcast token features without host synchronization in diffusion rollout.
+def broadcast_token_feat_to_atoms_by_index(
+    atom_to_token_index: torch.Tensor,
+    token_mask: torch.Tensor,
+    atom_mask: torch.Tensor,
+    token_feat: torch.Tensor,
+) -> torch.Tensor:
+    """Broadcast token features to atoms via a plain gather.
+
+    Equivalent to ``broadcast_token_feat_to_atoms`` (verified bitwise) but
+    expressed as ``torch.gather`` on the precomputed ``atom_to_token_index``,
+    which has a static output shape. The repeat-interleave form used by
+    ``broadcast_token_feat_to_atoms`` reads tensor values to size its output
+    (``torch.max().int()`` + ``repeat_interleave(repeats=<tensor>)``), forcing
+    a device->host sync that is illegal under CUDA-graph capture. This variant
+    is graph-capturable and is used on the diffusion rollout's per-step path.
+
+    Args:
+        atom_to_token_index: [*, N_atom] token index for each atom.
+        token_mask: [*, N_token] token padding mask.
+        atom_mask: [*, N_atom] atom padding mask.
+        token_feat: [*, N_token, *feat_dims] token-level features.
+    Returns:
+        [*, N_atom, *feat_dims] atom-level features.
+    """
+    n_token = token_mask.shape[-1]
+    token_dim = atom_to_token_index.dim() - 1  # token feat: [..., N_token, *feat]
+    feat_dims = token_feat.shape[token_dim + 1:]  # trailing feature dims
+    n_feat = len(feat_dims)
+
+    masked_tf = token_feat * token_mask.reshape(*token_mask.shape, *((1,) * n_feat))
+    idx = atom_to_token_index.clamp(0, n_token - 1).long()
+    idx = idx.reshape(*idx.shape, *((1,) * n_feat)).expand(*idx.shape, *feat_dims)
+    atom_feat = torch.gather(masked_tf, dim=token_dim, index=idx)
+    atom_feat = atom_feat * atom_mask.reshape(
+        *atom_mask.shape, *((1,) * n_feat)
+    ).to(atom_feat.dtype)
+    return atom_feat
+
+
 def aggregate_atom_feat_to_tokens(
     token_mask: torch.Tensor,
     atom_to_token_index: torch.Tensor,

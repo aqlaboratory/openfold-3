@@ -36,6 +36,7 @@ from openfold3.core.utils.atom_attention_block_utils import (
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
     broadcast_token_feat_to_atoms,
+    broadcast_token_feat_to_atoms_by_index,
 )
 from openfold3.core.utils.checkpointing import checkpoint_section
 
@@ -762,11 +763,15 @@ class AtomAttentionDecoder(nn.Module):
         """
         # Broadcast per-token activations to atoms
         # [*, N_atom, c_atom]
-        ql = ql + broadcast_token_feat_to_atoms(
+        # Use the gather-by-index form (bitwise-equivalent to
+        # broadcast_token_feat_to_atoms) to keep the output shape static and
+        # avoid the repeat-interleave form's device-to-host synchronization.
+        # This path runs about 200 times in the diffusion rollout.
+        ql = ql + broadcast_token_feat_to_atoms_by_index(
+            atom_to_token_index=batch["atom_to_token_index"],
             token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
+            atom_mask=batch["atom_mask"],
             token_feat=self.linear_q_in(ai),
-            token_dim=-2,
         )
 
         # Atom transformer

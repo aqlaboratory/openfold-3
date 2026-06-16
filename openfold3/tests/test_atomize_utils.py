@@ -23,6 +23,7 @@ from openfold3.core.data.primitives.featurization.structure import (
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
     broadcast_token_feat_to_atoms,
+    broadcast_token_feat_to_atoms_by_index,
     get_token_atom_index_offset,
     get_token_center_atoms,
     get_token_frame_atoms,
@@ -316,6 +317,56 @@ class TestBroadcastTokenFeatToAtoms(unittest.TestCase):
         )
 
         self.assertTrue((atom_mask == gt_atom_mask).all())
+
+
+class TestBroadcastTokenFeatToAtomsByIndex(unittest.TestCase):
+    """The indexed helper is the static-shape gather form.
+
+    It must stay numerically identical to the repeat-interleave
+    `broadcast_token_feat_to_atoms` while avoiding device-to-host
+    synchronization. These tests cover the public helpers rather than the
+    diffusion rollout that consumes them.
+    """
+
+    def _assert_matches_reference(self, num_atoms_per_token, token_mask, c_s=7):
+        atom_mask = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=token_mask,
+        )
+        atom_to_token_index = create_atom_to_token_index(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+        )
+
+        token_feat = torch.randn((*token_mask.shape, c_s))
+        reference = broadcast_token_feat_to_atoms(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            token_feat=token_feat,
+            token_dim=-2,
+        )
+        by_index = broadcast_token_feat_to_atoms_by_index(
+            atom_to_token_index=atom_to_token_index,
+            token_mask=token_mask,
+            atom_mask=atom_mask,
+            token_feat=token_feat,
+        )
+
+        self.assertEqual(by_index.shape, reference.shape)
+        self.assertTrue(torch.equal(by_index, reference))
+
+    def test_matches_reference_all_tokens_valid(self):
+        self._assert_matches_reference(
+            num_atoms_per_token=torch.Tensor([[3, 6, 2, 5, 1], [4, 7, 1, 3, 5]]),
+            token_mask=torch.ones((2, 5)),
+        )
+
+    def test_matches_reference_with_masked_token(self):
+        self._assert_matches_reference(
+            num_atoms_per_token=torch.Tensor([[3, 6, 2, 5, 1], [4, 7, 1, 3, 5]]),
+            token_mask=torch.Tensor([[1, 1, 1, 1, 1], [1, 1, 1, 1, 0]]),
+        )
 
 
 class TestAggregateAtomFeatToTokens(unittest.TestCase):
