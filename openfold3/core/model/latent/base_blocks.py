@@ -39,6 +39,9 @@ from openfold3.core.model.layers.triangular_multiplicative_update import (
     TriangleMultiplicationOutgoing,
 )
 from openfold3.core.model.primitives import DropoutRowwise
+from openfold3.core.model.primitives.fused_swiglu_transition import (
+    is_fused_swiglu_transition_enabled,
+)
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.tensor_utils import add
 
@@ -474,14 +477,33 @@ class PairBlock(nn.Module):
             inplace_safe=inplace_safe,
         )
 
-        z = add(
-            z,
-            self.pair_transition(
+        # In-place fused pair transition: when the fused kernel is enabled and
+        # in-place ops are safe, write z + transition(z) back into z's storage
+        # in a single kernel (no update tensor, no normalized copy, no add).
+        # Mathematically identical to the eager `z = add(z, transition(z))`
+        # below. Only SwiGLUTransition supports it; ReLUTransition and the
+        # grad/CPU/unsupported-dim cases take the eager path.
+        if (
+            is_fused_swiglu_transition_enabled()
+            and inplace_safe
+            and not torch.is_grad_enabled()
+            and isinstance(self.pair_transition, SwiGLUTransition)
+        ):
+            trans_mask = (
+                pair_trans_mask.unsqueeze(-1) if pair_trans_mask is not None else None
+            )
+            z = self.pair_transition._transition_inplace(
+                x=z, mask=trans_mask, residual=z
+            )
+        else:
+            z = add(
                 z,
-                mask=pair_trans_mask,
-                chunk_size=chunk_size,
-            ),
-            inplace=inplace_safe,
-        )
+                self.pair_transition(
+                    z,
+                    mask=pair_trans_mask,
+                    chunk_size=chunk_size,
+                ),
+                inplace=inplace_safe,
+            )
 
         return z
