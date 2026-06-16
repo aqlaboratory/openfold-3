@@ -19,6 +19,11 @@ from torch import nn
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.feature_embedders.input_embedders import FourierEmbedding
 from openfold3.core.model.layers.transition import SwiGLUTransition
+from openfold3.core.model.primitives.fused_ln_linear import (
+    FusedLNLinear,
+    is_fused_ln_linear_enabled,
+    register_legacy_remap_hook,
+)
 from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.model.primitives.normalization import LayerNorm
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
@@ -87,10 +92,22 @@ class DiffusionConditioning(nn.Module):
             + num_same_entity_features
         )
 
-        self.layer_norm_z = LayerNorm(num_relpos_dims + self.c_z, create_offset=False)
-        self.linear_z = Linear(
-            num_relpos_dims + self.c_z, self.c_z, **linear_init_params.linear_z
-        )
+        self._use_fused_ln_linear = is_fused_ln_linear_enabled()
+        if self._use_fused_ln_linear:
+            self.fused_ln_linear_z = FusedLNLinear(
+                num_relpos_dims + self.c_z, self.c_z,
+                ln_create_offset=False,
+                linear_bias=linear_init_params.linear_z.get("bias", True),
+                linear_init=linear_init_params.linear_z.get("init", "default"),
+                legacy_ln_name="layer_norm_z", legacy_linear_name="linear_z",
+            )
+        else:
+            self.layer_norm_z = LayerNorm(
+                num_relpos_dims + self.c_z, create_offset=False
+            )
+            self.linear_z = Linear(
+                num_relpos_dims + self.c_z, self.c_z, **linear_init_params.linear_z
+            )
 
         self.transition_z = nn.ModuleList(
             [
@@ -103,15 +120,44 @@ class DiffusionConditioning(nn.Module):
             ]
         )
 
-        self.layer_norm_s = LayerNorm(self.c_s + self.c_s_input, create_offset=False)
-        self.linear_s = Linear(
-            self.c_s + self.c_s_input, self.c_s, **linear_init_params.linear_z
-        )
+        if self._use_fused_ln_linear:
+            self.fused_ln_linear_s = FusedLNLinear(
+                self.c_s + self.c_s_input, self.c_s,
+                ln_create_offset=False,
+                linear_bias=linear_init_params.linear_z.get("bias", True),
+                linear_init=linear_init_params.linear_z.get("init", "default"),
+                legacy_ln_name="layer_norm_s", legacy_linear_name="linear_s",
+            )
+        else:
+            self.layer_norm_s = LayerNorm(
+                self.c_s + self.c_s_input, create_offset=False
+            )
+            self.linear_s = Linear(
+                self.c_s + self.c_s_input, self.c_s, **linear_init_params.linear_z
+            )
 
         self.fourier_emb = FourierEmbedding(c=c_fourier_emb, seed=seed_fourier_emb)
-        self.layer_norm_n = LayerNorm(self.c_fourier_emb, create_offset=False)
-        self.linear_n = Linear(
-            self.c_fourier_emb, self.c_s, **linear_init_params.linear_n
+        if self._use_fused_ln_linear:
+            self.fused_ln_linear_n = FusedLNLinear(
+                self.c_fourier_emb, self.c_s,
+                ln_create_offset=False,
+                linear_bias=linear_init_params.linear_n.get("bias", True),
+                linear_init=linear_init_params.linear_n.get("init", "default"),
+                legacy_ln_name="layer_norm_n", legacy_linear_name="linear_n",
+            )
+        else:
+            self.layer_norm_n = LayerNorm(self.c_fourier_emb, create_offset=False)
+            self.linear_n = Linear(
+                self.c_fourier_emb, self.c_s, **linear_init_params.linear_n
+            )
+
+        register_legacy_remap_hook(
+            self,
+            [
+                ("layer_norm_z", "linear_z", "fused_ln_linear_z"),
+                ("layer_norm_s", "linear_s", "fused_ln_linear_s"),
+                ("layer_norm_n", "linear_n", "fused_ln_linear_n"),
+            ],
         )
 
         self.transition_s = nn.ModuleList(
@@ -130,15 +176,11 @@ class DiffusionConditioning(nn.Module):
         if tune_chunk_size:
             self.chunk_size_tuner = ChunkSizeTuner()
 
-    def _embed_trunk_inputs(
+    def _embed_zij_invariant(
         self,
         batch: dict,
-        t: torch.Tensor,
-        si_input: torch.Tensor,
-        si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        # Pair conditioning
+    ) -> torch.Tensor:
         relpos_zij = relpos_complex(
             batch=batch,
             max_relative_idx=self.max_relative_idx,
@@ -146,64 +188,122 @@ class DiffusionConditioning(nn.Module):
         ).to(dtype=zij_trunk.dtype)
 
         zij = torch.cat([zij_trunk, relpos_zij], dim=-1)
-        zij = self.linear_z(self.layer_norm_z(zij))
+        if self._use_fused_ln_linear:
+            zij = self.fused_ln_linear_z(zij)
+        else:
+            zij = self.linear_z(self.layer_norm_z(zij))
+        return zij
 
-        # Single conditioning
+    def _embed_si_base(
+        self,
+        si_input: torch.Tensor,
+        si_trunk: torch.Tensor,
+    ) -> torch.Tensor:
         si = torch.cat([si_trunk, si_input], dim=-1)
-        si = self.linear_s(self.layer_norm_s(si))
+        if self._use_fused_ln_linear:
+            si = self.fused_ln_linear_s(si)
+        else:
+            si = self.linear_s(self.layer_norm_s(si))
+        return si
 
+    def _embed_n(self, t: torch.Tensor) -> torch.Tensor:
         n = 0.25 * torch.log(t / self.sigma_data)
         n = self.fourier_emb(n.unsqueeze(-1))
+        if self._use_fused_ln_linear:
+            return self.fused_ln_linear_n(n)
+        return self.linear_n(self.layer_norm_n(n))
 
-        si = si + self.linear_n(self.layer_norm_n(n)).unsqueeze(-2)
-
-        return si, zij
-
-    def _forward(
+    def _transition_z(
         self,
-        si: torch.Tensor,
         zij: torch.Tensor,
         token_mask: torch.Tensor,
         chunk_size: int | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         pair_token_mask = token_mask.unsqueeze(-1) * token_mask.unsqueeze(-2)
-
-        # Pair conditioning
         for l in self.transition_z:
             zij = zij + l(zij, mask=pair_token_mask, chunk_size=chunk_size)
+        return zij
 
-        # Single conditioning
-        for l in self.transition_s:
-            si = si + l(si, mask=token_mask, chunk_size=chunk_size)
-
-        return si, zij
-
-    def _chunk_forward(
+    def _transition_s(
         self,
         si: torch.Tensor,
-        zij: torch.Tensor,
         token_mask: torch.Tensor,
-        chunk_size: int,
-    ):
-        assert not self.training
+        chunk_size: int | None = None,
+    ) -> torch.Tensor:
+        for l in self.transition_s:
+            si = si + l(si, mask=token_mask, chunk_size=chunk_size)
+        return si
 
-        if self.chunk_size_tuner is not None:
-            chunk_size = self.chunk_size_tuner.tune_chunk_size(
-                representative_fn=self._forward,
-                # We don't want to write in-place during chunk tuning runs
-                args=(
-                    si.clone(),
-                    zij.clone(),
-                    token_mask,
-                ),
-                min_chunk_size=chunk_size,
+    def prepare_invariants(
+        self,
+        batch: dict,
+        si_input: torch.Tensor,
+        si_trunk: torch.Tensor,
+        zij_trunk: torch.Tensor,
+        use_conditioning: bool,
+        token_mask: torch.Tensor,
+        chunk_size: int | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Compute the rollout-invariant outputs of DiffusionConditioning.
+
+        Returns ``{"zij_conditioned", "si_base"}``. Performs the
+        ``use_conditioning`` zero-out exactly once. Tunes the
+        ``transition_z`` chunk size if ``chunk_size`` is set and the tuner
+        is active.
+        """
+        if not use_conditioning:
+            si_trunk = si_trunk * 0
+            zij_trunk = zij_trunk * 0
+
+        zij = self._embed_zij_invariant(batch=batch, zij_trunk=zij_trunk)
+        si_base = self._embed_si_base(si_input=si_input, si_trunk=si_trunk)
+
+        z_chunk_size = chunk_size
+        if z_chunk_size is not None and self.chunk_size_tuner is not None:
+            assert not self.training
+            z_chunk_size = self.chunk_size_tuner.tune_chunk_size(
+                representative_fn=self._transition_z,
+                args=(zij.clone(), token_mask),
+                min_chunk_size=z_chunk_size,
                 max_chunk_size=2048,
             )
 
-        si, zij = self._forward(
-            si=si, zij=zij, token_mask=token_mask, chunk_size=chunk_size
+        zij = self._transition_z(
+            zij=zij, token_mask=token_mask, chunk_size=z_chunk_size
         )
 
+        return {"zij_conditioned": zij, "si_base": si_base}
+
+    def apply_t(
+        self,
+        cache: dict[str, torch.Tensor],
+        t: torch.Tensor,
+        token_mask: torch.Tensor,
+        chunk_size: int | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Run the t-dependent path on top of a prepared cache.
+
+        Reads ``cache["si_base"]`` and ``cache["zij_conditioned"]``. The
+        cached pair tensor is returned by reference; ``apply_t`` never
+        mutates the cache.
+        """
+        si_base = cache["si_base"]
+        zij = cache["zij_conditioned"]
+
+        n = self._embed_n(t)
+        si = si_base + n.unsqueeze(-2)
+
+        s_chunk_size = chunk_size
+        if s_chunk_size is not None and self.chunk_size_tuner is not None:
+            assert not self.training
+            s_chunk_size = self.chunk_size_tuner.tune_chunk_size(
+                representative_fn=self._transition_s,
+                args=(si.clone(), token_mask),
+                min_chunk_size=s_chunk_size,
+                max_chunk_size=2048,
+            )
+
+        si = self._transition_s(si=si, token_mask=token_mask, chunk_size=s_chunk_size)
         return si, zij
 
     def forward(
@@ -240,20 +340,15 @@ class DiffusionConditioning(nn.Module):
                 [*, N_token, N_token, c_z] Conditioned pair representation
         """
         token_mask = batch["token_mask"]
-
-        if not use_conditioning:
-            si_trunk = si_trunk * 0
-            zij_trunk = zij_trunk * 0
-
-        si, zij = self._embed_trunk_inputs(
-            batch=batch, t=t, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+        cache = self.prepare_invariants(
+            batch=batch,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            use_conditioning=use_conditioning,
+            token_mask=token_mask,
+            chunk_size=chunk_size,
         )
-
-        if chunk_size is not None:
-            si, zij = self._chunk_forward(
-                si=si, zij=zij, token_mask=token_mask, chunk_size=chunk_size
-            )
-        else:
-            si, zij = self._forward(si=si, zij=zij, token_mask=token_mask)
-
-        return si, zij
+        return self.apply_t(
+            cache=cache, t=t, token_mask=token_mask, chunk_size=chunk_size
+        )

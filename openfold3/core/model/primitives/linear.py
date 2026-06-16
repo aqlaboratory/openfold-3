@@ -35,6 +35,43 @@ if deepspeed_is_installed:
     import deepspeed
 
 
+def apply_linear_init_(
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    init: str = "default",
+    init_fn: Callable[[torch.Tensor, torch.Tensor], None] | None = None,
+) -> None:
+    """In-place init dispatch matching openfold3 Linear conventions.
+
+    Same option set as Linear.__init__: "default", "relu" / "he_normal",
+    "glorot", "gating", "gating_ada_zero", "normal", "final".
+    """
+    with torch.no_grad():
+        if init_fn is not None:
+            init_fn(weight, bias)
+            return
+        if init == "default":
+            lecun_normal_init_(weight)
+        elif init in ["relu", "he_normal"]:
+            he_normal_init_(weight)
+        elif init == "glorot":
+            glorot_uniform_init_(weight)
+        elif init == "gating":
+            gating_init_(weight)
+            if bias is not None:
+                bias.fill_(1.0)
+        elif init == "gating_ada_zero":
+            gating_init_(weight)
+            if bias is not None:
+                bias.fill_(-2.0)
+        elif init == "normal":
+            kaiming_normal_init_(weight)
+        elif init == "final":
+            final_init_(weight)
+        else:
+            raise ValueError("Invalid init string.")
+
+
 class Linear(nn.Linear):
     """
     A Linear layer with built-in nonstandard initializations. Called just
@@ -86,31 +123,7 @@ class Linear(nn.Linear):
             with torch.no_grad():
                 self.bias.fill_(0)
 
-        with torch.no_grad():
-            if init_fn is not None:
-                init_fn(self.weight, self.bias)
-            else:
-                if init == "default":
-                    lecun_normal_init_(self.weight)
-                elif init in ["relu", "he_normal"]:
-                    he_normal_init_(self.weight)
-                elif init == "glorot":
-                    glorot_uniform_init_(self.weight)
-                elif init == "gating":
-                    gating_init_(self.weight)
-                    if bias:
-                        with torch.no_grad():
-                            self.bias.fill_(1.0)
-                elif init == "gating_ada_zero":
-                    gating_init_(self.weight)
-                    with torch.no_grad():
-                        self.bias.fill_(-2.0)
-                elif init == "normal":
-                    kaiming_normal_init_(self.weight)
-                elif init == "final":
-                    final_init_(self.weight)
-                else:
-                    raise ValueError("Invalid init string.")
+        apply_linear_init_(self.weight, self.bias if bias else None, init, init_fn)
 
         self.precision = precision
 

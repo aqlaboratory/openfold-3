@@ -34,6 +34,11 @@ from openfold3.core.model.latent.msa_module import MSAModuleStack
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.model.primitives.fused_ln_linear import (
+    FusedLNLinear,
+    is_fused_ln_linear_enabled,
+    register_legacy_remap_hook,
+)
 from openfold3.core.model.structure.diffusion_module import (
     DiffusionModule,
     SampleDiffusion,
@@ -78,10 +83,18 @@ class OpenFold3(nn.Module):
             **self.config.architecture.input_embedder
         )
 
-        self.layer_norm_z = LayerNorm(self.shared.c_z)
-        self.linear_z = Linear(
-            self.shared.c_z, self.shared.c_z, bias=False, init="final"
-        )
+        self._use_fused_ln_linear = is_fused_ln_linear_enabled()
+        if self._use_fused_ln_linear:
+            self.fused_ln_linear_z = FusedLNLinear(
+                self.shared.c_z, self.shared.c_z,
+                linear_bias=False, linear_init="final",
+                legacy_ln_name="layer_norm_z", legacy_linear_name="linear_z",
+            )
+        else:
+            self.layer_norm_z = LayerNorm(self.shared.c_z)
+            self.linear_z = Linear(
+                self.shared.c_z, self.shared.c_z, bias=False, init="final"
+            )
 
         self.template_embedder = TemplateEmbedderAllAtom(
             config=self.config.architecture.template
@@ -92,9 +105,27 @@ class OpenFold3(nn.Module):
         )
         self.msa_module = MSAModuleStack(**self.config.architecture.msa.msa_module)
 
-        self.layer_norm_s = LayerNorm(self.shared.c_s)
-        self.linear_s = Linear(
-            self.shared.c_s, self.shared.c_s, bias=False, init="final"
+        if self._use_fused_ln_linear:
+            self.fused_ln_linear_s = FusedLNLinear(
+                self.shared.c_s, self.shared.c_s,
+                linear_bias=False, linear_init="final",
+                legacy_ln_name="layer_norm_s", legacy_linear_name="linear_s",
+            )
+        else:
+            self.layer_norm_s = LayerNorm(self.shared.c_s)
+            self.linear_s = Linear(
+                self.shared.c_s, self.shared.c_s, bias=False, init="final"
+            )
+
+        # Pretrained checkpoints store layer_norm_z+linear_z and
+        # layer_norm_s+linear_s as separate sub-modules; remap their
+        # state-dict keys onto the fused module when the flag is on.
+        register_legacy_remap_hook(
+            self,
+            [
+                ("layer_norm_z", "linear_z", "fused_ln_linear_z"),
+                ("layer_norm_s", "linear_s", "fused_ln_linear_s"),
+            ],
         )
 
         self.pairformer_stack = PairFormerStack(**self.config.architecture.pairformer)
@@ -235,7 +266,10 @@ class OpenFold3(nn.Module):
                     self.clear_autocast_cache()
 
                 # [*, N_token, N_token, C_z]
-                z = z_init + self.linear_z(self.layer_norm_z(z))
+                if self._use_fused_ln_linear:
+                    z = z_init + self.fused_ln_linear_z(z)
+                else:
+                    z = z_init + self.linear_z(self.layer_norm_z(z))
 
                 z = add(
                     z,
@@ -303,7 +337,10 @@ class OpenFold3(nn.Module):
 
                     del m, msa_mask
 
-                s = s_init + self.linear_s(self.layer_norm_s(s))
+                if self._use_fused_ln_linear:
+                    s = s_init + self.fused_ln_linear_s(s)
+                else:
+                    s = s_init + self.linear_s(self.layer_norm_s(s))
                 s, z = self.pairformer_stack(
                     s=s,
                     z=z,

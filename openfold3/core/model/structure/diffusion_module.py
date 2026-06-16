@@ -163,6 +163,54 @@ class DiffusionModule(nn.Module):
 
         self.atom_attn_dec = AtomAttentionDecoder(**config.atom_attn_dec)
 
+    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: rollout-invariant diffusion
+    # conditioning and atom-representation caches shared by all denoising steps.
+    def prepare_diffusion_conditioning_cache(
+        self,
+        batch: dict,
+        si_input: torch.Tensor,
+        si_trunk: torch.Tensor,
+        zij_trunk: torch.Tensor,
+        use_conditioning: bool,
+        chunk_size: int | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Compute the rollout-invariant DiffusionConditioning outputs once.
+
+        Use the returned cache as ``conditioning_cache=`` to ``forward`` to
+        skip re-running ``relpos_complex`` + ``layer_norm_z/linear_z`` +
+        the two pair-tensor ``transition_z`` passes per rollout step.
+        """
+        return self.diffusion_conditioning.prepare_invariants(
+            batch=batch,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            use_conditioning=use_conditioning,
+            token_mask=batch["token_mask"],
+            chunk_size=chunk_size,
+        )
+
+    def prepare_atom_rep_cache(
+        self,
+        batch: dict,
+        si_trunk: torch.Tensor,
+        zij_conditioned: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        """Compute the rollout-invariant atom-encoder outputs (cl, plm) once.
+
+        ``zij_conditioned`` must be the conditioned pair representation
+        produced by ``DiffusionConditioning`` (i.e. the same tensor passed
+        into ``self.atom_attn_enc`` as ``zij_trunk`` inside ``forward``).
+        Pass the returned dict as ``atom_rep_cache=`` to ``forward`` to skip
+        ``ref_atom_feature_embedder`` + the ``NoisyPositionEmbedder`` trunk
+        projections + the cl_lm pair construction + ``pair_mlp`` per step.
+        """
+        return self.atom_attn_enc.prepare_atom_rep_cache(
+            batch=batch,
+            si_trunk=si_trunk,
+            zij_trunk=zij_conditioned,
+        )
+
     def forward(
         self,
         batch: dict,
@@ -175,6 +223,8 @@ class DiffusionModule(nn.Module):
         zij_trunk: torch.Tensor,
         use_conditioning: bool,
         chunk_size: int | None = None,
+        conditioning_cache: dict[str, torch.Tensor] | None = None,
+        atom_rep_cache: dict[str, torch.Tensor] | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
@@ -219,15 +269,23 @@ class DiffusionModule(nn.Module):
         Returns:
             [*, N_atom, 3] Denoised atom positions
         """
-        si, zij = self.diffusion_conditioning(
-            batch=batch,
-            t=t,
-            si_input=si_input,
-            si_trunk=si_trunk,
-            zij_trunk=zij_trunk,
-            use_conditioning=use_conditioning,
-            chunk_size=chunk_size,
-        )
+        if conditioning_cache is None:
+            si, zij = self.diffusion_conditioning(
+                batch=batch,
+                t=t,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                use_conditioning=use_conditioning,
+                chunk_size=chunk_size,
+            )
+        else:
+            si, zij = self.diffusion_conditioning.apply_t(
+                cache=conditioning_cache,
+                t=t,
+                token_mask=token_mask,
+                chunk_size=chunk_size,
+            )
 
         xl_noisy = xl_noisy * atom_mask[..., None]
 
@@ -241,6 +299,7 @@ class DiffusionModule(nn.Module):
             si_trunk=si_trunk,
             zij_trunk=zij,  # Use conditioned trunk representation
             use_high_precision_attention=use_high_precision_attention,
+            atom_rep_cache=atom_rep_cache,
         )
 
         ai = ai + self.linear_s(self.layer_norm_s(si))
@@ -374,6 +433,23 @@ class SampleDiffusion(nn.Module):
             dtype=atom_mask.dtype,
         )
 
+        conditioning_cache = self.diffusion_module.prepare_diffusion_conditioning_cache(
+            batch=batch,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            use_conditioning=use_conditioning,
+            chunk_size=chunk_size,
+        )
+
+        # The atom encoder consumes the conditioned zij (loop-invariant)
+        # and the original si_trunk. Pre-compute (cl, plm) once.
+        atom_rep_cache = self.diffusion_module.prepare_atom_rep_cache(
+            batch=batch,
+            si_trunk=si_trunk,
+            zij_conditioned=conditioning_cache["zij_conditioned"],
+        )
+
         for tau, c_tau in enumerate(noise_schedule[1:]):
             xl = centre_random_augmentation(xl=xl, atom_mask=atom_mask)
 
@@ -400,6 +476,8 @@ class SampleDiffusion(nn.Module):
                 zij_trunk=zij_trunk,
                 use_conditioning=use_conditioning,
                 chunk_size=chunk_size,
+                conditioning_cache=conditioning_cache,
+                atom_rep_cache=atom_rep_cache,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
