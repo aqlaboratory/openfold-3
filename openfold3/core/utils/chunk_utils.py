@@ -14,6 +14,7 @@
 
 import logging
 import math
+import os
 from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
@@ -27,6 +28,30 @@ from openfold3.core.utils.tensor_utils import (
 
 DEFAULT_MAX_CHUNK_SIZE = 512
 FLASH_MAX_CHUNK_SIZE = 1024
+
+
+# by Liang Hong <lhong22@cse.cuhk.edu.hk>: environment-controlled cap for
+# bounding triangle-attention projection memory during inference.
+def triangle_attn_chunk_cap() -> int | None:
+    """Optional cap on the triangle-attention chunk size (rows of the pair rep
+    processed per attention call), read from OPENFOLD3_TRI_ATTN_CHUNK_CAP.
+
+    The chunk-size tuner maximizes throughput by picking the largest viable
+    chunk (up to FLASH_MAX_CHUNK_SIZE with a flash/cueq kernel), which makes
+    triangle attention materialize the full [I, H, J, c] projections in one
+    shot (~8U at c_z=128, growing with N for the eager fallback). Triangle
+    attention is bandwidth/launch-bound here, so a smaller chunk is roughly
+    time-neutral but bounds that projection working set (e.g. cap=64 -> ~3U at
+    N=590). Unset -> no cap (upstream behavior).
+    """
+    raw = os.environ.get("OPENFOLD3_TRI_ATTN_CHUNK_CAP")
+    if raw is None:
+        return None
+    try:
+        val = int(raw)
+    except ValueError:
+        return None
+    return val if val > 0 else None
 
 
 def _fetch_dims(tree):

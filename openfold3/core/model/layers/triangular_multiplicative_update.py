@@ -29,6 +29,10 @@ import torch.nn as nn
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.kernels.cueq_utils import is_cuequivariance_available
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.model.primitives.fused_trimul import (
+    fused_trimul_update,
+    is_fused_trimul_enabled,
+)
 from openfold3.core.utils.tensor_utils import permute_final_dims
 
 if is_cuequivariance_available():
@@ -1118,6 +1122,15 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         ## inplace safe is used across the codebase and so should not
         ## be disabled. So if use_cueq_triangle_kernels is True, it will always
         ## supersede inplace_safe
+        if is_fused_trimul_enabled():
+            # Fused Triton path: returns the update only (mirrors the cuEq
+            # contract — caller adds via the dropout layer). None -> not
+            # eligible (batched/template 5D, grad, bias present) -> fall
+            # through to cuEq / eager.
+            out = fused_trimul_update(self, z, mask, with_add=False)
+            if out is not None:
+                return out
+
         if use_cueq_triangle_kernels:
             ## VS: The cuequivariance kernel is based on the boltz implementation
             ## of triangle multiplicative update, which fuses the linear_*_p

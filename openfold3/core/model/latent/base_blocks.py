@@ -42,6 +42,7 @@ from openfold3.core.model.primitives import DropoutRowwise
 from openfold3.core.model.primitives.fused_swiglu_transition import (
     is_fused_swiglu_transition_enabled,
 )
+from openfold3.core.model.primitives.fused_trimul import is_fused_trimul_enabled
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.tensor_utils import add
 
@@ -319,6 +320,11 @@ class PairBlock(nn.Module):
     ) -> torch.Tensor:
         """Perform the outgoing and incoming triangular multiplicative updates."""
         inplace_safe = inplace_safe and (not use_cueq_triangle_kernels)
+        # The fused Triton trimul returns the update only (like cuEq), so the
+        # caller must add it via the dropout layer — disable inplace_safe here
+        # too, otherwise the `z = tmu_update` branch would drop the residual.
+        if is_fused_trimul_enabled():
+            inplace_safe = False
         ## VS: having both inplace_safe and use_cueq_triangle_kernels set to
         ## true causes `z = z + self.ps_dropout_row_layer(tmu_update)` below
         ## to be skipped, as this is the expected output of tri_mult w/ inplace

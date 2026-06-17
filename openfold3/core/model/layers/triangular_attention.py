@@ -23,6 +23,10 @@ import torch.nn as nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import Attention, LayerNorm, Linear
+from openfold3.core.model.primitives.fused_tri_attn import (
+    fused_tri_attn_forward,
+    is_fused_tri_attn_enabled,
+)
 from openfold3.core.utils.chunk_utils import chunk_layer
 from openfold3.core.utils.tensor_utils import (
     permute_final_dims,
@@ -120,6 +124,13 @@ class TriangleAttention(nn.Module):
         Returns:
             [*, I, J, C_in] output tensor
         """
+
+        if is_fused_tri_attn_enabled():
+            out = fused_tri_attn_forward(
+                self, x, mask, use_cueq_triangle_kernels, inplace_safe,
+            )
+            if out is not None:
+                return out
 
         if mask is None:
             # [*, I, J]
