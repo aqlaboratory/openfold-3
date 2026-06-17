@@ -76,20 +76,26 @@ class PairformerEmbedding(nn.Module):
         )
         self.pairformer_stack = PairFormerStack(**pairformer)
 
+    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: in-place confidence pair
+    # embedding path that avoids full pair-tensor residual allocations.
     def embed_zij(
         self,
         si_input: torch.Tensor,
         zij: torch.Tensor,
         x_pred: torch.Tensor,
+        inplace: bool = False,
     ):
         orig_dtype = zij.dtype
         with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
-            # si projection to zij
-            zij = (
-                zij
-                + self.linear_i(si_input.unsqueeze(-2))
-                + self.linear_j(si_input.unsqueeze(-3))
-            )
+            if inplace and zij.dtype == torch.float32:
+                zij += self.linear_i(si_input.unsqueeze(-2))
+                zij += self.linear_j(si_input.unsqueeze(-3))
+            else:
+                zij = (
+                    zij
+                    + self.linear_i(si_input.unsqueeze(-2))
+                    + self.linear_j(si_input.unsqueeze(-3))
+                )
 
             # Embed pair distances of representative atoms
             bins = torch.linspace(
@@ -109,7 +115,10 @@ class PairformerEmbedding(nn.Module):
                 keepdims=True,
             )
             dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
-            zij = zij + self.linear_distance(dij)
+            if inplace and zij.dtype == torch.float32:
+                zij += self.linear_distance(dij)
+            else:
+                zij = zij + self.linear_distance(dij)
 
         return zij.to(dtype=orig_dtype)
 
@@ -188,7 +197,10 @@ class PairformerEmbedding(nn.Module):
         inplace_safe: bool = False,
         _mask_trans: bool = True,
     ):
-        zij = self.embed_zij(si_input=si_input, zij=zij, x_pred=x_pred)
+        zij = self.embed_zij(
+            si_input=si_input, zij=zij, x_pred=x_pred,
+            inplace=inplace_safe,
+        )
 
         batch_dims = x_pred.shape[:-2]
 
