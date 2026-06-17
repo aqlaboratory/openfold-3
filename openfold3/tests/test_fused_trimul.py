@@ -22,6 +22,10 @@ import unittest
 
 import torch
 
+from openfold3.core.kernels.triton.fused_trimul import (
+    ln_transpose_fp32,
+    trimul_batched_einsum_fp32,
+)
 from openfold3.core.model.layers.triangular_multiplicative_update import (
     TriangleMultiplicationIncoming,
     TriangleMultiplicationOutgoing,
@@ -167,6 +171,75 @@ class TestFusedTrimul(unittest.TestCase):
         del out
         print(f"  trimul fused peak: {peak_u:.2f} U")
         self.assertLess(peak_u, 3.2, f"peak {peak_u:.2f} U exceeds 3.2U target")
+
+
+@skip_unless_cuda_available()
+class TestFusedTrimulSubOps(unittest.TestCase):
+    """Tests for individual sub-op kernels used by the fused trimul pipeline."""
+
+    def test_ln_transpose_fp32(self):
+        """Transposing LN: (D, M) → (M, D) matches eager LN + permute."""
+        device = "cuda"
+        D = 128
+        for M in (128 * 128, 200 * 200):
+            torch.manual_seed(42)
+            x_dm = torch.randn(D, M, device=device, dtype=torch.float32)
+            w = torch.randn(D, device=device, dtype=torch.float32)
+            b = torch.randn(D, device=device, dtype=torch.float32)
+
+            out = ln_transpose_fp32(x_dm, w, b, eps=1e-5)
+
+            x_md = x_dm.t().contiguous()
+            ref = torch.nn.functional.layer_norm(x_md, (D,), w, b, eps=1e-5)
+
+            diff = (out - ref).abs().max().item()
+            self.assertLess(diff, 1e-5, f"M={M}: max diff {diff:.2e}")
+
+    def test_ln_transpose_no_bias(self):
+        """Transposing LN without bias."""
+        device = "cuda"
+        D, M = 128, 64 * 64
+        torch.manual_seed(42)
+        x_dm = torch.randn(D, M, device=device, dtype=torch.float32)
+        w = torch.randn(D, device=device, dtype=torch.float32)
+
+        out = ln_transpose_fp32(x_dm, w, None, eps=1e-5)
+
+        x_md = x_dm.t().contiguous()
+        ref = torch.nn.functional.layer_norm(x_md, (D,), w, None, eps=1e-5)
+
+        diff = (out - ref).abs().max().item()
+        self.assertLess(diff, 1e-5, f"no-bias: max diff {diff:.2e}")
+
+    def test_batched_einsum_outgoing(self):
+        """Triton batched einsum (outgoing) matches torch.einsum."""
+        device = "cuda"
+        D, B = 128, 1
+        for L in (64, 128):
+            torch.manual_seed(0)
+            a = torch.randn(D, B, L, L, device=device, dtype=torch.float32)
+            b = torch.randn(D, B, L, L, device=device, dtype=torch.float32)
+
+            out = trimul_batched_einsum_fp32(a, b, outgoing=True)
+            ref = torch.einsum("dbik,dbjk->dbij", a, b)
+
+            diff = (out - ref).abs().max().item()
+            self.assertLess(diff, 1e-4, f"outgoing L={L}: max diff {diff:.2e}")
+
+    def test_batched_einsum_incoming(self):
+        """Triton batched einsum (incoming) matches torch.einsum."""
+        device = "cuda"
+        D, B = 128, 1
+        for L in (64, 128):
+            torch.manual_seed(0)
+            a = torch.randn(D, B, L, L, device=device, dtype=torch.float32)
+            b = torch.randn(D, B, L, L, device=device, dtype=torch.float32)
+
+            out = trimul_batched_einsum_fp32(a, b, outgoing=False)
+            ref = torch.einsum("dbki,dbkj->dbij", a, b)
+
+            diff = (out - ref).abs().max().item()
+            self.assertLess(diff, 1e-4, f"incoming L={L}: max diff {diff:.2e}")
 
 
 if __name__ == "__main__":

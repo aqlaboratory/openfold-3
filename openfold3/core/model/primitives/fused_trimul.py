@@ -41,6 +41,7 @@ from openfold3.core.kernels.triton.fused_trimul import (
     gated_dual_gemm_fp32,
     gated_out_gemm_residual_fp32,
     is_triton_available,
+    ln_transpose_fp32,
 )
 
 _FLAG_TRUE = {"1", "true", "True"}
@@ -61,10 +62,6 @@ def _eligible(z: torch.Tensor) -> bool:
         and not torch.is_grad_enabled()
         and z.dim() == 4  # [B, N, N, c_z]; batched/template 5D -> eager
     )
-
-
-def _layer_norm(x, weight, bias, eps):
-    return torch.nn.functional.layer_norm(x, (x.shape[-1],), weight, bias, eps)
 
 
 def fused_trimul_update(
@@ -125,20 +122,23 @@ def fused_trimul_update(
     a = ab[:c_hidden].view(c_hidden, B, N, N)
     b = ab[c_hidden:].view(c_hidden, B, N, N)
 
-    # Stage 3: triangular einsum, emitted directly in [B, N, N, c_hidden].
+    # Stage 3: triangular einsum via cuBLAS, keeping (D, B, N, N) layout.
     if outgoing:
-        x = torch.einsum("cbik,cbjk->bijc", a, b)
+        x = torch.einsum("cbik,cbjk->cbij", a, b)
     else:
-        x = torch.einsum("cbki,cbkj->bijc", a, b)
+        x = torch.einsum("cbki,cbkj->cbij", a, b)
     del a, b, ab
 
-    # Stage 4: output LayerNorm.
-    x = _layer_norm(x, module.layer_norm_out.weight, module.layer_norm_out.bias,
-                    module.layer_norm_out.eps)
+    # Stage 4: output LayerNorm + transpose (c_hidden, M) → (M, c_hidden).
+    x_dm = x.reshape(c_hidden, B * N * N)  # zero-copy view
+    x_out_2d = ln_transpose_fp32(
+        x_dm, module.layer_norm_out.weight, module.layer_norm_out.bias,
+        eps=module.layer_norm_out.eps,
+    )  # [M, c_hidden]
+    del x, x_dm
 
     # Stage 5: gated output GEMM + residual, with fused LN_in for the gate.
     # Recomputes LN_in(z) in-register inside the kernel — z_n never in HBM.
-    x_out_2d = x.reshape(-1, c_hidden)
     residual_2d = z.reshape(-1, c_z) if with_add else None
     out_2d = gated_out_gemm_residual_fp32(
         z_2d, x_out_2d, module.linear_g.weight, module.linear_z.weight,

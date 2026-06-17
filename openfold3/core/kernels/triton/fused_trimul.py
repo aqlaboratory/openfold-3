@@ -314,6 +314,159 @@ if _TRITON_AVAILABLE:
         tl.store(o_ptrs, out_val.to(out_ptr.type.element_ty), mask=mask_m[:, None])
 
 
+    # ------------------------------------------------------------------ #
+    # Stage 3 — Triton batched einsum in native (D, B, L, L) layout      #
+    # ------------------------------------------------------------------ #
+
+    _EINSUM_CFG = dict(TILE_M=64, TILE_N=64, TILE_K=64, GROUP_M=8)
+
+    @triton.jit
+    def _batched_einsum_kernel(
+        a_ptr,      # (D, B, L, L) row-major
+        b_ptr,      # (D, B, L, L) row-major
+        out_ptr,    # (D, B, L, L) row-major
+        D,
+        B,
+        L,
+        stride_a_d,   # = B*L*L
+        stride_a_b,   # = L*L
+        stride_b_d,
+        stride_b_b,
+        stride_out_d,
+        stride_out_b,
+        TILE_M: tl.constexpr,
+        TILE_N: tl.constexpr,
+        TILE_K: tl.constexpr,
+        GROUP_M: tl.constexpr,
+        TRANSPOSE_A: tl.constexpr,
+        TRANSPOSE_B: tl.constexpr,
+        PRECISION: tl.constexpr,
+    ):
+        pid_mn = tl.program_id(axis=0)
+        pid_db = tl.program_id(axis=1)
+
+        pid_d = pid_db // B
+        pid_b = pid_db % B
+
+        num_pid_m = tl.cdiv(L, TILE_M)
+        num_pid_n = tl.cdiv(L, TILE_N)
+        num_pid_in_group = GROUP_M * num_pid_n
+        group_id = pid_mn // num_pid_in_group
+        first_pid_m = group_id * GROUP_M
+        group_size_m = min(num_pid_m - first_pid_m, GROUP_M)
+        pid_m = first_pid_m + ((pid_mn % num_pid_in_group) % group_size_m)
+        pid_n = (pid_mn % num_pid_in_group) // group_size_m
+
+        pid_d = tl.cast(pid_d, tl.int64)
+        pid_b = tl.cast(pid_b, tl.int64)
+        pid_m_i = tl.cast(pid_m, tl.int64)
+        pid_n_i = tl.cast(pid_n, tl.int64)
+        L_i = tl.cast(L, tl.int64)
+
+        a_plane = a_ptr + pid_d * stride_a_d + pid_b * stride_a_b
+        b_plane = b_ptr + pid_d * stride_b_d + pid_b * stride_b_b
+        out_plane = out_ptr + pid_d * stride_out_d + pid_b * stride_out_b
+
+        offs_m = pid_m_i * TILE_M + tl.arange(0, TILE_M).to(tl.int64)
+        offs_n = pid_n_i * TILE_N + tl.arange(0, TILE_N).to(tl.int64)
+        offs_k = tl.arange(0, TILE_K).to(tl.int64)
+
+        mask_m = offs_m < L_i
+        mask_n = offs_n < L_i
+
+        if TRANSPOSE_A:
+            a_ptrs = a_plane + (offs_k[:, None] * L_i + offs_m[None, :])
+            a_step = TILE_K * L_i
+        else:
+            a_ptrs = a_plane + (offs_m[:, None] * L_i + offs_k[None, :])
+            a_step = TILE_K
+
+        if TRANSPOSE_B:
+            b_ptrs = b_plane + (offs_n[None, :] * L_i + offs_k[:, None])
+            b_step = TILE_K
+        else:
+            b_ptrs = b_plane + (offs_k[:, None] * L_i + offs_n[None, :])
+            b_step = TILE_K * L_i
+
+        acc = tl.zeros((TILE_M, TILE_N), dtype=tl.float32)
+        n_k_tiles = tl.cdiv(L, TILE_K)
+        for kk in range(0, n_k_tiles):
+            k_remaining = L_i - kk * TILE_K
+            mask_k = offs_k < k_remaining
+
+            if TRANSPOSE_A:
+                a_mask = mask_k[:, None] & mask_m[None, :]
+                a_tile = tl.load(a_ptrs, mask=a_mask, other=0.0)
+                a_tile = tl.trans(a_tile)
+            else:
+                a_mask = mask_m[:, None] & mask_k[None, :]
+                a_tile = tl.load(a_ptrs, mask=a_mask, other=0.0)
+
+            if TRANSPOSE_B:
+                b_mask = mask_k[:, None] & mask_n[None, :]
+                b_tile = tl.load(b_ptrs, mask=b_mask, other=0.0)
+            else:
+                b_mask = mask_k[:, None] & mask_n[None, :]
+                b_tile = tl.load(b_ptrs, mask=b_mask, other=0.0)
+
+            if PRECISION == 1:
+                acc = tl.dot(a_tile, b_tile, acc, input_precision="ieee")
+            else:
+                acc = tl.dot(a_tile, b_tile, acc)
+
+            a_ptrs += a_step
+            b_ptrs += b_step
+
+        out_ptrs = out_plane + (offs_m[:, None] * L_i + offs_n[None, :])
+        out_mask = mask_m[:, None] & mask_n[None, :]
+        tl.store(out_ptrs, acc.to(out_ptr.type.element_ty), mask=out_mask)
+
+    # ------------------------------------------------------------------ #
+    # Stage 4 — Transposing LayerNorm: (D, M) → (M, D)                   #
+    # ------------------------------------------------------------------ #
+
+    _LN_TRANSPOSE_TILE_M = 64
+
+    @triton.jit
+    def _ln_transpose_kernel(
+        x_ptr,      # (D, M) D-major: x[d, m] at x_ptr + d * M + m
+        w_ptr,      # (D,) — LN scale
+        b_ptr,      # (D,) — LN bias (only if HAS_BIAS)
+        out_ptr,    # (M, D) M-major: out[m, d] at out_ptr + m * D + d
+        M,
+        D: tl.constexpr,
+        EPS: tl.constexpr,
+        HAS_BIAS: tl.constexpr,
+        TILE_M: tl.constexpr,
+    ):
+        pid = tl.program_id(axis=0).to(tl.int64)
+        M64 = M.to(tl.int64)
+
+        offs_m = pid * TILE_M + tl.arange(0, TILE_M).to(tl.int64)
+        offs_d = tl.arange(0, D).to(tl.int64)
+        mask_m = offs_m < M64
+
+        # Read D-major: x_ptr[d, m] = x_ptr + d * M + m
+        x_ptrs = x_ptr + offs_d[None, :] * M64 + offs_m[:, None]
+        x = tl.load(x_ptrs, mask=mask_m[:, None], other=0.0).to(tl.float32)
+
+        mean = tl.sum(x, axis=1) / D
+        x_c = x - mean[:, None]
+        var = tl.sum(x_c * x_c, axis=1) / D
+        rstd = 1.0 / tl.sqrt(var + EPS)
+        x_hat = x_c * rstd[:, None]
+
+        w = tl.load(w_ptr + offs_d).to(tl.float32)
+        y = x_hat * w[None, :]
+        if HAS_BIAS:
+            b = tl.load(b_ptr + offs_d).to(tl.float32)
+            y = y + b[None, :]
+
+        # Write M-major: out_ptr[m, d] = out_ptr + m * D + d
+        out_ptrs = out_ptr + offs_m[:, None] * D + offs_d[None, :]
+        tl.store(out_ptrs, y.to(out_ptr.type.element_ty), mask=mask_m[:, None])
+
+
 def _precision_flag(dtype: torch.dtype) -> int:
     return 1 if dtype == torch.float32 else 0
 
@@ -429,5 +582,88 @@ def gated_out_gemm_residual_fp32(
         HAS_LN_BIAS=ln_bias is not None,
         BLOCK_CZ=BLOCK_CZ,
         **cfg,
+    )
+    return out
+
+
+def trimul_batched_einsum_fp32(
+    a: torch.Tensor,
+    b: torch.Tensor,
+    outgoing: bool,
+) -> torch.Tensor:
+    """Batched einsum in native ``(D, B, L, L)`` layout.
+
+    outgoing: ``out[d,b,i,j] = sum_k a[d,b,i,k] * b[d,b,j,k]``  (A · B^T)
+    incoming: ``out[d,b,i,j] = sum_k a[d,b,k,i] * b[d,b,k,j]``  (A^T · B)
+    """
+    assert a.shape == b.shape and a.ndim == 4
+    assert a.is_contiguous() and b.is_contiguous()
+    D, B, L, L2 = a.shape
+    assert L == L2
+
+    out = torch.empty_like(a)
+    cfg = _EINSUM_CFG
+
+    def grid(meta):
+        num_m = triton.cdiv(L, meta["TILE_M"])
+        num_n = triton.cdiv(L, meta["TILE_N"])
+        return (num_m * num_n, D * B)
+
+    _batched_einsum_kernel[grid](
+        a,
+        b,
+        out,
+        D,
+        B,
+        L,
+        a.stride(0),
+        a.stride(1),
+        b.stride(0),
+        b.stride(1),
+        out.stride(0),
+        out.stride(1),
+        TRANSPOSE_A=not outgoing,
+        TRANSPOSE_B=outgoing,
+        PRECISION=_precision_flag(a.dtype),
+        num_warps=4,
+        num_stages=2,
+        **cfg,
+    )
+    return out
+
+
+def ln_transpose_fp32(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    eps: float = 1e-5,
+) -> torch.Tensor:
+    """LayerNorm with layout transpose: ``(D, M)`` D-major → ``(M, D)`` M-major.
+
+    Reads ``x[d, m]`` from ``(D, M)`` contiguous input, normalises over D per
+    row m, and writes ``out[m, d]`` in ``(M, D)`` contiguous output. One kernel,
+    no intermediate.
+    """
+    assert x.ndim == 2 and x.is_contiguous()
+    D, M = x.shape
+    assert weight.shape[0] == D
+
+    out = torch.empty((M, D), device=x.device, dtype=x.dtype)
+
+    grid = (triton.cdiv(M, _LN_TRANSPOSE_TILE_M),)
+    _dummy_bias = x.new_zeros(1)
+
+    _ln_transpose_kernel[grid](
+        x,
+        weight.contiguous(),
+        bias.contiguous() if bias is not None else _dummy_bias,
+        out,
+        M,
+        D=D,
+        EPS=eps,
+        HAS_BIAS=bias is not None,
+        TILE_M=_LN_TRANSPOSE_TILE_M,
+        num_warps=8,
+        num_stages=2,
     )
     return out
