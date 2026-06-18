@@ -129,7 +129,7 @@ openfold3-cuda13 = { no-default-feature = true, features = [
     "openfold3-editable",
     "tests"
 ] }
-openfold3-cuda13 = { no-default-feature = true, features = [
+openfold3-cuda13-smooth-lddt = { no-default-feature = true, features = [
     "python",
     "openfold3-cpu",
     "cuda13",
