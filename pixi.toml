@@ -106,6 +106,18 @@ openfold3-cuda12 = { no-default-feature = true, features = [
     "openfold3-editable",
     "tests"
 ] }
+openfold3-cuda12-smooth-lddt = { no-default-feature = true, features = [
+    "python",
+    "openfold3-cpu",
+    "cuda12",
+    "pytorch-conda-cuda",
+    "deepspeed",
+    "deepspeed-build",
+    "cuequivariance-cuda12",
+    "openfold3-editable",
+    "tests",
+    "smooth-lddt-kernel"
+] }
 openfold3-cuda13 = { no-default-feature = true, features = [
     "python",
     "openfold3-cpu",
@@ -116,6 +128,18 @@ openfold3-cuda13 = { no-default-feature = true, features = [
     "cuequivariance-cuda13",
     "openfold3-editable",
     "tests"
+] }
+openfold3-cuda13 = { no-default-feature = true, features = [
+    "python",
+    "openfold3-cpu",
+    "cuda13",
+    "pytorch-conda-cuda",
+    "deepspeed",
+    "deepspeed-build",
+    "cuequivariance-cuda13",
+    "openfold3-editable",
+    "tests",
+    "smooth-lddt-kernel"
 ] }
 openfold3-cuda12-pypi = { no-default-feature = true, features = [
     "python",
@@ -334,6 +358,21 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   # Change triton cache to be isolated
   env.TRITON_CACHE_DIR = "$CONDA_PREFIX/caches/triton"
   # Change torch extensions cache, used by deepspeed, to be isolated
+  env.TORCH_EXTENSIONS_DIR = "$CONDA_PREFIX/caches/torch_extensions"
+
+
+# --- Smooth lDDT CUDA kernel
+# JIT-compiles the ball-query CUDA extension on first import via torch.utils.cpp_extension.load
+
+[feature.smooth-lddt-kernel]
+
+  platforms = ["linux-64", "linux-aarch64"]
+
+  [feature.smooth-lddt-kernel.dependencies]
+  ninja = "*"
+  cuda-minimal-build = "*"
+
+  [feature.smooth-lddt-kernel.activation]
   env.TORCH_EXTENSIONS_DIR = "$CONDA_PREFIX/caches/torch_extensions"
 
 
