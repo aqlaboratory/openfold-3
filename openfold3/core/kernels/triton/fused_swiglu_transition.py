@@ -62,7 +62,36 @@ if _TRITON_AVAILABLE:
         # x assumed fp32; SiLU(x) = x * sigmoid(x). Matches swiglu.py.
         return x * tl.sigmoid(x)
 
-    @triton.jit
+    @triton.jit(
+        do_not_specialize=[
+            "stride_x_m",
+            "stride_x_k",
+            "stride_wa_h",
+            "stride_wa_k",
+            "stride_wb_h",
+            "stride_wb_k",
+            "stride_wo_n",
+            "stride_wo_h",
+            "stride_res_m",
+            "stride_res_n",
+            "stride_y_m",
+            "stride_y_n",
+            "stride_mask_m",
+            "M",
+            "eps",
+        ],
+        do_not_specialize_on_alignment=[
+            "X_ptr",
+            "WA_ptr",
+            "WB_ptr",
+            "WOUT_ptr",
+            "Gamma_ptr",
+            "Beta_ptr",
+            "Mask_ptr",
+            "Res_ptr",
+            "Y_ptr",
+        ],
+    )
     def _fused_swiglu_transition_fwd_kernel(
         X_ptr,  # [M, K]      input
         WA_ptr,  # [H, K]     linear_a.weight  (nn.Linear stores [out, in])

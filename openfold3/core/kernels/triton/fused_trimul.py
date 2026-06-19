@@ -67,7 +67,18 @@ if _TRITON_AVAILABLE:
     _OUT_GEMM_CFG = dict(TILE_M=64, TILE_N=64, TILE_K=32, GROUP_M=8)
     _OUT_GEMM_INPLACE_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=32, GROUP_M=8)
 
-    @triton.jit
+    @triton.jit(
+        do_not_specialize=["M", "eps"],
+        do_not_specialize_on_alignment=[
+            "x_ptr",
+            "wp_ptr",
+            "wg_ptr",
+            "mask_ptr",
+            "gamma_ptr",
+            "beta_ptr",
+            "out_ptr",
+        ],
+    )
     def _gated_dual_gemm_kernel(
         x_ptr,  # [M, K] — pair (raw if FUSED_LN, LN'd otherwise), row-major
         wp_ptr,  # [Nproj, K] — concatenated p-projection weight (a then b)
@@ -190,7 +201,19 @@ if _TRITON_AVAILABLE:
             mask=mask_m[None, :],
         )
 
-    @triton.jit
+    @triton.jit(
+        do_not_specialize=["M", "eps"],
+        do_not_specialize_on_alignment=[
+            "x_in_ptr",
+            "x_out_ptr",
+            "wg_ptr",
+            "wp_ptr",
+            "residual_ptr",
+            "gamma_ptr",
+            "beta_ptr",
+            "out_ptr",
+        ],
+    )
     def _gated_out_gemm_residual_kernel(
         x_in_ptr,  # [M, Cz] — raw pair (if FUSED_LN) or LN_in(pair) (gate input)
         x_out_ptr,  # [M, Ch] — LN_out(einsum) (value input)
@@ -321,7 +344,20 @@ if _TRITON_AVAILABLE:
 
     _EINSUM_CFG = dict(TILE_M=64, TILE_N=64, TILE_K=64, GROUP_M=8)
 
-    @triton.jit
+    @triton.jit(
+        do_not_specialize=[
+            "D",
+            "B",
+            "L",
+            "stride_a_d",
+            "stride_a_b",
+            "stride_b_d",
+            "stride_b_b",
+            "stride_o_d",
+            "stride_o_b",
+        ],
+        do_not_specialize_on_alignment=["a_ptr", "b_ptr", "out_ptr"],
+    )
     def _batched_einsum_kernel(
         a_ptr,      # (D, B, L, L) row-major
         b_ptr,      # (D, B, L, L) row-major
@@ -428,7 +464,10 @@ if _TRITON_AVAILABLE:
 
     _LN_TRANSPOSE_TILE_M = 64
 
-    @triton.jit
+    @triton.jit(
+        do_not_specialize=["M"],
+        do_not_specialize_on_alignment=["x_ptr", "w_ptr", "b_ptr", "out_ptr"],
+    )
     def _ln_transpose_kernel(
         x_ptr,      # (D, M) D-major: x[d, m] at x_ptr + d * M + m
         w_ptr,      # (D,) — LN scale

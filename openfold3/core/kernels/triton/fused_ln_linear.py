@@ -47,7 +47,28 @@ def is_triton_available() -> bool:
 
 if _TRITON_AVAILABLE:
 
-    @triton.jit
+    @triton.jit(
+        do_not_specialize=[
+            "stride_x_m",
+            "stride_x_k",
+            "stride_w_n",
+            "stride_w_k",
+            "stride_y_m",
+            "stride_y_n",
+            "M",
+            "eps",
+        ],
+        do_not_specialize_on_alignment=[
+            "X_ptr",
+            "W_ptr",
+            "Y_ptr",
+            "Gamma_ptr",
+            "Beta_ptr",
+            "Bias_ptr",
+            "Mean_ptr",
+            "Rstd_ptr",
+        ],
+    )
     def _fused_ln_linear_fwd_kernel(
         X_ptr,
         W_ptr,
