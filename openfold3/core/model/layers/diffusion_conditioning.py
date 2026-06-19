@@ -24,6 +24,9 @@ from openfold3.core.model.primitives.fused_ln_linear import (
     is_fused_ln_linear_enabled,
     register_legacy_remap_hook,
 )
+from openfold3.core.model.primitives.fused_swiglu_transition import (
+    is_fused_swiglu_transition_enabled,
+)
 from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.model.primitives.normalization import LayerNorm
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
@@ -188,6 +191,7 @@ class DiffusionConditioning(nn.Module):
         ).to(dtype=zij_trunk.dtype)
 
         zij = torch.cat([zij_trunk, relpos_zij], dim=-1)
+        del relpos_zij
         if self._use_fused_ln_linear:
             zij = self.fused_ln_linear_z(zij)
         else:
@@ -221,7 +225,14 @@ class DiffusionConditioning(nn.Module):
     ) -> torch.Tensor:
         pair_token_mask = token_mask.unsqueeze(-1) * token_mask.unsqueeze(-2)
         for l in self.transition_z:
-            zij = zij + l(zij, mask=pair_token_mask, chunk_size=chunk_size)
+            if chunk_size is None and not torch.is_grad_enabled():
+                zij = l._transition_inplace(
+                    x=zij,
+                    mask=pair_token_mask.unsqueeze(-1),
+                    residual=zij,
+                )
+            else:
+                zij = zij + l(zij, mask=pair_token_mask, chunk_size=chunk_size)
         return zij
 
     def _transition_s(
@@ -259,6 +270,8 @@ class DiffusionConditioning(nn.Module):
         si_base = self._embed_si_base(si_input=si_input, si_trunk=si_trunk)
 
         z_chunk_size = chunk_size
+        if is_fused_swiglu_transition_enabled() and not torch.is_grad_enabled():
+            z_chunk_size = None
         if z_chunk_size is not None and self.chunk_size_tuner is not None:
             assert not self.training
             z_chunk_size = self.chunk_size_tuner.tune_chunk_size(

@@ -95,6 +95,28 @@ class TestFusedTrimul(unittest.TestCase):
         diff = (fused - ref).abs().max().item()
         self.assertTrue(diff < 2e-4, f"with_add max diff {diff:.2e}")
 
+    def test_with_add_inplace_out(self):
+        device = "cuda"
+        torch.manual_seed(0)
+        for cls in (TriangleMultiplicationOutgoing, TriangleMultiplicationIncoming):
+            m = cls(128, 128).to(device, torch.float32).eval()
+            z = torch.randn(1, 128, 128, 128, device=device) * 0.5
+            mask = torch.ones(1, 128, 128, device=device)
+            with torch.inference_mode():
+                upd = m.forward(z.clone(), mask=mask, inplace_safe=False)
+                ref = z + upd
+                z_inplace = z.clone()
+                fused = fused_trimul_update(
+                    m,
+                    z_inplace,
+                    mask,
+                    with_add=True,
+                    out=z_inplace,
+                )
+            self.assertEqual(fused.data_ptr(), z_inplace.data_ptr())
+            diff = (fused - ref).abs().max().item()
+            self.assertTrue(diff < 2e-4, f"inplace with_add max diff {diff:.2e}")
+
     def test_multi_n_diff(self):
         """Numerical diff across multiple N values (outgoing + incoming, fp32)."""
         device = "cuda"

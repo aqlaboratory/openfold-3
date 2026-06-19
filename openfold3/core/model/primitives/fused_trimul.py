@@ -69,6 +69,7 @@ def fused_trimul_update(
     z: torch.Tensor,
     mask: torch.Tensor | None,
     with_add: bool,
+    out: torch.Tensor | None = None,
 ) -> torch.Tensor | None:
     """Fused trimul for non-fused TriangleMultiplication{Outgoing,Incoming}.
 
@@ -91,6 +92,12 @@ def fused_trimul_update(
     B, N, _, c_z = z.shape
     c_hidden = module.linear_a_p.weight.shape[0]
     outgoing = module._outgoing
+
+    if out is not None:
+        if not with_add or out.shape != z.shape or out.data_ptr() != z.data_ptr():
+            return None
+        if c_z > 128:
+            return None
 
     if mask is None:
         mask = z.new_ones(z.shape[:-1])
@@ -117,32 +124,47 @@ def fused_trimul_update(
     ab = gated_dual_gemm_fp32(
         z_2d, wp, wg, mask_flat,
         ln_weight=ln_in.weight, ln_bias=ln_in.bias, eps=ln_in.eps,
+        output_dtype=(
+            torch.bfloat16
+            if out is not None and z.dtype == torch.float32
+            else None
+        ),
     )  # [2*c_hidden, M]
     del wp, wg
     a = ab[:c_hidden].view(c_hidden, B, N, N)
     b = ab[c_hidden:].view(c_hidden, B, N, N)
 
     # Stage 3: triangular einsum via cuBLAS, keeping (D, B, N, N) layout.
-    if outgoing:
-        x = torch.einsum("cbik,cbjk->cbij", a, b)
-    else:
-        x = torch.einsum("cbki,cbkj->cbij", a, b)
+    # Auxiliary confidence heads run under a CUDA autocast(fp32) context.  Keep
+    # the fused path's explicit intermediate dtype there; otherwise einsum and
+    # the following LN-transpose are promoted back to fp32 and the confidence
+    # pairformer loses the trunk/MSA memory win.
+    with torch.amp.autocast(device_type="cuda", enabled=False):
+        if outgoing:
+            x = torch.einsum("cbik,cbjk->cbij", a, b)
+        else:
+            x = torch.einsum("cbki,cbkj->cbij", a, b)
     del a, b, ab
 
     # Stage 4: output LayerNorm + transpose (c_hidden, M) → (M, c_hidden).
     x_dm = x.reshape(c_hidden, B * N * N)  # zero-copy view
-    x_out_2d = ln_transpose_fp32(
-        x_dm, module.layer_norm_out.weight, module.layer_norm_out.bias,
-        eps=module.layer_norm_out.eps,
-    )  # [M, c_hidden]
+    with torch.amp.autocast(device_type="cuda", enabled=False):
+        x_out_2d = ln_transpose_fp32(
+            x_dm, module.layer_norm_out.weight, module.layer_norm_out.bias,
+            eps=module.layer_norm_out.eps,
+        )  # [M, c_hidden]
     del x, x_dm
 
     # Stage 5: gated output GEMM + residual, with fused LN_in for the gate.
     # Recomputes LN_in(z) in-register inside the kernel — z_n never in HBM.
     residual_2d = z.reshape(-1, c_z) if with_add else None
+    linear_z_weight = module.linear_z.weight
+    if linear_z_weight.dtype != x_out_2d.dtype:
+        linear_z_weight = linear_z_weight.to(dtype=x_out_2d.dtype)
     out_2d = gated_out_gemm_residual_fp32(
-        z_2d, x_out_2d, module.linear_g.weight, module.linear_z.weight,
+        z_2d, x_out_2d, module.linear_g.weight, linear_z_weight,
         residual_2d,
         ln_weight=ln_in.weight, ln_bias=ln_in.bias, eps=ln_in.eps,
+        out=out.reshape(-1, c_z) if out is not None else None,
     )
     return out_2d.view(B, N, N, c_z)

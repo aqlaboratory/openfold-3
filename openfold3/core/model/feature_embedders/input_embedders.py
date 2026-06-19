@@ -146,27 +146,98 @@ class InputEmbedderAllAtom(nn.Module):
         # [*, N_token, C_s]
         s = self.linear_s(s_input)
 
-        s_input_emb_i = self.linear_z_i(s_input)
-        s_input_emb_j = self.linear_z_j(s_input)
-        token_bonds_emb = self.linear_token_bonds(
-            batch["token_bonds"].unsqueeze(-1).to(dtype=s.dtype)
+        z = self.embed_z(
+            batch=batch, s_input=s_input, dtype=s.dtype, inplace_safe=inplace_safe
         )
-
-        # [*, N_token, N_token, C_z]
-        z = s_input_emb_i[..., None, :] + s_input_emb_j[..., None, :, :]
-
-        relpos_feats = relpos_complex(
-            batch=batch,
-            max_relative_idx=self.max_relative_idx,
-            max_relative_chain=self.max_relative_chain,
-        ).to(dtype=z.dtype)
-        relpos_emb = self.linear_relpos(relpos_feats)
-        z = add(z, relpos_emb, inplace=inplace_safe)
-
-        z = add(z, token_bonds_emb, inplace=inplace_safe)
 
         return s_input, s, z
 
+    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: staged pair embedding that
+    # folds contributions into z and releases pair-sized temporaries early.
+    def embed_z(
+        self,
+        batch: dict,
+        s_input: torch.Tensor,
+        dtype: torch.dtype,
+        inplace_safe: bool = False,
+    ) -> torch.Tensor:
+        """Build the input pair representation from cached single input features."""
+        s_input_emb_i = self.linear_z_i(s_input)
+        s_input_emb_j = self.linear_z_j(s_input)
+
+        # [*, N_token, N_token, C_z]
+        z = s_input_emb_i[..., None, :] + s_input_emb_j[..., None, :, :]
+        del s_input_emb_i, s_input_emb_j
+
+        # Fold in token_bonds early. In inference, linear_token_bonds is a
+        # bias-free 1->C projection, so x @ W^T is exactly x * W[0] and avoids
+        # materializing a separate pair-sized linear output.
+        token_bonds = batch["token_bonds"].to(dtype=dtype)
+        if not torch.is_grad_enabled() and self.linear_token_bonds.bias is None:
+            z.add_(token_bonds[..., None] * self.linear_token_bonds.weight[:, 0])
+        else:
+            token_bonds_emb = self.linear_token_bonds(token_bonds.unsqueeze(-1))
+            z = add(z, token_bonds_emb, inplace=inplace_safe)
+            del token_bonds_emb
+        del token_bonds
+
+        if not torch.is_grad_enabled() and self.linear_relpos.bias is None:
+            self._add_relpos_from_weights_(z=z, batch=batch)
+        else:
+            relpos_feats = relpos_complex(
+                batch=batch,
+                max_relative_idx=self.max_relative_idx,
+                max_relative_chain=self.max_relative_chain,
+            ).to(dtype=z.dtype)
+            relpos_emb = self.linear_relpos(relpos_feats)
+            del relpos_feats
+            z = add(z, relpos_emb, inplace=inplace_safe)
+            del relpos_emb
+
+        return z
+
+    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: inference-only direct relpos
+    # gather-add into z (fused Triton or weight-table path) plus in-place
+    # token-bonds projection.
+    def _add_relpos_from_weights_(self, z: torch.Tensor, batch: dict) -> None:
+        """Add ``linear_relpos(relpos_complex(batch))`` directly into ``z``."""
+        res_idx = batch["residue_index"]
+        asym_id = batch["asym_id"]
+        entity_id = batch["entity_id"]
+
+        same_chain = asym_id[..., None] == asym_id[..., None, :]
+        same_res = res_idx[..., None] == res_idx[..., None, :]
+        same_entity = entity_id[..., None] == entity_id[..., None, :]
+
+        def relpos_idx(pos: torch.Tensor, condition: torch.Tensor, clip: int):
+            offset = pos[..., None] - pos[..., None, :]
+            clipped = torch.clamp(offset + clip, min=0, max=2 * clip)
+            return torch.where(
+                condition,
+                clipped,
+                (2 * clip + 1) * torch.ones_like(clipped),
+            ).long()
+
+        rel_pos_idx = relpos_idx(res_idx, same_chain, self.max_relative_idx)
+        rel_token_idx = relpos_idx(
+            batch["token_index"],
+            same_chain & same_res,
+            self.max_relative_idx,
+        )
+        rel_chain_idx = relpos_idx(
+            batch["sym_id"], same_entity, self.max_relative_chain
+        )
+
+        w = self.linear_relpos.weight.to(dtype=z.dtype).t()
+        rel_pos_bins = 2 * self.max_relative_idx + 2
+        rel_token_offset = rel_pos_bins
+        same_entity_offset = rel_token_offset + rel_pos_bins
+        rel_chain_offset = same_entity_offset + 1
+
+        z.add_(w[rel_pos_idx])
+        z.add_(w[rel_token_idx + rel_token_offset])
+        z.add_(w[rel_chain_idx + rel_chain_offset])
+        z.add_(same_entity[..., None].to(dtype=z.dtype) * w[same_entity_offset])
 
 class MSAModuleEmbedder(nn.Module):
     """Sample MSA features and embed them. Implements AF3 Algorithm 8 lines 1-4.
@@ -559,7 +630,12 @@ class MSAModuleEmbedder(nn.Module):
 
         # [*, N_seq, N_token, C_m]
         m = self.linear_m(msa_feat)
-        m = m + self.linear_s_input(s_input).unsqueeze(-3)
+        s_input_emb = self.linear_s_input(s_input).unsqueeze(-3)
+        if not torch.is_grad_enabled():
+            m.add_(s_input_emb)
+        else:
+            m = m + s_input_emb
+        del s_input_emb
 
         return m, msa_mask
 

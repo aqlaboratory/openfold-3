@@ -239,11 +239,21 @@ class OpenFold3(nn.Module):
             inplace_safe=inplace_safe,
             use_high_precision_attention=True,
         )
+        # by Liang Hong <lhong22@cse.cuhk.edu.hk>: recycle-time pair
+        # recomputation and early release of trunk-scale inference tensors.
+        recompute_z_init = (
+            inplace_safe
+            and not torch.is_grad_enabled()
+            and num_cycles > 1
+            and hasattr(self.input_embedder, "embed_z")
+        )
 
         # s: [*, N_token, C_s]
         # z: [*, N_token, N_token, C_z]
         s = torch.zeros_like(s_init)
         z = torch.zeros_like(z_init)
+        if recompute_z_init:
+            del z_init
 
         # token_mask: [*, N_token]
         # pair_mask: [*, N_token, N_token]
@@ -266,10 +276,29 @@ class OpenFold3(nn.Module):
                     self.clear_autocast_cache()
 
                 # [*, N_token, N_token, C_z]
-                if self._use_fused_ln_linear:
-                    z = z_init + self.fused_ln_linear_z(z)
+                if recompute_z_init:
+                    z_init_cycle = self.input_embedder.embed_z(
+                        batch=batch,
+                        s_input=s_input,
+                        dtype=s.dtype,
+                        inplace_safe=inplace_safe,
+                    )
                 else:
-                    z = z_init + self.linear_z(self.layer_norm_z(z))
+                    z_init_cycle = z_init
+                if self._use_fused_ln_linear:
+                    z_recycle = self.fused_ln_linear_z(z)
+                else:
+                    z_recycle = self.linear_z(self.layer_norm_z(z))
+                if inplace_safe and not torch.is_grad_enabled():
+                    z_init_cycle.add_(z_recycle)
+                    z = z_init_cycle
+                    del z_recycle
+                else:
+                    z = z_init_cycle + z_recycle
+                if recompute_z_init:
+                    del z_init_cycle
+                elif is_final_iter:
+                    del z_init
 
                 z = add(
                     z,
@@ -341,6 +370,8 @@ class OpenFold3(nn.Module):
                     s = s_init + self.fused_ln_linear_s(s)
                 else:
                     s = s_init + self.linear_s(self.layer_norm_s(s))
+                if is_final_iter:
+                    del s_init
                 s, z = self.pairformer_stack(
                     s=s,
                     z=z,
@@ -354,8 +385,6 @@ class OpenFold3(nn.Module):
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
                 )
-
-        del s_init, z_init
 
         return s_input, s, z
 
@@ -450,6 +479,7 @@ class OpenFold3(nn.Module):
             "zij_trunk": zij_trunk,
             "atom_positions_predicted": atom_positions_predicted,
         }
+        del zij_trunk
 
         cast_dtype = torch.float32 if self.training else si_trunk.dtype
         with torch.amp.autocast(device_type="cuda", dtype=cast_dtype):

@@ -65,6 +65,7 @@ if _TRITON_AVAILABLE:
     # M,N,K are runtime args so a new sequence length never recompiles.
     _DUAL_GEMM_CFG = dict(TILE_M=64, TILE_N=64, TILE_K=32, GROUP_M=8)
     _OUT_GEMM_CFG = dict(TILE_M=64, TILE_N=64, TILE_K=32, GROUP_M=8)
+    _OUT_GEMM_INPLACE_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=32, GROUP_M=8)
 
     @triton.jit
     def _gated_dual_gemm_kernel(
@@ -485,6 +486,7 @@ def gated_dual_gemm_fp32(
     ln_weight: torch.Tensor | None = None,  # [K] — LN gamma (fused LN)
     ln_bias: torch.Tensor | None = None,  # [K] — LN beta (fused LN)
     eps: float = 1e-5,
+    output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
     """Return ``sigmoid(LN?(x)@wg^T) * (LN?(x)@wp^T) * mask`` as ``[Nproj, M]``.
 
@@ -496,7 +498,11 @@ def gated_dual_gemm_fp32(
     x = x.contiguous()
     wp = wp.contiguous()
     wg = wg.contiguous()
-    out = torch.empty((Nproj, M), device=x.device, dtype=x.dtype)
+    out = torch.empty(
+        (Nproj, M),
+        device=x.device,
+        dtype=output_dtype if output_dtype is not None else x.dtype,
+    )
     mask_flat = mask.contiguous().view(-1) if mask is not None else None
     _dummy = x
     fused_ln = ln_weight is not None
@@ -539,6 +545,7 @@ def gated_out_gemm_residual_fp32(
     ln_weight: torch.Tensor | None = None,  # [Cz] — LN gamma (fused LN)
     ln_bias: torch.Tensor | None = None,  # [Cz] — LN beta (fused LN)
     eps: float = 1e-5,
+    out: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Return ``[residual +] sigmoid(LN?(x_in)@wg^T) * (x_out@wp^T)`` as ``[M, Cz]``.
 
@@ -551,14 +558,27 @@ def gated_out_gemm_residual_fp32(
     x_out = x_out.contiguous()
     wg = wg.contiguous()
     wp = wp.contiguous()
-    out = torch.empty((M, CZ), device=x_in.device, dtype=x_in.dtype)
+    cfg = _OUT_GEMM_INPLACE_CFG if out is not None else _OUT_GEMM_CFG
+    if out is None:
+        out = torch.empty((M, CZ), device=x_in.device, dtype=x_in.dtype)
+    else:
+        if out.shape != (M, CZ):
+            raise ValueError(f"out shape {out.shape} does not match {(M, CZ)}")
+        if out.device != x_in.device or out.dtype != x_in.dtype:
+            raise ValueError("out must match x_in device and dtype")
+        out = out.contiguous()
+        # In-place residual writeback aliases x_in/residual.  It is safe only
+        # when a single program owns the full channel row: the kernel reads the
+        # complete row for LN/gating before storing that same row back.  With
+        # multiple column programs, one program could overwrite columns another
+        # still needs for LayerNorm.
+        assert cfg["TILE_N"] >= CZ
     with_add = residual is not None
     resid = residual.contiguous().view(M, CZ) if with_add else x_in
     fused_ln = ln_weight is not None
     BLOCK_CZ = _next_power_of_two(CZ) if fused_ln else 1
     gamma = ln_weight.contiguous() if fused_ln else x_in.new_zeros(1)
     beta = ln_bias.contiguous() if ln_bias is not None else x_in.new_zeros(1)
-    cfg = _OUT_GEMM_CFG
 
     def grid(meta):
         return (triton.cdiv(M, meta["TILE_M"]), triton.cdiv(CZ, meta["TILE_N"]))

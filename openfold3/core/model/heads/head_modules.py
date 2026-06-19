@@ -167,12 +167,17 @@ class AuxiliaryHeadsAllAtom(nn.Module):
 
         # Distogram head: Main loop (Algorithm 1), line 17
         distogram_logits = self.distogram(z=zij)
+        if inplace_safe and not torch.is_grad_enabled() and distogram_logits.is_cuda:
+            distogram_logits = distogram_logits.to(device="cpu")
         aux_out["distogram_logits"] = distogram_logits
 
         # Stop grad
         si_input = si_input.detach().clone()
         si = si.detach().clone()
-        zij = zij.detach().clone()
+        if inplace_safe and not torch.is_grad_enabled():
+            zij = zij.detach()
+        else:
+            zij = zij.detach().clone()
         # by Liang Hong <lhong22@cse.cuhk.edu.hk>: release the trunk pair
         # representation before confidence refinement allocates its own copy.
         del output["zij_trunk"]
@@ -259,6 +264,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
 
         aux_out["pde_logits"] = pde_logits.to(device=out_device)
 
-        aux_out = {k: v.to(dtype=out_dtype) for k, v in aux_out.items()}
+        aux_out = {
+            k: v.to(device=out_device, dtype=out_dtype) for k, v in aux_out.items()
+        }
 
         return aux_out

@@ -18,6 +18,7 @@ Template feature embedders. Used in the template stack to build the final templa
 embeddings.
 """
 
+import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
@@ -67,6 +68,8 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         self.layer_norm_z = LayerNorm(c_in)
         self.linear_z = Linear(c_in, c_out, **linear_init_params.linear_z)
 
+    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: inference-time in-place
+    # accumulation that avoids pair-sized template embedding temporaries.
     def _embed_feats(self, batch: dict):
         dtype = batch["template_unit_vector"].dtype
 
@@ -103,13 +106,26 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         )
 
         a = self.dgram_linear(template_distogram)
-        a = a + self.pseudo_beta_mask_linear(pseudo_beta_pair_mask)
-        a = a + self.aatype_linear_1(template_restype_ti.to(dtype=dtype))
-        a = a + self.aatype_linear_2(template_restype_tj.to(dtype=dtype))
-        a = a + self.x_linear(x[..., None])
-        a = a + self.y_linear(y[..., None])
-        a = a + self.z_linear(z[..., None])
-        a = a + self.backbone_mask_linear(backbone_frame_pair_mask)
+        # In inference, mutate `a` in place so each successive contribution
+        # is `a + temp` rather than `(old a) + temp = new a` (which keeps all
+        # three tensors alive simultaneously). Each `a` tensor at multimer
+        # N=590, n_templ=4, c_t=64 is ~2U; the eager pattern's triple-alive
+        # peak is the second-largest transient inside template_embedder
+        # after the pair_stack itself.
+        inplace_add = not torch.is_grad_enabled()
+        def _add(tmp):
+            nonlocal a
+            if inplace_add:
+                a.add_(tmp)
+            else:
+                a = a + tmp
+        _add(self.pseudo_beta_mask_linear(pseudo_beta_pair_mask))
+        _add(self.aatype_linear_1(template_restype_ti.to(dtype=dtype)))
+        _add(self.aatype_linear_2(template_restype_tj.to(dtype=dtype)))
+        _add(self.x_linear(x[..., None]))
+        _add(self.y_linear(y[..., None]))
+        _add(self.z_linear(z[..., None]))
+        _add(self.backbone_mask_linear(backbone_frame_pair_mask))
 
         return a
 
@@ -127,6 +143,8 @@ class TemplatePairEmbedderAllAtom(nn.Module):
 
         # [*, N_templ, N_token, N_token, C_out]
         z = self.linear_z(self.layer_norm_z(z))
-        z = z[..., None, :, :, :] + a
+        if not torch.is_grad_enabled():
+            a.add_(z[..., None, :, :, :])
+            return a
 
-        return z
+        return z[..., None, :, :, :] + a

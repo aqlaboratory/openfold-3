@@ -34,13 +34,35 @@ from openfold3.core.model.feature_embedders.template_embedders import (
 from openfold3.core.model.latent.base_blocks import PairBlock
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.utils import assert_sole_holder
-from openfold3.core.utils.checkpointing import checkpoint_blocks, checkpoint_section
+from openfold3.core.utils.checkpointing import (
+    checkpoint_blocks,
+    checkpoint_section,
+)
 from openfold3.core.utils.chunk_utils import (
     DEFAULT_MAX_CHUNK_SIZE,
     FLASH_MAX_CHUNK_SIZE,
     ChunkSizeTuner,
 )
 from openfold3.core.utils.tensor_utils import add
+
+_TEMPLATE_DIM_BY_KEY = {
+    "template_restype": -3,
+    "template_pseudo_beta_mask": -2,
+    "template_backbone_frame_mask": -2,
+    "template_distogram": -4,
+    "template_unit_vector": -4,
+}
+
+
+def _slice_template_feature(k: str, x: torch.Tensor, idx: int) -> torch.Tensor:
+    """Return one template while preserving the singleton template dimension."""
+    template_dim = _TEMPLATE_DIM_BY_KEY.get(k)
+    if template_dim is None:
+        return x
+
+    slices = [slice(None)] * x.dim()
+    slices[template_dim] = slice(idx, idx + 1)
+    return x[tuple(slices)]
 
 
 # TODO: Make arguments match PairBlock
@@ -127,13 +149,28 @@ class TemplatePairBlock(PairBlock):
         Helper function to process exactly one template slice.
         """
 
-        # t: [1, N, N, C]
+        # t: [*, 1, N, N, C]. Collapse the singleton template axis during
+        # inference so the 4D fused triangle kernels can handle template blocks
+        # the same way they handle trunk/MSA pair blocks.
+        squeezed_template_dim = False
+        if (
+            inplace_safe
+            and not self.training
+            and not torch.is_grad_enabled()
+            and t.shape[-4] == 1
+            and mask.shape[-3] == 1
+        ):
+            t = t.squeeze(-4)
+            mask = mask.squeeze(-3)
+            squeezed_template_dim = True
+
         if self.tri_mul_first:
             t = self.tri_att_start_end(
                 z=self.tri_mul_out_in(
                     z=t,
                     pair_mask=mask,
                     inplace_safe=inplace_safe,
+                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                     use_triton_triangle_kernels=use_triton_triangle_kernels,
                 ),
                 _attn_chunk_size=_attn_chunk_size,
@@ -158,8 +195,13 @@ class TemplatePairBlock(PairBlock):
                 ),
                 pair_mask=mask,
                 inplace_safe=inplace_safe,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
             )
+
+        if squeezed_template_dim:
+            t = t.unsqueeze(-4)
+            mask = mask.unsqueeze(-3)
 
         t = add(
             t,
@@ -557,7 +599,7 @@ class TemplateEmbedderAllAtom(nn.Module):
             batch_templ = {}
             for k, v in batch.items():
                 if isinstance(v, torch.Tensor) and k.startswith("template_"):
-                    batch_templ[k] = v[:, i : i + 1]
+                    batch_templ[k] = _slice_template_feature(k, v, i)
                 else:
                     batch_templ[k] = v
 
@@ -589,6 +631,63 @@ class TemplateEmbedderAllAtom(nn.Module):
         del z
 
         return t_out.to(device=out_device)
+
+    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: per-template streaming
+    # template stack with fused pair embedder dispatch (n_templ=1).
+    def _forward_streaming(
+        self,
+        batch: dict,
+        z: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: int | None = None,
+        _mask_trans: bool = True,
+        use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+    ) -> torch.Tensor:
+        """Inference-only GPU streaming path.
+
+        Processes one template at a time and accumulates the post-stack
+        template sum on GPU.  This avoids materializing the full
+        ``[N_templ, N, N, c_t]`` stack without paying the CPU offload copy.
+        """
+        n_templ = batch["template_restype"].shape[-3]
+
+        pair_mask = pair_mask[..., None, :, :].to(dtype=z.dtype)
+        t_sum = None
+
+        for i in range(n_templ):
+            batch_templ = {}
+            for k, v in batch.items():
+                if isinstance(v, torch.Tensor) and k.startswith("template_"):
+                    batch_templ[k] = _slice_template_feature(k, v, i)
+                else:
+                    batch_templ[k] = v
+
+            t = self.template_pair_embedder(batch=batch_templ, z=z)
+            t = self.template_pair_stack(
+                t,
+                pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
+
+            t = t.squeeze(-4)
+            if t_sum is None:
+                t_sum = t
+            else:
+                t_sum.add_(t)
+            del t
+
+        assert t_sum is not None
+        return t_sum / n_templ
 
     def _forward(
         self,
@@ -668,6 +767,15 @@ class TemplateEmbedderAllAtom(nn.Module):
                 [*, N_token, N_token, C_z] Template embedding
         """
         n_templ = batch["template_restype"].shape[-3]
+        template_sum_done = False
+        if (
+            not self.training
+            and not torch.is_grad_enabled()
+            and n_templ > 0
+            and batch["template_pseudo_beta_mask"].sum() == 0
+            and batch["template_backbone_frame_mask"].sum() == 0
+        ):
+            return z.new_zeros(*z.shape[:-1], self.config.c_z)
 
         if offload_inference:
             t = self._forward_offload(
@@ -683,22 +791,48 @@ class TemplateEmbedderAllAtom(nn.Module):
                 inplace_safe=inplace_safe,
             )
         else:
-            t = self._forward(
-                batch=batch,
-                z=z,
-                pair_mask=pair_mask,
-                chunk_size=chunk_size,
-                _mask_trans=True,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                use_triton_triangle_kernels=use_triton_triangle_kernels,
-                use_lma=use_lma,
-                inplace_safe=inplace_safe,
+            can_stream = (
+                inplace_safe
+                and not self.training
+                and not torch.is_grad_enabled()
+                and n_templ > 1
             )
+            if can_stream:
+                t = self._forward_streaming(
+                    batch=batch,
+                    z=z,
+                    pair_mask=pair_mask,
+                    chunk_size=chunk_size,
+                    _mask_trans=True,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                    use_triton_triangle_kernels=use_triton_triangle_kernels,
+                    use_lma=use_lma,
+                    inplace_safe=inplace_safe,
+                )
+                template_sum_done = True
+            else:
+                t = self._forward(
+                    batch=batch,
+                    z=z,
+                    pair_mask=pair_mask,
+                    chunk_size=chunk_size,
+                    _mask_trans=True,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                    use_triton_triangle_kernels=use_triton_triangle_kernels,
+                    use_lma=use_lma,
+                    inplace_safe=inplace_safe,
+                )
+
+        if not template_sum_done:
+            t = torch.sum(t, dim=-4) / n_templ
 
         # [*, N_token, N_token, C_z]
-        t = torch.sum(t, dim=-4) / n_templ
-        t = torch.nn.functional.relu(t)
+        if not torch.is_grad_enabled():
+            t = t.relu_()
+        else:
+            t = torch.nn.functional.relu(t)
         t = self.linear_t(t)
 
         return t

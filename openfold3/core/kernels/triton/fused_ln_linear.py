@@ -171,6 +171,7 @@ if _TRITON_AVAILABLE:
         weight: torch.Tensor,
         bias: torch.Tensor | None,
         eps: float,
+        output_dtype: torch.dtype | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Launch the Triton forward kernel.
 
@@ -187,7 +188,8 @@ if _TRITON_AVAILABLE:
         N = c_out
 
         # Output and saved-stats tensors.
-        y = torch.empty((M, N), dtype=x.dtype, device=x.device)
+        y_dtype = x.dtype if output_dtype is None else output_dtype
+        y = torch.empty((M, N), dtype=y_dtype, device=x.device)
         mean = torch.empty((M,), dtype=torch.float32, device=x.device)
         rstd = torch.empty((M,), dtype=torch.float32, device=x.device)
 
@@ -409,3 +411,50 @@ def fused_ln_linear(
         return _FusedLNLinearFn.apply(x, gamma, beta, weight, bias, eps)
     x_norm = F.layer_norm(x, (gamma.shape[0],), gamma, beta, eps)
     return F.linear(x_norm, weight, bias)
+
+
+def fused_ln_linear_inference(
+    x: torch.Tensor,
+    gamma: torch.Tensor,
+    beta: torch.Tensor | None,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    eps: float = 1e-5,
+    output_dtype: torch.dtype | None = None,
+) -> torch.Tensor:
+    """Inference-only fused LN→Linear with optional output dtype override."""
+    if torch.is_grad_enabled():
+        raise RuntimeError("fused_ln_linear_inference is inference-only")
+
+    if (
+        _TRITON_AVAILABLE
+        and x.is_cuda
+        and gamma.shape[0] <= _MAX_FUSED_C_IN
+        and x.numel() // gamma.shape[0] >= _MIN_FUSED_M
+    ):
+        gamma_d = gamma.to(dtype=x.dtype) if gamma.dtype != x.dtype else gamma
+        beta_d = (
+            beta.to(dtype=x.dtype)
+            if (beta is not None and beta.dtype != x.dtype)
+            else beta
+        )
+        weight_d = weight.to(dtype=x.dtype) if weight.dtype != x.dtype else weight
+        bias_d = (
+            bias.to(dtype=x.dtype)
+            if (bias is not None and bias.dtype != x.dtype)
+            else bias
+        )
+        y, _, _ = _fused_ln_linear_triton_fwd(
+            x.contiguous(),
+            gamma_d,
+            beta_d,
+            weight_d,
+            bias_d,
+            eps,
+            output_dtype=output_dtype,
+        )
+        return y
+
+    x_norm = F.layer_norm(x, (gamma.shape[0],), gamma, beta, eps)
+    y = F.linear(x_norm, weight, bias)
+    return y if output_dtype is None else y.to(output_dtype)

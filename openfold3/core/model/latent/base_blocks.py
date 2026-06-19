@@ -42,7 +42,10 @@ from openfold3.core.model.primitives import DropoutRowwise
 from openfold3.core.model.primitives.fused_swiglu_transition import (
     is_fused_swiglu_transition_enabled,
 )
-from openfold3.core.model.primitives.fused_trimul import is_fused_trimul_enabled
+from openfold3.core.model.primitives.fused_trimul import (
+    fused_trimul_update,
+    is_fused_trimul_enabled,
+)
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.tensor_utils import add
 
@@ -319,48 +322,90 @@ class PairBlock(nn.Module):
         use_triton_triangle_kernels: bool = False,
     ) -> torch.Tensor:
         """Perform the outgoing and incoming triangular multiplicative updates."""
+        # Track whether the caller's original semantics allow true in-place writes;
+        # the fused trimul kernel returns the update only (mirrors cuEq) so the
+        # layer itself can't be inplace_safe, but the residual add at this level
+        # CAN be inplace (`z.add_(update)`) when we are in inference without
+        # autograd. Without this, `z = z + dropout(update)` materialises a fresh
+        # 1U pair tensor that survives until the next bind step, lifting the
+        # sustained alloc going into tri_att by 1U.
+        caller_inplace_safe = inplace_safe and not torch.is_grad_enabled()
         inplace_safe = inplace_safe and (not use_cueq_triangle_kernels)
         # The fused Triton trimul returns the update only (like cuEq), so the
         # caller must add it via the dropout layer — disable inplace_safe here
         # too, otherwise the `z = tmu_update` branch would drop the residual.
         if is_fused_trimul_enabled():
             inplace_safe = False
+        fused_inplace_residual = (
+            caller_inplace_safe
+            and is_fused_trimul_enabled()
+            and not self.training
+            and not self.ps_dropout_row_layer.training
+        )
         ## VS: having both inplace_safe and use_cueq_triangle_kernels set to
         ## true causes `z = z + self.ps_dropout_row_layer(tmu_update)` below
         ## to be skipped, as this is the expected output of tri_mult w/ inplace
         ## safe, creating an error. So disable inplace_safe if
         ## use_cueq_triangle_kernels is true. Ideally could be refactored to use
         ## _add_with_inplace=False, then wrap with add as done elsewhere
-        tmu_update = self.tri_mul_out(
-            z,
-            mask=pair_mask,
-            inplace_safe=inplace_safe,
-            _add_with_inplace=True,
-            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-            use_triton_triangle_kernels=use_triton_triangle_kernels,
-        )
-        if not inplace_safe:
-            z = z + self.ps_dropout_row_layer(tmu_update)
-        else:
-            # TODO: Inplace operations won't work if we enable dropout during inference
-            # Potentially add check to make sure dropout is disabled if using
-            # inplace ops
-            z = tmu_update
+        tmu_update = None
+        if fused_inplace_residual:
+            tmu_update = fused_trimul_update(
+                self.tri_mul_out,
+                z,
+                pair_mask,
+                with_add=True,
+                out=z,
+            )
+        if tmu_update is None:
+            tmu_update = self.tri_mul_out(
+                z,
+                mask=pair_mask,
+                inplace_safe=inplace_safe,
+                _add_with_inplace=True,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+            )
+            if not inplace_safe:
+                if caller_inplace_safe:
+                    # Truly in-place add — keeps the same z storage. No fresh 1U.
+                    z.add_(self.ps_dropout_row_layer(tmu_update))
+                else:
+                    z = z + self.ps_dropout_row_layer(tmu_update)
+            else:
+                # TODO: Inplace operations won't work if dropout is enabled
+                # during inference.
+                # Potentially add check to make sure dropout is disabled if using
+                # inplace ops
+                z = tmu_update
+            del tmu_update
 
-        del tmu_update
-
-        tmu_update = self.tri_mul_in(
-            z,
-            mask=pair_mask,
-            inplace_safe=inplace_safe,
-            _add_with_inplace=True,
-            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-            use_triton_triangle_kernels=use_triton_triangle_kernels,
-        )
-        if not inplace_safe:
-            z = z + self.ps_dropout_row_layer(tmu_update)
-        else:
-            z = tmu_update
+        tmu_update = None
+        if fused_inplace_residual:
+            tmu_update = fused_trimul_update(
+                self.tri_mul_in,
+                z,
+                pair_mask,
+                with_add=True,
+                out=z,
+            )
+        if tmu_update is None:
+            tmu_update = self.tri_mul_in(
+                z,
+                mask=pair_mask,
+                inplace_safe=inplace_safe,
+                _add_with_inplace=True,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+            )
+            if not inplace_safe:
+                if caller_inplace_safe:
+                    z.add_(self.ps_dropout_row_layer(tmu_update))
+                else:
+                    z = z + self.ps_dropout_row_layer(tmu_update)
+            else:
+                z = tmu_update
+            del tmu_update
 
         return z
 

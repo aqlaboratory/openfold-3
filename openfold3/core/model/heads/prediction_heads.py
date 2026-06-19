@@ -197,9 +197,10 @@ class PairformerEmbedding(nn.Module):
         inplace_safe: bool = False,
         _mask_trans: bool = True,
     ):
+        embed_inplace = inplace_safe and x_pred.shape[:-2] == zij.shape[:-3]
         zij = self.embed_zij(
             si_input=si_input, zij=zij, x_pred=x_pred,
-            inplace=inplace_safe,
+            inplace=embed_inplace,
         )
 
         batch_dims = x_pred.shape[:-2]
