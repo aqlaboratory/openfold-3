@@ -37,7 +37,6 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (  # n
     InferenceQuerySet,
 )
 
-
 REPO = Path(__file__).resolve().parents[2]
 QUERY_DIR = REPO / "examples/example_inference_inputs"
 DEFAULT_RUNNER_YAML = REPO / "examples/example_runner_yamls/cuequivariance.yml"
@@ -171,6 +170,36 @@ def install_fast_hooks(model, prof: FastStageProfiler, fine: bool = False) -> No
             diffusion_module.diffusion_transformer, "forward", "diff.transformer"
         )
         prof.wrap(diffusion_module.atom_attn_dec, "forward", "diff.atom_dec")
+        if (
+            hasattr(diffusion_module.diffusion_transformer, "blocks")
+            and len(diffusion_module.diffusion_transformer.blocks) > 0
+        ):
+            block = diffusion_module.diffusion_transformer.blocks[0]
+            prof.wrap(
+                block.attention_pair_bias,
+                "forward",
+                "diff.transformer.b0.attn_pair_bias",
+            )
+            prof.wrap(
+                block.attention_pair_bias,
+                "_prep_bias",
+                "diff.transformer.b0.attn_pair_bias.prep_bias",
+            )
+            prof.wrap(
+                block.attention_pair_bias.mha,
+                "_prep_qkv",
+                "diff.transformer.b0.attn_pair_bias.prep_qkv",
+            )
+            prof.wrap(
+                block.attention_pair_bias.mha,
+                "_wrap_up",
+                "diff.transformer.b0.attn_pair_bias.wrap_up",
+            )
+            prof.wrap(
+                block.conditioned_transition,
+                "forward",
+                "diff.transformer.b0.conditioned_transition",
+            )
 
     prof.wrap(model.aux_heads.pairformer_embedding, "forward", "conf.pairformer_emb")
     conf_pairformer = model.aux_heads.pairformer_embedding.pairformer_stack

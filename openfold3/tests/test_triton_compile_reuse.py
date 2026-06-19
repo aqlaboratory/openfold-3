@@ -187,6 +187,63 @@ assert count == 1, count
     assert payload["_fused_ln_linear_fwd_kernel"] == 1
 
 
+def test_attention_pair_bias_reuses_fused_pair_projection_across_lengths(tmp_path):
+    """Diffusion pair-bias projection should reuse fused LN-linear compiles."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.fused_ln_linear import _fused_ln_linear_fwd_kernel
+from openfold3.core.model.layers.attention_pair_bias import AttentionPairBias
+
+torch.manual_seed(19)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+
+module = AttentionPairBias(
+    c_q=768,
+    c_k=768,
+    c_v=768,
+    c_s=384,
+    c_z=128,
+    c_hidden=48,
+    no_heads=16,
+    use_ada_layer_norm=True,
+).cuda().eval()
+
+for n in (64, 96, 127):
+    z = torch.randn(1, 1, n, n, 128, device="cuda")
+    pair_bias = module.prep_static_pair_bias(z)
+    assert pair_bias.shape == (1, 1, 16, n, n)
+    _fused_ln_linear_fwd_kernel.device_caches.clear()
+
+count = len(list(cache_dir.rglob("_fused_ln_linear_fwd_kernel.json")))
+print(json.dumps({"_fused_ln_linear_fwd_kernel": count}))
+assert count == 1, count
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "OPENFOLD3_FUSED_LN_LINEAR": "1",
+            "TRITON_CACHE_DIR": str(cache_dir),
+        }
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["_fused_ln_linear_fwd_kernel"] == 1
+
+
 def test_fused_softmax_reuses_compile_across_lengths(tmp_path):
     """MSA fused softmax should use one fixed tile for practical lengths."""
     cache_dir = tmp_path / "triton_cache"

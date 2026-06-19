@@ -21,12 +21,14 @@ from ml_collections import ConfigDict
 from torch import nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
+from openfold3.core.kernels.triton.fused_ln_linear import fused_ln_linear_inference
 from openfold3.core.model.primitives import (
     AdaLN,
     Attention,
     LayerNorm,
     Linear,
 )
+from openfold3.core.model.primitives.fused_ln_linear import is_fused_ln_linear_enabled
 from openfold3.core.utils.atom_attention_block_utils import convert_single_rep_to_blocks
 from openfold3.core.utils.tensor_utils import permute_final_dims
 
@@ -152,18 +154,30 @@ class AttentionPairBias(nn.Module):
         mask_bias = (self.inf * (mask - 1))[..., None, None, :]
         biases = [mask_bias]
 
-        # [*, N, N, C_z]
-        z = self.layer_norm_z(z)
-
-        # [*, N, N, no_heads]
-        z = self.linear_z(z)
-
-        # [*, no_heads, N, N]
-        z = permute_final_dims(z, [2, 0, 1])
-
-        biases.append(z)
+        biases.append(self.prep_static_pair_bias(z))
 
         return biases
+
+    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: fused LN-linear pair-bias
+    # preparation for loop-invariant diffusion pair tensors.
+    def prep_static_pair_bias(
+        self,
+        z: torch.Tensor,
+    ) -> torch.Tensor:
+        """Precompute the pair-bias term when ``z`` is loop-invariant."""
+        if is_fused_ln_linear_enabled() and not torch.is_grad_enabled():
+            z = fused_ln_linear_inference(
+                z,
+                self.layer_norm_z.weight,
+                self.layer_norm_z.bias,
+                self.linear_z.weight,
+                self.linear_z.bias,
+                self.layer_norm_z.eps,
+            )
+        else:
+            z = self.layer_norm_z(z)
+            z = self.linear_z(z)
+        return permute_final_dims(z, [2, 0, 1])
 
     def forward(
         self,

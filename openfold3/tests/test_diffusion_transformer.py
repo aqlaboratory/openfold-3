@@ -16,6 +16,7 @@ import unittest
 
 import torch
 
+from openfold3.core.model.layers.attention_pair_bias import AttentionPairBias
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
@@ -23,6 +24,34 @@ from openfold3.tests.config import consts
 
 
 class TestDiffusionTransformer(unittest.TestCase):
+    def test_attention_pair_bias_static_projection_matches_reference(self):
+        torch.manual_seed(0)
+        batch_size = 2
+        n_res = 5
+        c_q = 32
+        c_s = 16
+        c_z = 12
+        no_heads = 4
+
+        module = AttentionPairBias(
+            c_q=c_q,
+            c_k=c_q,
+            c_v=c_q,
+            c_s=c_s,
+            c_z=c_z,
+            c_hidden=8,
+            no_heads=no_heads,
+            use_ada_layer_norm=True,
+        ).eval()
+        z = torch.randn(batch_size, n_res, n_res, c_z)
+
+        with torch.inference_mode():
+            actual = module.prep_static_pair_bias(z)
+            expected = module.linear_z(module.layer_norm_z(z)).permute(0, 3, 1, 2)
+
+        self.assertEqual(actual.shape, (batch_size, no_heads, n_res, n_res))
+        torch.testing.assert_close(actual, expected)
+
     def test_shape(self):
         batch_size = consts.batch_size
         n_res = consts.n_res
