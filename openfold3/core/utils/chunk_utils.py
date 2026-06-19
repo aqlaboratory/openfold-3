@@ -54,6 +54,17 @@ def triangle_attn_chunk_cap() -> int | None:
     return val if val > 0 else None
 
 
+def apply_triangle_attn_chunk_cap(
+    chunk_size: int,
+    max_chunk_size: int,
+) -> int | None:
+    """Return the explicit triangle-attention cap as a chunk size, if set."""
+    cap = triangle_attn_chunk_cap()
+    if cap is None:
+        return None
+    return max(chunk_size, min(max_chunk_size, cap))
+
+
 def _fetch_dims(tree):
     shapes = []
     tree_type = type(tree)

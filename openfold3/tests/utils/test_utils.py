@@ -22,6 +22,7 @@ from openfold3.core.model.primitives import Linear
 from openfold3.core.utils.chunk_utils import (
     ChunkSizeTuner,
     _chunk_slice,
+    apply_triangle_attn_chunk_cap,
     chunk_layer,
     triangle_attn_chunk_cap,
 )
@@ -420,3 +421,34 @@ class TestUtils(unittest.TestCase):
                     os.environ.pop(k, None)
                 else:
                     os.environ[k] = v
+
+    def test_triangle_attn_cap_can_bypass_representative_tuning(self):
+        keys = ["OPENFOLD3_TRI_ATTN_CHUNK_CAP"]
+        old_env = {k: os.environ.get(k) for k in keys}
+
+        def choose_chunk(chunk_size, max_chunk_size, tuner):
+            os.environ["OPENFOLD3_TRI_ATTN_CHUNK_CAP"] = "64"
+            capped_chunk_size = apply_triangle_attn_chunk_cap(
+                chunk_size, max_chunk_size
+            )
+            if capped_chunk_size is not None:
+                return capped_chunk_size
+            return tuner.tune_chunk_size(
+                representative_fn=lambda arg, chunk_size: arg,
+                args=(torch.zeros(2, 3),),
+                min_chunk_size=chunk_size,
+                max_chunk_size=max_chunk_size,
+            )
+
+        try:
+            tuner = unittest.mock.Mock()
+            tuned = choose_chunk(chunk_size=4, max_chunk_size=1024, tuner=tuner)
+        finally:
+            for k, v in old_env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+        self.assertEqual(tuned, 64)
+        tuner.tune_chunk_size.assert_not_called()

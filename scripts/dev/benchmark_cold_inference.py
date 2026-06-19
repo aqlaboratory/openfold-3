@@ -39,19 +39,24 @@ QUERY_PATHS = {
 }
 DEFAULT_QUERIES = ["multimer", "protein_ligand", "homo_1200"]
 
-OPTIMIZED_ENV = {
+BASE_OPTIMIZED_ENV = {
     "OPENFOLD3_FUSED_LN_LINEAR": "1",
     "OPENFOLD3_FUSED_SWIGLU_TRANSITION": "1",
     "OPENFOLD3_FUSED_TRI_ATTN": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V2": "1",
     "OPENFOLD3_FUSED_TRIMUL": "1",
     "OPENFOLD3_FUSED_OPM": "1",
     "OPENFOLD3_FUSED_DIFFUSION_ATTN": "0",
     "OPENFOLD3_DIFFUSION_CUDA_GRAPH": "0",
 }
 
+V2_ENV = {
+    **BASE_OPTIMIZED_ENV,
+    "OPENFOLD3_FUSED_TRI_ATTN_V2": "1",
+    "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
+}
+
 CAP128_ENV = {
-    **OPTIMIZED_ENV,
+    **BASE_OPTIMIZED_ENV,
     "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
     "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "128",
 }
@@ -111,10 +116,7 @@ def _child_main(args: argparse.Namespace) -> None:
     mem.offload_inference.token_cutoff = 10_000_000
     mem.use_deepspeed_evo_attention = False
     mem.use_triton_triangle_kernels = False
-    mem.use_cueq_triangle_kernels = args.config in {
-        "optimized_no_graph",
-        "optimized_cap128_no_graph",
-    }
+    mem.use_cueq_triangle_kernels = args.config != "local_default"
 
     inference_query_set = InferenceQuerySet.from_json(args.query_json)
     runner.setup()
@@ -259,7 +261,9 @@ def _env_for_config(config: str, base_env: dict[str, str]) -> dict[str, str]:
     if config == "local_default":
         updates = DISABLED_ENV
     elif config == "optimized_no_graph":
-        updates = OPTIMIZED_ENV
+        updates = CAP128_ENV
+    elif config == "optimized_v2_no_graph":
+        updates = V2_ENV
     elif config == "optimized_cap128_no_graph":
         updates = CAP128_ENV
     else:
@@ -444,7 +448,12 @@ def main() -> None:
         "--configs",
         nargs="+",
         default=["local_default", "optimized_no_graph"],
-        choices=["local_default", "optimized_no_graph", "optimized_cap128_no_graph"],
+        choices=[
+            "local_default",
+            "optimized_no_graph",
+            "optimized_v2_no_graph",
+            "optimized_cap128_no_graph",
+        ],
     )
     parser.add_argument("--runner-yaml", type=Path, default=DEFAULT_RUNNER_YAML)
     parser.add_argument("--samples", type=int, default=1)

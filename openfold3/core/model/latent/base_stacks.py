@@ -32,6 +32,7 @@ from openfold3.core.utils.chunk_utils import (
     DEFAULT_MAX_CHUNK_SIZE,
     FLASH_MAX_CHUNK_SIZE,
     ChunkSizeTuner,
+    apply_triangle_attn_chunk_cap,
     triangle_attn_chunk_cap,
 )
 
@@ -135,18 +136,24 @@ class MSAStack(nn.Module, ABC):
             max_chunk_size = (
                 FLASH_MAX_CHUNK_SIZE if use_flash_kernels else DEFAULT_MAX_CHUNK_SIZE
             )
-            tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
-                representative_fn=blocks[0],
-                # Tensors cloned to avoid getting written to in-place
-                # A corollary is that chunk size tuning should be disabled for
-                # large N, when z gets really big
-                args=(
-                    m.clone(),
-                    z.clone(),
-                ),
-                min_chunk_size=chunk_size,
-                max_chunk_size=max_chunk_size,
+            capped_chunk_size = apply_triangle_attn_chunk_cap(
+                chunk_size, max_chunk_size
             )
+            if capped_chunk_size is not None:
+                tuned_chunk_size = capped_chunk_size
+            else:
+                tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
+                    representative_fn=blocks[0],
+                    # Tensors cloned to avoid getting written to in-place
+                    # A corollary is that chunk size tuning should be disabled for
+                    # large N, when z gets really big
+                    args=(
+                        m.clone(),
+                        z.clone(),
+                    ),
+                    min_chunk_size=chunk_size,
+                    max_chunk_size=max_chunk_size,
+                )
             attn_chunk = (
                 tuned_chunk_size if use_flash_kernels else (tuned_chunk_size // 4)
             )
