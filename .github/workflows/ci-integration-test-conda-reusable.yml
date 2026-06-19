@@ -36,7 +36,7 @@ jobs:
         id: aws-start
         uses: omsf/start-aws-gha-runner@v1.1.1
         with:
-          aws_image_id: ami-00839c71d8f6096b4  # Deep Learning Base AMI with Single CUDA (Ubuntu 22.04)
+          aws_image_id: resolve:ssm:/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id  # Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04), latest
           aws_instance_type: "g5.4xlarge" # A10G 64 GB 
           aws_home_dir: /home/ubuntu
           aws_root_device_size: 200
