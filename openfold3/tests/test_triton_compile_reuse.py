@@ -185,3 +185,262 @@ assert count == 1, count
     assert proc.returncode == 0, proc.stdout + proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
     assert payload["_fused_ln_linear_fwd_kernel"] == 1
+
+
+def test_fused_softmax_reuses_compile_across_lengths(tmp_path):
+    """MSA fused softmax should use one fixed tile for practical lengths."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.fused_softmax import fused_softmax
+from openfold3.core.kernels.triton.triton_softmax import softmax_mask_bias_kernel
+
+torch.manual_seed(17)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+
+for n in (96, 192, 384, 768, 1264, 2049, 2800):
+    x = torch.randn(1, 1, 4, n, n, device="cuda", dtype=torch.bfloat16)
+    y = fused_softmax(x)
+    assert y.shape == x.shape
+    softmax_mask_bias_kernel.device_caches.clear()
+
+counts = {
+    "softmax_mask_bias_kernel": len(
+        list(cache_dir.rglob("softmax_mask_bias_kernel.json"))
+    ),
+}
+print(json.dumps(counts))
+assert counts == {"softmax_mask_bias_kernel": 1}, counts
+"""
+    env = os.environ.copy()
+    env.update({"TRITON_CACHE_DIR": str(cache_dir)})
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["softmax_mask_bias_kernel"] == 1
+
+
+def test_fused_softmax_grad_reuses_compile_across_lengths(tmp_path):
+    """Backward fused softmax should use one fixed tile for practical lengths."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.fused_softmax import fused_softmax
+from openfold3.core.kernels.triton.triton_softmax import softmax_grad_kernel
+
+torch.manual_seed(19)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+
+for n in (96, 192, 384, 768, 1536):
+    x = torch.randn(
+        1,
+        1,
+        4,
+        n,
+        n,
+        device="cuda",
+        dtype=torch.float32,
+        requires_grad=True,
+    )
+    y = fused_softmax(x)
+    y.square().sum().backward()
+    softmax_grad_kernel.device_caches.clear()
+
+counts = {
+    "softmax_grad_kernel": len(
+        list(cache_dir.rglob("softmax_grad_kernel.json"))
+    ),
+}
+print(json.dumps(counts))
+assert counts == {"softmax_grad_kernel": 1}, counts
+"""
+    env = os.environ.copy()
+    env.update({"TRITON_CACHE_DIR": str(cache_dir)})
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["softmax_grad_kernel"] == 1
+    assert payload["softmax_grad_kernel_two_rows"] == 0
+
+
+def test_fused_softmax_wide_reuses_compile_across_lengths(tmp_path):
+    """Streaming wide-row softmax should avoid bucket recompiles above 4096."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.fused_softmax import fused_softmax
+from openfold3.core.kernels.triton.triton_softmax import (
+    softmax_mask_bias_wide_kernel,
+)
+
+torch.manual_seed(31)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+
+for n in (4097, 5000, 8193):
+    x = torch.randn(1, 1, 1, 2, n, device="cuda", dtype=torch.bfloat16)
+    y = fused_softmax(x)
+    ref = torch.softmax(x.float(), dim=-1).to(y.dtype)
+    assert y.shape == x.shape
+    torch.testing.assert_close(y, ref, atol=4e-3, rtol=4e-3)
+    softmax_mask_bias_wide_kernel.device_caches.clear()
+
+count = len(list(cache_dir.rglob("softmax_mask_bias_wide_kernel.json")))
+print(json.dumps({"softmax_mask_bias_wide_kernel": count}))
+assert count == 1, count
+"""
+    env = os.environ.copy()
+    env.update({"TRITON_CACHE_DIR": str(cache_dir)})
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["softmax_mask_bias_wide_kernel"] == 1
+
+
+def test_fused_softmax_wide_grad_reuses_compile_across_lengths(tmp_path):
+    """Streaming wide-row softmax backward should avoid bucket recompiles."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.fused_softmax import fused_softmax
+from openfold3.core.kernels.triton.triton_softmax import softmax_grad_wide_kernel
+
+torch.manual_seed(37)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+
+for n in (4097, 5000, 8193):
+    x = torch.randn(
+        1,
+        1,
+        1,
+        2,
+        n,
+        device="cuda",
+        dtype=torch.float32,
+        requires_grad=True,
+    )
+    x_ref = x.detach().clone().requires_grad_(True)
+    y = fused_softmax(x)
+    ref = torch.softmax(x_ref, dim=-1)
+    loss = y.square().sum()
+    ref_loss = ref.square().sum()
+    loss.backward()
+    ref_loss.backward()
+    torch.testing.assert_close(y, ref, atol=2e-5, rtol=2e-5)
+    torch.testing.assert_close(x.grad, x_ref.grad, atol=2e-5, rtol=2e-5)
+    softmax_grad_wide_kernel.device_caches.clear()
+
+count = len(list(cache_dir.rglob("softmax_grad_wide_kernel.json")))
+print(json.dumps({"softmax_grad_wide_kernel": count}))
+assert count == 1, count
+"""
+    env = os.environ.copy()
+    env.update({"TRITON_CACHE_DIR": str(cache_dir)})
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["softmax_grad_wide_kernel"] == 1
+
+
+def test_flash_diffusion_attn_reuses_compile_across_lengths(tmp_path):
+    """Diffusion pair-bias FlashAttention should not specialize on token length."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import math
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.flash_diffusion_attn import (
+    _flash_diffusion_attn_kernel,
+    flash_diffusion_attn,
+)
+
+torch.manual_seed(41)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+
+for n in (64, 96, 127):
+    q = torch.randn(1, 2, 4, n, 32, device="cuda", dtype=torch.bfloat16)
+    k = torch.randn_like(q)
+    v = torch.randn_like(q)
+    mask = torch.ones(1, 1, 1, 1, n, device="cuda", dtype=torch.bfloat16)
+    mask[..., -3:] = 0
+    mask_bias = 1e9 * (mask - 1)
+    pair_bias = torch.randn(
+        1, 1, 4, n, n, device="cuda", dtype=torch.bfloat16
+    ) * 0.1
+    scale = 1 / math.sqrt(32)
+    y = flash_diffusion_attn(q, k, v, mask_bias, pair_bias, scale)
+    scores = torch.einsum("bshqc,bshkc->bshqk", q.float(), k.float()) * scale
+    scores = scores + mask_bias.float() + pair_bias.float()
+    ref = torch.einsum(
+        "bshqk,bshkc->bshqc", torch.softmax(scores, dim=-1).to(v.dtype), v
+    )
+    assert y.shape == q.shape
+    torch.testing.assert_close(y, ref, atol=5e-2, rtol=5e-2)
+    _flash_diffusion_attn_kernel.device_caches.clear()
+
+count = len(list(cache_dir.rglob("_flash_diffusion_attn_kernel.json")))
+print(json.dumps({"_flash_diffusion_attn_kernel": count}))
+assert count == 1, count
+"""
+    env = os.environ.copy()
+    env.update({"TRITON_CACHE_DIR": str(cache_dir)})
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["_flash_diffusion_attn_kernel"] == 1

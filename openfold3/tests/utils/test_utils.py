@@ -13,12 +13,18 @@
 # limitations under the License.
 
 import math
+import os
 import unittest
 
 import torch
 
 from openfold3.core.model.primitives import Linear
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner, _chunk_slice, chunk_layer
+from openfold3.core.utils.chunk_utils import (
+    ChunkSizeTuner,
+    _chunk_slice,
+    chunk_layer,
+    triangle_attn_chunk_cap,
+)
 from openfold3.core.utils.rigid_utils import (
     Rigid,
     Rotation,
@@ -306,6 +312,45 @@ class TestUtils(unittest.TestCase):
             first, second, "Chunk size should have been re-tuned for new arg rank"
         )
 
+    def test_chunk_size_tuner_remembers_multiple_arg_shapes(self):
+        tuner = ChunkSizeTuner()
+
+        def fn(t, chunk_size):
+            if chunk_size > 2 ** t.dim() * t.dtype.itemsize:
+                raise RuntimeError("Chunk size too large")
+            return t
+
+        spy_fn = unittest.mock.Mock(side_effect=fn)
+
+        first = tuner.tune_chunk_size(
+            representative_fn=spy_fn,
+            args=(torch.zeros(2, 3, 4, 5),),
+            min_chunk_size=4,
+            max_chunk_size=256,
+        )
+        after_first = spy_fn.call_count
+        tuner.tune_chunk_size(
+            representative_fn=spy_fn,
+            args=(torch.zeros(2, 3, 4, 5, 6),),
+            min_chunk_size=4,
+            max_chunk_size=256,
+        )
+        after_second_shape = spy_fn.call_count
+        third = tuner.tune_chunk_size(
+            representative_fn=spy_fn,
+            args=(torch.zeros(2, 3, 4, 5),),
+            min_chunk_size=4,
+            max_chunk_size=256,
+        )
+
+        self.assertEqual(first, third)
+        self.assertGreater(after_second_shape, after_first)
+        self.assertEqual(
+            after_second_shape,
+            spy_fn.call_count,
+            "Returning to a previously tuned shape should reuse its cached chunk size",
+        )
+
     def test_chunk_size_tuner_handles_dtype_bytes_change(self):
         tuner = ChunkSizeTuner()
 
@@ -355,3 +400,23 @@ class TestUtils(unittest.TestCase):
         self.assertNotEqual(
             first, second, "Chunk size should have been re-tuned for new arg count"
         )
+
+    def test_triangle_attn_chunk_cap_env(self):
+        keys = ["OPENFOLD3_TRI_ATTN_CHUNK_CAP"]
+        old_env = {k: os.environ.get(k) for k in keys}
+        try:
+            for k in keys:
+                os.environ.pop(k, None)
+            self.assertIsNone(triangle_attn_chunk_cap())
+
+            os.environ["OPENFOLD3_TRI_ATTN_CHUNK_CAP"] = "64"
+            self.assertEqual(triangle_attn_chunk_cap(), 64)
+
+            os.environ["OPENFOLD3_TRI_ATTN_CHUNK_CAP"] = "bad"
+            self.assertIsNone(triangle_attn_chunk_cap())
+        finally:
+            for k, v in old_env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v

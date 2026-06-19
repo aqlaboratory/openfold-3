@@ -19,6 +19,8 @@ attention kernel, DS4Sci_EvoformerAttention vs. a stock PyTorch attention
 implementation.
 """
 
+import os
+
 import pytest
 import torch
 from torch.nn import functional as F
@@ -614,6 +616,7 @@ class TestKernels:
     def _compare_diffusion_transformer(
         self,
         use_deepspeed_evo_attention=False,
+        use_fused_diffusion_attention=False,
         dtype=torch.float32,
         eps=2e-2,
     ):
@@ -665,29 +668,42 @@ class TestKernels:
 
         mask = torch.randint(0, 2, (batch_size, 1, n_res), device="cuda", dtype=dtype)
 
-        with torch.no_grad(), torch.amp.autocast("cuda", dtype=dtype):
-            out_repro_a = block(
-                a=a,
-                s=s,
-                z=z,
-                mask=mask,
-                use_deepspeed_evo_attention=False,
-            )
+        old_env = os.environ.get("OPENFOLD3_FUSED_DIFFUSION_ATTN")
+        try:
+            with torch.no_grad(), torch.amp.autocast("cuda", dtype=dtype):
+                os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN"] = "0"
+                out_repro_a = block(
+                    a=a,
+                    s=s,
+                    z=z,
+                    mask=mask,
+                    use_deepspeed_evo_attention=False,
+                )
 
-            # In practice, layer norms applied later in the network make any
-            # kernel rounding errors negligible
-            out_repro_a = F.layer_norm(out_repro_a, (c_a,)).cpu()
+                # In practice, layer norms applied later in the network make any
+                # kernel rounding errors negligible
+                out_repro_a = F.layer_norm(out_repro_a, (c_a,)).cpu()
 
-            out_repro_a_ds = block(
-                a=a,
-                s=s,
-                z=z,
-                mask=mask,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            )
-            out_repro_a_ds = F.layer_norm(out_repro_a_ds, (c_a,)).cpu()
+                os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN"] = (
+                    "1" if use_fused_diffusion_attention else "0"
+                )
+                out_repro_a_ds = block(
+                    a=a,
+                    s=s,
+                    z=z,
+                    mask=mask,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                )
+                out_repro_a_ds = F.layer_norm(out_repro_a_ds, (c_a,)).cpu()
 
-            compare_utils.assert_mean_abs_diff_small(out_repro_a, out_repro_a_ds, eps)
+                compare_utils.assert_mean_abs_diff_small(
+                    out_repro_a, out_repro_a_ds, eps
+                )
+        finally:
+            if old_env is None:
+                os.environ.pop("OPENFOLD3_FUSED_DIFFUSION_ATTN", None)
+            else:
+                os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN"] = old_env
 
     @compare_utils.skip_unless_ds4s_installed()
     def test_compare_diffusion_transformer_dsk_bf16(self):
@@ -705,6 +721,16 @@ class TestKernels:
             use_deepspeed_evo_attention=True,
             dtype=torch.float32,
             eps=2e-2,
+        )
+
+    @compare_utils.skip_unless_triton_installed()
+    def test_compare_diffusion_transformer_fused_attention_bf16(self):
+        """Run Diffusion Transformer comparison test with fused pair-bias attention."""
+        self._compare_diffusion_transformer(
+            use_deepspeed_evo_attention=False,
+            use_fused_diffusion_attention=True,
+            dtype=torch.bfloat16,
+            eps=4e-2,
         )
 
     def _compare_template_stack(

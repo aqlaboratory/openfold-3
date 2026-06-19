@@ -22,6 +22,7 @@ Optimizations such as LMA and DeepSpeed EvoformerAttention are included.
 
 import importlib
 import math
+import os
 import warnings
 
 import torch
@@ -52,7 +53,59 @@ try:
 except ImportError:
     TritonEvoformer = None
 
+try:
+    from openfold3.core.kernels.triton.flash_diffusion_attn import (
+        flash_diffusion_attn,
+        is_triton_available as diffusion_attn_triton_available,
+    )
+except ImportError:
+    flash_diffusion_attn = None
+    diffusion_attn_triton_available = lambda: False
+
 TRITON_AVAILABLE = TritonEvoformer is not None
+DIFFUSION_ATTN_TRITON_AVAILABLE = (
+    flash_diffusion_attn is not None and diffusion_attn_triton_available()
+)
+
+_FLAG_TRUE = {"1", "true", "True"}
+
+
+# by Liang Hong <lhong22@cse.cuhk.edu.hk>: eligibility and dispatch for
+# length-generic fused diffusion attention with pair bias.
+def is_fused_diffusion_attention_enabled() -> bool:
+    """Returns True if OPENFOLD3_FUSED_DIFFUSION_ATTN=1."""
+    return os.environ.get("OPENFOLD3_FUSED_DIFFUSION_ATTN", "0") in _FLAG_TRUE
+
+
+def _can_use_fused_diffusion_attention(
+    q_x: torch.Tensor,
+    kv_x: torch.Tensor,
+    biases: list[torch.Tensor],
+    no_heads: int,
+) -> bool:
+    if (
+        not DIFFUSION_ATTN_TRITON_AVAILABLE
+        or torch.is_grad_enabled()
+        or not q_x.is_cuda
+        or kv_x is not q_x
+        or len(biases) != 2
+        or q_x.dim() != 4
+    ):
+        return False
+
+    mask_bias, pair_bias = biases
+    if mask_bias.dim() != 5 or pair_bias.dim() != 5:
+        return False
+
+    batch, samples, n_token = q_x.shape[:-1]
+    return (
+        mask_bias.shape[0] == batch
+        and mask_bias.shape[1] in (1, samples)
+        and mask_bias.shape[-3:] == (1, 1, n_token)
+        and pair_bias.shape[0] == batch
+        and pair_bias.shape[1] in (1, samples)
+        and pair_bias.shape[-3:] == (no_heads, n_token, n_token)
+    )
 
 cueq_is_installed = is_cuequivariance_available()
 if cueq_is_installed:
@@ -413,6 +466,18 @@ class Attention(nn.Module):
         if biases is None:
             biases = []
 
+        use_fused_diffusion_attention = (
+            is_fused_diffusion_attention_enabled()
+            and not (
+                use_deepspeed_evo_attention
+                or use_cueq_triangle_kernels
+                or use_triton_triangle_kernels
+                or use_lma
+                or use_high_precision
+            )
+            and _can_use_fused_diffusion_attention(q_x, kv_x, biases, self.no_heads)
+        )
+
         # DeepSpeed, cuequivariance, and Triton kernels apply scaling internally
         q, k, v = self._prep_qkv(
             q_x,
@@ -421,11 +486,24 @@ class Attention(nn.Module):
                 use_deepspeed_evo_attention
                 or use_cueq_triangle_kernels
                 or use_triton_triangle_kernels
+                or use_fused_diffusion_attention
             ),
         )
 
         # cuequivariance kernel takes precedence over use_deepspeed_evo_attention
-        if use_cueq_triangle_kernels:
+        if use_fused_diffusion_attention:
+            mask_bias, pair_bias = biases
+            scale = 1.0 / math.sqrt(self.c_hidden)
+            o = flash_diffusion_attn(
+                q=q,
+                k=k,
+                v=v,
+                mask_bias=mask_bias,
+                pair_bias=pair_bias,
+                softmax_scale=scale,
+            )
+            o = o.transpose(-2, -3)
+        elif use_cueq_triangle_kernels:
             if not cueq_is_installed:
                 raise ValueError(
                     "Running with `use_cueq_triangle_kernels` but package is not "

@@ -377,6 +377,7 @@ class ChunkSizeTuner:
     def __init__(self):
         self.cached_chunk_size = None
         self.cached_arg_data = None
+        self.cached_chunk_sizes = {}
 
     @staticmethod
     def _determine_favorable_chunk_size(fn, args, min_chunk_size, max_chunk_size):
@@ -443,6 +444,13 @@ class ChunkSizeTuner:
             return (a.shape, a.dtype.itemsize) if type(a) is torch.Tensor else a
 
         arg_data = tree_map(remove_tensors, args, object)
+        cache_key = (repr(arg_data), int(min_chunk_size), int(max_chunk_size))
+        cached = self.cached_chunk_sizes.get(cache_key)
+        if cached is not None:
+            self.cached_chunk_size = cached
+            self.cached_arg_data = arg_data
+            return cached
+
         if self.cached_arg_data is not None:
             # If args have changed shape/value, we need to re-tune
             consistent = self._compare_arg_caches(self.cached_arg_data, arg_data)
@@ -458,5 +466,6 @@ class ChunkSizeTuner:
                 max_chunk_size=max_chunk_size,
             )
             self.cached_arg_data = arg_data
+            self.cached_chunk_sizes[cache_key] = self.cached_chunk_size
 
         return self.cached_chunk_size

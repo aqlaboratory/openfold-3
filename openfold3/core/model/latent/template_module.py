@@ -42,6 +42,7 @@ from openfold3.core.utils.chunk_utils import (
     DEFAULT_MAX_CHUNK_SIZE,
     FLASH_MAX_CHUNK_SIZE,
     ChunkSizeTuner,
+    triangle_attn_chunk_cap,
 )
 from openfold3.core.utils.tensor_utils import add
 
@@ -445,11 +446,15 @@ class TemplatePairStack(nn.Module):
             attn_chunk = (
                 tuned_chunk_size if use_flash_kernels else (tuned_chunk_size // 4)
             )
+            attn_chunk = max(chunk_size, attn_chunk)
+            cap = triangle_attn_chunk_cap()
+            if cap is not None:
+                attn_chunk = max(chunk_size, min(attn_chunk, cap))
             blocks = [
                 partial(
                     b,
                     chunk_size=tuned_chunk_size,
-                    _attn_chunk_size=max(chunk_size, attn_chunk),
+                    _attn_chunk_size=attn_chunk,
                 )
                 for b in blocks
             ]
