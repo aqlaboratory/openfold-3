@@ -56,11 +56,15 @@ except ImportError:
 try:
     from openfold3.core.kernels.triton.flash_diffusion_attn import (
         flash_diffusion_attn,
+    )
+    from openfold3.core.kernels.triton.flash_diffusion_attn import (
         is_triton_available as diffusion_attn_triton_available,
     )
 except ImportError:
     flash_diffusion_attn = None
-    diffusion_attn_triton_available = lambda: False
+
+    def diffusion_attn_triton_available():
+        return False
 
 TRITON_AVAILABLE = TritonEvoformer is not None
 DIFFUSION_ATTN_TRITON_AVAILABLE = (
@@ -75,6 +79,16 @@ _FLAG_TRUE = {"1", "true", "True"}
 def is_fused_diffusion_attention_enabled() -> bool:
     """Returns True if OPENFOLD3_FUSED_DIFFUSION_ATTN=1."""
     return os.environ.get("OPENFOLD3_FUSED_DIFFUSION_ATTN", "0") in _FLAG_TRUE
+
+
+def _fused_diffusion_attention_min_tokens() -> int:
+    raw = os.environ.get("OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS")
+    if raw is None:
+        return 1024
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 1024
 
 
 def _can_use_fused_diffusion_attention(
@@ -100,6 +114,7 @@ def _can_use_fused_diffusion_attention(
     batch, samples, n_token = q_x.shape[:-1]
     return (
         mask_bias.shape[0] == batch
+        and (samples > 1 or n_token >= _fused_diffusion_attention_min_tokens())
         and mask_bias.shape[1] in (1, samples)
         and mask_bias.shape[-3:] == (1, 1, n_token)
         and pair_bias.shape[0] == batch

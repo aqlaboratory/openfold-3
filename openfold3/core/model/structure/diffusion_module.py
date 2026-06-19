@@ -30,6 +30,9 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionEncoder,
 )
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.model.primitives.attention import (
+    is_fused_diffusion_attention_enabled,
+)
 from openfold3.core.utils.rigid_utils import quat_to_rot
 
 
@@ -450,6 +453,37 @@ class SampleDiffusion(nn.Module):
             zij_conditioned=conditioning_cache["zij_conditioned"],
         )
 
+        # Loop-invariant kwargs for the per-step DiffusionModule call. These
+        # are constant across all rollout steps (only xl_noisy and t change).
+        # cuEq/Triton triangle flags are meaningful for trunk/template/MSA
+        # triangle attention, but the diffusion transformer uses token attention
+        # with pair bias. Passing those flags through would route it away from
+        # the fused diffusion flash-attention path when the global cuEq runner
+        # setting is enabled.
+        use_triangle_kernel_flags = not is_fused_diffusion_attention_enabled()
+
+        step_kwargs = dict(
+            batch=batch,
+            token_mask=batch["token_mask"],
+            atom_mask=atom_mask,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            use_conditioning=use_conditioning,
+            conditioning_cache=conditioning_cache,
+            atom_rep_cache=atom_rep_cache,
+            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+            use_cueq_triangle_kernels=(
+                use_cueq_triangle_kernels and use_triangle_kernel_flags
+            ),
+            use_triton_triangle_kernels=(
+                use_triton_triangle_kernels and use_triangle_kernel_flags
+            ),
+            use_lma=use_lma,
+            use_high_precision_attention=use_high_precision_attention,
+            _mask_trans=_mask_trans,
+        )
+
         for tau, c_tau in enumerate(noise_schedule[1:]):
             xl = centre_random_augmentation(xl=xl, atom_mask=atom_mask)
 
@@ -466,24 +500,10 @@ class SampleDiffusion(nn.Module):
             xl_noisy = xl + noise
 
             xl_denoised = self.diffusion_module(
-                batch=batch,
                 xl_noisy=xl_noisy,
-                token_mask=batch["token_mask"],
-                atom_mask=atom_mask,
                 t=t.to(xl_noisy.device),
-                si_input=si_input,
-                si_trunk=si_trunk,
-                zij_trunk=zij_trunk,
-                use_conditioning=use_conditioning,
                 chunk_size=chunk_size,
-                conditioning_cache=conditioning_cache,
-                atom_rep_cache=atom_rep_cache,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                use_triton_triangle_kernels=use_triton_triangle_kernels,
-                use_lma=use_lma,
-                use_high_precision_attention=use_high_precision_attention,
-                _mask_trans=_mask_trans,
+                **step_kwargs,
             )
 
             # TODO: Changed from SI, xl_noisy used instead of xl as in EDM paper

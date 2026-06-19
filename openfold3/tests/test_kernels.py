@@ -705,6 +705,122 @@ class TestKernels:
             else:
                 os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN"] = old_env
 
+    @compare_utils.skip_unless_triton_installed()
+    @compare_utils.skip_unless_cuda_available()
+    def test_fused_diffusion_attention_dispatch_policy(self):
+        """Fused diffusion attention should avoid slow single-sample medium N."""
+        from openfold3.core.model.primitives.attention import (
+            _can_use_fused_diffusion_attention,
+        )
+
+        old_min_tokens = os.environ.get("OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS")
+        try:
+            os.environ.pop("OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS", None)
+            with torch.no_grad():
+                for samples, n_token, expected in (
+                    (1, 590, False),
+                    (1, 1024, True),
+                    (5, 590, True),
+                ):
+                    q = torch.empty(
+                        1, samples, n_token, 768, device="cuda", dtype=torch.bfloat16
+                    )
+                    mask_bias = torch.empty(
+                        1, 1, 1, 1, n_token, device="cuda", dtype=torch.bfloat16
+                    )
+                    pair_bias = torch.empty(
+                        1,
+                        1,
+                        16,
+                        n_token,
+                        n_token,
+                        device="cuda",
+                        dtype=torch.bfloat16,
+                    )
+                    assert (
+                        _can_use_fused_diffusion_attention(
+                            q, q, [mask_bias, pair_bias], 16
+                        )
+                        is expected
+                    )
+
+                os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS"] = "0"
+                q = torch.empty(1, 1, 590, 768, device="cuda", dtype=torch.bfloat16)
+                mask_bias = torch.empty(
+                    1, 1, 1, 1, 590, device="cuda", dtype=torch.bfloat16
+                )
+                pair_bias = torch.empty(
+                    1, 1, 16, 590, 590, device="cuda", dtype=torch.bfloat16
+                )
+                assert _can_use_fused_diffusion_attention(
+                    q, q, [mask_bias, pair_bias], 16
+                )
+        finally:
+            if old_min_tokens is None:
+                os.environ.pop("OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS", None)
+            else:
+                os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS"] = old_min_tokens
+
+    def test_sample_diffusion_drops_triangle_flags_for_fused_attention(self):
+        """Diffusion flash attention should not be blocked by triangle flags."""
+        from openfold3.core.model.structure.diffusion_module import SampleDiffusion
+
+        class RecordingDiffusionModule(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.calls = []
+
+            def prepare_diffusion_conditioning_cache(
+                self, batch, si_input, si_trunk, zij_trunk, **kwargs
+            ):
+                return {"zij_conditioned": zij_trunk}
+
+            def prepare_atom_rep_cache(self, batch, si_trunk, zij_conditioned):
+                return {}
+
+            def forward(self, xl_noisy, **kwargs):
+                self.calls.append(kwargs)
+                return xl_noisy
+
+        old_env = os.environ.get("OPENFOLD3_FUSED_DIFFUSION_ATTN")
+        try:
+            os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN"] = "1"
+            diffusion_module = RecordingDiffusionModule()
+            sampler = SampleDiffusion(
+                gamma_0=0.0,
+                gamma_min=1.0,
+                noise_scale=1.0,
+                step_scale=1.0,
+                diffusion_module=diffusion_module,
+            )
+            batch = {
+                "atom_mask": torch.ones(1, 3),
+                "token_mask": torch.ones(1, 2),
+            }
+            si_input = torch.zeros(1, 2, 4)
+            si_trunk = torch.zeros(1, 2, 4)
+            zij_trunk = torch.zeros(1, 2, 2, 4)
+            sampler(
+                batch=batch,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                noise_schedule=torch.tensor([1.0, 0.5]),
+                no_rollout_samples=1,
+                use_cueq_triangle_kernels=True,
+                use_triton_triangle_kernels=True,
+            )
+
+            assert len(diffusion_module.calls) == 1
+            call = diffusion_module.calls[0]
+            assert call["use_cueq_triangle_kernels"] is False
+            assert call["use_triton_triangle_kernels"] is False
+        finally:
+            if old_env is None:
+                os.environ.pop("OPENFOLD3_FUSED_DIFFUSION_ATTN", None)
+            else:
+                os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN"] = old_env
+
     @compare_utils.skip_unless_ds4s_installed()
     def test_compare_diffusion_transformer_dsk_bf16(self):
         """Run Diffusion Transformer comparison test with BF16 precision."""

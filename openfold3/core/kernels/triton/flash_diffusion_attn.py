@@ -143,8 +143,7 @@ if _TRITON_AVAILABLE:
             + offs_c[None, :] * stride_q_c,
             mask=mask_m[:, None] & mask_c[None, :],
             other=0.0,
-        ).to(tl.float32)
-        q = q * softmax_scale
+        )
 
         m_i = tl.full((BLOCK_M,), float("-inf"), dtype=tl.float32)
         l_i = tl.zeros((BLOCK_M,), dtype=tl.float32)
@@ -171,12 +170,13 @@ if _TRITON_AVAILABLE:
                 + offs_c[None, :] * stride_k_c,
                 mask=mask_n[:, None] & mask_c[None, :],
                 other=0.0,
-            ).to(tl.float32)
+            )
 
             if ALLOW_TF32:
                 qk = tl.dot(q, tl.trans(k), allow_tf32=True)
             else:
                 qk = tl.dot(q, tl.trans(k), input_precision="ieee")
+            qk = qk * softmax_scale
 
             pair_bias = tl.load(
                 PAIR_BIAS_ptr
@@ -208,11 +208,13 @@ if _TRITON_AVAILABLE:
                 + offs_c[None, :] * stride_v_c,
                 mask=mask_n[:, None] & mask_c[None, :],
                 other=0.0,
-            ).to(tl.float32)
+            )
             if ALLOW_TF32:
-                acc = tl.dot(p, v, acc, allow_tf32=True)
+                acc = tl.dot(p.to(V_ptr.dtype.element_ty), v, acc, allow_tf32=True)
             else:
-                acc = tl.dot(p, v, acc, input_precision="ieee")
+                acc = tl.dot(
+                    p.to(V_ptr.dtype.element_ty), v, acc, input_precision="ieee"
+                )
 
         acc = acc / l_i[:, None]
 
@@ -291,7 +293,11 @@ def flash_diffusion_attn(
     block_c = _next_power_of_two(CH)
     if block_c > 128:
         raise ValueError(f"head dim {CH} is unsupported")
-    block_m = 64
+    block_m = 128
+    # Keep tile sizes independent of the target length.  For the OF3 diffusion
+    # signature (CH=48), a 128-row query tile with a wider K/V tile gives the
+    # best warmed throughput on both single-sample long-N and 5-sample rollout
+    # shapes while compiling once per operation signature.
     block_n = 64
     num_warps = 4 if block_c <= 64 else 8
 
