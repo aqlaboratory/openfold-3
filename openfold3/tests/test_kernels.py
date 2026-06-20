@@ -997,3 +997,63 @@ class TestKernels:
             use_triton_triangle_kernels=True,
             dtype=torch.bfloat16,
         )
+
+    @compare_utils.skip_unless_cuda_available()
+    def test_template_stack_empty_masks_match_full_path(self):
+        """Empty template masks still run the learned template path.
+
+        MSA-free/no-template inference supplies padded template slots with zero
+        masks. Those slots are not mathematically equivalent to returning a
+        zero template embedding because the template pair stack has learned
+        parameters and normalization layers.
+        """
+        batch_size = 1
+        n_templ = 2
+        n_token = 32
+
+        of3_proj_entry = OF3ProjectEntry()
+        of3_config = of3_proj_entry.get_model_config_with_presets()
+        c_in = of3_config.architecture.template.template_pair_embedder.c_in
+
+        embedder = (
+            TemplateEmbedderAllAtom(of3_config.architecture.template)
+            .eval()
+            .to(device="cuda")
+        )
+        self._initialize_model_weights(embedder)
+
+        batch = {
+            "token_mask": torch.ones((batch_size, n_token)),
+            "asym_id": torch.ones((batch_size, n_token)),
+            "template_restype": torch.ones((batch_size, n_templ, n_token, 32)),
+            "template_pseudo_beta_mask": torch.zeros(
+                (batch_size, n_templ, n_token)
+            ),
+            "template_backbone_frame_mask": torch.zeros(
+                (batch_size, n_templ, n_token)
+            ),
+            "template_distogram": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 39)
+            ),
+            "template_unit_vector": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 3)
+            ),
+        }
+        batch = tensor_tree_map(lambda t: t.cuda(), batch)
+        z = torch.randn((batch_size, n_token, n_token, c_in), device="cuda")
+        pair_mask = torch.ones((batch_size, n_token, n_token), device="cuda")
+
+        with torch.no_grad():
+            out = embedder(
+                batch,
+                z,
+                pair_mask,
+                inplace_safe=True,
+                use_deepspeed_evo_attention=False,
+                use_cueq_triangle_kernels=False,
+                use_triton_triangle_kernels=False,
+                chunk_size=4,
+            )
+
+        assert out.shape == (batch_size, n_token, n_token, of3_config.architecture.template.c_z)
+        assert out.abs().max() > 0

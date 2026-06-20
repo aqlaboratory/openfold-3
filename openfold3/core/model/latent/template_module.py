@@ -780,15 +780,6 @@ class TemplateEmbedderAllAtom(nn.Module):
         """
         n_templ = batch["template_restype"].shape[-3]
         template_sum_done = False
-        if (
-            not self.training
-            and not torch.is_grad_enabled()
-            and n_templ > 0
-            and batch["template_pseudo_beta_mask"].sum() == 0
-            and batch["template_backbone_frame_mask"].sum() == 0
-        ):
-            return z.new_zeros(*z.shape[:-1], self.config.c_z)
-
         if offload_inference:
             t = self._forward_offload(
                 batch=batch,
