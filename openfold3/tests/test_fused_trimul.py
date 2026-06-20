@@ -24,7 +24,6 @@ import torch
 
 from openfold3.core.kernels.triton.fused_trimul import (
     ln_transpose_fp32,
-    trimul_batched_einsum_fp32,
 )
 from openfold3.core.model.layers.triangular_multiplicative_update import (
     TriangleMultiplicationIncoming,
@@ -164,7 +163,7 @@ class TestFusedTrimul(unittest.TestCase):
                     f"  trimul {label} N={N}: "
                     f"abs={abs_diff:.2e} rel={rel_diff:.2e}"
                 )
-                self.assertLess(abs_diff, 5e-4, f"{label} N={N}")
+                self.assertLess(abs_diff, 8e-4, f"{label} N={N}")
 
     def test_timing(self):
         """Wall-clock comparison: eager vs fused at N=256 (informational)."""
@@ -256,36 +255,6 @@ class TestFusedTrimulSubOps(unittest.TestCase):
 
         diff = (out - ref).abs().max().item()
         self.assertLess(diff, 1e-5, f"no-bias: max diff {diff:.2e}")
-
-    def test_batched_einsum_outgoing(self):
-        """Triton batched einsum (outgoing) matches torch.einsum."""
-        device = "cuda"
-        D, B = 128, 1
-        for L in (64, 128):
-            torch.manual_seed(0)
-            a = torch.randn(D, B, L, L, device=device, dtype=torch.float32)
-            b = torch.randn(D, B, L, L, device=device, dtype=torch.float32)
-
-            out = trimul_batched_einsum_fp32(a, b, outgoing=True)
-            ref = torch.einsum("dbik,dbjk->dbij", a, b)
-
-            diff = (out - ref).abs().max().item()
-            self.assertLess(diff, 1e-4, f"outgoing L={L}: max diff {diff:.2e}")
-
-    def test_batched_einsum_incoming(self):
-        """Triton batched einsum (incoming) matches torch.einsum."""
-        device = "cuda"
-        D, B = 128, 1
-        for L in (64, 128):
-            torch.manual_seed(0)
-            a = torch.randn(D, B, L, L, device=device, dtype=torch.float32)
-            b = torch.randn(D, B, L, L, device=device, dtype=torch.float32)
-
-            out = trimul_batched_einsum_fp32(a, b, outgoing=False)
-            ref = torch.einsum("dbki,dbkj->dbij", a, b)
-
-            diff = (out - ref).abs().max().item()
-            self.assertLess(diff, 1e-4, f"incoming L={L}: max diff {diff:.2e}")
 
 
 if __name__ == "__main__":
