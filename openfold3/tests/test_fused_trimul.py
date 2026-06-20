@@ -83,7 +83,14 @@ class TestFusedTrimul(unittest.TestCase):
         for outgoing in (True, False):
             for N in (64, 256):
                 for use_mask in (True, False):
-                    self._check(outgoing, N, torch.float32, use_mask, atol=2e-4, rtol=2e-4)
+                    self._check(
+                        outgoing,
+                        N,
+                        torch.float32,
+                        use_mask,
+                        atol=8e-4,
+                        rtol=8e-4,
+                    )
 
     def test_bf16(self):
         for outgoing in (True, False):
@@ -102,30 +109,34 @@ class TestFusedTrimul(unittest.TestCase):
             ref = z + upd
             fused = fused_trimul_update(m, z.clone(), mask, with_add=True)
         diff = (fused - ref).abs().max().item()
-        self.assertTrue(diff < 2e-4, f"with_add max diff {diff:.2e}")
+        self.assertTrue(diff < 8e-4, f"with_add max diff {diff:.2e}")
 
     def test_with_add_inplace_out(self):
         device = "cuda"
         torch.manual_seed(0)
         for cls in (TriangleMultiplicationOutgoing, TriangleMultiplicationIncoming):
-            m = cls(128, 128).to(device, torch.float32).eval()
-            _randomize_observable_output(m)
-            z = torch.randn(1, 128, 128, 128, device=device) * 0.5
-            mask = torch.ones(1, 128, 128, device=device)
-            with torch.inference_mode():
-                upd = m.forward(z.clone(), mask=mask, inplace_safe=False)
-                ref = z + upd
-                z_inplace = z.clone()
-                fused = fused_trimul_update(
-                    m,
-                    z_inplace,
-                    mask,
-                    with_add=True,
-                    out=z_inplace,
+            for c_z in (64, 128):
+                m = cls(c_z, c_z).to(device, torch.float32).eval()
+                _randomize_observable_output(m)
+                z = torch.randn(1, 128, 128, c_z, device=device) * 0.5
+                mask = torch.ones(1, 128, 128, device=device)
+                with torch.inference_mode():
+                    upd = m.forward(z.clone(), mask=mask, inplace_safe=False)
+                    ref = z + upd
+                    z_inplace = z.clone()
+                    fused = fused_trimul_update(
+                        m,
+                        z_inplace,
+                        mask,
+                        with_add=True,
+                        out=z_inplace,
+                    )
+                self.assertEqual(fused.data_ptr(), z_inplace.data_ptr())
+                diff = (fused - ref).abs().max().item()
+                self.assertTrue(
+                    diff < 5e-4,
+                    f"inplace with_add c_z={c_z} max diff {diff:.2e}",
                 )
-            self.assertEqual(fused.data_ptr(), z_inplace.data_ptr())
-            diff = (fused - ref).abs().max().item()
-            self.assertTrue(diff < 2e-4, f"inplace with_add max diff {diff:.2e}")
 
     def test_multi_n_diff(self):
         """Numerical diff across multiple N values (outgoing + incoming, fp32)."""

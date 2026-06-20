@@ -373,7 +373,7 @@ class PairBlock(nn.Module):
                 else:
                     z = z + self.ps_dropout_row_layer(tmu_update)
             else:
-                # TODO: Inplace operations won't work if dropout is enabled
+                # TODO: Inplace operations won't work if we enable dropout
                 # during inference.
                 # Potentially add check to make sure dropout is disabled if using
                 # inplace ops

@@ -20,12 +20,14 @@ implementation.
 """
 
 import os
+from unittest import mock
 
 import pytest
 import torch
 from torch.nn import functional as F
 
 import openfold3.tests.compare_utils as compare_utils
+from openfold3.core.model.latent.base_blocks import PairBlock
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
@@ -613,6 +615,66 @@ class TestKernels:
             eps=4e-2,
         )
 
+    @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_triton_installed()
+    def test_pairblock_fused_tri_attn_v2_matches_cueq_without_output_norm(self):
+        """V2 must match the PairBlock integration path before layer-norm hiding."""
+        torch.manual_seed(7)
+        block = (
+            PairBlock(
+                c_z=128,
+                c_hidden_mul=128,
+                c_hidden_pair_att=32,
+                no_heads_pair=4,
+                transition_type="swiglu",
+                transition_n=2,
+                pair_dropout=0.25,
+                fuse_projection_weights=False,
+                inf=1e9,
+            )
+            .eval()
+            .cuda()
+        )
+        self._initialize_model_weights(block)
+
+        n_token = 76
+        z = torch.randn(1, n_token, n_token, 128, device="cuda") * 100
+        pair_mask = torch.ones(1, n_token, n_token, device="cuda")
+
+        with torch.inference_mode():
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "OPENFOLD3_FUSED_TRI_ATTN": "0",
+                    "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
+                    "OPENFOLD3_FUSED_TRIMUL": "0",
+                },
+            ):
+                ref = block(
+                    z.clone(),
+                    pair_mask=pair_mask,
+                    chunk_size=4,
+                    use_cueq_triangle_kernels=True,
+                    inplace_safe=True,
+                )
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "OPENFOLD3_FUSED_TRI_ATTN": "0",
+                    "OPENFOLD3_FUSED_TRI_ATTN_V2": "1",
+                    "OPENFOLD3_FUSED_TRIMUL": "0",
+                },
+            ):
+                fused = block(
+                    z.clone(),
+                    pair_mask=pair_mask,
+                    chunk_size=4,
+                    use_cueq_triangle_kernels=True,
+                    inplace_safe=True,
+                )
+
+        compare_utils.assert_max_abs_diff_small(ref, fused, 2e-3)
+
     def _compare_diffusion_transformer(
         self,
         use_deepspeed_evo_attention=False,
@@ -1057,3 +1119,80 @@ class TestKernels:
 
         assert out.shape == (batch_size, n_token, n_token, of3_config.architecture.template.c_z)
         assert out.abs().max() > 0
+
+    @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_triton_installed()
+    def test_template_stack_streaming_fused_trimul_matches_cueq(self):
+        """Fused trimul must handle template c_z=64 in the streaming path."""
+        batch_size = 1
+        n_templ = 4
+        n_token = 76
+
+        of3_proj_entry = OF3ProjectEntry()
+        of3_config = of3_proj_entry.get_model_config_with_presets()
+        c_in = of3_config.architecture.template.template_pair_embedder.c_in
+
+        embedder = (
+            TemplateEmbedderAllAtom(of3_config.architecture.template)
+            .eval()
+            .cuda()
+        )
+        self._initialize_model_weights(embedder)
+
+        batch = {
+            "token_mask": torch.ones((batch_size, n_token), device="cuda"),
+            "asym_id": torch.ones((batch_size, n_token), device="cuda"),
+            "template_restype": torch.ones(
+                (batch_size, n_templ, n_token, 32), device="cuda"
+            ),
+            "template_pseudo_beta_mask": torch.zeros(
+                (batch_size, n_templ, n_token), device="cuda"
+            ),
+            "template_backbone_frame_mask": torch.zeros(
+                (batch_size, n_templ, n_token), device="cuda"
+            ),
+            "template_distogram": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 39), device="cuda"
+            ),
+            "template_unit_vector": torch.ones(
+                (batch_size, n_templ, n_token, n_token, 3), device="cuda"
+            ),
+        }
+        z = torch.randn((batch_size, n_token, n_token, c_in), device="cuda")
+        pair_mask = torch.ones((batch_size, n_token, n_token), device="cuda")
+
+        with torch.inference_mode():
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "OPENFOLD3_FUSED_TRI_ATTN": "0",
+                    "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
+                    "OPENFOLD3_FUSED_TRIMUL": "0",
+                },
+            ):
+                ref = embedder(
+                    batch,
+                    z.clone(),
+                    pair_mask,
+                    chunk_size=4,
+                    use_cueq_triangle_kernels=True,
+                    inplace_safe=True,
+                )
+            with mock.patch.dict(
+                os.environ,
+                {
+                    "OPENFOLD3_FUSED_TRI_ATTN": "0",
+                    "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
+                    "OPENFOLD3_FUSED_TRIMUL": "1",
+                },
+            ):
+                fused = embedder(
+                    batch,
+                    z.clone(),
+                    pair_mask,
+                    chunk_size=4,
+                    use_cueq_triangle_kernels=True,
+                    inplace_safe=True,
+                )
+
+        compare_utils.assert_max_abs_diff_small(ref, fused, 2e-3)

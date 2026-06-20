@@ -259,6 +259,7 @@ if _TRITON_AVAILABLE:
         offs_n = pid_n * TILE_N + tl.arange(0, TILE_N).to(tl.int64)
         offs_k = tl.arange(0, TILE_K).to(tl.int64)
         mask_m = offs_m < M
+        mask_n = offs_n < CZ
 
         # value gemm: x_out [M,CH] @ wp[CZ,CH]^T  -> [TILE_M, TILE_N]
         xo_ptrs = x_out_ptr + (offs_m[:, None] * CH + offs_k[None, :])
@@ -266,7 +267,7 @@ if _TRITON_AVAILABLE:
         val_acc = tl.zeros((TILE_M, TILE_N), dtype=tl.float32)
         for _ in range(0, tl.cdiv(CH, TILE_K)):
             xo = tl.load(xo_ptrs, mask=mask_m[:, None], other=0.0)
-            wp = tl.load(wp_base)
+            wp = tl.load(wp_base, mask=mask_n[None, :], other=0.0)
             if PRECISION == 1:
                 val_acc = tl.dot(xo, wp, val_acc, input_precision="ieee")
             else:
@@ -310,6 +311,8 @@ if _TRITON_AVAILABLE:
                     xi = xi + tl.where(k_mask[None, :], beta_k[None, :], 0.0)
                 wg = tl.load(
                     wg_ptr + (offs_n[None, :] * CZ + k_range[:, None]),
+                    mask=mask_n[None, :] & k_mask[:, None],
+                    other=0.0,
                 )
                 if PRECISION == 1:
                     gate_acc = tl.dot(xi, wg, gate_acc, input_precision="ieee")
@@ -321,7 +324,7 @@ if _TRITON_AVAILABLE:
             wg_base = wg_ptr + (offs_n[None, :] * CZ + offs_k[:, None])
             for _ in range(0, tl.cdiv(CZ, TILE_K)):
                 xi = tl.load(xi_ptrs, mask=mask_m[:, None], other=0.0)
-                wg = tl.load(wg_base)
+                wg = tl.load(wg_base, mask=mask_n[None, :], other=0.0)
                 if PRECISION == 1:
                     gate_acc = tl.dot(xi, wg, gate_acc, input_precision="ieee")
                 else:
@@ -333,9 +336,17 @@ if _TRITON_AVAILABLE:
         o_ptrs = out_ptr + (offs_m[:, None] * CZ + offs_n[None, :])
         if WITH_ADD:
             r_ptrs = residual_ptr + (offs_m[:, None] * CZ + offs_n[None, :])
-            resid = tl.load(r_ptrs, mask=mask_m[:, None], other=0.0).to(tl.float32)
+            resid = tl.load(
+                r_ptrs,
+                mask=mask_m[:, None] & mask_n[None, :],
+                other=0.0,
+            ).to(tl.float32)
             out_val = out_val + resid
-        tl.store(o_ptrs, out_val.to(out_ptr.type.element_ty), mask=mask_m[:, None])
+        tl.store(
+            o_ptrs,
+            out_val.to(out_ptr.type.element_ty),
+            mask=mask_m[:, None] & mask_n[None, :],
+        )
 
 
     # ------------------------------------------------------------------ #
