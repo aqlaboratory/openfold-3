@@ -90,6 +90,7 @@ if _TRITON_AVAILABLE:
         eps,
         HAS_LN_BIAS: tl.constexpr,
         HAS_LIN_BIAS: tl.constexpr,
+        ALLOW_TF32: tl.constexpr,
         BLOCK_M: tl.constexpr,
         BLOCK_N: tl.constexpr,
         BLOCK_K: tl.constexpr,
@@ -160,13 +161,10 @@ if _TRITON_AVAILABLE:
         # x_hat: [BLOCK_M, BLOCK_K]; w: [BLOCK_N, BLOCK_K]; we want x_hat @ w.T
         # tl.dot(a, b) requires b: [K, N], so transpose w in registers.
         w_t = tl.trans(w)  # [BLOCK_K, BLOCK_N]
-        # TF32 tensor cores: ~10-bit mantissa for fp32 inputs. The
-        # baseline F.linear path on Ampere/Ada uses fp32 CUDA cores by
-        # default, but its `LayerNorm.forward` already casts bf16->fp32
-        # at boundaries; the model is robust to ~1e-3 relative drift.
-        # Enabling TF32 here is the difference between using tensor
-        # cores (good) and fp32 cores (10x slower for these tile sizes).
-        acc = tl.dot(x_hat, w_t, out_dtype=tl.float32, allow_tf32=True)
+        if ALLOW_TF32:
+            acc = tl.dot(x_hat, w_t, out_dtype=tl.float32, allow_tf32=True)
+        else:
+            acc = tl.dot(x_hat, w_t, out_dtype=tl.float32, input_precision="ieee")
 
         if HAS_LIN_BIAS:
             bias = tl.load(Bias_ptr + offs_n, mask=n_mask, other=0.0).to(tl.float32)
@@ -232,6 +230,7 @@ if _TRITON_AVAILABLE:
         # The (BLOCK_M, BLOCK_N, num_warps) we land on is the empirical
         # winner for each (BLOCK_K, M-regime) bucket. SMEM stays under
         # ~80KB for SM89/SM86 across all configs.
+        allow_tf32 = bool(torch.backends.cuda.matmul.allow_tf32)
         is_pair_scale = M >= 4096
         if BLOCK_K >= 1024:        # c_in in (513, 1024]; only when fallback is off
             BLOCK_M, BLOCK_N, num_warps = (32, 64, 4) if is_pair_scale else (16, 32, 2)
@@ -245,6 +244,8 @@ if _TRITON_AVAILABLE:
             BLOCK_N = max(16, _next_power_of_two(N))
             if BLOCK_N <= 32:
                 num_warps = min(num_warps, 2)
+        if not allow_tf32 and BLOCK_K >= 512 and is_pair_scale:
+            BLOCK_N = min(BLOCK_N, 32)
 
         # tl.dot requires its first operand's K (BLOCK_K) and second's K
         # to match. Both are BLOCK_K here. Triton requires BLOCK_K >= 16
@@ -264,7 +265,6 @@ if _TRITON_AVAILABLE:
 
         # gamma / beta cast to fp32 happens inside the kernel via .to(tl.float32).
         # Caller is responsible for passing matching-rank / contiguous inputs.
-
         # num_stages=1 keeps SMEM single-buffered. The whole reduction
         # fits in registers in one pass, so there's no pipeline to
         # hide latency — multi-stage just doubles SMEM and risks OOM
@@ -290,6 +290,7 @@ if _TRITON_AVAILABLE:
             eps,
             HAS_LN_BIAS=beta is not None,
             HAS_LIN_BIAS=bias is not None,
+            ALLOW_TF32=allow_tf32,
             BLOCK_M=BLOCK_M,
             BLOCK_N=BLOCK_N,
             BLOCK_K=BLOCK_K_DOT,

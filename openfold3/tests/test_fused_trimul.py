@@ -34,6 +34,13 @@ from openfold3.core.model.primitives.fused_trimul import fused_trimul_update
 from openfold3.tests.compare_utils import skip_unless_cuda_available
 
 
+def _randomize_observable_output(module):
+    """Make final/gate projections nonzero so parity tests observe errors."""
+    with torch.no_grad():
+        module.linear_z.weight.normal_(0, 0.02)
+        module.linear_g.weight.normal_(0, 0.02)
+
+
 def _time_fn(fn, n_runs=5):
     """Time a CUDA function, return median wall-clock in ms."""
     torch.cuda.synchronize()
@@ -57,6 +64,7 @@ class TestFusedTrimul(unittest.TestCase):
         )
         torch.manual_seed(0)
         m = cls(128, 128).to(device=device, dtype=dtype).eval()
+        _randomize_observable_output(m)
         z = torch.randn(1, N, N, 128, device=device, dtype=dtype) * 0.5
         mask = (
             torch.ones(1, N, N, device=device, dtype=dtype) if use_mask else None
@@ -86,6 +94,7 @@ class TestFusedTrimul(unittest.TestCase):
         device = "cuda"
         torch.manual_seed(0)
         m = TriangleMultiplicationOutgoing(128, 128).to(device, torch.float32).eval()
+        _randomize_observable_output(m)
         z = torch.randn(1, 128, 128, 128, device=device) * 0.5
         mask = torch.ones(1, 128, 128, device=device)
         with torch.inference_mode():
@@ -100,6 +109,7 @@ class TestFusedTrimul(unittest.TestCase):
         torch.manual_seed(0)
         for cls in (TriangleMultiplicationOutgoing, TriangleMultiplicationIncoming):
             m = cls(128, 128).to(device, torch.float32).eval()
+            _randomize_observable_output(m)
             z = torch.randn(1, 128, 128, 128, device=device) * 0.5
             mask = torch.ones(1, 128, 128, device=device)
             with torch.inference_mode():
@@ -128,6 +138,7 @@ class TestFusedTrimul(unittest.TestCase):
             )
             torch.manual_seed(0)
             m = cls(128, 128).to(device=device, dtype=torch.float32).eval()
+            _randomize_observable_output(m)
             label = "outgoing" if outgoing else "incoming"
             for N in (64, 128, 256):
                 z = torch.randn(1, N, N, 128, device=device) * 0.5
@@ -149,6 +160,7 @@ class TestFusedTrimul(unittest.TestCase):
         device = "cuda"
         torch.manual_seed(0)
         m = TriangleMultiplicationOutgoing(128, 128).to(device, torch.float32).eval()
+        _randomize_observable_output(m)
         N = 256
         z = torch.randn(1, N, N, 128, device=device)
         mask = torch.ones(1, N, N, device=device)
@@ -175,6 +187,7 @@ class TestFusedTrimul(unittest.TestCase):
         N = 256
         c_z = 128
         m = TriangleMultiplicationOutgoing(c_z, c_z).to(device, torch.float32).eval()
+        _randomize_observable_output(m)
         z = torch.randn(1, N, N, c_z, device=device)
         mask = torch.ones(1, N, N, device=device)
         U = N * N * c_z * 4

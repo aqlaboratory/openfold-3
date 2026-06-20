@@ -124,11 +124,7 @@ def fused_trimul_update(
     ab = gated_dual_gemm_fp32(
         z_2d, wp, wg, mask_flat,
         ln_weight=ln_in.weight, ln_bias=ln_in.bias, eps=ln_in.eps,
-        output_dtype=(
-            torch.bfloat16
-            if out is not None and z.dtype == torch.float32
-            else None
-        ),
+        output_dtype=None,
     )  # [2*c_hidden, M]
     del wp, wg
     a = ab[:c_hidden].view(c_hidden, B, N, N)

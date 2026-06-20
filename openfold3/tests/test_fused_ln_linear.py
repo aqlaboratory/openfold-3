@@ -44,7 +44,10 @@ M_VALUES = [1024, 65536]
 class TestFusedLNLinearForward(unittest.TestCase):
     """Forward correctness across c_in / c_out / dtype / sample-count."""
 
-    def _check(self, c_in, c_out, ln_offset, lin_bias, M, dtype, atol, rtol=0.0):
+    def _check(
+        self, c_in, c_out, ln_offset, lin_bias, M, dtype, atol, rtol=0.0,
+        allow_tf32=None,
+    ):
         torch.manual_seed(0)
         device = "cuda"
         x = torch.randn(M, c_in, dtype=dtype, device=device)
@@ -58,8 +61,14 @@ class TestFusedLNLinearForward(unittest.TestCase):
         # 'final' init zeros the weight; randomize for a non-trivial test.
         with torch.no_grad():
             m.weight.normal_(0, 0.5)
-        y_fused = m(x)
-        y_ref = m.reference_forward(x)
+        old_allow_tf32 = torch.backends.cuda.matmul.allow_tf32
+        if allow_tf32 is not None:
+            torch.backends.cuda.matmul.allow_tf32 = allow_tf32
+        try:
+            y_fused = m(x)
+            y_ref = m.reference_forward(x)
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_allow_tf32
         diff = (y_fused - y_ref).abs().max().item()
         ref_scale = y_ref.abs().max().item()
         bound = atol + rtol * ref_scale
@@ -83,6 +92,19 @@ class TestFusedLNLinearForward(unittest.TestCase):
                     self._check(
                         c_in, c_out, ln_off, lin_b, M, torch.float32,
                         atol=5e-3, rtol=2e-3,
+                        allow_tf32=True,
+                    )
+
+    def test_fp32_deterministic_precision(self):
+        for c_in, c_out, ln_off, lin_b in CASES:
+            for M in M_VALUES:
+                with self.subTest(
+                    c_in=c_in, c_out=c_out, ln_offset=ln_off, lin_bias=lin_b, M=M
+                ):
+                    self._check(
+                        c_in, c_out, ln_off, lin_b, M, torch.float32,
+                        atol=1e-4, rtol=1e-5,
+                        allow_tf32=False,
                     )
 
     def test_bf16(self):
