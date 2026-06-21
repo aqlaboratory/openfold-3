@@ -126,6 +126,7 @@ class AttentionPairBias(nn.Module):
         a: torch.Tensor,
         z: torch.Tensor,
         mask: torch.Tensor | None,
+        cached_pair_bias_h: torch.Tensor | None = None,
     ) -> list[torch.Tensor]:
         """
         Args:
@@ -135,6 +136,11 @@ class AttentionPairBias(nn.Module):
                 [*, N, N, C_z] Pair embedding
             mask:
                 [*, N] Mask for token or atom-level embedding
+            cached_pair_bias_h:
+                Optional precomputed `prep_static_pair_bias(z)` output shaped
+                ``[*, no_heads, N, N]`` (matching ``z`` batch dims). When
+                provided, ``z`` is not used and the LN+linear projection is
+                skipped. Caller is responsible for ensuring it matches ``z``.
 
         Returns:
             List of bias terms. Includes the pair bias and attention mask.
@@ -154,7 +160,25 @@ class AttentionPairBias(nn.Module):
         mask_bias = (self.inf * (mask - 1))[..., None, None, :]
         biases = [mask_bias]
 
-        biases.append(self.prep_static_pair_bias(z))
+        pair_bias = (
+            cached_pair_bias_h
+            if cached_pair_bias_h is not None
+            else self.prep_static_pair_bias(z)
+        )
+        # pair_bias has shape [*z.shape[:-3], H, N, N]. If a carries extra
+        # leading batch dims that z does not (e.g. diffusion's sample dim),
+        # insert matching broadcast singleton dims so the bias broadcasts
+        # naturally over a's batch shape. This is also what the fused
+        # diffusion-attn kernel expects: [B, S|1, H, N, N].
+        n_extra = a.dim() - z.dim() + 1
+        if n_extra > 0:
+            head_pos = pair_bias.dim() - 3
+            pair_bias = pair_bias.view(
+                pair_bias.shape[:head_pos]
+                + (1,) * n_extra
+                + pair_bias.shape[head_pos:]
+            )
+        biases.append(pair_bias)
 
         return biases
 
@@ -190,6 +214,7 @@ class AttentionPairBias(nn.Module):
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
+        cached_pair_bias_h: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -210,12 +235,19 @@ class AttentionPairBias(nn.Module):
                 Whether to use LMA
             use_high_precision_attention:
                 Whether to run attention in high precision
+            cached_pair_bias_h:
+                Optional precomputed pair-bias projection. When provided
+                ``z`` is not consumed by the pair-bias path and the LN+linear
+                projection is skipped. Used by the diffusion rollout to
+                avoid recomputing per-step.
         Returns
             [*, N, C_q] attention updated token or atom-level embedding
         """
         a = self.layer_norm_a(a, s) if self.use_ada_layer_norm else self.layer_norm_a(a)
 
-        biases = self._prep_bias(a=a, z=z, mask=mask)
+        biases = self._prep_bias(
+            a=a, z=z, mask=mask, cached_pair_bias_h=cached_pair_bias_h,
+        )
 
         # TODO: Make this less awkward, DS kernel has strict shape asserts
         #  and expects batch and seq dims to exist

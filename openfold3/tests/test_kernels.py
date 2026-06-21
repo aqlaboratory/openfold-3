@@ -823,6 +823,89 @@ class TestKernels:
             else:
                 os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS"] = old_min_tokens
 
+    def test_fused_diffusion_attention_default_cutoff_is_1024(self):
+        """Lock the S=1 token cutoff at 1024.
+
+        The microbench in scripts/dev/bench_diffusion_attn_module.py showed
+        that the kernel does not beat eager at S=1 N<1024 in either bf16 or
+        fp32, but wins from N>=1024 onward in fp32 (1.13x at N=1024,
+        1.15x at N=1264). Keep the default cutoff at 1024 so the kernel
+        only engages where it actually helps at single-sample.
+        """
+        from openfold3.core.model.primitives.attention import (
+            _fused_diffusion_attention_min_tokens,
+        )
+
+        old = os.environ.pop("OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS", None)
+        try:
+            assert _fused_diffusion_attention_min_tokens() == 1024
+        finally:
+            if old is not None:
+                os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS"] = old
+
+    @compare_utils.skip_unless_triton_installed()
+    @compare_utils.skip_unless_cuda_available()
+    def test_diffusion_transformer_pair_bias_cache_equivalence(self):
+        """Cached pair_bias_h produces identical output to uncached.
+
+        ``DiffusionTransformer.prepare_pair_bias_cache(z)`` returns one
+        precomputed ``LN_z(z) @ Wz`` projection per block. Passing those
+        through as ``pair_bias_cache`` must match the per-call eager path
+        bitwise (same kernel, same math, same input). Runs once with each
+        of the eager and fused diffusion-attn paths.
+        """
+        torch.manual_seed(0)
+        batch_size = 1
+        n_sample = 5
+        n_res = 384
+        c_a = 768
+        c_s = consts.c_s
+        c_z = consts.c_z
+
+        block = (
+            DiffusionTransformer(
+                c_a=c_a, c_s=c_s, c_z=c_z, c_hidden=48, no_heads=16,
+                no_blocks=2, n_transition=2, use_ada_layer_norm=True,
+                n_query=None, n_key=None, inf=1e9,
+            )
+            .eval().to(device="cuda", dtype=torch.float32)
+        )
+        self._initialize_model_weights(block)
+
+        a = torch.rand(batch_size, n_sample, n_res, c_a, device="cuda")
+        s = torch.rand(batch_size, n_sample, n_res, c_s, device="cuda")
+        z = torch.rand(batch_size, n_res, n_res, c_z, device="cuda")
+        mask = torch.randint(0, 2, (batch_size, n_res), device="cuda").float()
+
+        old_attn = os.environ.get("OPENFOLD3_FUSED_DIFFUSION_ATTN")
+        old_min = os.environ.get("OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS")
+        try:
+            for fused_attn in ("0", "1"):
+                os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN"] = fused_attn
+                os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS"] = "0"
+                with torch.no_grad():
+                    out_uncached = block(a=a, s=s, z=z, mask=mask).clone()
+                    cache = block.prepare_pair_bias_cache(z)
+                    out_cached = block(
+                        a=a, s=s, z=z, mask=mask, pair_bias_cache=cache,
+                    ).clone()
+                # Both paths consume the same input and call the same kernel
+                # math; the cache only changes WHEN prep_static_pair_bias is
+                # called, not its output. Outputs must be bitwise equal.
+                torch.testing.assert_close(
+                    out_uncached, out_cached, rtol=0, atol=0,
+                    msg=f"pair-bias cache != uncached (fused_attn={fused_attn})",
+                )
+        finally:
+            if old_attn is None:
+                os.environ.pop("OPENFOLD3_FUSED_DIFFUSION_ATTN", None)
+            else:
+                os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN"] = old_attn
+            if old_min is None:
+                os.environ.pop("OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS", None)
+            else:
+                os.environ["OPENFOLD3_FUSED_DIFFUSION_ATTN_MIN_TOKENS"] = old_min
+
     def test_sample_diffusion_drops_triangle_flags_for_fused_attention(self):
         """Diffusion flash attention should not be blocked by triangle flags."""
         from openfold3.core.model.structure.diffusion_module import SampleDiffusion

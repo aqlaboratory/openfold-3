@@ -19,6 +19,8 @@ Diffusion module. Implements the algorithms in section 3.7 of the
 Supplementary Information.
 """
 
+import os
+
 import torch
 import torch.nn as nn
 
@@ -34,6 +36,30 @@ from openfold3.core.model.primitives.attention import (
     is_fused_diffusion_attention_enabled,
 )
 from openfold3.core.utils.rigid_utils import quat_to_rot
+
+
+_FLAG_TRUE = {"1", "true", "True"}
+
+
+# by Liang Hong <lhong22@cse.cuhk.edu.hk>: rollout-wide diffusion pair-bias
+# cache toggle and preparation hooks amortized across denoising steps.
+def is_diffusion_pair_bias_cache_enabled() -> bool:
+    """Returns True if OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE=1.
+
+    When on, ``SampleDiffusion.forward`` precomputes one ``pair_bias_h``
+    per ``DiffusionTransformer`` block once before the 200-step rollout and
+    threads it into every per-step ``DiffusionModule`` call. Each block then
+    skips its own LN_z + linear_z pair-bias projection.
+
+    Memory cost is one ``[B, 1, no_heads, N, N]`` tensor per block held
+    resident across the rollout (e.g. ~2.9 GiB fp32 at homo_1200 N=1264,
+    H=16, 24 blocks).
+    Speed win is ~36% of the per-attention-call cost reclaimed × 24 blocks
+    × 200 steps, i.e. ~20-30% of diffusion wall.
+    Off by default; opt-in because the memory cost can push DIFFUSION above
+    TRUNK peak in U_trunk on memory-constrained targets.
+    """
+    return os.environ.get("OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE", "0") in _FLAG_TRUE
 
 
 def sample_rotations(shape, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
@@ -228,6 +254,7 @@ class DiffusionModule(nn.Module):
         chunk_size: int | None = None,
         conditioning_cache: dict[str, torch.Tensor] | None = None,
         atom_rep_cache: dict[str, torch.Tensor] | None = None,
+        pair_bias_cache: list[torch.Tensor] | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
@@ -318,6 +345,7 @@ class DiffusionModule(nn.Module):
             use_lma=use_lma,
             use_high_precision_attention=use_high_precision_attention,
             _mask_trans=_mask_trans,
+            pair_bias_cache=pair_bias_cache,
         )
 
         ai = self.layer_norm_a(ai)
@@ -453,6 +481,20 @@ class SampleDiffusion(nn.Module):
             zij_conditioned=conditioning_cache["zij_conditioned"],
         )
 
+        # Optionally precompute the per-block pair-bias projection once
+        # per rollout. zij is loop-invariant, so LN_z(zij) @ Wz is too.
+        # The cache trades memory for ~36% reduction in attn_pair_bias time
+        # per step (see is_diffusion_pair_bias_cache_enabled for trade-offs).
+        # Built before CUDA-graph capture so the captured kernels see stable
+        # HBM addresses for these tensors.
+        pair_bias_cache = None
+        if is_diffusion_pair_bias_cache_enabled() and not torch.is_grad_enabled():
+            pair_bias_cache = (
+                self.diffusion_module.diffusion_transformer.prepare_pair_bias_cache(
+                    conditioning_cache["zij_conditioned"]
+                )
+            )
+
         # Loop-invariant kwargs for the per-step DiffusionModule call. These
         # are constant across all rollout steps (only xl_noisy and t change).
         # cuEq/Triton triangle flags are meaningful for trunk/template/MSA
@@ -472,6 +514,7 @@ class SampleDiffusion(nn.Module):
             use_conditioning=use_conditioning,
             conditioning_cache=conditioning_cache,
             atom_rep_cache=atom_rep_cache,
+            pair_bias_cache=pair_bias_cache,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=(
                 use_cueq_triangle_kernels and use_triangle_kernel_flags

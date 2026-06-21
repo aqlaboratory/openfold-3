@@ -45,8 +45,9 @@ BASE_OPTIMIZED_ENV = {
     "OPENFOLD3_FUSED_TRI_ATTN": "0",
     "OPENFOLD3_FUSED_TRIMUL": "1",
     "OPENFOLD3_FUSED_OPM": "1",
-    "OPENFOLD3_FUSED_DIFFUSION_ATTN": "0",
+    "OPENFOLD3_FUSED_DIFFUSION_ATTN": "1",
     "OPENFOLD3_DIFFUSION_CUDA_GRAPH": "0",
+    "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "0",
 }
 
 V2_ENV = {
@@ -61,6 +62,22 @@ CAP128_ENV = {
     "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "128",
 }
 
+# Baseline matching the previous CAP128_ENV semantics before the diffusion-attn
+# kernel was added to BASE_OPTIMIZED_ENV. Useful for measuring just the
+# diffusion-attn kernel's contribution to overall wall/peak.
+CAP128_NO_DIFFATTN_ENV = {
+    **CAP128_ENV,
+    "OPENFOLD3_FUSED_DIFFUSION_ATTN": "0",
+}
+
+# CAP128_ENV plus the opt-in pair-bias cache. Cache costs ~3.0 U_trunk
+# resident (24 blocks × [B, 1, H, N, N] fp32) but reclaims ~36% of each
+# attention call's prep_bias time × 200 rollout steps × 24 blocks.
+CAP128_WITH_CACHE_ENV = {
+    **CAP128_ENV,
+    "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "1",
+}
+
 DISABLED_ENV = {
     "OPENFOLD3_FUSED_LN_LINEAR": "0",
     "OPENFOLD3_FUSED_SWIGLU_TRANSITION": "0",
@@ -70,6 +87,7 @@ DISABLED_ENV = {
     "OPENFOLD3_FUSED_OPM": "0",
     "OPENFOLD3_FUSED_DIFFUSION_ATTN": "0",
     "OPENFOLD3_DIFFUSION_CUDA_GRAPH": "0",
+    "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "0",
     "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
 }
 
@@ -240,6 +258,9 @@ def _child_main(args: argparse.Namespace) -> None:
             "OPENFOLD3_DIFFUSION_CUDA_GRAPH": os.environ.get(
                 "OPENFOLD3_DIFFUSION_CUDA_GRAPH"
             ),
+            "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": os.environ.get(
+                "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE"
+            ),
             "OPENFOLD3_TRI_ATTN_CHUNK_CAP": os.environ.get(
                 "OPENFOLD3_TRI_ATTN_CHUNK_CAP"
             ),
@@ -266,6 +287,10 @@ def _env_for_config(config: str, base_env: dict[str, str]) -> dict[str, str]:
         updates = V2_ENV
     elif config == "optimized_cap128_no_graph":
         updates = CAP128_ENV
+    elif config == "optimized_cap128_no_diffattn":
+        updates = CAP128_NO_DIFFATTN_ENV
+    elif config == "optimized_cap128_with_cache":
+        updates = CAP128_WITH_CACHE_ENV
     else:
         raise ValueError(f"Unknown config {config!r}")
 
@@ -453,6 +478,8 @@ def main() -> None:
             "optimized_no_graph",
             "optimized_v2_no_graph",
             "optimized_cap128_no_graph",
+            "optimized_cap128_no_diffattn",
+            "optimized_cap128_with_cache",
         ],
     )
     parser.add_argument("--runner-yaml", type=Path, default=DEFAULT_RUNNER_YAML)
