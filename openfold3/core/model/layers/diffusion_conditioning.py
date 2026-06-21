@@ -179,11 +179,16 @@ class DiffusionConditioning(nn.Module):
         if tune_chunk_size:
             self.chunk_size_tuner = ChunkSizeTuner()
 
+    _EMBED_ZIJ_CHUNK_ROWS: int = 128
+
     def _embed_zij_invariant(
         self,
         batch: dict,
         zij_trunk: torch.Tensor,
     ) -> torch.Tensor:
+        if not torch.is_grad_enabled():
+            return self._embed_zij_invariant_chunked(batch, zij_trunk)
+
         relpos_zij = relpos_complex(
             batch=batch,
             max_relative_idx=self.max_relative_idx,
@@ -197,6 +202,46 @@ class DiffusionConditioning(nn.Module):
         else:
             zij = self.linear_z(self.layer_norm_z(zij))
         return zij
+
+    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: row-chunked invariant pair
+    # embedding that avoids materializing the full relpos concat transient.
+    def _embed_zij_invariant_chunked(
+        self,
+        batch: dict,
+        zij_trunk: torch.Tensor,
+    ) -> torch.Tensor:
+        """Row-chunked variant that avoids the full [N, N, 267] concat transient.
+
+        Processes ``_EMBED_ZIJ_CHUNK_ROWS`` rows at a time. LN normalizes over
+        the last dim (267 channels) so each row is independent — chunking is
+        mathematically exact.
+        """
+        N = zij_trunk.shape[-3]
+        chunk = self._EMBED_ZIJ_CHUNK_ROWS
+        out = torch.empty(
+            *zij_trunk.shape[:-1], self.c_z,
+            dtype=zij_trunk.dtype, device=zij_trunk.device,
+        )
+        for i in range(0, N, chunk):
+            row_slice = slice(i, min(i + chunk, N))
+            relpos_chunk = relpos_complex(
+                batch=batch,
+                max_relative_idx=self.max_relative_idx,
+                max_relative_chain=self.max_relative_chain,
+                row_slice=row_slice,
+            ).to(dtype=zij_trunk.dtype)
+            cat_chunk = torch.cat(
+                [zij_trunk[..., row_slice, :, :], relpos_chunk], dim=-1
+            )
+            del relpos_chunk
+            if self._use_fused_ln_linear:
+                out[..., row_slice, :, :] = self.fused_ln_linear_z(cat_chunk)
+            else:
+                out[..., row_slice, :, :] = self.linear_z(
+                    self.layer_norm_z(cat_chunk)
+                )
+            del cat_chunk
+        return out
 
     def _embed_si_base(
         self,
