@@ -49,7 +49,7 @@ class MemorySnapshot(pl.Callback):
 
     Args:
         output_path: Path to save the .pickle snapshot file.
-        start_step: Step (batch_idx) at which to start recording and dump a single-step
+        step: Step (batch_idx) at which to record and dump a single-step
             snapshot. Set to `None` to disable step-based snapshotting (useful
             when only dump_on_oom is needed). Defaults to 0.
         dump_on_oom: If True, attaches an OOM observer that dumps the snapshot
@@ -61,13 +61,13 @@ class MemorySnapshot(pl.Callback):
     def __init__(
         self,
         output_path: str = "memory_snapshot.pickle",
-        start_step: int | None = 0,
+        step: int | None = 0,
         dump_on_oom: bool = False,
         stacks: str = "all",
     ):
         super().__init__()
         self.output_path = output_path
-        self.start_step = start_step
+        self.step = step
         self.dump_on_oom = dump_on_oom
         self.stacks = stacks
         self._oom_dumped = False
@@ -94,7 +94,7 @@ class MemorySnapshot(pl.Callback):
 
     @property
     def step_recording_enabled(self):
-        return self.start_step is not None
+        return self.step is not None
 
     def setup(self, trainer, pl_module, stage=None):
         # Only attach oom observer once
@@ -111,14 +111,14 @@ class MemorySnapshot(pl.Callback):
             torch._C._cuda_attach_out_of_memory_observer(self._oom_observer)
 
     def _on_batch_start(self, batch_idx: int):
-        record_step = self.step_recording_enabled and batch_idx == self.start_step
+        record_step = self.step_recording_enabled and batch_idx == self.step
         if self.dump_on_oom or record_step:
             # Reset history so the snapshot only contains the current step
             torch.cuda.memory._record_memory_history(enabled=None)
             torch.cuda.memory._record_memory_history(stacks=self.stacks)
 
     def _on_batch_end(self, batch_idx: int):
-        record_step = self.step_recording_enabled and batch_idx == self.start_step
+        record_step = self.step_recording_enabled and batch_idx == self.step
         if not record_step:
             return
 

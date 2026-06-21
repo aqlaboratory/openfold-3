@@ -16,6 +16,6 @@ memory_snapshot:
   enabled: true
   # Default values:
   output_path: memory_snapshot.pickle
-  start_step: 0
+  step: 0
   dump_on_oom: false
   stacks: null  # Defaults to 'all' for x86_64, 'python' for ARM
