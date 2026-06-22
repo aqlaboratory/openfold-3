@@ -20,6 +20,7 @@ the job logs:
   - `CUDA driver` / `nvidia-smi` failures before any test code runs
 - **EC2-capacity (in the `start-aws-runner` job)**:
   - `botocore.exceptions.ClientError: ... (InsufficientInstanceCapacity) when calling the RunInstances operation` — `start-aws-gha-runner` could not provision the GPU EC2 instance, so test code never ran.
+  - `botocore.exceptions.ClientError: ... (VcpuLimitExceeded) when calling the RunInstances operation` — vCPU quota exhausted, instance could not be provisioned.
   - Other `botocore.exceptions.ClientError` raised by `start-aws-gha-runner`
     before any GitHub runner registers.
 
@@ -42,6 +43,7 @@ GPU) are omitted; they don't tell us whether that runner was healthy.
 
 | Date (UTC) | Run ID | Failed job(s) | Time to fail | Signature |
 | --- | --- | --- | --- | --- |
+| 2026-06-22 | [27930489254](https://github.com/aqlaboratory/openfold-3/actions/runs/27930489254) | `start-aws-runner` × 3 (test-conda, test-pixi cuda12, test-pixi cuda13) | 0m 02s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner ever provisioned. |
 | 2026-06-19 | [27806279583](https://github.com/aqlaboratory/openfold-3/actions/runs/27806279583) | `start-aws-runner` × 3 (test-conda, test-pixi cuda12, test-pixi cuda13) | 0m 01s (all three) | `botocore.exceptions.ClientError: (InvalidAMIID.NotFound) ... The image id '[ami-00839c71d8f6096b4]' does not exist` — AMI referenced by workflow has been deleted/deregistered in AWS. No GPU runner ever provisioned. New signature class (AMI deletion vs. capacity exhaustion); will recur every run until the workflow's AMI reference is updated. |
 | 2026-06-16 | [27595142555](https://github.com/aqlaboratory/openfold-3/actions/runs/27595142555) | `test-conda` | 5m 24s | `CUDA-capable device(s) is/are busy or unavailable` in `TestKernels::test_dsk_forward_bf16` |
 | 2026-06-14 | [27488342368](https://github.com/aqlaboratory/openfold-3/actions/runs/27488342368) | `test-pixi (cuda13)` | 4m 27s | `cudaErrorDevicesUnavailable` in `TestKernels::test_dsk_forward_bf16` |
