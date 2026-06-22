@@ -32,7 +32,11 @@ from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
 )
 from openfold3.core.model.latent.base_blocks import PairBlock
+from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.model.primitives.fused_swiglu_transition import (
+    is_fused_swiglu_transition_enabled,
+)
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.checkpointing import (
     checkpoint_blocks,
@@ -43,7 +47,6 @@ from openfold3.core.utils.chunk_utils import (
     FLASH_MAX_CHUNK_SIZE,
     ChunkSizeTuner,
     apply_triangle_attn_chunk_cap,
-    triangle_attn_chunk_cap,
 )
 from openfold3.core.utils.tensor_utils import add
 
@@ -205,15 +208,30 @@ class TemplatePairBlock(PairBlock):
             t = t.unsqueeze(-4)
             mask = mask.unsqueeze(-3)
 
-        t = add(
-            t,
-            self.pair_transition(
+        pair_trans_mask = mask if _mask_trans else None
+        # Same fused pair-transition fast path as PairBlock in base_blocks.py.
+        if (
+            is_fused_swiglu_transition_enabled()
+            and inplace_safe
+            and not torch.is_grad_enabled()
+            and isinstance(self.pair_transition, SwiGLUTransition)
+        ):
+            trans_mask = (
+                pair_trans_mask.unsqueeze(-1) if pair_trans_mask is not None else None
+            )
+            t = self.pair_transition._transition_inplace(
+                x=t, mask=trans_mask, residual=t
+            )
+        else:
+            t = add(
                 t,
-                mask=mask if _mask_trans else None,
-                chunk_size=chunk_size,
-            ),
-            inplace_safe,
-        )
+                self.pair_transition(
+                    t,
+                    mask=pair_trans_mask,
+                    chunk_size=chunk_size,
+                ),
+                inplace=inplace_safe,
+            )
 
         return t
 
@@ -438,8 +456,9 @@ class TemplatePairStack(nn.Module):
             max_chunk_size = (
                 FLASH_MAX_CHUNK_SIZE if use_flash_kernels else DEFAULT_MAX_CHUNK_SIZE
             )
+            n_tokens = t.shape[-3]
             capped_chunk_size = apply_triangle_attn_chunk_cap(
-                chunk_size, max_chunk_size
+                chunk_size, max_chunk_size, n_tokens=n_tokens
             )
             if capped_chunk_size is not None:
                 tuned_chunk_size = capped_chunk_size
@@ -454,9 +473,11 @@ class TemplatePairStack(nn.Module):
                 tuned_chunk_size if use_flash_kernels else (tuned_chunk_size // 4)
             )
             attn_chunk = max(chunk_size, attn_chunk)
-            cap = triangle_attn_chunk_cap()
-            if cap is not None:
-                attn_chunk = max(chunk_size, min(attn_chunk, cap))
+            capped_attn_chunk = apply_triangle_attn_chunk_cap(
+                chunk_size, attn_chunk, n_tokens=n_tokens
+            )
+            if capped_attn_chunk is not None:
+                attn_chunk = capped_attn_chunk
             blocks = [
                 partial(
                     b,

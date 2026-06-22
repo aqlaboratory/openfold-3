@@ -28,6 +28,9 @@ _torch_gpu_setup()
 import torch  # noqa: E402
 
 from openfold3.core.config import config_utils  # noqa: E402
+from openfold3.core.model.primitives.fused_swiglu_transition import (  # noqa: E402
+    is_fused_swiglu_transition_enabled,
+)
 from openfold3.core.utils.tensor_utils import tensor_tree_map  # noqa: E402
 from openfold3.entry_points.experiment_runner import (  # noqa: E402
     InferenceExperimentRunner,
@@ -118,6 +121,25 @@ class FastStageProfiler:
         self._patches.clear()
 
 
+def _pair_transition_hook_attr(pair_block) -> str:
+    if (
+        is_fused_swiglu_transition_enabled()
+        and hasattr(pair_block.pair_transition, "_transition_inplace")
+    ):
+        return "_transition_inplace"
+    return "forward"
+
+
+def _wrap_tri_pair_block(prof: FastStageProfiler, pair_block, prefix: str) -> None:
+    prof.wrap(pair_block, "tri_mul_out_in", f"{prefix}.tri_mul")
+    prof.wrap(pair_block, "tri_att_start_end", f"{prefix}.tri_att")
+    prof.wrap(
+        pair_block.pair_transition,
+        _pair_transition_hook_attr(pair_block),
+        f"{prefix}.pair_trans",
+    )
+
+
 def install_fast_hooks(model, prof: FastStageProfiler, fine: bool = False) -> None:
     """Install stage hooks for one profiled forward."""
     prof.wrap(model, "run_trunk", "TRUNK", track_mem=True)
@@ -129,14 +151,42 @@ def install_fast_hooks(model, prof: FastStageProfiler, fine: bool = False) -> No
     prof.wrap(model.msa_module, "forward", "trunk.msa_module")
     prof.wrap(model.pairformer_stack, "forward", "trunk.pairformer")
 
-    if hasattr(model.msa_module, "blocks") and len(model.msa_module.blocks) > 0:
-        block = model.msa_module.blocks[0]
-        prof.wrap(block.outer_product_mean, "forward", "msa.b0.opm")
-        prof.wrap(block.pair_stack, "forward", "msa.b0.pair_stack")
-        prof.wrap(block.msa_att_row, "forward", "msa.b0.msa_att_row")
-        prof.wrap(block.msa_transition, "forward", "msa.b0.msa_transition")
-        if hasattr(block, "msa_pair_weighted_avg"):
-            prof.wrap(block.msa_pair_weighted_avg, "forward", "msa.b0.pair_wt_avg")
+    template_embedder = model.template_embedder
+    prof.wrap(
+        template_embedder.template_pair_embedder,
+        "forward",
+        "template.pair_embedder",
+    )
+    prof.wrap(
+        template_embedder.template_pair_embedder,
+        "_embed_feats",
+        "template.pair_embedder.feats",
+    )
+    prof.wrap(
+        template_embedder.template_pair_stack,
+        "forward",
+        "template.pair_stack",
+    )
+    if (
+        hasattr(template_embedder.template_pair_stack, "blocks")
+        and len(template_embedder.template_pair_stack.blocks) > 0
+    ):
+        block = template_embedder.template_pair_stack.blocks[0]
+        prof.wrap(block, "forward", "template.b0.total")
+        _wrap_tri_pair_block(prof, block, "template.b0")
+
+    if hasattr(model.msa_module, "blocks"):
+        for i, block in enumerate(model.msa_module.blocks):
+            prefix = f"msa.b{i}"
+            prof.wrap(block.outer_product_mean, "forward", f"{prefix}.opm")
+            if block.msa_att_row is not None:
+                prof.wrap(block.msa_att_row, "forward", f"{prefix}.msa_att_row")
+            if block.msa_transition is not None:
+                prof.wrap(
+                    block.msa_transition, "forward", f"{prefix}.msa_transition"
+                )
+            prof.wrap(block.pair_stack, "forward", f"{prefix}.pair_stack")
+            _wrap_tri_pair_block(prof, block.pair_stack, prefix)
 
     if (
         hasattr(model.pairformer_stack, "blocks")
@@ -144,22 +194,7 @@ def install_fast_hooks(model, prof: FastStageProfiler, fine: bool = False) -> No
     ):
         block = model.pairformer_stack.blocks[0]
         prof.wrap(block, "forward", "pf.b0.total")
-        prof.wrap(block.pair_stack, "tri_mul_out_in", "pf.b0.tri_mul")
-        prof.wrap(block.pair_stack, "tri_att_start_end", "pf.b0.tri_att")
-        fused_transition = os.environ.get(
-            "OPENFOLD3_FUSED_SWIGLU_TRANSITION", "0"
-        ) == "1"
-        transition_attr = (
-            "_transition_inplace"
-            if (
-                fused_transition
-                and hasattr(block.pair_stack.pair_transition, "_transition_inplace")
-            )
-            else "forward"
-        )
-        prof.wrap(
-            block.pair_stack.pair_transition, transition_attr, "pf.b0.pair_trans"
-        )
+        _wrap_tri_pair_block(prof, block.pair_stack, "pf.b0")
         prof.wrap(block.attn_pair_bias, "forward", "pf.b0.attn_pair_bias")
 
     diffusion_module = model.diffusion_module
@@ -285,11 +320,11 @@ def profile(args) -> dict:
     torch.cuda.synchronize()
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
-    model_params_bytes = torch.cuda.memory_allocated()
+    resident_baseline_bytes = torch.cuda.memory_allocated()
 
     print(f"n_tokens={n_tok}, n_atoms={n_atom}, c_z={c_z}")
     print(f"1U = {_mib(u_bytes):.1f} MiB")
-    print(f"Model params: {_mib(model_params_bytes):.0f} MiB")
+    print(f"Resident baseline: {_mib(resident_baseline_bytes):.0f} MiB")
 
     print("Warm-up forward...")
     with torch.inference_mode():
@@ -331,7 +366,10 @@ def profile(args) -> dict:
         "n_diffusion_samples": args.samples,
         "c_z": c_z,
         "U_bytes": u_bytes,
-        "model_params_bytes": model_params_bytes,
+        # Backward-compatible key; this is the resident CUDA baseline captured
+        # after model/batch setup, not a pure parameter-only payload.
+        "model_params_bytes": resident_baseline_bytes,
+        "resident_baseline_bytes": resident_baseline_bytes,
         "overall_peak_bytes": overall_peak_bytes,
         "overall_wall_s": round(overall_wall_s, 2),
         "stage_wall_s": round(stage_wall_s, 2),
@@ -362,10 +400,12 @@ def profile(args) -> dict:
 
 
 def print_report(result: dict) -> None:
-    params = result["model_params_bytes"]
+    resident_baseline = result.get(
+        "resident_baseline_bytes", result["model_params_bytes"]
+    )
     peak = result["overall_peak_bytes"]
     u_bytes = result["U_bytes"]
-    act_peak = peak - params
+    act_peak = peak - resident_baseline
 
     print()
     print("=" * 116)
@@ -373,7 +413,10 @@ def print_report(result: dict) -> None:
         f"n_tok={result['n_tokens']} n_atom={result['n_atoms']} "
         f"samples={result['n_diffusion_samples']} 1U={_mib(u_bytes):.1f} MiB"
     )
-    print(f"params={_gib(params):.2f} GiB peak={_gib(peak):.2f} GiB")
+    print(
+        f"resident_baseline={_gib(resident_baseline):.2f} GiB "
+        f"peak={_gib(peak):.2f} GiB"
+    )
     print(f"activation={_gib(act_peak):.2f} GiB = {act_peak / u_bytes:.2f}U")
     print(
         f"overall_wall={result['overall_wall_s']:.2f}s "
@@ -388,7 +431,7 @@ def print_report(result: dict) -> None:
     for name, stage in result["stages"].items():
         tracked = stage.get("memory_tracked", False)
         if tracked:
-            act_u = (stage["abs_peak_bytes"] - params) / u_bytes
+            act_u = (stage["abs_peak_bytes"] - resident_baseline) / u_bytes
             trans_u = stage["peak_over_before_bytes"] / u_bytes
             act_s = f"{act_u:7.2f}"
             trans_s = f"{trans_u:8.2f}"

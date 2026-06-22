@@ -187,6 +187,316 @@ assert count == 1, count
     assert payload["_fused_ln_linear_fwd_kernel"] == 1
 
 
+def test_msa_pair_bias_ln_linear_reuses_compile_across_lengths(tmp_path):
+    """MSA pair-bias LN-linear should compile once across token lengths."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.fused_ln_linear import (
+    _fused_ln_linear_fwd_kernel,
+    fused_ln_linear_inference,
+)
+
+torch.manual_seed(23)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+
+gamma = torch.ones(128, device="cuda")
+beta = torch.zeros(128, device="cuda")
+weight = torch.randn(4, 128, device="cuda") * 0.02
+bias = torch.randn(4, device="cuda") * 0.02
+
+for n in (64, 96, 127):
+    z = torch.randn(1, n, n, 128, device="cuda")
+    y = fused_ln_linear_inference(z, gamma, beta, weight, bias)
+    assert y.shape == (1, n, n, 4)
+    _fused_ln_linear_fwd_kernel.device_caches.clear()
+
+count = len(list(cache_dir.rglob("_fused_ln_linear_fwd_kernel.json")))
+print(json.dumps({"_fused_ln_linear_fwd_kernel": count}))
+assert count == 1, count
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "OPENFOLD3_FUSED_LN_LINEAR": "1",
+            "TRITON_CACHE_DIR": str(cache_dir),
+        }
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["_fused_ln_linear_fwd_kernel"] == 1
+
+
+def test_pair_ln_linear_reuses_compile_across_lengths(tmp_path):
+    """Strided pair LN-linear should compile once across sequence lengths."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.fused_ln_linear import (
+    _pair_ln_linear_fwd_kernel,
+    pair_ln_linear_inference,
+)
+
+torch.manual_seed(37)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+
+gamma = torch.ones(128, device="cuda")
+beta = torch.zeros(128, device="cuda")
+weight = torch.randn(384, 128, device="cuda") * 0.02
+
+for n in (192, 224, 255):
+    x = torch.randn(1, n, n, 128, device="cuda").transpose(-2, -3)
+    y = pair_ln_linear_inference(x, gamma, beta, weight, None)
+    assert y.shape == (n * n, 384)
+    _pair_ln_linear_fwd_kernel.device_caches.clear()
+
+count = len(list(cache_dir.rglob("_pair_ln_linear_fwd_kernel.json")))
+print(json.dumps({"_pair_ln_linear_fwd_kernel": count}))
+assert count == 1, count
+"""
+    env = os.environ.copy()
+    env.update({"TRITON_CACHE_DIR": str(cache_dir)})
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["_pair_ln_linear_fwd_kernel"] == 1
+
+
+def test_linear_inference_inplace_reuses_compile_across_lengths(tmp_path):
+    """The alias-safe linear helper should compile once across row counts."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.fused_ln_linear import (
+    _linear_fwd_kernel,
+    linear_inference_inplace,
+)
+
+torch.manual_seed(29)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+weight = torch.randn(128, 128, device="cuda") * 0.02
+
+for n in (192, 224, 255):
+    x = torch.randn(n * n, 128, device="cuda")
+    y = linear_inference_inplace(x, weight, out=x)
+    assert y.data_ptr() == x.data_ptr()
+    _linear_fwd_kernel.device_caches.clear()
+
+count = len(list(cache_dir.rglob("_linear_fwd_kernel.json")))
+print(json.dumps({"_linear_fwd_kernel": count}))
+assert count == 1, count
+"""
+    env = os.environ.copy()
+    env.update({"TRITON_CACHE_DIR": str(cache_dir)})
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["_linear_fwd_kernel"] == 1
+
+
+def test_group_i2_tri_attn_reuses_compile_across_lengths(tmp_path):
+    """The opt-in grouped-I2 triangle-attn core should be length-generic."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.flash_tri_attn import (
+    _flash_tri_attn_group_i2_packed_qkv_kernel,
+)
+from openfold3.core.model.layers.triangular_attention import TriangleAttention
+
+
+torch.manual_seed(17)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+tri_attn = TriangleAttention(128, 32, 4, starting=True).cuda().to(torch.bfloat16).eval()
+
+for n in (64, 96, 127):
+    z = torch.randn(1, n, n, 128, device="cuda", dtype=torch.bfloat16)
+    pair_mask = torch.ones(1, n, n, device="cuda", dtype=torch.bfloat16)
+    assert tri_attn(z, mask=pair_mask).shape == z.shape
+    _flash_tri_attn_group_i2_packed_qkv_kernel.device_caches.clear()
+
+counts = {
+    "_flash_tri_attn_group_i2_packed_qkv_kernel": len(
+        list(cache_dir.rglob("_flash_tri_attn_group_i2_packed_qkv_kernel.json"))
+    ),
+}
+print(json.dumps(counts))
+assert counts == {
+    "_flash_tri_attn_group_i2_packed_qkv_kernel": 1,
+}, counts
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "OPENFOLD3_FUSED_TRI_ATTN_V2": "1",
+            "TRITON_CACHE_DIR": str(cache_dir),
+        }
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["_flash_tri_attn_group_i2_packed_qkv_kernel"] == 1
+
+
+def test_group_i2_tri_attn_no_mask_reuses_compile_across_lengths(tmp_path):
+    """The grouped-I2 no-mask signature should also be length-generic."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.flash_tri_attn import (
+    _flash_tri_attn_group_i2_packed_qkv_kernel,
+)
+from openfold3.core.model.layers.triangular_attention import TriangleAttention
+
+
+torch.manual_seed(23)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+tri_attn = TriangleAttention(128, 32, 4, starting=True).cuda().to(torch.bfloat16).eval()
+
+for n in (64, 96, 127):
+    z = torch.randn(1, n, n, 128, device="cuda", dtype=torch.bfloat16)
+    assert tri_attn(z, mask=None).shape == z.shape
+    _flash_tri_attn_group_i2_packed_qkv_kernel.device_caches.clear()
+
+counts = {
+    "_flash_tri_attn_group_i2_packed_qkv_kernel": len(
+        list(cache_dir.rglob("_flash_tri_attn_group_i2_packed_qkv_kernel.json"))
+    ),
+}
+print(json.dumps(counts))
+assert counts == {
+    "_flash_tri_attn_group_i2_packed_qkv_kernel": 1,
+}, counts
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "OPENFOLD3_FUSED_TRI_ATTN_V2": "1",
+            "TRITON_CACHE_DIR": str(cache_dir),
+        }
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["_flash_tri_attn_group_i2_packed_qkv_kernel"] == 1
+
+
+def test_project_out_tri_attn_reuses_compile_across_lengths(tmp_path):
+    """The V2 projected-output kernel should be length-generic."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.flash_tri_attn import (
+    _flash_tri_attn_project_out_kernel,
+)
+from openfold3.core.model.layers.triangular_attention import TriangleAttention
+
+torch.manual_seed(31)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+tri_attn = TriangleAttention(128, 32, 4, starting=True).cuda().eval()
+with torch.no_grad():
+    tri_attn.mha.linear_o.weight.normal_(0, 0.02)
+    tri_attn.mha.linear_g.weight.normal_(0, 0.02)
+
+for n in (192, 224, 255):
+    z = torch.randn(1, n, n, 128, device="cuda")
+    pair_mask = torch.ones(1, n, n, device="cuda")
+    assert tri_attn(z, mask=pair_mask).shape == z.shape
+    _flash_tri_attn_project_out_kernel.device_caches.clear()
+
+count = len(list(cache_dir.rglob("_flash_tri_attn_project_out_kernel.json")))
+print(json.dumps({"_flash_tri_attn_project_out_kernel": count}))
+assert count == 1, count
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "OPENFOLD3_FUSED_TRI_ATTN_V2": "1",
+            "OPENFOLD3_FUSED_TRI_ATTN_V3": "0",
+            "OPENFOLD3_FUSED_TRI_ATTN_V2_DISABLE_GROUP_I2": "1",
+            "OPENFOLD3_FUSED_TRI_ATTN_V2_PROJECT_OUT": "1",
+            "TRITON_CACHE_DIR": str(cache_dir),
+        }
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["_flash_tri_attn_project_out_kernel"] == 1
+
+
 def test_attention_pair_bias_reuses_fused_pair_projection_across_lengths(tmp_path):
     """Diffusion pair-bias projection should reuse fused LN-linear compiles."""
     cache_dir = tmp_path / "triton_cache"

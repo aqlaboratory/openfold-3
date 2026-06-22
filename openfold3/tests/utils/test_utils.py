@@ -429,7 +429,7 @@ class TestUtils(unittest.TestCase):
         def choose_chunk(chunk_size, max_chunk_size, tuner):
             os.environ["OPENFOLD3_TRI_ATTN_CHUNK_CAP"] = "64"
             capped_chunk_size = apply_triangle_attn_chunk_cap(
-                chunk_size, max_chunk_size
+                chunk_size, max_chunk_size, n_tokens=128
             )
             if capped_chunk_size is not None:
                 return capped_chunk_size
@@ -452,3 +452,30 @@ class TestUtils(unittest.TestCase):
 
         self.assertEqual(tuned, 64)
         tuner.tune_chunk_size.assert_not_called()
+
+    def test_triangle_attn_cap_ignored_when_sequence_fits_cap(self):
+        keys = ["OPENFOLD3_TRI_ATTN_CHUNK_CAP"]
+        old_env = {k: os.environ.get(k) for k in keys}
+        try:
+            os.environ["OPENFOLD3_TRI_ATTN_CHUNK_CAP"] = "128"
+            self.assertIsNone(
+                apply_triangle_attn_chunk_cap(
+                    chunk_size=4,
+                    max_chunk_size=1024,
+                    n_tokens=76,
+                )
+            )
+            self.assertEqual(
+                apply_triangle_attn_chunk_cap(
+                    chunk_size=4,
+                    max_chunk_size=1024,
+                    n_tokens=129,
+                ),
+                128,
+            )
+        finally:
+            for k, v in old_env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v

@@ -33,7 +33,6 @@ from openfold3.core.utils.chunk_utils import (
     FLASH_MAX_CHUNK_SIZE,
     ChunkSizeTuner,
     apply_triangle_attn_chunk_cap,
-    triangle_attn_chunk_cap,
 )
 from openfold3.core.utils.tensor_utils import add
 
@@ -381,8 +380,9 @@ class PairFormerStack(nn.Module):
             max_chunk_size = (
                 FLASH_MAX_CHUNK_SIZE if use_flash_kernels else DEFAULT_MAX_CHUNK_SIZE
             )
+            n_tokens = z.shape[-3]
             capped_chunk_size = apply_triangle_attn_chunk_cap(
-                chunk_size, max_chunk_size
+                chunk_size, max_chunk_size, n_tokens=n_tokens
             )
             if capped_chunk_size is not None:
                 tuned_chunk_size = capped_chunk_size
@@ -401,11 +401,11 @@ class PairFormerStack(nn.Module):
                 tuned_chunk_size if use_flash_kernels else (tuned_chunk_size // 4)
             )
             attn_chunk = max(chunk_size, attn_chunk)
-            # Optionally cap the triangle-attention chunk to bound its projection
-            # working set (time-neutral; see triangle_attn_chunk_cap).
-            cap = triangle_attn_chunk_cap()
-            if cap is not None:
-                attn_chunk = max(chunk_size, min(attn_chunk, cap))
+            capped_attn_chunk = apply_triangle_attn_chunk_cap(
+                chunk_size, attn_chunk, n_tokens=n_tokens
+            )
+            if capped_attn_chunk is not None:
+                attn_chunk = capped_attn_chunk
             blocks = [
                 partial(
                     b,

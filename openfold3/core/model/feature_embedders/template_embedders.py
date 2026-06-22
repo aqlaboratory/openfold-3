@@ -20,10 +20,15 @@ embeddings.
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
+from openfold3.core.kernels.triton.fused_ln_linear import fused_ln_linear_inference
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.model.primitives.fused_ln_linear import (
+    is_fused_ln_linear_enabled,
+)
 
 
 class TemplatePairEmbedderAllAtom(nn.Module):
@@ -68,6 +73,36 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         self.layer_norm_z = LayerNorm(c_in)
         self.linear_z = Linear(c_in, c_out, **linear_init_params.linear_z)
 
+    def _linear_scalar_stack(
+        self, scalar_feats: torch.Tensor, dtype: torch.dtype
+    ) -> torch.Tensor:
+        """One matmul for pseudo-beta mask, unit vector, and backbone-mask feats."""
+        weight = torch.cat(
+            (
+                self.pseudo_beta_mask_linear.weight,
+                self.x_linear.weight,
+                self.y_linear.weight,
+                self.z_linear.weight,
+                self.backbone_mask_linear.weight,
+            ),
+            dim=-1,
+        )
+        biases = (
+            self.pseudo_beta_mask_linear.bias,
+            self.x_linear.bias,
+            self.y_linear.bias,
+            self.z_linear.bias,
+            self.backbone_mask_linear.bias,
+        )
+        bias = None
+        if any(b is not None for b in biases):
+            bias = sum(b for b in biases if b is not None)
+        if weight.dtype != dtype:
+            weight = weight.to(dtype=dtype)
+        if bias is not None and bias.dtype != dtype:
+            bias = bias.to(dtype=dtype)
+        return F.linear(scalar_feats, weight, bias)
+
     # by Liang Hong <lhong22@cse.cuhk.edu.hk>: inference-time in-place
     # accumulation that avoids pair-sized template embedding temporaries.
     def _embed_feats(self, batch: dict):
@@ -93,7 +128,6 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         )[..., None] * multichain_pair_mask
 
         template_unit_vector = batch["template_unit_vector"]
-        x, y, z = template_unit_vector.unbind(dim=-1)
 
         # [*, N_templ, N_token, N_token, 32]
         template_restype = batch["template_restype"]
@@ -113,19 +147,25 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         # peak is the second-largest transient inside template_embedder
         # after the pair_stack itself.
         inplace_add = not torch.is_grad_enabled()
+
         def _add(tmp):
             nonlocal a
             if inplace_add:
                 a.add_(tmp)
             else:
                 a = a + tmp
-        _add(self.pseudo_beta_mask_linear(pseudo_beta_pair_mask))
+
         _add(self.aatype_linear_1(template_restype_ti.to(dtype=dtype)))
         _add(self.aatype_linear_2(template_restype_tj.to(dtype=dtype)))
-        _add(self.x_linear(x[..., None]))
-        _add(self.y_linear(y[..., None]))
-        _add(self.z_linear(z[..., None]))
-        _add(self.backbone_mask_linear(backbone_frame_pair_mask))
+        scalar_feats = torch.cat(
+            (
+                pseudo_beta_pair_mask.to(dtype=dtype),
+                template_unit_vector,
+                backbone_frame_pair_mask.to(dtype=dtype),
+            ),
+            dim=-1,
+        )
+        _add(self._linear_scalar_stack(scalar_feats, dtype=dtype))
 
         return a
 
@@ -142,7 +182,17 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         a = self._embed_feats(batch=batch)
 
         # [*, N_templ, N_token, N_token, C_out]
-        z = self.linear_z(self.layer_norm_z(z))
+        if is_fused_ln_linear_enabled() and not torch.is_grad_enabled():
+            z = fused_ln_linear_inference(
+                z,
+                self.layer_norm_z.weight,
+                self.layer_norm_z.bias,
+                self.linear_z.weight,
+                self.linear_z.bias,
+                self.layer_norm_z.eps,
+            )
+        else:
+            z = self.linear_z(self.layer_norm_z(z))
         if not torch.is_grad_enabled():
             a.add_(z[..., None, :, :, :])
             return a

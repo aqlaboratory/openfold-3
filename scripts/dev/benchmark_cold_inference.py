@@ -78,6 +78,21 @@ CAP128_WITH_CACHE_ENV = {
     "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "1",
 }
 
+CAP128_CUEQ_TRIMUL_ENV = {
+    **CAP128_ENV,
+    "OPENFOLD3_FUSED_TRIMUL": "0",
+}
+
+CAP128_CUEQ_TRIMUL_WITH_CACHE_ENV = {
+    **CAP128_CUEQ_TRIMUL_ENV,
+    "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "1",
+}
+
+TRIATTN_CUEQ_UNCAPPED_ENV = {
+    **CAP128_ENV,
+    "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
+}
+
 DISABLED_ENV = {
     "OPENFOLD3_FUSED_LN_LINEAR": "0",
     "OPENFOLD3_FUSED_SWIGLU_TRANSITION": "0",
@@ -134,7 +149,9 @@ def _child_main(args: argparse.Namespace) -> None:
     mem.offload_inference.token_cutoff = 10_000_000
     mem.use_deepspeed_evo_attention = False
     mem.use_triton_triangle_kernels = False
-    mem.use_cueq_triangle_kernels = args.config != "local_default"
+    # Keep cuEq triangle kernels on for every config; local_default only disables
+    # the optional fused Triton/memory paths via DISABLED_ENV.
+    mem.use_cueq_triangle_kernels = True
 
     inference_query_set = InferenceQuerySet.from_json(args.query_json)
     runner.setup()
@@ -171,7 +188,7 @@ def _child_main(args: argparse.Namespace) -> None:
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
-        params_bytes = torch.cuda.memory_allocated()
+        resident_baseline_bytes = torch.cuda.memory_allocated()
 
         t_forward = time.perf_counter()
         with torch.inference_mode():
@@ -186,7 +203,7 @@ def _child_main(args: argparse.Namespace) -> None:
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
-        params_bytes = torch.cuda.memory_allocated()
+        resident_baseline_bytes = torch.cuda.memory_allocated()
 
         t_predict = time.perf_counter()
         runner.run(inference_query_set)
@@ -231,9 +248,12 @@ def _child_main(args: argparse.Namespace) -> None:
         "n_atoms": n_atom,
         "c_z": c_z,
         "U_bytes": u_bytes,
-        "model_params_bytes": params_bytes,
+        # Backward-compatible key; this is the resident CUDA baseline captured
+        # before the measured forward/predict, not necessarily pure parameters.
+        "model_params_bytes": resident_baseline_bytes,
+        "resident_baseline_bytes": resident_baseline_bytes,
         "max_memory_allocated_bytes": peak_bytes,
-        "activation_U": (peak_bytes - params_bytes) / u_bytes,
+        "activation_U": (peak_bytes - resident_baseline_bytes) / u_bytes,
         "setup_s": setup_s,
         "data_s": data_s,
         "first_forward_s": first_forward_s,
@@ -291,6 +311,12 @@ def _env_for_config(config: str, base_env: dict[str, str]) -> dict[str, str]:
         updates = CAP128_NO_DIFFATTN_ENV
     elif config == "optimized_cap128_with_cache":
         updates = CAP128_WITH_CACHE_ENV
+    elif config == "optimized_cap128_cueqtrimul":
+        updates = CAP128_CUEQ_TRIMUL_ENV
+    elif config == "optimized_cap128_cueqtrimul_with_cache":
+        updates = CAP128_CUEQ_TRIMUL_WITH_CACHE_ENV
+    elif config == "triattn_cueq_uncapped":
+        updates = TRIATTN_CUEQ_UNCAPPED_ENV
     else:
         raise ValueError(f"Unknown config {config!r}")
 
@@ -480,6 +506,9 @@ def main() -> None:
             "optimized_cap128_no_graph",
             "optimized_cap128_no_diffattn",
             "optimized_cap128_with_cache",
+            "optimized_cap128_cueqtrimul",
+            "optimized_cap128_cueqtrimul_with_cache",
+            "triattn_cueq_uncapped",
         ],
     )
     parser.add_argument("--runner-yaml", type=Path, default=DEFAULT_RUNNER_YAML)

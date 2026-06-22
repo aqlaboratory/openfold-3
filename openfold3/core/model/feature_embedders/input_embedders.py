@@ -416,6 +416,77 @@ class MSAModuleEmbedder(nn.Module):
         return sampled_msa_feat, sampled_msa_mask
 
     @staticmethod
+    def _concat_msa_feat(
+        msa: torch.Tensor,
+        has_deletion: torch.Tensor,
+        deletion_value: torch.Tensor,
+    ) -> torch.Tensor:
+        """Build [*, N_msa, N_token, 34] MSA features from raw inputs."""
+        return torch.cat(
+            [
+                msa,
+                has_deletion.unsqueeze(-1),
+                deletion_value.unsqueeze(-1),
+            ],
+            dim=-1,
+        )
+
+    @staticmethod
+    def _pad_sequences_dim(
+        m: torch.Tensor, max_seqs: int, seq_dim: int
+    ) -> torch.Tensor:
+        """Pad the msa to max_seqs along seq_dim to stack them in a batch."""
+        # Add zero padding at start and end for all dimensions after seq_dim
+        non_pad_dims = (0, 0) * (abs(seq_dim) - 1)
+
+        # Pad the seq_dim to max_msa_seqs length
+        pad = non_pad_dims + (0, max_seqs - m.shape[seq_dim])
+
+        return torch.nn.functional.pad(m, pad)
+
+    @staticmethod
+    def _subsample_all_msa_indices(
+        msa_mask: torch.Tensor, no_subsampled_all_msa: int
+    ) -> torch.Tensor:
+        """Select MSA rows for all-MSA subsampling from the mask only."""
+        mask_seq_dim = -2
+
+        if isinstance(no_subsampled_all_msa, torch.Tensor):
+            no_subsampled_all_msa = no_subsampled_all_msa.item()
+
+        # Valid msa
+        valid_msa = (msa_mask.sum(dim=mask_seq_dim + 1) > 0).squeeze()  # [N_msa]
+
+        if valid_msa.ndim == 0:
+            valid_msa = valid_msa.unsqueeze(0)
+
+        valid_idx = valid_msa.nonzero().squeeze()
+        invalid_idx = (~valid_msa).nonzero().squeeze()
+
+        if valid_idx.ndim == 0:
+            valid_idx = valid_idx.unsqueeze(0)
+        if invalid_idx.ndim == 0:
+            invalid_idx = invalid_idx.unsqueeze(0)
+
+        device = msa_mask.device
+        # Pick msa from the valid ones at random
+        if valid_idx.numel() >= no_subsampled_all_msa:
+            permuted_idx = valid_idx[torch.randperm(valid_idx.numel(), device=device)]
+            selected = permuted_idx[:no_subsampled_all_msa]
+        else:
+            # Take all valid, then fill with random invalid
+            take_invalid = no_subsampled_all_msa - valid_idx.numel()
+            if invalid_idx.numel() > 0:
+                permuted_idx = invalid_idx[
+                    torch.randperm(invalid_idx.numel(), device=device)
+                ]
+                selected = torch.cat([valid_idx, permuted_idx[:take_invalid]], dim=0)
+            else:
+                selected = valid_idx
+
+        return selected
+
+    @staticmethod
     def _subsample_all_msa(
         msa_feat: torch.Tensor, msa_mask: torch.Tensor, no_subsampled_all_msa: int
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -442,46 +513,36 @@ class MSAModuleEmbedder(nn.Module):
                 to a shared dimension.
         """
 
-        # Set the sequence dimension for the two tensors, the token dimension is this +1
         feat_seq_dim = -3
         mask_seq_dim = -2
-
-        if isinstance(no_subsampled_all_msa, torch.Tensor):
-            no_subsampled_all_msa = no_subsampled_all_msa.item()
-
-        # Valid msa
-        valid_msa = (msa_mask.sum(dim=mask_seq_dim + 1) > 0).squeeze()  # [N_msa]
-
-        if valid_msa.ndim == 0:
-            valid_msa = valid_msa.unsqueeze(0)
-
-        valid_idx = valid_msa.nonzero().squeeze()
-        invalid_idx = (~valid_msa).nonzero().squeeze()
-
-        if valid_idx.ndim == 0:
-            valid_idx = valid_idx.unsqueeze(0)
-        if invalid_idx.ndim == 0:
-            invalid_idx = invalid_idx.unsqueeze(0)
-
-        device = msa_feat.device
-        # Pick msa from the valid ones at random
-        if valid_idx.numel() >= no_subsampled_all_msa:
-            permuted_idx = valid_idx[torch.randperm(valid_idx.numel(), device=device)]
-            selected = permuted_idx[:no_subsampled_all_msa]
-        else:
-            # Take all valid, then fill with random invalid
-            take_invalid = no_subsampled_all_msa - valid_idx.numel()
-            if invalid_idx.numel() > 0:
-                permuted_idx = invalid_idx[
-                    torch.randperm(invalid_idx.numel(), device=device)
-                ]
-                selected = torch.cat([valid_idx, permuted_idx[:take_invalid]], dim=0)
-            else:
-                selected = valid_idx
+        selected = MSAModuleEmbedder._subsample_all_msa_indices(
+            msa_mask, no_subsampled_all_msa
+        )
 
         feat_sub = msa_feat.index_select(feat_seq_dim, selected)
         mask_sub = msa_mask.index_select(mask_seq_dim, selected)
         return feat_sub, mask_sub
+
+    @staticmethod
+    def _subsample_all_msa_raw_features(
+        msa: torch.Tensor,
+        has_deletion: torch.Tensor,
+        deletion_value: torch.Tensor,
+        msa_mask: torch.Tensor,
+        no_subsampled_all_msa: int,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Subsample raw MSA tensors before feature concatenation."""
+        selected = MSAModuleEmbedder._subsample_all_msa_indices(
+            msa_mask, no_subsampled_all_msa
+        )
+        feat_seq_dim = -3
+        mask_seq_dim = -2
+        return (
+            msa.index_select(feat_seq_dim, selected),
+            has_deletion.index_select(mask_seq_dim, selected),
+            deletion_value.index_select(mask_seq_dim, selected),
+            msa_mask.index_select(mask_seq_dim, selected),
+        )
 
     def _apply_subsample_fn_batch(
         self, fn: callable, **kwargs
@@ -522,34 +583,61 @@ class MSAModuleEmbedder(nn.Module):
         # Number of sequences to pad to for all the batch
         max_msa_seqs_batch = max([m.shape[-3] for m in per_sample_subsampled_msa])
 
-        def pad_sequences_dim(m, max_seqs, seq_dim):
-            """Pad the msa to max_seqs along seq_dim to stack them in a batch"""
-
-            # Add zero padding at start and end for all dimensions after seq_dim
-            non_pad_dims = (0, 0) * (abs(seq_dim) - 1)
-
-            # Pad the seq_dim to max_msa_seqs length
-            pad = non_pad_dims + (0, max_seqs - m.shape[seq_dim])
-
-            return torch.nn.functional.pad(m, pad)
-
         # Pad the sequences to same seq length and stack them in a batch
         sampled_msa = torch.stack(
             [
-                pad_sequences_dim(m, max_msa_seqs_batch, seq_dim=-3)
+                self._pad_sequences_dim(m, max_msa_seqs_batch, seq_dim=-3)
                 for m in per_sample_subsampled_msa
             ],
             dim=0,
         )
         sampled_msa_mask = torch.stack(
             [
-                pad_sequences_dim(m, max_msa_seqs_batch, seq_dim=-2)
+                self._pad_sequences_dim(m, max_msa_seqs_batch, seq_dim=-2)
                 for m in per_sample_subsampled_msa_mask
             ],
             dim=0,
         )
 
         return sampled_msa, sampled_msa_mask
+
+    def _apply_subsample_all_msa_raw_batch(
+        self,
+        msa: torch.Tensor,
+        has_deletion: torch.Tensor,
+        deletion_value: torch.Tensor,
+        msa_mask: torch.Tensor,
+        no_subsampled_all_msa: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Subsample raw MSA tensors per batch element, then pad and stack."""
+        batch_size = msa.shape[0]
+        sampled = [
+            self._subsample_all_msa_raw_features(
+                msa=msa[i],
+                has_deletion=has_deletion[i],
+                deletion_value=deletion_value[i],
+                msa_mask=msa_mask[i],
+                no_subsampled_all_msa=no_subsampled_all_msa[i],
+            )
+            for i in range(batch_size)
+        ]
+        max_msa_seqs_batch = max(item[0].shape[-3] for item in sampled)
+        seq_dims = (-3, -2, -2, -2)
+
+        return tuple(
+            torch.stack(
+                [
+                    self._pad_sequences_dim(
+                        item[out_idx],
+                        max_msa_seqs_batch,
+                        seq_dim=seq_dims[out_idx],
+                    )
+                    for item in sampled
+                ],
+                dim=0,
+            )
+            for out_idx in range(4)
+        )
 
     def forward(
         self, batch: dict, s_input: torch.Tensor
@@ -575,18 +663,13 @@ class MSAModuleEmbedder(nn.Module):
         """
         batch_dims = batch["msa"].shape[:-3]
 
-        # [*, N_msa, N_token, 34]
-        msa_feat = torch.cat(
-            [
-                batch["msa"],
-                batch["has_deletion"].unsqueeze(-1),
-                batch["deletion_value"].unsqueeze(-1),
-            ],
-            dim=-1,
-        )
+        msa = batch["msa"]
+        has_deletion = batch["has_deletion"]
+        deletion_value = batch["deletion_value"]
         msa_mask = batch["msa_mask"]
 
         if self.subsample_main_msa:
+            msa_feat = self._concat_msa_feat(msa, has_deletion, deletion_value)
             if math.prod(batch_dims) > 1:
                 msa_feat, msa_mask = self._apply_subsample_fn_batch(
                     fn=self._subsample_main_msa,
@@ -602,31 +685,41 @@ class MSAModuleEmbedder(nn.Module):
                     num_paired_seqs=batch["num_paired_seqs"],
                     asym_id=batch["asym_id"],
                 )
-        elif self.subsample_all_msa:
-            no_subsampled_all_msa = torch.randint(
-                low=self.min_subsampled_all_msa,
-                high=int(self.max_subsampled_all_msa + 1),
-                size=(1,),
-                device=msa_feat.device,
-            ).item()
+        else:
+            if self.subsample_all_msa:
+                no_subsampled_all_msa = torch.randint(
+                    low=self.min_subsampled_all_msa,
+                    high=int(self.max_subsampled_all_msa + 1),
+                    size=(1,),
+                    device=msa.device,
+                ).item()
 
-            if math.prod(batch_dims) > 1:
-                msa_feat, msa_mask = self._apply_subsample_fn_batch(
-                    fn=self._subsample_all_msa,
-                    msa_feat=msa_feat,
-                    msa_mask=msa_mask,
-                    no_subsampled_all_msa=torch.full(
-                        (msa_feat.shape[0],),
-                        no_subsampled_all_msa,
-                        device=msa_feat.device,
-                    ),
-                )
-            else:
-                msa_feat, msa_mask = self._subsample_all_msa(
-                    msa_feat=msa_feat,
-                    msa_mask=msa_mask,
-                    no_subsampled_all_msa=no_subsampled_all_msa,
-                )
+                if math.prod(batch_dims) > 1:
+                    msa, has_deletion, deletion_value, msa_mask = (
+                        self._apply_subsample_all_msa_raw_batch(
+                            msa=msa,
+                            has_deletion=has_deletion,
+                            deletion_value=deletion_value,
+                            msa_mask=msa_mask,
+                            no_subsampled_all_msa=torch.full(
+                                (msa.shape[0],),
+                                no_subsampled_all_msa,
+                                device=msa.device,
+                            ),
+                        )
+                    )
+                else:
+                    msa, has_deletion, deletion_value, msa_mask = (
+                        self._subsample_all_msa_raw_features(
+                            msa=msa,
+                            has_deletion=has_deletion,
+                            deletion_value=deletion_value,
+                            msa_mask=msa_mask,
+                            no_subsampled_all_msa=no_subsampled_all_msa,
+                        )
+                    )
+
+            msa_feat = self._concat_msa_feat(msa, has_deletion, deletion_value)
 
         # [*, N_seq, N_token, C_m]
         m = self.linear_m(msa_feat)

@@ -57,10 +57,18 @@ def triangle_attn_chunk_cap() -> int | None:
 def apply_triangle_attn_chunk_cap(
     chunk_size: int,
     max_chunk_size: int,
+    n_tokens: int | None = None,
 ) -> int | None:
-    """Return the explicit triangle-attention cap as a chunk size, if set."""
+    """Return the explicit triangle-attention cap as a chunk size, if set.
+
+    When ``n_tokens`` is provided and ``n_tokens <= cap``, returns ``None`` so
+    short sequences keep the tuner's default chunk size instead of forcing a
+    cap that cannot reduce the projection working set further.
+    """
     cap = triangle_attn_chunk_cap()
     if cap is None:
+        return None
+    if n_tokens is not None and n_tokens <= cap:
         return None
     return max(chunk_size, min(max_chunk_size, cap))
 

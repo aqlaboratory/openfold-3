@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import importlib
+import os
 import unittest
+from unittest import mock
 
 import torch
 
@@ -122,6 +125,41 @@ class TestMSAPairWeightedAveraging(unittest.TestCase):
         shape_after = m.shape
 
         self.assertTrue(shape_before == shape_after)
+
+    @unittest.skipUnless(
+        torch.cuda.is_available() and importlib.util.find_spec("triton") is not None,
+        "Requires CUDA and Triton",
+    )
+    def test_fused_ln_linear_pair_bias_matches_eager(self):
+        torch.manual_seed(17)
+        module = MSAPairWeightedAveraging(
+            c_in=64,
+            c_hidden=8,
+            c_z=128,
+            no_heads=4,
+        ).cuda().eval()
+        m = torch.randn(1, 64, 64, 64, device="cuda")
+        z = torch.randn(1, 64, 64, 128, device="cuda")
+        mask = torch.ones(1, 64, 64, device="cuda")
+
+        old_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = False
+        try:
+            with (
+                mock.patch.dict(os.environ, {"OPENFOLD3_FUSED_LN_LINEAR": "0"}),
+                torch.no_grad(),
+            ):
+                eager = module(m, z=z, mask=mask)
+
+            with (
+                mock.patch.dict(os.environ, {"OPENFOLD3_FUSED_LN_LINEAR": "1"}),
+                torch.no_grad(),
+            ):
+                fused = module(m, z=z, mask=mask)
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_tf32
+
+        torch.testing.assert_close(fused, eager, atol=2e-4, rtol=2e-4)
 
 
 if __name__ == "__main__":

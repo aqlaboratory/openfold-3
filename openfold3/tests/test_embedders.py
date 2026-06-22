@@ -141,6 +141,56 @@ class TestMSAModuleEmbedder:
                     n_sampled_seqs <= n_total_msa_seq
                 )
 
+    def test_subsample_all_msa_raw_features_matches_post_concat(self):
+        torch.manual_seed(7)
+        n_total_msa_seq = 37
+        n_token = 11
+        no_subsampled_all_msa = 12
+        msa = torch.randn(n_total_msa_seq, n_token, 32)
+        has_deletion = torch.rand(n_total_msa_seq, n_token)
+        deletion_value = torch.rand(n_total_msa_seq, n_token)
+        msa_mask = torch.zeros(n_total_msa_seq, n_token)
+        msa_mask[:20] = 1
+        msa_mask[25:30] = 1
+
+        msa_feat = torch.cat(
+            [
+                msa,
+                has_deletion.unsqueeze(-1),
+                deletion_value.unsqueeze(-1),
+            ],
+            dim=-1,
+        )
+
+        torch.manual_seed(11)
+        expected_feat, expected_mask = MSAModuleEmbedder._subsample_all_msa(
+            msa_feat=msa_feat,
+            msa_mask=msa_mask,
+            no_subsampled_all_msa=no_subsampled_all_msa,
+        )
+
+        torch.manual_seed(11)
+        actual_msa, actual_has_deletion, actual_deletion_value, actual_mask = (
+            MSAModuleEmbedder._subsample_all_msa_raw_features(
+                msa=msa,
+                has_deletion=has_deletion,
+                deletion_value=deletion_value,
+                msa_mask=msa_mask,
+                no_subsampled_all_msa=no_subsampled_all_msa,
+            )
+        )
+        actual_feat = torch.cat(
+            [
+                actual_msa,
+                actual_has_deletion.unsqueeze(-1),
+                actual_deletion_value.unsqueeze(-1),
+            ],
+            dim=-1,
+        )
+
+        torch.testing.assert_close(actual_feat, expected_feat)
+        torch.testing.assert_close(actual_mask, expected_mask)
+
 
 class TestTemplateEmbedders:
     @pytest.fixture

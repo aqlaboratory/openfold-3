@@ -26,6 +26,7 @@ import torch
 from torch import nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
+from openfold3.core.kernels.triton.fused_ln_linear import fused_ln_linear_inference
 from openfold3.core.model.primitives import (
     Attention,
     GlobalAttention,
@@ -35,6 +36,9 @@ from openfold3.core.model.primitives import (
 from openfold3.core.model.primitives.attention import (
     attention_chunked_trainable,
     softmax_no_cast,
+)
+from openfold3.core.model.primitives.fused_ln_linear import (
+    is_fused_ln_linear_enabled,
 )
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.chunk_utils import chunk_layer
@@ -579,11 +583,19 @@ class MSAPairWeightedAveraging(nn.Module):
         # [*, 1, 1, N_token, N_token]
         mask_bias = (self.inf * (mask - 1))[..., None, None, :, :]
 
-        # [*, N_token, N_token, C_z]
-        z = self.layer_norm_z(z)
-
         # [*, N_token, N_token, no_heads]
-        z = self.linear_z(z)
+        if is_fused_ln_linear_enabled() and not torch.is_grad_enabled():
+            z = fused_ln_linear_inference(
+                z,
+                self.layer_norm_z.weight,
+                self.layer_norm_z.bias,
+                self.linear_z.weight,
+                self.linear_z.bias,
+                self.layer_norm_z.eps,
+            )
+        else:
+            z = self.layer_norm_z(z)
+            z = self.linear_z(z)
 
         # [*, 1, no_heads, N_token, N_token]
         z = permute_final_dims(z, (2, 0, 1)).unsqueeze(-4)
