@@ -24,10 +24,8 @@ cuequivariance's ``fused_sigmoid_gated_dual_gemm`` /
 and independently re-implemented in Triton". This adaptation:
 
   * generalizes the IO/weight dtype to **fp32** (the upstream kernel is
-    bf16-only). fp32 accumulation is unchanged; fp32 matmuls use
-    ``input_precision="ieee"`` so they match cuBLAS true-fp32 — the OF3 trunk
-    is precision-sensitive (TF32 in the trunk injects error the 200-step
-    diffusion rollout amplifies to ~1 Angstrom).
+    bf16-only). fp32 accumulation is unchanged; fp32 matmuls use IEEE by
+    default so correctness can be checked against eager full-fp32.
   * is **inference / forward-only** (no autograd). The OF3 trimul inference
     path runs under ``torch.is_grad_enabled() == False``; the dispatch falls
     back to eager when grad is needed.
@@ -63,7 +61,7 @@ if _TRITON_AVAILABLE:
 
     # Single static config (no runtime autotune): one JIT compile, all N.
     # M,N,K are runtime args so a new sequence length never recompiles.
-    _DUAL_GEMM_CFG = dict(TILE_M=64, TILE_N=64, TILE_K=32, GROUP_M=8)
+    _DUAL_GEMM_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=32, GROUP_M=8)
     _OUT_GEMM_CFG = dict(TILE_M=64, TILE_N=64, TILE_K=32, GROUP_M=8)
     _OUT_GEMM_INPLACE_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=32, GROUP_M=8)
 

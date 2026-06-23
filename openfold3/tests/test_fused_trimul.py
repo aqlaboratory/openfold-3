@@ -58,25 +58,31 @@ def _time_fn(fn, n_runs=5):
 class TestFusedTrimul(unittest.TestCase):
     def _check(self, outgoing, N, dtype, use_mask, atol, rtol):
         device = "cuda"
+        old_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = False
         cls = (
             TriangleMultiplicationOutgoing if outgoing else TriangleMultiplicationIncoming
         )
-        torch.manual_seed(0)
-        m = cls(128, 128).to(device=device, dtype=dtype).eval()
-        _randomize_observable_output(m)
-        z = torch.randn(1, N, N, 128, device=device, dtype=dtype) * 0.5
-        mask = (
-            torch.ones(1, N, N, device=device, dtype=dtype) if use_mask else None
-        )
-        with torch.inference_mode():
-            ref = m.forward(z.clone(), mask=mask, inplace_safe=False)
-            fused = fused_trimul_update(m, z.clone(), mask, with_add=False)
-        self.assertIsNotNone(fused, "fused path returned None (ineligible)")
-        diff = (fused - ref).abs().max().item()
-        self.assertTrue(
-            torch.allclose(fused, ref, atol=atol, rtol=rtol),
-            f"outgoing={outgoing} N={N} {dtype} mask={use_mask}: max diff {diff:.2e}",
-        )
+        try:
+            torch.manual_seed(0)
+            m = cls(128, 128).to(device=device, dtype=dtype).eval()
+            _randomize_observable_output(m)
+            z = torch.randn(1, N, N, 128, device=device, dtype=dtype) * 0.5
+            mask = (
+                torch.ones(1, N, N, device=device, dtype=dtype) if use_mask else None
+            )
+            with torch.inference_mode():
+                ref = m.forward(z.clone(), mask=mask, inplace_safe=False)
+                fused = fused_trimul_update(m, z.clone(), mask, with_add=False)
+            self.assertIsNotNone(fused, "fused path returned None (ineligible)")
+            diff = (fused - ref).abs().max().item()
+            self.assertTrue(
+                torch.allclose(fused, ref, atol=atol, rtol=rtol),
+                f"outgoing={outgoing} N={N} {dtype} mask={use_mask}: "
+                f"max diff {diff:.2e}",
+            )
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_tf32
 
     def test_fp32(self):
         for outgoing in (True, False):
