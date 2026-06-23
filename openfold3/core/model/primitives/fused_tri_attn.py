@@ -12,23 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# by Liang Hong <lhong22@cse.cuhk.edu.hk>: inference dispatch for the fused
-# low-memory triangle-attention implementation.
+# by Liang Hong <lhong22@cse.cuhk.edu.hk>: streamed projection, kernel
+# dispatch, and residual-write handling for cap-blocked triangle attention.
 
-"""Fused triangle attention dispatch (inference, no chunking).
-
-Replaces the separate LN → 3 linear projections → cuEq → gate → output
-pipeline with:
-  1. ``fused_ln_linear`` for LN→QKV (one kernel, no LN intermediate in HBM)
-  2. ``fused_ln_linear`` for LN→triangle_bias (tiny output, no LN intermediate)
-  3. cuEq (or eager) attention core (unchanged)
-  4. ``fused_gated_attn_out`` for gate→output (gate in registers, no HBM alloc)
-
-Memory: ~4U peak (3U for q/k/v + 1U resident z) vs ~8U eager.
-No chunking — cuEq receives the full q/k/v tensors.
-
-Activated by ``OPENFOLD3_FUSED_TRI_ATTN=1``.
-"""
+"""Fused cap-blocked triangle attention dispatch for inference."""
 
 from __future__ import annotations
 
@@ -37,43 +24,50 @@ import os
 
 import torch
 
-from openfold3.core.kernels.triton.fused_ln_linear import (
-    fused_ln_linear,
+from openfold3.core.kernels.triton.flash_tri_attn import (
+    flash_tri_attn_v1_block,
+)
+from openfold3.core.kernels.triton.flash_tri_attn import (
+    is_triton_available as _flash_triton_available,
 )
 from openfold3.core.kernels.triton.fused_ln_linear import (
     is_triton_available as _ln_triton_available,
 )
-from openfold3.core.kernels.triton.fused_tri_attn_out import (
-    fused_gated_attn_out,
+from openfold3.core.kernels.triton.fused_ln_linear import (
+    pair_ln_linear_inference,
 )
-from openfold3.core.kernels.triton.fused_tri_attn_out import (
-    is_triton_available as _out_triton_available,
-)
-from openfold3.core.model.primitives.attention import (
-    _attention,
-    _cueq_triangle_attn,
-    cueq_is_installed,
-)
-from openfold3.core.utils.tensor_utils import permute_final_dims
-
-if cueq_is_installed:
-    from openfold3.core.model.primitives.attention import cueq_would_fall_back
 
 _FLAG_TRUE = {"1", "true", "True"}
 
 
-def is_fused_tri_attn_enabled() -> bool:
+def is_fused_tri_attn_v1_enabled() -> bool:
     return (
-        os.environ.get("OPENFOLD3_FUSED_TRI_ATTN", "0") in _FLAG_TRUE
+        os.environ.get("OPENFOLD3_FUSED_TRI_ATTN_V1", "0") in _FLAG_TRUE
         and _ln_triton_available()
-        and _out_triton_available()
+        and _flash_triton_available()
     )
+
+
+def is_residual_fused_tri_attn_enabled() -> bool:
+    """Env flag for the inference-only in-place residual add inside V1.
+
+    Defaults to ``1`` because the fused V1 path is already inference-only and
+    the residual-fusion is bitwise ``addmm = mm + add`` when ``allow_tf32`` is
+    off (the OF3 fp32 default).  Set to ``0`` to force the legacy path that
+    allocates a fresh ``[B, N, N, c_z]`` output buffer and lets the caller do
+    the outer residual add — useful for correctness bisection, or when a
+    downstream caller does not tolerate ``z`` being mutated in place.  Even
+    when this flag is on, the residual is only fused when the caller passes a
+    non-None ``residual`` argument AND grad is disabled AND the module is in
+    ``eval()`` mode, so training is unaffected regardless of the flag.
+    """
+    return os.environ.get("OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN", "1") in _FLAG_TRUE
 
 
 def _eligible(z: torch.Tensor) -> bool:
     return (
         _ln_triton_available()
-        and _out_triton_available()
+        and _flash_triton_available()
         and z.is_cuda
         and not torch.is_grad_enabled()
         and z.dim() == 4
@@ -84,129 +78,254 @@ def _has_bias(*linears) -> bool:
     return any(m.bias is not None for m in linears)
 
 
-def fused_tri_attn_forward(
+def fused_tri_attn_v1_forward(
     module,
     z: torch.Tensor,
     mask: torch.Tensor | None,
-    use_cueq: bool,
     inplace_safe: bool,
+    use_cueq_triangle_kernels: bool,
+    chunk_size: int | None,
+    residual: torch.Tensor | None = None,
 ) -> torch.Tensor | None:
-    """Fused triangle attention forward (no chunking).
+    """Cap-blocked custom triangle attention with streamed LN prologue (Design B).
 
-    Args:
-        module: ``TriangleAttention`` instance.
-        z: ``[B, I, J, c_z]`` raw pair tensor (pre-LN).
-        mask: ``[B, I, J]`` or None.
-        use_cueq: whether cuEq triangle attention is requested.
-        inplace_safe: whether output can alias input (unused here;
-            the fused path always allocates fresh output).
+    The outer schedule streams row blocks of size ``chunk_size`` through a
+    flash-attention-style Triton kernel (``flash_tri_attn_v1_block``).  Per row
+    block: LN → packed cuBLAS QKVG matmul → flash kernel → ``linear_o`` write.
+    The ``triangle_bias`` projection uses ``pair_ln_linear_inference`` (strided
+    LN→linear Triton kernel in ``fused_ln_linear.py``) which decodes ``(i, j)``
+    via independent strides so contig ``z`` (tri_att_start) and transpose-view
+    ``z`` (tri_att_end in ``PairBlock``) share the same call path — no Python
+    branch on the input stride pattern, no persistent 1U ``z_norm`` buffer.
 
-    Returns:
-        ``[B, I, J, c_z]`` attention update, or ``None`` if ineligible.
+    When ``residual`` is provided (must have the same shape / dtype / device as
+    ``z``), the per-block ``linear_o`` write is fused with the residual add.
+    The write dispatches on the residual's *write-view* layout, defined as
+    ``residual_wv = residual if module.starting else residual.transpose(-2, -3)``
+    (so ``residual_wv`` and ``z`` share (I, J) semantics after the internal
+    ``if not starting`` transpose):
+
+    * ``residual_wv`` contig  → ``torch.addmm(out=residual_wv[start:end])``
+      fuses the add into the ``W_o`` matmul (0U extra allocation).
+    * ``residual_wv`` non-contig → materialize per-block scratch
+      (``chunk × J × c_z`` ≈ 0.1U at chunk=128, N=1264) and ``.add_()`` into
+      the strided slice.  This handles ``PairBlock.tri_att_end`` (starting=True
+      module on pre-transposed z with ``residual=z_transposed`` sharing z's
+      storage) correctly, including the axis swap that the removed pre-Design-B
+      case-(c) shortcut used to drop silently.
+
+    Returns ``residual`` (mutated in place) when residual-fused, or the freshly
+    allocated output tensor otherwise.  Returns ``None`` if the fused path is
+    ineligible (grad enabled, unsupported dims, biases on gemms, or an
+    unsupported residual layout that shares neither z's stride nor is contig).
     """
-    if not _eligible(z):
+    del inplace_safe, use_cueq_triangle_kernels
+
+    if (
+        chunk_size is None
+        or not _eligible(z)
+        or torch.is_grad_enabled()
+    ):
         return None
 
     mha = module.mha
     if _has_bias(mha.linear_q, mha.linear_k, mha.linear_v, mha.linear_o):
         return None
-    if mha.linear_g is not None and mha.linear_g.bias is not None:
-        return None
-    if mha.linear_g is None:
+    if mha.linear_g is None or mha.linear_g.bias is not None:
         return None
 
     c_z = module.c_in
     c_hidden = module.c_hidden
     no_heads = module.no_heads
-    starting = module.starting
+    total_hidden = c_hidden * no_heads
+    if c_z != 128 or c_hidden != 32 or no_heads != 4 or total_hidden != c_z:
+        return None
 
-    # ── Handle starting/ending transpose ────────────────────────────
-    if not starting:
+    # ``starting`` denotes the starting-node attention pattern.  For a
+    # ``TriangleAttention(starting=False)`` module, we pre-transpose z so the
+    # rest of the fused path can process both variants with the same flash-
+    # kernel starting-node layout.  The tri_att_end pattern in ``PairBlock``
+    # instead calls a ``starting=True`` module on a pre-transposed z (with
+    # residual = z_transposed); that non-contig-input case is handled by the
+    # ``residual_wv`` classifier below (correct axis-swapped write path) and
+    # by the strided-input support in ``pair_ln_linear_inference`` for tri_bias.
+    if not module.starting:
         z = z.transpose(-2, -3)
         if mask is not None:
             mask = mask.transpose(-1, -2)
 
-    B, I, J, _ = z.shape
+    B, I_dim, J_dim, _ = z.shape
+    if B != 1 or I_dim != J_dim:
+        return None
+    if I_dim <= chunk_size:
+        return None
 
-    if mask is None:
-        mask = z.new_ones(z.shape[:-1])
+    # Residual write-view classification.  After the ``if not starting`` block
+    # above, ``z`` is always in the flash-kernel's starting-node layout.  The
+    # per-block flash output ``attn`` is indexed as ``(z-row-block, z-col)``,
+    # so its write into ``residual`` must be into a view that matches ``z``'s
+    # (I, J) axes.  Define ``residual_wv`` = ``residual`` if the caller passed
+    # residual in z's layout (starting=True), else ``residual.transpose(-2,-3)``
+    # (starting=False — the caller passed residual in the module's I/O layout,
+    # which is z's transposed layout post the ``if not starting`` transpose).
+    # Then ``residual_wv`` and ``z`` share (I, J) semantics and the per-block
+    # slice ``residual_wv[:, start:end, :, :]`` is the correct write target.
+    #
+    # ``residual_wv`` can be contig or non-contig; dispatch below:
+    # * contig write-view → per-block ``addmm(out=residual_wv[start:end])`` fuses
+    #   the residual add into the ``W_o`` matmul (0U extra).
+    # * non-contig write-view → materialize per-block scratch (~0.1U at
+    #   chunk=128) and ``.add_()`` into the strided slice.
+    #
+    # The four practical cases:
+    # (a) starting=True, residual contig  → residual_wv contig     (tri_att_start)
+    # (b) starting=False, residual contig → residual_wv non-contig (native
+    #     ending-node module)
+    # (c) starting=True, residual is the same non-contig transpose view as ``z``
+    #     (i.e. caller pre-transposed z, passed residual=z_transposed) →
+    #     residual_wv non-contig (tri_att_end pattern in PairBlock)
+    # (d) starting=False, residual non-contig transpose view of z's underlying
+    #     storage → residual_wv contig (uncommon, but symmetric to (c))
+    residual_wv: torch.Tensor | None = None
+    residual_wv_contig: bool = False
+    if residual is not None:
+        if not is_residual_fused_tri_attn_enabled():
+            return None
+        if (
+            residual.shape != z.shape
+            or residual.dtype != z.dtype
+            or residual.device != z.device
+        ):
+            return None
+        # If ``starting=False`` fired the transpose on ``z`` above, we need to
+        # apply the same transpose to ``residual`` so their (I, J) axes line up.
+        residual_wv = residual if module.starting else residual.transpose(-2, -3)
+        if residual_wv.is_contiguous():
+            residual_wv_contig = True
+        else:
+            # Non-contig write-view is only supported when it lines up with
+            # ``z``'s stride pattern — otherwise the ``.add_()`` broadcast /
+            # slice semantics would be wrong.
+            if not (
+                residual_wv.data_ptr() == z.data_ptr()
+                and residual_wv.stride() == z.stride()
+            ):
+                return None
+            residual_wv_contig = False
 
-    # ── Biases (computed from z, need LN'd z) ──────────────────────
-    # mask_bias: [B, I, 1, 1, J]
-    mask_bias = (module.inf * (mask - 1))[..., :, None, None, :]
-
-    # triangle_bias: LN(z) → linear_z → permute → [B, 1, H, I, J]
-    # Use fused_ln_linear to avoid materializing the full LN'd z.
-    z_2d = z.reshape(-1, c_z)
     ln = module.layer_norm
-    tb_2d = fused_ln_linear(
-        z_2d, ln.weight, ln.bias, module.linear_z.weight,
-        module.linear_z.bias, ln.eps,
-    )  # [B*I*J, H]
-    tb = tb_2d.view(B, I, J, no_heads)
-    triangle_bias = permute_final_dims(tb, (2, 0, 1))  # [B, H, I, J]
-    triangle_bias = triangle_bias.unsqueeze(-4)  # [B, 1, H, I, J]
 
-    biases = [mask_bias, triangle_bias]
-
-    # ── Fused LN → QKV projection ─────────────────────────────────
-    W_qkv = torch.cat(
-        [mha.linear_q.weight, mha.linear_k.weight, mha.linear_v.weight],
-        dim=0,
-    )  # [3*H*c_h, c_z]
-    qkv_2d = fused_ln_linear(
-        z_2d, ln.weight, ln.bias, W_qkv, None, ln.eps,
-    )  # [B*I*J, 3*H*c_h]
-
-    del W_qkv
-
-    total_hidden = c_hidden * no_heads
-    q, k, v = qkv_2d.split(total_hidden, dim=-1)
-    # Reshape: [B*I*J, H*c_h] → [B, I, J, H, c_h] → [B, I, H, J, c_h]
-    # .contiguous() so cuEq doesn't silently copy while qkv_2d is still live.
-    q = q.view(B, I, J, no_heads, c_hidden).transpose(-2, -3).contiguous()
-    k = k.view(B, I, J, no_heads, c_hidden).transpose(-2, -3).contiguous()
-    v = v.view(B, I, J, no_heads, c_hidden).transpose(-2, -3).contiguous()
-    del qkv_2d
-
-    # ── Attention core ─────────────────────────────────────────────
-    use_cueq_here = use_cueq
-    if use_cueq_here and cueq_is_installed and cueq_would_fall_back(
-        n_token=J, hidden_dim=c_hidden, dtype=z.dtype,
-    ):
-        use_cueq_here = False
-
-    if use_cueq_here and cueq_is_installed:
-        scale = 1.0 / math.sqrt(c_hidden)
-        o = _cueq_triangle_attn(q, k, v, biases, scale=scale)
-        # o: [B, I, J, H, c_h] (cuEq transposes internally)
-    else:
-        q = q / math.sqrt(c_hidden)
-        o = _attention(q, k, v, biases)
-        # o: [B, I, H, J, c_h] → transpose to [B, I, J, H, c_h]
-        o = o.transpose(-2, -3)
-
-    del q, k, v
-
-    # ── Fused gated output ─────────────────────────────────────────
-    # o: [B, I, J, H, c_h] → flatten to [M, H*c_h]
-    o_2d = o.reshape(-1, total_hidden)
-    del o
-
-    out_2d = fused_gated_attn_out(
-        z_2d,       # raw z for LN recompute inside kernel
-        o_2d,
+    # tri_bias projection via strided LN→linear.  ``pair_ln_linear_inference``
+    # decodes ``(i, j)`` via independent strides so the contig and transpose-
+    # view ``z`` cases are handled by one call with no Python branch and no
+    # full-N ``z_norm`` materialization.  Returns ``[I*J, no_heads]`` flat.
+    tb_flat = pair_ln_linear_inference(
+        z,
         ln.weight,
         ln.bias,
-        mha.linear_g.weight,
-        mha.linear_o.weight,
+        module.linear_z.weight,
+        None,
         ln.eps,
-    )  # [M, c_z]
+    )
+    triangle_bias_full = (
+        tb_flat.view(B, I_dim, J_dim, no_heads)
+        .permute(0, 3, 1, 2)
+        .contiguous()
+        .unsqueeze(1)
+    )
+    del tb_flat
 
-    out = out_2d.view(B, I, J, c_z)
+    W_qkvg = torch.cat(
+        [
+            mha.linear_q.weight,
+            mha.linear_k.weight,
+            mha.linear_v.weight,
+            mha.linear_g.weight,
+        ],
+        dim=0,
+    )
 
-    # ── Undo starting/ending transpose ─────────────────────────────
-    if not starting:
+    if mask is not None and not mask.is_contiguous():
+        mask = mask.contiguous()
+
+    # Fresh ``out`` allocation policy:
+    # * residual write-view provided (contig or non-contig) → aliases the write-
+    #   view (0U extra).  Per-block dispatch below picks addmm vs scratch+add_.
+    # * no residual → fresh ``[B, I_dim, J_dim, c_z]`` contig buffer (1U) in the
+    #   flash-kernel's starting-node layout; post-loop we transpose it back to
+    #   the caller's I/O layout if starting=False.
+    if residual_wv is not None:
+        out = residual_wv
+    else:
+        out = torch.empty((B, I_dim, J_dim, c_z), dtype=z.dtype, device=z.device)
+
+    scale = 1.0 / math.sqrt(c_hidden)
+
+    for start in range(0, I_dim, chunk_size):
+        end = min(I_dim, start + chunk_size)
+        rows = end - start
+
+        # Per-block LN — replaces the persistent ``z_norm`` allocation.  A
+        # ``.contiguous()`` on the block slice is a cheap ``chunk × N × c_z``
+        # copy (~0.1U at chunk=128, N=1264) that turns any stride pattern
+        # (contig from tri_att_start; transpose-view from tri_att_end) into a
+        # contig block ``F.layer_norm`` can consume in one shot.
+        z_block = z[:, start:end, :, :].contiguous()
+        z_norm_block = torch.nn.functional.layer_norm(
+            z_block, (c_z,), ln.weight, ln.bias, ln.eps,
+        )
+        del z_block
+
+        qkvg_2d = torch.nn.functional.linear(
+            z_norm_block.reshape(-1, c_z), W_qkvg, None,
+        )
+        del z_norm_block
+
+        q_2d, k_2d, v_2d, g_2d = qkvg_2d.split(total_hidden, dim=-1)
+        q = q_2d.view(B, rows, J_dim, no_heads, c_hidden)
+        k = k_2d.view(B, rows, J_dim, no_heads, c_hidden)
+        v = v_2d.view(B, rows, J_dim, no_heads, c_hidden)
+        gate = g_2d.view(B, rows, J_dim, no_heads, c_hidden)
+        attn = flash_tri_attn_v1_block(
+            q, k, v, gate,
+            triangle_bias_full,
+            mask, start, scale,
+            out=q,
+            mask_inf=module.inf,
+        )
+
+        attn_2d = attn.reshape(-1, total_hidden)
+        W_o_t = mha.linear_o.weight.t()
+
+        if residual_wv is None:
+            # Fresh contig ``out`` — plain ``torch.mm(out=slice)``.
+            out_block_2d = out[:, start:end, :, :].reshape(-1, c_z)
+            torch.mm(attn_2d, W_o_t, out=out_block_2d)
+            del out_block_2d
+        elif residual_wv_contig:
+            # Contig write-view: fuse the residual add into ``W_o`` matmul.
+            out_block_2d = out[:, start:end, :, :].reshape(-1, c_z)
+            torch.addmm(out_block_2d, attn_2d, W_o_t, out=out_block_2d)
+            del out_block_2d
+        else:
+            # Non-contig write-view: materialize per-block scratch, then
+            # ``.add_()`` the strided slice.  Scratch is ``chunk × J × c_z``
+            # fp32 ≈ 0.1U at chunk=128, N=1264 — dropped before the next iter.
+            scratch = torch.mm(attn_2d, W_o_t).view(B, rows, J_dim, c_z)
+            out[:, start:end, :, :].add_(scratch)
+            del scratch
+
+        del qkvg_2d, q_2d, k_2d, v_2d, g_2d
+        del q, k, v, gate, attn, attn_2d
+
+    del W_qkvg, triangle_bias_full
+
+    if residual_wv is not None:
+        # ``residual`` (the caller-visible tensor) has already been mutated in
+        # place; return it unchanged so the caller can chain assignments.
+        return residual
+
+    if not module.starting:
         out = out.transpose(-2, -3)
 
     return out

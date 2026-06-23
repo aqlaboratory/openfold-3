@@ -281,7 +281,9 @@ def build_runner(
     )
     cfg = runner.model_config
     cfg.settings.memory.eval.offload_inference.token_cutoff = 10_000_000
+    cfg.settings.memory.eval.use_deepspeed_evo_attention = False
     cfg.settings.memory.eval.use_cueq_triangle_kernels = use_cueq
+    cfg.settings.memory.eval.use_triton_triangle_kernels = False
     runner.setup()
     runner.inference_query_set = InferenceQuerySet.from_json(query_json)
     return runner

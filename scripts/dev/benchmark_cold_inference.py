@@ -42,7 +42,6 @@ DEFAULT_QUERIES = ["multimer", "protein_ligand", "homo_1200"]
 BASE_OPTIMIZED_ENV = {
     "OPENFOLD3_FUSED_LN_LINEAR": "1",
     "OPENFOLD3_FUSED_SWIGLU_TRANSITION": "1",
-    "OPENFOLD3_FUSED_TRI_ATTN": "0",
     "OPENFOLD3_FUSED_TRIMUL": "1",
     "OPENFOLD3_FUSED_OPM": "1",
     "OPENFOLD3_FUSED_DIFFUSION_ATTN": "1",
@@ -52,13 +51,46 @@ BASE_OPTIMIZED_ENV = {
 
 V2_ENV = {
     **BASE_OPTIMIZED_ENV,
+    "OPENFOLD3_FUSED_TRI_ATTN_V1": "0",
     "OPENFOLD3_FUSED_TRI_ATTN_V2": "1",
+    "OPENFOLD3_FUSED_TRI_ATTN_V3": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V4": "0",
     "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
+}
+
+V3_ENV = {
+    **BASE_OPTIMIZED_ENV,
+    "OPENFOLD3_FUSED_TRI_ATTN_V1": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V3": "1",
+    "OPENFOLD3_FUSED_TRI_ATTN_V4": "0",
+    "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
+}
+
+V4_ENV = {
+    **BASE_OPTIMIZED_ENV,
+    "OPENFOLD3_FUSED_TRI_ATTN_V1": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V3": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V4": "1",
+    "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
+}
+
+V1_ENV = {
+    **BASE_OPTIMIZED_ENV,
+    "OPENFOLD3_FUSED_TRI_ATTN_V1": "1",
+    "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V3": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V4": "0",
+    "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "128",
 }
 
 CAP128_ENV = {
     **BASE_OPTIMIZED_ENV,
+    "OPENFOLD3_FUSED_TRI_ATTN_V1": "0",
     "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V3": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V4": "0",
     "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "128",
 }
 
@@ -96,8 +128,10 @@ TRIATTN_CUEQ_UNCAPPED_ENV = {
 DISABLED_ENV = {
     "OPENFOLD3_FUSED_LN_LINEAR": "0",
     "OPENFOLD3_FUSED_SWIGLU_TRANSITION": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V1": "0",
     "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V3": "0",
+    "OPENFOLD3_FUSED_TRI_ATTN_V4": "0",
     "OPENFOLD3_FUSED_TRIMUL": "0",
     "OPENFOLD3_FUSED_OPM": "0",
     "OPENFOLD3_FUSED_DIFFUSION_ATTN": "0",
@@ -238,6 +272,12 @@ def _child_main(args: argparse.Namespace) -> None:
     else:
         raise ValueError(f"Unknown run mode {args.run_mode}")
 
+    activation_u = (
+        (peak_bytes - resident_baseline_bytes) / u_bytes
+        if args.run_mode == "forward"
+        else None
+    )
+
     result = {
         "query": args.query,
         "query_json": str(args.query_json),
@@ -253,7 +293,10 @@ def _child_main(args: argparse.Namespace) -> None:
         "model_params_bytes": resident_baseline_bytes,
         "resident_baseline_bytes": resident_baseline_bytes,
         "max_memory_allocated_bytes": peak_bytes,
-        "activation_U": (peak_bytes - resident_baseline_bytes) / u_bytes,
+        # Meaningful only for forward mode: the baseline is captured after the
+        # batch is resident on GPU. Predict mode measures before runner.run(),
+        # so it includes DataModule/predict-time resident tensors in the delta.
+        "activation_U": activation_u,
         "setup_s": setup_s,
         "data_s": data_s,
         "first_forward_s": first_forward_s,
@@ -266,9 +309,14 @@ def _child_main(args: argparse.Namespace) -> None:
             "OPENFOLD3_FUSED_SWIGLU_TRANSITION": os.environ.get(
                 "OPENFOLD3_FUSED_SWIGLU_TRANSITION"
             ),
-            "OPENFOLD3_FUSED_TRI_ATTN": os.environ.get("OPENFOLD3_FUSED_TRI_ATTN"),
             "OPENFOLD3_FUSED_TRI_ATTN_V2": os.environ.get(
                 "OPENFOLD3_FUSED_TRI_ATTN_V2"
+            ),
+            "OPENFOLD3_FUSED_TRI_ATTN_V3": os.environ.get(
+                "OPENFOLD3_FUSED_TRI_ATTN_V3"
+            ),
+            "OPENFOLD3_FUSED_TRI_ATTN_V4": os.environ.get(
+                "OPENFOLD3_FUSED_TRI_ATTN_V4"
             ),
             "OPENFOLD3_FUSED_TRIMUL": os.environ.get("OPENFOLD3_FUSED_TRIMUL"),
             "OPENFOLD3_FUSED_OPM": os.environ.get("OPENFOLD3_FUSED_OPM"),
@@ -302,9 +350,15 @@ def _env_for_config(config: str, base_env: dict[str, str]) -> dict[str, str]:
     if config == "local_default":
         updates = DISABLED_ENV
     elif config == "optimized_no_graph":
-        updates = CAP128_ENV
+        updates = V1_ENV
     elif config == "optimized_v2_no_graph":
         updates = V2_ENV
+    elif config == "optimized_v3_no_graph":
+        updates = V3_ENV
+    elif config == "optimized_v4_no_graph":
+        updates = V4_ENV
+    elif config == "optimized_v1_no_graph":
+        updates = V1_ENV
     elif config == "optimized_cap128_no_graph":
         updates = CAP128_ENV
     elif config == "optimized_cap128_no_diffattn":
@@ -431,7 +485,11 @@ def _summarize(raw: list[dict]) -> dict[str, dict]:
                     r["max_memory_allocated_bytes"] for r in rows
                 )
                 / 1024**3,
-                "activation_U_max": max(r["activation_U"] for r in rows),
+                "activation_U_max": (
+                    max(r["activation_U"] for r in rows)
+                    if first["activation_U"] is not None
+                    else None
+                ),
             }
         )
     return summary
@@ -503,6 +561,9 @@ def main() -> None:
             "local_default",
             "optimized_no_graph",
             "optimized_v2_no_graph",
+            "optimized_v3_no_graph",
+            "optimized_v4_no_graph",
+            "optimized_v1_no_graph",
             "optimized_cap128_no_graph",
             "optimized_cap128_no_diffattn",
             "optimized_cap128_with_cache",
