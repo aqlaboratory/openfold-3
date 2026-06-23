@@ -508,7 +508,13 @@ if _TRITON_AVAILABLE:
             if HAS_PAIR_BIAS:
                 QK_block += pair_bias_block
 
-            P_block = tl.math.exp(QK_block - M_block)
+            # Fully-masked rows lose the logsumexp correction (the masking bias is a
+            # large finite value), so clamp (qk - M <= 0 by construction) and
+            # renormalize the reconstructed probabilities. Threshold -1e3 is decoupled
+            # from the masking ``inf`` (fires for any inf >= 1e3, never on real logits).
+            P_arg = tl.minimum(QK_block - M_block, 0.0)
+            P_block = tl.math.exp(P_arg)
+            P_block = tl.where(res_mask_block <= -1e3, P_block / SEQ_LEN, P_block)
             dP_block = tl.dot(dO_block, V_T_block).to(tl.float32)
             dS_block = P_block * (dP_block - Di[:, None])
 
@@ -753,7 +759,9 @@ if _TRITON_AVAILABLE:
                     float("-inf"),
                 )
 
-            P_T_block = tl.math.exp(QK_T_block - m[None, :])
+            P_T_arg = tl.minimum(QK_T_block - m[None, :], 0.0)
+            P_T_block = tl.math.exp(P_T_arg)
+            P_T_block = tl.where(res_mask_T_block <= -1e3, P_T_block / SEQ_LEN, P_T_block)
 
             dV_block += tl.dot(P_T_block.to(K_block.dtype), dO_block)
 
