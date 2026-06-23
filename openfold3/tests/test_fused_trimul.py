@@ -102,6 +102,34 @@ class TestFusedTrimul(unittest.TestCase):
             for N in (64, 256):
                 self._check(outgoing, N, torch.bfloat16, True, atol=8e-2, rtol=8e-2)
 
+    def test_fp32_tf32_enabled(self):
+        device = "cuda"
+        old_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = True
+        try:
+            for outgoing in (True, False):
+                cls = (
+                    TriangleMultiplicationOutgoing
+                    if outgoing
+                    else TriangleMultiplicationIncoming
+                )
+                torch.manual_seed(0)
+                m = cls(128, 128).to(device=device, dtype=torch.float32).eval()
+                _randomize_observable_output(m)
+                z = torch.randn(1, 128, 128, 128, device=device) * 0.5
+                mask = torch.ones(1, 128, 128, device=device)
+                with torch.inference_mode():
+                    ref = m.forward(z.clone(), mask=mask, inplace_safe=False)
+                    fused = fused_trimul_update(m, z.clone(), mask, with_add=False)
+                self.assertIsNotNone(fused)
+                diff = (fused - ref).abs().max().item()
+                self.assertTrue(
+                    torch.allclose(fused, ref, atol=2e-3, rtol=2e-3),
+                    f"TF32 outgoing={outgoing}: max diff {diff:.2e}",
+                )
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_tf32
+
     def test_with_add(self):
         device = "cuda"
         torch.manual_seed(0)

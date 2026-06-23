@@ -96,7 +96,7 @@ if _TRITON_AVAILABLE:
         K,
         eps,
         HAS_MASK: tl.constexpr,
-        PRECISION: tl.constexpr,  # 0 = default (bf16/tf32), 1 = ieee (true fp32)
+        PRECISION: tl.constexpr,  # 0 = default, 1 = ieee, 2 = tf32
         FUSED_LN: tl.constexpr,  # 1 = x is raw, compute LN in-register
         HAS_LN_STATS: tl.constexpr,
         HAS_LN_BIAS: tl.constexpr,
@@ -179,6 +179,9 @@ if _TRITON_AVAILABLE:
                 if PRECISION == 1:
                     val_acc = tl.dot(x_tile, wp, val_acc, input_precision="ieee")
                     gate_acc = tl.dot(x_tile, wg, gate_acc, input_precision="ieee")
+                elif PRECISION == 2:
+                    val_acc = tl.dot(x_tile, wp, val_acc, input_precision="tf32")
+                    gate_acc = tl.dot(x_tile, wg, gate_acc, input_precision="tf32")
                 else:
                     x_t = x_tile.to(wp.dtype)
                     val_acc = tl.dot(x_t, wp, val_acc)
@@ -194,6 +197,9 @@ if _TRITON_AVAILABLE:
                 if PRECISION == 1:
                     val_acc = tl.dot(x, wp, val_acc, input_precision="ieee")
                     gate_acc = tl.dot(x, wg, gate_acc, input_precision="ieee")
+                elif PRECISION == 2:
+                    val_acc = tl.dot(x, wp, val_acc, input_precision="tf32")
+                    gate_acc = tl.dot(x, wg, gate_acc, input_precision="tf32")
                 else:
                     val_acc = tl.dot(x, wp, val_acc)
                     gate_acc = tl.dot(x, wg, gate_acc)
@@ -286,6 +292,8 @@ if _TRITON_AVAILABLE:
             wp = tl.load(wp_base, mask=mask_n[None, :], other=0.0)
             if PRECISION == 1:
                 val_acc = tl.dot(xo, wp, val_acc, input_precision="ieee")
+            elif PRECISION == 2:
+                val_acc = tl.dot(xo, wp, val_acc, input_precision="tf32")
             else:
                 val_acc = tl.dot(xo, wp, val_acc)
             xo_ptrs += TILE_K
@@ -340,6 +348,8 @@ if _TRITON_AVAILABLE:
                 )
                 if PRECISION == 1:
                     gate_acc = tl.dot(xi, wg, gate_acc, input_precision="ieee")
+                elif PRECISION == 2:
+                    gate_acc = tl.dot(xi, wg, gate_acc, input_precision="tf32")
                 else:
                     xi_t = xi.to(wg.dtype)
                     gate_acc = tl.dot(xi_t, wg, gate_acc)
@@ -351,6 +361,8 @@ if _TRITON_AVAILABLE:
                 wg = tl.load(wg_base, mask=mask_n[None, :], other=0.0)
                 if PRECISION == 1:
                     gate_acc = tl.dot(xi, wg, gate_acc, input_precision="ieee")
+                elif PRECISION == 2:
+                    gate_acc = tl.dot(xi, wg, gate_acc, input_precision="tf32")
                 else:
                     gate_acc = tl.dot(xi, wg, gate_acc)
                 xi_ptrs += TILE_K
@@ -456,7 +468,9 @@ if _TRITON_AVAILABLE:
 
 
 def _precision_flag(dtype: torch.dtype) -> int:
-    return 1 if dtype == torch.float32 else 0
+    if dtype == torch.float32:
+        return 2 if torch.backends.cuda.matmul.allow_tf32 else 1
+    return 0
 
 
 def _next_power_of_two(n: int) -> int:
