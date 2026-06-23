@@ -252,11 +252,24 @@ if _TRITON_AVAILABLE:
 
         BLOCK_K = max(_next_power_of_two(K), 16)
         BLOCK_N = max(_next_power_of_two(C_OUT), 16)
-        # Hidden tile: 64 keeps one [64, K] fp32 weight tile ~32KB in SMEM on
-        # SM89; drop to 32 for very wide hidden to bound register pressure.
-        BLOCK_H = 32 if H > 512 else 64
-        BLOCK_M = 32
+        allow_tf32 = bool(torch.backends.cuda.matmul.allow_tf32)
+        # Static config: M is runtime-specialized away via do_not_specialize,
+        # so this compiles once per dtype/shape signature and reuses across
+        # sequence lengths.
+        use_fast_tf32_cfg = (
+            K == 128
+            and H == 512
+            and C_OUT == 128
+            and x_2d.dtype == torch.float32
+            and allow_tf32
+        )
+        # Production Pairformer signature is K=128, H=512, C_OUT=128. A larger
+        # row tile improves tensor-core occupancy; keeping the hidden tile at
+        # 64 avoids the severe SMEM/register pressure seen with BLOCK_H=128.
+        BLOCK_M = 128 if use_fast_tf32_cfg else 32
+        BLOCK_H = 64
         num_warps = 4
+        num_stages = 1
 
         # Honor the same global flag cuBLAS honors: PyTorch defaults
         # matmul.allow_tf32 to False, so eager F.linear on fp32 uses true
@@ -264,8 +277,6 @@ if _TRITON_AVAILABLE:
         # eager trunk (TF32 drift through the diffusion rollout otherwise
         # reaches ~1 A RMSD). bf16 inputs are upcast to fp32 in-kernel, so
         # this flag only bites the fp32 path, exactly as for cuBLAS.
-        allow_tf32 = bool(torch.backends.cuda.matmul.allow_tf32)
-
         grid = (triton.cdiv(M, BLOCK_M),)
 
         beta_ptr = beta if beta is not None else x_2d.new_zeros(1)
@@ -311,7 +322,7 @@ if _TRITON_AVAILABLE:
             BLOCK_H=BLOCK_H,
             BLOCK_K=BLOCK_K,
             BLOCK_N=BLOCK_N,
-            num_stages=1,
+            num_stages=num_stages,
             num_warps=num_warps,
         )
         return y
