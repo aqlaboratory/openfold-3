@@ -31,6 +31,9 @@ and independently re-implemented in Triton". This adaptation:
     back to eager when grad is needed.
 
 Two kernels cover the memory-heavy stages of the AF3 (non-fused) trimul:
+  Stage 1 — optional compact LN stats: compute mean/rstd once as ``[2, M]``.
+    This is ~0.016U for ``c_z=128`` and avoids repeating the row reduction in
+    both gated GEMMs without materializing full ``LN_in(z)``.
   Stage 2 — gated dual GEMM: ``a = sigmoid(x@Wga)*(x@Wpa)`` and ``b`` likewise,
     with the row-shared mask folded in, emitted directly in the
     ``[c_hidden, B, N, N]`` layout the stage-3 einsum consumes. The separate
@@ -64,6 +67,7 @@ if _TRITON_AVAILABLE:
     _DUAL_GEMM_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=16, GROUP_M=8)
     _OUT_GEMM_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=16, GROUP_M=8)
     _OUT_GEMM_INPLACE_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=32, GROUP_M=8)
+    _LN_STATS_TILE_M = 64
 
     @triton.jit(
         do_not_specialize=["M", "eps"],
@@ -74,6 +78,7 @@ if _TRITON_AVAILABLE:
             "mask_ptr",
             "gamma_ptr",
             "beta_ptr",
+            "ln_stats_ptr",
             "out_ptr",
         ],
     )
@@ -84,6 +89,7 @@ if _TRITON_AVAILABLE:
         mask_ptr,  # [M] — row-shared mask (1 keep / 0 drop)
         gamma_ptr,  # [K] — LN scale (only used when FUSED_LN)
         beta_ptr,  # [K] — LN bias (only used when FUSED_LN and HAS_LN_BIAS)
+        ln_stats_ptr,  # [2, M] mean/rstd (only used when HAS_LN_STATS)
         out_ptr,  # [Nproj, M] — transposed output: sigmoid(x@wg)*(x@wp)*mask
         M,
         Nproj,
@@ -92,6 +98,7 @@ if _TRITON_AVAILABLE:
         HAS_MASK: tl.constexpr,
         PRECISION: tl.constexpr,  # 0 = default (bf16/tf32), 1 = ieee (true fp32)
         FUSED_LN: tl.constexpr,  # 1 = x is raw, compute LN in-register
+        HAS_LN_STATS: tl.constexpr,
         HAS_LN_BIAS: tl.constexpr,
         TILE_M: tl.constexpr,
         TILE_N: tl.constexpr,
@@ -123,17 +130,25 @@ if _TRITON_AVAILABLE:
         mask_m = offs_m < M
 
         if FUSED_LN:
-            offs_cz = tl.arange(0, BLOCK_CZ).to(tl.int64)
-            cz_mask = offs_cz < K
-            z_ptrs = x_ptr + (offs_m[:, None] * K + offs_cz[None, :])
-            z_raw = tl.load(
-                z_ptrs, mask=mask_m[:, None] & cz_mask[None, :], other=0.0,
-            ).to(tl.float32)
-            z_sum = tl.sum(z_raw, axis=1)
-            mean = z_sum / K
-            z_centered = tl.where(cz_mask[None, :], z_raw - mean[:, None], 0.0)
-            var = tl.sum(z_centered * z_centered, axis=1) / K
-            rstd = 1.0 / tl.sqrt(var + eps)
+            if HAS_LN_STATS:
+                mean = tl.load(ln_stats_ptr + offs_m, mask=mask_m, other=0.0).to(
+                    tl.float32
+                )
+                rstd = tl.load(
+                    ln_stats_ptr + M + offs_m, mask=mask_m, other=0.0,
+                ).to(tl.float32)
+            else:
+                offs_cz = tl.arange(0, BLOCK_CZ).to(tl.int64)
+                cz_mask = offs_cz < K
+                z_ptrs = x_ptr + (offs_m[:, None] * K + offs_cz[None, :])
+                z_raw = tl.load(
+                    z_ptrs, mask=mask_m[:, None] & cz_mask[None, :], other=0.0,
+                ).to(tl.float32)
+                z_sum = tl.sum(z_raw, axis=1)
+                mean = z_sum / K
+                z_centered = tl.where(cz_mask[None, :], z_raw - mean[:, None], 0.0)
+                var = tl.sum(z_centered * z_centered, axis=1) / K
+                rstd = 1.0 / tl.sqrt(var + eps)
 
         gate_acc = tl.zeros((TILE_M, TILE_N), dtype=tl.float32)
         val_acc = tl.zeros((TILE_M, TILE_N), dtype=tl.float32)
@@ -209,6 +224,7 @@ if _TRITON_AVAILABLE:
             "residual_ptr",
             "gamma_ptr",
             "beta_ptr",
+            "ln_stats_ptr",
             "out_ptr",
         ],
     )
@@ -220,6 +236,7 @@ if _TRITON_AVAILABLE:
         residual_ptr,  # [M, Cz] — pair residual (added in-kernel)
         gamma_ptr,  # [Cz] — LN scale (only used when FUSED_LN)
         beta_ptr,  # [Cz] — LN bias (only used when FUSED_LN and HAS_LN_BIAS)
+        ln_stats_ptr,  # [2, M] mean/rstd (only used when HAS_LN_STATS)
         out_ptr,  # [M, Cz]
         M,
         CZ,
@@ -228,6 +245,7 @@ if _TRITON_AVAILABLE:
         WITH_ADD: tl.constexpr,
         PRECISION: tl.constexpr,
         FUSED_LN: tl.constexpr,
+        HAS_LN_STATS: tl.constexpr,
         HAS_LN_BIAS: tl.constexpr,
         TILE_M: tl.constexpr,
         TILE_N: tl.constexpr,
@@ -275,17 +293,25 @@ if _TRITON_AVAILABLE:
 
         # gate gemm: LN(x_in) [M,CZ] @ wg[CZ,CZ]^T -> [TILE_M, TILE_N]
         if FUSED_LN:
-            offs_cz = tl.arange(0, BLOCK_CZ).to(tl.int64)
-            cz_mask = offs_cz < CZ
-            z_ptrs = x_in_ptr + (offs_m[:, None] * CZ + offs_cz[None, :])
-            z_raw = tl.load(
-                z_ptrs, mask=mask_m[:, None] & cz_mask[None, :], other=0.0,
-            ).to(tl.float32)
-            z_sum = tl.sum(z_raw, axis=1)
-            mean = z_sum / CZ
-            z_centered = tl.where(cz_mask[None, :], z_raw - mean[:, None], 0.0)
-            var = tl.sum(z_centered * z_centered, axis=1) / CZ
-            rstd = 1.0 / tl.sqrt(var + eps)
+            if HAS_LN_STATS:
+                mean = tl.load(ln_stats_ptr + offs_m, mask=mask_m, other=0.0).to(
+                    tl.float32
+                )
+                rstd = tl.load(
+                    ln_stats_ptr + M + offs_m, mask=mask_m, other=0.0,
+                ).to(tl.float32)
+            else:
+                offs_cz = tl.arange(0, BLOCK_CZ).to(tl.int64)
+                cz_mask = offs_cz < CZ
+                z_ptrs = x_in_ptr + (offs_m[:, None] * CZ + offs_cz[None, :])
+                z_raw = tl.load(
+                    z_ptrs, mask=mask_m[:, None] & cz_mask[None, :], other=0.0,
+                ).to(tl.float32)
+                z_sum = tl.sum(z_raw, axis=1)
+                mean = z_sum / CZ
+                z_centered = tl.where(cz_mask[None, :], z_raw - mean[:, None], 0.0)
+                var = tl.sum(z_centered * z_centered, axis=1) / CZ
+                rstd = 1.0 / tl.sqrt(var + eps)
 
         gate_acc = tl.zeros((TILE_M, TILE_N), dtype=tl.float32)
         if FUSED_LN:
@@ -345,6 +371,40 @@ if _TRITON_AVAILABLE:
             out_val.to(out_ptr.type.element_ty),
             mask=mask_m[:, None] & mask_n[None, :],
         )
+
+    @triton.jit(
+        do_not_specialize=["M", "eps"],
+        do_not_specialize_on_alignment=["x_ptr", "out_ptr"],
+    )
+    def _ln_stats_kernel(
+        x_ptr,  # [M, D]
+        out_ptr,  # [2, M] float32: mean then rstd
+        M,
+        D: tl.constexpr,
+        eps,
+        TILE_M: tl.constexpr,
+        BLOCK_D: tl.constexpr,
+    ):
+        pid = tl.program_id(0).to(tl.int64)
+        M64 = M.to(tl.int64)
+        offs_m = pid * TILE_M + tl.arange(0, TILE_M).to(tl.int64)
+        offs_d = tl.arange(0, BLOCK_D).to(tl.int64)
+        mask_m = offs_m < M64
+        mask_d = offs_d < D
+
+        x = tl.load(
+            x_ptr + offs_m[:, None] * D + offs_d[None, :],
+            mask=mask_m[:, None] & mask_d[None, :],
+            other=0.0,
+        ).to(tl.float32)
+        x = tl.where(mask_d[None, :], x, 0.0)
+        mean = tl.sum(x, axis=1) / D
+        x_c = tl.where(mask_d[None, :], x - mean[:, None], 0.0)
+        var = tl.sum(x_c * x_c, axis=1) / D
+        rstd = 1.0 / tl.sqrt(var + eps)
+
+        tl.store(out_ptr + offs_m, mean, mask=mask_m)
+        tl.store(out_ptr + M64 + offs_m, rstd, mask=mask_m)
 
     # ------------------------------------------------------------------ #
     # Transposing LayerNorm: (D, M) → (M, D)                             #
@@ -412,6 +472,7 @@ def gated_dual_gemm_fp32(
     mask: torch.Tensor | None,  # [M] or None
     ln_weight: torch.Tensor | None = None,  # [K] — LN gamma (fused LN)
     ln_bias: torch.Tensor | None = None,  # [K] — LN beta (fused LN)
+    ln_stats: torch.Tensor | None = None,  # [2, M] — precomputed mean/rstd
     eps: float = 1e-5,
     output_dtype: torch.dtype | None = None,
 ) -> torch.Tensor:
@@ -433,9 +494,12 @@ def gated_dual_gemm_fp32(
     mask_flat = mask.contiguous().view(-1) if mask is not None else None
     _dummy = x
     fused_ln = ln_weight is not None
+    if ln_stats is not None and not fused_ln:
+        raise ValueError("ln_stats requires ln_weight / fused LN")
     BLOCK_CZ = _next_power_of_two(K) if fused_ln else 1
     gamma = ln_weight.contiguous() if fused_ln else x.new_zeros(1)
     beta = ln_bias.contiguous() if ln_bias is not None else x.new_zeros(1)
+    stats = ln_stats.contiguous() if ln_stats is not None else x.new_zeros(1)
     cfg = _DUAL_GEMM_CFG
 
     def grid(meta):
@@ -448,6 +512,7 @@ def gated_dual_gemm_fp32(
         mask_flat if mask_flat is not None else _dummy,
         gamma,
         beta,
+        stats,
         out,
         M,
         Nproj,
@@ -456,9 +521,33 @@ def gated_dual_gemm_fp32(
         HAS_MASK=mask is not None,
         PRECISION=_precision_flag(x.dtype),
         FUSED_LN=fused_ln,
+        HAS_LN_STATS=ln_stats is not None,
         HAS_LN_BIAS=ln_bias is not None,
         BLOCK_CZ=BLOCK_CZ,
         **cfg,
+    )
+    return out
+
+
+def ln_stats_fp32(x: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
+    """Return per-row LayerNorm mean/rstd as float32 ``[2, M]``."""
+    assert x.ndim == 2
+    M, D = x.shape
+    x = x.contiguous()
+    out = torch.empty((2, M), device=x.device, dtype=torch.float32)
+    block_d = _next_power_of_two(D)
+
+    grid = (triton.cdiv(M, _LN_STATS_TILE_M),)
+    _ln_stats_kernel[grid](
+        x,
+        out,
+        M,
+        D=D,
+        eps=eps,
+        TILE_M=_LN_STATS_TILE_M,
+        BLOCK_D=block_d,
+        num_warps=8,
+        num_stages=2,
     )
     return out
 
@@ -471,6 +560,7 @@ def gated_out_gemm_residual_fp32(
     residual: torch.Tensor | None,  # [M, Cz] or None
     ln_weight: torch.Tensor | None = None,  # [Cz] — LN gamma (fused LN)
     ln_bias: torch.Tensor | None = None,  # [Cz] — LN beta (fused LN)
+    ln_stats: torch.Tensor | None = None,  # [2, M] — precomputed mean/rstd
     eps: float = 1e-5,
     out: torch.Tensor | None = None,
 ) -> torch.Tensor:
@@ -503,9 +593,12 @@ def gated_out_gemm_residual_fp32(
     with_add = residual is not None
     resid = residual.contiguous().view(M, CZ) if with_add else x_in
     fused_ln = ln_weight is not None
+    if ln_stats is not None and not fused_ln:
+        raise ValueError("ln_stats requires ln_weight / fused LN")
     BLOCK_CZ = _next_power_of_two(CZ) if fused_ln else 1
     gamma = ln_weight.contiguous() if fused_ln else x_in.new_zeros(1)
     beta = ln_bias.contiguous() if ln_bias is not None else x_in.new_zeros(1)
+    stats = ln_stats.contiguous() if ln_stats is not None else x_in.new_zeros(1)
 
     def grid(meta):
         return (triton.cdiv(M, meta["TILE_M"]), triton.cdiv(CZ, meta["TILE_N"]))
@@ -518,6 +611,7 @@ def gated_out_gemm_residual_fp32(
         resid,
         gamma,
         beta,
+        stats,
         out,
         M,
         CZ,
@@ -526,6 +620,7 @@ def gated_out_gemm_residual_fp32(
         WITH_ADD=with_add,
         PRECISION=_precision_flag(x_in.dtype),
         FUSED_LN=fused_ln,
+        HAS_LN_STATS=ln_stats is not None,
         HAS_LN_BIAS=ln_bias is not None,
         BLOCK_CZ=BLOCK_CZ,
         **cfg,

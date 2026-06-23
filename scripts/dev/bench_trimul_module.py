@@ -26,6 +26,7 @@ _torch_gpu_setup()
 from openfold3.core.kernels.triton.fused_trimul import (  # noqa: E402
     gated_dual_gemm_fp32,
     gated_out_gemm_residual_fp32,
+    ln_stats_fp32,
     ln_transpose_fp32,
 )
 
@@ -103,6 +104,7 @@ def _stage_split(module, z, mask, *, reps: int, warmup: int) -> list[dict]:
     wp = torch.cat([module.linear_a_p.weight, module.linear_b_p.weight], dim=0)
     wg = torch.cat([module.linear_a_g.weight, module.linear_b_g.weight], dim=0)
     with torch.inference_mode():
+        ln_stats = ln_stats_fp32(z_2d, ln_in.eps)
         ab = gated_dual_gemm_fp32(
             z_2d,
             wp,
@@ -110,6 +112,7 @@ def _stage_split(module, z, mask, *, reps: int, warmup: int) -> list[dict]:
             mask_flat,
             ln_weight=ln_in.weight,
             ln_bias=ln_in.bias,
+            ln_stats=ln_stats,
             eps=ln_in.eps,
             output_dtype=None,
         )
@@ -128,6 +131,9 @@ def _stage_split(module, z, mask, *, reps: int, warmup: int) -> list[dict]:
             torch.cat([module.linear_a_g.weight, module.linear_b_g.weight], dim=0),
         )
 
+    def input_ln_stats():
+        return ln_stats_fp32(z_2d, ln_in.eps)
+
     def dual_gemm():
         return gated_dual_gemm_fp32(
             z_2d,
@@ -136,6 +142,7 @@ def _stage_split(module, z, mask, *, reps: int, warmup: int) -> list[dict]:
             mask_flat,
             ln_weight=ln_in.weight,
             ln_bias=ln_in.bias,
+            ln_stats=ln_stats,
             eps=ln_in.eps,
             output_dtype=None,
         )
@@ -164,11 +171,13 @@ def _stage_split(module, z, mask, *, reps: int, warmup: int) -> list[dict]:
             None,
             ln_weight=ln_in.weight,
             ln_bias=ln_in.bias,
+            ln_stats=ln_stats,
             eps=ln_in.eps,
         )
 
     stages = [
         ("pack_weights", pack_weights),
+        ("input_ln_stats", input_ln_stats),
         ("dual_gemm", dual_gemm),
         ("einsum_contract", einsum_contract),
         ("bmm_contract", bmm_contract),

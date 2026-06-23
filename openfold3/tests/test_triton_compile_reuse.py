@@ -46,6 +46,7 @@ from openfold3.core.kernels.triton.fused_swiglu_transition import (
 from openfold3.core.kernels.triton.fused_trimul import (
     _gated_dual_gemm_kernel,
     _gated_out_gemm_residual_kernel,
+    _ln_stats_kernel,
     _ln_transpose_kernel,
 )
 from openfold3.core.model.layers.triangular_multiplicative_update import (
@@ -99,7 +100,12 @@ for n in lengths:
 
     y = fused_trimul_update(trimul, z, pair_mask, with_add=False)
     assert y is not None and y.shape == z.shape
-    clear(_gated_dual_gemm_kernel, _gated_out_gemm_residual_kernel, _ln_transpose_kernel)
+    clear(
+        _gated_dual_gemm_kernel,
+        _gated_out_gemm_residual_kernel,
+        _ln_stats_kernel,
+        _ln_transpose_kernel,
+    )
 
 counts = {
     "_fused_swiglu_transition_fwd_kernel": count(
@@ -109,6 +115,7 @@ counts = {
     "_gated_out_gemm_residual_kernel": count(
         cache_dir, "_gated_out_gemm_residual_kernel"
     ),
+    "_ln_stats_kernel": count(cache_dir, "_ln_stats_kernel"),
     "_ln_transpose_kernel": count(cache_dir, "_ln_transpose_kernel"),
 }
 print(json.dumps({"counts": counts}))

@@ -24,10 +24,10 @@ so the caller takes its existing eager / cuEq path. It reads the existing
 no retraining — concatenating the separate a/b projections into the dual-GEMM
 weights the kernel expects.
 
-LayerNorm is computed in-register inside both the dual-GEMM and the output
-GEMM kernels, so the full-pair LN intermediate is never materialized in HBM.
-Peak stays near the low-memory fused schedule: z plus the current large
-intermediate, without cuEq's materialized input-LN tensor.
+LayerNorm mean/rstd is computed once as compact ``[2, M]`` fp32 stats and reused
+by both gated GEMMs. The full-pair LN intermediate is never materialized in HBM.
+Peak stays near the low-memory fused schedule without cuEq's materialized
+``LN_in(z)`` tensor.
 
 Activated by ``OPENFOLD3_FUSED_TRIMUL=1``.
 """
@@ -42,6 +42,7 @@ from openfold3.core.kernels.triton.fused_trimul import (
     gated_dual_gemm_fp32,
     gated_out_gemm_residual_fp32,
     is_triton_available,
+    ln_stats_fp32,
     ln_transpose_fp32,
 )
 
@@ -85,7 +86,7 @@ def fused_trimul_update(
         x     = LN_out(x)
         out   = sigmoid(linear_g(z_n)) * linear_z(x)   [+ z]
 
-    LN_in is computed in-register inside both kernels (z_n is never in HBM).
+    LN_in stats are materialized once; z_n itself is never materialized in HBM.
     """
     if not _eligible(z):
         return None
@@ -117,14 +118,17 @@ def fused_trimul_update(
     z_2d = z.reshape(-1, c_z)
     mask_flat = mask.reshape(-1)
     ln_in = module.layer_norm_in
+    with torch.amp.autocast(device_type="cuda", enabled=False):
+        ln_stats = ln_stats_fp32(z_2d, eps=ln_in.eps)
 
     # Stage 2: gated dual GEMM for a and b with fused LN_in.
-    # LN is computed in-register per tile — z_n is never materialized.
+    # LN stats are reused; z_n is still normalized in-register per tile.
     wp = torch.cat([module.linear_a_p.weight, module.linear_b_p.weight], dim=0)
     wg = torch.cat([module.linear_a_g.weight, module.linear_b_g.weight], dim=0)
     ab = gated_dual_gemm_fp32(
         z_2d, wp, wg, mask_flat,
-        ln_weight=ln_in.weight, ln_bias=ln_in.bias, eps=ln_in.eps,
+        ln_weight=ln_in.weight, ln_bias=ln_in.bias, ln_stats=ln_stats,
+        eps=ln_in.eps,
         output_dtype=None,
     )  # [2*c_hidden, M]
     del wp, wg
@@ -152,8 +156,7 @@ def fused_trimul_update(
         )  # [M, c_hidden]
     del x, x_dm
 
-    # Stage 5: gated output GEMM + residual, with fused LN_in for the gate.
-    # Recomputes LN_in(z) in-register inside the kernel — z_n never in HBM.
+    # Stage 5: gated output GEMM + residual, reusing Stage-1 LN_in stats.
     residual_2d = z.reshape(-1, c_z) if with_add else None
     linear_z_weight = module.linear_z.weight
     if linear_z_weight.dtype != x_out_2d.dtype:
@@ -161,7 +164,9 @@ def fused_trimul_update(
     out_2d = gated_out_gemm_residual_fp32(
         z_2d, x_out_2d, module.linear_g.weight, linear_z_weight,
         residual_2d,
-        ln_weight=ln_in.weight, ln_bias=ln_in.bias, eps=ln_in.eps,
+        ln_weight=ln_in.weight, ln_bias=ln_in.bias, ln_stats=ln_stats,
+        eps=ln_in.eps,
         out=out.reshape(-1, c_z) if out is not None else None,
     )
+    del ln_stats
     return out_2d.view(B, N, N, c_z)
