@@ -41,7 +41,7 @@ jobs:
           echo "ami_id=$ami_id" >> "$GITHUB_OUTPUT"
       - name: Create cloud runner
         id: aws-start
-        uses: omsf/start-aws-gha-runner@v1.1.1
+        uses: omsf/start-aws-gha-runner@v1.2.0
         with:
           aws_image_id: ${{ steps.resolve-ami.outputs.ami_id }}  # Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04), resolved from SSM at runtime
           aws_instance_type: "g5.4xlarge" # A10G 64 GB 
@@ -58,7 +58,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
