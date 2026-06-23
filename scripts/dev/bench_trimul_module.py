@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""Microbenchmark OF3 triangle multiplication variants without cuEq.
+"""Microbenchmark OF3 triangle multiplication variants.
 
 This isolates ``TriangleMultiplication{Outgoing,Incoming}.forward`` and compares
-the eager/default path against the low-memory fused Triton path. cuEq is
-intentionally not part of the benchmark because its per-length autotune cost
-makes it the wrong target for this investigation.
+the eager/default path, low-memory fused Triton path, and optionally cuEq. cuEq
+first-call and warm timings are reported separately because its gated GEMM
+autotune/cache key is length dependent.
 """
 
 from __future__ import annotations
@@ -236,6 +236,11 @@ def main() -> None:
     )
     parser.add_argument("--profile-n", type=int, default=None)
     parser.add_argument("--stage-split", action="store_true")
+    parser.add_argument(
+        "--include-cueq",
+        action="store_true",
+        help="Also benchmark cuEq trimul; first call includes any length-keyed setup.",
+    )
     parser.add_argument("--output-json", type=Path, default=None)
     args = parser.parse_args()
 
@@ -243,10 +248,12 @@ def main() -> None:
     torch.backends.cuda.matmul.allow_tf32 = bool(args.allow_tf32)
     dtype = torch.float32 if args.dtype == "fp32" else torch.bfloat16
 
-    variants = (
-        ("eager_default", False),
-        ("fused", True),
-    )
+    variants = [
+        ("eager_default", False, False),
+        ("fused", True, False),
+    ]
+    if args.include_cueq:
+        variants.append(("cueq", False, True))
 
     results = []
     header = (
@@ -262,15 +269,15 @@ def main() -> None:
                 module, z, mask = _make_case(n, outgoing=outgoing, dtype=dtype)
                 u_bytes = n * n * 128 * z.element_size()
 
-                for label, fused in variants:
+                for label, fused, use_cueq in variants:
                     _set_fused(fused)
 
-                    def run(module=module, z=z, mask=mask):
+                    def run(module=module, z=z, mask=mask, use_cueq=use_cueq):
                         return module(
                             z.clone(),
                             mask=mask,
                             inplace_safe=False,
-                            use_cueq_triangle_kernels=False,
+                            use_cueq_triangle_kernels=use_cueq,
                         )
 
                     ms, first_ms, peak = _bench(

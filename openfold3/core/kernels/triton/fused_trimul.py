@@ -61,8 +61,8 @@ if _TRITON_AVAILABLE:
 
     # Single static config (no runtime autotune): one JIT compile, all N.
     # M,N,K are runtime args so a new sequence length never recompiles.
-    _DUAL_GEMM_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=32, GROUP_M=8)
-    _OUT_GEMM_CFG = dict(TILE_M=64, TILE_N=64, TILE_K=32, GROUP_M=8)
+    _DUAL_GEMM_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=16, GROUP_M=8)
+    _OUT_GEMM_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=16, GROUP_M=8)
     _OUT_GEMM_INPLACE_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=32, GROUP_M=8)
 
     @triton.jit(

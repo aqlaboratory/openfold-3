@@ -26,7 +26,8 @@ weights the kernel expects.
 
 LayerNorm is computed in-register inside both the dual-GEMM and the output
 GEMM kernels, so the full-pair LN intermediate is never materialized in HBM.
-Peak is ~3U (z + ab during dual-GEMM, or z + x + out during output GEMM).
+Peak stays near the low-memory fused schedule: z plus the current large
+intermediate, without cuEq's materialized input-LN tensor.
 
 Activated by ``OPENFOLD3_FUSED_TRIMUL=1``.
 """
