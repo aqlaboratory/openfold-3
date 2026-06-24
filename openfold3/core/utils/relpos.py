@@ -67,6 +67,7 @@ def relpos_complex(
         condition: torch.BoolTensor,
         rel_clip_idx: int,
         cyclic_mask: torch.Tensor,
+        asym_id: torch.Tensor,
     ) -> torch.Tensor:
         """
         Args:
@@ -82,14 +83,23 @@ def relpos_complex(
         """
         offset = pos[..., None] - pos[..., None, :]
         if cyclic_mask is not None and cyclic_mask.any():
-            pair_cyclic = cyclic_mask[..., None] & cyclic_mask[..., None, :]
-            cyc_mask_1d = cyclic_mask.view(-1, cyclic_mask.shape[-1])[0]
-            cyc_indices = torch.where(cyc_mask_1d)[0]
-            cyc_pos = pos.view(-1, pos.shape[-1])[0][cyc_mask_1d]
-            cyc_off = cyclic_offset(cyc_pos).to(dtype=offset.dtype)
-            full_cyc_off = offset.new_zeros(offset.shape)
-            full_cyc_off[..., cyc_indices[:, None], cyc_indices[None, :]] = cyc_off
-            offset = torch.where(pair_cyclic, full_cyc_off, offset)
+            for chain_id in torch.unique(asym_id):
+                chain_cyclic_mask = cyclic_mask & (asym_id == chain_id)
+                pair_cyclic = (
+                    chain_cyclic_mask[..., None] & chain_cyclic_mask[..., None, :]
+                )
+
+                if not pair_cyclic.any():
+                    continue
+                cyc_mask_1d = cyclic_mask.view(-1, cyclic_mask.shape[-1])[0]
+                cyc_indices = torch.where(
+                    cyc_mask_1d & (asym_id.squeeze(0) == chain_id)
+                )[0]
+                cyc_pos = pos.view(-1)[cyc_indices]
+                cyc_off = cyclic_offset(cyc_pos).to(dtype=offset.dtype)
+                full_cyc_off = offset.new_zeros(offset.shape)
+                full_cyc_off[..., cyc_indices[:, None], cyc_indices[None, :]] = cyc_off
+                offset = torch.where(pair_cyclic, full_cyc_off, offset)
 
         clipped_offset = torch.clamp(offset + rel_clip_idx, min=0, max=2 * rel_clip_idx)
         final_offset = torch.where(
@@ -112,6 +122,7 @@ def relpos_complex(
         condition=same_chain,
         rel_clip_idx=max_relative_idx,
         cyclic_mask=cyclic_mask,
+        asym_id=asym_id,
     )
 
     rel_token = relpos(
@@ -119,12 +130,14 @@ def relpos_complex(
         condition=same_chain & same_res,
         rel_clip_idx=max_relative_idx,
         cyclic_mask=cyclic_mask,
+        asym_id=asym_id,
     )
     rel_chain = relpos(
         pos=batch["sym_id"],
         condition=same_entity,
         rel_clip_idx=max_relative_chain,
         cyclic_mask=cyclic_mask,
+        asym_id=asym_id,
     )
 
     same_entity = same_entity[..., None].to(dtype=rel_pos.dtype)
