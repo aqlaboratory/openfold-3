@@ -52,6 +52,7 @@ from openfold3.entry_points.validator import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
+from openfold3.projects.of3_all_atom.model import OffloadModules, OpenFold3
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
 
 
@@ -315,9 +316,52 @@ class TestModelUpdate:
         assert model_cfg.settings.memory.eval.chunk_size == 4
         assert model_cfg.settings.memory.eval.offload_inference.confidence_heads
         assert model_cfg.settings.memory.eval.offload_inference.token_cutoff == 0
+        assert (
+            model_cfg.settings.memory.eval.offload_inference.confidence_token_cutoff
+            == 0
+        )
 
         # test existing setting in experiment runner is not overwritten
         assert not model_cfg.settings.memory.eval.use_lma
+
+    def test_confidence_offload_uses_dedicated_token_cutoff(self):
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets(["predict"])
+        offload = config.settings.memory.eval.offload_inference
+        offload.template_module = True
+        offload.msa_module = True
+        offload.confidence_heads = True
+        offload.token_cutoff = 2800
+        offload.confidence_token_cutoff = 0
+
+        model = OpenFold3(config).eval()
+
+        assert model._do_inference_offload(
+            seq_len=590, module_name=OffloadModules.CONFIDENCE_HEADS.value
+        )
+        assert not model._do_inference_offload(
+            seq_len=590, module_name=OffloadModules.MSA_MODULE.value
+        )
+        assert not model._do_inference_offload(
+            seq_len=590, module_name=OffloadModules.TEMPLATE_MODULE.value
+        )
+
+    def test_training_mode_disables_inference_offload(self):
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets(["predict"])
+        offload = config.settings.memory.eval.offload_inference
+        offload.template_module = True
+        offload.msa_module = True
+        offload.confidence_heads = True
+        offload.token_cutoff = 0
+        offload.confidence_token_cutoff = 0
+
+        model = OpenFold3(config).train()
+
+        for module_name in OffloadModules:
+            assert not model._do_inference_offload(
+                seq_len=590, module_name=module_name.value
+            )
 
     def test_model_update_with_pae_enabled_triggers_warning(self):
         with patch(

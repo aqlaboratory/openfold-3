@@ -19,7 +19,7 @@ from ml_collections import ConfigDict
 
 from openfold3.core.metrics.confidence import (
     compute_global_predicted_distance_error,
-    probs_to_expected_error,
+    logits_to_expected_error,
 )
 from openfold3.core.metrics.sample_ranking import (
     compute_chain_pair_iptm,
@@ -29,28 +29,62 @@ from openfold3.core.metrics.sample_ranking import (
 from openfold3.core.utils.atomize_utils import get_token_frame_atoms
 from openfold3.core.utils.tensor_utils import dict_multimap, tensor_tree_map
 
+_PAE_METRIC_BATCH_KEYS = {
+    "asym_id",
+    "atom_array",
+    "atom_mask",
+    "is_atomized",
+    "is_dna",
+    "is_ligand",
+    "is_protein",
+    "is_rna",
+    "num_atoms_per_token",
+    "restype",
+    "start_atom_index",
+    "token_mask",
+}
+
+
+def _pae_metric_inputs(
+    batch: dict, outputs: dict, device: torch.device
+) -> tuple[dict, dict]:
+    metric_batch = {
+        k: (v.to(device=device) if isinstance(v, torch.Tensor) else v)
+        for k, v in batch.items()
+        if k in _PAE_METRIC_BATCH_KEYS
+    }
+    metric_outputs = {
+        "atom_positions_predicted": outputs["atom_positions_predicted"].to(
+            device=device
+        ),
+        "pae_logits": outputs["pae_logits"],
+    }
+    return metric_batch, metric_outputs
+
 
 def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> dict:
     confidence_scores = {}
     confidence_scores["plddt"] = (
-        probs_to_expected_error(
-            torch.softmax(outputs["plddt_logits"], dim=-1), **config.confidence.plddt
-        )
+        logits_to_expected_error(outputs["plddt_logits"], **config.confidence.plddt)
         * 100.0
     )
 
-    pde_probs = torch.softmax(outputs["pde_logits"], dim=-1)
-    confidence_scores["pde"] = probs_to_expected_error(
-        pde_probs, **config.confidence.pde
-    )
     if config.confidence.pde.return_probs:
+        pde, pde_probs = logits_to_expected_error(
+            outputs["pde_logits"],
+            return_probs=True,
+            **config.confidence.pde,
+        )
+        confidence_scores["pde"] = pde
         confidence_scores["pde_probs"] = pde_probs
     else:
-        del pde_probs
+        confidence_scores["pde"] = logits_to_expected_error(
+            outputs["pde_logits"], **config.confidence.pde
+        )
 
     confidence_scores["gpde"], contact_probs = compute_global_predicted_distance_error(
         pde=confidence_scores["pde"],
-        logits=outputs["distogram_logits"],
+        logits=outputs["distogram_logits"].to(confidence_scores["pde"].device),
         **config.confidence.distogram,
     )
     if config.confidence.distogram.return_contact_probs:
@@ -59,27 +93,36 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
         del contact_probs
 
     if config.architecture.heads.pae.enabled:
-        pae_probs = torch.softmax(outputs["pae_logits"], dim=-1)
-        confidence_scores["pae"] = probs_to_expected_error(
-            pae_probs, **config.confidence.pae
+        pae_device = outputs["pae_logits"].device
+        metric_batch, metric_outputs = _pae_metric_inputs(
+            batch=batch, outputs=outputs, device=pae_device
         )
+
         if config.confidence.pae.return_probs:
+            pae, pae_probs = logits_to_expected_error(
+                outputs["pae_logits"],
+                return_probs=True,
+                **config.confidence.pae,
+            )
+            confidence_scores["pae"] = pae
             confidence_scores["pae_probs"] = pae_probs
         else:
-            del pae_probs
+            confidence_scores["pae"] = logits_to_expected_error(
+                outputs["pae_logits"], **config.confidence.pae
+            )
 
         _, valid_frame_mask = get_token_frame_atoms(
-            batch=batch,
-            x=outputs["atom_positions_predicted"],
-            atom_mask=batch["atom_mask"],
+            batch=metric_batch,
+            x=metric_outputs["atom_positions_predicted"],
+            atom_mask=metric_batch["atom_mask"],
         )
 
         valid_frame_mask = valid_frame_mask.bool()
 
         confidence_scores.update(
             full_complex_sample_ranking_metric(
-                batch=batch,
-                output=outputs,
+                batch=metric_batch,
+                output=metric_outputs,
                 has_frame=valid_frame_mask,
                 **config.confidence.sample_ranking.full_complex,
                 **config.confidence.ptm,
@@ -89,8 +132,8 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
         if config.confidence.sample_ranking.chain_pair_iptm.enabled:
             confidence_scores.update(
                 compute_chain_pair_iptm(
-                    batch=batch,
-                    logits=outputs["pae_logits"],
+                    batch=metric_batch,
+                    logits=metric_outputs["pae_logits"],
                     has_frame=valid_frame_mask,
                     **config.confidence.ptm,
                 )
@@ -99,8 +142,8 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
         if config.confidence.sample_ranking.chain_ptm.enabled:
             confidence_scores.update(
                 compute_chain_ptm(
-                    batch=batch,
-                    outputs=outputs,
+                    batch=metric_batch,
+                    outputs=metric_outputs,
                     has_frame=valid_frame_mask,
                     **config.confidence.ptm,
                 )

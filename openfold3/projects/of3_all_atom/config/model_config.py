@@ -129,6 +129,7 @@ model_config = mlc.ConfigDict(
                         "msa_module": False,
                         "confidence_heads": False,
                         "token_cutoff": None,
+                        "confidence_token_cutoff": None,
                     },
                 },
             },

@@ -199,6 +199,11 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             and repr_x_pred.shape[-2] > self.per_sample_token_cutoff
         )
         out_device = atom_positions_predicted.device
+        final_out_device = (
+            torch.device("cpu")
+            if offload_inference and not torch.is_grad_enabled()
+            else out_device
+        )
 
         if not use_zij_trunk_embedding:
             zij = zij * 0
@@ -262,10 +267,11 @@ class AuxiliaryHeadsAllAtom(nn.Module):
 
         del zij
 
-        aux_out["pde_logits"] = pde_logits.to(device=out_device)
+        aux_out["pde_logits"] = pde_logits.to(device=final_out_device)
 
         aux_out = {
-            k: v.to(device=out_device, dtype=out_dtype) for k, v in aux_out.items()
+            k: v.to(device=final_out_device, dtype=out_dtype)
+            for k, v in aux_out.items()
         }
 
         return aux_out

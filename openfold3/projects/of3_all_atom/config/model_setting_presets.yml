@@ -15,6 +15,7 @@ predict:
         chunk_size: 4
         offload_inference:
           confidence_heads: true
+          confidence_token_cutoff: 0
           token_cutoff: 2800
 
 low_mem:
@@ -28,4 +29,5 @@ low_mem:
           template_module: true
           msa_module: true
           confidence_heads: true
+          confidence_token_cutoff: 0
           token_cutoff: 0

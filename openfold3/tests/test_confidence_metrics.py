@@ -15,9 +15,12 @@
 import unittest
 
 import torch
+from biotite import structure
 
+from openfold3.core.metrics.aggregate_confidence_ranking import get_confidence_scores
 from openfold3.core.metrics.confidence import (
     get_bin_centers,
+    logits_to_expected_error,
     probs_to_expected_error,
 )
 from openfold3.core.metrics.sample_ranking import (
@@ -25,6 +28,7 @@ from openfold3.core.metrics.sample_ranking import (
     compute_ptm,
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.tests.data_utils import random_of3_features
 
 
 class TestConfidenceMetrics(unittest.TestCase):
@@ -41,6 +45,90 @@ class TestConfidenceMetrics(unittest.TestCase):
         actual_error = torch.tensor(0.5)
         expected_error = probs_to_expected_error(probs, 0.0, 1.0, no_bins)
         self.assertTrue(torch.allclose(expected_error, actual_error))
+
+    def test_logits_to_expected_error_matches_probability_path(self):
+        logits = torch.randn(2, 3, 7)
+        expected = probs_to_expected_error(
+            torch.softmax(logits, dim=-1), bin_min=0.0, bin_max=1.0, no_bins=7
+        )
+        actual = logits_to_expected_error(
+            logits, bin_min=0.0, bin_max=1.0, no_bins=7
+        )
+        self.assertTrue(torch.allclose(actual, expected))
+
+    def test_logits_to_expected_error_can_return_probs(self):
+        logits = torch.randn(2, 3, 7)
+        expected_probs = torch.softmax(logits, dim=-1)
+        expected = probs_to_expected_error(
+            expected_probs, bin_min=0.0, bin_max=1.0, no_bins=7
+        )
+        actual, actual_probs = logits_to_expected_error(
+            logits,
+            bin_min=0.0,
+            bin_max=1.0,
+            no_bins=7,
+            return_probs=True,
+        )
+        self.assertTrue(torch.allclose(actual, expected))
+        self.assertTrue(torch.allclose(actual_probs, expected_probs))
+
+    def test_confidence_scores_match_with_cpu_offloaded_aux_outputs(self):
+        batch_size = 1
+        num_samples = 1
+        n_token = 6
+        n_msa = 3
+        n_templ = 1
+        config = OF3ProjectEntry().get_model_config_with_presets()
+        config.architecture.heads.pae.enabled = True
+        config.confidence.pde.return_probs = False
+        config.confidence.pae.return_probs = False
+        config.confidence.distogram.return_contact_probs = False
+
+        batch = random_of3_features(batch_size, n_token, n_msa, n_templ)
+        batch["is_protein"].zero_()
+        n_atom = batch["atom_mask"].shape[-1]
+        batch["atom_array"] = [structure.AtomArray(n_atom)]
+
+        outputs = {
+            "atom_positions_predicted": torch.randn(batch_size, num_samples, n_atom, 3),
+            "plddt_logits": torch.randn(batch_size, num_samples, n_atom, 50),
+            "pde_logits": torch.randn(
+                batch_size,
+                num_samples,
+                n_token,
+                n_token,
+                config.architecture.heads.pde.c_out,
+            ),
+            "distogram_logits": torch.randn(
+                batch_size,
+                n_token,
+                n_token,
+                config.architecture.heads.distogram.c_out,
+            ),
+            "pae_logits": torch.randn(
+                batch_size,
+                num_samples,
+                n_token,
+                n_token,
+                config.architecture.heads.pae.c_out,
+            ),
+        }
+        expected = get_confidence_scores(batch=batch, outputs=outputs, config=config)
+        actual = get_confidence_scores(
+            batch=batch,
+            outputs={k: v.cpu() for k, v in outputs.items()},
+            config=config,
+        )
+
+        def assert_close_tree(actual_value, expected_value):
+            if isinstance(expected_value, dict):
+                self.assertEqual(actual_value.keys(), expected_value.keys())
+                for key in expected_value:
+                    assert_close_tree(actual_value[key], expected_value[key])
+            else:
+                self.assertTrue(torch.allclose(actual_value, expected_value))
+
+        assert_close_tree(actual, expected)
 
     def test_shape(self):
         batch_size, num_samples, n_atom = 1, 5, 16

@@ -412,6 +412,51 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
             aux_out["experimentally_resolved_logits"].shape, expected_shape_exp_res
         )
 
+    def test_auxiliary_heads_offload_keeps_inference_outputs_on_cpu(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        n_msa = 10
+        n_templ = 3
+
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
+        config.architecture.heads.pae.enabled = True
+
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
+
+        batch = random_of3_features(
+            batch_size=batch_size, n_token=n_token, n_msa=n_msa, n_templ=n_templ
+        )
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+
+        aux_head = AuxiliaryHeadsAllAtom(config.architecture.heads).eval()
+        initialize_model_weights(aux_head)
+
+        si_input = torch.ones(batch_size, n_token, c_s_input)
+        si = torch.ones(batch_size, n_token, c_s)
+        zij = torch.ones(batch_size, n_token, n_token, c_z)
+        atom_positions_predicted = torch.randn(batch_size, n_atom, 3)
+        outputs = {
+            "si_trunk": si,
+            "zij_trunk": zij,
+            "atom_positions_predicted": atom_positions_predicted,
+        }
+
+        with torch.inference_mode():
+            aux_out = aux_head(
+                batch,
+                si_input,
+                outputs,
+                use_zij_trunk_embedding=True,
+                chunk_size=4,
+                offload_inference=True,
+            )
+
+        for value in aux_out.values():
+            self.assertEqual(value.device.type, "cpu")
+
 
 if __name__ == "__main__":
     unittest.main()

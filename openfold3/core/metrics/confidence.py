@@ -38,12 +38,40 @@ def probs_to_expected_error(
     return expectation
 
 
+def logits_to_expected_error(
+    logits: torch.Tensor,
+    bin_min: float,
+    bin_max: float,
+    no_bins: int,
+    return_probs: bool = False,
+    **kwargs,
+) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+    """
+    Compute expected error directly from logits.
+
+    This keeps the full softmax tensor only when the caller explicitly needs it.
+    The common inference path otherwise reuses the softmax allocation in-place
+    for the bin-weighted reduction.
+    """
+    probs = torch.softmax(logits, dim=-1)
+    if return_probs:
+        expectation = probs_to_expected_error(probs, bin_min, bin_max, no_bins)
+        return expectation, probs
+
+    bin_centers = get_bin_centers(
+        bin_min, bin_max, no_bins, device=logits.device, dtype=probs.dtype
+    )
+    if torch.is_grad_enabled() and probs.requires_grad:
+        expectation = torch.sum(probs * bin_centers, dim=-1)
+    else:
+        expectation = torch.sum(probs.mul_(bin_centers), dim=-1)
+    return expectation
+
+
 # TODO We have this function since validation_all_atom calls this without access
 # to plddt bin config, But ultimately that function should get access to bin config
 def compute_plddt(logits):
-    return probs_to_expected_error(
-        torch.softmax(logits, dim=-1), bin_min=0, bin_max=1.0, no_bins=50
-    )
+    return logits_to_expected_error(logits, bin_min=0, bin_max=1.0, no_bins=50)
 
 
 def compute_global_predicted_distance_error(

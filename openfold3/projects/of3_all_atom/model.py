@@ -185,11 +185,14 @@ class OpenFold3(nn.Module):
             return False
 
         offload_settings = self.settings.memory.eval.offload_inference
-
-        is_above_cutoff = (
-            offload_settings.token_cutoff is None
-            or seq_len > offload_settings.token_cutoff
+        token_cutoff = (
+            offload_settings.confidence_token_cutoff
+            if module_name == OffloadModules.CONFIDENCE_HEADS.value
+            and offload_settings.confidence_token_cutoff is not None
+            else offload_settings.token_cutoff
         )
+
+        is_above_cutoff = token_cutoff is None or seq_len > token_cutoff
         offload_inference = offload_settings[module_name] and is_above_cutoff
 
         return offload_inference

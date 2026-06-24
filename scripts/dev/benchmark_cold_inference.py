@@ -196,6 +196,8 @@ def _child_main(args: argparse.Namespace) -> None:
     predict_run_s = None
     success_count = None
     failed_count = None
+    final_allocated_bytes = None
+    model_batch_baseline_bytes = None
 
     if args.run_mode == "forward":
         runner.inference_query_set = inference_query_set
@@ -223,6 +225,7 @@ def _child_main(args: argparse.Namespace) -> None:
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
         resident_baseline_bytes = torch.cuda.memory_allocated()
+        model_batch_baseline_bytes = resident_baseline_bytes
 
         t_forward = time.perf_counter()
         with torch.inference_mode():
@@ -230,10 +233,8 @@ def _child_main(args: argparse.Namespace) -> None:
         torch.cuda.synchronize()
         first_forward_s = time.perf_counter() - t_forward
         peak_bytes = torch.cuda.max_memory_allocated()
+        final_allocated_bytes = torch.cuda.memory_allocated()
     elif args.run_mode == "predict":
-        lightning_module = runner.lightning_module.to("cuda").eval()
-        c_z = int(lightning_module.model.config.architecture.shared.c_z)
-
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
@@ -244,6 +245,8 @@ def _child_main(args: argparse.Namespace) -> None:
         torch.cuda.synchronize()
         predict_run_s = time.perf_counter() - t_predict
         peak_bytes = torch.cuda.max_memory_allocated()
+        final_allocated_bytes = torch.cuda.memory_allocated()
+        c_z = int(runner.lightning_module.model.config.architecture.shared.c_z)
 
         summary_path = args.run_output_dir / "summary.txt"
         if not summary_path.exists():
@@ -277,6 +280,13 @@ def _child_main(args: argparse.Namespace) -> None:
         if args.run_mode == "forward"
         else None
     )
+    peak_over_resident_u = (peak_bytes - resident_baseline_bytes) / u_bytes
+    final_over_resident_u = (final_allocated_bytes - resident_baseline_bytes) / u_bytes
+    peak_over_model_batch_u = (
+        (peak_bytes - model_batch_baseline_bytes) / u_bytes
+        if model_batch_baseline_bytes is not None
+        else None
+    )
 
     result = {
         "query": args.query,
@@ -292,7 +302,12 @@ def _child_main(args: argparse.Namespace) -> None:
         # before the measured forward/predict, not necessarily pure parameters.
         "model_params_bytes": resident_baseline_bytes,
         "resident_baseline_bytes": resident_baseline_bytes,
+        "model_batch_baseline_bytes": model_batch_baseline_bytes,
         "max_memory_allocated_bytes": peak_bytes,
+        "final_memory_allocated_bytes": final_allocated_bytes,
+        "peak_over_resident_U": peak_over_resident_u,
+        "final_over_resident_U": final_over_resident_u,
+        "peak_over_model_batch_U": peak_over_model_batch_u,
         # Meaningful only for forward mode: the baseline is captured after the
         # batch is resident on GPU. Predict mode measures before runner.run(),
         # so it includes DataModule/predict-time resident tensors in the delta.
@@ -485,6 +500,25 @@ def _summarize(raw: list[dict]) -> dict[str, dict]:
                     r["max_memory_allocated_bytes"] for r in rows
                 )
                 / 1024**3,
+                "resident_baseline_gib_mean": mean(
+                    r["resident_baseline_bytes"] for r in rows
+                )
+                / 1024**3,
+                "final_memory_allocated_gib_max": max(
+                    r["final_memory_allocated_bytes"] for r in rows
+                )
+                / 1024**3,
+                "peak_over_resident_U_max": max(
+                    r["peak_over_resident_U"] for r in rows
+                ),
+                "final_over_resident_U_max": max(
+                    r["final_over_resident_U"] for r in rows
+                ),
+                "peak_over_model_batch_U_max": (
+                    max(r["peak_over_model_batch_U"] for r in rows)
+                    if first["peak_over_model_batch_U"] is not None
+                    else None
+                ),
                 "activation_U_max": (
                     max(r["activation_U"] for r in rows)
                     if first["activation_U"] is not None
