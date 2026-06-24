@@ -32,7 +32,7 @@ jobs:
           aws-region: us-east-1
       - name: Create cloud runner
         id: aws-start
-        uses: omsf/start-aws-gha-runner@v1.1.1
+        uses: omsf/start-aws-gha-runner@v1.2.0
         with:
           aws_image_id: ami-0754c6e75b3b97dcd  # Deep Learning AMI Neuron (Ubuntu 22.04)
           aws_instance_type: trn1.2xlarge
@@ -53,7 +53,7 @@ jobs:
       id-token: write
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4

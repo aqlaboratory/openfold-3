@@ -262,9 +262,12 @@ def processed_reference_molecule_from_mol(
     if atom_names is not None:
         mol = set_atomwise_annotation(mol, "atom_name", atom_names)
     else:
-        elements = [atom.GetSymbol().upper() for atom in mol.GetAtoms()]
-        atom_names = struc.create_atom_names(elements)
+        # `create_atom_names` currently requires an AtomArray, so make one first
+        # See https://github.com/biotite-dev/biotite/issues/915 for more context
+        temp_struc = from_mol(mol, conformer_id=0, add_hydrogen=False)
+        atom_names = struc.create_atom_names(temp_struc)
         mol = set_atomwise_annotation(mol, "atom_name", atom_names)
+        del temp_struc
 
     # This is a different mask only required for fallback conformers in the training
     # script where some coordinates are not defined
