@@ -17,6 +17,27 @@ import torch
 from openfold3.core.utils.tensor_utils import binned_one_hot
 
 
+def cyclic_offset(residue_index: torch.Tensor) -> torch.Tensor:
+    """Calculate the cyclic offset for the given residue index.
+    Parameters
+    ----------
+    residue_index : torch.Tensor
+        The residue index tensor.
+    Returns
+    -------
+    torch.Tensor
+        The cyclic offset tensor.
+    """
+    peptide_length = residue_index.shape[0]
+    cyclic_offset_array = torch.zeros((peptide_length, peptide_length))
+    cyc_row = torch.arange(0, -peptide_length, -1)
+    pc = int(torch.round(torch.tensor(peptide_length / 2)))  # Get centre
+    cyc_row[pc + 1 :] = torch.arange(len(cyc_row[pc + 1 :]), 0, -1)
+    for i in range(len(cyclic_offset_array)):
+        cyclic_offset_array[i] = torch.roll(cyc_row, i)
+    return cyclic_offset_array.type(torch.int).to(residue_index.device)
+
+
 def relpos_complex(
     batch: dict, max_relative_idx: int, max_relative_chain: int
 ) -> torch.Tensor:
@@ -34,13 +55,18 @@ def relpos_complex(
     """
     res_idx = batch["residue_index"]
     asym_id = batch["asym_id"]
+    cyclic_mask = batch["cyclic_mask"]
     entity_id = batch["entity_id"]
     same_chain = asym_id[..., None] == asym_id[..., None, :]
+
     same_res = res_idx[..., None] == res_idx[..., None, :]
     same_entity = entity_id[..., None] == entity_id[..., None, :]
 
     def relpos(
-        pos: torch.Tensor, condition: torch.BoolTensor, rel_clip_idx: int
+        pos: torch.Tensor,
+        condition: torch.BoolTensor,
+        rel_clip_idx: int,
+        cyclic_mask: torch.Tensor,
     ) -> torch.Tensor:
         """
         Args:
@@ -55,6 +81,16 @@ def relpos_complex(
                 [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
         """
         offset = pos[..., None] - pos[..., None, :]
+        if cyclic_mask is not None and cyclic_mask.any():
+            pair_cyclic = cyclic_mask[..., None] & cyclic_mask[..., None, :]
+            cyc_mask_1d = cyclic_mask.view(-1, cyclic_mask.shape[-1])[0]
+            cyc_indices = torch.where(cyc_mask_1d)[0]
+            cyc_pos = pos.view(-1, pos.shape[-1])[0][cyc_mask_1d]
+            cyc_off = cyclic_offset(cyc_pos).to(dtype=offset.dtype)
+            full_cyc_off = offset.new_zeros(offset.shape)
+            full_cyc_off[..., cyc_indices[:, None], cyc_indices[None, :]] = cyc_off
+            offset = torch.where(pair_cyclic, full_cyc_off, offset)
+
         clipped_offset = torch.clamp(offset + rel_clip_idx, min=0, max=2 * rel_clip_idx)
         final_offset = torch.where(
             condition,
@@ -71,16 +107,24 @@ def relpos_complex(
 
         return rel_pos
 
-    rel_pos = relpos(pos=res_idx, condition=same_chain, rel_clip_idx=max_relative_idx)
+    rel_pos = relpos(
+        pos=res_idx,
+        condition=same_chain,
+        rel_clip_idx=max_relative_idx,
+        cyclic_mask=cyclic_mask,
+    )
+
     rel_token = relpos(
         pos=batch["token_index"],
         condition=same_chain & same_res,
         rel_clip_idx=max_relative_idx,
+        cyclic_mask=cyclic_mask,
     )
     rel_chain = relpos(
         pos=batch["sym_id"],
         condition=same_entity,
         rel_clip_idx=max_relative_chain,
+        cyclic_mask=cyclic_mask,
     )
 
     same_entity = same_entity[..., None].to(dtype=rel_pos.dtype)
