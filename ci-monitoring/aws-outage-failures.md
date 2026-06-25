@@ -43,6 +43,7 @@ GPU) are omitted; they don't tell us whether that runner was healthy.
 
 | Date (UTC) | Run ID | Failed job(s) | Time to fail | Signature |
 | --- | --- | --- | --- | --- |
+| 2026-06-25 | [28147354416](https://github.com/aqlaboratory/openfold-3/actions/runs/28147354416) | `start-aws-runner` × 2 (test-pixi cuda12, test-conda) | 0m 03s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned; `test-pixi cuda13` cancelled by fail-fast. |
 | 2026-06-24 | [28075708064](https://github.com/aqlaboratory/openfold-3/actions/runs/28075708064) | `start-aws-runner` × 2 (test-pixi openfold3-cuda13, test-conda) | 0m 02s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned; `test-pixi cuda12` cancelled by fail-fast. |
 | 2026-06-23 | [28002658928](https://github.com/aqlaboratory/openfold-3/actions/runs/28002658928) | `start-aws-runner` × 2 (test-pixi cuda12, test-pixi cuda13) | 0m 02s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned for pixi jobs. `test-conda` succeeded. |
 | 2026-06-22 | [27930489254](https://github.com/aqlaboratory/openfold-3/actions/runs/27930489254) | `start-aws-runner` × 3 (test-conda, test-pixi cuda12, test-pixi cuda13) | 0m 02s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner ever provisioned. |
