@@ -53,6 +53,14 @@ from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 MODEL_VERSION = torch.tensor([1, 0, 0], dtype=torch.float32)
 
 
+def _as_int_seed(seed) -> int:
+    if isinstance(seed, torch.Tensor):
+        return int(seed.flatten()[0].item())
+    if isinstance(seed, list | tuple):
+        return _as_int_seed(seed[0])
+    return int(seed)
+
+
 class OffloadModules(Enum):
     TEMPLATE_MODULE = "template_module"
     MSA_MODULE = "msa_module"
@@ -458,6 +466,14 @@ class OpenFold3(nn.Module):
                 dtype=si_input.dtype,
                 device=si_input.device,
             )
+
+            if not self.training and "seed" in batch:
+                seed = _as_int_seed(batch["seed"])
+                random.seed(seed)
+                np.random.seed(seed % (2**32))
+                torch.manual_seed(seed)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(seed)
 
             atom_positions_predicted = self.sample_diffusion(
                 batch=batch,

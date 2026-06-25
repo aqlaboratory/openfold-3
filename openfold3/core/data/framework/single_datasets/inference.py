@@ -18,8 +18,11 @@ Inference class template for first inference pipeline prototype.
 
 import itertools
 import logging
+import random
 import traceback
+from contextlib import contextmanager
 
+import numpy as np
 import pandas as pd
 import torch
 from biotite.structure import AtomArray
@@ -70,6 +73,22 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _seeded_feature_creation(seed: int):
+    py_state = random.getstate()
+    np_state = np.random.get_state()
+    torch_state = torch.random.get_rng_state()
+    random.seed(seed)
+    np.random.seed(seed % (2**32))
+    torch.manual_seed(seed)
+    try:
+        yield
+    finally:
+        random.setstate(py_state)
+        np.random.set_state(np_state)
+        torch.random.set_rng_state(torch_state)
 
 
 @register_dataset
@@ -331,7 +350,8 @@ class InferenceDataset(Dataset):
         is_repeated_sample = bool(datapoint["repeated_sample"])
 
         try:
-            features = self.create_all_features(query)
+            with _seeded_feature_creation(int(seed)):
+                features = self.create_all_features(query)
             features["query_id"] = query_id
             features["seed"] = torch.tensor([seed])
             features["repeated_sample"] = torch.tensor(
