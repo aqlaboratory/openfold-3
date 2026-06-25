@@ -89,6 +89,82 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                 **self.config["pae"],
             )
 
+    def _pair_logits_per_sample(
+        self,
+        si_input: torch.Tensor,
+        si: torch.Tensor,
+        zij: torch.Tensor,
+        repr_x_pred: torch.Tensor,
+        repr_x_mask: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: int | None,
+        use_deepspeed_evo_attention: bool,
+        use_cueq_triangle_kernels: bool,
+        use_triton_triangle_kernels: bool,
+        use_lma: bool,
+        inplace_safe: bool,
+        _mask_trans: bool,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        no_samples = repr_x_pred.shape[-3]
+        si_out = None
+        pde_logits = None
+        pae_logits = None
+
+        for i in range(no_samples):
+            si_chunk, zij_chunk = self.pairformer_embedding(
+                si_input=si_input,
+                si=si,
+                zij=zij.clone(),
+                x_pred=repr_x_pred[..., i : i + 1, :, :],
+                single_mask=repr_x_mask,
+                pair_mask=pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+                apply_per_sample=False,
+            )
+
+            if si_out is None:
+                si_out = torch.empty(
+                    (*si_chunk.shape[:-3], no_samples, *si_chunk.shape[-2:]),
+                    device=si_chunk.device,
+                    dtype=si_chunk.dtype,
+                )
+            si_out[..., i : i + 1, :, :] = si_chunk
+            del si_chunk
+
+            pde_chunk = self.pde(zij_chunk, apply_per_sample=False)
+            if pde_logits is None:
+                pde_logits = torch.empty(
+                    (*pde_chunk.shape[:-4], no_samples, *pde_chunk.shape[-3:]),
+                    device="cpu",
+                    dtype=pde_chunk.dtype,
+                )
+            pde_logits[..., i : i + 1, :, :, :] = pde_chunk.to(device="cpu")
+            del pde_chunk
+
+            if self.config.pae.enabled:
+                pae_chunk = self.pae(zij_chunk, apply_per_sample=False)
+                if pae_logits is None:
+                    pae_logits = torch.empty(
+                        (*pae_chunk.shape[:-4], no_samples, *pae_chunk.shape[-3:]),
+                        device="cpu",
+                        dtype=pae_chunk.dtype,
+                    )
+                pae_logits[..., i : i + 1, :, :, :] = pae_chunk.to(device="cpu")
+                del pae_chunk
+
+            del zij_chunk
+
+        if si_out is None or pde_logits is None:
+            raise RuntimeError("per-sample confidence embedding produced no samples")
+
+        return si_out, pde_logits, pae_logits
+
     def forward(
         self,
         batch: dict,
@@ -208,25 +284,43 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         if not use_zij_trunk_embedding:
             zij = zij * 0
 
-        # Embed trunk outputs
-        # If offload_inference is enabled, si and zij will be returned on the CPU
-        si, zij = self.pairformer_embedding(
-            si_input=si_input,
-            si=si,
-            zij=zij,
-            x_pred=repr_x_pred,
-            single_mask=repr_x_mask,
-            pair_mask=pair_mask,
-            chunk_size=chunk_size,
-            use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-            use_triton_triangle_kernels=use_triton_triangle_kernels,
-            use_lma=use_lma,
-            inplace_safe=inplace_safe,
-            offload_inference=offload_inference,
-            _mask_trans=_mask_trans,
-            apply_per_sample=apply_per_sample,
-        )
+        if apply_per_sample:
+            si, pde_logits, pae_logits = self._pair_logits_per_sample(
+                si_input=si_input,
+                si=si,
+                zij=zij,
+                repr_x_pred=repr_x_pred,
+                repr_x_mask=repr_x_mask,
+                pair_mask=pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
+            del zij
+        else:
+            # Embed trunk outputs
+            # If offload_inference is enabled, si and zij will be returned on the CPU
+            si, zij = self.pairformer_embedding(
+                si_input=si_input,
+                si=si,
+                zij=zij,
+                x_pred=repr_x_pred,
+                single_mask=repr_x_mask,
+                pair_mask=pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                offload_inference=offload_inference,
+                _mask_trans=_mask_trans,
+                apply_per_sample=False,
+            )
 
         # Get atom mask padded to MAX_ATOMS_PER_TOKEN
         # Required to extract pLDDT and experimentally resolved logits for
@@ -252,26 +346,31 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
-        # zij is moved back to GPU after the single rep confidence heads
-        # because building the max_atom_per_token_mask uses a lot of memory
-        zij = zij.to(device=out_device)
+        if not apply_per_sample:
+            # zij is moved back to GPU after the single rep confidence heads
+            # because building the max_atom_per_token_mask uses a lot of memory
+            zij = zij.to(device=out_device)
+            pde_logits = self.pde(zij, apply_per_sample=False)
 
-        pde_logits = self.pde(zij, apply_per_sample=apply_per_sample)
+            if self.config.pae.enabled:
+                # Offload pde logits to not keep all three pairwise tensors
+                # in GPU memory at once
+                offload_device = "cpu" if offload_inference else out_device
+                pde_logits = pde_logits.to(device=offload_device)
+                aux_out["pae_logits"] = self.pae(zij, apply_per_sample=False)
 
-        if self.config.pae.enabled:
-            # Offload pde logits to not keep all three pairwise tensors
-            # in GPU memory at once
-            offload_device = "cpu" if offload_inference else out_device
-            pde_logits = pde_logits.to(device=offload_device)
-            aux_out["pae_logits"] = self.pae(zij, apply_per_sample=apply_per_sample)
+            del zij
+        elif pae_logits is not None:
+            aux_out["pae_logits"] = pae_logits
 
-        del zij
+        aux_out["pde_logits"] = pde_logits
 
-        aux_out["pde_logits"] = pde_logits.to(device=final_out_device)
-
-        aux_out = {
-            k: v.to(device=final_out_device, dtype=out_dtype)
-            for k, v in aux_out.items()
-        }
+        if apply_per_sample:
+            aux_out = {k: v.to(dtype=out_dtype) for k, v in aux_out.items()}
+        else:
+            aux_out = {
+                k: v.to(device=final_out_device, dtype=out_dtype)
+                for k, v in aux_out.items()
+            }
 
         return aux_out

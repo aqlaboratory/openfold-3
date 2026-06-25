@@ -522,6 +522,13 @@ class OpenFold3(nn.Module):
 
         return output
 
+    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: evict template features after
+    # trunk so diffusion and confidence no longer retain MSA/template tensors.
+    def _post_trunk_inference_cleanup(self, batch: dict) -> None:
+        for key in tuple(batch.keys()):
+            if key.startswith("template_"):
+                del batch[key]
+
     def _train_diffusion(
         self,
         batch: dict,
@@ -744,6 +751,8 @@ class OpenFold3(nn.Module):
         si_input, si_trunk, zij_trunk = self.run_trunk(
             batch=batch, num_cycles=num_cycles, inplace_safe=inplace_safe
         )
+        if inplace_safe:
+            self._post_trunk_inference_cleanup(batch)
 
         # Expand sampling dimension for rollout and diffusion
         si_input = si_input.unsqueeze(1)

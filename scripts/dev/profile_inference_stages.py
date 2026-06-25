@@ -323,18 +323,22 @@ def profile(args) -> dict:
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
     resident_baseline_bytes = torch.cuda.memory_allocated()
+    del batch
 
     print(f"n_tokens={n_tok}, n_atoms={n_atom}, c_z={c_z}")
     print(f"1U = {_mib(u_bytes):.1f} MiB")
     print(f"Resident baseline: {_mib(resident_baseline_bytes):.0f} MiB")
 
     print("Warm-up forward...")
+    batch = get_batch(runner, device)
     with torch.inference_mode():
         lightning_module(batch)
+    del batch
     torch.cuda.synchronize()
     torch.cuda.empty_cache()
 
     print("Overall measured forward...")
+    batch = get_batch(runner, device)
     torch.cuda.synchronize()
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
@@ -344,9 +348,11 @@ def profile(args) -> dict:
     torch.cuda.synchronize()
     overall_wall_s = time.perf_counter() - t0
     overall_peak_bytes = torch.cuda.max_memory_allocated()
+    del batch
     torch.cuda.empty_cache()
 
     print("Hooked stage forward...")
+    batch = get_batch(runner, device)
     profiler = FastStageProfiler()
     install_fast_hooks(model, profiler, fine=args.fine)
     try:
@@ -359,6 +365,7 @@ def profile(args) -> dict:
         stage_wall_s = time.perf_counter() - t0
     finally:
         profiler.unwrap_all()
+        del batch
 
     return {
         "query_json": str(query_json),
