@@ -124,7 +124,7 @@ def all_atom_distogram_loss(
 
     # Compute distogram loss
     loss = torch.sum(errors * pair_mask, dim=(-1, -2)) / (
-        torch.sum(pair_mask, dim=(-1, -2)) + eps
+        torch.sum(pair_mask, dim=(-1, -2), dtype=torch.float32) + eps
     )
 
     distogram_weight = batch["loss_weights"]["distogram"]

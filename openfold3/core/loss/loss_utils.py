@@ -175,4 +175,4 @@ def loss_masked_batch_mean(
     if apply_weight:
         loss = loss * weight
 
-    return torch.sum(loss * mask) / (torch.sum(mask) + eps)
+    return torch.sum(loss * mask) / (torch.sum(mask, dtype=torch.float32) + eps)

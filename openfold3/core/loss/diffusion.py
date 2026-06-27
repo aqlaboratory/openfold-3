@@ -55,13 +55,13 @@ def weighted_rigid_align(
 
     # Mean-centre positions
     w_mean = torch.sum(w * atom_mask_gt, dim=-1, keepdim=True) / (
-        torch.sum(atom_mask_gt, dim=-1, keepdim=True) + eps
+        torch.sum(atom_mask_gt, dim=-1, keepdim=True, dtype=torch.float32) + eps
     )
     wx_mean = torch.sum(x * w[..., None] * atom_mask_gt[..., None], dim=-2) / (
-        torch.sum(atom_mask_gt, dim=-1, keepdim=True) + eps
+        torch.sum(atom_mask_gt, dim=-1, keepdim=True, dtype=torch.float32) + eps
     )
     wx_gt_mean = torch.sum(x_gt * w[..., None] * atom_mask_gt[..., None], dim=-2) / (
-        torch.sum(atom_mask_gt, dim=-1, keepdim=True) + eps
+        torch.sum(atom_mask_gt, dim=-1, keepdim=True, dtype=torch.float32) + eps
     )
     mu = wx_mean / w_mean
     mu_gt = wx_gt_mean / w_mean
