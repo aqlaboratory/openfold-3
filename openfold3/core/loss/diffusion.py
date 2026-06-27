@@ -229,9 +229,6 @@ def bond_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     # Compute polymer-ligand bond loss
     mask = (bond_mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])).bool()
 
-    # Sum the mask directly in fp32 to avoids a slow int64 reduce followed by
-    # immediately throwing away the accuracy that gave us when addition of eps
-    # autocasts to float.
     loss = torch.sum((dx - dx_gt) ** 2 * mask, dim=(-1, -2)) / (
         torch.sum(mask, dim=(-1, -2), dtype=torch.float32) + eps
     )
@@ -410,9 +407,6 @@ def smooth_lddt_loss(
 
     mask = (mask * (loss_atom_mask[..., None] * loss_atom_mask[..., None, :])).bool()
 
-    # Sum the mask directly in fp32 to avoids a slow int64 reduce followed by
-    # immediately throwing away the accuracy that gave us when addition of eps
-    # autocasts to float.
     mask_sum = torch.sum(mask, dim=(-1, -2), dtype=torch.float32) + eps
     ce_mean = torch.sum(c * e * mask, dim=(-1, -2)) / mask_sum
     c_mean = torch.sum(c * mask, dim=(-1, -2)) / mask_sum
