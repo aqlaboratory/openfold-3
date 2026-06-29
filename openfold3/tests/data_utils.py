@@ -317,3 +317,31 @@ def create_atomarray_with_bondlist(
     atom_array.bonds = bondlist
 
     return atom_array
+
+
+def atomized_single_atom_batch(n_token: int) -> dict:
+    """Batch of ``n_token`` single-atom, atomized tokens for loss tests.
+
+    Every token is atomized with exactly one atom, so the representative-atom
+    and atom masks are all-true and their counts scale directly with
+    ``n_token``.
+    """
+    return {
+        "token_mask": torch.ones((1, n_token)),
+        "atom_mask": torch.ones((1, n_token)),
+        "restype": torch.nn.functional.one_hot(
+            torch.zeros(1, n_token).long(), 32
+        ).float(),
+        "num_atoms_per_token": torch.ones((1, n_token)),
+        "start_atom_index": torch.arange(n_token).unsqueeze(0).float(),
+        "asym_id": torch.zeros((1, n_token)),
+        "is_protein": torch.zeros((1, n_token)),
+        "is_rna": torch.zeros((1, n_token)),
+        "is_dna": torch.zeros((1, n_token)),
+        "is_atomized": torch.ones((1, n_token)),
+        "ground_truth": {
+            "atom_resolved_mask": torch.ones((1, n_token)),
+            "atom_positions": torch.randn((1, n_token, 3)),
+        },
+        "loss_weights": {"distogram": torch.Tensor([1.0])},
+    }

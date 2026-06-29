@@ -12,15 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import unittest
 
+import pytest
 import torch
 import torch.nn.functional as F
 
 from openfold3.core.loss.distogram import all_atom_distogram_loss
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.tests.data_utils import atomized_single_atom_batch
 
 
+@pytest.mark.usefixtures("seeded_rng")
 class TestDistogramLoss(unittest.TestCase):
     def setup_features(self):
         # Example: UNK UNK UNK ALA GLY/A A DT
@@ -76,6 +80,23 @@ class TestDistogramLoss(unittest.TestCase):
         )
 
         self.assertTrue(l.shape == ())
+
+    def test_distogram_loss_zero_logits(self):
+        # Same idea as test_pde_loss_zero_logits
+        n_token, no_bins = 350, 8
+        batch = atomized_single_atom_batch(n_token)
+        logits = torch.zeros((1, n_token, n_token, no_bins))
+
+        loss, _ = all_atom_distogram_loss(
+            batch=batch,
+            logits=logits,
+            no_bins=no_bins,
+            bin_min=0,
+            bin_max=32,
+            eps=1e-8,
+        )
+
+        self.assertAlmostEqual(loss.item(), math.log(no_bins), delta=1e-6)
 
 
 if __name__ == "__main__":
