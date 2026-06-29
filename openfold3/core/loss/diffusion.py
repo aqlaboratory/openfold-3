@@ -53,18 +53,13 @@ def weighted_rigid_align(
     """
     atom_mask_gt = atom_mask_gt.bool()
 
-    # Mean-centre positions
-    w_mean = torch.sum(w * atom_mask_gt, dim=-1, keepdim=True) / (
-        torch.sum(atom_mask_gt, dim=-1, keepdim=True, dtype=torch.float32) + eps
+    # Mean-centre positions. The atom-count normaliser cancels between the
+    # weighted-position mean and the weight mean, so divide the sums directly.
+    w_sum = torch.sum(w * atom_mask_gt, dim=-1, keepdim=True)
+    mu = torch.sum(x * w[..., None] * atom_mask_gt[..., None], dim=-2) / (w_sum + eps)
+    mu_gt = torch.sum(x_gt * w[..., None] * atom_mask_gt[..., None], dim=-2) / (
+        w_sum + eps
     )
-    wx_mean = torch.sum(x * w[..., None] * atom_mask_gt[..., None], dim=-2) / (
-        torch.sum(atom_mask_gt, dim=-1, keepdim=True, dtype=torch.float32) + eps
-    )
-    wx_gt_mean = torch.sum(x_gt * w[..., None] * atom_mask_gt[..., None], dim=-2) / (
-        torch.sum(atom_mask_gt, dim=-1, keepdim=True, dtype=torch.float32) + eps
-    )
-    mu = wx_mean / w_mean
-    mu_gt = wx_gt_mean / w_mean
     x = x - mu[..., None, :]
     x_gt = x_gt - mu_gt[..., None, :]
 
@@ -407,10 +402,11 @@ def smooth_lddt_loss(
 
     mask = (mask * (loss_atom_mask[..., None] * loss_atom_mask[..., None, :])).bool()
 
-    mask_sum = torch.sum(mask, dim=(-1, -2), dtype=torch.float32) + eps
-    ce_mean = torch.sum(c * e * mask, dim=(-1, -2)) / mask_sum
-    c_mean = torch.sum(c * mask, dim=(-1, -2)) / mask_sum
-    lddt = ce_mean / (c_mean + eps)
+    # The atom-pair-count normaliser cancels between ce_mean and c_mean, so take
+    # the ratio of the masked sums directly.
+    lddt = torch.sum(c * e * mask, dim=(-1, -2)) / (
+        torch.sum(c * mask, dim=(-1, -2)) + eps
+    )
 
     return 1 - lddt
 
