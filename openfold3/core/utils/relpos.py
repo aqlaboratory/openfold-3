@@ -89,6 +89,10 @@ def relpos_complex(
                 [*, N_token, N_token] Condition for clipping
             rel_clip_idx:
                 Max idx for clipping (max_relative_idx or max_relative_chain)
+            cyclic_mask:
+                [*, N_token] Boolean tensor for what residues should be considered cyclic
+            asym_id:
+                [*, N_token] Used by cyclic mask for multi-chain cyclic
         Returns:
             rel_pos:
                 [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
