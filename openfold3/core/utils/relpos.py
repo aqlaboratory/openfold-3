@@ -19,14 +19,26 @@ from openfold3.core.utils.tensor_utils import binned_one_hot
 
 def cyclic_offset(residue_index: torch.Tensor) -> torch.Tensor:
     """Calculate the cyclic offset for the given residue index.
-    Parameters
-    ----------
-    residue_index : torch.Tensor
-        The residue index tensor.
-    Returns
-    -------
-    torch.Tensor
-        The cyclic offset tensor.
+    Args:
+        residue_index:
+            [*, N_token] Token index
+
+    Returns:
+        cyclic_offset_array:
+            [N_token, N_token] token by token index distances
+
+    Example:
+        >>> import torch
+        >>> residue_index = torch.tensor([0,1,2,3,4,5,6])
+        >>> cyclic_offset_array = cyclic_offset(residue_index)
+        >>> cyclic_offset_array:
+            tensor([[ 0, -1, -2, -3,  2,  1],
+                    [ 1,  0, -1, -2, -3,  2],
+                    [ 2,  1,  0, -1, -2, -3],
+                    [-3,  2,  1,  0, -1, -2],
+                    [-2, -3,  2,  1,  0, -1],
+                    [-1, -2, -3,  2,  1,  0]], device='cuda:0', dtype=torch.int32)
+
     """
     peptide_length = residue_index.shape[0]
     cyclic_offset_array = torch.zeros((peptide_length, peptide_length))
