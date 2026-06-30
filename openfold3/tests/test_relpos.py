@@ -22,7 +22,9 @@ def _make_batch(n_token, asym_ids, cyclic_mask, batch_size=1):
     """Build a minimal feature dict for relpos_complex."""
     residue_index = torch.arange(n_token).unsqueeze(0).repeat(batch_size, 1)
     token_index = torch.arange(n_token).unsqueeze(0).repeat(batch_size, 1)
-    asym_id = torch.tensor(asym_ids, dtype=torch.int32).unsqueeze(0).repeat(batch_size, 1)
+    asym_id = (
+        torch.tensor(asym_ids, dtype=torch.int32).unsqueeze(0).repeat(batch_size, 1)
+    )
     entity_id = asym_id.clone()
     sym_id = torch.ones(batch_size, n_token, dtype=torch.int32)
     cm = torch.tensor(cyclic_mask, dtype=torch.bool).unsqueeze(0).repeat(batch_size, 1)
@@ -94,17 +96,10 @@ class TestRelposComplex:
     def _relpos(self, batch):
         return relpos_complex(batch, self.MAX_IDX, self.MAX_CHAIN)
 
-    def test_output_shape_no_cyclic(self):
+    @pytest.mark.parametrize("is_cyclic", [True, False])
+    def test_relpos_shape(self,is_cyclic):
         n = 10
-        batch = _make_batch(n, [1] * n, [False] * n)
-        out = self._relpos(batch)
-        # Output is [B, N, N, 2*max_idx+2 + 2*max_idx+2 + 1 + 2*max_chain+2]
-        expected_last = (2 * self.MAX_IDX + 2) * 2 + 1 + (2 * self.MAX_CHAIN + 2)
-        assert out.shape == (1, n, n, expected_last)
-
-    def test_output_shape_with_cyclic(self):
-        n = 10
-        batch = _make_batch(n, [1] * n, [True] * n)
+        batch = _make_batch(n, [1] * n, [is_cyclic] * n)
         out = self._relpos(batch)
         expected_last = (2 * self.MAX_IDX + 2) * 2 + 1 + (2 * self.MAX_CHAIN + 2)
         assert out.shape == (1, n, n, expected_last)
