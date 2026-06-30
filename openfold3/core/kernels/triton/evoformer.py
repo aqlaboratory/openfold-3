@@ -12,6 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Triton Evoformer (triangle) attention kernel.
+
+Fused forward with an optimized backward:
+  - ``d_pair_bias`` accumulated in registers and folded into the dQ kernel,
+    eliminating the per-element ``tl.atomic_add`` (the dominant backward cost);
+  - dK/dV written directly in BLLHS layout (kernel does the reorder) with a
+    folded dO preprocess that removes two transpose+contiguous copies;
+  - per-dtype forward tiles;
+  - MFMA-tile (``matrix_instr_nonkdim``) and ``waves_per_eu`` tuning gated to HIP.
+
+Acknowledges prior LLNL evoformer training optimization work.
+"""
+
+import os
+import warnings
+
 import torch
 
 try:
@@ -20,10 +36,17 @@ try:
 
     _TRITON_AVAILABLE = True
 except ImportError:
+    warnings.warn(
+        "Triton is not available; the OpenFold3 Triton evoformer kernel is "
+        "disabled and a non-kernel attention path will be used.",
+        stacklevel=2,
+    )
     _TRITON_AVAILABLE = False
 
 # Sentinel: replaced with EvoformerAttention.apply when Triton is available.
 TritonEvoformer = None
+# Opt-in variable-shape entry point (set when Triton is available).
+TritonEvoformerDynamic = None
 
 if _TRITON_AVAILABLE:
 
@@ -59,6 +82,7 @@ if _TRITON_AVAILABLE:
         offs_kv: tl.constexpr,
         offs_d: tl.constexpr,
         SEQ_LEN: tl.constexpr,
+        USE_EXP2: tl.constexpr = False,
     ):
         """Run the inner loop of the forward pass of the attention mechanism."""
         lo, hi = 0, SEQ_LEN
@@ -129,13 +153,20 @@ if _TRITON_AVAILABLE:
                     (start_kv + offs_kv)[None, :] < SEQ_LEN, 0, float("-inf")
                 )
 
+            # base-2 softmax: scale the full logit tile (dot + biases) by log2(e)
+            # so exp2 == exp but is faster. Probabilities (hence all gradients) are
+            # unchanged; M is stored in base-2 for the backward. Opt-in via USE_EXP2
+            # (default off); works for both fp32 and bf16.
+            log2e = 1.4426950408889634  # log2(e): exp(x) == exp2(x * log2e)
+            if USE_EXP2:
+                QK_block = QK_block * log2e
             m_ij = tl.maximum(m_i, tl.max(QK_block, 1))
             QK_block = QK_block - m_ij[:, None]
 
-            P_block = tl.math.exp(QK_block)
+            P_block = tl.math.exp2(QK_block) if USE_EXP2 else tl.math.exp(QK_block)
             l_ij = tl.sum(P_block, 1)
 
-            alpha = tl.math.exp(m_i - m_ij)
+            alpha = tl.math.exp2(m_i - m_ij) if USE_EXP2 else tl.math.exp(m_i - m_ij)
             l_i = l_i * alpha + l_ij
 
             P_block = P_block.to(V_block.dtype)
@@ -208,6 +239,7 @@ if _TRITON_AVAILABLE:
         BLOCK_SIZE_Q: tl.constexpr,
         BLOCK_SIZE_KV: tl.constexpr,
         BLOCK_DIM: tl.constexpr,
+        USE_EXP2: tl.constexpr = False,
     ):
         """Run the forward pass of the attention mechanism."""
         block_index_q = tl.program_id(0)
@@ -306,9 +338,191 @@ if _TRITON_AVAILABLE:
             offs_kv,
             offs_d,
             SEQ_LEN,
+            USE_EXP2,
         )
 
-        m_i += tl.math.log(l_i)
+        m_i += (
+            tl.math.log2(l_i) if USE_EXP2 else tl.math.log(l_i)
+        )  # base matches fwd-inner exp2 gate
+        O_block = O_block / l_i[:, None]
+        O_block = O_block.to(O.type.element_ty)
+        m_ptrs = M + index_batch_msa_head * SEQ_LEN + offs_q
+
+        if EVEN_Q:
+            tl.store(m_ptrs, m_i)
+            if EVEN_DIM:
+                tl.store(O_block_ptr, O_block)
+            else:
+                tl.store(O_block_ptr, O_block, mask=offs_d[None, :] < DIM)
+        else:
+            tl.store(m_ptrs, m_i, mask=offs_q < SEQ_LEN)
+            if EVEN_DIM:
+                tl.store(O_block_ptr, O_block, mask=offs_q[:, None] < SEQ_LEN)
+            else:
+                tl.store(
+                    O_block_ptr,
+                    O_block,
+                    mask=(offs_q[:, None] < SEQ_LEN) & (offs_d[None, :] < DIM),
+                )
+
+    @triton.jit
+    def _attn_fwd_dyn(
+        Q,  # BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN, DIM
+        K,  # BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN, DIM
+        V,  # BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN, DIM
+        res_mask,  # BATCH_SIZE, N_SEQ, 1, SEQ_LEN, 1
+        pair_bias,  # BATCH_SIZE, 1, HEAD, SEQ_LEN, SEQ_LEN
+        softmax_scale,
+        M,  # BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN
+        O,  # BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN, DIM
+        stride_Q_batch,
+        stride_Q_msa,
+        stride_Q_head,
+        stride_Q_seq,
+        stride_Q_dim,
+        stride_K_batch,
+        stride_K_msa,
+        stride_K_head,
+        stride_K_seq,
+        stride_K_dim,
+        stride_V_batch,
+        stride_V_msa,
+        stride_V_head,
+        stride_V_seq,
+        stride_V_dim,
+        stride_O_batch,
+        stride_O_msa,
+        stride_O_head,
+        stride_O_seq,
+        stride_O_dim,
+        stride_pair_bias_batch,
+        stride_pair_bias_head,
+        stride_pair_bias_seq1,
+        stride_pair_bias_seq2,
+        stride_mask_batch,
+        stride_mask_msa,
+        stride_mask_seq,
+        BATCH_SIZE,
+        HEAD: tl.constexpr,
+        N_SEQ,
+        SEQ_LEN,
+        DIM: tl.constexpr,
+        EVEN_Q: tl.constexpr,
+        EVEN_KV: tl.constexpr,
+        EVEN_DIM: tl.constexpr,
+        HAS_PAIR_BIAS: tl.constexpr,
+        BLOCK_SIZE_Q: tl.constexpr,
+        BLOCK_SIZE_KV: tl.constexpr,
+        BLOCK_DIM: tl.constexpr,
+        USE_EXP2: tl.constexpr = False,
+    ):
+        """Dynamic-shape forward: N_SEQ & SEQ_LEN runtime, EVEN_* off.
+
+        Opt-in second entry point for variable-size callers (one compile for all
+        sizes); the specialized _attn_fwd stays the default. Shares _attn_fwd_inner.
+        """
+        block_index_q = tl.program_id(0)
+
+        index_batch_msa_head = tl.program_id(1)
+        index_batch_msa = index_batch_msa_head // HEAD
+        index_head = index_batch_msa_head % HEAD
+        index_batch = index_batch_msa // N_SEQ
+        index_msa = index_batch_msa % N_SEQ
+
+        # Cast to int64 to avoid int32 overflow for large sequences
+        qvk_offset = (
+            index_batch.to(tl.int64) * stride_Q_batch
+            + index_msa.to(tl.int64) * stride_Q_msa
+            + index_head * stride_Q_head
+        )
+        offs_q = block_index_q * BLOCK_SIZE_Q + tl.arange(0, BLOCK_SIZE_Q)
+        offs_kv = tl.arange(0, BLOCK_SIZE_KV)
+        offs_d = tl.arange(0, BLOCK_DIM)
+
+        Q_block_ptr = (
+            Q + qvk_offset + (offs_q[:, None] * stride_Q_seq + offs_d[None, :])
+        )
+        V_block_ptr = (
+            V + qvk_offset + (offs_kv[:, None] * stride_V_seq + offs_d[None, :])
+        )
+        K_block_ptr = (
+            K + qvk_offset + (offs_kv[None, :] * stride_K_seq + offs_d[:, None])
+        )
+        pair_bias_block_ptr = (
+            pair_bias
+            + index_batch * stride_pair_bias_batch
+            + index_head * stride_pair_bias_head
+            + (
+                offs_q[:, None] * stride_pair_bias_seq1
+                + offs_kv[None, :] * stride_pair_bias_seq2
+            )
+        )
+        O_block_ptr = (
+            O + qvk_offset + (offs_q[:, None] * stride_O_seq + offs_d[None, :])
+        )
+
+        res_mask_block_ptr = (
+            res_mask
+            + index_batch * stride_mask_batch
+            + index_msa * stride_mask_msa
+            + (offs_kv[None, :] * stride_mask_seq)
+        )
+
+        m_i = tl.zeros([BLOCK_SIZE_Q], dtype=tl.float32) - float("inf")
+        l_i = tl.zeros([BLOCK_SIZE_Q], dtype=tl.float32) + 1.0
+        O_block = tl.zeros([BLOCK_SIZE_Q, BLOCK_DIM], dtype=tl.float32)
+
+        # Load Q block; it stays in SRAM for the duration of the inner loop
+        if EVEN_Q & EVEN_KV:
+            if EVEN_DIM:
+                Q_block = tl.load(Q_block_ptr)
+            else:
+                Q_block = tl.load(Q_block_ptr, mask=offs_d[None, :] < DIM, other=0.0)
+        else:
+            if EVEN_DIM:
+                Q_block = tl.load(
+                    Q_block_ptr, mask=offs_q[:, None] < SEQ_LEN, other=0.0
+                )
+            else:
+                Q_block = tl.load(
+                    Q_block_ptr,
+                    mask=(offs_q[:, None] < SEQ_LEN) & (offs_d[None, :] < DIM),
+                    other=0.0,
+                )
+
+        O_block, l_i, m_i = _attn_fwd_inner(
+            O_block,
+            l_i,
+            m_i,
+            Q_block,
+            K_block_ptr,
+            V_block_ptr,
+            res_mask_block_ptr,
+            pair_bias_block_ptr,
+            block_index_q,
+            DIM,
+            stride_K_seq,
+            stride_V_seq,
+            stride_mask_seq,
+            stride_pair_bias_seq2,
+            softmax_scale,
+            EVEN_Q,
+            EVEN_KV,
+            EVEN_DIM,
+            HAS_PAIR_BIAS,
+            BLOCK_SIZE_Q,
+            BLOCK_SIZE_KV,
+            BLOCK_DIM,
+            offs_q,
+            offs_kv,
+            offs_d,
+            SEQ_LEN,
+            USE_EXP2,
+        )
+
+        m_i += (
+            tl.math.log2(l_i) if USE_EXP2 else tl.math.log(l_i)
+        )  # base matches fwd-inner exp2 gate
         O_block = O_block / l_i[:, None]
         O_block = O_block.to(O.type.element_ty)
         m_ptrs = M + index_batch_msa_head * SEQ_LEN + offs_q
@@ -342,6 +556,11 @@ if _TRITON_AVAILABLE:
         dO_out=None,
         HEAD: tl.constexpr = 1,
         READ_DO_BLLHS: tl.constexpr = False,
+        stride_batch=0,
+        stride_msa=0,
+        stride_head=0,
+        stride_seq=0,
+        N_SEQ: tl.constexpr = 1,
     ):
         """Run the preprocessing step of the backward pass of the attention
         mechanism.
@@ -356,12 +575,22 @@ if _TRITON_AVAILABLE:
         offs_dim = tl.arange(0, BLOCK_DIM)
 
         # Cast to int64 to avoid int32 overflow for large sequences
-        bwd_offset = index_batch_msa_head.to(tl.int64) * SEQ_LEN * DIM
+        # Internal-layout slab from explicit strides (contiguous =>
+        # stride_seq==DIM and slab==idx*SEQ_LEN*DIM, identical to before).
+        ibm = index_batch_msa_head // HEAD
+        ih = index_batch_msa_head % HEAD
+        ib = ibm // N_SEQ
+        im = ibm % N_SEQ
+        slab = (
+            ib.to(tl.int64) * stride_batch
+            + im.to(tl.int64) * stride_msa
+            + ih.to(tl.int64) * stride_head
+        )
         q_mask = (offs_q[:, None] < SEQ_LEN) & (offs_dim[None, :] < DIM)
 
         # Load a single block of BLOCK_SIZE_Q rows of O
         O_block = tl.load(
-            O + bwd_offset + offs_q[:, None] * DIM + offs_dim[None, :],
+            O + slab + offs_q[:, None] * stride_seq + offs_dim[None, :],
             mask=q_mask,
             other=0.0,
         )
@@ -377,14 +606,14 @@ if _TRITON_AVAILABLE:
                 other=0.0,
             )
             tl.store(
-                dO_out + bwd_offset + offs_q[:, None] * DIM + offs_dim[None, :],
+                dO_out + slab + offs_q[:, None] * stride_seq + offs_dim[None, :],
                 dO_raw,
                 mask=q_mask,
             )
             dO_block = dO_raw.to(tl.float32)
         else:
             dO_block = tl.load(
-                dO + bwd_offset + offs_q[:, None] * DIM + offs_dim[None, :],
+                dO + slab + offs_q[:, None] * stride_seq + offs_dim[None, :],
                 mask=q_mask,
                 other=0.0,
             ).to(tl.float32)
@@ -431,6 +660,7 @@ if _TRITON_AVAILABLE:
         BLOCK_SIZE_KV: tl.constexpr,
         PIPE_STAGES: tl.constexpr,
         HAS_PAIR_BIAS: tl.constexpr,
+        USE_EXP2: tl.constexpr = False,
     ):
         """dbias accumulated in registers and stored once (no atomic); dQ via
         relaxed atomic. HAS_PAIR_BIAS=False skips all d_pair_bias work."""
@@ -508,12 +738,15 @@ if _TRITON_AVAILABLE:
             if HAS_PAIR_BIAS:
                 QK_block += pair_bias_block
 
+            if USE_EXP2:  # opt-in exp2 (match fwd); both fp32 and bf16
+                log2e = 1.4426950408889634  # log2(e): exp(x) == exp2(x * log2e)
+                QK_block = QK_block * log2e
             # Fully-masked rows lose the logsumexp correction (the masking bias is a
-            # large finite value), so clamp (qk - M <= 0 by construction) and
-            # renormalize the reconstructed probabilities. Threshold -1e3 is decoupled
-            # from the masking ``inf`` (fires for any inf >= 1e3, never on real logits).
+            # large finite value), so clamp (qk-M <= 0 by construction) and renormalize
+            # the reconstructed probabilities. Threshold -1e3 is decoupled from the
+            # masking ``inf`` (fires for any inf >= 1e3, never on real logits ~O(1e2)).
             P_arg = tl.minimum(QK_block - M_block, 0.0)
-            P_block = tl.math.exp(P_arg)
+            P_block = tl.math.exp2(P_arg) if USE_EXP2 else tl.math.exp(P_arg)
             P_block = tl.where(res_mask_block <= -1e3, P_block / SEQ_LEN, P_block)
             dP_block = tl.dot(dO_block, V_T_block).to(tl.float32)
             dS_block = P_block * (dP_block - Di[:, None])
@@ -583,6 +816,7 @@ if _TRITON_AVAILABLE:
         BLOCK_SIZE_Q: tl.constexpr,
         BLOCK_SIZE_KV: tl.constexpr,
         WRITE_BLLHS: tl.constexpr = False,
+        USE_EXP2: tl.constexpr = False,
     ):
         """Run the backward pass of the attention mechanism."""
         index_batch_msa_head = tl.program_id(1)
@@ -759,9 +993,15 @@ if _TRITON_AVAILABLE:
                     float("-inf"),
                 )
 
+            if USE_EXP2:  # opt-in exp2 (match fwd); both fp32 and bf16
+                log2e = 1.4426950408889634  # log2(e): exp(x) == exp2(x * log2e)
+                QK_T_block = QK_T_block * log2e
+            # Fully-masked rows: clamp + renormalize; threshold -1e3 decoupled from the
             P_T_arg = tl.minimum(QK_T_block - m[None, :], 0.0)
-            P_T_block = tl.math.exp(P_T_arg)
-            P_T_block = tl.where(res_mask_T_block <= -1e3, P_T_block / SEQ_LEN, P_T_block)
+            P_T_block = tl.math.exp2(P_T_arg) if USE_EXP2 else tl.math.exp(P_T_arg)
+            P_T_block = tl.where(
+                res_mask_T_block <= -1e3, P_T_block / SEQ_LEN, P_T_block
+            )
 
             dV_block += tl.dot(P_T_block.to(K_block.dtype), dO_block)
 
@@ -806,8 +1046,24 @@ if _TRITON_AVAILABLE:
 
     class EvoformerAttention(torch.autograd.Function):
         @staticmethod
-        def forward(ctx, Q, K, V, res_mask, pair_bias, has_pair_bias=True):
+        def forward(
+            ctx,
+            Q,
+            K,
+            V,
+            res_mask,
+            pair_bias,
+            has_pair_bias=True,
+            dynamic=False,
+            softmax_scale=None,
+        ):
             """Run the forward pass of the attention mechanism.
+
+            softmax_scale: optional caller-supplied softmax scale; defaults to
+            DIM**-0.5 (standard scaled dot-product). Runtime arg, no recompile.
+
+            dynamic=True selects the SEQ_LEN/N_SEQ-runtime forward (_attn_fwd_dyn):
+            one compile for all sequence lengths (opt-in; see _attn_fwd_dyn).
 
             has_pair_bias: set False when pair_bias is all-zeros (MSA column attention).
             This eliminates all pair_bias HBM loads in the forward kernel.
@@ -819,15 +1075,25 @@ if _TRITON_AVAILABLE:
             DIM_Q, DIM_K, DIM_V = Q.shape[-1], K.shape[-1], V.shape[-1]
             assert DIM_Q == DIM_K and DIM_K == DIM_V
 
-            Q = Q.transpose(
-                -2, -3
-            ).contiguous()  # (BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN, DIM)
-            K = K.transpose(
-                -2, -3
-            ).contiguous()  # (BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN, DIM)
-            V = V.transpose(
-                -2, -3
-            ).contiguous()  # (BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN, DIM)
+            # TRANSPOSE-FOLD (grad-gated): in inference (no grad needed) pass
+            # strided views and skip the 3 .contiguous() copies -> faster forward.
+            # In training keep contiguous so the backward reads coalesced (strided
+            # backward reads are slower than the copies). NOTE: torch disables grad
+            # *inside* autograd.Function.forward, so is_grad_enabled() is always
+            # False here -- gate on input requires_grad instead.
+            if (
+                Q.requires_grad
+                or K.requires_grad
+                or V.requires_grad
+                or pair_bias.requires_grad
+            ):
+                Q = Q.transpose(-2, -3).contiguous()
+                K = K.transpose(-2, -3).contiguous()
+                V = V.transpose(-2, -3).contiguous()
+            else:
+                Q = Q.transpose(-2, -3)
+                K = K.transpose(-2, -3)
+                V = V.transpose(-2, -3)
 
             BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN, DIM = Q.shape
 
@@ -846,7 +1112,8 @@ if _TRITON_AVAILABLE:
                 SEQ_LEN,
             ), f"{tuple(pair_bias.shape)} != {(BATCH_SIZE, 1, HEAD, SEQ_LEN, SEQ_LEN)}"
 
-            softmax_scale = DIM**-0.5
+            if softmax_scale is None:
+                softmax_scale = DIM**-0.5
             BLOCK_DIM = max(triton.next_power_of_2(DIM), 32)
 
             O = torch.empty_like(Q)
@@ -858,13 +1125,20 @@ if _TRITON_AVAILABLE:
                     "waves_per_eu": waves_per_eu,
                     "allow_flush_denorm": True,
                 }
-
-            # Per-dtype forward tiles (bf16 KV=64; fp32 KV=32, 64 for seq>512).
-            block_size_q = 128
-            if Q.dtype == torch.float32:
-                _oss_bkv = 64 if SEQ_LEN > 512 else 32
             else:
-                _oss_bkv = 64
+                # MFMA/waves_per_eu tunings are HIP-only; on other backends the
+                # kernel runs correct but untuned. Warn once (warnings dedups).
+                warnings.warn(
+                    "OpenFold3 Triton evoformer kernel is running on a non-HIP "
+                    "backend with default, untuned Triton config (AMD MFMA / "
+                    "waves_per_eu tunings disabled). Correctness holds; "
+                    "performance is not tuned for this backend.",
+                    stacklevel=2,
+                )
+
+            # Forward tiles Q=64, KV=16: validated fastest on real (low_mem chunked)
+            block_size_q = 64
+            _oss_bkv = 16
 
             grid = lambda args: (  # noqa: E731
                 triton.cdiv(SEQ_LEN, args["BLOCK_SIZE_Q"]),
@@ -877,7 +1151,19 @@ if _TRITON_AVAILABLE:
                 (BATCH_SIZE, N_SEQ, HEAD, SEQ_LEN), device=Q.device, dtype=torch.float32
             )
 
-            _attn_fwd[grid](
+            # exp2 base-2 softmax: opt-in (default off), works for both fp32 and bf16.
+            # Enable with env OF3_TRITON_EXP2=1.
+            use_exp2 = os.environ.get("OF3_TRITON_EXP2") == "1"
+
+            # Default: specialized _attn_fwd (SEQ_LEN/EVEN_* constexpr via heuristics).
+            # dynamic: _attn_fwd_dyn (SEQ_LEN/N_SEQ runtime) with EVEN_* passed off.
+            _fwd_kernel = _attn_fwd_dyn if dynamic else _attn_fwd
+            _extra_even = (
+                dict(EVEN_Q=False, EVEN_KV=False, EVEN_DIM=(DIM == BLOCK_DIM))
+                if dynamic
+                else {}
+            )
+            _fwd_kernel[grid](
                 Q=Q,
                 K=K,
                 V=V,
@@ -922,8 +1208,10 @@ if _TRITON_AVAILABLE:
                 HAS_PAIR_BIAS=has_pair_bias,
                 BLOCK_SIZE_Q=block_size_q,
                 BLOCK_SIZE_KV=_oss_bkv,
+                USE_EXP2=use_exp2,
                 num_warps=4,
                 num_stages=1,
+                **_extra_even,
                 **extra_kern_args,
             )
 
@@ -932,6 +1220,7 @@ if _TRITON_AVAILABLE:
             ctx.softmax_scale = softmax_scale
             ctx.DIM = DIM
             ctx.has_pair_bias = has_pair_bias
+            ctx.use_exp2 = use_exp2
 
             O = O.transpose(-2, -3).contiguous()
 
@@ -986,6 +1275,11 @@ if _TRITON_AVAILABLE:
                 dO_out=dO,
                 HEAD=HEAD,
                 READ_DO_BLLHS=True,
+                stride_batch=O.stride(0),
+                stride_msa=O.stride(1),
+                stride_head=O.stride(2),
+                stride_seq=O.stride(3),
+                N_SEQ=N_SEQ,
                 num_warps=4,
                 num_stages=2,
             )
@@ -1031,9 +1325,10 @@ if _TRITON_AVAILABLE:
                 # MFMA tile 16 + waves_per_eu=2 (HIP only) for dk_dv.
                 **({"waves_per_eu": 2, "matrix_instr_nonkdim": 16} if is_hip() else {}),
                 WRITE_BLLHS=True,
+                USE_EXP2=ctx.use_exp2,
             )
 
-            dQ_acc = torch.zeros(Q.shape, dtype=torch.float32, device=Q.device)
+            dQ_acc = torch.zeros_like(Q, dtype=torch.float32)
             # Shape/dtype-adaptive dbias tile.
             if Q.dtype == torch.float32:
                 _BQ, _BKV = 128, 64
@@ -1085,11 +1380,21 @@ if _TRITON_AVAILABLE:
                 num_stages=1,
                 **({"waves_per_eu": 2, "matrix_instr_nonkdim": 16} if is_hip() else {}),
                 HAS_PAIR_BIAS=ctx.has_pair_bias,
+                USE_EXP2=ctx.use_exp2,
             )
 
             dQ = dQ_acc.to(Q.dtype)
             dQ = dQ.transpose(-2, -3).contiguous()
             d_pb = d_pair_bias.to(dO.dtype) if ctx.has_pair_bias else None
-            return dQ, dK, dV, None, d_pb, None
+            # grads: Q,K,V, res_mask, pair_bias, has_pair_bias, dynamic, softmax_scale
+            return dQ, dK, dV, None, d_pb, None, None, None
 
     TritonEvoformer = EvoformerAttention.apply
+
+    def TritonEvoformerDynamic(Q, K, V, res_mask, pair_bias, has_pair_bias=True):
+        """Variable-shape entry point: one Triton compile across all sequence
+        lengths (opt-in). Same output as TritonEvoformer; trades a small per-call
+        cost for no per-size recompile. Best for variable-size / cold-cache."""
+        return EvoformerAttention.apply(
+            Q, K, V, res_mask, pair_bias, has_pair_bias, True
+        )
