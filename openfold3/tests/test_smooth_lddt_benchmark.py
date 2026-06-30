@@ -37,7 +37,16 @@ MINIMAL_TRAINING_ROOT = (
     / "standard"
     / "structure_files"
 )
-MINIMAL_TRAINING_SAMPLE_IDS = ["102m", "12e8", "134d", "17ra"]
+MINIMAL_TRAINING_SAMPLE_IDS = ["102m", "12e8", "134d", "17ra", "1tii", "1xfy"]
+
+BACKENDS = [
+    ("dense", None),
+    ("ball_query", 128),
+    ("ball_query", 256),
+    ("ball_query", 512),
+    ("ball_query", 1024),
+    ("ball_query", 2048),
+]
 
 pytestmark = [
     pytest.mark.slow,
@@ -107,139 +116,108 @@ def _forward(x, batch, loss_token_mask, backend, top_k):
     )
 
 
-@pytest.mark.parametrize(
-    "sample_id",
-    [
-        pytest.param(sample_id, id=f"sample_{sample_id}")
-        for sample_id in MINIMAL_TRAINING_SAMPLE_IDS
-    ],
-)
-@pytest.mark.parametrize(
-    ("backend", "top_k"),
-    [
-        pytest.param("dense", None, id="dense"),
-        pytest.param("ball_query", 128, id="ball_query_max_neighbors128"),
-        pytest.param("ball_query", 256, id="ball_query_max_neighbors256"),
-        pytest.param("ball_query", 512, id="ball_query_max_neighbors512"),
-        pytest.param("ball_query", 768, id="ball_query_max_neighbors768"),
-        pytest.param("ball_query", 1024, id="ball_query_max_neighbors1024"),
-        pytest.param("ball_query", 2048, id="ball_query_max_neighbors2048"),
-    ],
-)
-def test_smooth_lddt_loss_benchmark(benchmark, sample_id, backend, top_k):
-    torch.manual_seed(0)
-    n_sample = 2
-    batch = _minimal_training_batch(sample_id)
-    x = batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1))
-    x = x + 0.05 * torch.randn_like(x)
-    loss_token_mask = torch.ones_like(batch["is_protein"])
-
-    def _run():
-        torch.cuda.synchronize()
-        loss = _forward(x, batch, loss_token_mask, backend, top_k)
-        torch.cuda.synchronize()
-        return loss
-
-    _run()
-    loss = benchmark.pedantic(_run, rounds=1, iterations=1, warmup_rounds=0)
-    assert loss.shape == (1, n_sample)
+def _backend_label(backend, top_k):
+    if backend == "dense":
+        return "dense"
+    return f"bq K={top_k}"
 
 
-@pytest.mark.parametrize(
-    "sample_id",
-    [
-        pytest.param(sample_id, id=f"sample_{sample_id}")
-        for sample_id in MINIMAL_TRAINING_SAMPLE_IDS
-    ],
-)
-@pytest.mark.parametrize(
-    ("backend", "top_k"),
-    [
-        pytest.param("dense", None, id="dense"),
-        pytest.param("ball_query", 256, id="ball_query_max_neighbors256"),
-        pytest.param("ball_query", 512, id="ball_query_max_neighbors512"),
-        pytest.param("ball_query", 1024, id="ball_query_max_neighbors1024"),
-    ],
-)
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pytest.param(torch.float32, id="fp32"),
-        pytest.param(torch.bfloat16, id="bf16"),
-    ],
-)
-def test_smooth_lddt_loss_fwd_bwd_benchmark(
-    benchmark, sample_id, backend, top_k, dtype
-):
-    """Forward + backward time, parameterized over dtype to expose bf16 path."""
-    torch.manual_seed(0)
-    n_sample = 2
-    batch = _minimal_training_batch(sample_id)
-    x_base = batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1))
-    x_base = x_base + 0.05 * torch.randn_like(x_base)
-    loss_token_mask = torch.ones_like(batch["is_protein"])
-
-    def _run():
-        x = x_base.detach().to(dtype).clone().requires_grad_(True)
-        torch.cuda.synchronize()
-        loss = _forward(x, batch, loss_token_mask, backend, top_k)
-        loss.sum().backward()
-        torch.cuda.synchronize()
-        return loss, x.grad
-
-    _run()
-    loss, grad = benchmark.pedantic(_run, rounds=1, iterations=1, warmup_rounds=0)
-    assert loss.shape == (1, n_sample)
-    assert grad is not None
-
-
-@pytest.mark.parametrize(
-    "sample_id",
-    [
-        pytest.param(sample_id, id=f"sample_{sample_id}")
-        for sample_id in MINIMAL_TRAINING_SAMPLE_IDS
-    ],
-)
-@pytest.mark.parametrize(
-    ("backend", "top_k"),
-    [
-        pytest.param("dense", None, id="dense"),
-        pytest.param("ball_query", 256, id="ball_query_max_neighbors256"),
-        pytest.param("ball_query", 512, id="ball_query_max_neighbors512"),
-        pytest.param("ball_query", 1024, id="ball_query_max_neighbors1024"),
-    ],
-)
-def test_smooth_lddt_loss_peak_memory(sample_id, backend, top_k):
-    """Report fwd/bwd peak GPU memory; not a benchmark fixture, just a measurement."""
-    torch.manual_seed(0)
-    n_sample = 2
-    batch = _minimal_training_batch(sample_id)
-    x_base = batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1))
-    x_base = x_base + 0.05 * torch.randn_like(x_base)
-    loss_token_mask = torch.ones_like(batch["is_protein"])
-
-    # Warm up the JIT extension
-    x = x_base.detach().clone().requires_grad_(True)
+def _time_fwd_bwd(x_base, batch, loss_token_mask, backend, top_k, dtype):
+    x = x_base.detach().to(dtype).clone().requires_grad_(True)
+    torch.cuda.synchronize()
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
     loss = _forward(x, batch, loss_token_mask, backend, top_k)
     loss.sum().backward()
+    end.record()
     torch.cuda.synchronize()
+    return start.elapsed_time(end), loss, x.grad
 
+
+def _measure_peak_memory(x_base, batch, loss_token_mask, backend, top_k):
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
-
     x = x_base.detach().clone().requires_grad_(True)
     loss = _forward(x, batch, loss_token_mask, backend, top_k)
-    fwd_peak = torch.cuda.max_memory_allocated()
-
     loss.sum().backward()
     torch.cuda.synchronize()
-    bwd_peak = torch.cuda.max_memory_allocated()
+    return torch.cuda.max_memory_allocated()
 
-    n_atom = x.shape[-2]
-    print(
-        f"\n[memory] sample={sample_id} backend={backend} top_k={top_k} "
-        f"n_atom={n_atom} fwd_peak={fwd_peak / 1e6:.1f}MB "
-        f"bwd_peak={bwd_peak / 1e6:.1f}MB"
+
+@pytest.mark.parametrize(
+    "sample_id",
+    [pytest.param(sid, id=f"sample_{sid}") for sid in MINIMAL_TRAINING_SAMPLE_IDS],
+)
+def test_smooth_lddt_benchmark(sample_id):
+    """Time + memory comparison across all backends for one sample."""
+    torch.manual_seed(0)
+    n_sample = 2
+    batch = _minimal_training_batch(sample_id)
+    n_atom = batch["ground_truth"]["atom_positions"].shape[-2]
+    x_base = batch["ground_truth"]["atom_positions"].repeat((1, n_sample, 1, 1))
+    x_base = x_base + 0.05 * torch.randn_like(x_base)
+    loss_token_mask = torch.ones_like(batch["is_protein"])
+
+    # Warmup all backends
+    for backend, top_k in BACKENDS:
+        _forward(
+            x_base.detach().clone().requires_grad_(True),
+            batch,
+            loss_token_mask,
+            backend,
+            top_k,
+        )
+        torch.cuda.synchronize()
+
+    rows = []
+    for backend, top_k in BACKENDS:
+        label = _backend_label(backend, top_k)
+        time_fp32, loss, grad = _time_fwd_bwd(
+            x_base,
+            batch,
+            loss_token_mask,
+            backend,
+            top_k,
+            torch.float32,
+        )
+        assert loss.shape == (1, n_sample)
+        assert grad is not None
+        time_bf16, _, _ = _time_fwd_bwd(
+            x_base,
+            batch,
+            loss_token_mask,
+            backend,
+            top_k,
+            torch.bfloat16,
+        )
+        peak = _measure_peak_memory(
+            x_base,
+            batch,
+            loss_token_mask,
+            backend,
+            top_k,
+        )
+        rows.append((label, time_fp32, time_bf16, peak))
+
+    dense_time = rows[0][1]
+    dense_mem = rows[0][3]
+
+    header = (
+        f"\n{'=' * 78}\n"
+        f"  sample={sample_id}  n_atom={n_atom}  n_sample={n_sample}\n"
+        f"{'=' * 78}\n"
+        f"  {'backend':<12s} {'fp32 (ms)':>10s} {'bf16 (ms)':>10s}"
+        f" {'peak mem':>10s} {'speedup':>8s} {'mem save':>9s}\n"
+        f"  {'-' * 12} {'-' * 10} {'-' * 10}"
+        f" {'-' * 10} {'-' * 8} {'-' * 9}"
     )
-    assert loss.shape == (1, n_sample)
-    assert x.grad is not None
+    print(header)
+    for label, t32, t16, mem in rows:
+        speedup = f"{dense_time / t32:.1f}x" if t32 > 0 else "—"
+        mem_save = f"{dense_mem / mem:.1f}x" if mem > 0 else "—"
+        print(
+            f"  {label:<12s} {t32:>10.2f} {t16:>10.2f}"
+            f" {mem / 1e6:>9.1f}M {speedup:>8s} {mem_save:>9s}"
+        )
+    print()
