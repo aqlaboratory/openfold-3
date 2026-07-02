@@ -90,7 +90,7 @@ def relpos_complex(
             rel_clip_idx:
                 Max idx for clipping (max_relative_idx or max_relative_chain)
             cyclic_mask:
-                [*, N_token] Boolean tensor for what residues should be considered cyclic
+                [*, N_token] Boolean tensor for cyclic residues
             asym_id:
                 [*, N_token] Used by cyclic mask for multi-chain cyclic
         Returns:
