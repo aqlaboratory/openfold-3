@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import gc
-import importlib
 import logging
 import traceback
 import warnings
@@ -54,10 +53,6 @@ from openfold3.projects.of3_all_atom.constants import (
     VAL_LOSSES,
 )
 from openfold3.projects.of3_all_atom.model import OpenFold3
-
-deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-if deepspeed_is_installed:
-    import deepspeed
 
 logger = logging.getLogger(__name__)
 # We define extra metrics that will cause this warning depending on the training stage
@@ -648,6 +643,8 @@ class OpenFold3AllAtom(ModelRunner):
                     param = block.single_transition.linear_out.weight
 
                     if isinstance(self.trainer.strategy, DeepSpeedStrategy):
+                        import deepspeed
+
                         # Needs to be called on every rank to avoid hanging
                         # https://github.com/deepspeedai/DeepSpeed/issues/7117#issuecomment-2717974187
                         grad = deepspeed.utils.safe_get_full_grad(param)

@@ -14,20 +14,13 @@
 
 __all__ = ["core", "projects", "entry_points", "run_openfold"]
 
-import importlib.util
-
 import gemmi
 from packaging import version
 
 if version.parse(gemmi.__version__) >= version.parse("0.7.3"):
     gemmi.set_leak_warnings(False)
 
-if importlib.util.find_spec("deepspeed") is not None:
-    import deepspeed
-
-    # TODO: Resolve this later
-    # This is a hack to prevent deepspeed from doing the triton matmul autotuning
-    # This has weird effects with hanging if libaio is not installed and can
-    # cause restart errors if run is preempted in the middle of autotuning
-    deepspeed.HAS_TRITON = False
-    # FIXME: do we need this? it is really invasive with other potential users of DS
+# NOTE: deepspeed is imported lazily where it is actually used (the DS Evoformer
+# kernel, activation checkpointing, ZeRO checkpoint loading, and training), so that
+# importing openfold3 never triggers deepspeed's import-time side effects. The
+# deepspeed.HAS_TRITON autotuning hack now lives in _deepspeed_evo_attn.

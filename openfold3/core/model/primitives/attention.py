@@ -32,20 +32,18 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.kernels.cueq_utils import is_cuequivariance_available
 from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
+from openfold3.core.utils.deepspeed_utils import deepspeed_is_initialized
 from openfold3.core.utils.tensor_utils import flatten_final_dims
 
 warnings.filterwarnings("once")
 
+# DeepSpeed is imported lazily inside _deepspeed_evo_attn so that importing this
+# module (and the default, non-DeepSpeed code path) never triggers deepspeed's
+# import-time side effects. A top-level find_spec does not import deepspeed, but a
+# find_spec on the deepspeed.ops.deepspeed4science *submodule* would (Python imports
+# parent packages to resolve a submodule), so that availability check is deferred to
+# _deepspeed_evo_attn.
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-ds4s_is_installed = (
-    deepspeed_is_installed
-    and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
-)
-if deepspeed_is_installed:
-    import deepspeed
-
-if ds4s_is_installed:
-    from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
 try:
     from openfold3.core.kernels.triton.evoformer import TritonEvoformer
@@ -108,10 +106,7 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
     type bfloat16
     """
     d = t.dtype
-    deepspeed_is_initialized = (
-        deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
-    )
-    if d is torch.bfloat16 and not deepspeed_is_initialized:
+    if d is torch.bfloat16 and not deepspeed_is_initialized():
         with torch.amp.autocast("cuda", enabled=False):
             s = torch.nn.functional.softmax(t, dim=dim)
     else:
@@ -120,7 +115,6 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
     return s
 
 
-# @torch.jit.script
 def _attention(
     query: torch.Tensor,
     key: torch.Tensor,
@@ -558,11 +552,19 @@ def _deepspeed_evo_attn(
         biases:
             List of biases that broadcast to [*, H, Q, K]
     """
-    if not ds4s_is_installed:
+    try:
+        import deepspeed
+        from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
+    except ImportError as e:
         raise ValueError(
             "_deepspeed_evo_attn requires that DeepSpeed be installed "
             "and that the deepspeed.ops.deepspeed4science package exists"
-        )
+        ) from e
+
+    # Prevent deepspeed from doing triton matmul autotuning, which can hang if
+    # libaio is not installed and cause restart errors on preemption. Set here
+    # (rather than at import time) so it only runs when the DS kernel is used.
+    deepspeed.HAS_TRITON = False
 
     # [*, Q/K, H, C_hidden]
     q = q.transpose(-2, -3)

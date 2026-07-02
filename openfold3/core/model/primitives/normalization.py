@@ -15,18 +15,13 @@
 
 """Normalization layers. Includes LayerNorm and AdaptiveLayerNorm."""
 
-import importlib
-
 import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives.linear import Linear
-
-deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-if deepspeed_is_installed:
-    import deepspeed
+from openfold3.core.utils.deepspeed_utils import deepspeed_is_initialized
 
 
 class LayerNorm(nn.Module):
@@ -57,11 +52,7 @@ class LayerNorm(nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         d = x.dtype
-        deepspeed_is_initialized = (
-            deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
-        )
-
-        if d is torch.bfloat16 and not deepspeed_is_initialized:
+        if d is torch.bfloat16 and not deepspeed_is_initialized():
             with torch.amp.autocast("cuda", enabled=False):
                 weight = self.weight.to(dtype=d) if self.weight is not None else None
                 bias = self.bias.to(dtype=d) if self.bias is not None else None

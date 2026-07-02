@@ -113,8 +113,10 @@ model_config = mlc.ConfigDict(
                 "eval": {
                     "chunk_size": None,
                     "tune_chunk_size": tune_chunk_size,
-                    "use_deepspeed_evo_attention": not _is_rocm,
-                    "use_cueq_triangle_kernels": False,
+                    # Default inference kernels: cuEquivariance on CUDA, Triton on
+                    # ROCm. DeepSpeed remains available as an explicit opt-in.
+                    "use_deepspeed_evo_attention": False,
+                    "use_cueq_triangle_kernels": not _is_rocm,
                     "use_triton_triangle_kernels": _is_rocm,
                     "use_lma": False,
                     "msa_module": {
