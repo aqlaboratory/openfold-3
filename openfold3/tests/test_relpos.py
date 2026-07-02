@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import pytest
+import torch
 
 from openfold3.core.utils.relpos import cyclic_offset, relpos_complex
 
