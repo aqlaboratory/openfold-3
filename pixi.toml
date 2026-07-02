@@ -147,7 +147,6 @@ openfold3-rocm7 = { no-default-feature = true, features = [
     "pytorch-pypi-rocm7",
     "not-in-pypi",
     "openfold3-editable",
-    "smooth-lddt-kernel",
     "tests", 
 ] }
 openfold3-msa = { no-default-feature = true, features = [
