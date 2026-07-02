@@ -104,29 +104,7 @@ openfold3-cuda12 = { no-default-feature = true, features = [
     "deepspeed-build",
     "cuequivariance-cuda12",
     "openfold3-editable",
-    "tests"
-] }
-openfold3-cuda12-smooth-lddt = { no-default-feature = true, features = [
-    "python",
-    "openfold3-cpu",
-    "cuda12",
-    "pytorch-conda-cuda",
-    "deepspeed",
-    "deepspeed-build",
-    "cuequivariance-cuda12",
-    "openfold3-editable",
-    "tests",
-    "smooth-lddt-kernel"
-] }
-openfold3-cuda13 = { no-default-feature = true, features = [
-    "python",
-    "openfold3-cpu",
-    "cuda13",
-    "pytorch-conda-cuda",
-    "deepspeed",
-    "deepspeed-build",
-    "cuequivariance-cuda13",
-    "openfold3-editable",
+    "smooth-lddt-kernel",
     "tests"
 ] }
 openfold3-cuda13-smooth-lddt = { no-default-feature = true, features = [
@@ -138,8 +116,8 @@ openfold3-cuda13-smooth-lddt = { no-default-feature = true, features = [
     "deepspeed-build",
     "cuequivariance-cuda13",
     "openfold3-editable",
-    "tests",
-    "smooth-lddt-kernel"
+    "smooth-lddt-kernel",
+    "tests"
 ] }
 openfold3-cuda12-pypi = { no-default-feature = true, features = [
     "python",
@@ -149,6 +127,7 @@ openfold3-cuda12-pypi = { no-default-feature = true, features = [
     "deepspeed-build",
     "cuequivariance-cuda12",
     "openfold3-editable-full",
+    "smooth-lddt-kernel",
     "tests"
 ] }
 openfold3-cuda13-pypi = { no-default-feature = true, features = [
@@ -159,6 +138,7 @@ openfold3-cuda13-pypi = { no-default-feature = true, features = [
     "deepspeed-build",
     "cuequivariance-cuda13",
     "openfold3-editable-full",
+    "smooth-lddt-kernel",
     "tests"
 ] }
 openfold3-rocm7 = { no-default-feature = true, features = [
@@ -167,6 +147,7 @@ openfold3-rocm7 = { no-default-feature = true, features = [
     "pytorch-pypi-rocm7",
     "not-in-pypi",
     "openfold3-editable",
+    "smooth-lddt-kernel",
     "tests", 
 ] }
 openfold3-msa = { no-default-feature = true, features = [
