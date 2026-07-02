@@ -36,6 +36,8 @@ QUERY_PATHS = {
         REPO / "examples/example_inference_inputs/query_protein_ligand.json"
     ),
     "homo_1200": REPO / "data/inference_outputs/profiling/queries/homo_1200.json",
+    "homo_3000": REPO / "data/inference_outputs/profiling/queries/homo_3000.json",
+    "homo_4000": REPO / "data/inference_outputs/profiling/queries/homo_4000.json",
 }
 DEFAULT_QUERIES = ["multimer", "protein_ligand", "homo_1200"]
 
@@ -43,101 +45,55 @@ BASE_OPTIMIZED_ENV = {
     "OPENFOLD3_FUSED_LN_LINEAR": "1",
     "OPENFOLD3_FUSED_SWIGLU_TRANSITION": "1",
     "OPENFOLD3_FUSED_TRIMUL": "1",
-    "OPENFOLD3_FUSED_OPM": "1",
     "OPENFOLD3_FUSED_DIFFUSION_ATTN": "1",
-    "OPENFOLD3_DIFFUSION_CUDA_GRAPH": "0",
-    "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "0",
+    "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "1",
+    "OPENFOLD3_FUSED_TEMPLATE_EMBED": "1",
 }
 
-V2_ENV = {
-    **BASE_OPTIMIZED_ENV,
-    "OPENFOLD3_FUSED_TRI_ATTN_V1": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V2": "1",
-    "OPENFOLD3_FUSED_TRI_ATTN_V3": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V4": "0",
-    "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
-}
-
-V3_ENV = {
-    **BASE_OPTIMIZED_ENV,
-    "OPENFOLD3_FUSED_TRI_ATTN_V1": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V3": "1",
-    "OPENFOLD3_FUSED_TRI_ATTN_V4": "0",
-    "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
-}
-
-V4_ENV = {
-    **BASE_OPTIMIZED_ENV,
-    "OPENFOLD3_FUSED_TRI_ATTN_V1": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V3": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V4": "1",
-    "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
-}
-
-V1_ENV = {
+OPTIMIZED_ENV = {
     **BASE_OPTIMIZED_ENV,
     "OPENFOLD3_FUSED_TRI_ATTN_V1": "1",
-    "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V3": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V4": "0",
+    "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": "1",
     "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "128",
 }
 
-CAP128_ENV = {
+CUEQ_CAP128_TRI_ATTN_ENV = {
     **BASE_OPTIMIZED_ENV,
     "OPENFOLD3_FUSED_TRI_ATTN_V1": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V3": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V4": "0",
     "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "128",
 }
 
-# Baseline matching the previous CAP128_ENV semantics before the diffusion-attn
-# kernel was added to BASE_OPTIMIZED_ENV. Useful for measuring just the
-# diffusion-attn kernel's contribution to overall wall/peak.
-CAP128_NO_DIFFATTN_ENV = {
-    **CAP128_ENV,
-    "OPENFOLD3_FUSED_DIFFUSION_ATTN": "0",
-}
-
-# CAP128_ENV plus the opt-in pair-bias cache. Cache costs ~3.0 U_trunk
-# resident (24 blocks × [B, 1, H, N, N] fp32) but reclaims ~36% of each
-# attention call's prep_bias time × 200 rollout steps × 24 blocks.
-CAP128_WITH_CACHE_ENV = {
-    **CAP128_ENV,
-    "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "1",
-}
-
-CAP128_CUEQ_TRIMUL_ENV = {
-    **CAP128_ENV,
+OPTIMIZED_CUEQ_TRIMUL_ENV = {
+    **OPTIMIZED_ENV,
     "OPENFOLD3_FUSED_TRIMUL": "0",
 }
 
-CAP128_CUEQ_TRIMUL_WITH_CACHE_ENV = {
-    **CAP128_CUEQ_TRIMUL_ENV,
-    "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "1",
+SWEETSPOT_ENV = {
+    **OPTIMIZED_ENV,
+    "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "0",
+    "OPENFOLD3_TRIMUL_CHUNK_CAP": "128",
 }
 
 TRIATTN_CUEQ_UNCAPPED_ENV = {
-    **CAP128_ENV,
+    **CUEQ_CAP128_TRI_ATTN_ENV,
     "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
+}
+
+TRIATTN_CUEQ_CAP128_ENV = {
+    **CUEQ_CAP128_TRI_ATTN_ENV,
 }
 
 DISABLED_ENV = {
     "OPENFOLD3_FUSED_LN_LINEAR": "0",
     "OPENFOLD3_FUSED_SWIGLU_TRANSITION": "0",
     "OPENFOLD3_FUSED_TRI_ATTN_V1": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V2": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V3": "0",
-    "OPENFOLD3_FUSED_TRI_ATTN_V4": "0",
     "OPENFOLD3_FUSED_TRIMUL": "0",
-    "OPENFOLD3_FUSED_OPM": "0",
     "OPENFOLD3_FUSED_DIFFUSION_ATTN": "0",
-    "OPENFOLD3_DIFFUSION_CUDA_GRAPH": "0",
     "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "0",
+    "OPENFOLD3_FUSED_TEMPLATE_EMBED": "0",
+    "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": "0",
     "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
+    "OPENFOLD3_TRIMUL_CHUNK_CAP": "",
 }
 
 
@@ -180,7 +136,15 @@ def _child_main(args: argparse.Namespace) -> None:
 
     cfg = runner.model_config
     mem = cfg.settings.memory.eval
-    mem.offload_inference.token_cutoff = 10_000_000
+    if args.config == "sweetspot":
+        # Sweetspot is the low-memory config: offload MSA / template / confidence
+        # heads whenever the query is nontrivial.  Cutoff at 512 tokens engages
+        # offload for every real target (multimer N=590 and up) while leaving
+        # tiny targets (ubiquitin N=76) unoffloaded so their launch-bound
+        # rollout doesn't take a hit.
+        mem.offload_inference.token_cutoff = 512
+    else:
+        mem.offload_inference.token_cutoff = 10_000_000
     mem.use_deepspeed_evo_attention = False
     mem.use_triton_triangle_kernels = False
     # Keep cuEq triangle kernels on for every config; local_default only disables
@@ -197,11 +161,16 @@ def _child_main(args: argparse.Namespace) -> None:
     success_count = None
     failed_count = None
     final_allocated_bytes = None
+    peak_reserved_bytes = None
     model_batch_baseline_bytes = None
+    model_only_bytes = None
 
     if args.run_mode == "forward":
         runner.inference_query_set = inference_query_set
         lightning_module = runner.lightning_module.to("cuda").eval()
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        model_only_bytes = torch.cuda.memory_allocated()
 
         t_data = time.perf_counter()
         data_module = runner.lightning_data_module
@@ -233,6 +202,7 @@ def _child_main(args: argparse.Namespace) -> None:
         torch.cuda.synchronize()
         first_forward_s = time.perf_counter() - t_forward
         peak_bytes = torch.cuda.max_memory_allocated()
+        peak_reserved_bytes = torch.cuda.max_memory_reserved()
         final_allocated_bytes = torch.cuda.memory_allocated()
     elif args.run_mode == "predict":
         torch.cuda.synchronize()
@@ -245,6 +215,7 @@ def _child_main(args: argparse.Namespace) -> None:
         torch.cuda.synchronize()
         predict_run_s = time.perf_counter() - t_predict
         peak_bytes = torch.cuda.max_memory_allocated()
+        peak_reserved_bytes = torch.cuda.max_memory_reserved()
         final_allocated_bytes = torch.cuda.memory_allocated()
         c_z = int(runner.lightning_module.model.config.architecture.shared.c_z)
 
@@ -287,6 +258,11 @@ def _child_main(args: argparse.Namespace) -> None:
         if model_batch_baseline_bytes is not None
         else None
     )
+    total_peak_above_params_u = (
+        (peak_bytes - model_only_bytes) / u_bytes
+        if model_only_bytes is not None
+        else None
+    )
 
     result = {
         "query": args.query,
@@ -304,10 +280,13 @@ def _child_main(args: argparse.Namespace) -> None:
         "resident_baseline_bytes": resident_baseline_bytes,
         "model_batch_baseline_bytes": model_batch_baseline_bytes,
         "max_memory_allocated_bytes": peak_bytes,
+        "max_memory_reserved_bytes": peak_reserved_bytes,
+        "model_only_bytes": model_only_bytes,
         "final_memory_allocated_bytes": final_allocated_bytes,
         "peak_over_resident_U": peak_over_resident_u,
         "final_over_resident_U": final_over_resident_u,
         "peak_over_model_batch_U": peak_over_model_batch_u,
+        "total_peak_above_params_U": total_peak_above_params_u,
         # Meaningful only for forward mode: the baseline is captured after the
         # batch is resident on GPU. Predict mode measures before runner.run(),
         # so it includes DataModule/predict-time resident tensors in the delta.
@@ -324,28 +303,27 @@ def _child_main(args: argparse.Namespace) -> None:
             "OPENFOLD3_FUSED_SWIGLU_TRANSITION": os.environ.get(
                 "OPENFOLD3_FUSED_SWIGLU_TRANSITION"
             ),
-            "OPENFOLD3_FUSED_TRI_ATTN_V2": os.environ.get(
-                "OPENFOLD3_FUSED_TRI_ATTN_V2"
-            ),
-            "OPENFOLD3_FUSED_TRI_ATTN_V3": os.environ.get(
-                "OPENFOLD3_FUSED_TRI_ATTN_V3"
-            ),
-            "OPENFOLD3_FUSED_TRI_ATTN_V4": os.environ.get(
-                "OPENFOLD3_FUSED_TRI_ATTN_V4"
+            "OPENFOLD3_FUSED_TRI_ATTN_V1": os.environ.get(
+                "OPENFOLD3_FUSED_TRI_ATTN_V1"
             ),
             "OPENFOLD3_FUSED_TRIMUL": os.environ.get("OPENFOLD3_FUSED_TRIMUL"),
-            "OPENFOLD3_FUSED_OPM": os.environ.get("OPENFOLD3_FUSED_OPM"),
             "OPENFOLD3_FUSED_DIFFUSION_ATTN": os.environ.get(
                 "OPENFOLD3_FUSED_DIFFUSION_ATTN"
-            ),
-            "OPENFOLD3_DIFFUSION_CUDA_GRAPH": os.environ.get(
-                "OPENFOLD3_DIFFUSION_CUDA_GRAPH"
             ),
             "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": os.environ.get(
                 "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE"
             ),
+            "OPENFOLD3_FUSED_TEMPLATE_EMBED": os.environ.get(
+                "OPENFOLD3_FUSED_TEMPLATE_EMBED"
+            ),
+            "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": os.environ.get(
+                "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN"
+            ),
             "OPENFOLD3_TRI_ATTN_CHUNK_CAP": os.environ.get(
                 "OPENFOLD3_TRI_ATTN_CHUNK_CAP"
+            ),
+            "OPENFOLD3_TRIMUL_CHUNK_CAP": os.environ.get(
+                "OPENFOLD3_TRIMUL_CHUNK_CAP"
             ),
         },
     }
@@ -364,28 +342,16 @@ def _env_for_config(config: str, base_env: dict[str, str]) -> dict[str, str]:
     env = dict(base_env)
     if config == "local_default":
         updates = DISABLED_ENV
-    elif config == "optimized_no_graph":
-        updates = V1_ENV
-    elif config == "optimized_v2_no_graph":
-        updates = V2_ENV
-    elif config == "optimized_v3_no_graph":
-        updates = V3_ENV
-    elif config == "optimized_v4_no_graph":
-        updates = V4_ENV
-    elif config == "optimized_v1_no_graph":
-        updates = V1_ENV
-    elif config == "optimized_cap128_no_graph":
-        updates = CAP128_ENV
-    elif config == "optimized_cap128_no_diffattn":
-        updates = CAP128_NO_DIFFATTN_ENV
-    elif config == "optimized_cap128_with_cache":
-        updates = CAP128_WITH_CACHE_ENV
-    elif config == "optimized_cap128_cueqtrimul":
-        updates = CAP128_CUEQ_TRIMUL_ENV
-    elif config == "optimized_cap128_cueqtrimul_with_cache":
-        updates = CAP128_CUEQ_TRIMUL_WITH_CACHE_ENV
-    elif config == "triattn_cueq_uncapped":
+    elif config == "optimized":
+        updates = OPTIMIZED_ENV
+    elif config == "optimized_cueqtrimul":
+        updates = OPTIMIZED_CUEQ_TRIMUL_ENV
+    elif config == "optimized_cueqtriattn_uncapped":
         updates = TRIATTN_CUEQ_UNCAPPED_ENV
+    elif config == "optimized_cueqtriattn_cap128":
+        updates = TRIATTN_CUEQ_CAP128_ENV
+    elif config == "sweetspot":
+        updates = SWEETSPOT_ENV
     else:
         raise ValueError(f"Unknown config {config!r}")
 
@@ -500,6 +466,10 @@ def _summarize(raw: list[dict]) -> dict[str, dict]:
                     r["max_memory_allocated_bytes"] for r in rows
                 )
                 / 1024**3,
+                "max_memory_reserved_gib": max(
+                    r["max_memory_reserved_bytes"] for r in rows
+                )
+                / 1024**3,
                 "resident_baseline_gib_mean": mean(
                     r["resident_baseline_bytes"] for r in rows
                 )
@@ -522,6 +492,16 @@ def _summarize(raw: list[dict]) -> dict[str, dict]:
                 "activation_U_max": (
                     max(r["activation_U"] for r in rows)
                     if first["activation_U"] is not None
+                    else None
+                ),
+                "total_peak_above_params_U_max": (
+                    max(r["total_peak_above_params_U"] for r in rows)
+                    if first.get("total_peak_above_params_U") is not None
+                    else None
+                ),
+                "model_only_gib": (
+                    mean(r["model_only_bytes"] for r in rows) / 1024**3
+                    if first.get("model_only_bytes") is not None
                     else None
                 ),
             }
@@ -590,20 +570,14 @@ def main() -> None:
     parser.add_argument(
         "--configs",
         nargs="+",
-        default=["local_default", "optimized_no_graph"],
+        default=["local_default", "optimized"],
         choices=[
             "local_default",
-            "optimized_no_graph",
-            "optimized_v2_no_graph",
-            "optimized_v3_no_graph",
-            "optimized_v4_no_graph",
-            "optimized_v1_no_graph",
-            "optimized_cap128_no_graph",
-            "optimized_cap128_no_diffattn",
-            "optimized_cap128_with_cache",
-            "optimized_cap128_cueqtrimul",
-            "optimized_cap128_cueqtrimul_with_cache",
-            "triattn_cueq_uncapped",
+            "optimized",
+            "optimized_cueqtrimul",
+            "optimized_cueqtriattn_uncapped",
+            "optimized_cueqtriattn_cap128",
+            "sweetspot",
         ],
     )
     parser.add_argument("--runner-yaml", type=Path, default=DEFAULT_RUNNER_YAML)

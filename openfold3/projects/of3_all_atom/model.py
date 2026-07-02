@@ -525,8 +525,28 @@ class OpenFold3(nn.Module):
     # by Liang Hong <lhong22@cse.cuhk.edu.hk>: evict template features after
     # trunk so diffusion and confidence no longer retain MSA/template tensors.
     def _post_trunk_inference_cleanup(self, batch: dict) -> None:
+        template_keys = {
+            "template_backbone_frame_mask",
+            "template_distogram",
+            "template_pseudo_beta_mask",
+            "template_restype",
+            "template_unit_vector",
+        }
+        msa_keys = {
+            "deletion_value",
+            "deletion_mean",
+            "has_deletion",
+            "msa",
+            "msa_mask",
+            "num_paired_seqs",
+            "profile",
+        }
+        trunk_input_keys = {
+            "token_bonds",
+        }
+        evict_keys = template_keys | msa_keys | trunk_input_keys
         for key in tuple(batch.keys()):
-            if key.startswith("template_"):
+            if key in evict_keys:
                 del batch[key]
 
     def _train_diffusion(
