@@ -65,6 +65,7 @@ if _TRITON_AVAILABLE:
     # Single static config (no runtime autotune): one JIT compile, all N.
     # M,N,K are runtime args so a new sequence length never recompiles.
     _DUAL_GEMM_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=16, GROUP_M=8)
+    _DUAL_GEMM_CFG_N64 = dict(TILE_M=64, TILE_N=64, TILE_K=16, GROUP_M=8)
     _OUT_GEMM_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=16, GROUP_M=8)
     _OUT_GEMM_INPLACE_CFG = dict(TILE_M=64, TILE_N=128, TILE_K=32, GROUP_M=8)
     _LN_STATS_TILE_M = 64
@@ -514,7 +515,7 @@ def gated_dual_gemm_fp32(
     gamma = ln_weight.contiguous() if fused_ln else x.new_zeros(1)
     beta = ln_bias.contiguous() if ln_bias is not None else x.new_zeros(1)
     stats = ln_stats.contiguous() if ln_stats is not None else x.new_zeros(1)
-    cfg = _DUAL_GEMM_CFG
+    cfg = _DUAL_GEMM_CFG_N64 if Nproj < 128 else _DUAL_GEMM_CFG
 
     def grid(meta):
         return (triton.cdiv(M, meta["TILE_M"]), triton.cdiv(Nproj, meta["TILE_N"]))

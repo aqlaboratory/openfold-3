@@ -45,6 +45,7 @@ from openfold3.core.kernels.triton.fused_trimul import (
     ln_stats_fp32,
     ln_transpose_fp32,
 )
+from openfold3.core.utils.chunk_utils import trimul_chunk_cap
 
 _FLAG_TRUE = {"1", "true", "True"}
 
@@ -64,6 +65,216 @@ def _eligible(z: torch.Tensor) -> bool:
         and not torch.is_grad_enabled()
         and z.dim() == 4  # [B, N, N, c_z]; batched/template 5D -> eager
     )
+
+
+def _chunked_outgoing(
+    z_2d: torch.Tensor,
+    mask_flat: torch.Tensor,
+    ln_stats: torch.Tensor,
+    module,
+    N: int,
+    c_z: int,
+    c_hidden: int,
+    with_add: bool,
+    out: torch.Tensor | None,
+    chunk_cap: int,
+) -> torch.Tensor:
+    """I-row chunked outgoing: compute full b (1U), chunk a per I-rows.
+
+    Outgoing ``"cbik,cbjk->cbij"``: output row i depends on ``a[:,:,i,:]``
+    (I-row of a) and ALL of b.  I-rows map to contiguous M-slices
+    ``[i*N : (i+1)*N]``, so we can produce a per-chunk and immediately
+    einsum + LN + output-GEMM.  Peak ~1.2U above z: b(1U) + tiny chunks.
+    """
+    ln_in = module.layer_norm_in
+    ln_out = module.layer_norm_out
+    M = N * N
+
+    # Full b (1U)
+    with torch.amp.autocast(device_type="cuda", enabled=False):
+        b_full = gated_dual_gemm_fp32(
+            z_2d, module.linear_b_p.weight, module.linear_b_g.weight,
+            mask_flat,
+            ln_weight=ln_in.weight, ln_bias=ln_in.bias,
+            ln_stats=ln_stats, eps=ln_in.eps, output_dtype=None,
+        )
+    b_4d = b_full.view(c_hidden, 1, N, N)
+
+    if out is not None:
+        out_2d = out.reshape(-1, c_z)
+    else:
+        out_2d = torch.empty(
+            M, c_z, device=z_2d.device, dtype=z_2d.dtype,
+        )
+
+    linear_z_w = module.linear_z.weight
+    if linear_z_w.dtype != z_2d.dtype:
+        linear_z_w = linear_z_w.to(dtype=z_2d.dtype)
+
+    for i_start in range(0, N, chunk_cap):
+        i_end = min(N, i_start + chunk_cap)
+        rows = i_end - i_start
+        m0, m1 = i_start * N, i_end * N
+
+        z_c = z_2d[m0:m1]
+        mask_c = mask_flat[m0:m1]
+        ls_c = ln_stats[:, m0:m1].contiguous()
+
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            a_c = gated_dual_gemm_fp32(
+                z_c, module.linear_a_p.weight, module.linear_a_g.weight,
+                mask_c,
+                ln_weight=ln_in.weight, ln_bias=ln_in.bias,
+                ln_stats=ls_c, eps=ln_in.eps, output_dtype=None,
+            )
+        a_4d = a_c.view(c_hidden, 1, rows, N)
+
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            x_c = torch.einsum("cbik,cbjk->cbij", a_4d, b_4d)
+        del a_c, a_4d
+
+        x_dm = x_c.reshape(c_hidden, rows * N)
+        del x_c
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            x_out = ln_transpose_fp32(
+                x_dm, ln_out.weight, ln_out.bias, eps=ln_out.eps,
+            )
+        del x_dm
+
+        res_c = z_c if with_add else None
+        gated_out_gemm_residual_fp32(
+            z_c, x_out, module.linear_g.weight, linear_z_w,
+            res_c,
+            ln_weight=ln_in.weight, ln_bias=ln_in.bias,
+            ln_stats=ls_c, eps=ln_in.eps, out=out_2d[m0:m1],
+        )
+        del x_out, ls_c, z_c, mask_c, res_c
+
+    del b_full, b_4d
+    return out_2d.view(1, N, N, c_z)
+
+
+def _chunked_incoming(
+    z_2d: torch.Tensor,
+    mask_flat: torch.Tensor,
+    ln_stats: torch.Tensor,
+    module,
+    N: int,
+    c_z: int,
+    c_hidden: int,
+    with_add: bool,
+    out: torch.Tensor | None,
+    chunk_cap: int,
+) -> torch.Tensor:
+    """K-chunked incoming: accumulate partial einsums over K-chunks.
+
+    Incoming ``"cbki,cbkj->cbij"``: the contraction is over K.  In the
+    ``[c_hidden, M]`` layout (M = B*N*N, row-major ``(b,k,j)``-order),
+    K-rows ``[k_start*N : k_end*N]`` are contiguous M-slices.  We
+    produce a_k and b_k from the same K-chunk of z and accumulate the
+    partial ``a_k^T @ b_k`` into ``x_accum`` via in-place ``baddbmm``.
+    The first K-chunk uses ``bmm`` (skip reading zeros).
+
+    After the K-loop, ``x_accum`` holds the full einsum result (1U).
+    The I-loop chunks LN-transpose + output-GEMM so ``x_out`` is never
+    a full 1U buffer.
+    Peak ~1.2U above z: x_accum(1U) + ab_k/contig transient(~0.2U).
+    """
+    ln_in = module.layer_norm_in
+    ln_out = module.layer_norm_out
+    M = N * N
+
+    # Accumulator for the full einsum result (1U), stored as 3-D for baddbmm
+    x_accum = torch.empty(
+        c_hidden, N, N, device=z_2d.device, dtype=z_2d.dtype,
+    )
+
+    # Pre-concatenate weights (reused across K-chunks)
+    wp_ab = torch.cat(
+        [module.linear_a_p.weight, module.linear_b_p.weight], dim=0,
+    )
+    wg_ab = torch.cat(
+        [module.linear_a_g.weight, module.linear_b_g.weight], dim=0,
+    )
+
+    # K-chunk loop: accumulate partial einsums via in-place baddbmm.
+    # First chunk uses bmm (skip reading zeros from x_accum).
+    first_chunk = True
+    for k_start in range(0, N, chunk_cap):
+        k_end = min(N, k_start + chunk_cap)
+        k_rows = k_end - k_start
+        m0, m1 = k_start * N, k_end * N
+
+        z_c = z_2d[m0:m1]
+        mask_c = mask_flat[m0:m1]
+        ls_c = ln_stats[:, m0:m1].contiguous()
+
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            ab_k = gated_dual_gemm_fp32(
+                z_c, wp_ab, wg_ab, mask_c,
+                ln_weight=ln_in.weight, ln_bias=ln_in.bias,
+                ln_stats=ls_c, eps=ln_in.eps, output_dtype=None,
+            )  # [2*c_hidden, chunk_M]
+        del ls_c, z_c, mask_c
+
+        a_k = ab_k[:c_hidden].view(c_hidden, k_rows, N)
+        b_k = ab_k[c_hidden:].view(c_hidden, k_rows, N)
+
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            if first_chunk:
+                torch.bmm(a_k.transpose(1, 2), b_k, out=x_accum)
+                first_chunk = False
+            else:
+                torch.baddbmm(
+                    x_accum, a_k.transpose(1, 2), b_k,
+                    beta=1.0, alpha=1.0, out=x_accum,
+                )
+        del ab_k, a_k, b_k
+
+    del wp_ab, wg_ab
+
+    # x_accum holds the full einsum result (1U).
+    # I-chunk both LN-transpose and output-GEMM so x_out is never a
+    # full 1U buffer — only chunk-sized pieces exist at once.
+    if out is not None:
+        out_2d = out.reshape(-1, c_z)
+    else:
+        out_2d = torch.empty(
+            M, c_z, device=z_2d.device, dtype=z_2d.dtype,
+        )
+
+    linear_z_w = module.linear_z.weight
+    if linear_z_w.dtype != z_2d.dtype:
+        linear_z_w = linear_z_w.to(dtype=z_2d.dtype)
+
+    for i_start in range(0, N, chunk_cap):
+        i_end = min(N, i_start + chunk_cap)
+        rows = i_end - i_start
+        m0, m1 = i_start * N, i_end * N
+
+        # I-slice of x_accum → contiguous copy (rows/N fraction of 1U)
+        x_dm = x_accum[:, i_start:i_end, :].reshape(
+            c_hidden, rows * N,
+        ).contiguous()
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            x_out = ln_transpose_fp32(
+                x_dm, ln_out.weight, ln_out.bias, eps=ln_out.eps,
+            )
+        del x_dm
+
+        z_c = z_2d[m0:m1]
+        ls_c = ln_stats[:, m0:m1].contiguous()
+        res_c = z_c if with_add else None
+        gated_out_gemm_residual_fp32(
+            z_c, x_out, module.linear_g.weight, linear_z_w,
+            res_c,
+            ln_weight=ln_in.weight, ln_bias=ln_in.bias,
+            ln_stats=ls_c, eps=ln_in.eps, out=out_2d[m0:m1],
+        )
+        del x_out, ls_c, z_c, res_c
+
+    del x_accum
+    return out_2d.view(1, N, N, c_z)
 
 
 def fused_trimul_update(
@@ -120,6 +331,15 @@ def fused_trimul_update(
     ln_in = module.layer_norm_in
     with torch.amp.autocast(device_type="cuda", enabled=False):
         ln_stats = ln_stats_fp32(z_2d, eps=ln_in.eps)
+
+    # Dispatch to chunked path if cap is set and beneficial
+    chunk_cap = trimul_chunk_cap()
+    if chunk_cap is not None and chunk_cap < N and B == 1:
+        fn = _chunked_outgoing if outgoing else _chunked_incoming
+        return fn(
+            z_2d, mask_flat, ln_stats, module,
+            N, c_z, c_hidden, with_add, out, chunk_cap,
+        )
 
     # Stage 2: gated dual GEMM for a and b with fused LN_in.
     # LN stats are reused; z_n is still normalized in-register per tile.

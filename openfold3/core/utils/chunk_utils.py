@@ -54,6 +54,24 @@ def triangle_attn_chunk_cap() -> int | None:
     return val if val > 0 else None
 
 
+def trimul_chunk_cap() -> int | None:
+    """Optional cap on the fused trimul I-row chunk size, read from
+    OPENFOLD3_TRIMUL_CHUNK_CAP.
+
+    When set, the fused trimul splits a/b production and processes chunk_cap
+    I-rows at a time through einsum + LN + output GEMM, reducing peak from 4U
+    to ~2U.  Unset -> no chunking (full ab computed in one shot).
+    """
+    raw = os.environ.get("OPENFOLD3_TRIMUL_CHUNK_CAP")
+    if raw is None:
+        return None
+    try:
+        val = int(raw)
+    except ValueError:
+        return None
+    return val if val > 0 else None
+
+
 def apply_triangle_attn_chunk_cap(
     chunk_size: int,
     max_chunk_size: int,

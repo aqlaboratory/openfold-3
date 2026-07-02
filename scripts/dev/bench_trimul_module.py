@@ -250,6 +250,13 @@ def main() -> None:
         action="store_true",
         help="Also benchmark cuEq trimul; first call includes any length-keyed setup.",
     )
+    parser.add_argument(
+        "--chunk-cap",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Add fused_chunked variants with TRIMUL_CHUNK_CAP set.",
+    )
     parser.add_argument("--output-json", type=Path, default=None)
     args = parser.parse_args()
 
@@ -258,11 +265,14 @@ def main() -> None:
     dtype = torch.float32 if args.dtype == "fp32" else torch.bfloat16
 
     variants = [
-        ("eager_default", False, False),
-        ("fused", True, False),
+        ("eager_default", False, False, None),
+        ("fused", True, False, None),
     ]
     if args.include_cueq:
-        variants.append(("cueq", False, True))
+        variants.append(("cueq", False, True, None))
+    if args.chunk_cap:
+        for cap in args.chunk_cap:
+            variants.append((f"fused_chunk{cap}", True, False, cap))
 
     results = []
     header = (
@@ -278,8 +288,12 @@ def main() -> None:
                 module, z, mask = _make_case(n, outgoing=outgoing, dtype=dtype)
                 u_bytes = n * n * 128 * z.element_size()
 
-                for label, fused, use_cueq in variants:
+                for label, fused, use_cueq, chunk_cap in variants:
                     _set_fused(fused)
+                    if chunk_cap is not None:
+                        os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = str(chunk_cap)
+                    else:
+                        os.environ.pop("OPENFOLD3_TRIMUL_CHUNK_CAP", None)
 
                     def run(module=module, z=z, mask=mask, use_cueq=use_cueq):
                         return module(

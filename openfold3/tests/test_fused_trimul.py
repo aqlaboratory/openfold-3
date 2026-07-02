@@ -253,6 +253,161 @@ class TestFusedTrimul(unittest.TestCase):
 
 
 @skip_unless_cuda_available()
+class TestFusedTrimulChunked(unittest.TestCase):
+    """Tests for the chunked fused trimul path (OPENFOLD3_TRIMUL_CHUNK_CAP)."""
+
+    def _run_chunked_vs_nonchunked(self, outgoing, N, chunk_cap, with_add, inplace):
+        import os
+
+        device = "cuda"
+        old_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = False
+        cls = (
+            TriangleMultiplicationOutgoing if outgoing else TriangleMultiplicationIncoming
+        )
+        try:
+            torch.manual_seed(0)
+            m = cls(128, 128).to(device=device, dtype=torch.float32).eval()
+            _randomize_observable_output(m)
+            z = torch.randn(1, N, N, 128, device=device) * 0.5
+            mask = torch.ones(1, N, N, device=device)
+
+            with torch.inference_mode():
+                # Non-chunked reference
+                old_cap = os.environ.pop("OPENFOLD3_TRIMUL_CHUNK_CAP", None)
+                os.environ["OPENFOLD3_FUSED_TRIMUL"] = "1"
+                if inplace:
+                    z_ref = z.clone()
+                    ref = fused_trimul_update(m, z_ref, mask, with_add=True, out=z_ref)
+                else:
+                    ref = fused_trimul_update(
+                        m, z.clone(), mask, with_add=with_add,
+                    )
+
+                # Chunked
+                os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = str(chunk_cap)
+                if inplace:
+                    z_inp = z.clone()
+                    fused = fused_trimul_update(m, z_inp, mask, with_add=True, out=z_inp)
+                    self.assertEqual(fused.data_ptr(), z_inp.data_ptr())
+                else:
+                    fused = fused_trimul_update(
+                        m, z.clone(), mask, with_add=with_add,
+                    )
+
+                # Restore
+                if old_cap is not None:
+                    os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = old_cap
+                else:
+                    os.environ.pop("OPENFOLD3_TRIMUL_CHUNK_CAP", None)
+
+            self.assertIsNotNone(ref, "non-chunked returned None")
+            self.assertIsNotNone(fused, "chunked returned None")
+            diff = (fused - ref).abs().max().item()
+            label = "outgoing" if outgoing else "incoming"
+            self.assertLess(
+                diff, 1e-5,
+                f"{label} N={N} cap={chunk_cap} with_add={with_add} "
+                f"inplace={inplace}: max diff {diff:.2e}",
+            )
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_tf32
+
+    def test_chunked_outgoing(self):
+        for N in (128, 256):
+            for cap in (32, 64):
+                self._run_chunked_vs_nonchunked(True, N, cap, False, False)
+
+    def test_chunked_incoming(self):
+        for N in (128, 256):
+            for cap in (32, 64):
+                self._run_chunked_vs_nonchunked(False, N, cap, False, False)
+
+    def test_chunked_with_add(self):
+        for outgoing in (True, False):
+            self._run_chunked_vs_nonchunked(outgoing, 256, 64, True, False)
+
+    def test_chunked_inplace(self):
+        for outgoing in (True, False):
+            self._run_chunked_vs_nonchunked(outgoing, 256, 64, True, True)
+
+    def test_chunked_non_divisible_cap(self):
+        """Cap that doesn't evenly divide N."""
+        for outgoing in (True, False):
+            self._run_chunked_vs_nonchunked(outgoing, 256, 100, False, False)
+
+    def test_chunked_peak_memory_outgoing(self):
+        """Verify chunked outgoing peak is <= 2.6U."""
+        import os
+
+        device = "cuda"
+        N, c_z = 256, 128
+        U = N * N * c_z * 4
+        os.environ["OPENFOLD3_FUSED_TRIMUL"] = "1"
+        os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = "64"
+        try:
+            torch.manual_seed(0)
+            m = TriangleMultiplicationOutgoing(c_z, c_z).to(device, torch.float32).eval()
+            _randomize_observable_output(m)
+            z = torch.randn(1, N, N, c_z, device=device)
+            mask = torch.ones(1, N, N, device=device)
+
+            with torch.inference_mode():
+                _ = fused_trimul_update(m, z, mask, with_add=False)
+
+            gc.collect()
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+            base = torch.cuda.memory_allocated()
+            with torch.inference_mode():
+                out = fused_trimul_update(m, z, mask, with_add=False)
+            peak = torch.cuda.max_memory_allocated()
+            peak_u = (peak - base) / U
+            del out
+            print(f"  trimul chunked outgoing peak: {peak_u:.2f} U")
+            self.assertLess(
+                peak_u, 2.6, f"outgoing peak {peak_u:.2f} U exceeds 2.6U target"
+            )
+        finally:
+            os.environ.pop("OPENFOLD3_TRIMUL_CHUNK_CAP", None)
+
+    def test_chunked_peak_memory_incoming(self):
+        """Verify chunked incoming peak is <= 2.6U (non-inplace)."""
+        import os
+
+        device = "cuda"
+        N, c_z = 256, 128
+        U = N * N * c_z * 4
+        os.environ["OPENFOLD3_FUSED_TRIMUL"] = "1"
+        os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = "64"
+        try:
+            torch.manual_seed(0)
+            m = TriangleMultiplicationIncoming(c_z, c_z).to(device, torch.float32).eval()
+            _randomize_observable_output(m)
+            z = torch.randn(1, N, N, c_z, device=device)
+            mask = torch.ones(1, N, N, device=device)
+
+            with torch.inference_mode():
+                _ = fused_trimul_update(m, z, mask, with_add=False)
+
+            gc.collect()
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+            base = torch.cuda.memory_allocated()
+            with torch.inference_mode():
+                out = fused_trimul_update(m, z, mask, with_add=False)
+            peak = torch.cuda.max_memory_allocated()
+            peak_u = (peak - base) / U
+            del out
+            print(f"  trimul chunked incoming peak: {peak_u:.2f} U")
+            self.assertLess(
+                peak_u, 2.6, f"incoming peak {peak_u:.2f} U exceeds 2.6U target"
+            )
+        finally:
+            os.environ.pop("OPENFOLD3_TRIMUL_CHUNK_CAP", None)
+
+
+@skip_unless_cuda_available()
 class TestFusedTrimulSubOps(unittest.TestCase):
     """Tests for individual sub-op kernels used by the fused trimul pipeline."""
 
