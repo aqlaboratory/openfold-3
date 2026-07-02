@@ -27,7 +27,9 @@ urls.Documentation = "https://openfold-3.readthedocs.io/en/latest/"
 urls.Repository = "https://github.com/aqlaboratory/openfold-3"
 urls.Issues = "https://github.com/aqlaboratory/openfold-3/issues"
 
-requires-python = ">=3.10"
+# Upper-bounded at <3.15: TorchScript (torch.jit.script/script_method, still used by
+# deepspeed) is unsupported and breaks on Python 3.15+, so 3.14 is the max runnable.
+requires-python = ">=3.10,<3.15"
 dependencies = [
     "numpy",
     "scipy",
