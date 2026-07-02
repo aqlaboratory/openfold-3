@@ -1,4 +1,8 @@
-# cuEquivariance Kernels 
+# Kernels
+
+OpenFold3 supports some additional kernels to help accelerate model prediction and training. Kernel support is system specific, please review the kernel descriptions to see which kernels are compatible with your system.
+
+## cuEquivariance Kernels 
 
 OF3 supports cuEquivariance [triangle_multiplicative_update](https://docs.nvidia.com/cuda/cuequivariance/api/generated/cuequivariance_torch.triangle_multiplicative_update.html) and [triangle_attention](https://docs.nvidia.com/cuda/cuequivariance/api/generated/cuequivariance_torch.triangle_attention.html) kernels which can speed up inference/training of the model.
 Note: cuEquivariance acceleration can be used while DeepSpeed acceleration is enabled. 
@@ -34,3 +38,21 @@ model_update:
 ```
 
 This runner.yml is specifically for inference, but similar settings can be used for training. 
+
+## Triton ROCm Kernel
+
+To use AMD ROCm-compatible Triton kernels, first install the ROCm PyTorch wheel (which bundles ROCm Triton), then install openfold3:
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
+pip install openfold3
+```
+
+For AMD system installation: After installation, verify your ROCm environment is correctly configured:
+
+```bash
+validate-openfold3-rocm
+```
+
+## Smooth LDDT Ball Query Kernel
+TODO: Add brief description and installation instructions here
