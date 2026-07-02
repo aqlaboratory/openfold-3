@@ -1279,3 +1279,34 @@ class TestKernels:
                 )
 
         compare_utils.assert_max_abs_diff_small(ref, fused, 2e-3)
+
+    @pytest.mark.parametrize("N", [76, 256, 512])
+    def test_fused_relpos_embed_matches_eager(self, N):
+        """Fused relpos gather-add kernel matches the 4 sequential gather-adds."""
+        from openfold3.core.kernels.triton.fused_relpos_embed import (
+            fused_relpos_embed_add_,
+        )
+
+        C = 128
+        vocab = 130
+        same_entity_offset = 65
+
+        z = torch.randn(1, N, N, C, device="cuda", dtype=torch.float32)
+        w = torch.randn(vocab, C, device="cuda", dtype=torch.float32)
+        idx1 = torch.randint(0, vocab, (1, N, N), device="cuda", dtype=torch.int64)
+        idx2 = torch.randint(0, vocab, (1, N, N), device="cuda", dtype=torch.int64)
+        idx3 = torch.randint(0, vocab, (1, N, N), device="cuda", dtype=torch.int64)
+        same_entity = torch.randint(0, 2, (1, N, N), device="cuda", dtype=torch.bool)
+
+        z_ref = z.clone()
+        z_ref.add_(w[idx1])
+        z_ref.add_(w[idx2])
+        z_ref.add_(w[idx3])
+        z_ref.add_(same_entity[..., None].to(dtype=z.dtype) * w[same_entity_offset])
+
+        z_fused = z.clone()
+        fused_relpos_embed_add_(
+            z_fused, w, idx1, idx2, idx3, same_entity, same_entity_offset
+        )
+
+        compare_utils.assert_max_abs_diff_small(z_ref, z_fused, 1e-5)

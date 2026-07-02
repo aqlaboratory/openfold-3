@@ -174,7 +174,10 @@ class InputEmbedderAllAtom(nn.Module):
         # materializing a separate pair-sized linear output.
         token_bonds = batch["token_bonds"].to(dtype=dtype)
         if not torch.is_grad_enabled() and self.linear_token_bonds.bias is None:
-            z.add_(token_bonds[..., None] * self.linear_token_bonds.weight[:, 0])
+            z.view(-1, z.shape[-1]).addmm_(
+                token_bonds.reshape(-1, 1),
+                self.linear_token_bonds.weight[:, 0].unsqueeze(0),
+            )
         else:
             token_bonds_emb = self.linear_token_bonds(token_bonds.unsqueeze(-1))
             z = add(z, token_bonds_emb, inplace=inplace_safe)
@@ -228,16 +231,33 @@ class InputEmbedderAllAtom(nn.Module):
             batch["sym_id"], same_entity, self.max_relative_chain
         )
 
-        w = self.linear_relpos.weight.to(dtype=z.dtype).t()
+        w = self.linear_relpos.weight.to(dtype=z.dtype).t().contiguous()
         rel_pos_bins = 2 * self.max_relative_idx + 2
         rel_token_offset = rel_pos_bins
         same_entity_offset = rel_token_offset + rel_pos_bins
         rel_chain_offset = same_entity_offset + 1
 
-        z.add_(w[rel_pos_idx])
-        z.add_(w[rel_token_idx + rel_token_offset])
-        z.add_(w[rel_chain_idx + rel_chain_offset])
-        z.add_(same_entity[..., None].to(dtype=z.dtype) * w[same_entity_offset])
+        # by Liang Hong <lhong22@cse.cuhk.edu.hk>: fused relpos gather-add
+        # avoids materializing the full [N, N, c_z] intermediate on CUDA.
+        if z.is_cuda and z.is_contiguous():
+            from openfold3.core.kernels.triton.fused_relpos_embed import (
+                fused_relpos_embed_add_,
+            )
+
+            fused_relpos_embed_add_(
+                z=z,
+                w=w,
+                rel_pos_idx=rel_pos_idx,
+                rel_token_idx=(rel_token_idx + rel_token_offset),
+                rel_chain_idx=(rel_chain_idx + rel_chain_offset),
+                same_entity=same_entity,
+                same_entity_offset=same_entity_offset,
+            )
+        else:
+            z.add_(w[rel_pos_idx])
+            z.add_(w[rel_token_idx + rel_token_offset])
+            z.add_(w[rel_chain_idx + rel_chain_offset])
+            z.add_(same_entity[..., None].to(dtype=z.dtype) * w[same_entity_offset])
 
 class MSAModuleEmbedder(nn.Module):
     """Sample MSA features and embed them. Implements AF3 Algorithm 8 lines 1-4.
