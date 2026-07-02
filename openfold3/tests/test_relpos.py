@@ -97,7 +97,7 @@ class TestRelposComplex:
         return relpos_complex(batch, self.MAX_IDX, self.MAX_CHAIN)
 
     @pytest.mark.parametrize("is_cyclic", [True, False])
-    def test_relpos_shape(self,is_cyclic):
+    def test_relpos_shape(self, is_cyclic):
         n = 10
         batch = _make_batch(n, [1] * n, [is_cyclic] * n)
         out = self._relpos(batch)
