@@ -316,20 +316,13 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   cuda-version = "<13.3"
   # These are only needed to build local extensions the first time
   # Think on whether we want to delete them afterward and how it would play with the user
+  ninja = "*"
   cutlass = "*"
   cuda-minimal-build = "*"
   libcusparse-dev = "*"
   libcublas-dev = "*"
   libcusolver-dev = "*"
   libcurand-dev = "*"
-
-  [feature.deepspeed-build.pypi-dependencies]
-  # ninja is sourced from PyPI (not conda) to avoid a conda/pypi file-overwrite
-  # warning: deepspeed itself declares `Requires-Dist: ninja`, so a pip-installed
-  # deepspeed already pulls the pypi ninja wheel, which provides bin/ninja and would
-  # otherwise clobber a conda ninja. Declaring it here keeps ninja present in the
-  # conda-torch envs too (where deepspeed is a conda package and doesn't pull it in).
-  ninja = "*"
 
   [feature.deepspeed-build.activation]
   # Trick deepspeed - we could also point to $CONDA_PREFIX
