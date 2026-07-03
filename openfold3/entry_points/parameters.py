@@ -36,8 +36,11 @@ class CheckpointEntry:
 
 
 OPENFOLD_MODEL_CHECKPOINT_REGISTRY = {
+    "openfold3-ob-test": CheckpointEntry(
+        file_name="test-ob-v1.pt", version_compatibility=">=0.5"
+    ),
     "openfold3-p2-145k": CheckpointEntry(
-        file_name="of3-p2-145k.pt", version_compatibility=">=0.4"
+        file_name="of3-p2-145k.pt", version_compatibility=">=0.4,<0.5"
     ),
     "openfold3-p2-155k": CheckpointEntry(
         file_name="of3-p2-155k.pt", version_compatibility=">=0.4"
@@ -47,7 +50,7 @@ OPENFOLD_MODEL_CHECKPOINT_REGISTRY = {
     ),
 }
 
-DEFAULT_CHECKPOINT_NAME = "openfold3-p2-155k"
+DEFAULT_CHECKPOINT_NAME = "openfold3-ob-test"
 
 # These checkpoints are not supported for download and use in the current version,
 # but are left in the registry for record-keeping and compatibility checks.
