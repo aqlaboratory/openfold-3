@@ -244,7 +244,7 @@ The checkpoints are generated in a format that's not compatible with torch.load.
 You can run a small utility script to get a functional checkpoint 
 
 ```bash
-python scripts/dev/convert_ckpt_to_ema_only.py qtvqkrvf/checkpoints/255-4096.ckpt inference.ckpt
+python scripts/dev/convert_ckpt_to_ema_only.py <wandb_id>/checkpoints/<epoch>-<step_num>.ckpt inference.ckpt
 ls -l
 -rw-rw-r-- 1 jandom jandom 2287987691 Jul  2 06:48 inference.ckpt.tmp
 -rw-rw-r-- 1 jandom jandom 2287578277 Jul  2 06:48 inference.ckpt
@@ -253,8 +253,7 @@ ls -l
 This format of the checkpoint can be directly used with `run_openfold predict`
 
 ```bash
-pixi run \
-    --manifest-path ~/workspace/openfold-3/pixi.toml \
-    -e openfold3-cuda12 run_openfold predict \
-    --inference-ckpt-path inference.ckpt
+run_openfold predict \
+    --inference-ckpt-path inference.ckpt \
+    ... # other options
 ```
