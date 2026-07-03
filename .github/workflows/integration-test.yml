@@ -5,11 +5,20 @@ on:
     # GitHub-hosted schedulers see heavy contention on the hour; offsetting by
     # 17 minutes reduces queue delay and avoids colliding with other
     # AWS-runner-launching workflows that fire on :00.
-    - cron: '17 3 * * *' # daily at 03:17 UTC
+    #
+    # `on.schedule` cron entries can't be conditioned on `github.repository`
+    # (no expression context is available there), so both times are
+    # registered here and each job's `if` picks the one that matches its repo.
+    - cron: '17 3 * * *' # daily at 03:17 UTC - aqlaboratory/openfold-3
+    - cron: '17 4 * * *' # daily at 04:17 UTC - other repos 
   workflow_dispatch:
 
 jobs:
   test-conda:
+    if: |
+      github.event_name != 'schedule' ||
+      (github.repository == 'aqlaboratory/openfold-3' && github.event.schedule == '17 3 * * *') ||
+      (github.repository != 'aqlaboratory/openfold-3' && github.event.schedule == '17 4 * * *')
     permissions:
       id-token: write
       contents: read
@@ -29,6 +38,10 @@ jobs:
     secrets: inherit
 
   test-pixi:
+    if: |
+      github.event_name != 'schedule' ||
+      (github.repository == 'aqlaboratory/openfold-3' && github.event.schedule == '17 3 * * *') ||
+      (github.repository != 'aqlaboratory/openfold-3' && github.event.schedule == '17 4 * * *')
     permissions:
       id-token: write
       contents: read
