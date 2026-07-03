@@ -268,6 +268,7 @@ def build_runner(
     runner_yaml: Path,
     num_samples: int,
     use_cueq: bool,
+    offload_token_cutoff: int = 10_000_000,
 ) -> InferenceExperimentRunner:
     runner_args = config_utils.load_yaml(runner_yaml)
     runner_args.setdefault("data_module_args", {})
@@ -280,7 +281,7 @@ def build_runner(
         use_msa_server=False,
     )
     cfg = runner.model_config
-    cfg.settings.memory.eval.offload_inference.token_cutoff = 10_000_000
+    cfg.settings.memory.eval.offload_inference.token_cutoff = offload_token_cutoff
     cfg.settings.memory.eval.use_deepspeed_evo_attention = False
     cfg.settings.memory.eval.use_cueq_triangle_kernels = use_cueq
     cfg.settings.memory.eval.use_triton_triangle_kernels = False
@@ -309,6 +310,7 @@ def profile(args) -> dict:
         runner_yaml=args.runner_yaml,
         num_samples=args.samples,
         use_cueq=not args.no_cueq,
+        offload_token_cutoff=args.offload_token_cutoff,
     )
     lightning_module = runner.lightning_module.to(device).eval()
     model = lightning_module.model
@@ -384,25 +386,37 @@ def profile(args) -> dict:
         "stage_wall_s": round(stage_wall_s, 2),
         "env_flags": {
             "use_cueq_triangle_kernels": "0" if args.no_cueq else "1",
-            "OPENFOLD3_FUSED_TRI_ATTN": os.environ.get(
-                "OPENFOLD3_FUSED_TRI_ATTN", "0"
-            ),
-            "OPENFOLD3_FUSED_TRI_ATTN_V2": os.environ.get(
-                "OPENFOLD3_FUSED_TRI_ATTN_V2", "0"
+            "OPENFOLD3_FUSED_TRI_ATTN_V1": os.environ.get(
+                "OPENFOLD3_FUSED_TRI_ATTN_V1", "0"
             ),
             "OPENFOLD3_FUSED_TRIMUL": os.environ.get(
                 "OPENFOLD3_FUSED_TRIMUL", "0"
             ),
-            "OPENFOLD3_FUSED_OPM": os.environ.get("OPENFOLD3_FUSED_OPM", "0"),
             "OPENFOLD3_FUSED_SWIGLU_TRANSITION": os.environ.get(
                 "OPENFOLD3_FUSED_SWIGLU_TRANSITION", "0"
             ),
             "OPENFOLD3_FUSED_LN_LINEAR": os.environ.get(
                 "OPENFOLD3_FUSED_LN_LINEAR", "0"
             ),
-            "OPENFOLD3_DIFFUSION_CUDA_GRAPH": os.environ.get(
-                "OPENFOLD3_DIFFUSION_CUDA_GRAPH", "0"
+            "OPENFOLD3_FUSED_DIFFUSION_ATTN": os.environ.get(
+                "OPENFOLD3_FUSED_DIFFUSION_ATTN", "0"
             ),
+            "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": os.environ.get(
+                "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE", "0"
+            ),
+            "OPENFOLD3_FUSED_TEMPLATE_EMBED": os.environ.get(
+                "OPENFOLD3_FUSED_TEMPLATE_EMBED", "0"
+            ),
+            "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": os.environ.get(
+                "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN", "1"
+            ),
+            "OPENFOLD3_TRI_ATTN_CHUNK_CAP": os.environ.get(
+                "OPENFOLD3_TRI_ATTN_CHUNK_CAP"
+            ),
+            "OPENFOLD3_TRIMUL_CHUNK_CAP": os.environ.get(
+                "OPENFOLD3_TRIMUL_CHUNK_CAP"
+            ),
+            "offload_token_cutoff": args.offload_token_cutoff,
         },
         "stages": profiler.stats,
     }
@@ -462,6 +476,18 @@ def main() -> None:
     parser.add_argument("--runner-yaml", type=Path, default=DEFAULT_RUNNER_YAML)
     parser.add_argument("--samples", type=int, default=1)
     parser.add_argument("--no-cueq", action="store_true")
+    parser.add_argument(
+        "--offload-token-cutoff",
+        type=int,
+        default=10_000_000,
+        help=(
+            "``settings.memory.eval.offload_inference.token_cutoff`` override. "
+            "Default 10_000_000 = offload OFF for every practical target. "
+            "Set to 512 to enable offload for anything above N=512 (sweetspot). "
+            "Confidence-head offload is independent (always on via ``predict`` "
+            "preset's ``confidence_token_cutoff=0``)."
+        ),
+    )
     parser.add_argument(
         "--fine",
         action="store_true",

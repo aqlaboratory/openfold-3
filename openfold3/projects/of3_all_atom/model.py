@@ -96,7 +96,6 @@ class OpenFold3(nn.Module):
             self.fused_ln_linear_z = FusedLNLinear(
                 self.shared.c_z, self.shared.c_z,
                 linear_bias=False, linear_init="final",
-                legacy_ln_name="layer_norm_z", legacy_linear_name="linear_z",
             )
         else:
             self.layer_norm_z = LayerNorm(self.shared.c_z)
@@ -117,7 +116,6 @@ class OpenFold3(nn.Module):
             self.fused_ln_linear_s = FusedLNLinear(
                 self.shared.c_s, self.shared.c_s,
                 linear_bias=False, linear_init="final",
-                legacy_ln_name="layer_norm_s", legacy_linear_name="linear_s",
             )
         else:
             self.layer_norm_s = LayerNorm(self.shared.c_s)
@@ -250,8 +248,7 @@ class OpenFold3(nn.Module):
             inplace_safe=inplace_safe,
             use_high_precision_attention=True,
         )
-        # by Liang Hong <lhong22@cse.cuhk.edu.hk>: recycle-time pair
-        # recomputation and early release of trunk-scale inference tensors.
+
         recompute_z_init = (
             inplace_safe
             and not torch.is_grad_enabled()
@@ -287,6 +284,12 @@ class OpenFold3(nn.Module):
                     self.clear_autocast_cache()
 
                 # [*, N_token, N_token, C_z]
+                if self._use_fused_ln_linear:
+                    z_recycle = self.fused_ln_linear_z(z)
+                else:
+                    z_recycle = self.linear_z(self.layer_norm_z(z))
+                if inplace_safe and not torch.is_grad_enabled():
+                    del z
                 if recompute_z_init:
                     z_init_cycle = self.input_embedder.embed_z(
                         batch=batch,
@@ -296,10 +299,6 @@ class OpenFold3(nn.Module):
                     )
                 else:
                     z_init_cycle = z_init
-                if self._use_fused_ln_linear:
-                    z_recycle = self.fused_ln_linear_z(z)
-                else:
-                    z_recycle = self.linear_z(self.layer_norm_z(z))
                 if inplace_safe and not torch.is_grad_enabled():
                     z_init_cycle.add_(z_recycle)
                     z = z_init_cycle
@@ -522,8 +521,6 @@ class OpenFold3(nn.Module):
 
         return output
 
-    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: evict template features after
-    # trunk so diffusion and confidence no longer retain MSA/template tensors.
     def _post_trunk_inference_cleanup(self, batch: dict) -> None:
         template_keys = {
             "template_backbone_frame_mask",
@@ -753,6 +750,11 @@ class OpenFold3(nn.Module):
         # Controls whether the model uses in-place operations throughout
         # The dual condition accounts for activation checkpoints
         inplace_safe = not (self.training or torch.is_grad_enabled())
+
+        if inplace_safe:
+            for _k in ("template_distogram", "template_unit_vector"):
+                if _k in batch and hasattr(batch[_k], "is_cuda") and batch[_k].is_cuda:
+                    batch[_k] = batch[_k].to("cpu", non_blocking=True)
 
         # If training, we sample the number of recycles
         # This is the additional number of iterations through the trunk

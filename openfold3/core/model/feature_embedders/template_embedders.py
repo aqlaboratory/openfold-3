@@ -29,6 +29,10 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.primitives.fused_ln_linear import (
     is_fused_ln_linear_enabled,
 )
+from openfold3.core.model.primitives.fused_template_pair_embedder import (
+    fused_template_pair_embedder_inference,
+    is_fused_template_pair_embedder_enabled,
+)
 
 
 class TemplatePairEmbedderAllAtom(nn.Module):
@@ -103,8 +107,6 @@ class TemplatePairEmbedderAllAtom(nn.Module):
             bias = bias.to(dtype=dtype)
         return F.linear(scalar_feats, weight, bias)
 
-    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: inference-time in-place
-    # accumulation that avoids pair-sized template embedding temporaries.
     def _embed_feats(self, batch: dict):
         dtype = batch["template_unit_vector"].dtype
 
@@ -179,6 +181,27 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         Returns:
             # [*, N_templ, N_token, N_token, C_out] Template pair feature embedding
         """
+        # Fused inference path: LN(z)@Wz allocated straight into ``a``
+        # (chunked, no 0.5U ``z_projected`` transient) + in-place addmm
+        # for dgram / scalar + broadcast-add for the tiny per-i and per-j
+        # aatype projections (no 0.25U .to(dtype) expand copies).  Handles
+        # exactly one template at a time — this dispatch fires only when
+        # the caller has already reduced ``batch`` to n_templ=1 (i.e. the
+        # streaming path in TemplateEmbedderAllAtom._forward_streaming).
+        # For multi-template batches (grad path or non-streaming inference),
+        # fall through to the eager loop below.
+        if (
+            not torch.is_grad_enabled()
+            and is_fused_template_pair_embedder_enabled()
+            and z.is_cuda
+            and z.dim() == 4
+            and z.shape[0] == 1
+            and batch["template_restype"].shape[-3] == 1
+        ):
+            return fused_template_pair_embedder_inference(
+                module=self, batch=batch, z=z, template_index=0
+            )
+
         a = self._embed_feats(batch=batch)
 
         # [*, N_templ, N_token, N_token, C_out]
