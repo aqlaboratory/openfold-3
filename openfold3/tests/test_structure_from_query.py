@@ -13,9 +13,7 @@
 # limitations under the License.
 
 # TODO: Add more tests for general inference inputs
-import pickle
-from pathlib import Path
-
+import numpy as np
 import pytest
 from biotite.structure.io import pdbx
 from rdkit import Chem
@@ -26,18 +24,13 @@ from openfold3.core.data.pipelines.featurization.conformer import (
 )
 from openfold3.core.data.primitives.structure.metadata import get_cif_block
 from openfold3.core.data.primitives.structure.query import (
+    StructureWithReferenceMolecules,
     processed_reference_molecule_from_mol,
     structure_with_ref_mols_from_query,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Query,
 )
-from openfold3.tests.custom_assert_utils import (
-    assert_atomarray_equal,
-    assert_ref_mols_equal,
-)
-
-reference_data_path = Path(__file__).parent / "test_data" / "structure_from_query"
 
 # A standard peptide query
 standard_peptide_query = Query.model_validate(
@@ -73,45 +66,69 @@ non_canonical_peptide_query = Query.model_validate(
 )
 
 
+def _serialize_structure_with_ref_mols(
+    swrm: StructureWithReferenceMolecules,
+) -> dict[str, np.ndarray]:
+    """Flatten a StructureWithReferenceMolecules into a dict of numpy arrays.
+
+    All fields that the former assert_atomarray_equal / assert_ref_mols_equal helpers
+    compared are captured here as plain numpy arrays, making the snapshot format
+    independent of biotite's internal serialization protocol.
+    """
+    arrays: dict[str, np.ndarray] = {}
+
+    aa = swrm.atom_array
+    for annot in sorted(aa.get_annotation_categories()):
+        arrays[f"aa__{annot}"] = np.asarray(getattr(aa, annot))
+    arrays["aa__coord"] = aa.coord
+    if aa.bonds is not None:
+        arrays["aa__bonds"] = aa.bonds.as_array()
+
+    for i, ref_mol in enumerate(swrm.processed_reference_mols):
+        p = f"mol_{i}"
+        arrays[f"{p}__smiles"] = np.array(
+            [Chem.MolToSmiles(ref_mol.mol, canonical=False)]
+        )
+        arrays[f"{p}__in_crop_mask"] = ref_mol.in_crop_mask
+        if ref_mol.component_id is not None:
+            arrays[f"{p}__component_id"] = np.array([ref_mol.component_id])
+
+        atom_names = [
+            a.GetProp("annot_atom_name")
+            for a in ref_mol.mol.GetAtoms()
+            if a.HasProp("annot_atom_name")
+        ]
+        if atom_names:
+            arrays[f"{p}__annot_atom_name"] = np.array(atom_names)
+
+        used_masks = [
+            a.GetProp("annot_used_atom_mask")
+            for a in ref_mol.mol.GetAtoms()
+            if a.HasProp("annot_used_atom_mask")
+        ]
+        if used_masks:
+            arrays[f"{p}__annot_used_atom_mask"] = np.array(used_masks)
+
+        if ref_mol.permutations is not None:
+            for j, perm in enumerate(ref_mol.permutations):
+                arrays[f"{p}__perm_{j}"] = perm
+
+    return arrays
+
+
 @pytest.mark.parametrize(
-    "query, ground_truth_file",
+    "query",
     [
-        (
-            standard_peptide_query,
-            reference_data_path / "structure-w-ref-mols_std-peptide.pkl",
-        ),
-        (
-            non_canonical_peptide_query,
-            reference_data_path / "structure-w-ref-mols_non-std-peptide.pkl",
-        ),
-    ],
-    ids=[
-        "standard_peptide",
-        "non_canonical_peptide",
+        pytest.param(standard_peptide_query, id="standard_peptide"),
+        pytest.param(non_canonical_peptide_query, id="non_canonical_peptide"),
     ],
 )
-def test_structure_from_query(query: Query, ground_truth_file: Path):
+def test_structure_from_query(query: Query, ndarrays_regression):
     """Tests that the generated structure and reference molecules matches gt."""
     structure_with_ref_mols = structure_with_ref_mols_from_query(query)
-
-    # Get reference file
-    structure_with_ref_mols_gt = pickle.loads(ground_truth_file.read_bytes())
-
-    # Check that atom arrays match (for some reason the GT generation script generated a
-    # different order of annotations but that's fine)
-    assert_atomarray_equal(
-        structure_with_ref_mols.atom_array,
-        structure_with_ref_mols_gt.atom_array,
-        strict_annot_order=False,
+    ndarrays_regression.check(
+        _serialize_structure_with_ref_mols(structure_with_ref_mols)
     )
-
-    # Check that reference molecules match
-    for ref_mol, ref_mol_gt in zip(
-        structure_with_ref_mols.processed_reference_mols,
-        structure_with_ref_mols_gt.processed_reference_mols,
-        strict=False,
-    ):
-        assert_ref_mols_equal(ref_mol, ref_mol_gt)
 
 
 def test_smiles_with_explicit_hydrogen():

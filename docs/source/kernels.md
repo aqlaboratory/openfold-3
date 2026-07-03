@@ -8,7 +8,8 @@ Note: cuEquivariance acceleration can be used while DeepSpeed acceleration is en
 To enable cuequivariance with pixi, use the `openfold3-cuda12-pypi` or `openfold3-cuda13-pypi` environment. Below is a example inference command
 
 ```bash
-pixi run -e openfold3-cuda12-pypi run_openfold predict --query-json=query_ubiquitin.json  --runner-yaml=cuequivariance.yml
+pixi run -e openfold3-cuda12-pypi \
+  run_openfold predict --query-json=query_ubiquitin.json  --runner-yaml=cuequivariance.yml
 ```
 
 For other workflows, cuequivariance must first be installed with the cuequivariance optional dependency, e.g.

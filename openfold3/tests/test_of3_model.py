@@ -37,6 +37,7 @@ class TestOF3Model:
         reduce_model_size=True,
         use_deepspeed_evo_attention=False,
         use_triton_triangle_kernels=False,
+        chunk_size=None,
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -59,8 +60,13 @@ class TestOF3Model:
             use_deepspeed_evo_attention
         )
 
-        if use_triton_triangle_kernels:
-            config.settings.memory.eval.use_triton_triangle_kernels = True
+        config.settings.memory.eval.use_triton_triangle_kernels = (
+            use_triton_triangle_kernels
+        )
+        if chunk_size is not None:
+            config.settings.memory.eval.chunk_size = chunk_size
+            assert not train
+
         config.architecture.loss_module.diffusion.chunk_size = 16
 
         of3 = OpenFold3AllAtom(config).to(device=device, dtype=dtype)
@@ -151,6 +157,25 @@ class TestOF3Model:
             train=is_train,
             reduce_model_size=True,
             use_deepspeed_evo_attention=False,
+        )
+
+    def test_shape_small_chunk_size_one(self):
+        batch_size = consts.batch_size
+        n_token = 18
+        n_msa = 10
+        n_templ = 3
+
+        self.run_model(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=n_msa,
+            n_templ=n_templ,
+            dtype=torch.float32,
+            train=False,
+            reduce_model_size=True,
+            use_deepspeed_evo_attention=False,
+            use_triton_triangle_kernels=False,
+            chunk_size=1,
         )
 
     @compare_utils.skip_unless_triton_installed()
