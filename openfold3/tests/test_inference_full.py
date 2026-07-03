@@ -43,7 +43,6 @@ from openfold3.tests.compare_utils import skip_unless_cuda_available
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
-
 protein_only_query = InferenceQuerySet.model_validate(
     {
         "queries": {
@@ -86,11 +85,6 @@ inference_test_yaml_str = textwrap.dedent("""\
       presets:
         - predict
         - low_mem
-      custom:
-        settings:
-          memory:
-            eval:
-              use_deepspeed_evo_attention: false
     """)
 
 

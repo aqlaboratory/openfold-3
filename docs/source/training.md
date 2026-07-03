@@ -223,6 +223,8 @@ experiment_settings:
 
 ## 7. Fine-tuning
 
+### 7.1 Starting from a pre-trained checkpoint
+
 To fine-tune from a pre-trained checkpoint, specify the checkpoint path and adjust training parameters as needed:
 
 ```yaml
@@ -231,4 +233,27 @@ experiment_settings:
   output_dir: ./finetune_output
   seed: 42
   restart_checkpoint_path: /path/to/pretrained.ckpt
+```
+
+### 7.2 Inferencing on fine-tuning checkpoints 
+
+The checkpoints are generated in a format that's not compatible with torch.load. You'll see this error
+
+> _pickle.UnpicklingError: Weights only load failed. This file can still be loaded, to do so you have two options, do those steps only if you trust the source of the checkpoint. 
+
+You can run a small utility script to get a functional checkpoint 
+
+```bash
+python scripts/dev/convert_ckpt_to_ema_only.py <wandb_id>/checkpoints/<epoch>-<step_num>.ckpt inference.ckpt
+ls -l
+-rw-rw-r-- 1 jandom jandom 2287987691 Jul  2 06:48 inference.ckpt.tmp
+-rw-rw-r-- 1 jandom jandom 2287578277 Jul  2 06:48 inference.ckpt
+```
+
+This format of the checkpoint can be directly used with `run_openfold predict`
+
+```bash
+run_openfold predict \
+    --inference-ckpt-path inference.ckpt \
+    ... # other options
 ```
