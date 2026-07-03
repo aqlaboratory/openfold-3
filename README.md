@@ -6,7 +6,7 @@
 </picture>
 
 OpenFold3-preview is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's 
-[AlphaFold3](https://github.com/deepmind/alphafold3), developed by the AlQuraishi Lab at Columbia University and the OpenFold consortium. This research preview is intended to gather community feedback and allow developers to start building on top of the OpenFold ecosystem. The OpenFold project is committed to long-term maintenance and open source support, and our repository is freely available for academic and commercial use under the Apache 2.0 license.
+[AlphaFold3](https://github.com/google-deepmind/alphafold3), developed by the AlQuraishi Lab at Columbia University and the OpenFold consortium. This research preview is intended to gather community feedback and allow developers to start building on top of the OpenFold ecosystem. The OpenFold project is committed to long-term maintenance and open source support, and our repository is freely available for academic and commercial use under the Apache 2.0 license.
 
 For our reproduction of AlphaFold2, please refer to the original [OpenFold repository](https://github.com/aqlaboratory/openfold).
 
@@ -110,7 +110,7 @@ If you use OpenFold3-preview in your research, please cite the following:
   title = {OpenFold3-preview},
   author = {{The OpenFold3 Team}},
   year = {2025},
-  version = {0.4.1},
+  version = {0.4.2},
   doi = {10.5281/zenodo.19001000},
   url = {https://github.com/aqlaboratory/openfold-3},
   abstract = {OpenFold3-preview is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's AlphaFold3, developed by the AlQuraishi Lab at Columbia University and the OpenFold consortium.}

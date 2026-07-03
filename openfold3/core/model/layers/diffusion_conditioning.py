@@ -196,8 +196,7 @@ class DiffusionConditioning(nn.Module):
                     zij.clone(),
                     token_mask,
                 ),
-                min_chunk_size=chunk_size,
-                max_chunk_size=2048,
+                max_chunk_size=chunk_size,
             )
 
         si, zij = self._forward(
