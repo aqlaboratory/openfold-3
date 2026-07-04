@@ -1,0 +1,8 @@
+# Ignore everything in this directory...
+*
+
+# ...except these tracked files
+!.gitignore
+!helpers.py
+!notebook.ipynb
+!test_helpers.py
