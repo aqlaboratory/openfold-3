@@ -169,6 +169,9 @@ ban-relative-imports = "all"
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["E501"]
+# Colab notebooks keep `# @param` / `# @markdown` form directives on a single
+# physical line (the value cannot be wrapped without breaking Colab's form UI).
+"examples/notebooks/**/*.ipynb" = ["E501"]
 
 [tool.pytest.ini_options]
 log_cli = true
