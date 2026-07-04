@@ -43,6 +43,31 @@ class Bond(NamedTuple):
     atom2: Atom
 
 
+class PocketResidue(NamedTuple):
+    """Residue address used to define a ligand pocket constraint."""
+
+    chain_id: str
+    residue_id: int
+
+
+class PocketConstraint(BaseModel):
+    """User-specified ligand-to-pocket site constraint for inference."""
+
+    model_config = {"extra": "forbid"}
+    ligand_chain_id: str
+    pocket_residues: list[PocketResidue]
+    max_distance: float = 4.0
+
+    @model_validator(mode="after")
+    def validate_constraint(self) -> "PocketConstraint":
+        """Validate pocket constraint geometry inputs."""
+        if not self.pocket_residues:
+            raise ValueError("pocket_residues must contain at least one residue")
+        if self.max_distance <= 0:
+            raise ValueError("max_distance must be positive")
+        return self
+
+
 class Chain(BaseModel):
     model_config = {
         "use_enum_values": False,
@@ -119,6 +144,29 @@ class Query(BaseModel):
     use_paired_msas: bool = True
     use_main_msas: bool = True
     covalent_bonds: list[Bond] | None = None
+    pocket_constraints: list[PocketConstraint] | None = None
+
+    @model_validator(mode="after")
+    def validate_pocket_constraints(self) -> "Query":
+        """Validate query-level pocket constraints."""
+        if self.pocket_constraints is None:
+            return self
+        if len(self.pocket_constraints) != 1:
+            raise ValueError("Exactly one pocket constraint is currently supported")
+
+        ligand_chain_ids = {
+            chain_id
+            for chain in self.chains
+            if chain.molecule_type == MoleculeType.LIGAND
+            for chain_id in chain.chain_ids
+        }
+        ligand_chain_id = self.pocket_constraints[0].ligand_chain_id
+        if ligand_chain_id not in ligand_chain_ids:
+            raise ValueError(
+                f"pocket constraint ligand_chain_id {ligand_chain_id!r} does not "
+                "match any ligand chain"
+            )
+        return self
 
 
 class InferenceQuerySet(BaseModel):

@@ -221,7 +221,70 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - Support for providing a list of CCD codes (for instance for polymeric ligands) will be supported in a later release of the inference pipeline.
     - Mutually exclusive with `smiles`.
 
-## 4. Example Input Json for a Single Query Complex
+(4-pocket-constraints)=
+## 4. Pocket Constraints
+
+Queries with a small-molecule ligand can optionally provide `pocket_constraints`
+to bias ligand placement toward user-specified residues. This field is defined at
+the query level, next to `chains`:
+
+```json
+{
+  "queries": {
+    "query_1": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": "A",
+          "sequence": "PVLSCGEWQCL"
+        },
+        {
+          "molecule_type": "ligand",
+          "chain_ids": "L",
+          "smiles": "CC(=O)OC1C[NH+]2CCC1CC2"
+        }
+      ],
+      "pocket_constraints": [
+        {
+          "ligand_chain_id": "L",
+          "pocket_residues": [["A", 12], ["A", 15], ["A", 48]],
+          "max_distance": 4.0
+        }
+      ]
+    }
+  }
+}
+```
+
+- `pocket_constraints` *(list[dict], optional, default = null)*
+  - A one-entry list of ligand-to-pocket constraints. When present, OpenFold3 automatically
+    runs pocket proposal and partial-diffusion refinement for the constrained
+    ligand.
+  - The current inference implementation supports exactly one pocket constraint
+    per query.
+
+- `ligand_chain_id` *(str, required)*
+  - Chain ID of the ligand to constrain. This must match one of the ligand
+    `chain_ids`.
+
+- `pocket_residues` *(list[[str, int]], required)*
+  - Residues defining the desired pocket, written as `[chain_id, residue_id]`
+    pairs.
+  - At least one residue is required.
+  - `residue_id` uses the residue numbering in the input query structure after
+    OpenFold3 builds the query atom array. For sequence inputs, this is the
+    1-based query sequence position.
+
+- `max_distance` *(float, optional, default = 4.0)*
+  - Distance threshold used when scoring whether ligand atoms contact the
+    specified pocket.
+
+Pocket constraints can be disabled for testing without editing the input
+JSON by setting `OF3_POCKET_SAMPLING=0` in the environment. Additional environment
+variables can override expert sampling defaults, but the default settings are
+intended to run without user-provided environment flags.
+
+## 5. Example Input Json for a Single Query Complex
 
 Below is a complete example of an input JSON file specifying a single bioassembly, consisting of:
 

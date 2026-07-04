@@ -40,6 +40,9 @@ from openfold3.core.data.pipelines.featurization.msa import (
     MsaFeaturizerOF3,
     MsaFeaturizerOF3Config,
 )
+from openfold3.core.data.pipelines.featurization.pocket_constraints import (
+    create_pocket_sampling_features,
+)
 from openfold3.core.data.pipelines.featurization.structure import (
     featurize_structure_of3,
 )
@@ -279,6 +282,11 @@ class InferenceDataset(Dataset):
 
         return template_features
 
+    @staticmethod
+    def _pocket_sampling_features(query: Query, atom_array: AtomArray) -> dict:
+        """Features for in-memory pocket proposal/refinement."""
+        return create_pocket_sampling_features(query=query, atom_array=atom_array)
+
     def create_all_features(
         self,
         query: Query,
@@ -317,6 +325,8 @@ class InferenceDataset(Dataset):
             query, preprocessed_atom_array, n_tokens
         )
         features.update(template_features)
+
+        features.update(self._pocket_sampling_features(query, preprocessed_atom_array))
 
         return features
 
