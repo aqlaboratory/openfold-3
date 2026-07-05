@@ -1,114 +1,94 @@
-# Integration-Test CI Failures Attributed to AWS GPU Outages
+# CI Failures Due to AWS Outage / Infrastructure Issues
 
-This file is a running record of `integration-test.yml` workflow failures on
-`aqlaboratory/openfold-3` that were classified as AWS infrastructure outages
-(GPU unavailable, or AWS could not provision the EC2 instance at all), not
-OpenFold-3 code regressions. Maintained by the daily CI scan run from a
-Claude Code on the web scheduled trigger.
+This log records integration test failures caused by AWS-side issues (GPU unavailability, vCPU quota limits, network timeouts) rather than OpenFold-3 code problems.
 
-## How a failure is classified as an AWS outage
+Workflow: [integration-test.yml](https://github.com/aqlaboratory/openfold-3/actions/workflows/integration-test.yml)
 
-A failed job is classified as an AWS outage (and recorded here without
-sending a notification) if any of the following error signatures appear in
-the job logs:
+---
 
-- **GPU-busy (in the test job, after the runner is up)**:
-  - `CUDA error: CUDA-capable device(s) is/are busy or unavailable`
-  - `cudaErrorDevicesUnavailable`
-  - `torch.AcceleratorError: CUDA error` accompanied by a device-busy message
-  - `CUDA error: no CUDA-capable device is detected`
-  - `CUDA driver` / `nvidia-smi` failures before any test code runs
-- **EC2-capacity (in the `start-aws-runner` job)**:
-  - `botocore.exceptions.ClientError: ... (InsufficientInstanceCapacity) when calling the RunInstances operation` — `start-aws-gha-runner` could not provision the GPU EC2 instance, so test code never ran.
-  - `botocore.exceptions.ClientError: ... (VcpuLimitExceeded) when calling the RunInstances operation` — vCPU quota exhausted, instance could not be provisioned.
-  - Other `botocore.exceptions.ClientError` raised by `start-aws-gha-runner`
-    before any GitHub runner registers.
+## 2026-07-05
 
-Any other failure is treated as a potential code regression and surfaces a
-notification to the maintainer instead of being recorded here.
+**Run:** [#28729724398](https://github.com/aqlaboratory/openfold-3/actions/runs/28729724398) | Branch: `main` | Time: 04:40 UTC
 
-## Failures
+**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
 
-`Time to fail` = `failing step end` − `failing job start` (i.e. wall clock
-on the *failing* job only, excluding the `start-aws-runner` preamble). It
-approximates the GPU instance time that a successful early-failure smoke
-check could save per outage — the AWS instance is alive across the whole
-window.
+**Failing jobs:**
+- `test-pixi (openfold3-cuda12) / start-aws-runner`
+- `test-pixi (openfold3-cuda13) / start-aws-runner`
 
-Each test matrix entry (`test-conda`, `test-pixi (cuda12)`, `test-pixi
-(cuda13)`) runs on its own AWS GPU runner, so multiple failures within a
-single run are independent events on different instances. Test jobs that
-were *cancelled* by matrix `fail-fast` (rather than failing on their own
-GPU) are omitted; they don't tell us whether that runner was healthy.
+---
 
-| Date (UTC) | Run ID | Failed job(s) | Time to fail | Signature |
-| --- | --- | --- | --- | --- |
-| 2026-07-04 | [28694885677](https://github.com/aqlaboratory/openfold-3/actions/runs/28694885677) | `start-aws-runner` × 2 (test-pixi openfold3-cuda12, test-pixi openfold3-cuda13) | 0m 03s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned for pixi jobs; `test-conda` succeeded end-to-end. `stop-aws-runner` cascade-failed on both pixi jobs (secondary effect — no instance mapping produced by failed start). |
-| 2026-07-03 | [28638552070](https://github.com/aqlaboratory/openfold-3/actions/runs/28638552070) | `start-aws-runner` × 2 (test-conda, test-pixi openfold3-cuda12) | 0m 31s (conda), 0m 34s (cuda12) | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned for conda or cuda12 jobs. `test-pixi cuda13` runner was provisioned on `runner-txd8dw09` but test was cancelled by fail-fast before running; stop-aws-runner successfully terminated the instance. `stop-aws-runner` cascade-failed on conda and cuda12 (secondary effect — no instance mapping produced by failed start). |
-| 2026-07-02 | [28565870069](https://github.com/aqlaboratory/openfold-3/actions/runs/28565870069) | `start-aws-runner` × 2 (test-conda, test-pixi openfold3-cuda12) | 1m 42s (conda), 0m 02s (cuda12) | Two distinct infrastructure failures: (1) `test-conda` — Docker Hub connectivity timeout pulling `python:3.12` for the `omsf/start-aws-gha-runner@v1.2.0` action container (`dial tcp … i/o timeout` to `registry-1.docker.io` on 3 consecutive attempts, ~30 s each); no EC2 call was made. New failure class — Docker Hub network unreachable from GitHub Actions runner. (2) `test-pixi cuda12` — EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. `test-pixi cuda13` cancelled by fail-fast. `stop-aws-runner` cascade-failed on cuda12 (secondary effect — no instance mapping produced by failed start). |
-| 2026-07-01 | [28494335026](https://github.com/aqlaboratory/openfold-3/actions/runs/28494335026) | `start-aws-runner` × 2 (test-pixi openfold3-cuda12, test-conda) | 0m 36s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned for cuda12 or conda jobs; `test-pixi cuda13` cancelled by fail-fast (runner was provisioned but tests never ran). `stop-aws-runner` cascade-failed on both failed jobs (secondary effect — no instance mapping produced by failed start). |
-| 2026-06-30 | [28420797925](https://github.com/aqlaboratory/openfold-3/actions/runs/28420797925) | `start-aws-runner` × 2 (test-conda, test-pixi openfold3-cuda13) | 0m 30s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned for conda or cuda13 jobs; `test-pixi cuda12` cancelled by fail-fast. `stop-aws-runner` cascade-failed on both failed jobs (secondary effect — no instance mapping produced by failed start). |
-| 2026-06-29 | [28349485369](https://github.com/aqlaboratory/openfold-3/actions/runs/28349485369) | `start-aws-runner` × 2 (test-pixi openfold3-cuda12, test-pixi openfold3-cuda13) | 0m 33s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned for pixi jobs; `test-conda` succeeded. `stop-aws-runner` cascade-failed on both pixi jobs with `TypeError: StopAWS.__init__() missing 1 required positional argument: 'instance_mapping'` (secondary effect — no instance mapping was produced by the failed start). |
-| 2026-06-28 | [28311746392](https://github.com/aqlaboratory/openfold-3/actions/runs/28311746392) | `start-aws-runner` × 2 (test-conda, test-pixi openfold3-cuda13) | 0m 02s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned for conda or cuda13 jobs; `test-pixi cuda12` cancelled by fail-fast. |
-| 2026-06-27 | [28278794097](https://github.com/aqlaboratory/openfold-3/actions/runs/28278794097) | `start-aws-runner` × 2 (test-pixi openfold3-cuda12, test-conda) | 0m 02s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned for cuda12 or conda jobs; `test-pixi cuda13` cancelled by fail-fast. `stop-aws-runner` cascade-failed on both failed jobs with `TypeError: StopAWS.__init__() missing 1 required positional argument: 'instance_mapping'` (secondary effect — no instance mapping was produced by the failed start). |
-| 2026-06-26 | [28217708548](https://github.com/aqlaboratory/openfold-3/actions/runs/28217708548) | `start-aws-runner` × 2 (test-pixi openfold3-cuda13, test-pixi openfold3-cuda12) | 0m 02s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned for pixi jobs; `test-conda` not among failed jobs. `stop-aws-runner` cascade-failed on both pixi jobs with `TypeError: StopAWS.__init__() missing 1 required positional argument: 'instance_mapping'` (secondary effect — no instance mapping was produced by the failed start). |
-| 2026-06-25 | [28147354416](https://github.com/aqlaboratory/openfold-3/actions/runs/28147354416) | `start-aws-runner` × 2 (test-pixi cuda12, test-conda) | 0m 03s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned; `test-pixi cuda13` cancelled by fail-fast. |
-| 2026-06-25 | [28187827468](https://github.com/aqlaboratory/openfold-3/actions/runs/28187827468) (branch `jandom/2026-06/ci/support-custom-amd-rocm7-runners`) | `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | — | SSL connection failure downloading `actions/checkout@v7` on AMD ROCm7 runner (`xir-xup-w34`) — `The SSL connection could not be established` after 3 retries. Network/infrastructure issue on the AMD runner; no OF3 code was executed. |
-| 2026-06-24 | [28075708064](https://github.com/aqlaboratory/openfold-3/actions/runs/28075708064) | `start-aws-runner` × 2 (test-pixi openfold3-cuda13, test-conda) | 0m 02s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned; `test-pixi cuda12` cancelled by fail-fast. |
-| 2026-06-23 | [28002658928](https://github.com/aqlaboratory/openfold-3/actions/runs/28002658928) | `start-aws-runner` × 2 (test-pixi cuda12, test-pixi cuda13) | 0m 02s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner provisioned for pixi jobs. `test-conda` succeeded. |
-| 2026-06-22 | [27930489254](https://github.com/aqlaboratory/openfold-3/actions/runs/27930489254) | `start-aws-runner` × 3 (test-conda, test-pixi cuda12, test-pixi cuda13) | 0m 02s | EC2 `VcpuLimitExceeded` for `g5.4xlarge` in `us-east-2` — vCPU quota of 64 exhausted. No GPU runner ever provisioned. |
-| 2026-06-19 | [27806279583](https://github.com/aqlaboratory/openfold-3/actions/runs/27806279583) | `start-aws-runner` × 3 (test-conda, test-pixi cuda12, test-pixi cuda13) | 0m 01s (all three) | `botocore.exceptions.ClientError: (InvalidAMIID.NotFound) ... The image id '[ami-00839c71d8f6096b4]' does not exist` — AMI referenced by workflow has been deleted/deregistered in AWS. No GPU runner ever provisioned. New signature class (AMI deletion vs. capacity exhaustion); will recur every run until the workflow's AMI reference is updated. |
-| 2026-06-16 | [27595142555](https://github.com/aqlaboratory/openfold-3/actions/runs/27595142555) | `test-conda` | 5m 24s | `CUDA-capable device(s) is/are busy or unavailable` in `TestKernels::test_dsk_forward_bf16` |
-| 2026-06-14 | [27488342368](https://github.com/aqlaboratory/openfold-3/actions/runs/27488342368) | `test-pixi (cuda13)` | 4m 27s | `cudaErrorDevicesUnavailable` in `TestKernels::test_dsk_forward_bf16` |
-| 2026-06-13 | [27456584864](https://github.com/aqlaboratory/openfold-3/actions/runs/27456584864) | `start-aws-runner` × 3 (test-conda, test-pixi cuda12, test-pixi cuda13) | 0m 09s (all three) | EC2 `InsufficientInstanceCapacity` for `g5.4xlarge` in `us-east-1` (no GPU runner ever provisioned) |
-| 2026-06-12 | [27394591508](https://github.com/aqlaboratory/openfold-3/actions/runs/27394591508) | `test-pixi (cuda12)` | 4m 56s | `torch.AcceleratorError: cudaErrorDevicesUnavailable` |
-| 2026-06-11 | [27323934636](https://github.com/aqlaboratory/openfold-3/actions/runs/27323934636) | `test-pixi (cuda13)` | 4m 28s | `CUDA-capable device(s) is/are busy or unavailable` |
-| 2026-06-10 | [27253274562](https://github.com/aqlaboratory/openfold-3/actions/runs/27253274562) | `test-pixi (cuda12)` | 5m 04s | `CUDA-capable device(s) is/are busy or unavailable` |
-| 2026-06-09 | [27183771604](https://github.com/aqlaboratory/openfold-3/actions/runs/27183771604) | `test-pixi (cuda13)` | 4m 27s | `CUDA-capable device(s) is/are busy or unavailable` |
-| 2026-06-07 | [27082700605](https://github.com/aqlaboratory/openfold-3/actions/runs/27082700605) | `test-conda` | 5m 09s | `CUDA-capable device(s) is/are busy or unavailable` |
-| 2026-06-06 | [27052461098](https://github.com/aqlaboratory/openfold-3/actions/runs/27052461098) | `test-pixi (cuda12)` | 5m 06s | `torch.AcceleratorError: cudaErrorDevicesUnavailable` |
+## 2026-07-04
 
-> Earlier failures (2026-05-26 → 2026-06-05) are visible in the GitHub
-> Actions history but have not been individually triaged. Backfill on
-> request.
+**Run:** [#28694885677](https://github.com/aqlaboratory/openfold-3/actions/runs/28694885677) | Branch: `main` | Time: 04:27 UTC
 
-## Smoke-test effectiveness (running record)
+**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
 
-The pre-build `GPU smoke check` step (host `nvidia-smi` + container
-`docker run --gpus all ... nvidia-smi`) was first exercised on a feature
-branch on 2026-06-13. Tracking whether it catches the same outages the
-integration test catches:
+**Failing jobs:**
+- `test-pixi (openfold3-cuda12) / start-aws-runner`
+- `test-pixi (openfold3-cuda13) / start-aws-runner`
 
-| Date (UTC) | Run | Failed job(s) | Smoke result | Test result | Effective? |
-| --- | --- | --- | --- | --- | --- |
-| 2026-06-13 | [27456889723](https://github.com/aqlaboratory/openfold-3/actions/runs/27456889723) (feature branch `infra/add-smoketest-to-workflow`) | `test-conda`, `test-pixi (cuda13)` (sibling `test-pixi (cuda12)` passed) | passed in 11s on all three runners | `test-conda` failed at 5m 26s, `test-pixi (cuda13)` failed at 4m 27s — both with `cudaErrorDevicesUnavailable` | **No** — two of the three runners passed NVML/container smoke yet still hit the failure inside pytest. The CUDA-runtime context-creation path isn't exercised by `nvidia-smi`. |
+---
 
-### Cost/benefit as of 2026-06-15
+## 2026-07-03
 
-- Per-outage **upper bound** on GPU time saved by a perfectly effective
-  smoke check: ~4m 30s – 5m 10s of the test job, plus avoided
-  `stop-aws-runner` ramp (which still runs either way, so net is just the
-  test-job window).
-- Smoke check **overhead** on every healthy run: ~11s × (number of test
-  jobs per run). At three test jobs/run × ~365 runs/year ≈ ~3.3 hours/year
-  of added wall time.
-- Observed smoke check **catch rate** so far: 0/1 (the one outage that hit
-  the smoke-enabled branch slipped past it).
-- Failure-mode coverage: smoke catches the *NVIDIA Container Runtime
-  injection / driver visibility* class of failure. It does not catch the
-  *CUDA runtime can't create a context* class, which is the class we have
-  actually been seeing. It also doesn't catch the EC2 capacity class
-  (which already fails fast in the runner-start job in ~10s, so no
-  intervention needed).
+**Run:** [#28638552070](https://github.com/aqlaboratory/openfold-3/actions/runs/28638552070) | Branch: `main` | Time: 04:31 UTC
 
-Given the above, the smoke check as currently designed is probably not
-worth keeping unless we start seeing failures of the class it would
-catch. Revisit before/after the next planned AMI bump or AWS-runner
-action upgrade.
+**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
 
-## Weekly report
+**Failing jobs:**
+- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner`
+- `test-pixi (openfold3-cuda12) / start-aws-runner`
 
-Ask "give me the weekly AWS-outage CI report" (or similar) and the
-assistant will read this file plus the last 7 days of `integration-test.yml`
-runs and produce a short summary: total runs, failed runs, share
-attributed to AWS outages, and any non-outage failures that surfaced.
+---
+
+## 2026-07-02
+
+**Run:** [#28565870069](https://github.com/aqlaboratory/openfold-3/actions/runs/28565870069) | Branch: `main` | Time: 04:40 UTC
+
+**Error (conda):** Docker Hub network timeout pulling `python:3.12` — `dial tcp ... i/o timeout` (infrastructure network issue).
+**Error (pixi):** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
+
+**Failing jobs:**
+- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner` (Docker Hub timeout)
+- `test-pixi (openfold3-cuda12) / start-aws-runner` (VcpuLimitExceeded)
+
+---
+
+## 2026-07-01
+
+**Run:** [#28494335026](https://github.com/aqlaboratory/openfold-3/actions/runs/28494335026) | Branch: `main` | Time: 04:50 UTC
+
+**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
+
+**Failing jobs:**
+- `test-pixi (openfold3-cuda12) / start-aws-runner`
+- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner`
+
+---
+
+## 2026-06-30
+
+**Run:** [#28420797925](https://github.com/aqlaboratory/openfold-3/actions/runs/28420797925) | Branch: `main` | Time: 04:41 UTC
+
+**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
+
+**Failing jobs:**
+- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner`
+- `test-pixi (openfold3-cuda13) / start-aws-runner`
+
+---
+
+## 2026-06-29
+
+**Run:** [#28349485369](https://github.com/aqlaboratory/openfold-3/actions/runs/28349485369) | Branch: `main` | Time: 04:53 UTC
+
+**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
+
+**Failing jobs:**
+- `test-pixi (openfold3-cuda12) / start-aws-runner`
+- `test-pixi (openfold3-cuda13) / start-aws-runner`
+
+---
+
+*Last updated by automated daily scan: 2026-07-05*
