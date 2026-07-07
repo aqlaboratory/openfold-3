@@ -60,7 +60,7 @@ docker run \
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `BASE_IMAGE` | `ubuntu:22.04` | Base Docker image |
-| `PIXI_VERSION` | `v0.65.0` | Pixi version to install |
+| `PIXI_VERSION` | `v0.72.0` | Pixi version to install |
 | `PIXI_ENV` | `openfold3-cuda12` | Pixi environment name (`openfold3-cuda12` or `openfold3-cuda13`) |
 
 ### cuEquivariance

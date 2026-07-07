@@ -1,5 +1,5 @@
 model_update:
-  presets: 
+  presets:
     - predict
     - low_mem  # to use low memory settings
   custom:
