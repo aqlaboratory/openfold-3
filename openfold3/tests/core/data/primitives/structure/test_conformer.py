@@ -151,7 +151,7 @@ _FIXED_RDKIT_SEED = 424242
     ],
 )
 def test_compute_conformer_snapshot(
-    smiles, use_random_coord_init, remove_hs, ndarrays_regression
+    smiles, use_random_coord_init, remove_hs, assert_conformer_snapshot
 ):
     mol = Chem.MolFromSmiles(smiles)
 
@@ -169,21 +169,13 @@ def test_compute_conformer_snapshot(
         )
 
     assert conf_id == 0
-    coords = out_mol.GetConformer(conf_id).GetPositions().astype(np.float64)
     elements = np.array([a.GetSymbol() for a in out_mol.GetAtoms()], dtype="U2")
     if remove_hs:
         assert "H" not in set(elements.tolist())
     else:
         assert "H" in set(elements.tolist())
 
-    ndarrays_regression.check(
-        {"coords": coords},
-        # ETKDGv3 is deterministic for a fixed seed within one RDKit build, but
-        # numerics drift across RDKit minor versions and CPU archs (aarch64 vs
-        # x86_64). Observed drift on paracetamol is ~1.5e-3 Å; give it headroom
-        # while staying ≪ chemistry scale (~0.1 Å) to still catch real regressions.
-        default_tolerance=dict(atol=5e-3, rtol=5e-3),
-    )
+    assert_conformer_snapshot(out_mol, conf_id)
 
 
 @pytest.mark.parametrize(
