@@ -661,7 +661,7 @@ class SampleDiffusion(nn.Module):
                 no_rollout_samples=no_rollout_samples,
             )
             pocket_sampling_start_frac = _batch_scalar(
-                batch, "pocket_sampling_start_frac", 0.85, float
+                batch, "pocket_sampling_start_frac", 0.75, float
             )
             pocket_sampling_jitter = _batch_scalar(
                 batch, "pocket_sampling_ligand_jitter", 0.25, float

@@ -19,10 +19,14 @@ import pytest
 import torch
 from biotite.structure import AtomArray
 from pydantic import ValidationError
+from rdkit import Chem
 
 from openfold3.core.data.pipelines.featurization.pocket_constraints import (
     create_pocket_sampling_features,
     read_bool_env,
+)
+from openfold3.core.data.primitives.structure.query import (
+    structure_with_ref_mol_from_smiles,
 )
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.core.model.structure.diffusion_module import SampleDiffusion
@@ -161,6 +165,44 @@ def test_create_pocket_sampling_features_uses_defaults(monkeypatch):
     assert "pocket_sampling_conformer_rels" not in features
 
 
+def test_smiles_ligand_atom_order_matches_rdkit_heavy_atom_order():
+    query = _query_with_pocket_constraint()
+    smiles = query.chains[1].smiles
+    structure = structure_with_ref_mol_from_smiles(
+        smiles=smiles, chain_id="L", res_name="LIG0"
+    )
+    atom_array = structure.atom_array
+    rdkit_mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+    rdkit_elements = [
+        atom.GetSymbol().upper()
+        for atom in rdkit_mol.GetAtoms()
+        if atom.GetAtomicNum() > 1
+    ]
+
+    assert [str(element).upper() for element in atom_array.element] == rdkit_elements
+
+
+def test_create_pocket_sampling_features_generates_rdkit_conformers_from_smiles(
+    monkeypatch,
+):
+    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "2")
+    monkeypatch.setenv("OF3_POCKET_SAMPLING_CONFORMER_RNG", "17")
+
+    features = create_pocket_sampling_features(
+        query=_query_with_pocket_constraint(),
+        atom_array=_atom_array(),
+    )
+
+    rels = features["pocket_sampling_conformer_rels"]
+    assert rels.shape[0] >= 1
+    assert rels.shape[1:] == (3, 3)
+    assert torch.allclose(
+        rels.mean(dim=1),
+        torch.zeros(rels.shape[0], 3),
+        atol=1e-5,
+    )
+
+
 def test_create_pocket_sampling_features_respects_disable_env(monkeypatch):
     monkeypatch.setenv("OF3_POCKET_SAMPLING", "0")
 
@@ -177,6 +219,43 @@ def test_create_pocket_sampling_features_validates_boolean_env(monkeypatch):
     monkeypatch.setenv("OF3_POCKET_SAMPLING", "maybe")
 
     with pytest.raises(ValueError, match="OF3_POCKET_SAMPLING must be one of"):
+        create_pocket_sampling_features(
+            query=_query_with_pocket_constraint(),
+            atom_array=_atom_array(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "value", "match"),
+    [
+        (
+            "OF3_POCKET_SAMPLING_NUM_PARENTS",
+            "zero",
+            "OF3_POCKET_SAMPLING_NUM_PARENTS must be an integer",
+        ),
+        (
+            "OF3_POCKET_SAMPLING_NOISE_FRAC",
+            "1.5",
+            "OF3_POCKET_SAMPLING_NOISE_FRAC must be <= 1.0",
+        ),
+        (
+            "OF3_POCKET_SAMPLING_LIGAND_JITTER",
+            "-1",
+            "OF3_POCKET_SAMPLING_LIGAND_JITTER must be >= 0.0",
+        ),
+        (
+            "OF3_POCKET_SAMPLING_CONFORMER_MAX_ITERS",
+            "0",
+            "OF3_POCKET_SAMPLING_CONFORMER_MAX_ITERS must be >= 1",
+        ),
+    ],
+)
+def test_create_pocket_sampling_features_validates_numeric_env(
+    monkeypatch, name, value, match
+):
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(ValueError, match=match):
         create_pocket_sampling_features(
             query=_query_with_pocket_constraint(),
             atom_array=_atom_array(),

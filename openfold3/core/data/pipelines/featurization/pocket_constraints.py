@@ -55,6 +55,51 @@ def read_bool_env(name: str, default: bool) -> bool:
     )
 
 
+def read_int_env(
+    name: str,
+    default: int,
+    *,
+    min_value: int | None = None,
+) -> int:
+    """Read an integer environment override with explicit validation."""
+    value = os.environ.get(name)
+    if value is None:
+        parsed = default
+    else:
+        try:
+            parsed = int(value)
+        except ValueError as exc:
+            raise ValueError(f"{name} must be an integer; got {value!r}") from exc
+    if min_value is not None and parsed < min_value:
+        raise ValueError(f"{name} must be >= {min_value}; got {parsed}")
+    return parsed
+
+
+def read_float_env(
+    name: str,
+    default: float,
+    *,
+    min_value: float | None = None,
+    max_value: float | None = None,
+) -> float:
+    """Read a float environment override with explicit validation."""
+    value = os.environ.get(name)
+    if value is None:
+        parsed = default
+    else:
+        try:
+            parsed = float(value)
+        except ValueError as exc:
+            raise ValueError(f"{name} must be a finite float; got {value!r}") from exc
+    if not np.isfinite(parsed):
+        raise ValueError(f"{name} must be a finite float; got {parsed!r}")
+    if min_value is not None and parsed < min_value:
+        raise ValueError(f"{name} must be >= {min_value}; got {parsed}")
+    if max_value is not None and parsed > max_value:
+        raise ValueError(f"{name} must be <= {max_value}; got {parsed}")
+    return parsed
+
+
 def create_pocket_sampling_features(
     query: Query, atom_array: AtomArray
 ) -> dict[str, torch.Tensor]:
@@ -109,46 +154,60 @@ def create_pocket_sampling_features(
             [float(constraint.max_distance)], dtype=torch.float32
         ),
         "pocket_sampling_num_parents": torch.tensor(
-            [int(os.environ.get("OF3_POCKET_SAMPLING_NUM_PARENTS", "16"))],
+            [read_int_env("OF3_POCKET_SAMPLING_NUM_PARENTS", 16, min_value=1)],
             dtype=torch.long,
         ),
         "pocket_sampling_candidates": torch.tensor(
-            [int(os.environ.get("OF3_POCKET_SAMPLING_CANDIDATES", "1024"))],
+            [read_int_env("OF3_POCKET_SAMPLING_CANDIDATES", 1024, min_value=1)],
             dtype=torch.long,
         ),
         "pocket_sampling_start_frac": torch.tensor(
-            [float(os.environ.get("OF3_POCKET_SAMPLING_NOISE_FRAC", "0.75"))],
+            [
+                read_float_env(
+                    "OF3_POCKET_SAMPLING_NOISE_FRAC",
+                    0.75,
+                    min_value=0.0,
+                    max_value=1.0,
+                )
+            ],
             dtype=torch.float32,
         ),
         "pocket_sampling_ligand_jitter": torch.tensor(
-            [float(os.environ.get("OF3_POCKET_SAMPLING_LIGAND_JITTER", "0.25"))],
+            [read_float_env("OF3_POCKET_SAMPLING_LIGAND_JITTER", 0.25, min_value=0.0)],
             dtype=torch.float32,
         ),
         "pocket_sampling_translate": torch.tensor(
-            [float(os.environ.get("OF3_POCKET_SAMPLING_TRANSLATE", "0.0"))],
+            [read_float_env("OF3_POCKET_SAMPLING_TRANSLATE", 0.0, min_value=0.0)],
             dtype=torch.float32,
         ),
         "pocket_sampling_center_jitter": torch.tensor(
-            [float(os.environ.get("OF3_POCKET_SAMPLING_CENTER_JITTER", "4.0"))],
+            [read_float_env("OF3_POCKET_SAMPLING_CENTER_JITTER", 4.0, min_value=0.0)],
             dtype=torch.float32,
         ),
         "pocket_sampling_surface_jitter": torch.tensor(
-            [float(os.environ.get("OF3_POCKET_SAMPLING_SURFACE_JITTER", "1.5"))],
+            [read_float_env("OF3_POCKET_SAMPLING_SURFACE_JITTER", 1.5, min_value=0.0)],
             dtype=torch.float32,
         ),
         "pocket_sampling_vdw_buffer": torch.tensor(
-            [float(os.environ.get("OF3_POCKET_SAMPLING_VDW_BUFFER", "0.225"))],
+            [read_float_env("OF3_POCKET_SAMPLING_VDW_BUFFER", 0.225, min_value=0.0)],
             dtype=torch.float32,
         ),
         "pocket_sampling_diversity_rmsd": torch.tensor(
-            [float(os.environ.get("OF3_POCKET_SAMPLING_DIVERSITY_RMSD", "0.5"))],
+            [read_float_env("OF3_POCKET_SAMPLING_DIVERSITY_RMSD", 0.5, min_value=0.0)],
             dtype=torch.float32,
         ),
     }
 
-    n_conformers = int(os.environ.get("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "32"))
+    n_conformers = read_int_env("OF3_POCKET_SAMPLING_NUM_CONFORMERS", 32, min_value=0)
     smiles = _ligand_smiles()
     if n_conformers > 0 and smiles is not None:
+        conformer_rng = read_int_env("OF3_POCKET_SAMPLING_CONFORMER_RNG", 0)
+        conformer_prune_rmsd = read_float_env(
+            "OF3_POCKET_SAMPLING_CONFORMER_PRUNE_RMSD", 0.0, min_value=0.0
+        )
+        conformer_max_iters = read_int_env(
+            "OF3_POCKET_SAMPLING_CONFORMER_MAX_ITERS", 200, min_value=1
+        )
         try:
             from rdkit import Chem
             from rdkit.Chem import AllChem
@@ -158,12 +217,8 @@ def create_pocket_sampling_features(
                 raise ValueError("RDKit failed to parse ligand SMILES")
             mol_h = Chem.AddHs(mol)
             params = AllChem.ETKDGv3()
-            params.randomSeed = int(
-                os.environ.get("OF3_POCKET_SAMPLING_CONFORMER_RNG", "0")
-            )
-            params.pruneRmsThresh = float(
-                os.environ.get("OF3_POCKET_SAMPLING_CONFORMER_PRUNE_RMSD", "0.0")
-            )
+            params.randomSeed = conformer_rng
+            params.pruneRmsThresh = conformer_prune_rmsd
             conf_ids = list(
                 AllChem.EmbedMultipleConfs(
                     mol_h,
@@ -171,18 +226,15 @@ def create_pocket_sampling_features(
                     params=params,
                 )
             )
-            max_iters = int(
-                os.environ.get("OF3_POCKET_SAMPLING_CONFORMER_MAX_ITERS", "200")
-            )
             if AllChem.MMFFHasAllMoleculeParams(mol_h):
                 for conf_id in conf_ids:
                     AllChem.MMFFOptimizeMolecule(
-                        mol_h, confId=int(conf_id), maxIters=max_iters
+                        mol_h, confId=int(conf_id), maxIters=conformer_max_iters
                     )
             else:
                 for conf_id in conf_ids:
                     AllChem.UFFOptimizeMolecule(
-                        mol_h, confId=int(conf_id), maxIters=max_iters
+                        mol_h, confId=int(conf_id), maxIters=conformer_max_iters
                     )
 
             heavy_indices = [
