@@ -80,14 +80,21 @@ jobs:
       - name: Run integration test
         run: |
           # ROCm GPU access is via kfd/dri device passthrough, not the NVIDIA
-          # container toolkit's `--gpus all`. video/render groups grant access to
-          # the render nodes; seccomp=unconfined + ipc=host are the standard ROCm
-          # container requirements.
+          # container toolkit's `--gpus all`. Numeric group IDs grant access to
+          # the render nodes without relying on group names existing in the image.
+          rocm_group_args=()
+          while IFS= read -r gid; do
+            rocm_group_args+=(--group-add "$gid")
+          done < <(
+            for device in /dev/kfd /dev/dri/card* /dev/dri/renderD*; do
+              [ -e "$device" ] && stat -c '%g' "$device"
+            done | sort -u
+          )
+
           docker run --rm \
             --device=/dev/kfd \
             --device=/dev/dri \
-            --group-add video \
-            --group-add render \
+            "${rocm_group_args[@]}" \
             --ipc=host \
             --security-opt seccomp=unconfined \
             -v ${{ github.workspace }}:/opt/openfold3 \
