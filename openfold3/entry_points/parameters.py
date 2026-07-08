@@ -123,6 +123,7 @@ def get_default_checkpoint_dir(cache_path: Path | None = None) -> Path:
         logger.info(
             f"Storing path to OpenFold parameters {param_dir} in {ckpt_root_file}"
         )
+        ckpt_root_file.parent.mkdir(parents=True, exist_ok=True)
         with open(ckpt_root_file, "w") as f:
             f.write(str(param_dir))
     return param_dir

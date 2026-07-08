@@ -1,0 +1,11 @@
+model_update:
+  presets:
+    - predict
+    - low_mem  # to use low memory settings
+  custom:
+    settings:
+      memory:
+        eval:
+          use_triton_triangle_kernels: true
+          use_deepspeed_evo_attention: false
+          use_cueq_triangle_kernels: false

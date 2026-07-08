@@ -12,15 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .activations import SwiGLU
-from .attention import (
+from openfold3.core.model.primitives.activations import SwiGLU
+from openfold3.core.model.primitives.attention import (
     DEFAULT_LMA_KV_CHUNK_SIZE,
     DEFAULT_LMA_Q_CHUNK_SIZE,
     Attention,
     GlobalAttention,
 )
-from .dropout import Dropout, DropoutColumnwise, DropoutRowwise
-from .initialization import (
+from openfold3.core.model.primitives.dropout import (
+    Dropout,
+    DropoutColumnwise,
+    DropoutRowwise,
+)
+from openfold3.core.model.primitives.initialization import (
     final_init_,
     gating_init_,
     glorot_uniform_init_,
@@ -29,8 +33,8 @@ from .initialization import (
     lecun_normal_init_,
     trunc_normal_init_,
 )
-from .linear import Linear
-from .normalization import AdaLN, LayerNorm
+from openfold3.core.model.primitives.linear import Linear
+from openfold3.core.model.primitives.normalization import AdaLN, LayerNorm
 
 __all__ = [
     "SwiGLU",

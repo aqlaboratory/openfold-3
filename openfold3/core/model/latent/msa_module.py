@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +20,6 @@ Note that this does not include the MSA sampling, which is handled in the
 MSAModuleEmbedder.
 """
 
-import sys
 from collections.abc import Sequence
 
 import torch
@@ -29,6 +29,7 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.layers.msa import MSAPairWeightedAveraging
+from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.tensor_utils import add
 
 
@@ -148,6 +149,7 @@ class MSAModuleBlock(MSABlock):
         transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -196,7 +198,7 @@ class MSAModuleBlock(MSABlock):
             if _offload_inference and inplace_safe:
                 # m: GPU, z: CPU
                 del m, z
-                assert sys.getrefcount(input_tensors[1]) == 2
+                assert_sole_holder(input_tensors[1], in_container=True)
                 input_tensors[1] = input_tensors[1].cpu()
                 torch.cuda.empty_cache()
                 m, z = input_tensors
@@ -229,7 +231,7 @@ class MSAModuleBlock(MSABlock):
         if _offload_inference and inplace_safe:
             # m: CPU, z: GPU
             del m, z
-            assert sys.getrefcount(input_tensors[0]) == 2
+            assert_sole_holder(input_tensors[0], in_container=True)
             device = input_tensors[0].device
             input_tensors[0] = input_tensors[0].cpu()
             input_tensors[1] = input_tensors[1].to(device)
@@ -246,6 +248,7 @@ class MSAModuleBlock(MSABlock):
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
@@ -255,7 +258,7 @@ class MSAModuleBlock(MSABlock):
         if _offload_inference and inplace_safe:
             # m: GPU, z: GPU
             device = z.device
-            assert sys.getrefcount(input_tensors[0]) == 2
+            assert_sole_holder(input_tensors[0], in_container=True)
             input_tensors[0] = input_tensors[0].to(device)
             m, _ = input_tensors
         else:

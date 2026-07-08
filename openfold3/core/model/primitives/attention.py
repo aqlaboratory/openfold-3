@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
 #
@@ -29,10 +30,9 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.kernels.cueq_utils import is_cuequivariance_available
+from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
 from openfold3.core.utils.tensor_utils import flatten_final_dims
-
-from .linear import Linear
 
 warnings.filterwarnings("once")
 
@@ -46,6 +46,13 @@ if deepspeed_is_installed:
 
 if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
+
+try:
+    from openfold3.core.kernels.triton.evoformer import TritonEvoformer
+except ImportError:
+    TritonEvoformer = None
+
+TRITON_AVAILABLE = TritonEvoformer is not None
 
 cueq_is_installed = is_cuequivariance_available()
 if cueq_is_installed:
@@ -70,6 +77,28 @@ if cueq_is_installed:
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
+
+# Cache of all-zero pair-bias tensors used when the Triton kernel requires a pair_bias
+# argument but the caller has none (e.g. MSA column attention). Keyed by
+# (device_str, dtype, B, H, L) so tensors are never reused across incompatible shapes.
+_ZERO_PAIR_BIAS_CACHE: dict = {}
+
+
+def _get_zero_pair_bias(
+    device: torch.device, dtype: torch.dtype, B: int, H: int, L: int
+) -> torch.Tensor:
+    """Return a cached [B, 1, H, L, L] zero tensor, allocating only on first call"""
+    key = (str(device), dtype, int(B), int(H), int(L))
+    t = _ZERO_PAIR_BIAS_CACHE.get(key)
+    if t is None or t.shape != (B, 1, H, L, L):
+        t = torch.zeros((B, 1, H, L, L), device=device, dtype=dtype)
+        _ZERO_PAIR_BIAS_CACHE[key] = t
+    return t
+
+
+def clear_zero_pair_bias_cache():
+    """Clear the cached zero pair-bias tensors."""
+    _ZERO_PAIR_BIAS_CACHE.clear()
 
 
 @torch.jit.ignore
@@ -309,6 +338,7 @@ class Attention(nn.Module):
         biases: list[torch.Tensor] | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
@@ -329,6 +359,9 @@ class Attention(nn.Module):
             use_cueq_triangle_kernels:
                 whether to use cuequivariance triangle kernels. Mutually
                 exclusive with use_lma
+            use_triton_triangle_kernels:
+                Whether to use Triton-based memory-efficient attention kernel.
+                Mutually exclusive with other kernel options.
             use_lma:
                 Whether to use low-memory attention (Staats & Rabe 2021). If
                 none of the "use_<...>" flags are True, a stock PyTorch
@@ -363,8 +396,13 @@ class Attention(nn.Module):
         if use_deepspeed_evo_attention and q_x.shape[-2] <= 16:
             use_deepspeed_evo_attention = False
 
+        if use_triton_triangle_kernels and q_x.shape[-2] <= 16:
+            use_triton_triangle_kernels = False
+
         attn_options = [
-            use_deepspeed_evo_attention or use_cueq_triangle_kernels,
+            use_deepspeed_evo_attention
+            or use_cueq_triangle_kernels
+            or use_triton_triangle_kernels,
             use_lma,
             use_high_precision,
         ]
@@ -374,11 +412,15 @@ class Attention(nn.Module):
         if biases is None:
             biases = []
 
-        # DeepSpeed attention kernel and cuequivariance kernel apply scaling internally
+        # DeepSpeed, cuequivariance, and Triton kernels apply scaling internally
         q, k, v = self._prep_qkv(
             q_x,
             kv_x,
-            apply_scale=not (use_deepspeed_evo_attention or use_cueq_triangle_kernels),
+            apply_scale=not (
+                use_deepspeed_evo_attention
+                or use_cueq_triangle_kernels
+                or use_triton_triangle_kernels
+            ),
         )
 
         # cuequivariance kernel takes precedence over use_deepspeed_evo_attention
@@ -397,6 +439,15 @@ class Attention(nn.Module):
                     "provide up to two bias terms"
                 )
             o = _deepspeed_evo_attn(q, k, v, biases)
+        elif use_triton_triangle_kernels:
+            if not TRITON_AVAILABLE or TritonEvoformer is None:
+                raise RuntimeError(
+                    "Triton kernels requested (use_triton_triangle_kernels=True) "
+                    "but openfold3.core.kernels.triton is not available. "
+                    "Ensure the package is installed with Triton support."
+                )
+            o = _triton_evo_attn(q, k, v, biases)
+
         elif use_lma:
             biases = [
                 b.expand(b.shape[:-2] + (q_x.shape[-2],) + (kv_x.shape[-2],))
@@ -506,11 +557,6 @@ def _deepspeed_evo_attn(
         biases:
             List of biases that broadcast to [*, H, Q, K]
     """
-    from openfold3 import hacks
-
-    hacks.prep_deepspeed()
-    hacks.prep_cutlass()
-
     if not ds4s_is_installed:
         raise ValueError(
             "_deepspeed_evo_attn requires that DeepSpeed be installed "
@@ -557,6 +603,73 @@ def _deepspeed_evo_attn(
     # Convert back to original shape and dtype
     o = o.reshape(orig_shape).to(dtype=orig_dtype)
 
+    return o
+
+
+@torch.compiler.disable
+def _triton_evo_attn(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    biases: list[torch.Tensor],
+):
+    """
+    Compute attention using the Triton EvoformerAttention kernel.
+
+    Args:
+        q:
+            [*, H, Q, C_hidden] query data
+        k:
+            [*, H, K, C_hidden] key data
+        v:
+            [*, H, V, C_hidden] value data
+        biases:
+            List of biases that broadcast to [*, H, Q, K]
+    """
+
+    def reshape_dims(x):
+        no_batch_dims = len(x.shape[:-3])
+        if no_batch_dims < 2:
+            return x.reshape(*((1,) * (2 - no_batch_dims) + x.shape))
+        if no_batch_dims > 2:
+            return x.reshape(*((x.shape[0], -1) + x.shape[-3:]))
+        return x
+
+    # [*, Q/K, H, C_hidden]
+    q = q.transpose(-2, -3)
+    k = k.transpose(-2, -3)
+    v = v.transpose(-2, -3)
+
+    # Reshape to [B, N_seq, N_res, H, C_hidden] as required by the kernel.
+    orig_shape = q.shape
+    if len(orig_shape[:-3]) != 2:
+        q = reshape_dims(q)
+        k = reshape_dims(k)
+        v = reshape_dims(v)
+        biases = [reshape_dims(b) for b in biases]
+
+    # When there is no pair bias (e.g. MSA column attention), pass a zero tensor
+    # and set HAS_PAIR_BIAS=False so the kernel skips all pair_bias loads.
+    has_pair_bias = len(biases) == 2
+    if not has_pair_bias:
+        Batch, N_seq, N_res, Head, Dim = q.shape
+        biases.append(_get_zero_pair_bias(q.device, q.dtype, Batch, Head, N_res))
+
+    # Kernel requires fp16 or bf16; cast if needed.
+    orig_dtype = q.dtype
+    if orig_dtype not in [torch.bfloat16, torch.float16]:
+        o = TritonEvoformer(
+            q.to(dtype=torch.bfloat16),
+            k.to(dtype=torch.bfloat16),
+            v.to(dtype=torch.bfloat16),
+            biases[0].to(dtype=torch.bfloat16),
+            biases[1].to(dtype=torch.bfloat16),
+            has_pair_bias,
+        ).to(dtype=orig_dtype)
+    else:
+        o = TritonEvoformer(q, k, v, biases[0], biases[1], has_pair_bias)
+
+    o = o.reshape(orig_shape)
     return o
 
 
@@ -631,40 +744,73 @@ def _cueq_triangle_attn(q, k, v, biases, scale):
     )
     mask_bias, triangle_bias = biases
 
-    ##VS: the cueq attn kernel only allows up to 5 input dimensions:
-    ## (batch,*,n_head, *,c_hidden); batch here denotes multiple
-    ## structures in a single fwd pass; while this is fine for the
-    ## pairformer, in the template module we have
-    ## inputs of shape (batch, n_tmpl, n_res,n_head, n_res, c_in)
-    ## so therefore we need to reshape the input to remove the
-    ## extra batch dimension, then reshape it back to the original
+    # cuequivariance triangle_attention expects 5D inputs:
+    #   q/k/v: (B, N, H, S, D)
+    #   bias:  (B, 1, H, S_qo, S_kv)   — N must be 1
+    #   mask:  (B, N, 1, 1, S_kv)
+    #
+    # Inputs arrive here in one of three shapes depending on call path:
+    #   6D — template module: (batch, n_tmpl, N, H, S, D)  → collapse to 5D
+    #   5D — standard pairformer: already correct
+    #   4D — after chunk_layer flattens batch dims: (chunk, H, S, D) → promote to 5D
+
+    # 6D → 5D: merge the (batch, n_tmpl) dims into a single batch dim.
     if len(q.shape) > 5:
         assert len(q.shape) == 6, (
             "max number of dimensions for CUEQ triangle attention kernel is 6"
         )
         is_batched_input = True
-        batch, n_tmpl, n_res, n_head, c_hidden = q.shape[:5]
+        batch, n_tmpl = q.shape[:2]
+        # q: (batch, n_tmpl, N, H, S, D) → (batch*n_tmpl, N, H, S, D)
         q = q.view(batch * n_tmpl, *q.shape[2:])
         k = k.view(batch * n_tmpl, *k.shape[2:])
         v = v.view(batch * n_tmpl, *v.shape[2:])
+        # mask_bias: (batch, n_tmpl, N, 1, 1, S) → (batch*n_tmpl, N, 1, 1, S)
         mask_bias = mask_bias.view(batch * n_tmpl, *mask_bias.shape[2:])
+        # triangle_bias: (batch, n_tmpl, 1, H, S, S) → (batch*n_tmpl, 1, H, S, S)
         triangle_bias = triangle_bias.view(batch * n_tmpl, *triangle_bias.shape[2:])
-    ##VS: The mask for the triangle attention kernel needs to be a
-    ## boolean mask - the default mask is an additive mask, where
-    ## 0 means no masking and -inf means masking. so we need to
-    ## convert this to a boolean mask where positions to keep are
-    ## True, and positions to mask are False.
+
+    # 4D → 5D: chunk_layer flattens batch dims and slices into chunks.
+    # chunk_layer skips expanding bias when all its batch dims are 1,
+    # so bias may have B=1 while q has B=chunk. In this case, we're good - otherwise:
+    # Promote to 5D with N=1 so each chunk entry is an independent batch item.
+    # cuequivariance >=0.8 requires bias shape (B, 1, H, Q, K) with exact
+    # batch match — no implicit broadcasting.
+    is_chunked_input = len(q.shape) == 4 and triangle_bias.shape[0] > 1
+    if is_chunked_input:
+        # q: (chunk, H, S, D) → (chunk, 1, H, S, D)
+        q = q.unsqueeze(1)
+        k = k.unsqueeze(1)
+        v = v.unsqueeze(1)
+        # mask_bias: (chunk, 1, 1, S) → (chunk, 1, 1, 1, S)
+        mask_bias = mask_bias.unsqueeze(1)
+        # triangle_bias: (chunk, H, S, S) → (chunk, 1, H, S, S)
+        #   or: (1, H, S, S) → (1, 1, H, S, S) when chunk_layer kept B=1
+        triangle_bias = triangle_bias.unsqueeze(1)
+        # This should not happen. Just in case. Expand to match.
+        if triangle_bias.shape[0] != q.shape[0]:
+            # (1, 1, H, S, S) → (chunk, 1, H, S, S)
+            triangle_bias = triangle_bias.expand(q.shape[0], *triangle_bias.shape[1:])
+        if mask_bias.shape[0] != q.shape[0]:
+            mask_bias = mask_bias.expand(q.shape[0], *mask_bias.shape[1:])
+
+    # Convert additive mask (0 = keep, -inf = mask) to boolean (True = keep).
     if mask_bias.dtype != torch.bool:
         mask_bias = mask_bias == 0
 
+    # At this point all tensors are 5D with the shapes expected by the kernel.
     o = triangle_attention(q, k, v, bias=triangle_bias, mask=mask_bias, scale=scale)
 
+    # Undo the promotions in reverse order.
     if len(q.shape) == 4:
         ##VS: There's a bug in cueq where if the input is missing the batch dim
         ## the outputs adds it in and so we need to remove it here
         o = o.squeeze(0)
-
-    if is_batched_input:
+    elif is_chunked_input:
+        # (chunk, 1, H, S, D) → (chunk, H, S, D)
+        o = o.squeeze(1)
+    elif is_batched_input:
+        # (batch*n_tmpl, N, H, S, D) → (batch, n_tmpl, N, H, S, D)
         o = o.view(batch, n_tmpl, *o.shape[1:])
 
     o = o.transpose(-2, -3)

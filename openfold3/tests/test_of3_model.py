@@ -36,6 +36,7 @@ class TestOF3Model:
         train=True,
         reduce_model_size=True,
         use_deepspeed_evo_attention=False,
+        use_triton_triangle_kernels=False,
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -57,6 +58,9 @@ class TestOF3Model:
         config.settings.memory.eval.use_deepspeed_evo_attention = (
             use_deepspeed_evo_attention
         )
+
+        if use_triton_triangle_kernels:
+            config.settings.memory.eval.use_triton_triangle_kernels = True
         config.architecture.loss_module.diffusion.chunk_size = 16
 
         of3 = OpenFold3AllAtom(config).to(device=device, dtype=dtype)
@@ -163,6 +167,7 @@ class TestOF3Model:
         n_msa = 10
         n_templ = 3
 
+        is_rocm = torch.cuda.is_available() and torch.version.hip is not None
         is_train = model_phase == "train"
         self.run_model(
             batch_size=batch_size,
@@ -172,7 +177,8 @@ class TestOF3Model:
             dtype=dtype,
             train=is_train,
             reduce_model_size=True,
-            use_deepspeed_evo_attention=True,
+            use_deepspeed_evo_attention=not is_rocm,
+            use_triton_triangle_kernels=is_rocm,
         )
 
     @pytest.mark.slow
@@ -187,6 +193,7 @@ class TestOF3Model:
         n_msa = 16384
         n_templ = 4
 
+        is_rocm = torch.cuda.is_available() and torch.version.hip is not None
         self.run_model(
             batch_size=batch_size,
             n_token=n_token,
@@ -195,7 +202,8 @@ class TestOF3Model:
             dtype=dtype,
             train=False,
             reduce_model_size=False,
-            use_deepspeed_evo_attention=True,
+            use_deepspeed_evo_attention=not is_rocm,
+            use_triton_triangle_kernels=is_rocm,
         )
 
     @compare_utils.skip_unless_triton_installed()
@@ -206,6 +214,7 @@ class TestOF3Model:
         n_msa = 16384
         n_templ = 4
 
+        is_rocm = torch.cuda.is_available() and torch.version.hip is not None
         self.run_model(
             batch_size=batch_size,
             n_token=n_token,
@@ -214,5 +223,6 @@ class TestOF3Model:
             dtype=torch.bfloat16,
             train=True,
             reduce_model_size=False,
-            use_deepspeed_evo_attention=True,
+            use_deepspeed_evo_attention=not is_rocm,
+            use_triton_triangle_kernels=is_rocm,
         )

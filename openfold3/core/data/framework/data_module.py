@@ -42,6 +42,9 @@ and highlight where you currently are in the process:
 import dataclasses
 import enum
 import logging
+import multiprocessing
+import platform
+import sys
 import warnings
 from functools import partial
 from typing import Any
@@ -156,9 +159,81 @@ class DataModuleConfig(BaseModel):
     num_workers_validation: int = 0
     prefetch_factor_validation: int | None = None
     persistent_workers: bool = False
-    multiprocessing_context: str | None = None
+    multiprocessing_context: str | None = "openfold-default"
     data_seed: int = 42
     epoch_len: int = 1
+
+    @staticmethod
+    def safe_multiprocessing_context(
+        multiprocessing_context: str | None, num_workers: int
+    ) -> str | None:
+        """
+        Returns multiprocessing start methods with safer/sensible defaults:
+          - fork when using MPS
+          - forkserver for linux, matching the new 3.14 default
+          - default otherwise
+
+        For general info on risks and defaults across platforms
+        and python versions see:
+          https://docs.pytorch.org/docs/stable/data.html#torch.utils.data.DataLoader
+          https://docs.pytorch.org/docs/stable/notes/multiprocessing.html#multiprocessing-poison-fork-note
+          https://docs.python.org/3/library/multiprocessing.html#contexts-and-start-methods
+        """
+
+        # Do not bother if not using multiprocessing
+        if num_workers == 0:
+            return None
+
+        # Set safe defaults
+        if multiprocessing_context == "openfold-default":
+            # Use fork to create processes when using MPS. See:
+            #  - https://github.com/pytorch/pytorch/issues/70344
+            #  - https://github.com/pytorch/pytorch/issues/87688
+            if platform.system() == "Darwin" and torch.backends.mps.is_available():
+                return "fork"
+
+            # Use forkserver in linux
+            # Backports the new python 3.14 default in previous python versions.
+            # An alternative for further safety would be "spawn". Avoid "fork".
+            # See: https://github.com/python/cpython/issues/84559
+            if platform.system() == "Linux":
+                return "forkserver"
+
+            # Use the platform default otherwise - "spawn" at the time of writing
+            return multiprocessing.get_start_method()
+
+        # Warn about unsafe defaults
+        else:
+            if (
+                platform.system() == "Darwin"
+                and torch.backends.mps.is_available()
+                and multiprocessing_context != "fork"
+            ):
+                logger.warning(
+                    "Using multiprocessing context "
+                    f"{multiprocessing_context} on MPS may cause "
+                    "issues. Consider using 'fork' or "
+                    "'openfold-default' (which resolves to "
+                    "'fork' on MPS).",
+                    stacklevel=2,
+                )
+            if platform.system() == "Linux":
+                dangerous_start_method = (
+                    multiprocessing_context == "fork"
+                    or multiprocessing_context is None
+                    and sys.version_info < (3, 14)
+                )
+                if dangerous_start_method:
+                    logger.warning(
+                        "Using 'fork' multiprocessing context "
+                        "in linux may cause issues. Consider "
+                        "using 'spawn', 'forkserver' or "
+                        "'openfold-default' (which resolves to "
+                        "'forkserver' on linux).",
+                        stacklevel=2,
+                    )
+
+        return multiprocessing_context
 
 
 class DataModule(pl.LightningDataModule):
@@ -443,8 +518,10 @@ class DataModule(pl.LightningDataModule):
 
         persistent_workers = self.persistent_workers and num_workers > 0
         prefetch_factor = prefetch_factor if num_workers > 0 else None
-        multiprocessing_context = (
-            self.multiprocessing_context if num_workers > 0 else None
+        # Set a sensible default for multiprocesssing start method
+        # depending on platform and python version.
+        multiprocessing_context = DataModuleConfig.safe_multiprocessing_context(
+            self.multiprocessing_context, num_workers
         )
 
         generator = self.generators.get(mode)
@@ -460,8 +537,11 @@ class DataModule(pl.LightningDataModule):
         # instead of pl.seed_everything(workers=True), so this function is
         # passed explicitly here.
         worker_init_fn = partial(pl_worker_init_function, rank=self.global_rank)
+
         logger.debug(
-            f"Creating {mode} dataloader: num_workers={num_workers}, "
+            f"Creating {mode} dataloader: "
+            f"num_workers={num_workers}, "
+            f"multiprocessing_context={multiprocessing_context}, "
             f"rank={self.global_rank}."
         )
         return DataLoader(
@@ -591,8 +671,16 @@ class InferenceDataModule(DataModule):
         self.inference_config = _configs.configs[0]
 
     def prepare_data(self) -> None:
+        logger.info("=" * 60)
+        logger.info(
+            f"Prepare data: use_msa_server={self.use_msa_server}, "
+            f"use_templates={self.use_templates}"
+        )
+        logger.info("=" * 60)
+
         # Colabfold msa preparation
         if self.use_msa_server:
+            logger.info("Running ColabFold MSA server...")
             self.inference_config.query_set = preprocess_colabfold_msas(
                 inference_query_set=self.inference_config.query_set,
                 compute_settings=self.msa_computation_settings,
@@ -604,11 +692,13 @@ class InferenceDataModule(DataModule):
             )
 
         if self.use_templates:
+            logger.info("Running template preprocessing...")
             template_preprocessor = TemplatePreprocessor(
                 input_set=self.inference_config.query_set,
                 config=self.inference_config.template_preprocessor_settings,
             )
             template_preprocessor()
+            logger.info("Template preprocessing complete!")
 
     def setup(self, stage=None):
         """Broadcast updated query set to all ranks if multiple GPUs are used."""

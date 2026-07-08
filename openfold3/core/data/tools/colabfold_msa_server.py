@@ -18,7 +18,6 @@ import os
 import random
 import shutil
 import tarfile
-import tempfile
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -54,6 +53,15 @@ TQDM_BAR_FORMAT = (
 )
 
 
+class ColabFoldServerResultError(RuntimeError):
+    """Raised when a ColabFold MSA server download is missing expected outputs.
+
+    The public ColabFold server can return the wrong cached job for a ticket --
+    e.g. an unpaired MSA (no ``pair.a3m``) in response to a paired request -- which
+    otherwise surfaces as an opaque ``FileNotFoundError`` downstream (issue #269).
+    """
+
+
 class MsaServerPairingStrategy(IntEnum):
     """Enum for MSA server pairing strategy."""
 
@@ -62,6 +70,50 @@ class MsaServerPairingStrategy(IntEnum):
 
     def __str__(self) -> str:
         return self.name.lower()
+
+
+def _validate_expected_msa_files(
+    a3m_files: list[str], tar_gz_file: str, *, use_pairing: bool
+) -> None:
+    """Verify the download produced every expected a3m file (present and non-empty).
+
+    Guards against the ColabFold server returning an unexpected or incomplete result
+    (issue #269): instead of letting a later ``open()`` raise a bare
+    ``FileNotFoundError``, raise a clear error naming the expected files, the missing
+    ones, and what the downloaded tarball actually contained.
+
+    Args:
+        a3m_files: Absolute paths of the a3m files this query is expected to yield.
+        tar_gz_file: Path of the downloaded ``out.tar.gz`` (read only for diagnostics).
+        use_pairing: Whether this was a paired query (used only for the message).
+
+    Raises:
+        ColabFoldServerResultError: If any expected file is missing or empty.
+    """
+    missing: list[str] = [
+        f for f in a3m_files if not os.path.isfile(f) or os.path.getsize(f) == 0
+    ]
+    if not missing:
+        return
+
+    try:
+        with tarfile.open(tar_gz_file) as tar_gz:
+            members: list[str] = sorted(m.name for m in tar_gz.getmembers())
+    except (tarfile.TarError, OSError):
+        members = ["<missing or unreadable out.tar.gz>"]
+
+    query_kind = "paired" if use_pairing else "unpaired"
+    raise ColabFoldServerResultError(
+        f"ColabFold {query_kind} MSA query returned an unexpected or incomplete "
+        "result.\n"
+        f"  expected (non-empty): {[os.path.basename(f) for f in a3m_files]}\n"
+        f"  missing/empty:        {[os.path.basename(f) for f in missing]}\n"
+        f"  tarball contained:    {members}\n"
+        f"  download:             {tar_gz_file}\n"
+        "The MSA server likely returned the wrong cached job for this query "
+        "(e.g. an unpaired result for a paired request; see issue #269). Delete the "
+        "raw output directory and retry."
+    )
 
 
 def query_colabfold_msa_server(
@@ -112,6 +164,12 @@ def query_colabfold_msa_server(
     """
 
     submission_endpoint = "ticket/pair" if use_pairing else "ticket/msa"
+
+    # Normalize the host: a pydantic Url stringifies with a trailing slash, which
+    # would produce a doubled slash (e.g. ".../com//ticket/msa") in the f-strings
+    # below. The server 301-redirects the doubled slash, and requests downgrades
+    # the POST to GET while dropping the body, yielding a misleading "invalid ID".
+    host_url = str(host_url).rstrip("/")
 
     headers = {}
     if user_agent != "":
@@ -333,6 +391,10 @@ def query_colabfold_msa_server(
     if any(not os.path.isfile(a3m_file) for a3m_file in a3m_files):
         with tarfile.open(tar_gz_file) as tar_gz:
             tar_gz.extractall(path)
+
+    # Validate the download produced the expected outputs before any downstream
+    # code blindly opens them (issue #269).
+    _validate_expected_msa_files(a3m_files, tar_gz_file, use_pairing=use_pairing)
 
     # Process templates
     if use_templates:
@@ -687,22 +749,40 @@ def remap_colabfold_template_chain_ids(
         for entry_id, l2a in label_to_author_maps.items()
     }
 
-    # Remap chain IDs
+    # Remap chain IDs, dropping rows whose author chain ID cannot be resolved
     for top_n in per_rep.values():
         remapped_ids = []
-        for template_id in top_n[1]:
+        rows_to_drop: list[int] = []
+        for idx, template_id in zip(top_n.index, top_n[1]):
             entry_id, author_chain_id = template_id.split("_")
 
             author_to_label = author_to_label_maps.get(entry_id, {})
-            if author_chain_id not in author_to_label:
-                raise RuntimeError(
-                    f"Author chain {author_chain_id} not found in {entry_id}. "
-                    f"Available author chains: {sorted(author_to_label.keys())}"
+            if not author_to_label:
+                # No RCSB chain mapping at all (e.g. obsolete/removed PDB).
+                # Fall back to using the author chain ID as the label chain ID.
+                logger.warning(
+                    f"No RCSB chain mapping found for {entry_id}. "
+                    f"This entry may be obsolete. Falling back to "
+                    f"author chain ID '{author_chain_id}' as label chain ID."
                 )
-            label_chain_id = author_to_label[author_chain_id][0]
+                label_chain_id = author_chain_id
+            elif author_chain_id not in author_to_label:
+                logger.warning(
+                    f"Skipping template {template_id}: author chain "
+                    f"{author_chain_id} not found in {entry_id}. "
+                    f"Available author chains: "
+                    f"{sorted(author_to_label.keys())}"
+                )
+                rows_to_drop.append(idx)
+                continue
+            else:
+                label_chain_id = author_to_label[author_chain_id][0]
 
             remapped_ids.append(f"{entry_id}_{label_chain_id}")
 
+        if rows_to_drop:
+            top_n.drop(index=rows_to_drop, inplace=True)
+            top_n.reset_index(drop=True, inplace=True)
         top_n[1] = remapped_ids
 
     return per_rep
@@ -930,7 +1010,7 @@ def add_msa_paths_to_iqs(
 
                 if chain.main_msa_file_paths is not None:
                     warnings.warn(
-                        f"Query {query_name} chain {chain} already has "
+                        f"Query {query_name} chain {chain.chain_ids} already has "
                         "main_msa_file_paths set. These are now overwritten "
                         "with path(s) to the ColabFold MSAs.",
                         stacklevel=2,
@@ -959,13 +1039,22 @@ def add_msa_paths_to_iqs(
 
                     if chain.paired_msa_file_paths is not None:
                         warnings.warn(
-                            f"Query {query_name} chain {chain} already has "
+                            f"Query {query_name} chain {chain.chain_ids} already has "
                             "paired_msa_file_paths set. These are now "
                             "overwritten with path(s) to the ColabFold MSAs.",
                             stacklevel=2,
                         )
                     chain.paired_msa_file_paths = [paired_msa_file_paths]
 
+                if chain.template_cif_paths is not None:
+                    warnings.warn(
+                        f"Query {query_name} chain {chain.chain_ids} already has "
+                        "template_cif_paths set. These are not overwritten with "
+                        "path(s) to the template CIF files from the "
+                        "ColabFold MSA server.",
+                        stacklevel=2,
+                    )
+                    continue
                 # Add template alignment file paths
                 template_alignment_file_path = (
                     output_directory
@@ -997,13 +1086,17 @@ class MsaComputationSettings(BaseModel):
     server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
     save_mappings: bool = True
-    msa_output_directory: Path = Path(tempfile.gettempdir()) / "of3_colabfold_msas"
+    msa_output_directory: Path | None = None
     cleanup_msa_dir: bool = True
 
     @model_validator(mode="after")
     def create_dir(self) -> "MsaComputationSettings":
         """Creates the output directory if it does not exist."""
-        if not self.msa_output_directory.exists():
+        if self.msa_output_directory is None:
+            from openfold3.core.data.tools.utils import get_of3_tmpdir
+
+            self.msa_output_directory = get_of3_tmpdir("colabfold_msas")
+        elif not self.msa_output_directory.exists():
             self.msa_output_directory.mkdir(parents=True, exist_ok=True)
         return self
 
@@ -1110,6 +1203,16 @@ def preprocess_colabfold_msas(
     # Save mappings to file
     if compute_settings.save_mappings:
         save_colabfold_mappings(colabfold_mapper, output_directory)
+
+    # Abort early if a stale raw directory exists — it contains unvalidated
+    # out.tar.gz files that would be silently reused for the wrong query.
+    raw_dir = output_directory / "raw"
+    if raw_dir.exists():
+        raise FileExistsError(
+            f"ColabFold raw directory already exists: {raw_dir}\n"
+            "This is likely left over from a previous failed run. "
+            "Please remove it before starting a new run."
+        )
 
     # Run batch queries for main and paired MSAs
     colabfold_query_runner = ColabFoldQueryRunner(

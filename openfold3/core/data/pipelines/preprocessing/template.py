@@ -19,7 +19,6 @@ import multiprocessing as mp
 import os
 import random
 import re
-import tempfile
 import traceback
 from datetime import datetime
 from functools import wraps
@@ -34,6 +33,7 @@ from biotite.structure import AtomArray
 from biotite.structure.io import pdbx
 from biotite.structure.io.pdbx import CIFFile
 from func_timeout import func_timeout
+from func_timeout.exceptions import FunctionTimedOut
 from pydantic import (
     BaseModel,
     BeforeValidator,
@@ -50,6 +50,7 @@ from openfold3.core.data.io.dataset_cache import read_datacache, write_datacache
 from openfold3.core.data.io.s3 import open_local_or_s3
 from openfold3.core.data.io.sequence.template import (
     A3mParser,
+    CifDirectParser,
     TemplateData,
     parse_entry_chain_id,
     parse_hmmsearch_sto,
@@ -91,6 +92,8 @@ from openfold3.core.data.resources.residues import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # TODO: rename variables to be PDB-agnostic
@@ -1486,9 +1489,33 @@ class TemplatePreprocessorInputTrain(BaseModel):
 
 
 class TemplatePreprocessorInputInference(BaseModel):
-    aln_path: Path
+    aln_path: Path | None = None
     query_seq_str: str
     template_entry_chain_ids: list[str] | None = None
+    template_cif_paths: list[Path] | None = None
+    template_cif_chain_ids: list[str | None] | None = None
+
+    @model_validator(mode="after")
+    def validate_inputs(self) -> "TemplatePreprocessorInputInference":
+        """Validate template input consistency."""
+        if self.aln_path is not None and self.template_cif_paths is not None:
+            raise ValueError(
+                "Cannot provide both 'aln_path' and 'template_cif_paths'. "
+                "Choose one mode: alignment-based or CIF-direct."
+            )
+
+        if self.template_cif_chain_ids is not None:
+            if self.template_cif_paths is None:
+                raise ValueError(
+                    "'template_cif_chain_ids' requires 'template_cif_paths'"
+                )
+            if len(self.template_cif_chain_ids) != len(self.template_cif_paths):
+                raise ValueError(
+                    f"Length mismatch: {len(self.template_cif_paths)} CIF files "
+                    f"but {len(self.template_cif_chain_ids)} chain IDs"
+                )
+
+        return self
 
 
 class TemplatePreprocessorSettings(BaseModel):
@@ -1541,6 +1568,9 @@ class TemplatePreprocessorSettings(BaseModel):
             Number of processes to use template preprocessing.
         chunksize (int):
             Number of tasks per worker in multiprocessing.
+        preprocess_timeout (int):
+                Maximum time in seconds allowed for preprocessing templates for a
+                single query chain. Defaults to 60.
         structure_directory (DirectoryPath):
             Directory containing raw template structures or where template structures
             are to be downloaded.
@@ -1573,6 +1603,7 @@ class TemplatePreprocessorSettings(BaseModel):
     max_release_date: datetime | None = None
     min_release_date_diff: int | None = None
     max_templates: int = 20
+    cif_direct_min_score: float = 0.1
     min_f_resolved: float = 0.1
 
     fetch_missing_structures: bool = True
@@ -1581,6 +1612,7 @@ class TemplatePreprocessorSettings(BaseModel):
     create_logs: bool = False
     n_processes: int = 1
     chunksize: int = 1
+    preprocess_timeout: int = 60
 
     structure_directory: Path | None = None
     structure_file_format: str = "cif"
@@ -1604,9 +1636,11 @@ class TemplatePreprocessorSettings(BaseModel):
                 "pipeline."
             )
 
-        self.output_directory = (
-            self.output_directory or Path(tempfile.gettempdir()) / "of3_template_data"
-        )
+        if self.output_directory is None:
+            from openfold3.core.data.tools.utils import get_of3_tmpdir
+
+            self.output_directory = get_of3_tmpdir("template_data")
+
         base = self.output_directory
 
         # only set these if the user did not give them explicitly
@@ -1665,12 +1699,15 @@ class TemplatePreprocessor:
         self.min_release_date_diff = config.min_release_date_diff
         self.max_templates = config.max_templates
 
+        self.cif_direct_min_score = config.cif_direct_min_score
+
         self.fetch_missing_structures = config.fetch_missing_structures
         self.create_precache = config.create_precache
         self.preparse_structures = config.preparse_structures
         self.create_logs = config.create_logs
         self.n_processes = config.n_processes
         self.chunksize = config.chunksize
+        self.preprocess_timeout = config.preprocess_timeout
 
         self.structure_directory = config.structure_directory
         self.structure_file_format = config.structure_file_format
@@ -1708,24 +1745,51 @@ class TemplatePreprocessor:
                 if chain.molecule_type not in self.moltypes:
                     continue
 
-                if chain.template_alignment_file_path is None:
+                # CASE 1: Alignment file mode
+                if chain.template_alignment_file_path is not None:
+                    template_alignment_path = Path(chain.template_alignment_file_path)
+                    if template_alignment_path not in paths_seen:
+                        paths_seen.add(template_alignment_path)
+                        inputs.append(
+                            TemplatePreprocessorInputInference(
+                                aln_path=template_alignment_path,
+                                query_seq_str=chain.sequence,
+                                template_entry_chain_ids=chain.template_entry_chain_ids,
+                                template_cif_paths=None,
+                            )
+                        )
+
+                # CASE 2: CIF-direct mode
+                elif chain.template_cif_paths is not None:
+                    cif_paths_tuple = tuple(
+                        sorted(str(p) for p in chain.template_cif_paths)
+                    )
+                    chain_ids_tuple = (
+                        tuple(chain.template_cif_chain_ids)
+                        if chain.template_cif_chain_ids
+                        else ()
+                    )
+                    cache_key = (cif_paths_tuple, chain_ids_tuple)
+
+                    if cache_key not in paths_seen:
+                        paths_seen.add(cache_key)
+                        inputs.append(
+                            TemplatePreprocessorInputInference(
+                                aln_path=None,
+                                query_seq_str=chain.sequence,
+                                template_entry_chain_ids=None,
+                                template_cif_paths=chain.template_cif_paths,
+                                template_cif_chain_ids=chain.template_cif_chain_ids,
+                            )
+                        )
+
+                else:
                     print(
-                        f"Warning: No template alignment file path provided for chain "
+                        f"Warning: No template data provided for chain "
                         f"{chain.chain_ids} of query {query_name}, skipping..."
                     )
                     continue
 
-                template_alignment_path = Path(chain.template_alignment_file_path)
-
-                if template_alignment_path not in paths_seen:
-                    paths_seen.add(template_alignment_path)
-                    inputs.append(
-                        TemplatePreprocessorInputInference(
-                            aln_path=template_alignment_path,
-                            query_seq_str=chain.sequence,
-                            template_entry_chain_ids=chain.template_entry_chain_ids,
-                        )
-                    )
         self.inputs = inputs
 
     def _update_dataset_cache(self) -> None:
@@ -1786,12 +1850,133 @@ class TemplatePreprocessor:
         elif isinstance(self.input_set, InferenceQuerySet):
             self._update_inference_query_set()
 
+    def _parse_templates_from_cif_files(
+        self,
+        input_data: TemplatePreprocessorInputInference,
+    ) -> dict[int, TemplateData]:
+        """Parse templates from CIF files in CIF-direct mode.
+
+        Args:
+            input_data: Input data containing CIF file paths
+
+        Returns:
+            Dictionary mapping indices to TemplateData objects
+        """
+        if self.create_logs:
+            worker_logger = logging.getLogger(f"template_preprocess_{os.getpid()}")
+            worker_logger.info(
+                "CIF-direct mode: "
+                f"Processing {len(input_data.template_cif_paths)} CIF files"
+            )
+
+        templates = {}
+        parser = CifDirectParser(
+            max_sequences=None,
+            min_score_threshold=self.cif_direct_min_score,
+        )
+
+        if self.create_logs:
+            worker_logger = logging.getLogger(f"template_preprocess_{os.getpid()}")
+            worker_logger.info(
+                f"Processing {len(input_data.template_cif_paths)} CIF files "
+                "in CIF-direct mode..."
+            )
+
+        for idx, cif_path in enumerate(input_data.template_cif_paths):
+            try:
+                if not cif_path.exists():
+                    if self.create_logs:
+                        worker_logger.warning(f"CIF file not found: {cif_path}")
+                    continue
+
+                entry_id = cif_path.stem
+
+                specified_chain_id = None
+                if input_data.template_cif_chain_ids is not None:
+                    specified_chain_id = input_data.template_cif_chain_ids[idx]
+
+                if self.precache_directory is not None:
+                    precache_file = self.precache_directory / f"{entry_id}.npz"
+                    if precache_file.exists():
+                        precache_entry = np.load(precache_file, allow_pickle=True)
+                        chain_id_seq_map = precache_entry["chain_id_seq_map"].item()
+                    else:
+                        cif_file = _load_ciffile(cif_path)
+                        chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
+                else:
+                    cif_file = _load_ciffile(cif_path)
+                    chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
+
+                cif_templates = parser(
+                    cif_file_path=cif_path,
+                    query_seq_str=input_data.query_seq_str,
+                    chain_id_seq_map=chain_id_seq_map,
+                    entry_id=entry_id,
+                    specified_chain_id=specified_chain_id,
+                )
+
+                if cif_templates:
+                    template = cif_templates[0]
+                    template = template._replace(index=idx, cif_path=cif_path)
+                    templates[idx] = template
+
+                    if self.create_logs:
+                        worker_logger.info(
+                            f"Selected chain {template.chain_id} from {entry_id} "
+                            f"(seq_id={template.seq_id:.3f}, "
+                            f"q_cov={template.q_cov:.3f})"
+                        )
+
+            except Exception as e:
+                if self.create_logs:
+                    worker_logger.warning(f"Failed to process CIF file {cif_path}: {e}")
+                continue
+
+        if templates:
+            templates_list = list(templates.values())
+            templates_list.sort(
+                key=lambda t: t.seq_id * (t.q_cov if t.q_cov is not None else 0.0),
+                reverse=True,
+            )
+            templates = {i: t._replace(index=i) for i, t in enumerate(templates_list)}
+
+            if self.create_logs:
+                worker_logger.info(f"Parsed {len(templates)} templates from CIF files")
+            for t in templates_list[:5]:
+                if self.create_logs:
+                    worker_logger.info(
+                        f"  - {t.entry_id}_{t.chain_id}: "
+                        f"seq_id={t.seq_id:.3f}, q_cov={t.q_cov:.3f}"
+                    )
+
+            if self.create_logs:
+                worker_logger.info(
+                    f"Parsed {len(templates)} templates from CIF files, "
+                    f"sorted by alignment quality"
+                )
+        else:
+            if self.create_logs:
+                worker_logger.info("No templates parsed from CIF files")
+
+        return templates
+
     def preprocess_templates(
         self,
         input_data: TemplatePreprocessorInputTrain | TemplatePreprocessorInputInference,
     ) -> None:
         try:
-            func_timeout(60, self._preprocess_templates_for_query, args=(input_data,))
+            func_timeout(
+                self.preprocess_timeout,
+                self._preprocess_templates_for_query,
+                args=(input_data,),
+            )
+        except FunctionTimedOut:
+            print(
+                f"\n Template preprocessing TIMED OUT after {self.preprocess_timeout}s "
+                f"for {input_data.aln_path}.\n"
+                f"Skipping templates for this query chain.\n"
+                f"Hint: increase the timeout with --preprocess-timeout <seconds>\n"
+            )
         except Exception as e:
             print(
                 f"Failed to preprocess template alignment "
@@ -1817,9 +2002,19 @@ class TemplatePreprocessor:
             worker_logger.propagate = False
 
         # preprocess templates for a single chain
-        # 1. Parse template alignment file
-        if self.create_logs:
-            worker_logger.info(f"Parsing template alignment {input_data.aln_path}...")
+        # 1. Parse template alignment file or CIF files
+        if isinstance(input_data, TemplatePreprocessorInputInference):
+            if input_data.aln_path is not None:
+                if self.create_logs:
+                    worker_logger.info(
+                        f"Parsing template alignment {input_data.aln_path}..."
+                    )
+            elif input_data.template_cif_paths is not None:  # noqa: SIM102
+                if self.create_logs:
+                    worker_logger.info(
+                        f"Processing {len(input_data.template_cif_paths)} CIF files "
+                        "in CIF-direct mode..."
+                    )
 
         # TODO: 2. if template entry and chain ID list provided in the IQS - skip some
         # below:
@@ -1848,9 +2043,25 @@ class TemplatePreprocessor:
                 worker_logger.info(
                     f"Creating new cache entry {template_cache_entry_file}."
                 )
-            templates = parse_template_alignment(
-                input_data.aln_path, input_data.query_seq_str, self.max_sequences_parse
-            )
+
+            # Parse templates based on mode
+            if isinstance(input_data, TemplatePreprocessorInputInference):
+                if input_data.aln_path is not None:
+                    templates = parse_template_alignment(
+                        input_data.aln_path,
+                        input_data.query_seq_str,
+                        self.max_sequences_parse,
+                    )
+                elif input_data.template_cif_paths is not None:
+                    templates = self._parse_templates_from_cif_files(input_data)
+                else:
+                    return
+            else:
+                templates = parse_template_alignment(
+                    input_data.aln_path,
+                    input_data.query_seq_str,
+                    self.max_sequences_parse,
+                )
             if self.create_logs:
                 worker_logger.info(f"Parsed {len(templates)} templates...")
             template_cache_entry = {}
@@ -2052,7 +2263,7 @@ class TemplatePreprocessor:
                     continue
 
                 # H. Add to cache entry
-                template_cache_entry[f"{template.entry_id}_{chain_id_matched}"] = {
+                cache_entry_data = {
                     "index": template.index,
                     "release_date": release_date,
                     "idx_map": np.concatenate(
@@ -2063,6 +2274,12 @@ class TemplatePreprocessor:
                         axis=1,
                     ),
                 }
+                # Store CIF path for CIF-direct mode
+                if template.cif_path is not None:
+                    cache_entry_data["cif_path"] = str(template.cif_path)
+                template_cache_entry[f"{template.entry_id}_{chain_id_matched}"] = (
+                    cache_entry_data
+                )
                 template_ids.append(f"{template.entry_id}_{chain_id_matched}")
                 if self.create_logs:
                     worker_logger.info(
@@ -2117,6 +2334,7 @@ class TemplatePrecachePreprocessor:
         self.moltypes = config.moltypes
         self.n_processes = config.n_processes
         self.chunksize = config.chunksize
+        self.preprocess_timeout = config.preprocess_timeout
 
         self.structure_directory = config.structure_directory
         self.structure_file_format = config.structure_file_format

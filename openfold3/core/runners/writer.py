@@ -17,6 +17,7 @@
 import json
 import logging
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import torch
@@ -38,8 +39,16 @@ class NumpyEncoder(json.JSONEncoder):
 
     def default(self, obj):
         if isinstance(obj, np.ndarray):
+            if obj.dtype == np.float16:
+                return obj.astype(np.float64).round(3).tolist()
+            elif obj.dtype == np.float32:
+                return obj.astype(np.float64).round(6).tolist()
             return obj.tolist()
         elif isinstance(obj, np.generic):
+            if obj.dtype == np.float16:
+                return round(obj.item(), 3)
+            elif obj.dtype == np.float32:
+                return round(obj.item(), 6)
             return obj.item()
         return super().default(obj)
 
@@ -75,6 +84,7 @@ class OF3OutputWriter(BasePredictionWriter):
         output_dir: Path,
         structure_format: str = "pdb",
         full_confidence_output_format: str = "json",
+        full_confidence_output_dtype: Literal["float32", "float16"] = "float16",
         write_features: bool = False,
         write_latent_outputs: bool = False,
         write_full_confidence_scores: bool = True,
@@ -83,6 +93,7 @@ class OF3OutputWriter(BasePredictionWriter):
         self.output_dir = output_dir
         self.structure_format = structure_format
         self.full_confidence_format = full_confidence_output_format
+        self.full_confidence_dtype = np.dtype(full_confidence_output_dtype)
         self.write_features = write_features
         self.write_latent_outputs = write_latent_outputs
         self.write_full_confidence_scores = write_full_confidence_scores
@@ -207,7 +218,17 @@ class OF3OutputWriter(BasePredictionWriter):
                     )
                 )
             elif out_fmt == "npz":
-                np.savez_compressed(out_file_full, **full_confidence_scores)
+                for key, val in full_confidence_scores.items():
+                    if (
+                        isinstance(val, np.ndarray)
+                        and val.dtype != self.full_confidence_dtype
+                    ):
+                        full_confidence_scores[key] = val.astype(
+                            self.full_confidence_dtype
+                        )
+                np.savez_compressed(
+                    out_file_full, **full_confidence_scores, allow_pickle=False
+                )
 
     def write_all_outputs(self, batch: dict, outputs: dict, confidence_scores: dict):
         """Writes all outputs for a given batch."""

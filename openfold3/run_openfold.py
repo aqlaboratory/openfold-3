@@ -25,7 +25,10 @@ from pathlib import Path
 import click
 
 from openfold3.core.config import config_utils
-from openfold3.entry_points.import_utils import _enable_tf32
+from openfold3.entry_points.import_utils import (
+    _configure_torch_backend,
+    _enable_tf32,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +67,7 @@ def train(
     use_tf32: bool = False,
 ):
     """Perform a training experiment with a preprepared dataset cache."""
+    _configure_torch_backend()
     if use_tf32:
         _enable_tf32()
 
@@ -142,15 +146,21 @@ def train(
     "--use-msa-server",
     "--use_msa_server",
     type=bool,
-    default=True,
-    help="Use ColabFold MSA server to perform alignments.",
+    default=None,
+    help=(
+        "Use ColabFold MSA server to perform alignments. If unset, the value from"
+        " the runner yaml (or config default) is used."
+    ),
 )
 @click.option(
     "--use-templates",
     "--use_templates",
     type=bool,
-    default=True,
-    help="Use ColabFold MSA server to perform template alignments.",
+    default=None,
+    help=(
+        "Whether to use templates for prediction. If unset, the value from the"
+        " runner yaml (or config default) is used."
+    ),
 )
 @click.option(
     "--output-dir",
@@ -172,12 +182,13 @@ def predict(
     num_diffusion_samples: int | None = None,
     num_model_seeds: int | None = None,
     runner_yaml: Path | None = None,
-    use_msa_server: bool = True,
-    use_templates: bool = True,
+    use_msa_server: bool | None = None,
+    use_templates: bool | None = None,
     output_dir: Path | None = None,
     use_tf32: bool = True,
 ):
     """Perform inference on a set of queries defined in the query_json."""
+    _configure_torch_backend()
     if use_tf32:
         _enable_tf32()
 

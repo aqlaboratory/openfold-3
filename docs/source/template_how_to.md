@@ -1,6 +1,13 @@
 # Running OpenFold3 Inference with Templates
 
-This document contains instructions on how to use template information for OF3 predictions. Here, we assume that you already generated all of your template alignments or intend to fetch them from Colabfold on-the-fly. If you do not have any precomputed template alignments and do not want to use Colabfold, refer to our {doc}`MSA Generation Guide <precomputed_msa_generation_how_to>` before consulting this document. If you need further clarifications on how some of the template components of our inference pipeline work, refer to {doc}`this explanatory document <template_explanation>`.
+This document contains instructions on how to use template information for OF3 predictions. OpenFold3 supports two template modes:
+
+1. **Alignment-based templates** (traditional): Requires template alignments and template structures
+2. **CIF direct templates** (simplified): Requires only template CIF files, no alignments needed
+
+For alignment-based templates, we assume you already generated all of your template alignments or intend to fetch them from Colabfold on-the-fly. If you do not have any precomputed template alignments and do not want to use Colabfold, refer to our {doc}`MSA Generation Guide <precomputed_msa_generation_how_to>` before consulting this document.
+
+If you need further clarifications on how some of the template components of our inference pipeline work, refer to {doc}`this explanatory document <template_explanation>`.
 
 The template pipeline currently supports monomeric templates and has been tested for protein chains only.
 
@@ -12,10 +19,18 @@ The main steps detailed in this guide are:
 (1-template-files)=
 ## 1. Template Files
 
-Template featurization requires query-to-template **alignments** and template **structures**.
+OpenFold3 supports two modes for providing template information:
+
+### Alignment-Based Mode (Traditional)
+Requires query-to-template **alignments** and template **structures**. Sections 1.1 and 1.2 below describe the required file formats.
+
+### CIF Direct Mode (Simplified)
+Requires only template **CIF files**. The system automatically aligns template chains to your query sequence and selects the best matching chain. See {ref}`Section 2.3 <23-cif-direct-templates>` for usage details.
+
+---
 
 (11-template-aligment-file-format)=
-### 1.1. Template Aligment File Format
+### 1.1. Template Alignment File Format (Alignment-Based Mode)
 
 Template alignments can be provided in either `sto`, `a3m` or `m8` format. Template alignments from the Colabfold server are in `m8` format.
 
@@ -73,16 +88,18 @@ query_A	template_C	71.4	14	4	0	5	18	75	88	2e-03	22.3
 
 Note that since `m8` files do not provide actual alignments, we only use them to identify which structure files to get templates from, retrieve sequences from these structure files and always realign them to the query sequence using Kalign. More on this in the [template processing explanatory document](template_explanation.md).
 
-### 1.2. Template Structure File Format
+### 1.2. Template Structure File Format (Alignment-Based Mode)
 
-Template structures currently can only be provided in `cif` format. An upcoming release will add support for parsing templates from `pdb` files.
+For alignment-based templates, template structures currently can only be provided in `cif` format. An upcoming release will add support for parsing templates from `pdb` files.
+
+**Note:** For {ref}`CIF direct mode <23-cif-direct-templates>`, template CIF files are specified directly in the query JSON without separate structure directories.
 
 (2-specifying-template-information-in-the-inference-query-file)=
 ## 2. Specifying Template Information in the Inference Query File
 
-### 2.1. Specifying Alignments
+### 2.1. Specifying Alignments (Alignment-Based Mode)
 
-The data pipeline needs to know which template alignment to use for which chain. This information is provided by specifying the {ref}`paths to the alignments <31-protein-chains>` for each chain's `template_alignment_file_path` field in the inference query json file.
+For alignment-based templates, the data pipeline needs to know which template alignment to use for which chain. This information is provided by specifying the {ref}`paths to the alignments <31-protein-chains>` for each chain's `template_alignment_file_path` field in the inference query json file.
 
 Note that when fetching alignments from the Colabfold server, `template_alignment_file_path` fields are automatically populated.
 
@@ -118,9 +135,9 @@ Note that when fetching alignments from the Colabfold server, `template_alignmen
 </code></pre>
 </details>
 
-### 2.2. Using Specific Templates
+### 2.2. Using Specific Templates (Alignment-Based Mode)
 
-By default, the template pipeline automatically populates the `template_entry_chain_ids` field with [n templates](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py#L1535) from the alignment, which is then further subset to the [top k templates](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py#L116) during featurization for inference.
+By default, for alignment-based templates, the template pipeline automatically populates the `template_entry_chain_ids` field with [n templates](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py#L1535) from the alignment, which is then further subset to the [top k templates](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py#L116) during featurization for inference.
 
 In an **upcoming release**, we will add support for specifying *specific templates* for the data pipeline to use for featurization. This will be possible through the `template_entry_chain_ids` field:
 
@@ -156,10 +173,77 @@ entry3_A     MK----DDARGQGKFT
 //
 ```
 
+(23-cif-direct-templates)=
+### 2.3. CIF Direct Templates (No Alignments Required)
+
+OpenFold3 supports providing template structures directly as CIF files without requiring pre-computed template alignments. This is particularly useful for:
+- Stateless inference environments (e.g., NVIDIA Inference Microservices)
+- Quick predictions when you have specific template structures
+- Simplified workflows without external alignment tools
+
+#### How It Works
+
+In CIF direct mode, the system automatically:
+1. Parses each provided CIF file to extract all chains and their sequences
+2. Aligns each chain sequence to your query sequence using sequence alignment
+3. Scores each chain by `sequence_identity × coverage`
+4. Selects the best matching chain as the template (if score ≥ minimum threshold)
+
+For multi-chain CIF files, only the best matching chain per file is used.
+
+#### Usage Example
+
+Specify `template_cif_paths` instead of `template_alignment_file_path` in your query JSON:
+
+```json
+{
+    "queries": {
+        "my_protein": {
+            "chains": [
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": ["A", "B"],
+                    "sequence": "XRMKQLEDKVEELLSKNYHLENEVARLKKLVGER",
+                    "template_cif_paths": [
+                        "templates/1dgc.cif",
+                        "templates/1ysa.cif",
+                        "templates/1zta.cif"
+                    ]
+                }
+            ]
+        }
+    }
+}
+```
+
+**Example query files:**
+- [Homomer with direct CIF templates](https://github.com/aqlaboratory/openfold-3/blob/main/examples/example_inference_inputs/query_homomer_with_direct_cif_templates.json)
+- [Multimer with direct CIF templates](https://github.com/aqlaboratory/openfold-3/blob/main/examples/example_inference_inputs/query_multimer_with_direct_cif_templates.json)
+
+#### Configuration
+
+Adjust the minimum score threshold for chain selection in your `runner.yml`:
+
+```yaml
+template_preprocessor_settings:
+  cif_direct_min_score: 0.1  # Default: 0.1 (seq_identity × coverage)
+```
+
+Only chains with a score (sequence identity × coverage) above this threshold will be considered as valid templates.
+
+#### Important Notes
+
+- The `template_cif_paths` field is **mutually exclusive** with `template_alignment_file_path` - you must use one or the other, not both
+- Template structures must be in CIF format
+- Currently supported for protein chains only
+- For multi-chain CIF files, the system automatically selects the best matching chain per file
+
 (3-optimizations-for-high-throughput-workflows)=
 ## 3. Optimizations for High-Throughput Workflows
 
-For high-throughput use cases, where a large number of structures are to be predicted, template processing can take a significant amount of time even with the built-in {doc}`deduplication utility <template_explanation>` we have for template alignment and structure processing. To avoid having to spend GPU compute on data transformations, we provide separate template preprocessing scripts to generate the necessary inputs from which template featurization can run efficiently in a subsequent job without being a bottleneck to the model forward pass.
+**Note:** The optimizations described in this section apply to **alignment-based templates**. If you're using {ref}`CIF direct templates <23-cif-direct-templates>`, the workflow is already simplified and these preprocessing steps are not necessary.
+
+For high-throughput use cases with alignment-based templates, where a large number of structures are to be predicted, template processing can take a significant amount of time even with the built-in {doc}`deduplication utility <template_explanation>` we have for template alignment and structure processing. To avoid having to spend GPU compute on data transformations, we provide separate template preprocessing scripts to generate the necessary inputs from which template featurization can run efficiently in a subsequent job without being a bottleneck to the model forward pass.
 
 ### 3.1. Template Alignment Preprocessing
 

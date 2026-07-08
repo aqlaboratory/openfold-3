@@ -7,15 +7,63 @@
 
 OpenFold3 inference requires a system with a GPU with a minimum of CUDA 12.1 and 32GB of memory. Most of our testing has been performed on A100s with 40GB of memory. 
 
-It is also recommended to use [Mamba](https://mamba.readthedocs.io/en/latest/) to install some of the packages.
+
+### Modern conda environments with pixi (recommended)
+
+Although OpenFold3 can be installed directly with:
+
+```shell
+pip install openfold3
+```
+
+for a more reproducible and streamlined setup, especially when installing OpenFold3 with its full set of dependencies, we recommend using [pixi](https://pixi.prefix.dev/latest/index.html). Using pixi makes it easier to choose the right pre-configured environment for your hardware, such as CPU-only, NVIDIA CUDA, or AMD ROCm.
+
+First, install pixi by following the [official installation instructions](https://pixi.prefix.dev/latest/installation/):
+
+```shell
+# You only need to do this once, and then you can use pixi for future projects.
+curl -fsSL https://pixi.sh/install.sh | sh
+
+# Restart your shell after installation.
+# Optionally, you can also install shell completions for pixi.
+```
+
+Next, clone the OpenFold3 repository:
+
+```shell
+git clone git@github.com:aqlaboratory/openfold-3.git
+cd openfold-3
+```
+
+OpenFold3 includes several pre-configured pixi environments for different systems and hardware configurations.
+
+To set up and run OpenFold3 using the CPU environment, run:
+
+```shell
+pixi run -e openfold3-cpu setup_openfold
+pixi run -e openfold3-cpu run_openfold
+```
+
+Available pixi environments:
+
+| Environment        | Supported platforms                                | Description                                                          |
+| ------------------ | -------------------------------------------------- | -------------------------------------------------------------------- |
+| `openfold3-cpu`    | `linux-64`, `linux-aarch64`, `osx-64`, `osx-arm64` | CPU-only environment for running OpenFold3 without GPU acceleration. |
+| `openfold3-cuda12` | `linux-64`, `linux-aarch64`                        | NVIDIA GPU environment using CUDA 12.                                |
+| `openfold3-cuda13` | `linux-64`, `linux-aarch64`                        | NVIDIA GPU environment using CUDA 13.                                |
+| `openfold3-rocm7`  | `linux-64`                                         | AMD GPU environment using ROCm 7.                                    |
+
+Choose the environment that matches your system. For example, use `openfold3-cpu` for CPU-only installations, `openfold3-cuda12` or `openfold3-cuda13` for NVIDIA GPU systems, and `openfold3-rocm7` for AMD ROCm systems.
+
+For more information, including rationale, tips and tricks, see [Modern Conda Environments with Pixi](./modern-conda-environments-with-pixi.md).
 
 
-### Installation via pip and mamba (recommended) 
+### Installation via pip
 
-0. [Optional] Create a fresh mamba environment with python. Python versions 3.10 - 3.13 are supported
+0. [Optional] Create a fresh environment with python. Python versions 3.10 - 3.13 are supported
 
 ```bash
-mamba create -n openfold3 python=3.13 
+conda create -n openfold3 python=3.13 
 ```
 
 1. Install openfold3 the pypi server:
@@ -24,13 +72,47 @@ mamba create -n openfold3 python=3.13
 pip install openfold3
 ```
 
-to install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, use: 
+### Installation with kernels
+
+Using Attention kernels compatible with your system can provide 4-5x speedup for inference on long (>1000 residue) sequences. We currently support 3 different kernels 
+
+**Deepspeed** 
+Installation of Deepspeed requires installation of [Nvidia CUTLASS](https://github.com/NVIDIA/cutlass)
+
+Nvidia CUTLASS may be installed [directly from source](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/quickstart.html). 
+
+Alternatively, a [pypi package of nvidia-cutlass](https://pypi.org/project/nvidia-cutlass/) is available, but it is no longer being maintained after version 4.2.0. To use this package, run `pip install nvidia-cutlass && export CUTLASS_PATH=DS_USE_CUTLASS_PYTHON_BINDINGS`
+
+Once nvidia cutlass is installed, the deepspeed extension may be installed with
+
+```bash
+pip install openfold3[deepspeed]
+```
+
+**cuEquivariance** 
+To install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, use: 
 
 ```bash
 pip install openfold3[cuequivariance]
 ```
 
+**Triton** To use AMD ROCm-compatible Triton kernels, first install the ROCm PyTorch wheel (which bundles ROCm Triton), then install openfold3:
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
+pip install openfold3
+```
+
+For AMD system installation: After installation, verify your ROCm environment is correctly configured:
+
+```bash
+validate-openfold3-rocm
+```
+
+(installation-environment-variables)=
 ### Environment variables
+
+> **Note:** This may need a revision given the pixi managed envs above (JD).
 
 OpenFold may need a few environment variables set so CUDA, compilation, and JIT-built extensions can be found correctly. 
 
@@ -52,7 +134,6 @@ OpenFold may need a few environment variables set so CUDA, compilation, and JIT-
 
 - If you get a `/usr/bin/ld: cannot find -lcurand` error, this usually means the CUDA math libraries (which include `libcurand`) are not on your library search path. You may need to add the appropriate CUDA library directory to  `LIBRARY_PATH`. 
     - Example: `export LIBRARY_PATH="$(echo "$CUDA_HOME" | sed 's|/cuda/|/math_libs/|')/targets/sbsa-linux/lib:${LIBRARY_PATH:-}"`
-
 
 
 ### OpenFold3 Docker Image
@@ -98,7 +179,7 @@ gh auth token | docker login ghcr.io -u $(gh api user --jq .login) --password-st
 Pull the image itself 
 
 ```bash
-docker pull ghcr.io/aqlaboratory/openfold-3/openfold3-docker:0.4.0
+docker pull ghcr.io/aqlaboratory/openfold-3/openfold3-docker:0.4.2
 ```
 
 ### Building the OpenFold3 Docker Image 
@@ -116,10 +197,16 @@ On the first inference run, default model parameters will be downloaded to the `
 
 ### Using `setup_openfold` 
 
-We provide a one-stop binary that sets up openfold and runs integration tests. This binary can be called with:
+We provide a one-stop binary that sets up openfold and runs integration tests.
 
-```bash
-setup_openfold
+```
+Usage: setup_openfold [OPTIONS]
+
+Options:
+  --non-interactive  Non-interactively run setup using all default config
+                     values.
+  --config FILE      Path to a JSON file containing an OpenFoldSetupConfig.
+  --help             Show this message and exit.
 ```
 
 This script will:

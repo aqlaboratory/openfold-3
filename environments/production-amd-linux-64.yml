@@ -1,0 +1,39 @@
+name: openfold3-env
+channels:
+  - conda-forge
+  - bioconda
+  - pytorch
+dependencies:
+  - python
+  - awscli
+  - setuptools
+  - pip
+  - conda-forge::uv
+  - pytorch-lightning
+  - biopython
+  - numpy
+  - pandas
+  - PyYAML
+  - requests
+  - scipy
+  - tqdm
+  - typing-extensions
+  - wandb
+  - modelcif
+  - ml-collections
+  - mkl
+  - rdkit=2025.09.3
+  - biotite==1.2.0
+  - bioconda::hmmer
+  - bioconda::hhsuite
+  - bioconda::kalign2
+  - memory_profiler
+  - func_timeout
+  - boto3
+  - conda-forge::python-lmdb=1.6
+  - conda-forge::ijson
+  - pip:
+      - pdbeccdutils
+      - --extra-index-url https://download.pytorch.org/whl/rocm7.2
+      - torch
+      - torchvision

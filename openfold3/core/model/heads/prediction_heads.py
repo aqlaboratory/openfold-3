@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,8 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
-
 import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
@@ -22,6 +21,7 @@ from ml_collections import ConfigDict
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.atomize_utils import max_atom_per_token_masked_select
 
 
@@ -122,6 +122,7 @@ class PairformerEmbedding(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         offload_inference: bool = False,
@@ -143,27 +144,26 @@ class PairformerEmbedding(nn.Module):
 
         in_dtype = zij.dtype
         for i in range(no_samples):
-            zij_chunk = self.embed_zij(
-                si_input=si_input, zij=zij, x_pred=x_pred[:, i : i + 1]
+            si_chunk, zij_chunk = self.pairformer_emb(
+                si_input=si_input,
+                si=si.clone(),  # Avoid inplace ops on si
+                zij=zij,
+                x_pred=x_pred[..., i : i + 1, :, :],
+                single_mask=single_mask,
+                pair_mask=pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+                pairformer_dtype=pairformer_dtype,
             )
 
-            with torch.amp.autocast(device_type="cuda", dtype=pairformer_dtype):
-                si_chunk, zij_chunk = self.pairformer_stack(
-                    si.clone(),  # Avoid inplace ops on si
-                    zij_chunk,
-                    single_mask,
-                    pair_mask,
-                    chunk_size=chunk_size,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                    use_lma=use_lma,
-                    inplace_safe=inplace_safe,
-                    _mask_trans=_mask_trans,
-                )
-
             if offload_inference:
-                assert sys.getrefcount(si_chunk) == 2
-                assert sys.getrefcount(zij_chunk) == 2
+                assert_sole_holder(si_chunk)
+                assert_sole_holder(zij_chunk)
 
             si_out[..., i : i + 1, :, :] = si_chunk.to(device=device)
             zij_out[..., i : i + 1, :, :, :] = zij_chunk.to(device=device)
@@ -184,6 +184,7 @@ class PairformerEmbedding(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -207,11 +208,14 @@ class PairformerEmbedding(nn.Module):
         single_mask = reshape_inputs(x=single_mask, feat_dims=single_mask.shape[-1:])
         pair_mask = reshape_inputs(x=pair_mask, feat_dims=pair_mask.shape[-2:])
 
-        # Using the DS kernel with chunk tuning and multiple samples causes shape issues
-        # in the DS kernel. To avoid this, chunk tuning is disabled in this case.
-        # TODO: cuEq seems to fail comparison unit tests with the same settings,
-        #  disable for now and verify behavior
-        use_kernels = use_deepspeed_evo_attention or use_cueq_triangle_kernels
+        # The optimized kernels all require that pair bias have size 1 in the
+        # second dimension and cross-sample chunking has to combine the batch
+        # dimensions and expand it.
+        use_kernels = (
+            use_deepspeed_evo_attention
+            or use_cueq_triangle_kernels
+            or use_triton_triangle_kernels
+        )
         if use_kernels and si.shape[0] > 1:
             chunk_size = None
 
@@ -225,6 +229,7 @@ class PairformerEmbedding(nn.Module):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -246,6 +251,7 @@ class PairformerEmbedding(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         offload_inference: bool = False,
@@ -297,6 +303,32 @@ class PairformerEmbedding(nn.Module):
             zij:
                 [*, N_token, N_token, C_z] Updated pair representation
         """
+
+        batch_dim_counts = {
+            "x_pred": x_pred.dim() - 2,
+            "si_input": si_input.dim() - 2,
+            "si": si.dim() - 2,
+            "zij": zij.dim() - 3,
+            "single_mask": single_mask.dim() - 1,
+            "pair_mask": pair_mask.dim() - 2,
+        }
+
+        if len(set(batch_dim_counts.values())) != 1:
+            raise ValueError(
+                f"Inputs have different number of batch dimensions:\n"
+                f"{batch_dim_counts}.\n"
+                f"Shapes: x_pred={(*x_pred.shape,)},\n"
+                f"si_input={(*si_input.shape,)},\n"
+                f"si={(*si.shape,)}, zij={(*zij.shape,)},\n"
+                f"single_mask={(*single_mask.shape,)},\n"
+                f"pair_mask={(*pair_mask.shape,)}"
+            )
+
+        if apply_per_sample and batch_dim_counts["x_pred"] < 1:
+            raise ValueError(
+                "apply_per_sample is not compatible with no batch dimensions"
+            )
+
         if apply_per_sample:
             si, zij = self.per_sample_pairformer_emb(
                 si_input=si_input,
@@ -308,6 +340,7 @@ class PairformerEmbedding(nn.Module):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 offload_inference=offload_inference,
@@ -325,6 +358,7 @@ class PairformerEmbedding(nn.Module):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -377,7 +411,9 @@ class PredictedAlignedErrorHead(nn.Module):
         )
         no_samples = zij.shape[-4]
         for i in range(no_samples):
-            zij_out[:, i : i + 1] = self._compute_logits(zij[:, i : i + 1])
+            zij_out[..., i : i + 1, :, :, :] = self._compute_logits(
+                zij[..., i : i + 1, :, :, :]
+            )
 
         return zij_out
 
@@ -447,7 +483,9 @@ class PredictedDistanceErrorHead(nn.Module):
         )
         no_samples = zij.shape[-4]
         for i in range(no_samples):
-            zij_out[:, i : i + 1] = self._compute_logits(zij[:, i : i + 1])
+            zij_out[..., i : i + 1, :, :, :] = self._compute_logits(
+                zij[..., i : i + 1, :, :, :]
+            )
 
         return zij_out
 

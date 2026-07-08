@@ -26,7 +26,7 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.structure.component import PERIODIC_TABLE
-from openfold3.core.model.structure.diffusion_module import centre_random_augmentation
+from openfold3.core.model.structure.augmentation import centre_random_augmentation
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,9 @@ def featurize_reference_conformers_of3(
             # Intermediate reference coordinates (without random rotation & translation)
             coords = conf.GetAtomPosition(atom.GetIdx())
             mol_ref_mask.append(int(atom.GetBoolProp("annot_used_atom_mask")))
-            mol_ref_pos.append(coords)
+            # Avoid passing RDKit Point3D objects directly into torch.tensor(),
+            # which can segfault in some RDKit/PyTorch builds.
+            mol_ref_pos.append((coords.x, coords.y, coords.z))
 
             # Atom elements (0-indexed)
             element_symbol = atom.GetSymbol()

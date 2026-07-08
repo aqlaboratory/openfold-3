@@ -18,13 +18,16 @@ import shutil
 import tempfile
 import textwrap
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
 
 import ml_collections as mlc
 import pytest
+from click.testing import CliRunner
 from pytorch_lightning.loggers import WandbLogger
 
+import openfold3.core.model.primitives.initialization as initialization
 from openfold3 import setup_openfold
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModuleConfig
@@ -32,6 +35,7 @@ from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
     TrainingExperimentRunner,
     WandbHandler,
+    skip_random_init,
 )
 from openfold3.entry_points.parameters import (
     CHECKPOINT_ROOT_FILENAME,
@@ -50,6 +54,7 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
+from openfold3.setup_openfold import OpenFoldSetupConfig
 
 
 @pytest.fixture
@@ -81,7 +86,7 @@ class TestTrainingExperiment:
             data_module_args:
                 data_seed: 114
                 num_workers: 0
-                                        
+
             model_update:
                 presets:
                     - train
@@ -92,17 +97,17 @@ class TestTrainingExperiment:
                         shared:
                             diffusion:
                                 no_samples: 32
-                                        
+
             dataset_configs:
                 train:
                     weighted-pdb:
-                        dataset_class: WeightedPDBDataset 
-                        weight: 1 
+                        dataset_class: WeightedPDBDataset
+                        weight: 1
                         config:
                             debug_mode: true
                             crop:
                                 token_crop:
-                                    token_budget: 640 
+                                    token_budget: 640
                                 chain_crop:
                                     enabled: true
                                     n_chains: 25
@@ -121,13 +126,13 @@ class TestTrainingExperiment:
                 weighted-pdb:
                     alignments_directory: null
                     alignment_db_directory: null
-                    alignment_array_directory: {tmp_path} 
-                    target_structures_directory: {tmp_path} 
+                    alignment_array_directory: {tmp_path}
+                    target_structures_directory: {tmp_path}
                     target_structure_file_format: npz
-                    dataset_cache_file: {test_dummy_file} 
-                    reference_molecule_directory: {tmp_path} 
-                    template_cache_directory: {tmp_path} 
-                    template_structure_array_directory: {tmp_path} 
+                    dataset_cache_file: {test_dummy_file}
+                    reference_molecule_directory: {tmp_path}
+                    template_cache_directory: {tmp_path}
+                    template_structure_array_directory: {tmp_path}
                     template_structures_directory: null
                     template_file_format: pkl
                     ccd_file: null
@@ -135,13 +140,13 @@ class TestTrainingExperiment:
                 val-weighted-pdb:
                     alignments_directory: null
                     alignment_db_directory: null
-                    alignment_array_directory: {tmp_path} 
+                    alignment_array_directory: {tmp_path}
                     target_structures_directory: {tmp_path}
                     target_structure_file_format: npz
-                    dataset_cache_file: {test_dummy_file} 
-                    reference_molecule_directory: {tmp_path} 
-                    template_cache_directory: {tmp_path} 
-                    template_structure_array_directory: {tmp_path} 
+                    dataset_cache_file: {test_dummy_file}
+                    reference_molecule_directory: {tmp_path}
+                    template_cache_directory: {tmp_path}
+                    template_structure_array_directory: {tmp_path}
                     template_structures_directory: null
                     template_file_format: pkl
                     ccd_file: null
@@ -260,7 +265,7 @@ class TestModelUpdate:
               custom:
                 architecture:
                   shared:
-                    num_recycles: 1 
+                    num_recycles: 1
         """)
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
@@ -286,7 +291,7 @@ class TestModelUpdate:
         test_yaml_str = textwrap.dedent("""\
             data_module_args:
                 data_seed: 114
-                                        
+
             model_update:
                 presets:
                     - predict
@@ -423,22 +428,87 @@ class TestWandbHandler(unittest.TestCase):
                     self.assertEqual(data, dummy_model_config.to_dict())
 
 
-class TestInferenceCommandLineSettings:
-    @pytest.mark.parametrize("use_msa_cli_arg", [True, False])
-    def test_use_msa_cli(self, use_msa_cli_arg, tmp_path, dummy_ckpt_file):
-        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
-        expt_runner = InferenceExperimentRunner(
-            expt_config, use_msa_server=use_msa_cli_arg
-        )
-        assert expt_runner.use_msa_server == use_msa_cli_arg
+@dataclass
+class FlagResolutionCase:
+    """One row of the use_templates / use_msa_server resolution matrix.
 
-    @pytest.mark.parametrize("use_templates_cli_arg", [True, False])
-    def test_use_templates_cli(self, use_templates_cli_arg, tmp_path, dummy_ckpt_file):
-        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
-        expt_runner = InferenceExperimentRunner(
-            expt_config, use_templates=use_templates_cli_arg
+    ``yaml`` and ``cli`` use ``None`` to mean "not provided" (field absent from
+    the runner yaml / flag omitted on the CLI), and ``True``/``False`` for an
+    explicit value. ``expected`` is the value the runner should resolve to.
+    """
+
+    yaml: bool | None
+    cli: bool | None
+    expected: bool
+
+
+# Resolution rule: the CLI arg wins when provided; otherwise the yaml value
+# wins; otherwise the config default (True). The two cases marked "BUG #250"
+# are the regressions this matrix guards against.
+_FLAG_RESOLUTION_CASES = [
+    pytest.param(
+        FlagResolutionCase(yaml=None, cli=None, expected=True),
+        id="yaml_unset+cli_omitted->default_on",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=None, cli=True, expected=True),
+        id="yaml_unset+cli_true->on",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=None, cli=False, expected=False),
+        id="yaml_unset+cli_false->off",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=True, cli=None, expected=True),
+        id="yaml_true+cli_omitted->on",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=True, cli=True, expected=True),
+        id="yaml_true+cli_true->on",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=True, cli=False, expected=False),
+        id="yaml_true+cli_false->off(BUG#250)",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=False, cli=None, expected=False),
+        id="yaml_false+cli_omitted->off(BUG#250)",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=False, cli=True, expected=True),
+        id="yaml_false+cli_true->on",
+    ),
+    pytest.param(
+        FlagResolutionCase(yaml=False, cli=False, expected=False),
+        id="yaml_false+cli_false->off",
+    ),
+]
+
+
+class TestInferenceCommandLineSettings:
+    @pytest.mark.parametrize("setting", ["use_templates", "use_msa_server"])
+    @pytest.mark.parametrize("case", _FLAG_RESOLUTION_CASES)
+    def test_cli_and_yaml_resolution(self, setting, case, tmp_path, dummy_ckpt_file):
+        """CLI arg (when provided) overrides yaml; otherwise yaml/config default wins."""
+        runner_args = {}
+        if case.yaml is not None:
+            test_yaml_file = tmp_path / "runner.yml"
+            test_yaml_file.write_text(
+                textwrap.dedent(f"""\
+                    experiment_settings:
+                        {setting}: {str(case.yaml).lower()}
+                    """)
+            )
+            runner_args = config_utils.load_yaml(test_yaml_file)
+
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file, **runner_args
         )
-        assert expt_runner.use_templates == use_templates_cli_arg
+
+        cli_kwargs = {} if case.cli is None else {setting: case.cli}
+        expt_runner = InferenceExperimentRunner(expt_config, **cli_kwargs)
+
+        assert getattr(expt_runner, setting) is case.expected
 
     def test_seeding_from_num_seeds(self, dummy_ckpt_file):
         expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
@@ -450,7 +520,7 @@ class TestInferenceCommandLineSettings:
         test_yaml_str = textwrap.dedent("""\
             experiment_settings:
                 seeds:
-                  - 17 
+                  - 17
                   - 101
             """)
         test_yaml_file = tmp_path / "runner.yml"
@@ -476,7 +546,7 @@ class TestInferenceCommandLineSettings:
         test_yaml_str = textwrap.dedent(f"""\
             experiment_settings:
                 seeds:
-                  - {model_seed} 
+                  - {model_seed}
                   - 101
             """)
 
@@ -667,64 +737,107 @@ class TestRemoveQuerySetDuplicates:
 
 
 class TestSetupOpenFold:
-    def test_fresh_parameter_default_download(self, tmp_path):
-        inputs = iter(
-            [
-                str(tmp_path),  # Set cache directory
-                "",  # Use default (cache) directory for params directory
-                "1",  # download choice: default checkpoint only
-                "no",  # skip integration tests
-            ]
+    def test_non_interactive(self, tmp_path):
+        env_patch = patch.dict(os.environ, {"HOME": str(tmp_path)}, clear=False)
+        s3_patch = patch(
+            "openfold3.setup_openfold.download_s3_file",
+            side_effect=_fake_download_s3_file,
         )
+        with env_patch, s3_patch:
+            os.environ.pop("OPENFOLD_CACHE", None)
+            result = CliRunner().invoke(setup_openfold.main, ["--non-interactive"])
 
-        with (
-            patch.dict(os.environ),
-            patch("builtins.input", side_effect=inputs),
-            patch(
-                "openfold3.entry_points.parameters.download_s3_file",
-                side_effect=_fake_download_s3_file,
-            ),
-            patch(
-                "openfold3.setup_openfold.download_s3_file",
-                side_effect=_fake_download_s3_file,
-            ),
+        assert result.exit_code == 0, result.output
+        expected_cache = tmp_path / ".openfold3"
+        assert (expected_cache / CHECKPOINT_ROOT_FILENAME).exists()
+        assert (expected_cache / CHECKPOINT_ROOT_FILENAME).read_text() == str(
+            expected_cache
+        )
+        assert (
+            expected_cache
+            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[DEFAULT_CHECKPOINT_NAME].file_name
+        ).exists()
+
+    def test_existing_parameter_installation(self, tmp_path):
+        # Pre-seed the checkpoint file and ckpt_root as if a prior install ran.
+        existing_ckpt = (
+            tmp_path
+            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[DEFAULT_CHECKPOINT_NAME].file_name
+        )
+        pre_existing_content = "pre-existing dummy content"
+        existing_ckpt.write_text(pre_existing_content)
+        (tmp_path / CHECKPOINT_ROOT_FILENAME).write_text(str(tmp_path))
+
+        # force_download_parameters defaults to False, so the existing file should
+        # be left untouched.
+        config = OpenFoldSetupConfig(
+            openfold_cache=tmp_path,
+            param_directory=tmp_path,
+            selected_parameters="default",
+            run_integration_tests=False,
+        )
+        config_file = tmp_path / "input_setup_config.json"
+        config_file.write_text(config.model_dump_json())
+
+        with patch(
+            "openfold3.setup_openfold.download_s3_file",
+            side_effect=_fake_download_s3_file,
         ):
-            setup_openfold.main()
+            result = CliRunner().invoke(
+                setup_openfold.main, ["--config", str(config_file)]
+            )
 
-        # Check that the checkpoint root file exists and has the expected path
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / CHECKPOINT_ROOT_FILENAME).read_text() == str(tmp_path)
+        # Content must be unchanged — download_model_parameters skips files that
+        # already exist when force_download_parameters=False.
+        assert existing_ckpt.read_text() == pre_existing_content
+
+    def test_fresh_parameter_default_download(self, tmp_path):
+        config = OpenFoldSetupConfig(
+            openfold_cache=tmp_path,
+            param_directory=tmp_path,
+            selected_parameters="default",
+            run_integration_tests=False,
+        )
+        config_file = tmp_path / "input_setup_config.json"
+        config_file.write_text(config.model_dump_json())
+
+        with patch(
+            "openfold3.setup_openfold.download_s3_file",
+            side_effect=_fake_download_s3_file,
+        ):
+            result = CliRunner().invoke(
+                setup_openfold.main, ["--config", str(config_file)]
+            )
+
+        assert result.exit_code == 0, result.output
         assert (tmp_path / CHECKPOINT_ROOT_FILENAME).exists()
         assert (tmp_path / CHECKPOINT_ROOT_FILENAME).read_text() == str(tmp_path)
-        # Check that dummy checkpoint file has been installed correctly
         assert (
             tmp_path
             / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[DEFAULT_CHECKPOINT_NAME].file_name
         ).exists()
 
     def test_fresh_parameter_download_all(self, tmp_path):
-        inputs = iter(
-            [
-                str(tmp_path),  # Set cache directory
-                "",  # Use default (cache) directory for params directory
-                "2",  # download choice: all parameters
-                "no",  # skip integration tests
-            ]
+        config = OpenFoldSetupConfig(
+            openfold_cache=tmp_path,
+            param_directory=tmp_path,
+            selected_parameters="all",
+            run_integration_tests=False,
         )
+        config_file = tmp_path / "input_setup_config.json"
+        config_file.write_text(config.model_dump_json())
 
-        with (
-            patch.dict(os.environ),
-            patch("builtins.input", side_effect=inputs),
-            patch(
-                "openfold3.entry_points.parameters.download_s3_file",
-                side_effect=_fake_download_s3_file,
-            ),
-            patch(
-                "openfold3.setup_openfold.download_s3_file",
-                side_effect=_fake_download_s3_file,
-            ),
+        with patch(
+            "openfold3.setup_openfold.download_s3_file",
+            side_effect=_fake_download_s3_file,
         ):
-            setup_openfold.main()
+            result = CliRunner().invoke(
+                setup_openfold.main, ["--config", str(config_file)]
+            )
 
-        # Check that the checkpoint root file exists and has the expected path
+        assert result.exit_code == 0, result.output
         assert (tmp_path / CHECKPOINT_ROOT_FILENAME).exists()
         assert (tmp_path / CHECKPOINT_ROOT_FILENAME).read_text() == str(tmp_path)
 
@@ -735,3 +848,15 @@ class TestSetupOpenFold:
             assert (
                 tmp_path / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[ckpt_name].file_name
             ).exists()
+
+
+def test_skip_random_init_context_manager():
+    original_func = initialization.trunc_normal_init_
+
+    with skip_random_init():
+        # function should be noop
+        assert initialization.trunc_normal_init_ is not original_func
+        assert initialization.trunc_normal_init_.__name__ == "noop_init"
+
+    # function should be restored
+    assert initialization.trunc_normal_init_ is original_func

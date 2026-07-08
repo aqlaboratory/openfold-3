@@ -14,13 +14,18 @@
 
 """Tests for the ColabFold MSA server module."""
 
+import io
 import json
+import shutil
+import tarfile
 import textwrap
 from pathlib import Path
+from typing import NamedTuple
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from pydantic_core import Url
 
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
 from openfold3.core.data.pipelines.preprocessing.template import (
@@ -28,12 +33,15 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 )
 from openfold3.core.data.tools.colabfold_msa_server import (
     ColabFoldQueryRunner,
+    ColabFoldServerResultError,
     ComplexGroup,
     MsaComputationSettings,
+    add_msa_paths_to_iqs,
     augment_main_msa_with_query_sequence,
     collect_colabfold_msa_data,
     get_sequence_hash,
     preprocess_colabfold_msas,
+    query_colabfold_msa_server,
     remap_colabfold_template_chain_ids,
 )
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
@@ -160,15 +168,35 @@ class TestRemapColabfoldTemplateChainIds:
         assert remapped_ids[1] == "4pqx_A"
 
     @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
-    def test_unknown_author_chain_raises(self, _mock_fetch):
-        """When the author chain ID isn't in the API response, raise."""
-        with pytest.raises(RuntimeError, match="Author chain Z not found in 1rnb"):
-            remap_colabfold_template_chain_ids(
-                template_alignments=_make_m8_dataframe(["1rnb_Z"]),
-                m_with_templates={101},
-                rep_ids=["rep1"],
-                rep_id_to_m={"rep1": 101},
-            )
+    def test_unknown_author_chain_skipped(self, _mock_fetch):
+        """When the author chain ID isn't in the API response, skip that template."""
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=_make_m8_dataframe(["1rnb_Z"]),
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        assert "rep1" in result
+        # The template with unmappable chain Z should be dropped
+        assert len(result["rep1"]) == 0
+
+    @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
+    def test_unknown_chain_drops_only_bad_rows(self, _mock_fetch):
+        """Valid templates are kept; only unmappable ones are dropped."""
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=_make_m8_dataframe(["1rnb_A", "1rnb_Z", "4pqx_A"]),
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        assert "rep1" in result
+        remapped_ids = result["rep1"][1].tolist()
+        # 1rnb_Z dropped, 1rnb_A remapped to 1rnb_B, 4pqx_A kept
+        assert len(remapped_ids) == 2
+        assert remapped_ids[0] == "1rnb_B"
+        assert remapped_ids[1] == "4pqx_A"
 
     def test_skips_rep_without_templates(self):
         """Rep IDs not in m_with_templates should be skipped (no fetch needed)."""
@@ -232,6 +260,29 @@ class TestColabFoldQueryRunner:
         raw_main_dir.mkdir(parents=True, exist_ok=True)
         # Create an empty file (0 bytes)
         (raw_main_dir / "pdb70.m8").touch()
+
+    @patch("openfold3.core.data.tools.colabfold_msa_server.requests.post")
+    def test_submit_url_has_no_double_slash_with_url_host(self, mock_post, tmp_path):
+        """Regression: a pydantic Url host (trailing slash) must not yield
+        '...com//ticket/msa'. The server 301-redirects the doubled slash, which
+        makes requests downgrade the POST to GET and drop the body, so the
+        server returns 'invalid ID' and the run fails with a misleading error.
+        """
+        # Make submit() return ERROR so the function exits right after the POST,
+        # before any polling/download -- we only care about the URL that was built.
+        mock_post.return_value.json.return_value = {"status": "ERROR"}
+
+        with pytest.raises(Exception, match="MMseqs2 API is giving errors"):
+            query_colabfold_msa_server(
+                ["TESTSEQ"],
+                prefix=tmp_path / "raw",
+                user_agent="test-agent",
+                host_url=Url("https://api.colabfold.com"),  # str() -> trailing slash
+            )
+
+        called_url = mock_post.call_args.args[0]
+        assert called_url == "https://api.colabfold.com/ticket/msa", called_url
+        assert "//" not in called_url.split("://", 1)[1], "doubled slash in path"
 
     @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
     @patch(_MOCK_QUERY_TARGET)
@@ -364,9 +415,7 @@ class TestColabFoldQueryRunner:
         test_sequences = ["TEST", "LONGERTEST"]
 
         for sequence in test_sequences:
-            # dummy tsv output
             query_set = self._construct_monomer_query(sequence)
-            self._make_dummy_template_file(tmp_path)
             msa_compute_settings = MsaComputationSettings(
                 msa_file_format=msa_file_format,
                 server_user_agent="test-agent",
@@ -407,6 +456,11 @@ class TestColabFoldQueryRunner:
                 assert t == t_expected, f"Target length mismatch: {t} != {t_expected}"
                 assert e == e_expected, f"Feature size mismatch: {e} != {e_expected}"
 
+            # Clean up raw directory after running test
+            # This is normally performed in InferenceRunner.cleanup_msa_dir
+            # but that isn't called in this test.
+            shutil.rmtree(tmp_path / "raw", ignore_errors=True)
+
         # Test contents of mapping file after all runs
         with open(tmp_path / "mappings/seq_to_rep_id.json") as f:
             assert set(json.load(f).keys()) == set(test_sequences), (
@@ -419,7 +473,9 @@ class TestColabFoldQueryRunner:
         mock_query,
         tmp_path,
     ):
-        """Test that empty pdb70.m8 file is handled gracefully without crashing."""
+        """Test that empty pdb70.m8 file is handled gracefully without crashing.
+        Runs logic in `preprocess_colabfold_msas` manually in order to add assertions within the run.
+        """
         test_sequence = "TESTSEQUENCE"
         query = self._construct_monomer_query(test_sequence)
 
@@ -455,19 +511,11 @@ class TestColabFoldQueryRunner:
                 "Expected no template files to be created when m8 file is empty"
             )
 
-        # Test preprocess_colabfold_msas with empty template file
-        msa_compute_settings = MsaComputationSettings(
-            msa_file_format="npz",
-            server_user_agent="test-agent",
-            server_url="https://dummy.url",
-            save_mappings=True,
-            msa_output_directory=tmp_path,
-            cleanup_msa_dir=False,
-        )
-
-        # Call preprocess_colabfold_msas - should not raise any exception
-        processed_query_set = preprocess_colabfold_msas(
-            inference_query_set=query, compute_settings=msa_compute_settings
+        # Continue with inner loop of `preprocess_colabfold_msas` to test template chain assignment
+        processed_query_set = add_msa_paths_to_iqs(
+            inference_query_set=query,
+            colabfold_mapper=mapper,
+            output_directory=tmp_path,
         )
 
         # Verify that template fields are None/empty for all chains
@@ -483,6 +531,165 @@ class TestColabFoldQueryRunner:
                     f"{chain.chain_ids} of query {query_name} when template file"
                     f"is empty, but got {chain.template_entry_chain_ids}"
                 )
+
+    def test_preprocess_raises_if_raw_dir_exists(self, tmp_path):
+        """preprocess_colabfold_msas should raise FileExistsError if raw/ exists.
+
+        A leftover raw/ directory from a prior crashed run contains stale
+        out.tar.gz files that would be silently reused for the wrong query.
+        """
+        query = self._construct_monomer_query("TESTSEQUENCE")
+        msa_compute_settings = MsaComputationSettings(
+            msa_file_format="npz",
+            server_user_agent="test-agent",
+            server_url="https://dummy.url",
+            msa_output_directory=tmp_path,
+            cleanup_msa_dir=False,
+        )
+
+        stale_raw_dir = tmp_path / "raw"
+        stale_raw_dir.mkdir(parents=True)
+
+        with pytest.raises(FileExistsError, match="raw"):
+            preprocess_colabfold_msas(
+                inference_query_set=query, compute_settings=msa_compute_settings
+            )
+
+
+class _ValidationCase(NamedTuple):
+    """A bad ColabFold download and the error it should trigger (issue #269)."""
+
+    members: dict[str, bytes]  # tarball contents (name -> bytes)
+    use_pairing: bool
+    match: str  # substring expected in the raised error message
+
+
+# The server returned the wrong/incomplete job: the expected a3m file is absent or
+# empty in the downloaded tarball.
+_VALIDATION_CASES = [
+    pytest.param(
+        _ValidationCase(
+            members={
+                "uniref.a3m": b">101\nAAAA\n",
+                "bfd.mgnify30.metaeuk30.smag30.a3m": b">101\nAAAA\n",
+                "pdb70.m8": b"",
+            },
+            use_pairing=True,
+            match="pair.a3m",
+        ),
+        id="paired_gets_unpaired_tarball",
+    ),
+    pytest.param(
+        _ValidationCase(
+            members={"pdb70.m8": b"templates\n"},
+            use_pairing=False,
+            match="uniref.a3m",
+        ),
+        id="unpaired_missing_uniref",
+    ),
+    pytest.param(
+        _ValidationCase(
+            members={"pair.a3m": b""},
+            use_pairing=True,
+            match="pair.a3m",
+        ),
+        id="empty_pair_a3m",
+    ),
+]
+
+
+class TestQueryColabFoldServerValidation:
+    """Regression tests for issue #269.
+
+    The ColabFold server can return the wrong cached job for a ticket (e.g. an
+    unpaired MSA -- no ``pair.a3m`` -- for a paired request). ``query_colabfold_msa_
+    server`` must reject such a download with a clear ``ColabFoldServerResultError``
+    instead of crashing later on a bare ``FileNotFoundError``.
+    """
+
+    @staticmethod
+    def _write_tarball(out_tar_gz: Path, members: dict[str, bytes]) -> None:
+        """Write a gzipped tar of ``members`` (name -> bytes) at ``out_tar_gz``."""
+        with tarfile.open(out_tar_gz, "w:gz") as tar:
+            for name, data in members.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+
+    @pytest.mark.parametrize("case", _VALIDATION_CASES)
+    def test_rejects_unexpected_download(
+        self, case: _ValidationCase, tmp_path: Path
+    ) -> None:
+        """A download missing an expected a3m file raises ColabFoldServerResultError.
+
+        Pre-creating ``out.tar.gz`` makes ``query_colabfold_msa_server`` skip the
+        submit/download (no network) and go straight to extraction + validation.
+        """
+        self._write_tarball(tmp_path / "out.tar.gz", case.members)
+
+        with pytest.raises(ColabFoldServerResultError, match=case.match):
+            query_colabfold_msa_server(
+                ["AAAA", "CCCC"],
+                prefix=tmp_path,
+                user_agent="test-agent",
+                use_pairing=case.use_pairing,
+            )
+
+    def test_valid_paired_download_passes(self, tmp_path: Path) -> None:
+        """A paired download containing a valid pair.a3m returns the alignments."""
+        self._write_tarball(
+            tmp_path / "out.tar.gz",
+            {"pair.a3m": b">101\nAAAA\n\x00>102\nCCCC\n", "pair.sh": b"#\n"},
+        )
+
+        result = query_colabfold_msa_server(
+            ["AAAA", "CCCC"],
+            prefix=tmp_path,
+            user_agent="test-agent",
+            use_pairing=True,
+        )
+
+        assert len(result) == 2
+
+
+class TestRemapObsoletePdb:
+    """Regression test for GitHub issue #170.
+
+    When ColabFold returns a template hit for an obsolete PDB (e.g. 7QE7),
+    the RCSB API returns no chain mapping.  The function should warn and
+    fall back to using the author chain ID as the label chain ID, rather
+    than crashing the entire run.
+    """
+
+    @staticmethod
+    def _mock_fetch_excluding_obsolete(pdb_ids):
+        """Simulate RCSB not returning data for obsolete PDB entries."""
+        known = {
+            "4pqx": {"A": "A"},
+        }
+        # Obsolete PDB "7qe7" is intentionally absent from known
+        return {pid: known[pid] for pid in pdb_ids if pid in known}
+
+    @patch(_MOCK_FETCH_TARGET)
+    def test_obsolete_pdb_falls_back(self, mock_fetch):
+        """Obsolete PDB with no RCSB mapping falls back to author chain ID."""
+        mock_fetch.side_effect = self._mock_fetch_excluding_obsolete
+
+        # Template hits include an obsolete PDB entry (7qe7)
+        df = _make_m8_dataframe(["7qe7_A", "4pqx_A"])
+
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=df,
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        remapped_ids = result["rep1"][1].tolist()
+        # Obsolete entry falls back to author chain ID
+        assert remapped_ids[0] == "7qe7_A"
+        # Non-obsolete entry is remapped normally
+        assert remapped_ids[1] == "4pqx_A"
 
 
 class TestMsaComputationSettings:

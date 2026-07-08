@@ -119,11 +119,13 @@ dataset_config_kwargs:
 
 # OutputWriterSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141
 # Configure the output formats / content
-output_writing_settings: 
+output_writer_settings: 
   structure_format: cif  [cif | pdb | cif.gz]
   full_confidence_output_format: json [json | npz]
+  full_confidence_output_dtype: float16 [float32 | float16]
   write_features: false
   write_latent_outputs: false
+  write_full_confidence_scores: true
 
 # MSAComputationSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py#L904
 # Configure MSA server settings for colabfold 
@@ -132,7 +134,7 @@ msa_computation_settings:
   server_user_agent: openfold
   server_url: https://api.colabfold.com/
   save_mappings: true
-  msa_output_directory: <tmp-dir>/of3_colabfold_msas/ 
+  msa_output_directory: <tmp-dir>/of3-of-<user>/colabfold_msas/ 
   cleanup_msa_dir: true
 
 # TemplatePreprocessorSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py#L1459
@@ -154,11 +156,12 @@ template_preprocessor_settings:
   create_logs: false
   n_processes: 1
   chunksize: 1
-  structure_directory: <tmp-dir>/of3_template_data/template_structures
+  preprocess_timeout: 60
+  structure_directory: <tmp-dir>/of3-of-<user>/template_data/template_structures
   structure_file_format: cif
-  output_directory: <tmp-dir>/of3_template_data
+  output_directory: <tmp-dir>/of3-of-<user>/template_data
   precache_directory: null
   structure_array_directory: null
-  cache_directory: <tmp-dir>/of3_template_data/template_cache
+  cache_directory: <tmp-dir>/of3-of-<user>/template_data/template_cache
   log_directory: null
   ccd_file_path: null

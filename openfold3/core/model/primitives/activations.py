@@ -22,8 +22,7 @@ from ml_collections import ConfigDict
 from torch import nn
 
 import openfold3.core.config.default_linear_init_config as lin_init
-
-from .linear import Linear
+from openfold3.core.model.primitives.linear import Linear
 
 triton_is_installed = importlib.util.find_spec("triton") is not None
 if triton_is_installed:

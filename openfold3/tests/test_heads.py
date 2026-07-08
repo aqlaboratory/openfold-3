@@ -32,6 +32,7 @@ from openfold3.projects.of3_all_atom.config.model_config import (
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.tests.config import consts
 from openfold3.tests.data_utils import random_of3_features
+from openfold3.tests.model_utils import initialize_model_weights
 
 
 class TestPredictedAlignedErrorHead(unittest.TestCase):
@@ -42,6 +43,7 @@ class TestPredictedAlignedErrorHead(unittest.TestCase):
         c_out = 50
 
         pae_head = PredictedAlignedErrorHead(c_z, c_out)
+        initialize_model_weights(pae_head)
 
         zij = torch.ones((batch_size, n_token, n_token, c_z))
         out = pae_head(zij)
@@ -58,6 +60,7 @@ class TestPredictedDistanceErrorHead(unittest.TestCase):
         c_out = 50
 
         pde_head = PredictedDistanceErrorHead(c_z, c_out)
+        initialize_model_weights(pde_head)
 
         zij = torch.ones((batch_size, n_token, n_token, c_z))
         out = pde_head(zij)
@@ -76,6 +79,7 @@ class TestPLDDTHead(unittest.TestCase):
         plddt_head = PerResidueLDDTAllAtom(
             c_s, c_out, max_atoms_per_token=max_atoms_per_token.get()
         )
+        initialize_model_weights(plddt_head)
 
         si = torch.ones((batch_size, n_token, c_s))
         token_mask = torch.ones((batch_size, n_token))
@@ -107,6 +111,7 @@ class TestExperimentallyResolvedHeadAllAtom(unittest.TestCase):
         exp_res_head = ExperimentallyResolvedHeadAllAtom(
             c_s, c_out, max_atoms_per_token=max_atoms_per_token.get()
         )
+        initialize_model_weights(exp_res_head)
 
         si = torch.ones((batch_size, n_token, c_s))
         token_mask = torch.ones((batch_size, n_token))
@@ -143,6 +148,7 @@ class TestPairformerEmbedding(unittest.TestCase):
         pair_emb = PairformerEmbedding(
             **config.architecture.heads.pairformer_embedding
         ).eval()
+        initialize_model_weights(pair_emb)
 
         si_input = torch.ones(batch_size, n_token, c_s_input)
         si = torch.ones(batch_size, n_token, c_s)
@@ -174,6 +180,164 @@ class TestPairformerEmbedding(unittest.TestCase):
         expected_shape_pair = (batch_size, n_token, n_token, c_z)
         np.testing.assert_array_equal(out_pair.shape, expected_shape_pair)
 
+    def test_pairformer_embedding_multisample_shape(self):
+        batch_size = consts.batch_size
+        n_sample = 5
+        n_token = consts.n_res
+
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
+
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
+
+        pair_emb = PairformerEmbedding(
+            **config.architecture.heads.pairformer_embedding
+        ).eval()
+        initialize_model_weights(pair_emb)
+
+        si_input = torch.randn(batch_size, 1, n_token, c_s_input)
+        si = torch.randn(batch_size, 1, n_token, c_s)
+        zij = torch.randn(batch_size, 1, n_token, n_token, c_z)
+        atom_positions_predicted = torch.randn(batch_size, n_sample, n_token, 3)
+        single_mask = torch.randint(
+            0,
+            2,
+            size=(
+                batch_size,
+                1,
+                n_token,
+            ),
+        )
+        pair_mask = torch.randint(0, 2, size=(batch_size, 1, n_token, n_token))
+
+        out_single, out_pair = pair_emb(
+            si_input,
+            si,
+            zij,
+            atom_positions_predicted,
+            single_mask,
+            pair_mask,
+            chunk_size=4,
+        )
+
+        expected_shape_single = (batch_size, n_sample, n_token, c_s)
+        np.testing.assert_array_equal(out_single.shape, expected_shape_single)
+
+        expected_shape_pair = (batch_size, n_sample, n_token, n_token, c_z)
+        np.testing.assert_array_equal(out_pair.shape, expected_shape_pair)
+
+    def test_pairformer_embedding_apply_per_sample_equal(self):
+        batch_size = consts.batch_size
+        n_sample = 5
+        n_token = consts.n_res
+
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
+
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
+
+        pair_emb = PairformerEmbedding(
+            **config.architecture.heads.pairformer_embedding
+        ).eval()
+        initialize_model_weights(pair_emb)
+
+        si_input = torch.randn(batch_size, 1, n_token, c_s_input)
+        si = torch.randn(batch_size, 1, n_token, c_s)
+        zij = torch.randn(batch_size, 1, n_token, n_token, c_z)
+        atom_positions_predicted = torch.randn(batch_size, n_sample, n_token, 3)
+        single_mask = torch.randint(
+            0,
+            2,
+            size=(
+                batch_size,
+                1,
+                n_token,
+            ),
+        )
+        pair_mask = torch.randint(0, 2, size=(batch_size, 1, n_token, n_token))
+
+        out_single, out_pair = pair_emb(
+            si_input,
+            si,
+            zij,
+            atom_positions_predicted,
+            single_mask,
+            pair_mask,
+            chunk_size=4,
+        )
+
+        out_single_per_sample, out_pair_per_sample = pair_emb(
+            si_input,
+            si,
+            zij,
+            atom_positions_predicted,
+            single_mask,
+            pair_mask,
+            chunk_size=4,
+            apply_per_sample=True,
+        )
+
+        torch.testing.assert_close(out_single, out_single_per_sample)
+        torch.testing.assert_close(out_pair, out_pair_per_sample)
+
+    def test_pairformer_embedding_apply_per_sample_one_batch_dim_equal(self):
+        n_sample = 5
+        n_token = consts.n_res
+
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
+
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
+
+        pair_emb = PairformerEmbedding(
+            **config.architecture.heads.pairformer_embedding
+        ).eval()
+        initialize_model_weights(pair_emb)
+
+        si_input = torch.randn(1, n_token, c_s_input)
+        si = torch.randn(1, n_token, c_s)
+        zij = torch.randn(1, n_token, n_token, c_z)
+        atom_positions_predicted = torch.randn(n_sample, n_token, 3)
+        single_mask = torch.randint(
+            0,
+            2,
+            size=(
+                1,
+                n_token,
+            ),
+        )
+        pair_mask = torch.randint(0, 2, size=(1, n_token, n_token))
+
+        out_single, out_pair = pair_emb(
+            si_input,
+            si,
+            zij,
+            atom_positions_predicted,
+            single_mask,
+            pair_mask,
+            chunk_size=4,
+        )
+
+        out_single_per_sample, out_pair_per_sample = pair_emb(
+            si_input,
+            si,
+            zij,
+            atom_positions_predicted,
+            single_mask,
+            pair_mask,
+            chunk_size=4,
+            apply_per_sample=True,
+        )
+
+        torch.testing.assert_close(out_single, out_single_per_sample)
+        torch.testing.assert_close(out_pair, out_pair_per_sample)
+
 
 class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
     def test_auxiliary_heads_all_atom_shape(self):
@@ -197,6 +361,7 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         heads_config = config.architecture.heads
         heads_config.pae.enabled = True
         aux_head = AuxiliaryHeadsAllAtom(heads_config).eval()
+        initialize_model_weights(aux_head)
 
         si_input = torch.ones(batch_size, n_token, c_s_input)
         si = torch.ones(batch_size, n_token, c_s)

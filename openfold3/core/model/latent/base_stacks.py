@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
 #
@@ -28,8 +29,8 @@ from torch import nn
 
 from openfold3.core.utils.checkpointing import checkpoint_blocks
 from openfold3.core.utils.chunk_utils import (
-    CUEQ_MAX_CHUNK_SIZE,
     DEFAULT_MAX_CHUNK_SIZE,
+    FLASH_MAX_CHUNK_SIZE,
     ChunkSizeTuner,
 )
 
@@ -84,6 +85,7 @@ class MSAStack(nn.Module, ABC):
         transition_ckpt_chunk_size: int | None,
         use_deepspeed_evo_attention: bool,
         use_cueq_triangle_kernels: bool,
+        use_triton_triangle_kernels: bool,
         use_lma: bool,
         msa_mask: torch.Tensor | None,
         pair_mask: torch.Tensor | None,
@@ -106,6 +108,7 @@ class MSAStack(nn.Module, ABC):
                 transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
@@ -123,10 +126,13 @@ class MSAStack(nn.Module, ABC):
 
         if chunk_size is not None and self.chunk_size_tuner is not None:
             assert not self.training
+            use_flash_kernels = (
+                use_cueq_triangle_kernels
+                or use_triton_triangle_kernels
+                or use_deepspeed_evo_attention
+            )
             max_chunk_size = (
-                CUEQ_MAX_CHUNK_SIZE
-                if use_cueq_triangle_kernels
-                else DEFAULT_MAX_CHUNK_SIZE
+                FLASH_MAX_CHUNK_SIZE if use_flash_kernels else DEFAULT_MAX_CHUNK_SIZE
             )
             tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
                 representative_fn=blocks[0],
@@ -141,9 +147,7 @@ class MSAStack(nn.Module, ABC):
                 max_chunk_size=max_chunk_size,
             )
             attn_chunk = (
-                tuned_chunk_size
-                if use_cueq_triangle_kernels
-                else (tuned_chunk_size // 4)
+                tuned_chunk_size if use_flash_kernels else (tuned_chunk_size // 4)
             )
             blocks = [
                 partial(
@@ -181,6 +185,7 @@ class MSAStack(nn.Module, ABC):
         transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         _mask_trans: bool = True,
     ):
@@ -195,6 +200,7 @@ class MSAStack(nn.Module, ABC):
             transition_ckpt_chunk_size=transition_ckpt_chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             msa_mask=msa_mask,
             pair_mask=pair_mask,
@@ -227,6 +233,7 @@ class MSAStack(nn.Module, ABC):
         transition_ckpt_chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
@@ -269,6 +276,7 @@ class MSAStack(nn.Module, ABC):
             transition_ckpt_chunk_size=transition_ckpt_chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             msa_mask=msa_mask,
             pair_mask=pair_mask,

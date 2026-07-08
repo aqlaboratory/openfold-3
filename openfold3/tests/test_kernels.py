@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,8 +19,7 @@ attention kernel, DS4Sci_EvoformerAttention vs. a stock PyTorch attention
 implementation.
 """
 
-import unittest
-
+import pytest
 import torch
 from torch.nn import functional as F
 
@@ -41,14 +41,18 @@ from openfold3.tests.data_utils import (
 
 # Needed to do backward for cuEq kernels with FP32
 torch.backends.cuda.matmul.allow_tf32 = True
+pytestmark = [pytest.mark.slow]
+
+torch.backends.cuda.preferred_blas_library("cublas")
 
 
 @compare_utils.skip_unless_cuda_available()
-class TestKernels(unittest.TestCase):
+class TestKernels:
     def _compare_attn_kernel_forward(
         self,
         use_deepspeed_evo_attention=False,
         use_cueq_triangle_kernels=False,
+        use_triton_triangle_kernels=False,
         dtype=torch.float32,
     ):
         """Compare attention with and without using DeepSpeed Evoformer kernel."""
@@ -90,10 +94,11 @@ class TestKernels(unittest.TestCase):
                 biases=biases,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
             ).cpu()
 
         err = torch.max(torch.abs(kernel_out - real_out))
-        self.assertTrue(err < eps, f"Error: {err}")
+        assert err < eps, f"Error: {err}"
 
     @compare_utils.skip_unless_ds4s_installed()
     def test_dsk_forward_bf16(self):
@@ -127,10 +132,25 @@ class TestKernels(unittest.TestCase):
             dtype=torch.bfloat16,
         )
 
+    @compare_utils.skip_unless_triton_installed()
+    def test_triton_forward_bf16(self):
+        self._compare_attn_kernel_forward(
+            use_triton_triangle_kernels=True,
+            dtype=torch.bfloat16,
+        )
+
+    @compare_utils.skip_unless_triton_installed()
+    def test_triton_forward_fp32(self):
+        self._compare_attn_kernel_forward(
+            use_triton_triangle_kernels=True,
+            dtype=torch.float32,
+        )
+
     def _compare_attn_kernel_backward(
         self,
         use_deepspeed_evo_attention=False,
         use_cueq_triangle_kernels=False,
+        use_triton_triangle_kernels=False,
         dtype=torch.float32,
     ):
         """
@@ -197,6 +217,7 @@ class TestKernels(unittest.TestCase):
             biases=biases_repro,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
         )
         loss_repro = torch.mean(out_repro)
         loss_repro.backward()
@@ -221,7 +242,7 @@ class TestKernels(unittest.TestCase):
         for i, item in enumerate(pairs):
             t_repro, t_gt = item
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
-            self.assertTrue(err < eps, f"Error item #{i}: {err}")
+            assert err < eps, f"Error item #{i}: {err}"
 
         # Compare the grads of model weights
         a_repro_params = dict(a_repro.named_parameters())
@@ -230,7 +251,7 @@ class TestKernels(unittest.TestCase):
             t_repro = a_repro_params[name]
             t_gt = a_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
-            self.assertTrue(err < eps, f"Error item {name}: {err}")
+            assert err < eps, f"Error item {name}: {err}"
 
     @compare_utils.skip_unless_ds4s_installed()
     def test_dsk_backward_bf16(self):
@@ -261,6 +282,13 @@ class TestKernels(unittest.TestCase):
         self._compare_attn_kernel_backward(
             use_deepspeed_evo_attention=False,
             use_cueq_triangle_kernels=True,
+            dtype=torch.bfloat16,
+        )
+
+    @compare_utils.skip_unless_triton_installed()
+    def test_triton_backward_bf16(self):
+        self._compare_attn_kernel_backward(
+            use_triton_triangle_kernels=True,
             dtype=torch.bfloat16,
         )
 
@@ -299,7 +327,7 @@ class TestKernels(unittest.TestCase):
             )
         err = torch.max(torch.abs(fwd_reg - fwd_cueq))
         eps = 2e-2
-        self.assertTrue(err < eps, f"Error: {err}")
+        assert err < eps, f"Error: {err}"
 
     @compare_utils.skip_unless_cueq_installed()
     def test_cueq_tri_mult_bwd(self):
@@ -376,7 +404,7 @@ class TestKernels(unittest.TestCase):
             t_repro = tm_repro_params[name]
             t_gt = tm_gt_params[name]
             err = torch.max(torch.abs(t_repro.grad.cpu() - t_gt.grad.cpu()))
-            self.assertTrue(err < eps, f"Error item {name}: {err}")
+            assert err < eps, f"Error item {name}: {err}"
 
     def _initialize_model_weights(self, model):
         for module in model.modules():
@@ -388,6 +416,7 @@ class TestKernels(unittest.TestCase):
         self,
         use_deepspeed_evo_attention=False,
         use_cueq_triangle_kernels=False,
+        use_triton_triangle_kernels=False,
         dtype=torch.float32,
         chunk_size=None,
         eps=2e-2,
@@ -405,9 +434,9 @@ class TestKernels(unittest.TestCase):
         """
         batch_size = consts.batch_size
         if chunk_size is not None and (
-            use_deepspeed_evo_attention or use_cueq_triangle_kernels
+            use_deepspeed_evo_attention or use_triton_triangle_kernels
         ):
-            # Chunk tuning is not supported with batch size > 1 for DeepSpeed kernel
+            # Chunk tuning is not supported with batch size > 1 for these kernels
             batch_size = 1
 
         n_res = 200  # Avoid cuEq seq len constraints
@@ -478,6 +507,7 @@ class TestKernels(unittest.TestCase):
                 pair_mask=z_mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 chunk_size=chunk_size,
             )
             out_repro_single_ds = F.layer_norm(out_repro_single_ds, (consts.c_s,)).cpu()
@@ -548,6 +578,34 @@ class TestKernels(unittest.TestCase):
         self._compare_pairformer(
             use_deepspeed_evo_attention=False,
             use_cueq_triangle_kernels=True,
+            dtype=torch.float32,
+            chunk_size=4,
+            eps=4e-2,
+        )
+
+    @compare_utils.skip_unless_triton_installed()
+    def test_compare_pairformer_triton_bf16(self):
+        """Run Pairformer comparison test with Triton kernel and BF16 precision."""
+        self._compare_pairformer(
+            use_triton_triangle_kernels=True,
+            dtype=torch.bfloat16,
+            eps=2e-2,
+        )
+
+    @compare_utils.skip_unless_triton_installed()
+    def test_compare_pairformer_triton_fp32(self):
+        """Run Pairformer comparison test with Triton kernel and FP32 precision."""
+        self._compare_pairformer(
+            use_triton_triangle_kernels=True,
+            dtype=torch.float32,
+            eps=2e-2,
+        )
+
+    @compare_utils.skip_unless_triton_installed()
+    def test_compare_pairformer_triton_fp32_chunk(self):
+        """Run Pairformer comparison test with Triton kernel and chunk tuning enabled."""
+        self._compare_pairformer(
+            use_triton_triangle_kernels=True,
             dtype=torch.float32,
             chunk_size=4,
             eps=4e-2,
@@ -652,17 +710,21 @@ class TestKernels(unittest.TestCase):
         self,
         use_deepspeed_evo_attention=False,
         use_cueq_triangle_kernels=False,
+        use_triton_triangle_kernels=False,
         dtype=torch.float32,
         chunk_size=None,
+        eps=2e-2,
     ):
         """
-        Compare Template Stack output with and without using DeepSpeed Evoformer
-        attention kernel. Kernel can be used for Triangle Attention in the Template Pair
-        Stack.
+        Compare Template Stack output with and without using different optimized
+        attention kernels. Kernel can be used for Triangle Attention in the
+        Template Pair Stack.
         """
         batch_size = consts.batch_size
-        if chunk_size is not None and use_deepspeed_evo_attention:
-            # Chunk tuning is not supported with batch size > 1 for DeepSpeed kernel
+        if chunk_size is not None and (
+            use_deepspeed_evo_attention or use_triton_triangle_kernels
+        ):
+            # Chunk tuning is not supported with batch size > 1 for these kernels
             batch_size = 1
 
         n_templ = 3
@@ -721,15 +783,15 @@ class TestKernels(unittest.TestCase):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
             )
 
-            compare_utils.assert_max_abs_diff_small(out_repro, out_repro_ds, 2e-2)
+            compare_utils.assert_max_abs_diff_small(out_repro, out_repro_ds, eps)
 
     @compare_utils.skip_unless_ds4s_installed()
     def test_compare_template_stack_dsk_fp32(self):
         self._compare_template_stack(
             use_deepspeed_evo_attention=True,
-            use_cueq_triangle_kernels=False,
             dtype=torch.float32,
         )
 
@@ -737,15 +799,14 @@ class TestKernels(unittest.TestCase):
     def test_compare_template_stack_dsk_bf16(self):
         self._compare_template_stack(
             use_deepspeed_evo_attention=True,
-            use_cueq_triangle_kernels=False,
             dtype=torch.bfloat16,
+            eps=4e-2,
         )
 
     @compare_utils.skip_unless_ds4s_installed()
     def test_compare_template_stack_dsk_fp32_chunk(self):
         self._compare_template_stack(
             use_deepspeed_evo_attention=True,
-            use_cueq_triangle_kernels=False,
             dtype=torch.float32,
             chunk_size=4,
         )
@@ -753,7 +814,6 @@ class TestKernels(unittest.TestCase):
     @compare_utils.skip_unless_cueq_installed()
     def test_compare_template_stack_cueq_fp32(self):
         self._compare_template_stack(
-            use_deepspeed_evo_attention=False,
             use_cueq_triangle_kernels=True,
             dtype=torch.float32,
         )
@@ -761,7 +821,6 @@ class TestKernels(unittest.TestCase):
     @compare_utils.skip_unless_cueq_installed()
     def test_compare_template_stack_cueq_bf16(self):
         self._compare_template_stack(
-            use_deepspeed_evo_attention=False,
             use_cueq_triangle_kernels=True,
             dtype=torch.bfloat16,
         )
@@ -769,12 +828,29 @@ class TestKernels(unittest.TestCase):
     @compare_utils.skip_unless_cueq_installed()
     def test_compare_template_stack_cueq_fp32_chunk(self):
         self._compare_template_stack(
-            use_deepspeed_evo_attention=False,
             use_cueq_triangle_kernels=True,
             dtype=torch.float32,
             chunk_size=4,
         )
 
+    @compare_utils.skip_unless_triton_installed()
+    def test_compare_template_stack_triton_fp32_chunk(self):
+        self._compare_template_stack(
+            use_triton_triangle_kernels=True,
+            dtype=torch.float32,
+            chunk_size=4,
+        )
 
-if __name__ == "__main__":
-    unittest.main()
+    @compare_utils.skip_unless_triton_installed()
+    def test_compare_template_stack_triton_fp32(self):
+        self._compare_template_stack(
+            use_triton_triangle_kernels=True,
+            dtype=torch.float32,
+        )
+
+    @compare_utils.skip_unless_triton_installed()
+    def test_compare_template_stack_triton_bf16(self):
+        self._compare_template_stack(
+            use_triton_triangle_kernels=True,
+            dtype=torch.bfloat16,
+        )

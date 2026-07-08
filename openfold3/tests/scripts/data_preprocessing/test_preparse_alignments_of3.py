@@ -62,7 +62,7 @@ class TestPreparseAlignmentsOf3:
 
         # Check that npz files were created for both chains
         npz_files = list(tmp_path.glob("*.npz"))
-        assert [f.name for f in npz_files] == ["2q2k_B.npz", "2q2k_A.npz"]
+        assert set([f.name for f in npz_files]) == {"2q2k_B.npz", "2q2k_A.npz"}
 
         # Check contents of one npz file
         npz_data = np.load(tmp_path / "2q2k_A.npz", allow_pickle=True)

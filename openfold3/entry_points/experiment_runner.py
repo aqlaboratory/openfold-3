@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import json
 import logging
 import operator
@@ -582,6 +583,21 @@ class TrainingExperimentRunner(ExperimentRunner):
         return _callbacks
 
 
+@contextlib.contextmanager
+def skip_random_init():
+    import openfold3.core.model.primitives.initialization as m
+
+    def noop_init(*args, **kwargs):
+        pass
+
+    original_trunc_normal_init = m.trunc_normal_init_
+    try:
+        m.trunc_normal_init_ = noop_init
+        yield
+    finally:
+        m.trunc_normal_init_ = original_trunc_normal_init
+
+
 class InferenceExperimentRunner(ExperimentRunner):
     """Inference experiment builder."""
 
@@ -590,8 +606,8 @@ class InferenceExperimentRunner(ExperimentRunner):
         experiment_config,
         num_diffusion_samples: int | None = None,
         num_model_seeds: int | None = None,
-        use_msa_server: bool = False,
-        use_templates: bool = False,
+        use_msa_server: bool | None = None,
+        use_templates: bool | None = None,
         output_dir: Path | None = None,
     ):
         super().__init__(experiment_config)
@@ -627,15 +643,26 @@ class InferenceExperimentRunner(ExperimentRunner):
     def num_diffusion_samples(self) -> int:
         return self.model_config.architecture.shared.diffusion.no_full_rollout_samples
 
+    @cached_property
+    def lightning_module(self) -> pl.LightningModule:
+        """Instantiate without random initialization to speed up inference setup."""
+        with skip_random_init():
+            return self.project_entry.runner(self.model_config, log_dir=self.log_dir)
+
     def update_config_with_cli_args(
         self,
         num_diffusion_samples: int | None,
         num_model_seeds: int | None,
         output_dir: Path | None,
-        use_msa_server: bool = False,
-        use_templates: bool = False,
+        use_msa_server: bool | None = None,
+        use_templates: bool | None = None,
     ):
-        """Updates configuration given command line args."""
+        """Updates configuration given command line args.
+
+        ``use_msa_server`` and ``use_templates`` are tri-state: ``None`` means the
+        argument was not provided, so the runner yaml / config value is left as-is.
+        An explicit ``True`` or ``False`` overrides the yaml / config value.
+        """
         if output_dir:
             self.experiment_config.experiment_settings.output_dir = output_dir
 
@@ -647,11 +674,11 @@ class InferenceExperimentRunner(ExperimentRunner):
             start_seed = 42
             self.seeds = generate_seeds(start_seed, num_model_seeds)
 
-        if use_msa_server:
-            self.experiment_config.experiment_settings.use_msa_server = True
+        if use_msa_server is not None:
+            self.experiment_config.experiment_settings.use_msa_server = use_msa_server
 
-        if use_templates:
-            self.experiment_config.experiment_settings.use_templates = True
+        if use_templates is not None:
+            self.experiment_config.experiment_settings.use_templates = use_templates
 
     @cached_property
     def use_msa_server(self) -> bool:

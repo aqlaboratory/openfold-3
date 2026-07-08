@@ -20,8 +20,7 @@ import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
-
-from .linear import Linear
+from openfold3.core.model.primitives.linear import Linear
 
 
 class LayerNorm(nn.Module):

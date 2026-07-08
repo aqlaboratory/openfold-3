@@ -64,6 +64,8 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     "paired_msa_file_paths": "/absolute/path/to/paired_msas",
     "template_alignment_file_path": "/absolute/path/to/template_msa",
     "template_entry_chain_ids": ["entry1_A", "entry2_B", "entry3_A"],
+    "template_cif_paths": ["/path/to/template1.cif", "/path/to/template2.cif"],
+    "template_cif_chain_ids": ["A", null],
   }
   ```
 
@@ -118,6 +120,19 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - A list of template PDB entry + chain IDs to use for this chain.
     - Use this field only when running inference with **precomputed alignments**. See the {doc}`Running with Templates Documentation <template_how_to>` for details.
     - If using the ColabFold MSA server, this field is automatically populated and will **override any user-provided path**.
+
+  - `template_cif_paths` *(list[str], optional, default = null)*
+    - List of paths to CIF files to use as templates for this chain.
+    - Enables **CIF-direct template mode**, which parses templates directly from CIF files without requiring pre-computed alignments.
+    - Alignments are computed on-the-fly using Kalign.
+    - This is useful when you have known template structures but no pre-computed MSA/template alignments.
+    - Example: `["/path/to/template1.cif", "/path/to/template2.cif"]`
+
+  - `template_cif_chain_ids` *(list[str | null], optional, default = null)*
+    - List of chain IDs to use from each corresponding CIF file in `template_cif_paths`.
+    - Must have the same length as `template_cif_paths` if provided.
+    - Use `null` for a specific entry to let the parser automatically select the best-matching chain.
+    - Example: `["A", null, "B"]` - uses chain A from the first CIF, auto-selects from the second, and uses chain B from the third.
 
   ### 3.2. RNA Chains
 

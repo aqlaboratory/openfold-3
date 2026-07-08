@@ -26,7 +26,7 @@ from openfold3.core.utils.tensor_utils import (
 )
 
 DEFAULT_MAX_CHUNK_SIZE = 512
-CUEQ_MAX_CHUNK_SIZE = 1024
+FLASH_MAX_CHUNK_SIZE = 1024
 
 
 def _fetch_dims(tree):
@@ -363,7 +363,6 @@ class ChunkSizeTuner:
         candidates = [2**l for l in range(int(math.log(max_chunk_size, 2)) + 1)]
         candidates = [c for c in candidates if c > min_chunk_size]
         candidates = [min_chunk_size] + candidates
-        candidates[-1] += 4
 
         def test_chunk_size(chunk_size):
             try:
@@ -373,19 +372,25 @@ class ChunkSizeTuner:
             except RuntimeError:
                 return False
 
-        min_viable_chunk_size_index = 0
+        # Binary search for largest viable chunk size (min_chunk_size is assumed
+        # to be viable).
+        lo = 0
+        hi = len(candidates)
         i = len(candidates) - 1
-        while i > min_viable_chunk_size_index:
+        while lo < i < hi:
             viable = test_chunk_size(candidates[i])
-            if not viable:
-                i = (min_viable_chunk_size_index + i) // 2
+            if viable:
+                lo = i
             else:
-                min_viable_chunk_size_index = i
-                i = (i + len(candidates) - 1) // 2
+                hi = i
+            i = (lo + hi) // 2
 
-        return candidates[min_viable_chunk_size_index]
+        return candidates[lo]
 
     def _compare_arg_caches(self, ac1, ac2):
+        # When recursing this tests that tensors have the same rank
+        if len(ac1) != len(ac2):
+            return False
         consistent = True
         for a1, a2 in zip(ac1, ac2, strict=True):
             assert type(a1) is type(a2)
@@ -410,12 +415,11 @@ class ChunkSizeTuner:
         max_chunk_size=DEFAULT_MAX_CHUNK_SIZE,
     ) -> int:
         def remove_tensors(a):
-            return a.shape if type(a) is torch.Tensor else a
+            return (a.shape, a.dtype.itemsize) if type(a) is torch.Tensor else a
 
         arg_data = tree_map(remove_tensors, args, object)
         if self.cached_arg_data is not None:
             # If args have changed shape/value, we need to re-tune
-            assert len(self.cached_arg_data) == len(arg_data)
             consistent = self._compare_arg_caches(self.cached_arg_data, arg_data)
         else:
             # Otherwise, we can reuse the precomputed value

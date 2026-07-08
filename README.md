@@ -14,7 +14,7 @@ For our reproduction of AlphaFold2, please refer to the original [OpenFold repos
 A technical description of our most recent model version, OpenFold3-preview2, is available [here](https://portal.openfold.omsf.io/reports/of3p2_technical_report.pdf).
 
 ## Documentation
-Please visit our [portal](https://portal.openfold.omsf.io/reports/of3p2_technical_report.pdf) and [full documentation](https://openfold-3.readthedocs.io/en/latest/) for instructions on running model training and inference.
+Please visit our [portal](https://portal.openfold.omsf.io) and [full documentation](https://openfold-3.readthedocs.io/en/latest/) for instructions on running model training and inference.
 
 ## Datasets
 We provide the full training data for reproducing OpenFold3-preview, including our reproduction of the MGnify-based 13M-sequence distillation dataset described in the AlphaFold3 paper. For more details about dataset access, please refer to [our portal](https://portal.openfold.omsf.io/datasets).
@@ -99,7 +99,7 @@ The final OpenFold3 model is still in development, and we are actively working o
 If you encounter problems using OpenFold3-preview, feel free to create an issue! We also
 welcome pull requests from the community.
 
-In addition, we offer a [public Slack channel](https://join.slack.com/share/enQtMTA2ODc5MzU5NjYxNzktY2FjMjg5Y2NhNTJmMzExODIyNzkxNTZiMGYzZGVmOTY1ZDEyMWZiZTRjN2U1YTNlNjkxN2YyZDdlNzFmMGRiZQ) for discussions and questions around OpenFold3.
+In addition, we offer a [public Slack channel](https://join.slack.com/t/openfoldworkspace/shared_invite/zt-40rax5ape-96NkpN_EYgp5~vELu_IdQg) for discussions and questions around OpenFold3.
 
 ## Citing this Work
 
@@ -110,7 +110,7 @@ If you use OpenFold3-preview in your research, please cite the following:
   title = {OpenFold3-preview},
   author = {{The OpenFold3 Team}},
   year = {2025},
-  version = {0.4.0},
+  version = {0.4.2},
   doi = {10.5281/zenodo.19001000},
   url = {https://github.com/aqlaboratory/openfold-3},
   abstract = {OpenFold3-preview is a biomolecular structure prediction model aiming to be a bitwise reproduction of DeepMind's AlphaFold3, developed by the AlQuraishi Lab at Columbia University and the OpenFold consortium.}

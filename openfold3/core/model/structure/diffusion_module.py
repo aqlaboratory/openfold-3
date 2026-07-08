@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,53 +30,13 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionEncoder,
 )
 from openfold3.core.model.primitives import LayerNorm, Linear
-from openfold3.core.utils.rigid_utils import quat_to_rot
 
-
-def sample_rotations(shape, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
-    """Sample random quaternions"""
-    q = torch.randn(*shape, 4, dtype=dtype, device=device)
-    q = q / torch.linalg.norm(q, dim=-1, keepdim=True)
-
-    rots = quat_to_rot(q)
-
-    return rots
-
-
-def centre_random_augmentation(
-    xl: torch.Tensor, atom_mask: torch.Tensor, scale_trans: float = 1.0
-) -> torch.Tensor:
-    """
-    Implements AF3 Algorithm 19.
-
-    Args:
-        xl:
-            [*, N_atom, 3] Atom positions
-        atom_mask:
-            [*, N_atom] Atom mask
-        scale_trans:
-            Translation scaling factor
-    Returns:
-        Updated atom position with random global rotation and translation
-    """
-    rots = sample_rotations(shape=xl.shape[:-2], dtype=xl.dtype, device=xl.device)
-
-    trans = scale_trans * torch.randn(
-        (*xl.shape[:-2], 3), dtype=xl.dtype, device=xl.device
-    )
-
-    mean_xl = torch.sum(
-        xl * atom_mask[..., None],
-        dim=-2,
-        keepdim=True,
-    ) / torch.sum(atom_mask[..., None], dim=-2, keepdim=True).clamp(min=1)  # no 0-div
-
-    # center coordinates
-    pos_centered = xl - mean_xl
-    pos_out = pos_centered @ rots.transpose(-1, -2) + trans[..., None, :]
-    pos_out = pos_out * atom_mask[..., None]
-
-    return pos_out
+# Re-exported from a lightweight module so that data-pipeline imports do not pull
+# in the heavy model stack (e.g. cuequivariance). See augmentation.py / issue #268.
+from openfold3.core.model.structure.augmentation import (  # noqa: F401
+    centre_random_augmentation,
+    sample_rotations,
+)
 
 
 # Move this somewhere else?
@@ -176,6 +137,7 @@ class DiffusionModule(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -206,6 +168,8 @@ class DiffusionModule(nn.Module):
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
+            use_triton_triangle_kernels:
+                Whether to use Triton triangle attention kernel
             use_lma:
                 Whether to use LMA
             use_high_precision_attention:
@@ -248,6 +212,7 @@ class DiffusionModule(nn.Module):
             mask=token_mask,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
             use_high_precision_attention=use_high_precision_attention,
             _mask_trans=_mask_trans,
@@ -324,6 +289,7 @@ class SampleDiffusion(nn.Module):
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
@@ -348,6 +314,8 @@ class SampleDiffusion(nn.Module):
                 Inference-time subbatch size
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
+            use_triton_triangle_kernels:
+                Whether to use Triton triangle attention kernel
             use_lma:
                 Whether to use LMA
             use_high_precision_attention:
@@ -394,6 +362,7 @@ class SampleDiffusion(nn.Module):
                 chunk_size=chunk_size,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,

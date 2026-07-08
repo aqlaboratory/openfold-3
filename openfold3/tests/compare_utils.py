@@ -13,11 +13,19 @@
 # limitations under the License.
 
 import importlib
-import unittest
 
+import pytest
 import torch
 
-from openfold3.core.kernels.cueq_utils import is_cuequivariance_available
+from openfold3.core.kernels.cueq_utils import (
+    is_cuequivariance_available,
+    is_cuequivariance_installed,
+)
+
+
+def skip_if_rocm():
+    is_rocm = torch.cuda.is_available() and torch.version.hip is not None
+    return pytest.mark.skipif(is_rocm, reason="Not supported on ROCm/HIP")
 
 
 def skip_unless_ds4s_installed():
@@ -26,24 +34,30 @@ def skip_unless_ds4s_installed():
         deepspeed_is_installed
         and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
     )
-    return unittest.skipUnless(
-        ds4s_is_installed, "Requires DeepSpeed with version ≥ 0.10.4"
+    is_rocm = torch.cuda.is_available() and torch.version.hip is not None
+    return pytest.mark.skipif(
+        not (ds4s_is_installed and not is_rocm),
+        reason="Requires DeepSpeed with version ≥ 0.10.4 (not supported on ROCm/HIP)",
     )
 
 
 def skip_unless_cueq_installed():
-    return unittest.skipUnless(
-        is_cuequivariance_available(), "Requires CU-Equivaraince to be installed"
-    )
+    if not is_cuequivariance_installed():
+        reason = "Requires cuequivariance to be installed"
+    elif not torch.cuda.is_available():
+        reason = "Requires CUDA (cuequivariance is installed but no GPU available)"
+    else:
+        reason = "cuequivariance not available"
+    return pytest.mark.skipif(not is_cuequivariance_available(), reason=reason)
 
 
 def skip_unless_triton_installed():
     triton_is_installed = importlib.util.find_spec("triton") is not None
-    return unittest.skipUnless(triton_is_installed, "Requires Triton")
+    return pytest.mark.skipif(not triton_is_installed, reason="Requires Triton")
 
 
 def skip_unless_cuda_available():
-    return unittest.skipUnless(torch.cuda.is_available(), "Requires GPU")
+    return pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
 
 
 def _assert_abs_diff_small_base(compare_func, expected, actual, eps):

@@ -61,11 +61,14 @@ class TemplateCacheEntry:
             The release date of the template structure.
         idx_map (np.ndarray[int]):
             Dictionary mapping tokens that fall into the crop to corresponding residue
-            indices in the matching alignment."""
+            indices in the matching alignment.
+        cif_path (Path | None):
+            Original CIF file path for CIF-direct mode."""
 
     index: int
     release_date: str
     idx_map: np.ndarray[int]
+    cif_path: Path | None = None
 
 
 @dataclasses.dataclass(frozen=False)
@@ -298,6 +301,8 @@ def parse_template_structure(
     template_pdb_chain_id: str,
     template_file_format: str,
     ccd: CIFFile | None,
+    cif_assembly_cache: dict[str, tuple] | None = None,
+    cif_path: Path | None = None,
 ) -> AtomArray:
     """Parses the template structure for the given chain.
 
@@ -313,11 +318,17 @@ def parse_template_structure(
             The format of the template structures.
         ccd (CIFFile | None):
             Parsed CCD file.
+        cif_assembly_cache (dict[str, tuple] | None):
+            Optional cache dictionary mapping PDB IDs to (cif_file, atom_array_assembly)
+            tuples. Used to avoid re-parsing the same CIF file when multiple chains from
+            the same structure are needed.
+        cif_path (Path | None):
+            Direct path to the CIF file for CIF-direct mode.
 
     Raises:
         ValueError:
             If neither template_structure_array_directory nor
-            template_structures_directory is provided.
+            template_structures_directory nor cif_path is provided.
 
     Returns:
         AtomArray:
@@ -325,6 +336,10 @@ def parse_template_structure(
     """
     # Parse template IDs
     pdb_id, chain_id = template_pdb_chain_id.split("_")
+
+    # Initialize cache if not provided
+    if cif_assembly_cache is None:
+        cif_assembly_cache = {}
 
     # Parse the pre-parsed template structure array
     if template_structure_array_directory is not None:
@@ -346,15 +361,40 @@ def parse_template_structure(
                 "Only pickle or npz formats are supported."
             )
 
-    # Parse and clean the raw template structure file
-    elif template_structures_directory is not None:
-        # Parse the full template assembly and subset assembly to template chain
-        result = parse_mmcif(
-            template_structures_directory / Path(f"{pdb_id}.{template_file_format}")
+    # CIF-direct mode: use the provided CIF path directly
+    elif cif_path is not None:
+        cache_key = str(cif_path)
+        if cache_key in cif_assembly_cache:
+            cif_file, atom_array_template_assembly = cif_assembly_cache[cache_key]
+            logger.info(f"[CACHE HIT] Using cached CIF-direct assembly for {cif_path}")
+        else:
+            result = parse_mmcif(cif_path)
+            if isinstance(result, SkippedStructure):
+                return None
+            cif_file, atom_array_template_assembly = result
+            cif_assembly_cache[cache_key] = (cif_file, atom_array_template_assembly)
+            logger.info(f"[CIF-DIRECT] Parsed {cif_path}")
+
+        atom_array_template_chain = clean_template_atom_array(
+            atom_array_template_assembly, cif_file, chain_id, ccd
         )
-        if isinstance(result, SkippedStructure):
-            return None
-        cif_file, atom_array_template_assembly = result
+
+    # Parse and clean the raw template structure file from directory
+    elif template_structures_directory is not None:
+        # Check cache first to avoid re-parsing the same CIF file for different chains
+        if pdb_id in cif_assembly_cache:
+            cif_file, atom_array_template_assembly = cif_assembly_cache[pdb_id]
+            logger.info(f"[CACHE HIT] Using cached assembly for {pdb_id}")
+        else:
+            result = parse_mmcif(
+                template_structures_directory / Path(f"{pdb_id}.{template_file_format}")
+            )
+            if isinstance(result, SkippedStructure):
+                return None
+            cif_file, atom_array_template_assembly = result
+            cif_assembly_cache[pdb_id] = (cif_file, atom_array_template_assembly)
+            logger.info(f"[CACHE MISS] Parsed and cached assembly for {pdb_id}")
+
         # Clean up the template atom array and subset to the chosen template chain
         atom_array_template_chain = clean_template_atom_array(
             atom_array_template_assembly, cif_file, chain_id, ccd
@@ -362,7 +402,7 @@ def parse_template_structure(
     else:
         raise ValueError(
             "Either template_structure_array_directory or "
-            "template_structures_directory must be provided."
+            "template_structures_directory or cif_path must be provided."
         )
 
     return atom_array_template_chain
@@ -552,6 +592,7 @@ def align_template_to_query(
     template_file_format: str,
     ccd: CIFFile | None,
     atom_array_query_chain: AtomArray,
+    cif_assembly_cache: dict[str, tuple] | None = None,
 ) -> list[AtomArray]:
     """Identifies the subset of atoms in the template that align to the query.
 
@@ -569,6 +610,10 @@ def align_template_to_query(
             Parsed CCD file.
         atom_array_query_chain (AtomArray):
             The cropped atom array containing atoms of the current protein chain.).
+        cif_assembly_cache (dict[str, tuple] | None):
+            Optional cache dictionary mapping PDB IDs to (cif_file, atom_array_assembly)
+            tuples. Used to avoid re-parsing the same CIF file when multiple chains from
+            the same structure are needed.
 
     Returns:
         list[AtomArray]:
@@ -594,6 +639,8 @@ def align_template_to_query(
             template_pdb_chain_id,
             template_file_format,
             ccd,
+            cif_assembly_cache=cif_assembly_cache,
+            cif_path=template_cache_entry.cif_path,
         )
         if atom_array_template_chain is None:
             continue

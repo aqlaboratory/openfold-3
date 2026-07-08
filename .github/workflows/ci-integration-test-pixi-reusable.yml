@@ -1,0 +1,135 @@
+name: Reusable Docker Test for running heavy test loads (Pixi)
+
+on:
+  # Can only be called by another workflow, not directly by the user
+  workflow_call:
+    inputs:
+      pixi_env:
+        description: 'Pixi environment name (e.g., openfold3-cuda12, openfold3-cuda13)'
+        required: true
+        type: string
+      base_image:
+        description: 'Base Docker image'
+        required: false
+        type: string
+        default: 'ubuntu:22.04'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/openfold3-docker
+
+jobs:
+  start-aws-runner:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      mapping: ${{ steps.aws-start.outputs.mapping }}
+      instances: ${{ steps.aws-start.outputs.instances }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
+          aws-region: us-east-2
+      - name: Resolve GPU DLAMI from SSM
+        id: resolve-ami
+        run: |
+          ami_id=$(aws ssm get-parameter \
+            --name /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id \
+            --query 'Parameter.Value' --output text)
+          echo "ami_id=$ami_id" >> "$GITHUB_OUTPUT"
+      - name: Create cloud runner
+        id: aws-start
+        uses: omsf/start-aws-gha-runner@v1.2.0
+        with:
+          aws_image_id: ${{ steps.resolve-ami.outputs.ami_id }}  # Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04), resolved from SSM at runtime
+          aws_instance_type: "g5.4xlarge" # A10G 64 GB
+          aws_home_dir: /home/ubuntu
+          aws_root_device_size: 200
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+  test-openfold-docker-pixi:
+    runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
+    needs:
+      - start-aws-runner
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push test image
+        uses: docker/build-push-action@v7.2.0
+        with:
+          context: .
+          file: docker/Dockerfile.pixi
+          target: test
+          push: true
+          build-args: |
+            PIXI_ENV=${{ inputs.pixi_env }}
+            BASE_IMAGE=${{ inputs.base_image }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }},mode=max
+
+      - name: Create parameter cache directory
+        run: mkdir -p ~/.openfold3
+
+      - name: Cache download of parameters
+        id: cache-openfold_parameters
+        uses: actions/cache@v5
+        with:
+          path: ~/.openfold3/
+          key: shared-params_of3
+          restore-keys: |
+            shared-params_of3
+
+      - name: Install AWS CLI and Download OpenFold parameters
+        if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
+        run: |
+          echo "Cache miss: Downloading OpenFold parameters..."
+          aws s3 cp s3://openfold3-data/openfold3-parameters/of3-p2-155k.pt ~/.openfold3/ --no-sign-request
+
+      - name: Run integration test
+        run: |
+          docker run --gpus all\
+            -v ${{ github.workspace }}:/opt/openfold3 \
+            -v ~/.openfold3:/root/.openfold3 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
+            pytest -x openfold3/tests/ -m slow -vvv
+
+  stop-aws-runner:
+    runs-on: ubuntu-latest
+    permissions:
+        id-token: write
+        contents: read
+    needs:
+      - start-aws-runner
+      - test-openfold-docker-pixi
+    if: ${{ always() }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
+          aws-region: us-east-2
+      - name: Stop instances
+        uses: omsf/stop-aws-gha-runner@v1.0.0
+        with:
+          instance_mapping: ${{ needs.start-aws-runner.outputs.mapping }}
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}

@@ -21,9 +21,18 @@ import pytest
 import openfold3
 from openfold3.core.data.io.sequence.template import (
     A3mParser,
+    CifDirectParser,
     M8Parser,
     StoParser,
     TemplateData,
+)
+from openfold3.core.data.io.structure.cif import _load_ciffile
+from openfold3.core.data.pipelines.preprocessing.template import (
+    TemplatePreprocessor,
+    TemplatePreprocessorInputInference,
+)
+from openfold3.core.data.primitives.structure.metadata import (
+    get_asym_id_to_canonical_seq_dict,
 )
 
 TEST_DIR = (
@@ -134,3 +143,136 @@ def _compare_template_data(actual, expected):
             np.testing.assert_array_equal(v_actual, v_expected)
         else:
             assert v_actual == v_expected
+
+
+MMCIFS_DIR = Path(openfold3.__file__).parent / "tests" / "test_data" / "mmcifs"
+
+
+def _load_chain_id_seq_map(cif_path: Path) -> dict[str, str]:
+    return get_asym_id_to_canonical_seq_dict(_load_ciffile(cif_path))
+
+
+def test_cif_direct_parser_auto_select():
+    """Auto-select picks the chain that matches the query sequence."""
+    cif_path = MMCIFS_DIR / "2q2k.cif"
+    chain_id_seq_map = _load_chain_id_seq_map(cif_path)
+    # Chain B and C are identical 70-residue proteins; A is RNA. Query is chain B.
+    query_seq_str = chain_id_seq_map["B"]
+
+    parser = CifDirectParser(max_sequences=None, min_score_threshold=0.1)
+    result = parser(
+        cif_file_path=cif_path,
+        query_seq_str=query_seq_str,
+        chain_id_seq_map=chain_id_seq_map,
+        entry_id="2q2k",
+    )
+
+    assert len(result) == 1
+    template = result[0]
+    assert template.entry_id == "2q2k"
+    # Either B or C should win since they're identical; both score 1.0.
+    assert template.chain_id in {"B", "C"}
+    assert template.seq_id == pytest.approx(1.0)
+    assert template.q_cov == pytest.approx(1.0)
+    assert template.seq == query_seq_str
+
+
+def test_cif_direct_parser_specified_chain():
+    """specified_chain_id restricts parsing to one chain."""
+    cif_path = MMCIFS_DIR / "2q2k.cif"
+    chain_id_seq_map = _load_chain_id_seq_map(cif_path)
+    query_seq_str = chain_id_seq_map["B"]
+
+    parser = CifDirectParser(max_sequences=None, min_score_threshold=0.1)
+    result = parser(
+        cif_file_path=cif_path,
+        query_seq_str=query_seq_str,
+        chain_id_seq_map=chain_id_seq_map,
+        entry_id="2q2k",
+        specified_chain_id="C",
+    )
+
+    assert len(result) == 1
+    assert result[0].chain_id == "C"
+    assert result[0].seq_id == pytest.approx(1.0)
+
+
+def test_cif_direct_parser_below_threshold_returns_empty():
+    """No chain passes the threshold -> empty dict."""
+    cif_path = MMCIFS_DIR / "2q2k.cif"
+    chain_id_seq_map = _load_chain_id_seq_map(cif_path)
+    # Unrelated sequence well below threshold against any chain in the CIF.
+    query_seq_str = "WWWWWWWWWWWWWWWWWWWW"
+
+    parser = CifDirectParser(max_sequences=None, min_score_threshold=0.9)
+    result = parser(
+        cif_file_path=cif_path,
+        query_seq_str=query_seq_str,
+        chain_id_seq_map=chain_id_seq_map,
+        entry_id="2q2k",
+    )
+
+    assert result == {}
+
+
+def _make_bare_preprocessor(cif_direct_min_score: float = 0.1) -> TemplatePreprocessor:
+    """Build a TemplatePreprocessor with only the fields _parse_templates_from_cif_files reads."""
+    pre = object.__new__(TemplatePreprocessor)
+    pre.create_logs = False
+    pre.cif_direct_min_score = cif_direct_min_score
+    pre.precache_directory = None
+    return pre
+
+
+def test_parse_templates_from_cif_files_auto_select():
+    """_parse_templates_from_cif_files returns one TemplateData per CIF, indexed and tagged with cif_path."""
+    cif_path = MMCIFS_DIR / "2q2k.cif"
+    query_seq_str = _load_chain_id_seq_map(cif_path)["B"]
+
+    pre = _make_bare_preprocessor(cif_direct_min_score=0.1)
+    input_data = TemplatePreprocessorInputInference(
+        query_seq_str=query_seq_str,
+        template_cif_paths=[cif_path],
+    )
+
+    templates = pre._parse_templates_from_cif_files(input_data)
+
+    assert len(templates) == 1
+    template = templates[0]
+    assert template.index == 0
+    assert template.entry_id == "2q2k"
+    assert template.chain_id in {"B", "C"}
+    assert template.cif_path == cif_path
+    assert template.seq_id == pytest.approx(1.0)
+    assert template.q_cov == pytest.approx(1.0)
+
+
+def test_parse_templates_from_cif_files_specified_chain_ids():
+    """When template_cif_chain_ids is provided, only the specified chain is used."""
+    cif_path = MMCIFS_DIR / "2q2k.cif"
+    query_seq_str = _load_chain_id_seq_map(cif_path)["B"]
+
+    pre = _make_bare_preprocessor(cif_direct_min_score=0.1)
+    input_data = TemplatePreprocessorInputInference(
+        query_seq_str=query_seq_str,
+        template_cif_paths=[cif_path],
+        template_cif_chain_ids=["C"],
+    )
+
+    templates = pre._parse_templates_from_cif_files(input_data)
+
+    assert len(templates) == 1
+    assert templates[0].chain_id == "C"
+
+
+def test_parse_templates_from_cif_files_missing_cif_skipped():
+    """Missing CIF paths are skipped rather than raising."""
+    pre = _make_bare_preprocessor(cif_direct_min_score=0.1)
+    input_data = TemplatePreprocessorInputInference(
+        query_seq_str="ACDEFGHIKLMNPQRSTVWY",
+        template_cif_paths=[Path("/nonexistent/path/does_not_exist.cif")],
+    )
+
+    templates = pre._parse_templates_from_cif_files(input_data)
+
+    assert templates == {}
