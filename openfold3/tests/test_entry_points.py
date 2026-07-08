@@ -24,6 +24,7 @@ from unittest.mock import patch
 
 import ml_collections as mlc
 import pytest
+from click.testing import CliRunner
 from pytorch_lightning.loggers import WandbLogger
 
 import openfold3.core.model.primitives.initialization as initialization
@@ -53,6 +54,7 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
+from openfold3.setup_openfold import OpenFoldSetupConfig
 
 
 @pytest.fixture
@@ -735,56 +737,107 @@ class TestRemoveQuerySetDuplicates:
 
 
 class TestSetupOpenFold:
-    def test_fresh_parameter_default_download(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("OPENFOLD_CACHE", raising=False)
-        inputs = iter(
-            [
-                str(tmp_path),  # Set cache directory
-                "",  # Use default (cache) directory for params directory
-                "1",  # download choice: default checkpoint only
-                "no",  # skip integration tests
-            ]
+    def test_non_interactive(self, tmp_path):
+        env_patch = patch.dict(os.environ, {"HOME": str(tmp_path)}, clear=False)
+        s3_patch = patch(
+            "openfold3.setup_openfold.download_s3_file",
+            side_effect=_fake_download_s3_file,
         )
+        with env_patch, s3_patch:
+            os.environ.pop("OPENFOLD_CACHE", None)
+            result = CliRunner().invoke(setup_openfold.main, ["--non-interactive"])
 
-        with (
-            patch("builtins.input", side_effect=inputs),
-            patch(
-                "openfold3.setup_openfold.download_s3_file",
-                side_effect=_fake_download_s3_file,
-            ),
+        assert result.exit_code == 0, result.output
+        expected_cache = tmp_path / ".openfold3"
+        assert (expected_cache / CHECKPOINT_ROOT_FILENAME).exists()
+        assert (expected_cache / CHECKPOINT_ROOT_FILENAME).read_text() == str(
+            expected_cache
+        )
+        assert (
+            expected_cache
+            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[DEFAULT_CHECKPOINT_NAME].file_name
+        ).exists()
+
+    def test_existing_parameter_installation(self, tmp_path):
+        # Pre-seed the checkpoint file and ckpt_root as if a prior install ran.
+        existing_ckpt = (
+            tmp_path
+            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[DEFAULT_CHECKPOINT_NAME].file_name
+        )
+        pre_existing_content = "pre-existing dummy content"
+        existing_ckpt.write_text(pre_existing_content)
+        (tmp_path / CHECKPOINT_ROOT_FILENAME).write_text(str(tmp_path))
+
+        # force_download_parameters defaults to False, so the existing file should
+        # be left untouched.
+        config = OpenFoldSetupConfig(
+            openfold_cache=tmp_path,
+            param_directory=tmp_path,
+            selected_parameters="default",
+            run_integration_tests=False,
+        )
+        config_file = tmp_path / "input_setup_config.json"
+        config_file.write_text(config.model_dump_json())
+
+        with patch(
+            "openfold3.setup_openfold.download_s3_file",
+            side_effect=_fake_download_s3_file,
         ):
-            setup_openfold.main()
+            result = CliRunner().invoke(
+                setup_openfold.main, ["--config", str(config_file)]
+            )
 
-        # Check that the checkpoint root file exists and has the expected path
+        assert result.exit_code == 0, result.output
+        assert (tmp_path / CHECKPOINT_ROOT_FILENAME).read_text() == str(tmp_path)
+        # Content must be unchanged — download_model_parameters skips files that
+        # already exist when force_download_parameters=False.
+        assert existing_ckpt.read_text() == pre_existing_content
+
+    def test_fresh_parameter_default_download(self, tmp_path):
+        config = OpenFoldSetupConfig(
+            openfold_cache=tmp_path,
+            param_directory=tmp_path,
+            selected_parameters="default",
+            run_integration_tests=False,
+        )
+        config_file = tmp_path / "input_setup_config.json"
+        config_file.write_text(config.model_dump_json())
+
+        with patch(
+            "openfold3.setup_openfold.download_s3_file",
+            side_effect=_fake_download_s3_file,
+        ):
+            result = CliRunner().invoke(
+                setup_openfold.main, ["--config", str(config_file)]
+            )
+
+        assert result.exit_code == 0, result.output
         assert (tmp_path / CHECKPOINT_ROOT_FILENAME).exists()
         assert (tmp_path / CHECKPOINT_ROOT_FILENAME).read_text() == str(tmp_path)
-        # Check that dummy checkpoint file has been installed correctly
         assert (
             tmp_path
             / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[DEFAULT_CHECKPOINT_NAME].file_name
         ).exists()
 
-    def test_fresh_parameter_download_all(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("OPENFOLD_CACHE", raising=False)
-        inputs = iter(
-            [
-                str(tmp_path),  # Set cache directory
-                "",  # Use default (cache) directory for params directory
-                "2",  # download choice: all parameters
-                "no",  # skip integration tests
-            ]
+    def test_fresh_parameter_download_all(self, tmp_path):
+        config = OpenFoldSetupConfig(
+            openfold_cache=tmp_path,
+            param_directory=tmp_path,
+            selected_parameters="all",
+            run_integration_tests=False,
         )
+        config_file = tmp_path / "input_setup_config.json"
+        config_file.write_text(config.model_dump_json())
 
-        with (
-            patch("builtins.input", side_effect=inputs),
-            patch(
-                "openfold3.setup_openfold.download_s3_file",
-                side_effect=_fake_download_s3_file,
-            ),
+        with patch(
+            "openfold3.setup_openfold.download_s3_file",
+            side_effect=_fake_download_s3_file,
         ):
-            setup_openfold.main()
+            result = CliRunner().invoke(
+                setup_openfold.main, ["--config", str(config_file)]
+            )
 
-        # Check that the checkpoint root file exists and has the expected path
+        assert result.exit_code == 0, result.output
         assert (tmp_path / CHECKPOINT_ROOT_FILENAME).exists()
         assert (tmp_path / CHECKPOINT_ROOT_FILENAME).read_text() == str(tmp_path)
 

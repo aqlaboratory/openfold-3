@@ -26,7 +26,7 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.structure.component import PERIODIC_TABLE
-from openfold3.core.model.structure.diffusion_module import centre_random_augmentation
+from openfold3.core.model.structure.augmentation import centre_random_augmentation
 
 logger = logging.getLogger(__name__)
 

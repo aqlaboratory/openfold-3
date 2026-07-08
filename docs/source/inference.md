@@ -82,7 +82,7 @@ Coming soon:
 A prediction job can be submitted with the following command:
 
 ```bash
-run_openfold --query-json=<query_json>
+run_openfold predict --query-json=<query_json>
 ```
 
 Sample input query jsons can be found in the [examples/example_inference_inputs](https://github.com/aqlaboratory/openfold-3/tree/main/examples/example_inference_inputs) directory.

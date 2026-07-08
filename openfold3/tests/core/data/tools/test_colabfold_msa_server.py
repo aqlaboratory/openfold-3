@@ -14,10 +14,13 @@
 
 """Tests for the ColabFold MSA server module."""
 
+import io
 import json
 import shutil
+import tarfile
 import textwrap
 from pathlib import Path
+from typing import NamedTuple
 from unittest.mock import patch
 
 import pandas as pd
@@ -30,6 +33,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 )
 from openfold3.core.data.tools.colabfold_msa_server import (
     ColabFoldQueryRunner,
+    ColabFoldServerResultError,
     ComplexGroup,
     MsaComputationSettings,
     add_msa_paths_to_iqs,
@@ -550,6 +554,102 @@ class TestColabFoldQueryRunner:
             preprocess_colabfold_msas(
                 inference_query_set=query, compute_settings=msa_compute_settings
             )
+
+
+class _ValidationCase(NamedTuple):
+    """A bad ColabFold download and the error it should trigger (issue #269)."""
+
+    members: dict[str, bytes]  # tarball contents (name -> bytes)
+    use_pairing: bool
+    match: str  # substring expected in the raised error message
+
+
+# The server returned the wrong/incomplete job: the expected a3m file is absent or
+# empty in the downloaded tarball.
+_VALIDATION_CASES = [
+    pytest.param(
+        _ValidationCase(
+            members={
+                "uniref.a3m": b">101\nAAAA\n",
+                "bfd.mgnify30.metaeuk30.smag30.a3m": b">101\nAAAA\n",
+                "pdb70.m8": b"",
+            },
+            use_pairing=True,
+            match="pair.a3m",
+        ),
+        id="paired_gets_unpaired_tarball",
+    ),
+    pytest.param(
+        _ValidationCase(
+            members={"pdb70.m8": b"templates\n"},
+            use_pairing=False,
+            match="uniref.a3m",
+        ),
+        id="unpaired_missing_uniref",
+    ),
+    pytest.param(
+        _ValidationCase(
+            members={"pair.a3m": b""},
+            use_pairing=True,
+            match="pair.a3m",
+        ),
+        id="empty_pair_a3m",
+    ),
+]
+
+
+class TestQueryColabFoldServerValidation:
+    """Regression tests for issue #269.
+
+    The ColabFold server can return the wrong cached job for a ticket (e.g. an
+    unpaired MSA -- no ``pair.a3m`` -- for a paired request). ``query_colabfold_msa_
+    server`` must reject such a download with a clear ``ColabFoldServerResultError``
+    instead of crashing later on a bare ``FileNotFoundError``.
+    """
+
+    @staticmethod
+    def _write_tarball(out_tar_gz: Path, members: dict[str, bytes]) -> None:
+        """Write a gzipped tar of ``members`` (name -> bytes) at ``out_tar_gz``."""
+        with tarfile.open(out_tar_gz, "w:gz") as tar:
+            for name, data in members.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+
+    @pytest.mark.parametrize("case", _VALIDATION_CASES)
+    def test_rejects_unexpected_download(
+        self, case: _ValidationCase, tmp_path: Path
+    ) -> None:
+        """A download missing an expected a3m file raises ColabFoldServerResultError.
+
+        Pre-creating ``out.tar.gz`` makes ``query_colabfold_msa_server`` skip the
+        submit/download (no network) and go straight to extraction + validation.
+        """
+        self._write_tarball(tmp_path / "out.tar.gz", case.members)
+
+        with pytest.raises(ColabFoldServerResultError, match=case.match):
+            query_colabfold_msa_server(
+                ["AAAA", "CCCC"],
+                prefix=tmp_path,
+                user_agent="test-agent",
+                use_pairing=case.use_pairing,
+            )
+
+    def test_valid_paired_download_passes(self, tmp_path: Path) -> None:
+        """A paired download containing a valid pair.a3m returns the alignments."""
+        self._write_tarball(
+            tmp_path / "out.tar.gz",
+            {"pair.a3m": b">101\nAAAA\n\x00>102\nCCCC\n", "pair.sh": b"#\n"},
+        )
+
+        result = query_colabfold_msa_server(
+            ["AAAA", "CCCC"],
+            prefix=tmp_path,
+            user_agent="test-agent",
+            use_pairing=True,
+        )
+
+        assert len(result) == 2
 
 
 class TestRemapObsoletePdb:
