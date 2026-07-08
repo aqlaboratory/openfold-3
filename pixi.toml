@@ -72,17 +72,33 @@
 
 [workspace]
 name = "openfold3"
+version = "0.4.2"
 authors = ["OpenFold Team <support@openfold.io>"]
 channels = ["conda-forge", "bioconda"]
-platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
-version = "0.4.0"
-
+platforms = [
+    "linux-64",
+    "linux-aarch64",
+    { name = "linux-64-cuda12", platform = "linux-64", cuda = "12.0" },
+    { name = "linux-aarch64-cuda12", platform = "linux-aarch64", cuda = "12.0" },
+    { name = "linux-64-cuda13", platform = "linux-64", cuda = "13.0" },
+    { name = "linux-aarch64-cuda13", platform = "linux-aarch64", cuda = "13.0" },
+    "osx-64",
+    "osx-arm64"
+]
+# Minimum pixi version required to run this workspace
 # - as we use task.default-environment
 #   hoping for environment markers to also come to conda dependencies,
 #   as it would help simplifying this toml
 #   https://github.com/prefix-dev/pixi/blob/main/CHANGELOG.md#-highlights-1
 # - as our lockfiles are now v7
-requires-pixi = ">=0.68"
+# - as we will use cuda support in build
+# - 0.72.0:
+#   * as we now use rich platform support
+#     arguably definition got more complex with this
+#     maybe we should lobby for system-requiremets to be an alternative
+#     and not deprecated
+#   * as we now use wildcard platform target selectors (this helped)
+requires-pixi = ">=0.72.0"
 
 # --- Environments
 
@@ -143,7 +159,7 @@ openfold3-rocm7 = { no-default-feature = true, features = [
     "pytorch-pypi-rocm7",
     "not-in-pypi",
     "openfold3-editable",
-    "tests", 
+    "tests",
 ] }
 openfold3-msa = { no-default-feature = true, features = [
     "openfold3-msa",
@@ -225,6 +241,7 @@ pytest-xdist = "*"
 pytest-cov = "*"
 pytest-benchmark = "*"
 pytest-regressions = "*"
+pytest-vcr = "*"
 
 # --- Dev and documentation optionals
 # We do not put on a feature to avoid combinatorial explosion.
@@ -259,6 +276,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
 [feature.pytorch-pypi-rocm7]
 
+  # TODO: we should ask for a ROCM and METAL virtual packages in the conda world, to mirror the CUDA one
   platforms = ["linux-64"]
 
   [feature.pytorch-pypi-rocm7.dependencies]
@@ -271,10 +289,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
 [feature.cuda12]
 
-  platforms = ["linux-64", "linux-aarch64"]
-
-  [feature.cuda12.system-requirements]
-  cuda = "12.0"
+  platforms = ["linux-64-cuda12", "linux-aarch64-cuda12",]
 
   [feature.cuda12.dependencies]
   cuda-version = ">=12,<13"
@@ -285,10 +300,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
 [feature.cuda13]
 
-  platforms = ["linux-64", "linux-aarch64"]
-
-  [feature.cuda13.system-requirements]
-  cuda = "13.0"
+  platforms = ["linux-64-cuda13", "linux-aarch64-cuda13"]
 
   [feature.cuda13.dependencies]
   cuda-version = ">=13,<14"
@@ -303,7 +315,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 [feature.deepspeed]
 
   # N.B. aarch64 is not officially supported (yet), but seems to be working (for OF3-used primitives at least)
-  platforms = ["linux-64", "linux-aarch64"]
+  platforms = ["linux-64-cuda12", "linux-aarch64-cuda12", "linux-64-cuda13", "linux-aarch64-cuda13"]
 
   # aarch64 is not built in CF, so at the moment installing from sdist and crossing fingers
   [feature.deepspeed.target.linux-64.dependencies]
@@ -355,22 +367,12 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 #   See also: https://github.com/NVIDIA/cuEquivariance/issues/218
 #
 
-[feature.cuequivariance-cuda12.target.linux-64.pypi-dependencies]
+[feature.cuequivariance-cuda12.target."*-cuda12".pypi-dependencies]
 cuequivariance = ">=0.8"
 cuequivariance-torch = ">=0.8"
 cuequivariance-ops-torch-cu12 = ">=0.8"
 
-[feature.cuequivariance-cuda12.target.linux-aarch64.pypi-dependencies]
-cuequivariance = ">=0.8"
-cuequivariance-torch = ">=0.8"
-cuequivariance-ops-torch-cu12 = ">=0.8"
-
-[feature.cuequivariance-cuda13.target.linux-64.pypi-dependencies]
-cuequivariance = ">=0.8"
-cuequivariance-torch = ">=0.8"
-cuequivariance-ops-torch-cu13 = ">=0.8"
-
-[feature.cuequivariance-cuda13.target.linux-aarch64.pypi-dependencies]
+[feature.cuequivariance-cuda13.target."*-cuda13".pypi-dependencies]
 cuequivariance = ">=0.8"
 cuequivariance-torch = ">=0.8"
 cuequivariance-ops-torch-cu13 = ">=0.8"
