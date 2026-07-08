@@ -22,6 +22,7 @@ Optimizations such as LMA and DeepSpeed EvoformerAttention are included.
 
 import importlib
 import math
+import os
 import warnings
 
 import torch
@@ -48,9 +49,13 @@ if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
 try:
-    from openfold3.core.kernels.triton.evoformer import TritonEvoformer
+    from openfold3.core.kernels.triton.evoformer import (
+        TritonEvoformer,
+        TritonEvoformerDynamic,
+    )
 except ImportError:
     TritonEvoformer = None
+    TritonEvoformerDynamic = None
 
 TRITON_AVAILABLE = TritonEvoformer is not None
 
@@ -656,19 +661,16 @@ def _triton_evo_attn(
         Batch, N_seq, N_res, Head, Dim = q.shape
         biases.append(_get_zero_pair_bias(q.device, q.dtype, Batch, Head, N_res))
 
-    # Kernel requires fp16 or bf16; cast if needed.
-    orig_dtype = q.dtype
-    if orig_dtype not in [torch.bfloat16, torch.float16]:
-        o = TritonEvoformer(
-            q.to(dtype=torch.bfloat16),
-            k.to(dtype=torch.bfloat16),
-            v.to(dtype=torch.bfloat16),
-            biases[0].to(dtype=torch.bfloat16),
-            biases[1].to(dtype=torch.bfloat16),
-            has_pair_bias,
-        ).to(dtype=orig_dtype)
-    else:
-        o = TritonEvoformer(q, k, v, biases[0], biases[1], has_pair_bias)
+    # Kernel runs bf16/fp16/fp32 natively (fp32 accumulators); pass through as-is.
+    # Opt-in variable-shape entry point: one Triton compile across all sequence
+    # lengths (for variable-size / cold-cache callers, e.g. variable inference).
+    # Off by default; the specialized kernel stays the default everywhere else.
+    _kernel = (
+        TritonEvoformerDynamic
+        if os.environ.get("OF3_TRITON_DYNAMIC_SHAPES") == "1"
+        else TritonEvoformer
+    )
+    o = _kernel(q, k, v, biases[0], biases[1], has_pair_bias)
 
     o = o.reshape(orig_shape)
     return o
