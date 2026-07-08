@@ -6,6 +6,19 @@ Workflow: [integration-test.yml](https://github.com/aqlaboratory/openfold-3/acti
 
 ---
 
+## 2026-07-08
+
+**Run:** [#28917346933](https://github.com/aqlaboratory/openfold-3/actions/runs/28917346933) | Branch: `main` | Time: 04:23 UTC
+
+**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
+
+**Failing jobs:**
+- `test-pixi (openfold3-cuda13) / start-aws-runner`
+- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner`
+- `test-pixi (openfold3-cuda12) / start-aws-runner` (cancelled)
+
+---
+
 ## 2026-07-07
 
 **Run:** [#28841857721](https://github.com/aqlaboratory/openfold-3/actions/runs/28841857721) | Branch: `main` | Time: 04:36 UTC
@@ -115,4 +128,4 @@ Workflow: [integration-test.yml](https://github.com/aqlaboratory/openfold-3/acti
 
 ---
 
-*Last updated by automated daily scan: 2026-07-07*
+*Last updated by automated daily scan: 2026-07-08*
