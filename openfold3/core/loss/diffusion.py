@@ -23,6 +23,7 @@ import torch
 from openfold3.core.kernels.smooth_lddt import (
     ball_query_smooth_lddt_loss,
     is_smooth_lddt_kernel_available,
+    is_smooth_lddt_kernel_installed,
 )
 from openfold3.core.loss.loss_utils import loss_masked_batch_mean
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
@@ -469,8 +470,18 @@ def get_smooth_lddt_loss_fn(smooth_lddt_backend: str) -> Callable:
         return smooth_lddt_loss
 
     if smooth_lddt_backend == "ball_query":
+        if not is_smooth_lddt_kernel_installed():
+            raise RuntimeError(
+                "smooth_lddt_backend='ball_query' requires the smooth lDDT "
+                "CUDA extension, which is not installed. Install with "
+                '`pip install "openfold3[smooth-lddt-kernel]"` (needs ninja + '
+                "CUDA sources under openfold3/core/kernels/smooth_lddt/ball_query_ext)."
+            )
         if not is_smooth_lddt_kernel_available():
-            raise RuntimeError("Ball-query smooth lDDT backend is not available")
+            raise RuntimeError(
+                "smooth_lddt_backend='ball_query' requires a CUDA device at "
+                "runtime, but torch.cuda.is_available() is False."
+            )
         return smooth_lddt_loss_ball_query
 
     raise ValueError(

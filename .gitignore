@@ -23,3 +23,6 @@ cutlass/
 
 # uv environments
 .venv/
+
+# local benchmark data downloaded by scripts/benchmarks/ball-query-lddt-benchmark
+/data/

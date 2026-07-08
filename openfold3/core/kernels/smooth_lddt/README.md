@@ -21,7 +21,7 @@ Measured on a single RTX 4090 (fwd+bwd, `n_sample=2`):
 Rule of thumb: dense for `n_atom ≲ 1000`, ball-query (`top_k ≈ 256`) for
 `n_atom ≳ 2000`. Memory savings scale as `n_atom² / (n_atom · top_k)` and the
 speed crossover is around `n_atom ≈ 1500`. Reproduce with
-`pytest --benchmark-only openfold3/tests/test_smooth_lddt_benchmark.py`.
+`pytest --benchmark-only scripts/benchmarks/ball-query-lddt-benchmark/test_smooth_lddt_benchmark.py`.
 
 ## Kernel layout (`ball_query_ext/`)
 
@@ -93,7 +93,7 @@ from `torch.cuda.get_device_capability()` and exported as
 
 - Correctness + gradient parity vs dense: `pytest openfold3/tests/test_diffusion_loss.py -k "ball_query" -v`
 - Benchmark sweep across real protein samples / dtypes / `top_k`:
-  `pytest --benchmark-only openfold3/tests/test_smooth_lddt_benchmark.py`
+  `pytest --benchmark-only scripts/benchmarks/ball-query-lddt-benchmark/test_smooth_lddt_benchmark.py`
 
 The gradient parity test uses a slightly looser tolerance (`atol=1e-3`,
 `rtol=5e-3`) because of the `atomicAdd` reordering and the different reduction

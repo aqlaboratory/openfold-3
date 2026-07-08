@@ -55,4 +55,32 @@ validate-openfold3-rocm
 ```
 
 ## Smooth LDDT Ball Query Kernel
-TODO: Add brief description and installation instructions here
+
+OF3 supports a CUDA ball-query backend for the smooth lDDT loss. For long targets (roughly `n_atom >= 1500`), it replaces the `O(N^2)` dense pairwise-distance scan with a sparse `[N, K]` neighbor list. The default backend remains `dense`. Enabling the kernel is opt-in.
+
+The kernel is JIT-compiled with `ninja` on first use. Install with the extra:
+
+```bash
+pip install "openfold3[smooth-lddt-kernel]"
+```
+
+The extra only installs `ninja`. A matching CUDA toolchain (`nvcc` + CUDA development headers like `cusparse.h`, `cublas.h`, `cusolver.h`, `curand.h`) must already be on the system.
+
+Or with pixi, the `openfold3-cuda12` / `openfold3-cuda13-smooth-lddt` environments already include `ninja`, `nvcc`, and the required CUDA headers, so no extra system setup is needed:
+
+```bash
+pixi run -e openfold3-cuda12 pytest openfold3/tests/test_diffusion_loss.py -v
+```
+
+Then enable it via the runner YAML by setting the diffusion-loss backend and a top-K:
+
+```yaml
+loss:
+  diffusion:
+    smooth_lddt_backend: ball_query
+    smooth_lddt_top_k: 256
+```
+
+`smooth_lddt_top_k` sets the per-atom neighbor cap. `top_k = 256` is a good default for typical protein-density training samples. If `top_k` exceeds every atom's in-radius neighbor count, the result is bit-equivalent (up to floating-point reorder) to the dense backend; otherwise the kernel returns an unbiased uniform-random size-`K` subsample of the in-radius neighbors, so the loss remains an unbiased estimator of the dense value.
+
+The ball-query backend is incompatible with the existing `chunk_size` low-memory path and will raise a clear error if both are configured.

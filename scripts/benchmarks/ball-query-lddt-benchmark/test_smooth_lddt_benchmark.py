@@ -24,13 +24,14 @@ from openfold3.core.data.resources.residues import (
     STANDARD_PROTEIN_RESIDUES_3,
     STANDARD_RNA_RESIDUES,
 )
+from openfold3.core.kernels.smooth_lddt import is_smooth_lddt_kernel_available
 from openfold3.core.loss.diffusion import (
     smooth_lddt_loss,
     smooth_lddt_loss_ball_query,
 )
 
 MINIMAL_TRAINING_ROOT = (
-    Path(__file__).parents[2]
+    Path(__file__).parents[3]
     / "data"
     / "pdb_training_minimal"
     / "preprocessed_pdb_data"
@@ -52,7 +53,12 @@ pytestmark = [
     pytest.mark.slow,
     pytest.mark.benchmark,
     pytest.mark.skipif(
-        not torch.cuda.is_available(), reason="Ball-query smooth lDDT requires CUDA"
+        not is_smooth_lddt_kernel_available(),
+        reason=(
+            "Ball-query smooth lDDT requires CUDA and the compiled "
+            "ball-query extension (install with "
+            "`pip install openfold3[smooth-lddt-kernel]`)."
+        ),
     ),
 ]
 

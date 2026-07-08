@@ -33,13 +33,19 @@ from openfold3.core.kernels.smooth_lddt.ball_query import (
     ball_query_coop_with_pred,
     ball_query_pred_backward,
     is_ball_query_available,
+    is_ball_query_installed,
 )
 
 MAX_SMOOTH_LDDT_RADIUS = 30.0
 
 
+def is_smooth_lddt_kernel_installed() -> bool:
+    """Return whether the CUDA ball-query smooth lDDT backend can be built."""
+    return is_ball_query_installed()
+
+
 def is_smooth_lddt_kernel_available() -> bool:
-    """Return whether the CUDA ball-query smooth lDDT backend is available."""
+    """Return whether the CUDA ball-query smooth lDDT backend is usable now."""
     return is_ball_query_available()
 
 

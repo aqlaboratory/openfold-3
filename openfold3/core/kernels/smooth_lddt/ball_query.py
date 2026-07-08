@@ -22,22 +22,55 @@
 
 """JIT loader for the smooth lDDT CUDA ball-query extension."""
 
+import importlib.util
 import os
+import shutil
 from pathlib import Path
 
 import torch
-from torch.utils.cpp_extension import load as load_ext
 
 EXT_NAME = "openfold3_smooth_lddt_ball_query"
 EXT_DIR = Path(__file__).parent / "ball_query_ext"
+_EXT_SOURCES = ("binding.cpp", "ball_query.cu")
 VERBOSE = bool(int(os.environ.get("OPENFOLD3_SMOOTH_LDDT_VERBOSE", "0")))
+
+INSTALL_HINT = (
+    "smooth lDDT ball-query extension is not installed. "
+    'Install the extra with `pip install "openfold3[smooth-lddt-kernel]"` '
+    "(or `pip install ninja` if building from source), and ensure the CUDA "
+    "sources under openfold3/core/kernels/smooth_lddt/ball_query_ext are present."
+)
 
 _ext = None
 
 
+def _ninja_available() -> bool:
+    """torch.utils.cpp_extension shells out to the ``ninja`` binary; the pypi
+    ``ninja`` wheel provides both binary and Python module, conda ships only
+    the binary. Accept either."""
+    if shutil.which("ninja") is not None:
+        return True
+    return importlib.util.find_spec("ninja") is not None
+
+
+def is_ball_query_installed() -> bool:
+    """Check whether the ball-query extension can be built.
+
+    Verifies ninja is available (as a CLI binary or Python module) and the
+    CUDA source files ship with the installed package. Does NOT require CUDA
+    to be available at runtime, so this is safe to call at import time on
+    CPU-only or pypi builds.
+    """
+    if not _ninja_available():
+        return False
+    if not EXT_DIR.is_dir():
+        return False
+    return all((EXT_DIR / src).is_file() for src in _EXT_SOURCES)
+
+
 def is_ball_query_available() -> bool:
-    """Return whether the CUDA-only ball-query extension can run."""
-    return torch.cuda.is_available()
+    """Return whether the ball-query extension is installed AND CUDA is usable."""
+    return is_ball_query_installed() and torch.cuda.is_available()
 
 
 def _set_cuda_arch_list() -> None:
@@ -55,14 +88,17 @@ def _set_cuda_arch_list() -> None:
 def _load():
     global _ext
     if _ext is None:
-        if not is_ball_query_available():
+        if not is_ball_query_installed():
+            raise RuntimeError(INSTALL_HINT)
+        if not torch.cuda.is_available():
             raise RuntimeError("smooth lDDT ball-query extension requires CUDA")
 
+        # Deferred to keep top-level import cheap and avoid importing
+        # torch.utils.cpp_extension on pypi builds that never use the kernel.
+        from torch.utils.cpp_extension import load as load_ext
+
         _set_cuda_arch_list()
-        sources = [
-            str(EXT_DIR / "binding.cpp"),
-            str(EXT_DIR / "ball_query.cu"),
-        ]
+        sources = [str(EXT_DIR / src) for src in _EXT_SOURCES]
         _ext = load_ext(
             name=EXT_NAME,
             sources=sources,

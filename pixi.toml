@@ -147,7 +147,7 @@ openfold3-rocm7 = { no-default-feature = true, features = [
     "pytorch-pypi-rocm7",
     "not-in-pypi",
     "openfold3-editable",
-    "tests", 
+    "tests",
 ] }
 openfold3-msa = { no-default-feature = true, features = [
     "openfold3-msa",
@@ -351,6 +351,13 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   [feature.smooth-lddt-kernel.dependencies]
   ninja = "*"
   cuda-minimal-build = "*"
+  # Torch/ATen headers include cusparse.h; other libcu*-dev headers may be
+  # pulled in transitively depending on the torch build. Match the set that
+  # `deepspeed-build` installs so this feature is self-contained.
+  libcusparse-dev = "*"
+  libcublas-dev = "*"
+  libcusolver-dev = "*"
+  libcurand-dev = "*"
 
   [feature.smooth-lddt-kernel.activation]
   env.TORCH_EXTENSIONS_DIR = "$CONDA_PREFIX/caches/torch_extensions"

@@ -8,10 +8,10 @@ of downloading.
 
 Usage:
     # Download from S3
-    python scripts/download_smooth_lddt_benchmark_data.py
+    python scripts/benchmarks/ball-query-lddt-benchmark/download_smooth_lddt_benchmark_data.py
 
     # Symlink from existing training set
-    python scripts/download_smooth_lddt_benchmark_data.py \
+    python scripts/benchmarks/ball-query-lddt-benchmark/download_smooth_lddt_benchmark_data.py \
         --training-set-dir /shared/openfold3/pdb_training_set
 """
 
@@ -21,7 +21,7 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from openfold3.core.utils.s3 import download_s3_file, s3_file_matches_local
 
@@ -34,7 +34,7 @@ S3_PREFIX = "pdb_training_set/preprocessed_pdb_data/standard/structure_files"
 SAMPLE_IDS = ["102m", "12e8", "134d", "17ra", "1tii", "1xfy"]
 
 DEFAULT_OUTPUT_DIR = (
-    Path(__file__).resolve().parents[1]
+    Path(__file__).resolve().parents[3]
     / "data"
     / "pdb_training_minimal"
     / "preprocessed_pdb_data"
@@ -112,7 +112,8 @@ def main() -> None:
 
     logger.info("Done. Run the benchmark with:")
     logger.info(
-        "  pytest --benchmark-only openfold3/tests/test_smooth_lddt_benchmark.py"
+        "  pytest --benchmark-only "
+        "scripts/benchmarks/ball-query-lddt-benchmark/test_smooth_lddt_benchmark.py"
     )
 
 

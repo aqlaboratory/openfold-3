@@ -18,6 +18,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
+from openfold3.core.kernels.smooth_lddt import is_smooth_lddt_kernel_available
 from openfold3.core.loss.diffusion import (
     bond_loss,
     diffusion_loss,
@@ -28,6 +29,11 @@ from openfold3.core.loss.diffusion import (
 )
 from openfold3.core.model.structure.diffusion_module import centre_random_augmentation
 from openfold3.tests.config import consts
+
+BALL_QUERY_SKIP_REASON = (
+    "Ball-query smooth lDDT requires CUDA and the compiled ball-query extension "
+    "(install with `pip install openfold3[smooth-lddt-kernel]`)."
+)
 
 
 class TestDiffusionLoss(unittest.TestCase):
@@ -203,8 +209,8 @@ class TestDiffusionLoss(unittest.TestCase):
         assert torch.all(torch.not_equal(loss_masked, loss))
 
     def test_smooth_lddt_ball_query_matches_dense(self):
-        if not torch.cuda.is_available():
-            pytest.skip("Ball-query smooth lDDT requires CUDA")
+        if not is_smooth_lddt_kernel_available():
+            pytest.skip(BALL_QUERY_SKIP_REASON)
 
         n_sample = 2
         device = torch.device("cuda")
@@ -247,8 +253,8 @@ class TestDiffusionLoss(unittest.TestCase):
         )
 
     def test_smooth_lddt_ball_query_requires_top_k(self):
-        if not torch.cuda.is_available():
-            pytest.skip("Ball-query smooth lDDT requires CUDA")
+        if not is_smooth_lddt_kernel_available():
+            pytest.skip(BALL_QUERY_SKIP_REASON)
 
         n_sample = 2
         device = torch.device("cuda")
@@ -272,8 +278,8 @@ class TestDiffusionLoss(unittest.TestCase):
     def test_smooth_lddt_ball_query_gradient_matches_dense(self):
         # Ball-query backward uses atomicAdd in the CUDA kernel; tolerance is
         # slightly looser than the forward-only matches_dense test.
-        if not torch.cuda.is_available():
-            pytest.skip("Ball-query smooth lDDT requires CUDA")
+        if not is_smooth_lddt_kernel_available():
+            pytest.skip(BALL_QUERY_SKIP_REASON)
 
         n_sample = 2
         device = torch.device("cuda")
@@ -309,8 +315,8 @@ class TestDiffusionLoss(unittest.TestCase):
         torch.testing.assert_close(x_bq.grad, x_dense.grad, atol=1e-3, rtol=5e-3)
 
     def test_smooth_lddt_ball_query_backward_runs_subsampled(self):
-        if not torch.cuda.is_available():
-            pytest.skip("Ball-query smooth lDDT requires CUDA")
+        if not is_smooth_lddt_kernel_available():
+            pytest.skip(BALL_QUERY_SKIP_REASON)
 
         device = torch.device("cuda")
 
@@ -336,8 +342,8 @@ class TestDiffusionLoss(unittest.TestCase):
         assert x.grad.abs().sum() > 0
 
     def test_smooth_lddt_ball_query_bf16_path(self):
-        if not torch.cuda.is_available():
-            pytest.skip("Ball-query smooth lDDT requires CUDA")
+        if not is_smooth_lddt_kernel_available():
+            pytest.skip(BALL_QUERY_SKIP_REASON)
 
         device = torch.device("cuda")
 
@@ -412,8 +418,8 @@ class TestDiffusionLoss(unittest.TestCase):
         self._test_diffusion_loss(batch)
 
     def test_diffusion_loss_ball_query_matches_dense(self):
-        if not torch.cuda.is_available():
-            pytest.skip("Ball-query smooth lDDT requires CUDA")
+        if not is_smooth_lddt_kernel_available():
+            pytest.skip(BALL_QUERY_SKIP_REASON)
 
         n_sample = 2
         sigma_data = 16
@@ -453,8 +459,8 @@ class TestDiffusionLoss(unittest.TestCase):
         )
 
     def test_diffusion_loss_ball_query_rejects_chunking(self):
-        if not torch.cuda.is_available():
-            pytest.skip("Ball-query smooth lDDT requires CUDA")
+        if not is_smooth_lddt_kernel_available():
+            pytest.skip(BALL_QUERY_SKIP_REASON)
 
         n_sample = 2
         sigma_data = 16
