@@ -23,13 +23,13 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.attention_pair_bias import (
-    AttentionPairBias,
     CrossAttentionPairBias,
     DiffusionAttentionPairBias,
 )
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
 from openfold3.core.model.primitives import LayerNorm
 from openfold3.core.utils.checkpointing import checkpoint_blocks
+
 
 class DiffusionTransformerBlock(nn.Module):
     """Diffusion transformer block.

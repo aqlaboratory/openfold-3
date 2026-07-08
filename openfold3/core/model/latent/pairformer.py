@@ -191,7 +191,7 @@ class PairFormerBlock(nn.Module):
             _attn_chunk_size=_attn_chunk_size,
         )
 
-        # TODO: Removed kernels here for now, re-evaluate training safety
+        # TODO: Add back triton and cueq APB kernel
         s = add(
             s,
             self.attn_pair_bias(
