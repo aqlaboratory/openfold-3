@@ -256,7 +256,6 @@ def random_of3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         # Additional features
         "token_mask": token_mask.unsqueeze(0).repeat((batch_size, 1)),
         "atom_mask": atom_mask.unsqueeze(0).repeat((batch_size, 1)),
-        "cyclic_mask": torch.zeros(n_token).repeat((batch_size, 1)).type(torch.long),
         "start_atom_index": start_atom_index.unsqueeze(0).repeat((batch_size, 1)).int(),
         "num_atoms_per_token": num_atoms_per_token.unsqueeze(0)
         .repeat((batch_size, 1))
