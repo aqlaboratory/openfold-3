@@ -110,6 +110,13 @@ def query_colabfold_msa_server(
             is True, also returns a list of template paths for each sequence.
     """
 
+    # host_url may arrive as a pydantic Url (or a str). pydantic normalizes a bare
+    # authority to a trailing slash ("https://api.colabfold.com/"), so building request
+    # URLs as f"{host_url}/{endpoint}" would produce a double slash
+    # ("https://api.colabfold.com//ticket/msa"), which the server rejects with HTTP 400.
+    # Normalize to a plain string without a trailing slash so exactly one slash appears.
+    host_url = str(host_url).rstrip("/")
+
     submission_endpoint = "ticket/pair" if use_pairing else "ticket/msa"
 
     headers = {}
@@ -686,23 +693,34 @@ def remap_colabfold_template_chain_ids(
         for entry_id, l2a in label_to_author_maps.items()
     }
 
-    # Remap chain IDs
-    for top_n in per_rep.values():
+    # Remap chain IDs. Drop (rather than raise on) template hits whose author chain ID
+    # no longer maps to a label chain -- e.g. RCSB re-labeled the entry's author chains
+    # since pdb100 was built, so a pdb100 hit like "7t3m_J" references a chain that no
+    # longer exists. The rows are filtered alongside the remapped IDs so that the length
+    # of column 1 stays consistent with the DataFrame.
+    for rep_id, top_n in list(per_rep.items()):
         remapped_ids = []
+        keep_mask = []
         for template_id in top_n[1]:
             entry_id, author_chain_id = template_id.split("_")
 
             author_to_label = author_to_label_maps.get(entry_id, {})
             if author_chain_id not in author_to_label:
-                raise RuntimeError(
+                logger.warning(
                     f"Author chain {author_chain_id} not found in {entry_id}. "
-                    f"Available author chains: {sorted(author_to_label.keys())}"
+                    f"Available author chains: {sorted(author_to_label.keys())}. "
+                    "Dropping this template hit."
                 )
+                keep_mask.append(False)
+                continue
             label_chain_id = author_to_label[author_chain_id][0]
 
             remapped_ids.append(f"{entry_id}_{label_chain_id}")
+            keep_mask.append(True)
 
+        top_n = top_n[keep_mask].copy()
         top_n[1] = remapped_ids
+        per_rep[rep_id] = top_n
 
     return per_rep
 

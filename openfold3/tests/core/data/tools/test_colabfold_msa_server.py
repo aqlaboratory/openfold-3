@@ -17,10 +17,11 @@
 import json
 import textwrap
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+from pydantic_core import Url
 
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
 from openfold3.core.data.pipelines.preprocessing.template import (
@@ -34,6 +35,7 @@ from openfold3.core.data.tools.colabfold_msa_server import (
     collect_colabfold_msa_data,
     get_sequence_hash,
     preprocess_colabfold_msas,
+    query_colabfold_msa_server,
     remap_colabfold_template_chain_ids,
 )
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
@@ -160,15 +162,39 @@ class TestRemapColabfoldTemplateChainIds:
         assert remapped_ids[1] == "4pqx_A"
 
     @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
-    def test_unknown_author_chain_raises(self, _mock_fetch):
-        """When the author chain ID isn't in the API response, raise."""
-        with pytest.raises(RuntimeError, match="Author chain Z not found in 1rnb"):
-            remap_colabfold_template_chain_ids(
-                template_alignments=_make_m8_dataframe(["1rnb_Z"]),
-                m_with_templates={101},
-                rep_ids=["rep1"],
-                rep_id_to_m={"rep1": 101},
-            )
+    def test_unmappable_author_chain_is_dropped(self, _mock_fetch):
+        """A hit whose author chain isn't in the map is dropped, not raised."""
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=_make_m8_dataframe(["1rnb_Z"]),
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        assert "rep1" in result
+        assert result["rep1"][1].tolist() == []
+        assert len(result["rep1"]) == 0
+
+    @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
+    def test_unmappable_hit_dropped_mappable_kept(self, _mock_fetch):
+        """Unmappable hits are filtered out while mappable hits are remapped.
+
+        The dropped row must be removed from the DataFrame as well, so column 1
+        stays the same length as the frame.
+        """
+        result = remap_colabfold_template_chain_ids(
+            template_alignments=_make_m8_dataframe(["1rnb_Z", "1rnb_A", "4pqx_A"]),
+            m_with_templates={101},
+            rep_ids=["rep1"],
+            rep_id_to_m={"rep1": 101},
+        )
+
+        remapped = result["rep1"]
+        # 1rnb_Z is unmappable and dropped; the other two remain and are remapped.
+        assert remapped[1].tolist() == ["1rnb_B", "4pqx_A"]
+        assert len(remapped) == 2
+        # The e-value column (10) should still line up with the surviving rows.
+        assert len(remapped[10]) == len(remapped[1])
 
     def test_skips_rep_without_templates(self):
         """Rep IDs not in m_with_templates should be skipped (no fetch needed)."""
@@ -524,3 +550,71 @@ class TestMsaComputationSettings:
         assert "Output directory mismatch" in str(exc_info.value), (
             "Expected ValueError on output directory conflict"
         )
+
+
+class TestQueryUrlConstruction:
+    """The ColabFold host may carry a trailing slash (pydantic Url normalization).
+
+    Request URLs must still contain exactly one slash before the endpoint, otherwise
+    the server rejects the double-slash URL with HTTP 400.
+    """
+
+    @staticmethod
+    def _complete_post_response():
+        response = MagicMock()
+        response.json.return_value = {"status": "COMPLETE", "id": "jobid"}
+        return response
+
+    @patch("openfold3.core.data.tools.colabfold_msa_server.requests")
+    def test_submit_url_has_no_double_slash(self, mock_requests, tmp_path):
+        # A bare pydantic Url normalizes to a trailing slash: this is the bug trigger.
+        host = Url("https://dummy.url")
+        assert str(host).endswith("/")
+
+        prefix = tmp_path / "raw" / "main"
+        prefix.mkdir(parents=True, exist_ok=True)
+        # Pre-create the expected a3m so extraction/parsing runs without a real tarball.
+        (prefix / "uniref.a3m").write_text(">101\nSEQ\n")
+
+        mock_requests.post.return_value = self._complete_post_response()
+        mock_requests.get.return_value = MagicMock(content=b"")
+
+        query_colabfold_msa_server(
+            ["SEQ"],
+            prefix=prefix,
+            user_agent="test-agent",
+            use_templates=False,
+            use_pairing=False,
+            use_env=False,
+            host_url=host,
+        )
+
+        submit_url = mock_requests.post.call_args.args[0]
+        assert submit_url == "https://dummy.url/ticket/msa"
+        # No "//" after the scheme separator.
+        assert "//" not in submit_url.split("://", 1)[1]
+
+        download_url = mock_requests.get.call_args.args[0]
+        assert "//" not in download_url.split("://", 1)[1]
+
+    @patch("openfold3.core.data.tools.colabfold_msa_server.requests")
+    def test_submit_url_ok_for_plain_string_host(self, mock_requests, tmp_path):
+        prefix = tmp_path / "raw" / "main"
+        prefix.mkdir(parents=True, exist_ok=True)
+        (prefix / "uniref.a3m").write_text(">101\nSEQ\n")
+
+        mock_requests.post.return_value = self._complete_post_response()
+        mock_requests.get.return_value = MagicMock(content=b"")
+
+        query_colabfold_msa_server(
+            ["SEQ"],
+            prefix=prefix,
+            user_agent="test-agent",
+            use_templates=False,
+            use_pairing=False,
+            use_env=False,
+            host_url="https://api.colabfold.com",
+        )
+
+        submit_url = mock_requests.post.call_args.args[0]
+        assert submit_url == "https://api.colabfold.com/ticket/msa"
