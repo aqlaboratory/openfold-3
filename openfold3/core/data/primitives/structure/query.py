@@ -630,10 +630,6 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                 "entity_id",
                 np.repeat(entity_to_id[representation], len(segment_atom_array)),
             )
-            segment_atom_array.set_annotation(
-                "is_cyclic",
-                np.repeat(chain.cyclic, len(segment_atom_array)),
-            )
 
             # Append atom array to end
             if atom_array is None:
