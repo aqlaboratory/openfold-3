@@ -139,20 +139,24 @@ def random_attention_inputs(
     inf=1e9,
     dtype=torch.float32,
     requires_grad=False,
+    bias_scale=0.1,
 ):
-    q = torch.rand(
+    q = torch.randn(
         batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad
     ).cuda()
-    kv = torch.rand(
+    kv = torch.randn(
         batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad
     ).cuda()
 
     mask = torch.randint(
         0, 2, (batch_size, n_seq, 1, 1, n), dtype=dtype, requires_grad=False
     ).cuda()
-    z_bias = torch.rand(
-        batch_size, 1, no_heads, n, n, dtype=dtype, requires_grad=requires_grad
-    ).cuda()
+    z_bias = (
+        bias_scale
+        * torch.randn(
+            batch_size, 1, no_heads, n, n, dtype=dtype, requires_grad=requires_grad
+        ).cuda()
+    )
     mask_bias = inf * (mask - 1)
 
     biases = [mask_bias, z_bias]
