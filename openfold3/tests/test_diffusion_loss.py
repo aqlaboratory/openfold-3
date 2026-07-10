@@ -14,8 +14,10 @@
 
 import unittest
 
+import pytest
 import torch
 import torch.nn.functional as F
+from torch.testing import assert_close
 
 from openfold3.core.loss.diffusion import (
     bond_loss,
@@ -28,6 +30,7 @@ from openfold3.core.model.structure.diffusion_module import centre_random_augmen
 from openfold3.tests.config import consts
 
 
+@pytest.mark.usefixtures("seeded_rng")
 class TestDiffusionLoss(unittest.TestCase):
     def setup_features(self):
         # Example: UNK UNK UNK ALA GLY/A A DT
@@ -96,6 +99,27 @@ class TestDiffusionLoss(unittest.TestCase):
         self.assertTrue(x_align.shape == (batch_size, n_atom, 3))
         self.assertTrue(torch.sum(torch.abs(x_align - x_gt) > 1e-5) == 0)
 
+    def test_weighted_rigid_align_ignores_masked_atoms(self):
+        # Masked-out atoms must not enter the centroid/covariance: with garbage
+        # at the masked positions the valid atoms must still recover x_gt.
+        k, g = 12, 6
+        theta = torch.tensor(0.7)
+        c, s = torch.cos(theta), torch.sin(theta)
+        rot = torch.tensor([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+
+        x_gt_valid = torch.randn(1, k, 3)
+        x_valid = x_gt_valid @ rot.T + torch.tensor([3.0, -1.0, 2.0])
+
+        x_gt = torch.cat([x_gt_valid, 1e3 * torch.randn(1, g, 3)], dim=1)
+        x = torch.cat([x_valid, 1e3 * torch.randn(1, g, 3)], dim=1)
+        mask = torch.cat([torch.ones(1, k), torch.zeros(1, g)], dim=1)
+
+        x_align = weighted_rigid_align(
+            x=x, x_gt=x_gt, w=torch.ones(1, k + g), atom_mask_gt=mask, eps=1e-8
+        )
+
+        assert_close(x_align[:, :k], x_gt_valid)
+
     def test_mse_loss(self):
         n_sample = 2
         dna_weight = 5
@@ -156,6 +180,38 @@ class TestDiffusionLoss(unittest.TestCase):
         self.assertTrue(loss.shape == (batch_size, n_sample))
         self.assertTrue((loss < 1e-5).all())
 
+    def test_bond_loss_value(self):
+        # Two coincident clusters of m single-atom polymer+ligand tokens make
+        # the bond mask all-true. Predicted cluster B is twice as far as the
+        # ground-truth B, so every cross-cluster pair has squared error exactly
+        # 1 while within-cluster pairs and the diagonal are 0; half the ordered
+        # pairs are cross-cluster, so the masked mean is exactly 0.5. The input
+        # is large enough that a less precise accumulator for the mask sum (e.g.
+        # bf16) would have a noticeable difference.
+        m = 175
+        n = 2 * m
+        x_gt = torch.zeros((1, n, 3))
+        x_gt[:, m:, 0] = 1.0
+        x = torch.zeros((1, n, 3))
+        x[:, m:, 0] = 2.0
+        batch = {
+            "token_mask": torch.ones((1, n)),
+            "num_atoms_per_token": torch.ones((1, n)),
+            "is_protein": torch.ones((1, n)),
+            "is_dna": torch.zeros((1, n)),
+            "is_rna": torch.zeros((1, n)),
+            "is_ligand": torch.ones((1, n)),
+            "token_bonds": torch.ones((1, n, n)),
+            "ground_truth": {
+                "atom_resolved_mask": torch.ones((1, n)),
+                "atom_positions": x_gt,
+            },
+        }
+
+        loss = bond_loss(x=x, batch=batch, eps=1e-8)
+
+        self.assertAlmostEqual(loss.item(), 0.5)
+
     def test_smooth_lddt_loss(self):
         n_sample = 2
 
@@ -192,6 +248,41 @@ class TestDiffusionLoss(unittest.TestCase):
 
         assert torch.equal(torch.nonzero(loss_masked), torch.nonzero(mostly_zeros_mask))
         assert torch.all(torch.not_equal(loss_masked, loss))
+
+    def test_smooth_lddt_loss_ignores_masked_atoms(self):
+        # Masked-out atoms must not affect the loss: adding extra atoms whose
+        # ground truth would count but whose prediction is wildly wrong (would
+        # drag the loss up markedly if they leaked), masked out, must give the
+        # same loss as not having them at all.
+        n = 10
+        extra = 5
+        x_gt = torch.randn(1, n + extra, 3)
+        x = torch.randn(1, n + extra, 3)
+        mask = torch.cat([torch.ones(1, n), torch.zeros(1, extra)], dim=1)
+
+        def run(positions_gt, positions, resolved_mask):
+            n_tok = positions_gt.shape[1]
+            batch = {
+                "token_mask": torch.ones((1, n_tok)),
+                "num_atoms_per_token": torch.ones((1, n_tok)),
+                "is_dna": torch.zeros((1, n_tok)),
+                "is_rna": torch.zeros((1, n_tok)),
+                "ground_truth": {
+                    "atom_resolved_mask": resolved_mask,
+                    "atom_positions": positions_gt,
+                },
+            }
+            return smooth_lddt_loss(
+                x=positions,
+                batch=batch,
+                loss_token_mask=torch.ones((1, n_tok)),
+                eps=1e-8,
+            )
+
+        loss_valid = run(x_gt[:, :n, :], x[:, :n, :], mask[:, :n])
+        loss_masked = run(x_gt, x, mask)
+
+        self.assertAlmostEqual(loss_masked.item(), loss_valid.item(), delta=1e-6)
 
     def _test_diffusion_loss(self, batch):
         n_sample = 2

@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import unittest
 
+import pytest
 import torch
 import torch.nn.functional as F
 
@@ -25,8 +27,10 @@ from openfold3.core.loss.confidence import (
     pde_loss,
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.tests.data_utils import atomized_single_atom_batch
 
 
+@pytest.mark.usefixtures("seeded_rng")
 class TestConfidenceLoss(unittest.TestCase):
     def setup_features(self):
         # Example: UNK UNK UNK ALA GLY/A A DT
@@ -155,6 +159,29 @@ class TestConfidenceLoss(unittest.TestCase):
 
         self.assertTrue(l_pde.shape == (batch_size,))
 
+    def test_pde_loss_zero_logits(self):
+        # With an all-true mask and all-zero logits, softmax_cross_entropy
+        # returns log(no_bins) for every (one-hot) target, so the true loss is
+        # log(no_bins). This test is constructed such that if we were to
+        # accumulate the mask sum divisor in bfloat16, it would fail because
+        # n_token**2 = 122,500 is not precisely representable.
+        n_token, no_bins = 350, 8
+        batch = atomized_single_atom_batch(n_token)
+        x = torch.randn((1, n_token, 3))
+        logits = torch.zeros((1, n_token, n_token, no_bins))
+
+        loss = pde_loss(
+            batch=batch,
+            x=x,
+            logits=logits,
+            no_bins=no_bins,
+            bin_min=0,
+            bin_max=32,
+            eps=1e-8,
+        )
+
+        self.assertAlmostEqual(loss.item(), math.log(no_bins), delta=1e-6)
+
     def test_resolved_loss(self):
         no_bins = 2
         eps = 1e-8
@@ -169,6 +196,18 @@ class TestConfidenceLoss(unittest.TestCase):
         )
 
         self.assertTrue(l_resolved.shape == (batch_size,))
+
+    def test_resolved_loss_zero_logits(self):
+        # Same idea as test_pde_loss_zero_logits.
+        n_atom, no_bins = 50000, 2
+        batch = atomized_single_atom_batch(n_atom)
+        logits = torch.zeros((1, n_atom, no_bins))
+
+        loss = all_atom_experimentally_resolved_loss(
+            batch=batch, logits=logits, no_bins=no_bins, eps=1e-8
+        )
+
+        self.assertAlmostEqual(loss.item(), math.log(no_bins), delta=1e-6)
 
     def test_confidence_loss(self):
         batch = self.setup_features()

@@ -252,7 +252,7 @@ def all_atom_plddt_loss(
         * ((d < 0.5).int() + (d < 1).int() + (d < 2).int() + (d < 4).int())
         * pair_mask,
         dim=-1,
-    ) / (torch.sum(pair_mask, dim=-1) + eps)
+    ) / (torch.sum(pair_mask, dim=-1, dtype=torch.float32) + eps)
 
     # Compute binned lddt
     # [*, N_atom, no_bins]
@@ -264,7 +264,7 @@ def all_atom_plddt_loss(
 
     # Compute loss on plddt
     l_plddt = torch.sum(errors * atom_mask_gt, dim=-1) / (
-        torch.sum(atom_mask_gt, dim=-1) + eps
+        torch.sum(atom_mask_gt, dim=-1, dtype=torch.float32) + eps
     )
 
     return l_plddt
@@ -423,7 +423,7 @@ def pde_loss(
 
     # Compute loss on predicted distance error
     l_pde = torch.sum(errors * pair_mask, dim=(-1, -2)) / (
-        torch.sum(pair_mask, dim=(-1, -2)) + eps
+        torch.sum(pair_mask, dim=(-1, -2), dtype=torch.float32) + eps
     )
 
     return l_pde
@@ -460,7 +460,7 @@ def all_atom_experimentally_resolved_loss(
     errors = softmax_cross_entropy(logits, y_b)
 
     l_resolved = torch.sum(errors * atom_mask, dim=-1) / (
-        torch.sum(atom_mask, dim=-1) + eps
+        torch.sum(atom_mask, dim=-1, dtype=torch.float32) + eps
     )
 
     return l_resolved
