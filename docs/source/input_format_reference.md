@@ -34,12 +34,18 @@ Each query entry is a dictionary with the following structure:
 ```
 "query_1": {
   "chains": [ { ... }, { ... } ],
+  "pocket_constraint": { ... },
 }
 ```
 
 In the current inference release, the only required field is:
   - `chains` *(list of dict, required)*
     - A list of chain definitions, where each sub-dictionary specifies one chain in the assembly. See {ref}`Section 3 <3-chains>` for a full breakdown of chain-level fields.
+
+Optional query-level fields include:
+  - `pocket_constraint` *(dict, optional, default = null)*
+    - Optional ligand-to-pocket constraint for a small-molecule ligand. See
+      {ref}`Section 4 <4-pocket-constraints>` for schema details and examples.
 
 (3-chains)=
 ## 3. Chains
@@ -224,9 +230,8 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
 (4-pocket-constraints)=
 ## 4. Pocket Constraints
 
-Queries with a small-molecule ligand can optionally provide `pocket_constraints`
-to bias ligand placement toward user-specified residues. This field is defined at
-the query level, next to `chains`:
+Pocket constraints bias small-molecule ligand placement toward user-specified
+residues:
 
 ```json
 {
@@ -244,24 +249,20 @@ the query level, next to `chains`:
           "smiles": "CC(=O)OC1C[NH+]2CCC1CC2"
         }
       ],
-      "pocket_constraints": [
-        {
-          "ligand_chain_id": "L",
-          "pocket_residues": [["A", 12], ["A", 15], ["A", 48]],
-          "max_distance": 4.0
-        }
-      ]
+      "pocket_constraint": {
+        "ligand_chain_id": "L",
+        "pocket_residues": [["A", 12], ["A", 15], ["A", 48]],
+        "max_distance": 4.0
+      }
     }
   }
 }
 ```
 
-- `pocket_constraints` *(list[dict], optional, default = null)*
-  - A one-entry list of ligand-to-pocket constraints. When present, OpenFold3 automatically
+- `pocket_constraint` *(dict, optional, default = null)*
+  - A ligand-to-pocket constraint. When present, OpenFold3 automatically
     runs pocket proposal and partial-diffusion refinement for the constrained
     ligand.
-  - The current inference implementation supports exactly one pocket constraint
-    per query.
 
 - `ligand_chain_id` *(str, required)*
   - Chain ID of the ligand to constrain. This must match one of the ligand
@@ -282,7 +283,8 @@ the query level, next to `chains`:
 Pocket constraints can be disabled for testing without editing the input
 JSON by setting `OF3_POCKET_SAMPLING=0` in the environment. Additional environment
 variables can override expert sampling defaults, but the default settings are
-intended to run without user-provided environment flags.
+intended to run without user-provided environment flags. Expert sampling defaults
+are defined in `openfold3/core/config/pocket_sampling_defaults.py`.
 
 ## 5. Example Input Json for a Single Query Complex
 

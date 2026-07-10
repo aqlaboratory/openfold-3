@@ -23,6 +23,7 @@ from pydantic import (
     model_validator,
 )
 
+from openfold3.core.config import pocket_sampling_defaults as pocket_defaults
 from openfold3.core.config.config_utils import (
     _cast_keys_to_int,
     _convert_molecule_type,
@@ -56,7 +57,7 @@ class PocketConstraint(BaseModel):
     model_config = {"extra": "forbid"}
     ligand_chain_id: str
     pocket_residues: list[PocketResidue]
-    max_distance: float = 4.0
+    max_distance: float = pocket_defaults.DEFAULT_POCKET_CONSTRAINT_MAX_DISTANCE
 
     @model_validator(mode="after")
     def validate_constraint(self) -> "PocketConstraint":
@@ -144,15 +145,13 @@ class Query(BaseModel):
     use_paired_msas: bool = True
     use_main_msas: bool = True
     covalent_bonds: list[Bond] | None = None
-    pocket_constraints: list[PocketConstraint] | None = None
+    pocket_constraint: PocketConstraint | None = None
 
     @model_validator(mode="after")
-    def validate_pocket_constraints(self) -> "Query":
-        """Validate query-level pocket constraints."""
-        if self.pocket_constraints is None:
+    def validate_pocket_constraint(self) -> "Query":
+        """Validate the query-level pocket constraint."""
+        if self.pocket_constraint is None:
             return self
-        if len(self.pocket_constraints) != 1:
-            raise ValueError("Exactly one pocket constraint is currently supported")
 
         ligand_chain_ids = {
             chain_id
@@ -160,7 +159,7 @@ class Query(BaseModel):
             if chain.molecule_type == MoleculeType.LIGAND
             for chain_id in chain.chain_ids
         }
-        ligand_chain_id = self.pocket_constraints[0].ligand_chain_id
+        ligand_chain_id = self.pocket_constraint.ligand_chain_id
         if ligand_chain_id not in ligand_chain_ids:
             raise ValueError(
                 f"pocket constraint ligand_chain_id {ligand_chain_id!r} does not "

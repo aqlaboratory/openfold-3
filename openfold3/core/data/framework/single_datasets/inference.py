@@ -283,9 +283,17 @@ class InferenceDataset(Dataset):
         return template_features
 
     @staticmethod
-    def _pocket_sampling_features(query: Query, atom_array: AtomArray) -> dict:
+    def _pocket_sampling_features(
+        query: Query,
+        atom_array: AtomArray,
+        processed_reference_molecules: list[ProcessedReferenceMolecule],
+    ) -> dict:
         """Features for in-memory pocket proposal/refinement."""
-        return create_pocket_sampling_features(query=query, atom_array=atom_array)
+        return create_pocket_sampling_features(
+            query=query,
+            atom_array=atom_array,
+            processed_reference_molecules=processed_reference_molecules,
+        )
 
     def create_all_features(
         self,
@@ -326,7 +334,13 @@ class InferenceDataset(Dataset):
         )
         features.update(template_features)
 
-        features.update(self._pocket_sampling_features(query, preprocessed_atom_array))
+        features.update(
+            self._pocket_sampling_features(
+                query=query,
+                atom_array=preprocessed_atom_array,
+                processed_reference_molecules=processed_reference_molecules,
+            )
+        )
 
         return features
 

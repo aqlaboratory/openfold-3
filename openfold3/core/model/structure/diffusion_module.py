@@ -20,6 +20,7 @@ Supplementary Information.
 """
 
 import logging
+from typing import NamedTuple
 
 import torch
 import torch.nn as nn
@@ -84,15 +85,44 @@ def create_noise_schedule(
     )
 
 
-def _batch_scalar(batch: dict, name: str, default, cast=float):
-    value = batch.get(name)
-    if value is None:
-        return default
+def _required_batch_feature(batch: dict, name: str):
+    if name not in batch:
+        raise ValueError(f"Pocket proposal/refinement requires batch feature {name!r}")
+    return batch[name]
+
+
+def _required_batch_scalar(batch: dict, name: str, cast=float):
+    value = _required_batch_feature(batch, name)
     return cast(value.flatten()[0].item())
 
 
+def _pocket_sampling_enabled(batch: dict) -> bool:
+    enabled = batch.get("pocket_sampling_enabled")
+    return enabled is not None and bool(enabled.flatten()[0].item())
+
+
+def _validate_pocket_sampling_features(batch: dict) -> None:
+    required_features = (
+        "pocket_sampling_ligand_atom_mask",
+        "pocket_sampling_pocket_atom_mask",
+        "pocket_sampling_vdw_radii",
+        "pocket_sampling_contact_distance",
+        "pocket_sampling_num_parents",
+        "pocket_sampling_candidates",
+        "pocket_sampling_start_frac",
+        "pocket_sampling_ligand_jitter",
+        "pocket_sampling_translate",
+        "pocket_sampling_center_jitter",
+        "pocket_sampling_surface_jitter",
+        "pocket_sampling_vdw_buffer",
+        "pocket_sampling_diversity_rmsd",
+    )
+    for name in required_features:
+        _required_batch_feature(batch, name)
+
+
 def _feature_mask(batch: dict, atom_mask: torch.Tensor, name: str) -> torch.Tensor:
-    mask = batch[name].to(device=atom_mask.device).bool()
+    mask = _required_batch_feature(batch, name).to(device=atom_mask.device).bool()
     batch_dim = atom_mask.shape[0]
     while mask.dim() > 2 and mask.shape[1] == 1:
         mask = mask[:, 0]
@@ -130,13 +160,25 @@ def _score_ligand_pose(
     return pocket_com_dist, vdw_overlap, min_prot, lig_atoms_in_pocket, contact
 
 
-def _candidate_sort_key(item) -> tuple[float, float, float, float, float]:
+class _PocketSamplingCandidate(NamedTuple):
+    pocket_com_dist: torch.Tensor
+    vdw_overlap: torch.Tensor
+    min_protein_dist: torch.Tensor
+    lig_atoms_in_pocket: torch.Tensor
+    contact_penalty: torch.Tensor
+    pose: torch.Tensor
+    parent_slot: int
+
+
+def _candidate_sort_key(
+    candidate: _PocketSamplingCandidate,
+) -> tuple[float, float, float, float, float]:
     return (
-        float(item[0]),
-        float(item[3]),
-        float(item[4]),
-        float(item[1]),
-        -float(item[2]),
+        float(candidate.pocket_com_dist),
+        -float(candidate.lig_atoms_in_pocket),
+        float(candidate.contact_penalty),
+        float(candidate.vdw_overlap),
+        -float(candidate.min_protein_dist),
     )
 
 
@@ -147,7 +189,7 @@ def _build_pocket_sampling_seeds(
     no_rollout_samples: int,
 ) -> torch.Tensor:
     """Generate ligand seeds in a user-specified pocket for partial diffusion."""
-    batch_dim, num_atoms = atom_mask.shape[0], atom_mask.shape[-1]
+    batch_dim = atom_mask.shape[0]
     lig_mask = _feature_mask(batch, atom_mask, "pocket_sampling_ligand_atom_mask")
     pocket_mask = _feature_mask(batch, atom_mask, "pocket_sampling_pocket_atom_mask")
     lig_idx = torch.nonzero(lig_mask[0], as_tuple=False).flatten()
@@ -155,15 +197,11 @@ def _build_pocket_sampling_seeds(
     protein_idx = torch.nonzero(atom_mask[0].bool() & ~lig_mask[0], as_tuple=False)
     protein_idx = protein_idx.flatten()
 
-    radii = batch.get("pocket_sampling_vdw_radii")
-    if radii is None:
-        radii = torch.full(
-            (num_atoms,), 1.70, dtype=atom_mask.dtype, device=atom_mask.device
-        )
-    else:
-        radii = radii.to(device=atom_mask.device, dtype=atom_mask.dtype)
-        while radii.dim() > 1:
-            radii = radii[0]
+    radii = _required_batch_feature(batch, "pocket_sampling_vdw_radii").to(
+        device=atom_mask.device, dtype=atom_mask.dtype
+    )
+    while radii.dim() > 1:
+        radii = radii[0]
     lig_vdw = radii[lig_idx]
     protein_vdw = radii[protein_idx]
 
@@ -177,21 +215,51 @@ def _build_pocket_sampling_seeds(
         1,
         min(
             no_rollout_samples,
-            _batch_scalar(batch, "pocket_sampling_num_parents", 16, int),
+            _required_batch_scalar(
+                batch,
+                "pocket_sampling_num_parents",
+                int,
+            ),
         ),
     )
     n_candidates = max(
         no_rollout_samples,
-        _batch_scalar(batch, "pocket_sampling_candidates", 1024, int),
+        _required_batch_scalar(
+            batch,
+            "pocket_sampling_candidates",
+            int,
+        ),
     )
-    contact_distance = _batch_scalar(
-        batch, "pocket_sampling_contact_distance", 4.0, float
+    contact_distance = _required_batch_scalar(
+        batch,
+        "pocket_sampling_contact_distance",
+        float,
     )
-    translate = _batch_scalar(batch, "pocket_sampling_translate", 1.0, float)
-    center_jitter = _batch_scalar(batch, "pocket_sampling_center_jitter", 4.0, float)
-    surface_jitter = _batch_scalar(batch, "pocket_sampling_surface_jitter", 1.5, float)
-    vdw_buffer = _batch_scalar(batch, "pocket_sampling_vdw_buffer", 0.225, float)
-    diversity_rmsd = _batch_scalar(batch, "pocket_sampling_diversity_rmsd", 0.5, float)
+    translate = _required_batch_scalar(
+        batch,
+        "pocket_sampling_translate",
+        float,
+    )
+    center_jitter = _required_batch_scalar(
+        batch,
+        "pocket_sampling_center_jitter",
+        float,
+    )
+    surface_jitter = _required_batch_scalar(
+        batch,
+        "pocket_sampling_surface_jitter",
+        float,
+    )
+    vdw_buffer = _required_batch_scalar(
+        batch,
+        "pocket_sampling_vdw_buffer",
+        float,
+    )
+    diversity_rmsd = _required_batch_scalar(
+        batch,
+        "pocket_sampling_diversity_rmsd",
+        float,
+    )
 
     all_seed_batches = []
     for b in range(batch_dim):
@@ -262,14 +330,14 @@ def _build_pocket_sampling_seeds(
                 vdw_buffer,
             )
             candidates.append(
-                (
-                    score,
-                    vdw_overlap,
-                    min_prot,
-                    -lig_atoms,
-                    contact,
-                    pose,
-                    parent_slot,
+                _PocketSamplingCandidate(
+                    pocket_com_dist=score,
+                    vdw_overlap=vdw_overlap,
+                    min_protein_dist=min_prot,
+                    lig_atoms_in_pocket=lig_atoms,
+                    contact_penalty=contact,
+                    pose=pose,
+                    parent_slot=parent_slot,
                 )
             )
 
@@ -277,7 +345,9 @@ def _build_pocket_sampling_seeds(
         selected = []
         for cand in candidates:
             if all(
-                torch.sqrt(torch.square(cand[5] - prev[5]).mean()).item()
+                torch.sqrt(
+                    torch.square(cand.pose - prev.pose).sum(dim=-1).mean()
+                ).item()
                 >= diversity_rmsd
                 for prev in selected
             ):
@@ -289,8 +359,8 @@ def _build_pocket_sampling_seeds(
 
         seed_list = []
         for cand in selected[:no_rollout_samples]:
-            seed = xl_base[b, cand[6]].clone()
-            seed[lig_idx] = cand[5]
+            seed = xl_base[b, cand.parent_slot].clone()
+            seed[lig_idx] = cand.pose
             seed_list.append(seed)
         all_seed_batches.append(torch.stack(seed_list, dim=0))
 
@@ -302,10 +372,10 @@ def _build_pocket_sampling_seeds(
             n_parents,
             no_rollout_samples,
             n_candidates,
-            float(best[0]),
-            float(best[1]),
-            float(best[2]),
-            int(-best[3].item()),
+            float(best.pocket_com_dist),
+            float(best.vdw_overlap),
+            float(best.min_protein_dist),
+            int(best.lig_atoms_in_pocket.item()),
         )
 
     return torch.stack(all_seed_batches, dim=0)
@@ -643,28 +713,33 @@ class SampleDiffusion(nn.Module):
             "_mask_trans": _mask_trans,
         }
 
-        xl = self._sample_rollout(xl=xl, start_step=0, **rollout_kwargs)
-
-        pocket_sampling_enabled = bool(
-            _batch_scalar(batch, "pocket_sampling_enabled", False, bool)
-        )
+        pocket_sampling_enabled = _pocket_sampling_enabled(batch)
         if pocket_sampling_enabled:
+            _validate_pocket_sampling_features(batch)
             if batch_dim != 1:
                 raise ValueError(
                     "Pocket proposal/refinement currently supports one query per "
                     "model batch"
                 )
+
+        xl = self._sample_rollout(xl=xl, start_step=0, **rollout_kwargs)
+
+        if pocket_sampling_enabled:
             seed = _build_pocket_sampling_seeds(
                 batch=batch,
                 xl_base=xl.detach(),
                 atom_mask=atom_mask,
                 no_rollout_samples=no_rollout_samples,
             )
-            pocket_sampling_start_frac = _batch_scalar(
-                batch, "pocket_sampling_start_frac", 0.75, float
+            pocket_sampling_start_frac = _required_batch_scalar(
+                batch,
+                "pocket_sampling_start_frac",
+                float,
             )
-            pocket_sampling_jitter = _batch_scalar(
-                batch, "pocket_sampling_ligand_jitter", 0.25, float
+            pocket_sampling_jitter = _required_batch_scalar(
+                batch,
+                "pocket_sampling_ligand_jitter",
+                float,
             )
             pocket_sampling_start_step = max(
                 0,
