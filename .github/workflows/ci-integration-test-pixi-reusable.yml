@@ -42,7 +42,7 @@ jobs:
           echo "ami_id=$ami_id" >> "$GITHUB_OUTPUT"
       - name: Create cloud runner
         id: aws-start
-        uses: omsf/start-aws-gha-runner@v1.2.0
+        uses: omsf/start-aws-gha-runner@v1.3.0
         with:
           aws_image_id: ${{ steps.resolve-ami.outputs.ami_id }}  # Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04), resolved from SSM at runtime
           aws_instance_type: "g5.4xlarge" # A10G 64 GB
