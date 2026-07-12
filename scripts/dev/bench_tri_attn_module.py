@@ -1,17 +1,16 @@
 """Microbenchmark TriangleAttention.forward in isolation.
 
-Compares V3 / V2 / cap128 (cuEq with TRI_ATTN_CHUNK_CAP) / eager-cuEq
-across a small sweep of N. Reports per-call wall time, peak transient
-memory above the resident input, and CUDA-event totals from a torch
-profiler trace so we can see where V3 spends time.
+Compares V1 cap128 against cuEq default and cuEq cap128 across a small sweep of
+N. Reports per-call wall time and peak transient memory above the resident
+input.
 
 Run with:
     OPENFOLD_CACHE=/.../data/openfold_cache CUBLAS_WORKSPACE_CONFIG=:4096:8 \
     python scripts/dev/bench_tri_attn_module.py --n 384 590 --reps 20
 
-The script imports openfold3 lazily after toggling env flags so each
-configuration sees fresh module imports. TF32 is enabled by default to match
-normal OF3 inference; pass ``--no-tf32`` for true-fp32 diagnostics.
+The dispatch flags are read at call time, so each configuration can be toggled
+within one process. TF32 is enabled by default to match normal OF3 inference;
+pass ``--no-tf32`` for true-fp32 diagnostics.
 """
 
 import argparse
@@ -23,10 +22,7 @@ from pathlib import Path
 import torch
 
 
-def _set_flags(*, v4: bool, v3: bool, v2: bool, v1: bool, cap: str | None) -> None:
-    os.environ["OPENFOLD3_FUSED_TRI_ATTN_V4"] = "1" if v4 else "0"
-    os.environ["OPENFOLD3_FUSED_TRI_ATTN_V3"] = "1" if v3 else "0"
-    os.environ["OPENFOLD3_FUSED_TRI_ATTN_V2"] = "1" if v2 else "0"
+def _set_flags(*, v1: bool, cap: str | None) -> None:
     os.environ["OPENFOLD3_FUSED_TRI_ATTN_V1"] = "1" if v1 else "0"
     if cap is None or cap == "":
         os.environ.pop("OPENFOLD3_TRI_ATTN_CHUNK_CAP", None)
@@ -100,13 +96,10 @@ def _run_config(
     dtype: torch.dtype,
     starting: bool,
     reps: int,
-    v4: bool,
-    v3: bool,
-    v2: bool,
     v1: bool,
     cap: str | None,
 ) -> dict:
-    _set_flags(v4=v4, v3=v3, v2=v2, v1=v1, cap=cap)
+    _set_flags(v1=v1, cap=cap)
 
     old_tf32 = torch.backends.cuda.matmul.allow_tf32
     torch.backends.cuda.matmul.allow_tf32 = bool(
@@ -140,42 +133,6 @@ def _run_config(
         torch.backends.cuda.matmul.allow_tf32 = old_tf32
 
 
-def _profile_v3_sub_ops(N: int, c_z: int, c_h: int, H: int) -> None:
-    """torch.profiler trace of V3 call — dumps top kernels by CUDA time."""
-    from torch.profiler import ProfilerActivity, profile
-
-    _set_flags(v4=False, v3=True, v2=False, v1=False, cap=None)
-    old_tf32 = torch.backends.cuda.matmul.allow_tf32
-    torch.backends.cuda.matmul.allow_tf32 = bool(
-        os.environ.get("OF3_BENCH_TF32", "1") in ("1", "true")
-    )
-    try:
-        module = _build_module(c_in=c_z, c_hidden=c_h, no_heads=H, starting=True)
-        x = torch.randn(1, N, N, c_z, device="cuda", dtype=torch.float32)
-        mask = torch.ones(1, N, N, device="cuda", dtype=torch.float32)
-
-        with torch.no_grad():
-            for _ in range(3):
-                module(x, mask=mask)
-            torch.cuda.synchronize()
-
-            with profile(activities=[ProfilerActivity.CUDA], record_shapes=False) as p:
-                for _ in range(5):
-                    module(x, mask=mask)
-                torch.cuda.synchronize()
-
-        print(f"\n=== V3 CUDA profile @ N={N} (5 calls) ===")
-        print(
-            p.key_averages().table(
-                sort_by="self_cuda_time_total",
-                row_limit=15,
-                top_level_events_only=False,
-            )
-        )
-    finally:
-        torch.backends.cuda.matmul.allow_tf32 = old_tf32
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, nargs="+", default=[256, 384, 590])
@@ -195,8 +152,6 @@ def main() -> None:
         action="store_true",
         help="Skip the cuEq baseline (useful at large N where it OOMs).",
     )
-    parser.add_argument("--profile-n", type=int, default=None,
-                        help="If set, also run a torch.profiler trace at this N.")
     parser.add_argument("--output-json", type=Path, default=None)
     args = parser.parse_args()
 
@@ -206,13 +161,10 @@ def main() -> None:
     dtype = torch.float32 if args.dtype == "fp32" else torch.bfloat16
 
     configs = [
-        # (label, v4, v3, v2, cap)
-        ("cueq_default",       False, False, False, False, None),
-        ("cueq_cap128",        False, False, False, False, "128"),
-        ("v1_cap128",          False, False, False, True,  "128"),
-        ("v2",              False, False, True,  False, None),
-        ("v3",              False, True,  False, False, None),
-        ("v4",              True,  False, False, False, None),
+        # (label, v1, cap)
+        ("cueq_default", False, None),
+        ("cueq_cap128", False, "128"),
+        ("v1_cap128", True, "128"),
     ]
     if args.skip_cueq:
         configs = [c for c in configs if not c[0].startswith("cueq")]
@@ -220,13 +172,12 @@ def main() -> None:
     results = []
     print(f"{'config':<14}{'N':>6}{'ms':>10}{'peak U':>10}{'peak MiB':>12}")
     for N in args.n:
-        for label, v4, v3, v2, v1, cap in configs:
+        for label, v1, cap in configs:
             r = _run_config(
                 label,
                 N=N, c_z=args.c_z, c_h=args.c_h, H=args.heads,
                 dtype=dtype, starting=not args.ending, reps=args.reps,
-                v4=v4, v3=v3, v2=v2, cap=cap,
-                v1=v1,
+                v1=v1, cap=cap,
             )
             results.append(r)
             print(
@@ -235,9 +186,6 @@ def main() -> None:
                 f"{r['peak_transient_bytes'] / 1024**2:>12.1f}"
             )
         print()
-
-    if args.profile_n is not None:
-        _profile_v3_sub_ops(args.profile_n, args.c_z, args.c_h, args.heads)
 
     if args.output_json is not None:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)

@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# by Liang Hong <lhong22@cse.cuhk.edu.hk>: inference dispatch and parameter
-# packing for fused low-memory triangle multiplicative updates.
+# by Liang Hong <lhong22@cse.cuhk.edu.hk>: inference dispatch and chunked
+# outgoing/incoming schedules for the fused triangle multiplication kernels.
 
 """Dispatch + env-flag gating for the fused triangle multiplicative update.
 

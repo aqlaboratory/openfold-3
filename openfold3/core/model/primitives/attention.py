@@ -74,8 +74,6 @@ DIFFUSION_ATTN_TRITON_AVAILABLE = (
 _FLAG_TRUE = {"1", "true", "True"}
 
 
-# by Liang Hong <lhong22@cse.cuhk.edu.hk>: eligibility and dispatch for
-# length-generic fused diffusion attention with pair bias.
 def is_fused_diffusion_attention_enabled() -> bool:
     """Returns True if OPENFOLD3_FUSED_DIFFUSION_ATTN=1."""
     return os.environ.get("OPENFOLD3_FUSED_DIFFUSION_ATTN", "0") in _FLAG_TRUE

@@ -15,10 +15,16 @@ combinations the model actually uses.
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 import torch
+import torch.nn as nn
 
-from openfold3.core.model.primitives.fused_ln_linear import FusedLNLinear
+from openfold3.core.kernels.triton.fused_ln_linear import pair_ln_linear_inference
+from openfold3.core.model.primitives.fused_ln_linear import (
+    FusedLNLinear,
+    register_legacy_remap_hook,
+)
 from openfold3.tests.compare_utils import skip_unless_cuda_available
 
 # (c_in, c_out, ln_create_offset, linear_bias) covering the wired sites.
@@ -38,6 +44,39 @@ CASES = [
 
 # Per-call sample sizes: pair-tensor scale (256*256=65536 rows) + small.
 M_VALUES = [1024, 65536]
+
+
+class TestFusedLNLinearCheckpointCompatibility(unittest.TestCase):
+    def test_public_checkpoint_keys_are_remapped(self):
+        parent = nn.Module()
+        parent.fused = FusedLNLinear(
+            8,
+            4,
+            ln_create_offset=True,
+            linear_bias=True,
+        )
+        with mock.patch(
+            "openfold3.core.model.primitives.fused_ln_linear."
+            "is_fused_ln_linear_enabled",
+            return_value=True,
+        ):
+            register_legacy_remap_hook(
+                parent,
+                [("layer_norm", "linear", "fused")],
+            )
+
+        legacy_state = {
+            "layer_norm.weight": torch.randn(8),
+            "layer_norm.bias": torch.randn(8),
+            "linear.weight": torch.randn(4, 8),
+            "linear.bias": torch.randn(4),
+        }
+        parent.load_state_dict(legacy_state)
+
+        torch.testing.assert_close(parent.fused.ln_weight, legacy_state["layer_norm.weight"])
+        torch.testing.assert_close(parent.fused.ln_bias, legacy_state["layer_norm.bias"])
+        torch.testing.assert_close(parent.fused.weight, legacy_state["linear.weight"])
+        torch.testing.assert_close(parent.fused.bias, legacy_state["linear.bias"])
 
 
 @skip_unless_cuda_available()
@@ -151,6 +190,32 @@ class TestFusedLNLinearForward(unittest.TestCase):
         y_fused = m(x)
         y_ref = m.reference_forward(x)
         self.assertEqual((y_fused - y_ref).abs().max().item(), 0.0)
+
+    def test_pair_ln_linear_inference_matches_transposed_pair_view(self):
+        """Pair LN-linear must avoid copies while matching transposed views."""
+        torch.manual_seed(4)
+        device = "cuda"
+        old_allow_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = False
+        try:
+            x_base = torch.randn(1, 96, 96, 128, device=device)
+            gamma = torch.randn(128, device=device)
+            beta = torch.randn(128, device=device)
+            weight = torch.randn(128, 128, device=device) * 0.02
+            bias = torch.randn(128, device=device) * 0.02
+
+            with torch.inference_mode():
+                for x in (x_base, x_base.transpose(-2, -3)):
+                    y = pair_ln_linear_inference(x, gamma, beta, weight, bias)
+                    ref = torch.nn.functional.linear(
+                        torch.nn.functional.layer_norm(x, (128,), gamma, beta, 1e-5),
+                        weight,
+                        bias,
+                    ).reshape(-1, 128)
+                    self.assertEqual(y.shape, ref.shape)
+                    self.assertLess((y - ref).abs().max().item(), 2e-5)
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_allow_tf32
 
 
 @skip_unless_cuda_available()

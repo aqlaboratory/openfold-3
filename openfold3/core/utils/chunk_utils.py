@@ -30,8 +30,6 @@ DEFAULT_MAX_CHUNK_SIZE = 512
 FLASH_MAX_CHUNK_SIZE = 1024
 
 
-# by Liang Hong <lhong22@cse.cuhk.edu.hk>: environment-controlled cap for
-# bounding triangle-attention projection memory during inference.
 def triangle_attn_chunk_cap() -> int | None:
     """Optional cap on the triangle-attention chunk size (rows of the pair rep
     processed per attention call), read from OPENFOLD3_TRI_ATTN_CHUNK_CAP.

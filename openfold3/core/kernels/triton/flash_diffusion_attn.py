@@ -324,7 +324,9 @@ _DIFF_ATTN_CONFIG: dict[torch.dtype, tuple[int, int, int, int]] = {
 }
 
 
-def _pick_diff_attn_config(dtype: torch.dtype, block_c: int) -> tuple[int, int, int, int]:
+def _pick_diff_attn_config(
+    dtype: torch.dtype, block_c: int
+) -> tuple[int, int, int, int]:
     if dtype in _DIFF_ATTN_CONFIG:
         return _DIFF_ATTN_CONFIG[dtype]
     # Conservative fallback for any unswept dtype: small tile, low stages.

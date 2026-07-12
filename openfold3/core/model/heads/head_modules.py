@@ -254,8 +254,6 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             zij = zij.detach()
         else:
             zij = zij.detach().clone()
-        # by Liang Hong <lhong22@cse.cuhk.edu.hk>: release the trunk pair
-        # representation before confidence refinement allocates its own copy.
         del output["zij_trunk"]
         atom_positions_predicted = atom_positions_predicted.detach().clone()
 

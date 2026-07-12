@@ -76,8 +76,6 @@ class PairformerEmbedding(nn.Module):
         )
         self.pairformer_stack = PairFormerStack(**pairformer)
 
-    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: in-place confidence pair
-    # embedding path that avoids full pair-tensor residual allocations.
     def embed_zij(
         self,
         si_input: torch.Tensor,

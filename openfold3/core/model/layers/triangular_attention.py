@@ -24,8 +24,8 @@ import torch.nn as nn
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import Attention, LayerNorm, Linear
 from openfold3.core.model.primitives.fused_tri_attn import (
-    fused_tri_attn_forward,
-    is_fused_tri_attn_enabled,
+    fused_tri_attn_v1_forward,
+    is_fused_tri_attn_v1_enabled,
 )
 from openfold3.core.utils.chunk_utils import chunk_layer
 from openfold3.core.utils.tensor_utils import (
@@ -116,18 +116,38 @@ class TriangleAttention(nn.Module):
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
+        residual: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
             x:
                 [*, I, J, C_in] input tensor (e.g. the pair representation)
+            residual:
+                Optional [*, I, J, C_in] buffer sharing storage with ``x`` (may
+                be ``x`` itself for the starting node) into which the residual
+                add ``residual += linear_o(attn)`` is fused per row-block.  When
+                supplied AND the fused V1 path is eligible, no separate
+                ``[N, N, c_z]`` output buffer is allocated.  The returned tensor
+                is ``residual`` (mutated in place) and the caller MUST NOT add
+                the return value on top of ``residual`` again.  When the fused
+                path is not eligible, ``residual`` is ignored and the function
+                falls back to the eager path which returns ``linear_o(attn)``
+                unmodified — the caller is then responsible for the outer add.
         Returns:
-            [*, I, J, C_in] output tensor
+            [*, I, J, C_in] output tensor.  If ``residual`` was provided AND the
+            fused path was used, the return value is the mutated ``residual``;
+            otherwise it is the raw attention output.
         """
 
-        if is_fused_tri_attn_enabled():
-            out = fused_tri_attn_forward(
-                self, x, mask, use_cueq_triangle_kernels, inplace_safe,
+        if is_fused_tri_attn_v1_enabled():
+            out = fused_tri_attn_v1_forward(
+                self,
+                x,
+                mask,
+                inplace_safe,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                chunk_size=chunk_size,
+                residual=residual,
             )
             if out is not None:
                 return out
@@ -180,6 +200,14 @@ class TriangleAttention(nn.Module):
 
         if not self.starting:
             x = x.transpose(-2, -3)
+
+        if residual is not None and not self.training:
+            # Eager fallback for the residual-fused API: dropout is a no-op at
+            # inference (``Dropout.forward`` short-circuits when
+            # ``not self.training``), so folding the residual add here is
+            # semantically identical to the caller's outer ``z += tri_att(z)``.
+            residual.add_(x)
+            return residual
 
         return x
 

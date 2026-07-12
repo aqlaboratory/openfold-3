@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# by Liang Hong <lhong22@cse.cuhk.edu.hk>: eligibility and fallback dispatch
-# for the fused inference-only SwiGLU pair transition.
+# by Liang Hong <lhong22@cse.cuhk.edu.hk>: eligibility, dtype adaptation,
+# eager fallback, and residual dispatch for the fused pair transition.
 
 """Dispatch + env-flag gating for the fused SwiGLU pair transition.
 

@@ -102,7 +102,6 @@ class DiffusionConditioning(nn.Module):
                 ln_create_offset=False,
                 linear_bias=linear_init_params.linear_z.get("bias", True),
                 linear_init=linear_init_params.linear_z.get("init", "default"),
-                legacy_ln_name="layer_norm_z", legacy_linear_name="linear_z",
             )
         else:
             self.layer_norm_z = LayerNorm(
@@ -129,7 +128,6 @@ class DiffusionConditioning(nn.Module):
                 ln_create_offset=False,
                 linear_bias=linear_init_params.linear_z.get("bias", True),
                 linear_init=linear_init_params.linear_z.get("init", "default"),
-                legacy_ln_name="layer_norm_s", legacy_linear_name="linear_s",
             )
         else:
             self.layer_norm_s = LayerNorm(
@@ -146,7 +144,6 @@ class DiffusionConditioning(nn.Module):
                 ln_create_offset=False,
                 linear_bias=linear_init_params.linear_n.get("bias", True),
                 linear_init=linear_init_params.linear_n.get("init", "default"),
-                legacy_ln_name="layer_norm_n", legacy_linear_name="linear_n",
             )
         else:
             self.layer_norm_n = LayerNorm(self.c_fourier_emb, create_offset=False)
@@ -351,17 +348,13 @@ class DiffusionConditioning(nn.Module):
         n = self._embed_n(t)
         si = si_base + n.unsqueeze(-2)
 
-        s_chunk_size = chunk_size
-        if s_chunk_size is not None and self.chunk_size_tuner is not None:
-            assert not self.training
-            s_chunk_size = self.chunk_size_tuner.tune_chunk_size(
-                representative_fn=self._transition_s,
-                args=(si.clone(), token_mask),
-                min_chunk_size=s_chunk_size,
-                max_chunk_size=2048,
-            )
-
-        si = self._transition_s(si=si, token_mask=token_mask, chunk_size=s_chunk_size)
+        # ``_transition_s`` runs the single-representation transition — an
+        # elementwise SwiGLU along the token axis over ``[B, N_token, c_s]``,
+        # no N² memory footprint.  Chunking it is meaningless: the transient
+        # doesn't grow with N, and the tuner probe (multiple full-block
+        # forwards on the first call) is pure Triton first-touch cost with no
+        # payoff.  Pass ``chunk_size=None`` unconditionally.
+        si = self._transition_s(si=si, token_mask=token_mask, chunk_size=None)
         return si, zij
 
     def forward(

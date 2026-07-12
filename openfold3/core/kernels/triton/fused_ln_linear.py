@@ -17,11 +17,10 @@
 
 """Triton kernel that fuses LayerNorm followed by a Linear layer.
 
-Targets the pinned LN -> Linear chains identified by the training audit
-(see plan): DiffusionConditioning, NoisyPositionEmbedder, OpenFold3
-outer trunk. The fused kernel never materializes the [..., c_in]
-normalized intermediate, eliminating ~sizeof(input.dtype)*input.numel()
-of allocator activity per call.
+Targets pair-scale LN -> Linear chains in DiffusionConditioning,
+NoisyPositionEmbedder, and the OpenFold3 outer trunk. The fused kernel never
+materializes the [..., c_in] normalized intermediate, eliminating
+~sizeof(input.dtype)*input.numel() of allocator activity per call.
 
 Forward only in this iteration; backward is autograd-decomposed against
 the saved input + LN stats.
@@ -178,6 +177,115 @@ if _TRITON_AVAILABLE:
             mask=m_mask[:, None] & n_mask[None, :],
         )
 
+    @triton.jit(
+        do_not_specialize=[
+            "I_dim",
+            "J_dim",
+            "stride_x_i",
+            "stride_x_j",
+            "stride_x_k",
+            "stride_w_n",
+            "stride_w_k",
+            "stride_y_m",
+            "stride_y_n",
+            "eps",
+        ],
+        do_not_specialize_on_alignment=[
+            "X_ptr",
+            "W_ptr",
+            "Y_ptr",
+            "Gamma_ptr",
+            "Beta_ptr",
+            "Bias_ptr",
+        ],
+    )
+    def _pair_ln_linear_fwd_kernel(
+        X_ptr,
+        W_ptr,
+        Y_ptr,
+        Gamma_ptr,
+        Beta_ptr,
+        Bias_ptr,
+        I_dim,
+        J_dim,
+        stride_x_i,
+        stride_x_j,
+        stride_x_k,
+        stride_w_n,
+        stride_w_k,
+        stride_y_m,
+        stride_y_n,
+        N,
+        K,
+        eps,
+        HAS_LN_BIAS: tl.constexpr,
+        HAS_LIN_BIAS: tl.constexpr,
+        ALLOW_TF32: tl.constexpr,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
+        BLOCK_K: tl.constexpr,
+    ):
+        """LayerNorm + Linear over logical [1, I, J, K] rows.
+
+        Unlike ``_fused_ln_linear_fwd_kernel``, the row address is decoded as
+        ``i = row // J`` and ``j = row % J``.  This lets triangle attention
+        project a transposed pair view without first materializing a contiguous
+        1U copy.
+        """
+        pid_m = tl.program_id(0)
+        pid_n = tl.program_id(1)
+
+        offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+        offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+        offs_k = tl.arange(0, BLOCK_K)
+
+        M = I_dim * J_dim
+        m_mask = offs_m < M
+        n_mask = offs_n < N
+        k_mask = offs_k < K
+
+        offs_i = offs_m // J_dim
+        offs_j = offs_m - offs_i * J_dim
+        x_base = offs_i * stride_x_i + offs_j * stride_x_j
+        x = tl.load(
+            X_ptr + x_base[:, None] + offs_k[None, :] * stride_x_k,
+            mask=m_mask[:, None] & k_mask[None, :],
+            other=0.0,
+        ).to(tl.float32)
+
+        mean = tl.sum(x, axis=1) / K
+        x_centered = tl.where(k_mask[None, :], x - mean[:, None], 0.0)
+        var = tl.sum(x_centered * x_centered, axis=1) / K
+        rstd = 1.0 / tl.sqrt(var + eps)
+
+        gamma = tl.load(Gamma_ptr + offs_k, mask=k_mask, other=0.0).to(tl.float32)
+        x_hat = x_centered * rstd[:, None] * gamma[None, :]
+        if HAS_LN_BIAS:
+            beta = tl.load(Beta_ptr + offs_k, mask=k_mask, other=0.0).to(tl.float32)
+            x_hat = x_hat + tl.where(k_mask[None, :], beta[None, :], 0.0)
+
+        w = tl.load(
+            W_ptr + offs_n[:, None] * stride_w_n + offs_k[None, :] * stride_w_k,
+            mask=n_mask[:, None] & k_mask[None, :],
+            other=0.0,
+        ).to(tl.float32)
+        if ALLOW_TF32:
+            acc = tl.dot(x_hat, tl.trans(w), out_dtype=tl.float32, allow_tf32=True)
+        else:
+            acc = tl.dot(
+                x_hat, tl.trans(w), out_dtype=tl.float32, input_precision="ieee"
+            )
+
+        if HAS_LIN_BIAS:
+            bias = tl.load(Bias_ptr + offs_n, mask=n_mask, other=0.0).to(tl.float32)
+            acc = acc + bias[None, :]
+
+        tl.store(
+            Y_ptr + offs_m[:, None] * stride_y_m + offs_n[None, :] * stride_y_n,
+            acc.to(Y_ptr.dtype.element_ty),
+            mask=m_mask[:, None] & n_mask[None, :],
+        )
+
     def _next_power_of_two(n: int) -> int:
         if n <= 1:
             return 1
@@ -218,9 +326,8 @@ if _TRITON_AVAILABLE:
         # If c_in ever exceeds 4096 we'd need a K-loop; assert instead so we notice.
         assert BLOCK_K <= 4096, f"BLOCK_K={BLOCK_K} too large for one-pass LN"
 
-        # M, N block sizes — picked from a hand-tuned sweep across the
-        # shapes the model actually exercises (see plan file for the
-        # full table). Two regimes:
+        # M, N block sizes — picked from a hand-tuned sweep across the shapes
+        # the model actually exercises. Two regimes:
         #
         #   * Pair-tensor scale (M = N_token^2 ~= 80k):
         #     bigger tiles win; tensor-core utilization dominates.
@@ -480,3 +587,97 @@ def fused_ln_linear_inference(
     x_norm = F.layer_norm(x, (gamma.shape[0],), gamma, beta, eps)
     y = F.linear(x_norm, weight, bias)
     return y if output_dtype is None else y.to(output_dtype)
+
+
+def pair_ln_linear_inference(
+    x: torch.Tensor,
+    gamma: torch.Tensor,
+    beta: torch.Tensor | None,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    eps: float = 1e-5,
+) -> torch.Tensor:
+    """Inference-only LN→Linear for logical ``[1, I, J, C]`` pair tensors.
+
+    The input may be a transposed pair view.  The Triton kernel indexes the
+    logical ``(i, j)`` row directly, avoiding the hidden contiguous 1U clone
+    that ``reshape``/``contiguous`` would create for ending triangle attention.
+    """
+    if torch.is_grad_enabled():
+        raise RuntimeError("pair_ln_linear_inference is inference-only")
+    if x.dim() != 4 or x.shape[0] != 1:
+        raise ValueError(f"expected [1, I, J, C] pair tensor, got {tuple(x.shape)}")
+    if (
+        not _TRITON_AVAILABLE
+        or not x.is_cuda
+        or gamma.shape[0] > _MAX_FUSED_C_IN
+        or x.numel() // gamma.shape[0] < _MIN_FUSED_M
+    ):
+        x_norm = F.layer_norm(x, (gamma.shape[0],), gamma, beta, eps)
+        return F.linear(x_norm, weight, bias).reshape(-1, weight.shape[0])
+
+    I_dim, J_dim, K = x.shape[1], x.shape[2], gamma.shape[0]
+    N = weight.shape[0]
+    gamma_d = gamma.to(dtype=x.dtype) if gamma.dtype != x.dtype else gamma
+    beta_d = (
+        beta.to(dtype=x.dtype)
+        if (beta is not None and beta.dtype != x.dtype)
+        else beta
+    )
+    weight_d = weight.to(dtype=x.dtype) if weight.dtype != x.dtype else weight
+    bias_d = (
+        bias.to(dtype=x.dtype)
+        if (bias is not None and bias.dtype != x.dtype)
+        else bias
+    )
+    y = torch.empty((I_dim * J_dim, N), dtype=x.dtype, device=x.device)
+
+    BLOCK_K = max(_next_power_of_two(K), 16)
+    assert BLOCK_K <= 4096, f"BLOCK_K={BLOCK_K} too large for one-pass LN"
+    allow_tf32 = bool(torch.backends.cuda.matmul.allow_tf32)
+    is_pair_scale = I_dim * J_dim >= 4096
+    if BLOCK_K >= 512:
+        BLOCK_M, BLOCK_N, num_warps = (16, 64, 4) if is_pair_scale else (16, 32, 2)
+    elif BLOCK_K >= 256:
+        BLOCK_M, BLOCK_N, num_warps = (32, 64, 4)
+    else:
+        BLOCK_M, BLOCK_N, num_warps = (
+            (64, 64, 4) if is_pair_scale else (32, 32, 2)
+        )
+    if N <= 64:
+        BLOCK_N = max(16, _next_power_of_two(N))
+        if BLOCK_N <= 32:
+            num_warps = min(num_warps, 2)
+
+    beta_ptr = beta_d if beta_d is not None else x.new_zeros(1)
+    bias_ptr = bias_d if bias_d is not None else x.new_zeros(1)
+    grid = (triton.cdiv(I_dim * J_dim, BLOCK_M), triton.cdiv(N, BLOCK_N))
+    _pair_ln_linear_fwd_kernel[grid](
+        x,
+        weight_d,
+        y,
+        gamma_d,
+        beta_ptr,
+        bias_ptr,
+        I_dim,
+        J_dim,
+        x.stride(1),
+        x.stride(2),
+        x.stride(3),
+        weight_d.stride(0),
+        weight_d.stride(1),
+        y.stride(0),
+        y.stride(1),
+        N,
+        K,
+        eps,
+        HAS_LN_BIAS=beta is not None,
+        HAS_LIN_BIAS=bias is not None,
+        ALLOW_TF32=allow_tf32,
+        BLOCK_M=BLOCK_M,
+        BLOCK_N=BLOCK_N,
+        BLOCK_K=BLOCK_K,
+        num_stages=1,
+        num_warps=num_warps,
+    )
+    return y

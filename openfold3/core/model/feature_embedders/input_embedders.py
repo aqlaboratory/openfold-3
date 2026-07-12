@@ -152,8 +152,6 @@ class InputEmbedderAllAtom(nn.Module):
 
         return s_input, s, z
 
-    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: staged pair embedding that
-    # folds contributions into z and releases pair-sized temporaries early.
     def embed_z(
         self,
         batch: dict,
@@ -237,8 +235,6 @@ class InputEmbedderAllAtom(nn.Module):
         same_entity_offset = rel_token_offset + rel_pos_bins
         rel_chain_offset = same_entity_offset + 1
 
-        # by Liang Hong <lhong22@cse.cuhk.edu.hk>: fused relpos gather-add
-        # avoids materializing the full [N, N, c_z] intermediate on CUDA.
         if z.is_cuda and z.is_contiguous():
             from openfold3.core.kernels.triton.fused_relpos_embed import (
                 fused_relpos_embed_add_,

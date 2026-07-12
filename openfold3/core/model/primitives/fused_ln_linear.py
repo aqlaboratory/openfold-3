@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# by Liang Hong <lhong22@cse.cuhk.edu.hk>: dispatch, autograd decomposition,
-# and fallback plumbing for fused LayerNorm-to-linear operations.
+# by Liang Hong <lhong22@cse.cuhk.edu.hk>: module dispatch and checkpoint-key
+# remapping for the fused LayerNorm-to-linear kernels.
 
 """LayerNorm followed by Linear, fused into a single Triton kernel.
 
@@ -57,11 +57,9 @@ def is_fused_ln_linear_enabled() -> bool:
 class FusedLNLinear(nn.Module):
     """LayerNorm(c_in) followed by Linear(c_in, c_out), fused.
 
-    Parameter naming matches a side-by-side ``LayerNorm + Linear``:
-    ``self.layer_norm.weight``, ``self.layer_norm.bias`` (optional),
-    ``self.linear.weight``, ``self.linear.bias`` (optional). This keeps
-    state_dict shape compatibility minus the renaming step — see
-    ``load_compat_state_dict`` if a pretrained checkpoint needs mapping.
+    Parameters use the compact names ``ln_weight``, ``ln_bias``, ``weight``,
+    and ``bias``. Parent modules install ``register_legacy_remap_hook`` to map
+    pretrained side-by-side LayerNorm/Linear checkpoint keys onto this layout.
 
     Args:
         c_in: input feature dim (also LN normalized dim)
@@ -83,8 +81,6 @@ class FusedLNLinear(nn.Module):
         linear_bias: bool = True,
         linear_init: str = "default",
         eps: float = 1e-5,
-        legacy_ln_name: str | None = None,
-        legacy_linear_name: str | None = None,
     ):
         super().__init__()
         self.c_in = c_in
@@ -105,13 +101,6 @@ class FusedLNLinear(nn.Module):
         self.weight = nn.Parameter(torch.empty(c_out, c_in))
         self.bias = nn.Parameter(torch.zeros(c_out)) if linear_bias else None
         apply_linear_init_(self.weight, self.bias, linear_init)
-
-        # Legacy state-dict compat: pretrained checkpoints store params
-        # under separate `<legacy_ln_name>.{weight,bias}` and
-        # `<legacy_linear_name>.{weight,bias}` keys. _load_from_state_dict
-        # rewrites those to our fused-module key layout when present.
-        self._legacy_ln_name = legacy_ln_name
-        self._legacy_linear_name = legacy_linear_name
 
     # Note: legacy state-dict remap can't happen in this module's own
     # `_load_from_state_dict` because PyTorch's loader filters keys by

@@ -277,8 +277,6 @@ class DiffusionTransformer(nn.Module):
             ]
         )
 
-    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: precompute per-block pair-bias
-    # projections once and reuse them across diffusion rollout steps.
     def prepare_pair_bias_cache(
         self, z: torch.Tensor
     ) -> list[torch.Tensor] | None:

@@ -37,7 +37,6 @@ from openfold3.core.model.primitives.attention import (
 )
 from openfold3.core.utils.rigid_utils import quat_to_rot
 
-
 _FLAG_TRUE = {"1", "true", "True"}
 
 
@@ -62,7 +61,11 @@ def is_diffusion_pair_bias_cache_enabled() -> bool:
     return os.environ.get("OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE", "0") in _FLAG_TRUE
 
 
-def sample_rotations(shape, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
+def sample_rotations(
+    shape,
+    dtype: torch.dtype,
+    device: torch.device,
+) -> torch.Tensor:
     """Sample random quaternions"""
     q = torch.randn(*shape, 4, dtype=dtype, device=device)
     q = q / torch.linalg.norm(q, dim=-1, keepdim=True)
@@ -73,7 +76,9 @@ def sample_rotations(shape, dtype: torch.dtype, device: torch.device) -> torch.T
 
 
 def centre_random_augmentation(
-    xl: torch.Tensor, atom_mask: torch.Tensor, scale_trans: float = 1.0
+    xl: torch.Tensor,
+    atom_mask: torch.Tensor,
+    scale_trans: float = 1.0,
 ) -> torch.Tensor:
     """
     Implements AF3 Algorithm 19.
@@ -485,8 +490,6 @@ class SampleDiffusion(nn.Module):
         # per rollout. zij is loop-invariant, so LN_z(zij) @ Wz is too.
         # The cache trades memory for ~36% reduction in attn_pair_bias time
         # per step (see is_diffusion_pair_bias_cache_enabled for trade-offs).
-        # Built before CUDA-graph capture so the captured kernels see stable
-        # HBM addresses for these tensors.
         pair_bias_cache = None
         if is_diffusion_pair_bias_cache_enabled() and not torch.is_grad_enabled():
             pair_bias_cache = (
@@ -499,7 +502,7 @@ class SampleDiffusion(nn.Module):
         # are constant across all rollout steps (only xl_noisy and t change).
         # cuEq/Triton triangle flags are meaningful for trunk/template/MSA
         # triangle attention, but the diffusion transformer uses token attention
-        # with pair bias. Passing those flags through would route it away from
+        # with pair bias.  Passing those flags through would route it away from
         # the fused diffusion flash-attention path when the global cuEq runner
         # setting is enabled.
         use_triangle_kernel_flags = not is_fused_diffusion_attention_enabled()

@@ -182,8 +182,6 @@ class AttentionPairBias(nn.Module):
 
         return biases
 
-    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: fused LN-linear pair-bias
-    # preparation for loop-invariant diffusion pair tensors.
     def prep_static_pair_bias(
         self,
         z: torch.Tensor,

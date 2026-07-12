@@ -421,43 +421,85 @@ class PairBlock(nn.Module):
         inplace_safe: bool = False,
     ) -> torch.Tensor:
         """Perform the starting and ending triangular attention layers."""
-        z = add(
-            z,
-            self.ps_dropout_row_layer(
-                self.tri_att_start(
-                    z,
-                    mask=pair_mask,
-                    chunk_size=_attn_chunk_size,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                    use_triton_triangle_kernels=use_triton_triangle_kernels,
-                    use_lma=use_lma,
-                    inplace_safe=inplace_safe,
-                )
-            ),
-            inplace=inplace_safe,
+        # Residual-fusion: at inference (``inplace_safe`` + no grad + not
+        # training) ``ps_dropout_row_layer`` is identity, and the fused V1
+        # triangle-attention path can ``addmm`` its ``linear_o`` output
+        # directly into ``z``'s storage per row-block via ``residual=z``.
+        # This drops the fresh ``[B, N, N, c_z]`` output allocation (1U) that
+        # would otherwise sit alongside the ``z_norm`` LN result.  When the
+        # fused path is ineligible (grad enabled, non-conforming shape, etc.),
+        # ``TriangleAttention.forward`` falls back to the eager path and folds
+        # the residual add on the returned tensor internally — same math as
+        # the classic ``z = add(z, tri_att(z), inplace=True)`` line.
+        use_residual = (
+            inplace_safe
+            and not self.training
+            and not torch.is_grad_enabled()
         )
+
+        if use_residual:
+            z = self.tri_att_start(
+                z,
+                mask=pair_mask,
+                chunk_size=_attn_chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                residual=z,
+            )
+        else:
+            z = add(
+                z,
+                self.ps_dropout_row_layer(
+                    self.tri_att_start(
+                        z,
+                        mask=pair_mask,
+                        chunk_size=_attn_chunk_size,
+                        use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                        use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                        use_triton_triangle_kernels=use_triton_triangle_kernels,
+                        use_lma=use_lma,
+                        inplace_safe=inplace_safe,
+                    )
+                ),
+                inplace=inplace_safe,
+            )
 
         z = z.transpose(-2, -3)
 
         # Using dropout_row_layer since the dimensions were transposed before
         # calling the attention layer
-        z = add(
-            z,
-            self.ps_dropout_row_layer(
-                self.tri_att_end(
-                    z,
-                    mask=pair_mask.transpose(-1, -2),
-                    chunk_size=_attn_chunk_size,
-                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                    use_triton_triangle_kernels=use_triton_triangle_kernels,
-                    use_lma=use_lma,
-                    inplace_safe=inplace_safe,
-                )
-            ),
-            inplace=inplace_safe,
-        )
+        if use_residual:
+            z = self.tri_att_end(
+                z,
+                mask=pair_mask.transpose(-1, -2),
+                chunk_size=_attn_chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                residual=z,
+            )
+        else:
+            z = add(
+                z,
+                self.ps_dropout_row_layer(
+                    self.tri_att_end(
+                        z,
+                        mask=pair_mask.transpose(-1, -2),
+                        chunk_size=_attn_chunk_size,
+                        use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                        use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                        use_triton_triangle_kernels=use_triton_triangle_kernels,
+                        use_lma=use_lma,
+                        inplace_safe=inplace_safe,
+                    )
+                ),
+                inplace=inplace_safe,
+            )
 
         z = z.transpose(-2, -3)
 
