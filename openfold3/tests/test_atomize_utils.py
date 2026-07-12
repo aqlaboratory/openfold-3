@@ -22,6 +22,7 @@ from openfold3.core.data.primitives.featurization.structure import (
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
+    aggregate_atom_feat_to_tokens_segmented,
     broadcast_token_feat_to_atoms,
     broadcast_token_feat_to_atoms_by_index,
     get_token_atom_index_offset,
@@ -320,12 +321,11 @@ class TestBroadcastTokenFeatToAtoms(unittest.TestCase):
 
 
 class TestBroadcastTokenFeatToAtomsByIndex(unittest.TestCase):
-    """The indexed helper is the static-shape gather form.
-
-    It must stay numerically identical to the repeat-interleave
-    `broadcast_token_feat_to_atoms` while avoiding device-to-host
-    synchronization. These tests cover the public helpers rather than the
-    diffusion rollout that consumes them.
+    """`broadcast_token_feat_to_atoms_by_index` is the CUDA-graph-capturable
+    gather form. It must stay numerically identical to the repeat-interleave
+    `broadcast_token_feat_to_atoms`. These tests only touch the public helpers
+    (the broadcast functions + `create_atom_to_token_index`), not the diffusion
+    rollout that consumes them.
     """
 
     def _assert_matches_reference(self, num_atoms_per_token, token_mask, c_s=7):
@@ -370,6 +370,87 @@ class TestBroadcastTokenFeatToAtomsByIndex(unittest.TestCase):
 
 
 class TestAggregateAtomFeatToTokens(unittest.TestCase):
+    def test_segmented_matches_scatter_with_masked_and_padding_atoms(self):
+        token_mask = torch.tensor([[1, 1, 1], [1, 1, 0]], dtype=torch.float32)
+        num_atoms_per_token = torch.tensor([[2, 3, 1], [1, 2, 2]])
+        atom_mask = torch.tensor(
+            [[1, 1, 1, 0, 1, 1, 0], [1, 1, 0, 1, 0, 0, 0]],
+            dtype=torch.float32,
+        )
+        atom_to_token_index = torch.tensor(
+            [[0, 0, 1, 1, 1, 2, 3], [0, 1, 1, 2, 2, 3, 3]]
+        )
+        atom_feat = torch.randn(2, 7, 5)
+
+        for aggregate_fn in ("mean", "sum"):
+            expected = aggregate_atom_feat_to_tokens(
+                token_mask=token_mask,
+                atom_to_token_index=atom_to_token_index,
+                atom_mask=atom_mask,
+                atom_feat=atom_feat,
+                atom_dim=-2,
+                aggregate_fn=aggregate_fn,
+            )
+            actual = aggregate_atom_feat_to_tokens_segmented(
+                token_mask=token_mask,
+                num_atoms_per_token=num_atoms_per_token,
+                atom_mask=atom_mask,
+                atom_feat=atom_feat,
+                atom_dim=-2,
+                aggregate_fn=aggregate_fn,
+            )
+
+            torch.testing.assert_close(actual, expected)
+
+    def test_segmented_supports_diffusion_sample_dimension(self):
+        token_mask = torch.tensor([[1, 1, 0]], dtype=torch.float32)
+        num_atoms_per_token = torch.tensor([[2, 3, 1]])
+        atom_mask = torch.tensor([[1, 1, 1, 0, 1, 0, 0]], dtype=torch.float32)
+        atom_feat = torch.randn(1, 4, 7, 3)
+
+        actual = aggregate_atom_feat_to_tokens_segmented(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            atom_mask=atom_mask,
+            atom_feat=atom_feat,
+            atom_dim=-2,
+        )
+        expected = torch.stack(
+            (
+                atom_feat[:, :, :2].mean(dim=-2),
+                atom_feat[:, :, [2, 4]].mean(dim=-2),
+                torch.zeros_like(atom_feat[:, :, 0]),
+            ),
+            dim=-2,
+        )
+
+        torch.testing.assert_close(actual, expected)
+
+    @unittest.skipUnless(torch.cuda.is_available(), "requires CUDA")
+    def test_segmented_is_bitwise_repeatable_on_cuda(self):
+        device = torch.device("cuda")
+        token_mask = torch.ones((1, 3), device=device)
+        num_atoms_per_token = torch.tensor([[256, 257, 258]], device=device)
+        atom_mask = torch.ones((1, 771), device=device)
+        atom_feat = torch.randn((1, 771, 128), device=device)
+
+        expected = aggregate_atom_feat_to_tokens_segmented(
+            token_mask=token_mask,
+            num_atoms_per_token=num_atoms_per_token,
+            atom_mask=atom_mask,
+            atom_feat=atom_feat,
+            atom_dim=-2,
+        )
+        for _ in range(8):
+            actual = aggregate_atom_feat_to_tokens_segmented(
+                token_mask=token_mask,
+                num_atoms_per_token=num_atoms_per_token,
+                atom_mask=atom_mask,
+                atom_feat=atom_feat,
+                atom_dim=-2,
+            )
+            self.assertTrue(torch.equal(actual, expected))
+
     def test_with_one_batch_dim(self):
         num_atoms_per_token = torch.Tensor([[3, 6, 2, 5, 1], [4, 7, 1, 3, 5]])
 

@@ -129,8 +129,8 @@ def broadcast_token_feat_to_atoms_by_index(
     which has a static output shape. The repeat-interleave form used by
     ``broadcast_token_feat_to_atoms`` reads tensor values to size its output
     (``torch.max().int()`` + ``repeat_interleave(repeats=<tensor>)``), forcing
-    a device->host sync that is illegal under CUDA-graph capture. This variant
-    is graph-capturable and is used on the diffusion rollout's per-step path.
+    a device-to-host synchronization. This variant avoids that synchronization
+    on the diffusion rollout's per-step path.
 
     Args:
         atom_to_token_index: [*, N_atom] token index for each atom.
@@ -241,6 +241,89 @@ def aggregate_atom_feat_to_tokens(
 
         token_feat = token_feat / (
             token_num_atoms.reshape(token_num_atoms.shape + (1,) * len(feat_dims)) + eps
+        )
+
+    return token_feat
+
+
+# by Liang Hong <lhong22@cse.cuhk.edu.hk>: deterministic token-segment
+# atom aggregation for packed inference layouts (replaces index-scatter).
+def aggregate_atom_feat_to_tokens_segmented(
+    token_mask: torch.Tensor,
+    num_atoms_per_token: torch.Tensor,
+    atom_mask: torch.Tensor,
+    atom_feat: torch.Tensor,
+    atom_dim: int | None = -1,
+    aggregate_fn: Literal["mean", "sum"] = "mean",
+    eps: float = 1e-9,
+) -> torch.Tensor:
+    """Deterministically aggregate packed, token-sorted atom features.
+
+    ``num_atoms_per_token`` defines contiguous atom segments in token order.
+    Masked atoms may occur within those segments, and unused trailing atom
+    slots are placed in a final segment that is discarded.
+    """
+    if aggregate_fn not in {"mean", "sum"}:
+        raise ValueError(f"Invalid aggregation function: {aggregate_fn}")
+
+    if atom_dim is None:
+        atom_dim = -1
+    atom_dim %= atom_feat.ndim
+
+    n_token = token_mask.shape[-1]
+    n_atom = atom_feat.shape[atom_dim]
+    feat_batch_dims = atom_feat.shape[:atom_dim]
+    feat_dims = atom_feat.shape[atom_dim + 1 :]
+
+    def expand_layout_tensor(tensor: torch.Tensor) -> torch.Tensor:
+        source_batch_dims = tensor.shape[:-1]
+        if len(source_batch_dims) > len(feat_batch_dims) or any(
+            source_dim not in {1, target_dim}
+            for source_dim, target_dim in zip(
+                source_batch_dims,
+                feat_batch_dims[: len(source_batch_dims)],
+                strict=True,
+            )
+        ):
+            raise ValueError(
+                "Atom layout batch dimensions are incompatible with atom features"
+            )
+        extra_dims = len(feat_batch_dims) - len(source_batch_dims)
+        return tensor.reshape(
+            *source_batch_dims, *((1,) * extra_dims), tensor.shape[-1]
+        ).expand(*feat_batch_dims, tensor.shape[-1])
+
+    lengths = expand_layout_tensor(
+        num_atoms_per_token.to(device=atom_feat.device, dtype=torch.int64)
+    )
+    padding_length = n_atom - lengths.sum(dim=-1, keepdim=True)
+    lengths = torch.cat((lengths, padding_length), dim=-1).contiguous()
+
+    expanded_atom_mask = expand_layout_tensor(
+        atom_mask.to(device=atom_feat.device, dtype=atom_feat.dtype)
+    )
+    masked_atom_feat = atom_feat * expanded_atom_mask.reshape(
+        *feat_batch_dims, n_atom, *((1,) * len(feat_dims))
+    )
+    token_feat = torch.segment_reduce(
+        masked_atom_feat,
+        "sum",
+        lengths=lengths,
+        axis=atom_dim,
+    ).narrow(atom_dim, 0, n_token)
+
+    if aggregate_fn == "mean":
+        token_num_atoms = torch.segment_reduce(
+            expanded_atom_mask,
+            "sum",
+            lengths=lengths,
+            axis=-1,
+        )[..., :n_token]
+        token_feat = token_feat / (
+            token_num_atoms.reshape(
+                *feat_batch_dims, n_token, *((1,) * len(feat_dims))
+            )
+            + eps
         )
 
     return token_feat

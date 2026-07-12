@@ -35,6 +35,7 @@ from openfold3.core.utils.atom_attention_block_utils import (
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
+    aggregate_atom_feat_to_tokens_segmented,
     broadcast_token_feat_to_atoms,
     broadcast_token_feat_to_atoms_by_index,
 )
@@ -203,14 +204,12 @@ class NoisyPositionEmbedder(nn.Module):
                 ln_create_offset=False,
                 linear_bias=linear_init_params.linear_s.get("bias", True),
                 linear_init=linear_init_params.linear_s.get("init", "default"),
-                legacy_ln_name="layer_norm_s", legacy_linear_name="linear_s",
             )
             self.fused_ln_linear_z = FusedLNLinear(
                 c_z, c_atom_pair,
                 ln_create_offset=False,
                 linear_bias=linear_init_params.linear_z.get("bias", True),
                 linear_init=linear_init_params.linear_z.get("init", "default"),
-                legacy_ln_name="layer_norm_z", legacy_linear_name="linear_z",
             )
         else:
             self.layer_norm_s = LayerNorm(c_s, create_offset=False)
@@ -631,16 +630,28 @@ class AtomAttentionEncoder(nn.Module):
 
         ql = ql * atom_mask.unsqueeze(-1)
 
-        agg_args = (
-            batch["token_mask"],
-            batch["atom_to_token_index"],
-            atom_mask,
-            self.linear_q(ql),
-            -2,
-            "mean",
-        )
+        if not self.training and not torch.is_grad_enabled():
+            aggregate_fn = aggregate_atom_feat_to_tokens_segmented
+            agg_args = (
+                batch["token_mask"],
+                batch["num_atoms_per_token"],
+                atom_mask,
+                self.linear_q(ql),
+                -2,
+                "mean",
+            )
+        else:
+            aggregate_fn = aggregate_atom_feat_to_tokens
+            agg_args = (
+                batch["token_mask"],
+                batch["atom_to_token_index"],
+                atom_mask,
+                self.linear_q(ql),
+                -2,
+                "mean",
+            )
         ai = checkpoint_section(
-            fn=aggregate_atom_feat_to_tokens,
+            fn=aggregate_fn,
             args=agg_args,
             apply_ckpt=self.ckpt_intermediate_steps,
             use_reentrant=self.use_reentrant,
@@ -764,9 +775,9 @@ class AtomAttentionDecoder(nn.Module):
         # Broadcast per-token activations to atoms
         # [*, N_atom, c_atom]
         # Use the gather-by-index form (bitwise-equivalent to
-        # broadcast_token_feat_to_atoms) to keep the output shape static and
-        # avoid the repeat-interleave form's device-to-host synchronization.
-        # This path runs about 200 times in the diffusion rollout.
+        # broadcast_token_feat_to_atoms) — it has a static output shape and is
+        # free of the repeat-interleave form's device-to-host synchronization.
+        # This path runs ~200x in the diffusion rollout.
         ql = ql + broadcast_token_feat_to_atoms_by_index(
             atom_to_token_index=batch["atom_to_token_index"],
             token_mask=batch["token_mask"],
