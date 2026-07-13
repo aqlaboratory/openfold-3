@@ -43,13 +43,6 @@ def make_cache_entry(
 
 
 def write_cache_npz(path: Path, entries: dict[str, TemplateCacheEntry]) -> Path:
-    """Write a template cache npz keyed by template id.
-
-    Mirrors the production on-disk format (preprocessing/template.py:2263-2294): each
-    value is a 0-d object array whose ``.item()`` yields a dict with ``index``,
-    ``release_date`` and ``idx_map`` (the unused ``cif_path`` is dropped when None so the
-    shape matches exactly). Read back by ``sample_templates`` (template.py:232-236).
-    """
     npz = {
         template_id: np.array(
             {k: v for k, v in dataclasses.asdict(entry).items() if v is not None},
@@ -64,12 +57,7 @@ def write_cache_npz(path: Path, entries: dict[str, TemplateCacheEntry]) -> Path:
 def template_structure_array_path(
     array_dir: Path, template_id: str = TEMPLATE_ID
 ) -> Path:
-    """Path a preparsed structure array is read from: <dir>/<pdb_id>/<template_id>.npz.
-
-    Matches the layout ``parse_template_structure``/``sample_templates`` expect
-    (template.py:189-191, 346-348).
-    """
-    pdb_id = template_id.split("_")[0]
+    pdb_id, chain_id = template_id.split("_")[0]
     return array_dir / pdb_id / f"{template_id}.npz"
 
 
