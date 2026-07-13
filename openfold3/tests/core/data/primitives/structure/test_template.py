@@ -18,29 +18,22 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from openfold3.core.data.primitives.structure.template import (
-    TemplateCacheEntry,
-    sample_templates,
+from openfold3.core.data.primitives.structure.template import sample_templates
+from openfold3.tests.utils.template_helpers import (
+    TEMPLATE_ID,
+    make_cache_entry,
+    template_structure_array_path,
+    write_cache_npz,
 )
 
-TEMPLATE_ID = "1FOO_A"
 
-
-def _cache_entry() -> TemplateCacheEntry:
+def _cache_entry():
     """The single template both written to the cache and expected back out."""
-    return TemplateCacheEntry(
-        index=0,
-        release_date="2000-01-01",
-        idx_map=np.array([[1, 1], [2, 2]], dtype=int),
-    )
+    return make_cache_entry([[1, 1], [2, 2]])
 
 
 def _write_cache_npz(path: Path) -> Path:
-    entry_dict = {
-        k: v for k, v in dataclasses.asdict(_cache_entry()).items() if v is not None
-    }
-    np.savez(path, **{TEMPLATE_ID: np.array(entry_dict, dtype=object)})
-    return path
+    return write_cache_npz(path, {TEMPLATE_ID: _cache_entry()})
 
 
 def _assembly_data(cache_npz: Path) -> dict:
@@ -68,8 +61,7 @@ def _structure_arrays_none(tmp_path: Path) -> None:
 def _structure_arrays_dummy(tmp_path: Path) -> Path:
     """A dummy structure erray (empty inside)"""
     array_dir = tmp_path / "arrays"
-    [pdb_id, chain_id] = TEMPLATE_ID.split("_")
-    struct_path = array_dir / pdb_id / f"{TEMPLATE_ID}.npz"
+    struct_path = template_structure_array_path(array_dir)
     struct_path.parent.mkdir(parents=True, exist_ok=True)
     struct_path.touch()
     return array_dir
