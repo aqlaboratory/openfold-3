@@ -51,6 +51,7 @@ def _assembly_data(cache_npz: Path) -> dict:
         }
     }
 
+
 def _cache_none(tmp_path: Path) -> None:
     return None
 
@@ -77,10 +78,24 @@ def _structure_arrays_dummy(tmp_path: Path) -> Path:
 @pytest.mark.parametrize(
     "make_cache_directory, make_structure_array_directory, expected",
     [
-        pytest.param(_cache_none, _structure_arrays_none, {}, id="no_cache__no_arrays__drops"),
-        pytest.param(_cache_none, _structure_arrays_dummy, {}, id="no_cache__with_arrays__drops"),
-        pytest.param(_cache_tmp_path, _structure_arrays_none, {TEMPLATE_ID: _cache_entry()}, id="cache__no_arrays__loads"),
-        pytest.param(_cache_tmp_path, _structure_arrays_dummy, {TEMPLATE_ID: _cache_entry()}, id="cache__with_arrays__loads"),
+        pytest.param(
+            _cache_none, _structure_arrays_none, {}, id="no_cache__no_arrays__drops"
+        ),
+        pytest.param(
+            _cache_none, _structure_arrays_dummy, {}, id="no_cache__with_arrays__drops"
+        ),
+        pytest.param(
+            _cache_tmp_path,
+            _structure_arrays_none,
+            {TEMPLATE_ID: _cache_entry()},
+            id="cache__no_arrays__loads",
+        ),
+        pytest.param(
+            _cache_tmp_path,
+            _structure_arrays_dummy,
+            {TEMPLATE_ID: _cache_entry()},
+            id="cache__with_arrays__loads",
+        ),
     ],
 )
 def test_sample_templates_cache_directory_gate(
