@@ -6,6 +6,19 @@ Workflow: [integration-test.yml](https://github.com/aqlaboratory/openfold-3/acti
 
 ---
 
+## 2026-07-14
+
+**Run:** [#29305629949](https://github.com/aqlaboratory/openfold-3/actions/runs/29305629949) | Branch: `main` | Time: 04:17 UTC
+
+**Error:** `InsufficientInstanceCapacity` — AWS EC2 failed to provision `g5.4xlarge` instances in `us-east-2` after 4 retries. No test code was executed.
+
+**Failing jobs:**
+- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner`
+- `test-pixi (openfold3-cuda13) / start-aws-runner`
+- `test-pixi (openfold3-cuda12) / start-aws-runner`
+
+---
+
 ## 2026-07-08
 
 **Run:** [#28917346933](https://github.com/aqlaboratory/openfold-3/actions/runs/28917346933) | Branch: `main` | Time: 04:23 UTC
@@ -128,4 +141,4 @@ Workflow: [integration-test.yml](https://github.com/aqlaboratory/openfold-3/acti
 
 ---
 
-*Last updated by automated daily scan: 2026-07-08*
+*Last updated by automated daily scan: 2026-07-14*
