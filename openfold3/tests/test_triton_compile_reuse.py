@@ -47,7 +47,9 @@ from openfold3.core.kernels.triton.fused_swiglu_transition import (
     _fused_swiglu_transition_fwd_kernel,
 )
 from openfold3.core.kernels.triton.fused_trimul import (
+    _gated_column_gemm_kernel,
     _gated_dual_gemm_kernel,
+    _gated_out_from_dm_kernel,
     _gated_out_gemm_residual_kernel,
     _ln_stats_kernel,
     _ln_transpose_kernel,
@@ -110,9 +112,8 @@ for n in lengths:
     assert y is not None and y.shape == z.shape
     clear(
         _gated_dual_gemm_kernel,
-        _gated_out_gemm_residual_kernel,
+        _gated_out_from_dm_kernel,
         _ln_stats_kernel,
-        _ln_transpose_kernel,
     )
 
 counts = {
@@ -121,20 +122,16 @@ counts = {
         cache_dir, "_fused_swiglu_transition_fwd_kernel"
     ),
     "_gated_dual_gemm_kernel": count(cache_dir, "_gated_dual_gemm_kernel"),
-    "_gated_out_gemm_residual_kernel": count(
-        cache_dir, "_gated_out_gemm_residual_kernel"
-    ),
+    "_gated_out_from_dm_kernel": count(cache_dir, "_gated_out_from_dm_kernel"),
     "_ln_stats_kernel": count(cache_dir, "_ln_stats_kernel"),
-    "_ln_transpose_kernel": count(cache_dir, "_ln_transpose_kernel"),
 }
 print(json.dumps({"counts": counts}))
 assert counts == {
     "_flash_tri_attn_kernel": 1,
     "_fused_swiglu_transition_fwd_kernel": 1,
     "_gated_dual_gemm_kernel": 1,
-    "_gated_out_gemm_residual_kernel": 1,
+    "_gated_out_from_dm_kernel": 1,
     "_ln_stats_kernel": 1,
-    "_ln_transpose_kernel": 1,
 }, counts
 """
     env = os.environ.copy()
@@ -157,6 +154,136 @@ assert counts == {
     assert proc.returncode == 0, proc.stdout + proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
     assert all("opm" not in name for name in payload["counts"])
+
+
+def test_fused_trimul_reuses_compiles_across_lengths_and_chunks(tmp_path):
+    """Trimul signatures are stable across N for both directions and dimensions."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.fused_trimul import (
+    _gated_column_gemm_kernel,
+    _gated_dual_gemm_kernel,
+    _gated_out_from_dm_kernel,
+    _gated_out_gemm_residual_kernel,
+    _ln_stats_kernel,
+    _ln_transpose_kernel,
+)
+from openfold3.core.model.layers.triangular_multiplicative_update import (
+    TriangleMultiplicationIncoming,
+    TriangleMultiplicationOutgoing,
+)
+from openfold3.core.model.primitives.fused_trimul import fused_trimul_update
+
+
+KERNELS = (
+    _gated_column_gemm_kernel,
+    _gated_dual_gemm_kernel,
+    _gated_out_from_dm_kernel,
+    _gated_out_gemm_residual_kernel,
+    _ln_stats_kernel,
+    _ln_transpose_kernel,
+)
+NAMES = tuple(kernel.fn.__name__ for kernel in KERNELS)
+
+
+def clear():
+    for kernel in KERNELS:
+        kernel.device_caches.clear()
+
+
+def counts(cache_dir):
+    return {
+        name: len(list(Path(cache_dir).rglob(f"{name}.json")))
+        for name in NAMES
+    }
+
+
+def run(module, n, c_z, cap):
+    if cap is None:
+        os.environ.pop("OPENFOLD3_TRIMUL_CHUNK_CAP", None)
+    else:
+        os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = str(cap)
+    z = torch.randn(1, n, n, c_z, device="cuda") * 0.1
+    mask = torch.ones(1, n, n, device="cuda")
+    if cap is not None and not module._outgoing:
+        out = fused_trimul_update(module, z, mask, with_add=False)
+        assert out is not None and out.shape == z.shape
+        z_inplace = z.clone()
+        out_inplace = fused_trimul_update(
+            module, z_inplace, mask, with_add=True, out=z_inplace
+        )
+        assert out_inplace is not None
+        assert out_inplace.data_ptr() == z_inplace.data_ptr()
+    else:
+        out = fused_trimul_update(module, z, mask, with_add=True, out=z)
+        assert out is not None and out.data_ptr() == z.data_ptr()
+    torch.cuda.synchronize()
+    clear()
+
+
+torch.manual_seed(17)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+records = []
+for c_z in (64, 128):
+    for cls in (TriangleMultiplicationOutgoing, TriangleMultiplicationIncoming):
+        module = cls(c_z, c_z).cuda().eval()
+        for linear in (
+            module.linear_a_p,
+            module.linear_a_g,
+            module.linear_b_p,
+            module.linear_b_g,
+            module.linear_z,
+            module.linear_g,
+        ):
+            linear.bias = None
+        for cap in (None, 64, 128, 256):
+            first_n, second_n = ((383, 511) if cap == 256 else (211, 383))
+            run(module, first_n, c_z, cap)
+            before = counts(cache_dir)
+            run(module, second_n, c_z, cap)
+            after = counts(cache_dir)
+            assert after == before, {
+                "c_z": c_z,
+                "direction": cls.__name__,
+                "cap": cap,
+                "before": before,
+                "after": after,
+            }
+            records.append(
+                {
+                    "c_z": c_z,
+                    "direction": cls.__name__,
+                    "cap": cap,
+                    "counts": after,
+                }
+            )
+
+print(json.dumps({"records": records}))
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "OPENFOLD3_FUSED_TRIMUL": "1",
+            "TRITON_CACHE_DIR": str(cache_dir),
+        }
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert len(payload["records"]) == 16
 
 
 def test_fused_ln_linear_reuses_compile_across_lengths(tmp_path):

@@ -21,8 +21,13 @@ import time
 import unittest
 
 import torch
+import torch.nn.functional as F
 
 from openfold3.core.kernels.triton.fused_trimul import (
+    gated_column_gemm_fp32,
+    gated_out_from_dm_residual_fp32,
+    gated_out_gemm_residual_fp32,
+    ln_stats_fp32,
     ln_transpose_fp32,
 )
 from openfold3.core.model.layers.triangular_multiplicative_update import (
@@ -331,10 +336,86 @@ class TestFusedTrimulChunked(unittest.TestCase):
         for outgoing in (True, False):
             self._run_chunked_vs_nonchunked(outgoing, 256, 64, True, True)
 
+    def test_grouped_inplace_tf32_matches_whole(self):
+        """Production grouped accumulation matches the full TF32 schedule."""
+        import os
+
+        old_cap = os.environ.get("OPENFOLD3_TRIMUL_CHUNK_CAP")
+        old_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = True
+        try:
+            torch.manual_seed(29)
+            n, cap = 383, 128
+            module = TriangleMultiplicationIncoming(128, 128).cuda().eval()
+            _randomize_observable_output(module)
+            z = torch.randn(1, n, n, 128, device="cuda") * 0.1
+            mask = torch.ones(1, n, n, device="cuda")
+            os.environ.pop("OPENFOLD3_TRIMUL_CHUNK_CAP", None)
+            whole_z = z.clone()
+            with torch.inference_mode():
+                whole = fused_trimul_update(
+                    module, whole_z, mask, with_add=True, out=whole_z
+                )
+            os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = str(cap)
+            grouped_z = z.clone()
+            with torch.inference_mode():
+                grouped = fused_trimul_update(
+                    module, grouped_z, mask, with_add=True, out=grouped_z
+                )
+            torch.testing.assert_close(grouped, whole, atol=2e-3, rtol=2e-3)
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_tf32
+            if old_cap is None:
+                os.environ.pop("OPENFOLD3_TRIMUL_CHUNK_CAP", None)
+            else:
+                os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = old_cap
+
     def test_chunked_non_divisible_cap(self):
         """Cap that doesn't evenly divide N."""
         for outgoing in (True, False):
             self._run_chunked_vs_nonchunked(outgoing, 256, 100, False, False)
+
+    def test_incoming_grouped_c64_masked_irregular(self):
+        """Grouped accumulation covers template-sized channel dimensions."""
+        import os
+
+        old_cap = os.environ.get("OPENFOLD3_TRIMUL_CHUNK_CAP")
+        old_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = False
+        try:
+            torch.manual_seed(23)
+            n, c_z, cap = 191, 64, 64
+            module = TriangleMultiplicationIncoming(c_z, c_z).cuda().eval()
+            _randomize_observable_output(module)
+            z = torch.randn(1, n, n, c_z, device="cuda") * 0.1
+            mask = (torch.rand(1, n, n, device="cuda") > 0.15).float()
+            os.environ.pop("OPENFOLD3_TRIMUL_CHUNK_CAP", None)
+            with torch.inference_mode():
+                reference = fused_trimul_update(
+                    module, z.clone(), mask, with_add=False
+                )
+            os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = str(cap)
+            with torch.inference_mode():
+                actual = fused_trimul_update(module, z.clone(), mask, with_add=False)
+            torch.testing.assert_close(actual, reference, atol=1e-5, rtol=1e-5)
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_tf32
+            if old_cap is None:
+                os.environ.pop("OPENFOLD3_TRIMUL_CHUNK_CAP", None)
+            else:
+                os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = old_cap
+
+    def test_chunked_irregular_production_caps(self):
+        """Production-sized caps preserve parity at an irregular sequence length."""
+        for outgoing in (True, False):
+            for cap in (128, 256):
+                self._run_chunked_vs_nonchunked(
+                    outgoing,
+                    N=383,
+                    chunk_cap=cap,
+                    with_add=True,
+                    inplace=True,
+                )
 
     def test_chunked_peak_memory_outgoing(self):
         """Verify chunked outgoing peak is <= 2.6U."""
@@ -410,6 +491,99 @@ class TestFusedTrimulChunked(unittest.TestCase):
 @skip_unless_cuda_available()
 class TestFusedTrimulSubOps(unittest.TestCase):
     """Tests for individual sub-op kernels used by the fused trimul pipeline."""
+
+    def test_gated_out_from_dm_matches_transpose_pipeline(self):
+        """Streamed LN_out + output GEMMs match the materialized pipeline."""
+        old_tf32 = torch.backends.cuda.matmul.allow_tf32
+        try:
+            for tf32 in (False, True):
+                torch.backends.cuda.matmul.allow_tf32 = tf32
+                for channels in (64, 128):
+                    torch.manual_seed(31 + channels)
+                    m = 4099
+                    z = torch.randn(m, channels, device="cuda") * 0.1
+                    x_dm = torch.randn(channels, m, device="cuda") * 0.1
+                    ln_in_w = torch.randn(channels, device="cuda") * 0.1 + 1.0
+                    ln_in_b = torch.randn(channels, device="cuda") * 0.1
+                    ln_out_w = torch.randn(channels, device="cuda") * 0.1 + 1.0
+                    ln_out_b = torch.randn(channels, device="cuda") * 0.1
+                    wg = torch.randn(channels, channels, device="cuda") * 0.02
+                    wp = torch.randn(channels, channels, device="cuda") * 0.02
+                    stats = ln_stats_fp32(z)
+                    x_out = ln_transpose_fp32(x_dm, ln_out_w, ln_out_b)
+                    reference = gated_out_gemm_residual_fp32(
+                        z,
+                        x_out,
+                        wg,
+                        wp,
+                        z,
+                        ln_weight=ln_in_w,
+                        ln_bias=ln_in_b,
+                        ln_stats=stats,
+                    )
+                    z_alias = z.clone()
+                    actual = gated_out_from_dm_residual_fp32(
+                        z_alias,
+                        x_dm,
+                        wg,
+                        wp,
+                        z_alias,
+                        ln_in_w,
+                        ln_in_b,
+                        stats,
+                        ln_out_w,
+                        ln_out_b,
+                        out=z_alias,
+                    )
+                    tolerance = 2e-3 if tf32 else 1e-5
+                    torch.testing.assert_close(
+                        actual, reference, atol=tolerance, rtol=tolerance
+                    )
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_tf32
+
+    def test_gated_column_gemm_fp32(self):
+        """Strided z[k, i] projection matches an eager gather for c64/c128."""
+        old_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = False
+        try:
+            for c_z in (64, 128):
+                torch.manual_seed(19 + c_z)
+                n, i_start, i_rows = 73, 11, 17
+                z = torch.randn(n * n, c_z, device="cuda") * 0.1
+                mask = (torch.rand(n * n, device="cuda") > 0.2).float()
+                gamma = torch.randn(c_z, device="cuda") * 0.1 + 1.0
+                beta = torch.randn(c_z, device="cuda") * 0.1
+                wp = torch.randn(c_z, c_z, device="cuda") * 0.02
+                wg = torch.randn(c_z, c_z, device="cuda") * 0.02
+                stats = ln_stats_fp32(z)
+
+                actual = gated_column_gemm_fp32(
+                    z,
+                    wp,
+                    wg,
+                    mask,
+                    gamma,
+                    beta,
+                    stats,
+                    n=n,
+                    i_start=i_start,
+                    i_rows=i_rows,
+                )
+                z_norm = F.layer_norm(z, (c_z,), gamma, beta)
+                projected = (
+                    torch.sigmoid(F.linear(z_norm, wg))
+                    * F.linear(z_norm, wp)
+                    * mask[:, None]
+                )
+                expected = (
+                    projected.view(n, n, c_z)[:, i_start : i_start + i_rows]
+                    .permute(2, 0, 1)
+                    .contiguous()
+                )
+                torch.testing.assert_close(actual, expected, atol=1e-5, rtol=1e-5)
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_tf32
 
     def test_ln_transpose_fp32(self):
         """Transposing LN: (D, M) → (M, D) matches eager LN + permute."""
