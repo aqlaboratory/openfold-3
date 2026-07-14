@@ -23,12 +23,9 @@ because callers use them at parametrize/collection time.
 import dataclasses
 from pathlib import Path
 
-import biotite.structure as struc
 import numpy as np
 
-from openfold3.core.data.io.structure.atom_array import write_atomarray_to_npz
 from openfold3.core.data.primitives.structure.template import TemplateCacheEntry
-from openfold3.core.data.resources.residues import MoleculeType
 
 TEMPLATE_ID = "1FOO_A"
 
@@ -57,42 +54,5 @@ def write_cache_npz(path: Path, entries: dict[str, TemplateCacheEntry]) -> Path:
 def template_structure_array_path(
     array_dir: Path, template_id: str = TEMPLATE_ID
 ) -> Path:
-    pdb_id, chain_id = template_id.split("_")[0]
+    pdb_id = template_id.split("_")[0]
     return array_dir / pdb_id / f"{template_id}.npz"
-
-
-def write_template_structure_array(
-    array_dir: Path, n_res: int, *, template_id: str = TEMPLATE_ID
-) -> Path:
-    """Write a preparsed poly-ALA template chain of ``n_res`` residues.
-
-    Each residue carries N/CA/C/CB (pseudo-beta = CB for non-GLY) so the template is
-    featurizable; coordinates only need to be finite for the presence masks. Written with
-    the production ``write_atomarray_to_npz`` to ``template_structure_array_path(...)``.
-    """
-    atoms = []
-    for res_id in range(1, n_res + 1):
-        for i, (atom_name, element) in enumerate(
-            [("N", "N"), ("CA", "C"), ("C", "C"), ("CB", "C")]
-        ):
-            atoms.append(
-                struc.Atom(
-                    [float(res_id), float(i), 0.0],
-                    chain_id="A",
-                    res_id=res_id,
-                    res_name="ALA",
-                    atom_name=atom_name,
-                    element=element,
-                )
-            )
-    atom_array = struc.array(atoms)
-    atom_array.set_annotation(
-        "molecule_type_id",
-        np.full(len(atom_array), int(MoleculeType.PROTEIN), dtype=int),
-    )
-    atom_array.set_annotation("occupancy", np.ones(len(atom_array), dtype=float))
-
-    out = template_structure_array_path(array_dir, template_id)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    write_atomarray_to_npz(atom_array, out)
-    return out
