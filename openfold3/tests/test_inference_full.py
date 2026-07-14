@@ -51,7 +51,7 @@ from openfold3.entry_points.validator import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
-from openfold3.tests.compare_utils import skip_unless_cuda_available
+from openfold3.tests.utils.compare_utils import skip_unless_cuda_available
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
