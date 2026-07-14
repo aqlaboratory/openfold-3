@@ -103,7 +103,7 @@ inference_test_yaml_str = textwrap.dedent("""\
     """)
 
 
-def _run_inference(
+def _run_inference_helper(
     query_set,
     output_dir: Path,
     *,
@@ -172,7 +172,7 @@ class TestInferenceRun(unittest.TestCase):
     def _run_inference(self, query_set):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            _run_inference(
+            _run_inference_helper(
                 query_set,
                 tmp_path,
                 use_msa_server=True,
@@ -215,15 +215,20 @@ class TemplateRmsdCase:
 
     ``<pdb_id>.cif`` under ``test_data/mmcifs/`` doubles as the template CIF input and the
     RMSD reference; ``chain`` is compared against (and given as ``template_cif_chain_ids``).
-    ``sequence`` is that chain's SEQRES. Thresholds are per-case (in Angstroms).
+    ``sequence`` is that chain's SEQRES. The three thresholds are per-case bounds on the
+    CA-RMSD to the reference, all in Ångström (Å).
     """
 
     pdb_id: str
     chain: str
     sequence: str
-    no_template_min: float  # predicted-without-template CA-RMSD expected above this
-    with_template_max: float  # predicted-with-template CA-RMSD expected below this
-    separation_min: float  # required (off - on) gap
+    no_template_rmsd_min_angstrom: (
+        float  # CA-RMSD without a template must exceed this (Å)
+    )
+    with_template_rmsd_max_angstrom: (
+        float  # CA-RMSD with a template must be below this (Å)
+    )
+    rmsd_separation_min_angstrom: float  # required (off - on) CA-RMSD gap (Å)
 
 
 CASES = [
@@ -240,9 +245,9 @@ CASES = [
             "LKNGVLTERSQFWKDTAEGFFSANRPGNKVTQGNKDAFWYMAMAQTIEGGVRCVDAFGYTDFTEDLKKFDI"
             "PTLVVHGDDDQVVPIDATGRKSAQIIPNAELKVYEGSSHGIAMVPGDKEKFNRDLLEFLNK"
         ),
-        no_template_min=8.0,
-        with_template_max=2.0,
-        separation_min=5.0,
+        no_template_rmsd_min_angstrom=8.0,
+        with_template_rmsd_max_angstrom=2.0,
+        rmsd_separation_min_angstrom=5.0,
     ),
 ]
 
@@ -298,7 +303,7 @@ def _mean_ca_rmsd(
     query_set, key = _make_query(case, with_template=with_template)
     out_dir = tmp_path / key
     out_dir.mkdir(parents=True, exist_ok=True)
-    _run_inference(
+    _run_inference_helper(
         query_set,
         out_dir,
         use_msa_server=False,
@@ -324,17 +329,17 @@ def test_template_lowers_rmsd(case, tmp_path):
     rmsd_on = _mean_ca_rmsd(case, with_template=True, tmp_path=tmp_path)
     logger.info("%s mean RMSD off=%.2f on=%.2f", case.pdb_id, rmsd_off, rmsd_on)
 
-    assert rmsd_off > case.no_template_min, (
-        f"{case.pdb_id}: expected no-template RMSD > {case.no_template_min}, "
+    assert rmsd_off > case.no_template_rmsd_min_angstrom, (
+        f"{case.pdb_id}: expected no-template RMSD > {case.no_template_rmsd_min_angstrom}, "
         f"got {rmsd_off:.2f}"
     )
-    assert rmsd_on < case.with_template_max, (
-        f"{case.pdb_id}: expected with-template RMSD < {case.with_template_max}, "
+    assert rmsd_on < case.with_template_rmsd_max_angstrom, (
+        f"{case.pdb_id}: expected with-template RMSD < {case.with_template_rmsd_max_angstrom}, "
         f"got {rmsd_on:.2f}"
     )
-    assert rmsd_off - rmsd_on > case.separation_min, (
+    assert rmsd_off - rmsd_on > case.rmsd_separation_min_angstrom, (
         f"{case.pdb_id}: template effect too small — off={rmsd_off:.2f} "
-        f"on={rmsd_on:.2f} (need gap > {case.separation_min})"
+        f"on={rmsd_on:.2f} (need gap > {case.rmsd_separation_min_angstrom})"
     )
 
 
