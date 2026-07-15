@@ -14,8 +14,8 @@
 
 """Integration tests for inference.
 
-- ``TestInferenceRun``: two small queries run end-to-end (with MSA server + templates),
-  checking the expected output files are written.
+- ``test_protein_only`` / ``test_protein_and_ligand``: two small queries run end-to-end
+  (with MSA server + templates), checking the expected output files are written.
 - ``test_template_lowers_rmsd``: functional check for PR #306 — with no MSA, supplying a
   template must pull the prediction onto the native fold (low CA-RMSD to the reference),
   whereas without a template the single-sequence model can't find it (high CA-RMSD).
@@ -23,17 +23,13 @@
 
 All of these require a GPU and downloaded model weights; they skip otherwise.
 
-Can be run directly:
-    python -m pytest openfold3/tests/test_inference_full.py  (dev)
-    python openfold3/tests/test_inference_full.py            (validation)
-    python -m unittest openfold3.tests.test_inference_full   (validation, class tests)
+Run with:
+    pytest openfold3/tests/test_inference_full.py
 """
 
 import logging
 import os
-import tempfile
 import textwrap
-import unittest
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
@@ -114,7 +110,7 @@ def _run_inference_helper(
 ) -> Path:
     """Run one inference job into ``output_dir`` and return it.
 
-    Raises ``unittest.SkipTest`` if no model checkpoint is available (escalated to a hard
+    Skips (``pytest.skip``) if no model checkpoint is available (escalated to a hard
     failure when ``OPENFOLD_SETUP_SCRIPT=1``). ``template_output_dir`` isolates the
     template cache per run (otherwise it lands in a persistent ``/tmp`` dir shared across
     runs and same-sequence queries).
@@ -152,7 +148,7 @@ def _run_inference_helper(
                 "No checkpoint files found, skipping. Use the setup script to "
                 "download the weights."
             )
-            raise unittest.SkipTest("No checkpoint files available") from None
+            pytest.skip("No checkpoint files available")
         raise
 
     runner.run(query_set)
@@ -167,38 +163,36 @@ def _run_inference_helper(
     return output_dir
 
 
+def _assert_inference_writes_outputs(query_set, tmp_path):
+    _run_inference_helper(
+        query_set,
+        tmp_path,
+        use_msa_server=True,
+        use_templates=True,
+        num_diffusion_samples=1,
+    )
+    logger.info("Checking output contents at %s", tmp_path)
+    seed_dir = tmp_path / "query1" / "seed_42"
+    expected_files = [
+        "query1_seed_42_sample_1_confidences.json",
+        "query1_seed_42_sample_1_confidences_aggregated.json",
+        "query1_seed_42_sample_1_model.cif",
+        "timing.json",
+    ]
+    for name in expected_files:
+        assert (seed_dir / name).exists(), (
+            f"Expected output file not found: {seed_dir / name}"
+        )
+
+
 @skip_unless_cuda_available()
-class TestInferenceRun(unittest.TestCase):
-    def _run_inference(self, query_set):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            _run_inference_helper(
-                query_set,
-                tmp_path,
-                use_msa_server=True,
-                use_templates=True,
-                num_diffusion_samples=1,
-            )
+def test_protein_only(tmp_path):
+    _assert_inference_writes_outputs(protein_only_query, tmp_path)
 
-            logging.info(f"Checking output contents at {tmp_path}")
-            expected_output_dir = tmp_path / "query1" / "seed_42"
-            expected_files = [
-                "query1_seed_42_sample_1_confidences.json",
-                "query1_seed_42_sample_1_confidences_aggregated.json",
-                "query1_seed_42_sample_1_model.cif",
-                "timing.json",
-            ]
-            for f in expected_files:
-                self.assertTrue(
-                    (expected_output_dir / f).exists(),
-                    f"Expected output file not found: {expected_output_dir / f}",
-                )
 
-    def test_protein_only(self):
-        self._run_inference(protein_only_query)
-
-    def test_protein_and_ligand(self):
-        self._run_inference(protein_and_ligand_query)
+@skip_unless_cuda_available()
+def test_protein_and_ligand(tmp_path):
+    _assert_inference_writes_outputs(protein_and_ligand_query, tmp_path)
 
 
 # --- Template-effect RMSD test (PR #306) -----------------------------------------------
@@ -344,4 +338,4 @@ def test_template_lowers_rmsd(case, tmp_path):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    raise SystemExit(pytest.main([__file__, "-vv"]))
