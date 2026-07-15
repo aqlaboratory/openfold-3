@@ -1,144 +1,22 @@
-# CI Failures Due to AWS Outage / Infrastructure Issues
+# CI Failures Due to AWS Outages
 
-This log records integration test failures caused by AWS-side issues (GPU unavailability, vCPU quota limits, network timeouts) rather than OpenFold-3 code problems.
+This file records CI failures caused by AWS infrastructure issues (capacity, GPU unavailability, etc.) rather than OpenFold3 code defects.
 
-Workflow: [integration-test.yml](https://github.com/aqlaboratory/openfold-3/actions/workflows/integration-test.yml)
-
----
-
-## 2026-07-14
-
-**Run:** [#29305629949](https://github.com/aqlaboratory/openfold-3/actions/runs/29305629949) | Branch: `main` | Time: 04:17 UTC
-
-**Error:** `InsufficientInstanceCapacity` — AWS EC2 failed to provision `g5.4xlarge` instances in `us-east-2` after 4 retries. No test code was executed.
-
-**Failing jobs:**
-- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner`
-- `test-pixi (openfold3-cuda13) / start-aws-runner`
-- `test-pixi (openfold3-cuda12) / start-aws-runner`
+| Date | Run ID | Branch | Error Type | Failed Jobs |
+|------|--------|--------|------------|-------------|
+| 2026-07-14 | [29305629949](https://github.com/aqlaboratory/openfold-3/actions/runs/29305629949) | main | InsufficientInstanceCapacity | test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml), test-pixi (openfold3-cuda13), test-pixi (openfold3-cuda12) |
 
 ---
 
-## 2026-07-08
+## Entries
 
-**Run:** [#28917346933](https://github.com/aqlaboratory/openfold-3/actions/runs/28917346933) | Branch: `main` | Time: 04:23 UTC
+### 2026-07-14 — Run [29305629949](https://github.com/aqlaboratory/openfold-3/actions/runs/29305629949)
 
-**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
-
-**Failing jobs:**
-- `test-pixi (openfold3-cuda13) / start-aws-runner`
-- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner`
-- `test-pixi (openfold3-cuda12) / start-aws-runner` (cancelled)
-
----
-
-## 2026-07-07
-
-**Run:** [#28841857721](https://github.com/aqlaboratory/openfold-3/actions/runs/28841857721) | Branch: `main` | Time: 04:36 UTC
-
-**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
-
-**Failing jobs:**
-- `test-pixi (openfold3-cuda13) / start-aws-runner`
-- `test-pixi (openfold3-cuda12) / start-aws-runner`
-
----
-
-## 2026-07-06
-
-**Run:** [#28768427331](https://github.com/aqlaboratory/openfold-3/actions/runs/28768427331) | Branch: `main` | Time: 04:45 UTC
-
-**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
-
-**Failing jobs:**
-- `test-pixi (openfold3-cuda13) / start-aws-runner`
-- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner`
-
----
-
-## 2026-07-05
-
-**Run:** [#28729724398](https://github.com/aqlaboratory/openfold-3/actions/runs/28729724398) | Branch: `main` | Time: 04:40 UTC
-
-**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
-
-**Failing jobs:**
-- `test-pixi (openfold3-cuda12) / start-aws-runner`
-- `test-pixi (openfold3-cuda13) / start-aws-runner`
-
----
-
-## 2026-07-04
-
-**Run:** [#28694885677](https://github.com/aqlaboratory/openfold-3/actions/runs/28694885677) | Branch: `main` | Time: 04:27 UTC
-
-**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
-
-**Failing jobs:**
-- `test-pixi (openfold3-cuda12) / start-aws-runner`
-- `test-pixi (openfold3-cuda13) / start-aws-runner`
-
----
-
-## 2026-07-03
-
-**Run:** [#28638552070](https://github.com/aqlaboratory/openfold-3/actions/runs/28638552070) | Branch: `main` | Time: 04:31 UTC
-
-**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
-
-**Failing jobs:**
-- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner`
-- `test-pixi (openfold3-cuda12) / start-aws-runner`
-
----
-
-## 2026-07-02
-
-**Run:** [#28565870069](https://github.com/aqlaboratory/openfold-3/actions/runs/28565870069) | Branch: `main` | Time: 04:40 UTC
-
-**Error (conda):** Docker Hub network timeout pulling `python:3.12` — `dial tcp ... i/o timeout` (infrastructure network issue).
-**Error (pixi):** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
-
-**Failing jobs:**
-- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner` (Docker Hub timeout)
-- `test-pixi (openfold3-cuda12) / start-aws-runner` (VcpuLimitExceeded)
-
----
-
-## 2026-07-01
-
-**Run:** [#28494335026](https://github.com/aqlaboratory/openfold-3/actions/runs/28494335026) | Branch: `main` | Time: 04:50 UTC
-
-**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
-
-**Failing jobs:**
-- `test-pixi (openfold3-cuda12) / start-aws-runner`
-- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner`
-
----
-
-## 2026-06-30
-
-**Run:** [#28420797925](https://github.com/aqlaboratory/openfold-3/actions/runs/28420797925) | Branch: `main` | Time: 04:41 UTC
-
-**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
-
-**Failing jobs:**
-- `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / start-aws-runner`
-- `test-pixi (openfold3-cuda13) / start-aws-runner`
-
----
-
-## 2026-06-29
-
-**Run:** [#28349485369](https://github.com/aqlaboratory/openfold-3/actions/runs/28349485369) | Branch: `main` | Time: 04:53 UTC
-
-**Error:** `VcpuLimitExceeded` — AWS EC2 vCPU limit of 64 exceeded for `g5.4xlarge` instance bucket.
-
-**Failing jobs:**
-- `test-pixi (openfold3-cuda12) / start-aws-runner`
-- `test-pixi (openfold3-cuda13) / start-aws-runner`
-
----
-
-*Last updated by automated daily scan: 2026-07-14*
+- **Branch:** main
+- **Scan date:** 2026-07-15
+- **Error:** `botocore.exceptions.ClientError: An error occurred (InsufficientInstanceCapacity) when calling the RunInstances operation (reached max retries: 4): Insufficient capacity.`
+- **Root cause:** AWS could not provision GPU EC2 instances (capacity exhaustion). All `start-aws-runner` steps failed; corresponding `stop-aws-runner` steps failed as a cascading consequence (no instances to stop).
+- **Failed jobs:**
+  - `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml)` — start-aws-runner
+  - `test-pixi (openfold3-cuda13)` — start-aws-runner
+  - `test-pixi (openfold3-cuda12)` — start-aws-runner
