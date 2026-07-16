@@ -751,11 +751,6 @@ class OpenFold3(nn.Module):
         # The dual condition accounts for activation checkpoints
         inplace_safe = not (self.training or torch.is_grad_enabled())
 
-        if inplace_safe:
-            for _k in ("template_distogram", "template_unit_vector"):
-                if _k in batch and hasattr(batch[_k], "is_cuda") and batch[_k].is_cuda:
-                    batch[_k] = batch[_k].to("cpu", non_blocking=True)
-
         # If training, we sample the number of recycles
         # This is the additional number of iterations through the trunk
         num_recycles = (

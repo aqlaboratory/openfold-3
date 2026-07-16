@@ -78,6 +78,39 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
 
         self.assertTrue(t.shape == (batch_size, n_token, n_token, c_in))
 
+    def test_legacy_inference_uses_non_streaming_forward(self):
+        of3_config = OF3ProjectEntry().get_model_config_with_presets()
+        template_config = of3_config.architecture.template
+        embedder = TemplateEmbedderAllAtom(template_config).eval()
+        n_token = 4
+        n_templ = 2
+        batch = {
+            "template_restype": torch.zeros(1, n_templ, n_token, 32),
+        }
+        z = torch.zeros(1, n_token, n_token, template_config.c_z)
+        pair_mask = torch.ones(1, n_token, n_token)
+        template_output = torch.zeros(
+            1, n_templ, n_token, n_token, template_config.c_t
+        )
+
+        with (
+            mock.patch.object(
+                embedder, "_forward", return_value=template_output
+            ) as forward,
+            mock.patch.object(embedder, "_forward_offload") as forward_offload,
+            torch.inference_mode(),
+        ):
+            embedder(
+                batch=batch,
+                z=z,
+                pair_mask=pair_mask,
+                inplace_safe=True,
+                offload_inference=False,
+            )
+
+        forward.assert_called_once()
+        forward_offload.assert_not_called()
+
     @unittest.skipUnless(
         torch.cuda.is_available() and importlib.util.find_spec("triton") is not None,
         "Requires CUDA and Triton",

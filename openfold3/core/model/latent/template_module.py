@@ -311,7 +311,13 @@ class TemplatePairBlock(PairBlock):
             if inplace_safe:
                 # t_in is the view into t at index i
                 # Copy here to safely update t if t_out has any non-inplace updates
-                t_in.copy_(t_out)
+                if not t_in.is_set_to(t_out):
+                    if (
+                        t_in.untyped_storage().data_ptr()
+                        == t_out.untyped_storage().data_ptr()
+                    ):
+                        t_out = t_out.clone()
+                    t_in.copy_(t_out)
             else:
                 single_templates[i] = t_out
 
@@ -665,81 +671,6 @@ class TemplateEmbedderAllAtom(nn.Module):
 
         return t_out.to(device=out_device)
 
-    # by Liang Hong <lhong22@cse.cuhk.edu.hk>: per-template streaming
-    # template stack with fused pair embedder dispatch (n_templ=1).
-    def _forward_streaming(
-        self,
-        batch: dict,
-        z: torch.Tensor,
-        pair_mask: torch.Tensor,
-        chunk_size: int | None = None,
-        _mask_trans: bool = True,
-        use_deepspeed_evo_attention: bool = False,
-        use_cueq_triangle_kernels: bool = False,
-        use_triton_triangle_kernels: bool = False,
-        use_lma: bool = False,
-        inplace_safe: bool = False,
-    ) -> torch.Tensor:
-        """Inference-only GPU streaming path.
-
-        Processes one template at a time and accumulates the post-stack
-        template sum on GPU.  This avoids materializing the full
-        ``[N_templ, N, N, c_t]`` stack without paying the CPU offload copy.
-
-        Any ``batch["template_*"]`` tensor that already lives on CPU (the
-        caller may have offloaded it at the top of ``OpenFold3.forward``
-        to keep the raw ~1.2U ``template_distogram`` out of GPU HBM) is
-        streamed H→D one template at a time by the existing
-        ``sliced.to(out_device, non_blocking=True)`` copy below.  No
-        special-casing needed here — the branch handles both regimes.
-        """
-        n_templ = batch["template_restype"].shape[-3]
-        out_device = z.device
-
-        pair_mask = pair_mask[..., None, :, :].to(dtype=z.dtype)
-        t_sum = None
-
-        for i in range(n_templ):
-            batch_templ = {}
-            for k, v in batch.items():
-                if isinstance(v, torch.Tensor) and k.startswith("template_"):
-                    sliced = _slice_template_feature(k, v, i)
-                    if sliced.device != out_device:
-                        sliced = sliced.to(out_device, non_blocking=True)
-                    batch_templ[k] = sliced
-                else:
-                    batch_templ[k] = v
-
-            t = self.template_pair_embedder(batch=batch_templ, z=z)
-            # Release the sliced [B, 1, N, N, 39] template_distogram (~0.30U at
-            # N=1264 fp32) and [B, 1, N, N, 3] template_unit_vector immediately
-            # after the embedder has folded them into ``t``.  Otherwise they
-            # coexist with the pair_stack peak below, lifting the template phase
-            # transient by ~0.30U per iteration.
-            batch_templ.pop("template_distogram", None)
-            batch_templ.pop("template_unit_vector", None)
-            t = self.template_pair_stack(
-                t,
-                pair_mask,
-                chunk_size=chunk_size,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                use_triton_triangle_kernels=use_triton_triangle_kernels,
-                use_lma=use_lma,
-                inplace_safe=inplace_safe,
-                _mask_trans=_mask_trans,
-            )
-
-            t = t.squeeze(-4)
-            if t_sum is None:
-                t_sum = t
-            else:
-                t_sum.add_(t)
-            del t
-
-        assert t_sum is not None
-        return t_sum / n_templ
-
     def _forward(
         self,
         batch: dict,
@@ -819,27 +750,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         """
         n_templ = batch["template_restype"].shape[-3]
         template_sum_done = False
-        can_stream = (
-            inplace_safe
-            and not self.training
-            and not torch.is_grad_enabled()
-            and n_templ > 1
-        )
-        if can_stream:
-            t = self._forward_streaming(
-                batch=batch,
-                z=z,
-                pair_mask=pair_mask,
-                chunk_size=chunk_size,
-                _mask_trans=True,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                use_triton_triangle_kernels=use_triton_triangle_kernels,
-                use_lma=use_lma,
-                inplace_safe=inplace_safe,
-            )
-            template_sum_done = True
-        elif offload_inference:
+        if offload_inference:
             t = self._forward_offload(
                 batch=batch,
                 z=z,

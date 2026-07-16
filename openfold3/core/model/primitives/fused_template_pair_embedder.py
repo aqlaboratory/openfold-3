@@ -240,9 +240,7 @@ def fused_template_pair_embedder_inference(
         w_dg = w_dg.to(dtype)
     torch.addmm(a_flat, dg_flat, w_dg.t(), out=a_flat)
     # Release the [B, N, N, c_dgram] slice (~0.30U at c_dgram=39, N=1264)
-    # immediately — nothing below this line references dgram.  Without this
-    # explicit del, dgram survives to the end of the function and coexists
-    # with the pair_stack peak downstream in _forward_streaming.
+    # immediately — nothing below this line references dgram.
     del dg_flat, dgram
 
     # ── aatype_i: [B, N, C_RE] @ [C_OUT, C_RE].T -> [B, N, C_OUT]; ──

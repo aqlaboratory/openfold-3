@@ -186,8 +186,7 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         # for dgram / scalar + broadcast-add for the tiny per-i and per-j
         # aatype projections (no 0.25U .to(dtype) expand copies).  Handles
         # exactly one template at a time — this dispatch fires only when
-        # the caller has already reduced ``batch`` to n_templ=1 (i.e. the
-        # streaming path in TemplateEmbedderAllAtom._forward_streaming).
+        # configured low-memory offload has reduced ``batch`` to n_templ=1.
         # For multi-template batches (grad path or non-streaming inference),
         # fall through to the eager loop below.
         if (
