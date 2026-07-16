@@ -32,12 +32,25 @@ jobs:
           aws-region: us-east-1
       - name: Create cloud runner
         id: aws-start
-        uses: omsf/start-aws-gha-runner@v1.2.0
+        uses: omsf/start-aws-gha-runner@v1.3.0
         with:
           aws_image_id: ami-0754c6e75b3b97dcd  # Deep Learning AMI Neuron (Ubuntu 22.04)
           aws_instance_type: trn1.2xlarge
           aws_home_dir: /home/ubuntu
           aws_root_device_size: 200
+          aws_tags: >-
+            [
+              {"Key":"Name","Value":"of-gha-runner"},
+              {"Key":"Repository","Value":"${{ github.repository }}"},
+              {"Key":"Workflow","Value":"${{ github.workflow }}"},
+              {"Key":"RunId","Value":"${{ github.run_id }}"},
+              {"Key":"RunNumber","Value":"${{ github.run_number }}"},
+              {"Key":"RunAttempt","Value":"${{ github.run_attempt }}"},
+              {"Key":"Actor","Value":"${{ github.actor }}"},
+              {"Key":"EventName","Value":"${{ github.event_name }}"},
+              {"Key":"Ref","Value":"${{ github.ref_name }}"},
+              {"Key":"Sha","Value":"${{ github.sha }}"}
+            ]
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
 
