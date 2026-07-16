@@ -38,6 +38,7 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         c_aatype: int,
         c_out: int,
         linear_init_params: ConfigDict = lin_init.all_atom_templ_pair_feat_emb_init,
+        unmasked: bool = False,
     ):
         """
         Args:
@@ -53,6 +54,8 @@ class TemplatePairEmbedderAllAtom(nn.Module):
                 Output channel dimension
             linear_init_params:
                 Linear layer initialization
+            unmasked:
+                Unmasking of multimer partners
         """
         super().__init__()
         self.dgram_linear = Linear(c_dgram, c_out, **linear_init_params.linear_a)
@@ -71,9 +74,10 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         dtype = batch["template_unit_vector"].dtype
 
         # [*, N_token, N_token]
-        multichain_pair_mask = (
-            batch["asym_id"][..., None] == batch["asym_id"][..., None, :]
-        )
+        if self.unmasked:
+            multichain_pair_mask = ((batch["asym_id"][..., None] == batch["asym_id"][..., None, :]) | (batch["asym_id"][..., None] != batch["asym_id"][..., None, :]))
+        else:
+            multichain_pair_mask = (batch["asym_id"][..., None] == batch["asym_id"][..., None, :])
         multichain_pair_mask = multichain_pair_mask[..., None, :, :, None]
 
         # [*, N_templ, N_token, N_token]
@@ -82,14 +86,14 @@ class TemplatePairEmbedderAllAtom(nn.Module):
             * batch["template_pseudo_beta_mask"][..., None, :]
         )[..., None] * multichain_pair_mask
 
-        template_distogram = batch["template_distogram"]
+        template_distogram = batch["template_distogram"] * multichain_pair_mask
 
         backbone_frame_pair_mask = (
             batch["template_backbone_frame_mask"][..., None]
             * batch["template_backbone_frame_mask"][..., None, :]
         )[..., None] * multichain_pair_mask
 
-        template_unit_vector = batch["template_unit_vector"]
+        template_unit_vector = batch["template_unit_vector"] * multichain_pair_mask
         x, y, z = template_unit_vector.unbind(dim=-1)
 
         # [*, N_templ, N_token, N_token, 32]
