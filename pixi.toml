@@ -282,6 +282,12 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   [feature.pytorch-pypi-rocm7.dependencies]
   # torch 2.11.0+rocm7.2 requires setuptools<82
   setuptools = "<82"
+  # Triton JIT-compiles the launcher stub with a host C compiler at runtime.
+  # Unlike the CUDA envs (which get gcc/gxx transitively via deepspeed-build ->
+  # cuda-minimal-build/cutlass), the ROCm env pulls in no compiler otherwise, so
+  # Triton kernels fail with "Failed to find C compiler". Keep it in the env.
+  c-compiler = "*"
+  cxx-compiler = "*"
 
   [feature.pytorch-pypi-rocm7.pypi-dependencies]
   torch = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
