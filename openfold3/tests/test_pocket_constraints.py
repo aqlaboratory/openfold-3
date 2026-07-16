@@ -14,7 +14,10 @@ from openfold3.core.data.primitives.structure.query import (
     structure_with_ref_mols_from_query,
 )
 from openfold3.core.data.resources.residues import MoleculeType
-from openfold3.core.model.structure.diffusion_module import SampleDiffusion
+from openfold3.core.model.structure.diffusion_module import (
+    SampleDiffusion,
+    _build_pocket_sampling_seeds,
+)
 from openfold3.projects.of3_all_atom.config.inference_query_format import Query
 
 
@@ -460,6 +463,36 @@ def _pocket_sampling_batch(batch_dim: int = 1) -> dict[str, torch.Tensor]:
         "pocket_sampling_vdw_buffer": torch.tensor([0.0]),
         "pocket_sampling_diversity_rmsd": torch.tensor([0.0]),
     }
+
+
+def test_build_pocket_sampling_seeds_uses_generated_conformer_candidates():
+    torch.manual_seed(0)
+    batch = _pocket_sampling_batch()
+    batch["pocket_sampling_candidates"] = torch.tensor([6])
+    batch["pocket_sampling_conformer_rels"] = torch.tensor(
+        [[[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]]]
+    )
+
+    xl_base = torch.zeros(1, 2, 5, 3)
+    xl_base[:, :, 0] = torch.tensor([0.0, 0.0, 0.0])
+    xl_base[:, :, 1] = torch.tensor([0.0, 0.0, 0.0])
+    xl_base[:, :, 2] = torch.tensor([20.0, 0.0, 0.0])
+    xl_base[:, :, 3] = torch.tensor([10.0, 0.0, 0.0])
+    xl_base[:, :, 4] = torch.tensor([11.0, 0.0, 0.0])
+
+    seeds = _build_pocket_sampling_seeds(
+        batch=batch,
+        xl_base=xl_base,
+        atom_mask=batch["atom_mask"],
+        no_rollout_samples=2,
+    )
+
+    ligand = seeds[0, :, 3:5]
+    ligand_com = ligand.mean(dim=1)
+    ligand_distance = torch.linalg.vector_norm(ligand[:, 0] - ligand[:, 1], dim=-1)
+
+    assert torch.all(torch.linalg.vector_norm(ligand_com, dim=-1) < 1e-5)
+    assert torch.allclose(ligand_distance, torch.full((2,), 4.0), atol=1e-5)
 
 
 def test_sample_diffusion_runs_second_pass_when_pocket_sampling_enabled():
