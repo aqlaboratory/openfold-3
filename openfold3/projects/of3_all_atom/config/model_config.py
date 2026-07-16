@@ -228,6 +228,7 @@ model_config = mlc.ConfigDict(
                     "c_aatype": 32,
                     "c_out": c_t,
                     "linear_init_params": lin_init.templ_pair_feat_emb_init,
+                    "unmasking": False,
                 },
                 "template_pair_stack": {
                     "c_t": c_t,

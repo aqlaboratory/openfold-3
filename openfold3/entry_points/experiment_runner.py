@@ -562,6 +562,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         use_msa_server: bool | None = None,
         use_templates: bool | None = None,
         output_dir: Path | None = None,
+        unmasked: bool | None = False,
     ):
         super().__init__(experiment_config)
 
@@ -579,6 +580,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             output_dir,
             use_msa_server,
             use_templates,
+            unmasked,
         )
 
     def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
@@ -609,6 +611,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         output_dir: Path | None,
         use_msa_server: bool | None = None,
         use_templates: bool | None = None,
+        unmasked: bool | None = False,
     ):
         """Updates configuration given command line args.
 
@@ -632,6 +635,8 @@ class InferenceExperimentRunner(ExperimentRunner):
 
         if use_templates is not None:
             self.experiment_config.experiment_settings.use_templates = use_templates
+        if unmasked is not None:
+            self.model_config.architecture.template.template_pair_embedder.unmasked = unmasked
 
     @cached_property
     def use_msa_server(self) -> bool:
@@ -709,7 +714,6 @@ class InferenceExperimentRunner(ExperimentRunner):
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
-        self.inference_query_set = inference_query_set
         if self.experiment_config.experiment_settings.skip_existing:
             inference_query_set = self.remove_completed_queries_from_query_set(
                 inference_query_set
