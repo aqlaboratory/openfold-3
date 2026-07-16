@@ -328,7 +328,6 @@ class TestModelUpdate:
         proj_entry = OF3ProjectEntry()
         config = proj_entry.get_model_config_with_presets(["predict"])
         offload = config.settings.memory.eval.offload_inference
-        offload.template_module = True
         offload.msa_module = True
         offload.confidence_heads = True
         offload.token_cutoff = 2800
@@ -342,15 +341,11 @@ class TestModelUpdate:
         assert not model._do_inference_offload(
             seq_len=590, module_name=OffloadModules.MSA_MODULE.value
         )
-        assert not model._do_inference_offload(
-            seq_len=590, module_name=OffloadModules.TEMPLATE_MODULE.value
-        )
 
     def test_training_mode_disables_inference_offload(self):
         proj_entry = OF3ProjectEntry()
         config = proj_entry.get_model_config_with_presets(["predict"])
         offload = config.settings.memory.eval.offload_inference
-        offload.template_module = True
         offload.msa_module = True
         offload.confidence_heads = True
         offload.token_cutoff = 0

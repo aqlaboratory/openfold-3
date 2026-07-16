@@ -120,6 +120,10 @@ def _child_main(args: argparse.Namespace) -> None:
     runner_args = config_utils.load_yaml(args.runner_yaml)
     runner_args.setdefault("data_module_args", {})
     runner_args["data_module_args"]["num_workers"] = 0
+    if args.config != "local_default":
+        runner_args.setdefault("dataset_config_kwargs", {}).setdefault(
+            "template", {}
+        ).setdefault("use_coordinate_pair_features", True)
     runner_args.setdefault("experiment_settings", {})
     runner_args["experiment_settings"]["skip_existing"] = False
     runner_args["experiment_settings"]["output_dir"] = str(args.run_output_dir)

@@ -37,7 +37,9 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.primitives.fused_swiglu_transition import (
     is_fused_swiglu_transition_enabled,
 )
-from openfold3.core.model.utils import assert_sole_holder
+from openfold3.core.model.primitives.fused_template_pair_embedder import (
+    fused_template_coordinate_pair_embedder_inference,
+)
 from openfold3.core.utils.checkpointing import checkpoint_blocks, checkpoint_section
 from openfold3.core.utils.chunk_utils import (
     DEFAULT_MAX_CHUNK_SIZE,
@@ -46,25 +48,6 @@ from openfold3.core.utils.chunk_utils import (
     apply_triangle_attn_chunk_cap,
 )
 from openfold3.core.utils.tensor_utils import add
-
-_TEMPLATE_DIM_BY_KEY = {
-    "template_restype": -3,
-    "template_pseudo_beta_mask": -2,
-    "template_backbone_frame_mask": -2,
-    "template_distogram": -4,
-    "template_unit_vector": -4,
-}
-
-
-def _slice_template_feature(k: str, x: torch.Tensor, idx: int) -> torch.Tensor:
-    """Return one template while preserving the singleton template dimension."""
-    template_dim = _TEMPLATE_DIM_BY_KEY.get(k)
-    if template_dim is None:
-        return x
-
-    slices = [slice(None)] * x.dim()
-    slices[template_dim] = slice(idx, idx + 1)
-    return x[tuple(slices)]
 
 
 # TODO: Make arguments match PairBlock
@@ -568,7 +551,6 @@ class TemplateEmbedderAllAtom(nn.Module):
         """
         super().__init__()
 
-        self.config = config
         self.template_pair_embedder = TemplatePairEmbedderAllAtom(
             **config.template_pair_embedder,
         )
@@ -580,96 +562,6 @@ class TemplateEmbedderAllAtom(nn.Module):
             "linear_init_params", lin_init.all_atom_templ_module_init
         )
         self.linear_t = Linear(config.c_t, config.c_z, **templ_init.linear_t)
-
-    def _forward_offload(
-        self,
-        batch: dict,
-        z: torch.Tensor,
-        pair_mask: torch.Tensor,
-        chunk_size: int | None = None,
-        _mask_trans: bool = True,
-        use_deepspeed_evo_attention: bool = False,
-        use_cueq_triangle_kernels: bool = False,
-        use_triton_triangle_kernels: bool = False,
-        use_lma: bool = False,
-        inplace_safe: bool = False,
-    ) -> torch.Tensor:
-        """
-        Args:
-            batch:
-                Input feature dictionary
-            z:
-                [*, N_token, N_token, C_z] Pair embedding
-            pair_mask:
-                [*, N_token, N_token] Pair mask
-            chunk_size:
-                Inference-time subbatch size.
-            _mask_trans:
-                Whether to mask the output of the transition layers
-            use_deepspeed_evo_attention:
-                Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma.
-            use_lma:
-                Whether to use low-memory attention during inference.
-                Mutually exclusive with and use_deepspeed_evo_attention.
-            inplace_safe:
-                Whether inplace operations can be performed
-
-        Returns:
-            t:
-                [*, N_token, N_token, C_z] Template embedding
-        """
-        batch_dims = z.shape[:-3]
-        n_token = z.shape[-2]
-        out_device = z.device
-        n_templ = batch["template_restype"].shape[-3]
-
-        # [*, 1, N_token, N_token]
-        pair_mask = pair_mask[..., None, :, :].to(dtype=z.dtype)
-
-        t_out = torch.zeros(
-            (*batch_dims, n_templ, n_token, n_token, self.config.c_t), device="cpu"
-        )
-
-        for i in range(n_templ):
-            batch_templ = {}
-            for k, v in batch.items():
-                if isinstance(v, torch.Tensor) and k.startswith("template_"):
-                    sliced = _slice_template_feature(k, v, i)
-                    if sliced.device != out_device:
-                        sliced = sliced.to(out_device, non_blocking=True)
-                    batch_templ[k] = sliced
-                else:
-                    batch_templ[k] = v
-
-            # [*, N, N, C_t]
-            t = self.template_pair_embedder(
-                batch=batch_templ,
-                z=z,
-            )
-
-            # [*, N_templ, N_token, N_token, C_z]
-            t = self.template_pair_stack(
-                t,
-                pair_mask,
-                chunk_size=chunk_size,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                use_triton_triangle_kernels=use_triton_triangle_kernels,
-                use_lma=use_lma,
-                inplace_safe=inplace_safe,
-                _mask_trans=_mask_trans,
-            )
-
-            assert_sole_holder(t)
-
-            t_out[..., i : i + 1, :, :, :] = t.cpu()
-
-            del t
-
-        del z
-
-        return t_out.to(device=out_device)
 
     def _forward(
         self,
@@ -717,7 +609,6 @@ class TemplateEmbedderAllAtom(nn.Module):
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
-        offload_inference: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -741,28 +632,49 @@ class TemplateEmbedderAllAtom(nn.Module):
                 Mutually exclusive with and use_deepspeed_evo_attention.
             inplace_safe:
                 Whether inplace operations can be performed
-            offload_inference:
-                Whether to offload some computation to CPU
 
         Returns:
             t:
                 [*, N_token, N_token, C_z] Template embedding
         """
+        coordinate_feature_count = sum(
+            key in batch
+            for key in ("template_pseudo_beta_coords", "template_frame_atom_coords")
+        )
+        legacy_feature_count = sum(
+            key in batch for key in ("template_distogram", "template_unit_vector")
+        )
+        if (coordinate_feature_count, legacy_feature_count) not in {(2, 0), (0, 2)}:
+            raise ValueError("Expected exactly one complete template representation")
+
+        has_coordinate_features = coordinate_feature_count == 2
         n_templ = batch["template_restype"].shape[-3]
-        template_sum_done = False
-        if offload_inference:
-            t = self._forward_offload(
-                batch=batch,
-                z=z,
-                pair_mask=pair_mask,
-                chunk_size=chunk_size,
-                _mask_trans=True,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                use_triton_triangle_kernels=use_triton_triangle_kernels,
-                use_lma=use_lma,
-                inplace_safe=inplace_safe,
-            )
+        if has_coordinate_features:
+            template_mask = pair_mask[..., None, :, :].to(dtype=z.dtype)
+            for i in range(n_templ):
+                t_i = fused_template_coordinate_pair_embedder_inference(
+                    module=self.template_pair_embedder,
+                    batch=batch,
+                    z=z,
+                    template_index=i,
+                )
+                t_i = self.template_pair_stack(
+                    t_i,
+                    template_mask,
+                    chunk_size=chunk_size,
+                    use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                    use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                    use_triton_triangle_kernels=use_triton_triangle_kernels,
+                    use_lma=use_lma,
+                    inplace_safe=inplace_safe,
+                    _mask_trans=True,
+                ).squeeze(-4)
+                if i == 0:
+                    t = t_i
+                else:
+                    t.add_(t_i)
+                del t_i
+            t.div_(n_templ)
         else:
             t = self._forward(
                 batch=batch,
@@ -776,8 +688,6 @@ class TemplateEmbedderAllAtom(nn.Module):
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
             )
-
-        if not template_sum_done:
             t = torch.sum(t, dim=-4) / n_templ
 
         # [*, N_token, N_token, C_z]

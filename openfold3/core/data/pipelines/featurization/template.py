@@ -54,6 +54,7 @@ def featurize_template_structures_of3(
     min_bin: float,
     max_bin: float,
     n_bins: int,
+    use_coordinate_pair_features: bool = False,
 ) -> dict[str, torch.Tensor]:
     """Featurizes template data for AF3.
 
@@ -70,6 +71,9 @@ def featurize_template_structures_of3(
             Distogram constructed from pseudo beta atoms distances.
         - template_unit_vector:
             Unit vector constructed from backbone frames.
+        - template_pseudo_beta_coords / template_frame_atom_coords:
+            Compact alternative to the two pair features when
+            ``use_coordinate_pair_features`` is enabled.
 
     Args:
         template_slice_collection (TemplateSliceCollection):
@@ -84,6 +88,8 @@ def featurize_template_structures_of3(
             The maximum distance for the distogram bins.
         n_bins (int):
             The number of bins in the distogram.
+        use_coordinate_pair_features (bool):
+            Return compact coordinates instead of materialized pair features.
 
     Returns:
         dict[str, torch.Tensor]:
@@ -95,19 +101,6 @@ def featurize_template_structures_of3(
         n_tokens,
     )
 
-    # Create asym ID to mask inter-chain features and mask
-    token_starts_with_stop, _ = extract_starts_entities(atom_array)
-    token_starts = token_starts_with_stop[:-1]
-    chain_ids_token = atom_array.chain_id[token_starts]
-    _, renum_ids = np.unique(chain_ids_token, return_inverse=True)
-    asym_id = pad_token_dim(
-        {"asym_id": torch.tensor(renum_ids + 1, dtype=torch.int32)}, n_tokens
-    )["asym_id"]
-    multichain_pair_mask = (asym_id[..., None] == asym_id[..., None, :])[
-        ..., None, :, :, None
-    ]
-
-    # Create features
     features = {}
     features["template_pseudo_beta_mask"] = torch.tensor(
         ~np.isnan(template_feature_precursor.pseudo_beta_atom_coords).any(axis=-1),
@@ -121,6 +114,33 @@ def featurize_template_structures_of3(
         template_feature_precursor.res_names,
         features["template_pseudo_beta_mask"],
     )
+    if use_coordinate_pair_features:
+        features["template_pseudo_beta_coords"] = torch.nan_to_num(
+            torch.as_tensor(
+                template_feature_precursor.pseudo_beta_atom_coords,
+                dtype=torch.float32,
+            )
+        )
+        features["template_frame_atom_coords"] = torch.nan_to_num(
+            torch.as_tensor(
+                template_feature_precursor.frame_atom_coords,
+                dtype=torch.float32,
+            )
+        )
+        return features
+
+    # The legacy representation masks pair features during featurization.
+    token_starts_with_stop, _ = extract_starts_entities(atom_array)
+    token_starts = token_starts_with_stop[:-1]
+    chain_ids_token = atom_array.chain_id[token_starts]
+    _, renum_ids = np.unique(chain_ids_token, return_inverse=True)
+    asym_id = pad_token_dim(
+        {"asym_id": torch.tensor(renum_ids + 1, dtype=torch.int32)}, n_tokens
+    )["asym_id"]
+    multichain_pair_mask = (asym_id[..., None] == asym_id[..., None, :])[
+        ..., None, :, :, None
+    ]
+
     features["template_distogram"] = create_template_distogram(
         template_feature_precursor.pseudo_beta_atom_coords,
         features["template_pseudo_beta_mask"],

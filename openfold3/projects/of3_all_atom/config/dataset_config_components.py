@@ -23,7 +23,7 @@ The main sections of the dataset configuration are:
 
 from typing import Annotated
 
-from pydantic import BaseModel, BeforeValidator
+from pydantic import BaseModel, BeforeValidator, model_validator
 
 from openfold3.core.config.config_utils import _convert_molecule_type
 from openfold3.core.data.resources.residues import MoleculeType
@@ -125,6 +125,21 @@ class TemplateSettings(BaseModel):
     take_top_k: bool = False
     min_n_tokens_per_chain: int = 5
     distogram: TemplateDistogramSettings = TemplateDistogramSettings()
+    use_coordinate_pair_features: bool = False
+
+    @model_validator(mode="after")
+    def validate_coordinate_distogram(self):
+        distogram = (
+            self.distogram.min_bin,
+            self.distogram.max_bin,
+            self.distogram.n_bins,
+        )
+        if self.use_coordinate_pair_features and distogram != (3.25, 50.75, 39):
+            raise ValueError(
+                "Coordinate-derived templates currently require the default "
+                "3.25/50.75/39 distogram configuration."
+            )
+        return self
 
 
 class CropWeights(BaseModel):

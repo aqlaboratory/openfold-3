@@ -24,6 +24,64 @@ from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 
 class TestTemplateEmbedderAllAtom(unittest.TestCase):
+    def test_coordinate_inference_averages_templates(self):
+        of3_config = OF3ProjectEntry().get_model_config_with_presets()
+        template_config = of3_config.architecture.template
+        embedder = TemplateEmbedderAllAtom(template_config).eval()
+        n_token = 4
+        batch = {
+            "template_restype": torch.zeros(1, 2, n_token, 32),
+            "template_pseudo_beta_coords": torch.zeros(1, 2, n_token, 3),
+            "template_frame_atom_coords": torch.zeros(1, 2, n_token, 3, 3),
+        }
+        z = torch.zeros(1, n_token, n_token, template_config.c_z)
+        pair_mask = torch.ones(1, n_token, n_token)
+        projection_shape = (1, 1, n_token, n_token, template_config.c_t)
+        projections = [torch.full(projection_shape, value) for value in (1.0, 3.0)]
+
+        with (
+            mock.patch(
+                "openfold3.core.model.latent.template_module."
+                "fused_template_coordinate_pair_embedder_inference",
+                side_effect=projections,
+            ) as project,
+            mock.patch.object(
+                embedder.template_pair_stack,
+                "forward",
+                side_effect=lambda t, *args, **kwargs: t,
+            ),
+            mock.patch.object(
+                embedder.linear_t,
+                "forward",
+                side_effect=lambda t: t,
+            ),
+            torch.inference_mode(),
+        ):
+            output = embedder(batch=batch, z=z, pair_mask=pair_mask)
+
+        self.assertEqual(project.call_count, 2)
+        torch.testing.assert_close(output, torch.full_like(output, 2.0))
+
+    def test_rejects_mixed_template_representations(self):
+        template_config = (
+            OF3ProjectEntry().get_model_config_with_presets().architecture.template
+        )
+        embedder = TemplateEmbedderAllAtom(template_config).eval()
+        n_token = 2
+        batch = {
+            "template_restype": torch.zeros(1, 1, n_token, 32),
+            "template_pseudo_beta_coords": torch.zeros(1, 1, n_token, 3),
+            "template_frame_atom_coords": torch.zeros(1, 1, n_token, 3, 3),
+            "template_distogram": torch.zeros(1, 1, n_token, n_token, 39),
+            "template_unit_vector": torch.zeros(1, 1, n_token, n_token, 3),
+        }
+        with self.assertRaisesRegex(ValueError, "exactly one complete"):
+            embedder(
+                batch=batch,
+                z=torch.zeros(1, n_token, n_token, template_config.c_z),
+                pair_mask=torch.ones(1, n_token, n_token),
+            )
+
     @staticmethod
     def _run_embedder_with_env(
         embedder,
@@ -77,39 +135,6 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
         t = embedder(batch=batch, z=z, pair_mask=pair_mask, chunk_size=None)
 
         self.assertTrue(t.shape == (batch_size, n_token, n_token, c_in))
-
-    def test_legacy_inference_uses_non_streaming_forward(self):
-        of3_config = OF3ProjectEntry().get_model_config_with_presets()
-        template_config = of3_config.architecture.template
-        embedder = TemplateEmbedderAllAtom(template_config).eval()
-        n_token = 4
-        n_templ = 2
-        batch = {
-            "template_restype": torch.zeros(1, n_templ, n_token, 32),
-        }
-        z = torch.zeros(1, n_token, n_token, template_config.c_z)
-        pair_mask = torch.ones(1, n_token, n_token)
-        template_output = torch.zeros(
-            1, n_templ, n_token, n_token, template_config.c_t
-        )
-
-        with (
-            mock.patch.object(
-                embedder, "_forward", return_value=template_output
-            ) as forward,
-            mock.patch.object(embedder, "_forward_offload") as forward_offload,
-            torch.inference_mode(),
-        ):
-            embedder(
-                batch=batch,
-                z=z,
-                pair_mask=pair_mask,
-                inplace_safe=True,
-                offload_inference=False,
-            )
-
-        forward.assert_called_once()
-        forward_offload.assert_not_called()
 
     @unittest.skipUnless(
         torch.cuda.is_available() and importlib.util.find_spec("triton") is not None,

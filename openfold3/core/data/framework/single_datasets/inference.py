@@ -294,6 +294,9 @@ class InferenceDataset(Dataset):
             min_bin=self.template_settings.distogram.min_bin,
             max_bin=self.template_settings.distogram.max_bin,
             n_bins=self.template_settings.distogram.n_bins,
+            use_coordinate_pair_features=(
+                self.template_settings.use_coordinate_pair_features
+            ),
         )
 
         return template_features

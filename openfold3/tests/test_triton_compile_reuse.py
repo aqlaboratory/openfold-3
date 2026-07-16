@@ -46,6 +46,10 @@ from openfold3.core.kernels.triton.flash_tri_attn import (
 from openfold3.core.kernels.triton.fused_swiglu_transition import (
     _fused_swiglu_transition_fwd_kernel,
 )
+from openfold3.core.kernels.triton.fused_template_coordinate import (
+    _template_coordinate_projection_kernel,
+    template_coordinate_projection_add_,
+)
 from openfold3.core.kernels.triton.fused_trimul import (
     _gated_column_gemm_kernel,
     _gated_dual_gemm_kernel,
@@ -95,6 +99,8 @@ sw_beta = torch.zeros(128, device="cuda")
 w_a = torch.randn(512, 128, device="cuda") * 0.02
 w_b = torch.randn(512, 128, device="cuda") * 0.02
 w_out = torch.randn(128, 512, device="cuda") * 0.02
+template_w_dgram = torch.randn(64, 39, device="cuda")
+template_w_scalar = torch.randn(64, 5, device="cuda")
 
 for n in lengths:
     z = torch.randn(1, n, n, 128, device="cuda") * 0.1
@@ -107,6 +113,19 @@ for n in lengths:
     y = fused_swiglu_transition(x2d, sw_gamma, sw_beta, w_a, w_b, w_out)
     assert y.shape == x2d.shape
     clear(_fused_swiglu_transition_fwd_kernel)
+
+    template_out = torch.zeros(1, n, n, 64, device="cuda")
+    template_coordinate_projection_add_(
+        template_out,
+        torch.randn(1, n, 3, device="cuda"),
+        torch.randn(1, n, 3, 3, device="cuda"),
+        pair_mask[:, 0],
+        pair_mask[:, 0],
+        torch.ones(1, n, dtype=torch.int32, device="cuda"),
+        template_w_dgram,
+        template_w_scalar,
+    )
+    clear(_template_coordinate_projection_kernel)
 
     y = fused_trimul_update(trimul, z, pair_mask, with_add=False)
     assert y is not None and y.shape == z.shape
@@ -121,6 +140,9 @@ counts = {
     "_fused_swiglu_transition_fwd_kernel": count(
         cache_dir, "_fused_swiglu_transition_fwd_kernel"
     ),
+    "_template_coordinate_projection_kernel": count(
+        cache_dir, "_template_coordinate_projection_kernel"
+    ),
     "_gated_dual_gemm_kernel": count(cache_dir, "_gated_dual_gemm_kernel"),
     "_gated_out_from_dm_kernel": count(cache_dir, "_gated_out_from_dm_kernel"),
     "_ln_stats_kernel": count(cache_dir, "_ln_stats_kernel"),
@@ -129,6 +151,7 @@ print(json.dumps({"counts": counts}))
 assert counts == {
     "_flash_tri_attn_kernel": 1,
     "_fused_swiglu_transition_fwd_kernel": 1,
+    "_template_coordinate_projection_kernel": 1,
     "_gated_dual_gemm_kernel": 1,
     "_gated_out_from_dm_kernel": 1,
     "_ln_stats_kernel": 1,
@@ -154,7 +177,6 @@ assert counts == {
     assert proc.returncode == 0, proc.stdout + proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
     assert all("opm" not in name for name in payload["counts"])
-
 
 def test_fused_trimul_reuses_compiles_across_lengths_and_chunks(tmp_path):
     """Trimul signatures are stable across N for both directions and dimensions."""
