@@ -28,11 +28,16 @@ def _skip_no_cuda(fn):
     return unittest.skipUnless(torch.cuda.is_available(), "CUDA required")(fn)
 
 
-def _build_module(starting: bool):
+def _build_module(
+    starting: bool,
+    c_in: int = 128,
+    c_hidden: int = 32,
+    no_heads: int = 4,
+):
     module = TriangleAttention(
-        c_in=128,
-        c_hidden=32,
-        no_heads=4,
+        c_in=c_in,
+        c_hidden=c_hidden,
+        no_heads=no_heads,
         starting=starting,
     )
     with torch.no_grad():
@@ -70,6 +75,106 @@ def _forward(module, x, mask, *, v1: bool, use_cueq: bool = True):
 
 
 class TestFusedTriAttnV1(unittest.TestCase):
+    @_skip_no_cuda
+    def test_v1_template_shape_matches_eager_starting_and_ending(self):
+        old_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = False
+        try:
+            for starting in (True, False):
+                torch.manual_seed(210 + int(starting))
+                module = _build_module(
+                    starting=starting,
+                    c_in=64,
+                    c_hidden=16,
+                )
+                x = torch.randn(
+                    1,
+                    160,
+                    160,
+                    64,
+                    device="cuda",
+                    dtype=torch.float32,
+                )
+                mask = torch.ones(1, 160, 160, device="cuda", dtype=torch.float32)
+                mask[:, :, -11:] = 0
+
+                ref = _forward(module, x, mask, v1=False, use_cueq=False)
+                out = _forward(module, x, mask, v1=True, use_cueq=False)
+
+                diff = (ref - out).abs().max().item()
+                self.assertLessEqual(diff, 2e-5, f"template V1 max diff {diff}")
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_tf32
+
+    @_skip_no_cuda
+    def test_v1_template_shape_grouped_tf32_matches_eager(self):
+        old_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = True
+        try:
+            torch.manual_seed(213)
+            module = _build_module(
+                starting=True,
+                c_in=64,
+                c_hidden=16,
+            )
+            x = torch.randn(1, 160, 160, 64, device="cuda", dtype=torch.float32)
+            mask = torch.ones(1, 160, 160, device="cuda", dtype=torch.float32)
+
+            ref = _forward(module, x, mask, v1=False, use_cueq=False)
+            out = _forward(module, x, mask, v1=True, use_cueq=False)
+
+            diff = (ref - out).abs().max().item()
+            self.assertLessEqual(diff, 5e-4, f"template grouped TF32 diff {diff}")
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_tf32
+
+    @_skip_no_cuda
+    def test_v1_template_shape_residual_handles_pairblock_ending_view(self):
+        old_tf32 = torch.backends.cuda.matmul.allow_tf32
+        torch.backends.cuda.matmul.allow_tf32 = False
+        try:
+            torch.manual_seed(212)
+            module = _build_module(
+                starting=True,
+                c_in=64,
+                c_hidden=16,
+            )
+            z = torch.randn(1, 160, 160, 64, device="cuda", dtype=torch.float32)
+            mask = torch.ones(1, 160, 160, device="cuda", dtype=torch.float32)
+
+            with torch.no_grad():
+                z_view = z.transpose(-2, -3)
+                mask_view = mask.transpose(-1, -2)
+                update = fused_tri_attn_v1_forward(
+                    module,
+                    z_view,
+                    mask_view,
+                    inplace_safe=True,
+                    use_cueq_triangle_kernels=False,
+                    chunk_size=128,
+                )
+                self.assertIsNotNone(update)
+                expected = z_view + update
+
+                residual_base = z.clone()
+                residual_view = residual_base.transpose(-2, -3)
+                out = fused_tri_attn_v1_forward(
+                    module,
+                    residual_view,
+                    mask_view,
+                    inplace_safe=True,
+                    use_cueq_triangle_kernels=False,
+                    chunk_size=128,
+                    residual=residual_view,
+                )
+
+            self.assertIs(out, residual_view)
+            self.assertEqual(out.data_ptr(), residual_view.data_ptr())
+            diff = (expected - out).abs().max().item()
+            self.assertLessEqual(diff, 2e-5, f"template residual max diff {diff}")
+        finally:
+            torch.backends.cuda.matmul.allow_tf32 = old_tf32
+
     @_skip_no_cuda
     def test_v1_direct_path_returns_output(self):
         torch.manual_seed(201)
@@ -186,12 +291,7 @@ class TestFusedTriAttnV1(unittest.TestCase):
             x = torch.randn(1, 160, 160, 128, device="cuda", dtype=torch.float32)
             mask = torch.ones(1, 160, 160, device="cuda", dtype=torch.float32)
 
-            with (
-                mock.patch.dict(
-                    os.environ, {"OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": "1"}
-                ),
-                torch.no_grad(),
-            ):
+            with torch.no_grad():
                 update = fused_tri_attn_v1_forward(
                     module,
                     x,
@@ -231,12 +331,7 @@ class TestFusedTriAttnV1(unittest.TestCase):
             z = torch.randn(1, 160, 160, 128, device="cuda", dtype=torch.float32)
             mask = torch.ones(1, 160, 160, device="cuda", dtype=torch.float32)
 
-            with (
-                mock.patch.dict(
-                    os.environ, {"OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": "1"}
-                ),
-                torch.no_grad(),
-            ):
+            with torch.no_grad():
                 z_view = z.transpose(-2, -3)
                 mask_view = mask.transpose(-1, -2)
                 update = fused_tri_attn_v1_forward(
@@ -287,9 +382,6 @@ class TestFusedTriAttnV1(unittest.TestCase):
         residual_before = residual.clone()
 
         with (
-            mock.patch.dict(
-                os.environ, {"OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": "1"}
-            ),
             mock.patch(
                 "openfold3.core.model.primitives.fused_tri_attn."
                 "flash_tri_attn_v1_block",

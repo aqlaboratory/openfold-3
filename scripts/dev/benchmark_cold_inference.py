@@ -54,7 +54,6 @@ BASE_OPTIMIZED_ENV = {
 OPTIMIZED_ENV = {
     **BASE_OPTIMIZED_ENV,
     "OPENFOLD3_FUSED_TRI_ATTN_V1": "1",
-    "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": "1",
     "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "128",
 }
 
@@ -93,7 +92,6 @@ DISABLED_ENV = {
     "OPENFOLD3_DIFFUSION_PAIR_BIAS_CACHE": "0",
     "OPENFOLD3_FUSED_TEMPLATE_EMBED": "0",
     "OPENFOLD3_INPLACE_OPM": "0",
-    "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": "0",
     "OPENFOLD3_TRI_ATTN_CHUNK_CAP": "",
     "OPENFOLD3_TRIMUL_CHUNK_CAP": "",
 }
@@ -321,9 +319,6 @@ def _child_main(args: argparse.Namespace) -> None:
             ),
             "OPENFOLD3_FUSED_TEMPLATE_EMBED": os.environ.get(
                 "OPENFOLD3_FUSED_TEMPLATE_EMBED"
-            ),
-            "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": os.environ.get(
-                "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN"
             ),
             "OPENFOLD3_TRI_ATTN_CHUNK_CAP": os.environ.get(
                 "OPENFOLD3_TRI_ATTN_CHUNK_CAP"

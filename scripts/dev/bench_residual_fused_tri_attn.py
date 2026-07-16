@@ -3,24 +3,21 @@
 
 Measures peak allocated bytes and wall time for the ``tri_att_start`` +
 ``tri_att_end`` pair at N=1264 (homo_1200-shaped), c_z=128, c_hidden=32, H=4,
-chunk_size=128 across three configurations:
+chunk_size=128 across cuEq and two V1 call modes:
 
     v1_baseline            V1 kernel, no residual arg (allocates fresh out,
-                           caller adds).  Matches the pre-patch behaviour.
-    v1_residual_fused_off  V1 kernel, residual=z passed but the flag disables
-                           in-place; V1 returns None and eager fallback in
-                           TriangleAttention.forward folds residual.add_(x).
-    v1_residual_fused_on   V1 kernel + residual=z + flag on.  ``addmm`` writes
+                           caller adds).
+    v1_production          V1 kernel + residual=z. ``addmm`` writes
                            per-row-block into z's storage; no ``out`` alloc.
 
 The peak-drop target is 1U (= N² * c_z * 4 bytes ≈ 780 MiB at N=1264).
 The wall-time gate is +/-5% relative to v1_baseline.
 """
+
 from __future__ import annotations
 
 import argparse
 import os
-import statistics
 import sys
 from pathlib import Path
 
@@ -28,24 +25,18 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 
-def _mib(b): return b / 1024 ** 2
+def _mib(b):
+    return b / 1024**2
 
 
 def _run_config(cfg: str, N: int, cap: int, warmup: int, iters: int):
     """Run one config in a subprocess (per your CLAUDE.md pattern) to isolate
     allocator state.  Returns dict of peak/wall for both starting and ending."""
     import subprocess
+
     env = os.environ.copy()
     env["OPENFOLD3_FUSED_TRI_ATTN_V1"] = "1"
     env["OPENFOLD3_TRI_ATTN_CHUNK_CAP"] = str(cap)
-    env["OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN"] = {
-        "v1_baseline": "1",  # unused because we won't pass residual
-        "v1_residual_fused_off": "0",
-        "v1_residual_fused_on": "1",
-        "v1_case_c": "1",  # starting=True on pre-transposed z (matches tri_att_end in PairBlock)
-        "cueq_baseline": "0",
-        "cueq_case_c": "0",
-    }[cfg]
     if cfg in ("cueq_baseline", "cueq_case_c"):
         # cuEq path: disable V1 fusion.
         env["OPENFOLD3_FUSED_TRI_ATTN_V1"] = "0"
@@ -91,7 +82,7 @@ for starting in starting_iter:
             with torch.no_grad():
                 z_in = z if starting else z.transpose(-2, -3)
                 out = m(z_in, mask=mask, chunk_size=CAP)
-            return (z + out) if starting else (z + out.transpose(-2, -3) if not starting else z + out)
+            return (z + out) if starting else (z + out.transpose(-2, -3))
         elif CFG == "cueq_baseline":
             # cuEq path with chunked layer + inplace_safe (matches the eager
             # fallback in TriangleAttention.forward when V1 is off).  Caller
@@ -115,12 +106,18 @@ for starting in starting_iter:
             # caller pre-transposes z, passes residual=z_transposed (non-contig).
             with torch.no_grad():
                 z_t = z.transpose(-2, -3)
-                return m(z_t, mask=mask.transpose(-1, -2), chunk_size=CAP, inplace_safe=True, residual=z_t)
+                return m(
+                    z_t, mask=mask.transpose(-1, -2), chunk_size=CAP,
+                    inplace_safe=True, residual=z_t,
+                )
         else:
             with torch.no_grad():
                 z_in = z if starting else z.transpose(-2, -3)
                 res_in = z if starting else z.transpose(-2, -3)
-                return m(z_in, mask=mask, chunk_size=CAP, inplace_safe=True, residual=res_in)
+                return m(
+                    z_in, mask=mask, chunk_size=CAP,
+                    inplace_safe=True, residual=res_in,
+                )
 
     for _ in range(WARMUP):
         _step()
@@ -133,7 +130,8 @@ for starting in starting_iter:
 
     for _ in range(ITERS):
         torch.cuda.synchronize()
-        e0 = torch.cuda.Event(enable_timing=True); e1 = torch.cuda.Event(enable_timing=True)
+        e0 = torch.cuda.Event(enable_timing=True)
+        e1 = torch.cuda.Event(enable_timing=True)
         e0.record()
         _step()
         e1.record()
@@ -154,15 +152,18 @@ print("__RES__" + json.dumps(out_results))
 """
     r = subprocess.run(
         ["python", "-c", script],
-        capture_output=True, env=env, cwd=str(REPO),
+        capture_output=True,
+        env=env,
+        cwd=str(REPO),
     )
     if r.returncode != 0:
         print(r.stderr.decode(), file=sys.stderr)
         raise RuntimeError(f"subprocess failed for {cfg}")
     import json
+
     for line in r.stdout.decode().splitlines():
         if line.startswith("__RES__"):
-            return json.loads(line[len("__RES__"):])
+            return json.loads(line[len("__RES__") :])
     raise RuntimeError("no result marker")
 
 
@@ -177,23 +178,33 @@ def main():
     u_bytes = args.n * args.n * 128 * 4
     print(f"N={args.n}  cap={args.cap}  1U = {_mib(u_bytes):.1f} MiB")
 
-    configs = ("cueq_baseline", "v1_baseline", "v1_residual_fused_on", "cueq_case_c", "v1_case_c")
+    configs = (
+        "cueq_baseline",
+        "v1_baseline",
+        "v1_production",
+        "cueq_case_c",
+        "v1_case_c",
+    )
     results = {}
     for cfg in configs:
         print(f"\n== {cfg} ==")
         results[cfg] = _run_config(cfg, args.n, args.cap, args.warmup, args.iters)
         for starting_str, d in results[cfg].items():
-            print(f"  starting={starting_str}  "
-                  f"peak_over_baseline={_mib(d['peak_over_baseline_bytes']):8.1f} MiB "
-                  f"= {d['peak_over_baseline_bytes'] / u_bytes:5.2f}U   "
-                  f"wall_min={d['wall_ms_min']:6.2f}ms  wall_mean={d['wall_ms_mean']:6.2f}ms")
+            print(
+                f"  starting={starting_str}  "
+                f"peak_over_baseline={_mib(d['peak_over_baseline_bytes']):8.1f} MiB "
+                f"= {d['peak_over_baseline_bytes'] / u_bytes:5.2f}U   "
+                f"wall_min={d['wall_ms_min']:6.2f}ms  "
+                f"wall_mean={d['wall_ms_mean']:6.2f}ms"
+            )
 
     # Summary
     print("\n== Summary (starting node) ==")
-    print(f"{'cfg':<28s} {'peak_delta':>15s} {'wall_mean_ms':>14s} {'vs_baseline':>14s}")
+    print(
+        f"{'cfg':<28s} {'peak_delta':>15s} {'wall_mean_ms':>14s} {'vs_baseline':>14s}"
+    )
     base_key = "cueq_baseline" if "cueq_baseline" in results else configs[0]
     base = results[base_key]["True"]
-    base_label = f"vs {base_key}"
     print(f"    (baseline: {base_key})")
     for cfg in configs:
         d = results[cfg].get("True")
@@ -202,8 +213,10 @@ def main():
         delta_bytes = d["peak_over_baseline_bytes"] - base["peak_over_baseline_bytes"]
         delta_u = delta_bytes / u_bytes
         wall_ratio = d["wall_ms_mean"] / base["wall_ms_mean"]
-        print(f"{cfg:<28s} {_mib(d['peak_over_baseline_bytes']):>10.1f} MiB "
-              f"({delta_u:+.2f}U) {d['wall_ms_mean']:>10.2f}ms  {wall_ratio:>10.2%}")
+        print(
+            f"{cfg:<28s} {_mib(d['peak_over_baseline_bytes']):>10.1f} MiB "
+            f"({delta_u:+.2f}U) {d['wall_ms_mean']:>10.2f}ms  {wall_ratio:>10.2%}"
+        )
 
 
 if __name__ == "__main__":

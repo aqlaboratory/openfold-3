@@ -512,6 +512,57 @@ assert count == 1, count
     assert payload["_flash_tri_attn_kernel"] == 1
 
 
+def test_v1_template_tri_attn_reuses_compile_across_lengths(tmp_path):
+    """The c_t=64 V1 template kernel should be length-generic."""
+    cache_dir = tmp_path / "triton_cache"
+    code = r"""
+import json
+import os
+from pathlib import Path
+
+import torch
+
+from openfold3.core.kernels.triton.flash_tri_attn import _flash_tri_attn_kernel
+from openfold3.core.model.layers.triangular_attention import TriangleAttention
+
+torch.manual_seed(41)
+torch.set_grad_enabled(False)
+cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
+tri_attn = TriangleAttention(64, 16, 4, starting=True).cuda().eval()
+with torch.no_grad():
+    tri_attn.mha.linear_o.weight.normal_(0, 0.02)
+    tri_attn.mha.linear_g.weight.normal_(0, 0.02)
+
+for n in (192, 224, 255):
+    z = torch.randn(1, n, n, 64, device="cuda")
+    pair_mask = torch.ones(1, n, n, device="cuda")
+    assert tri_attn(z, mask=pair_mask, chunk_size=128).shape == z.shape
+    _flash_tri_attn_kernel.device_caches.clear()
+
+count = len(list(cache_dir.rglob("_flash_tri_attn_kernel.json")))
+print(json.dumps({"_flash_tri_attn_kernel": count}))
+assert count == 1, count
+"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "OPENFOLD3_FUSED_TRI_ATTN_V1": "1",
+            "OPENFOLD3_FUSED_LN_LINEAR": "1",
+            "TRITON_CACHE_DIR": str(cache_dir),
+        }
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["_flash_tri_attn_kernel"] == 1
+
+
 def test_attention_pair_bias_reuses_fused_pair_projection_across_lengths(tmp_path):
     """Diffusion pair-bias projection should reuse fused LN-linear compiles."""
     cache_dir = tmp_path / "triton_cache"

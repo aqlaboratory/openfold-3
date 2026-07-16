@@ -48,22 +48,6 @@ def is_fused_tri_attn_v1_enabled() -> bool:
     )
 
 
-def is_residual_fused_tri_attn_enabled() -> bool:
-    """Env flag for the inference-only in-place residual add inside V1.
-
-    Defaults to ``1`` because the fused V1 path is already inference-only and
-    the residual-fusion is bitwise ``addmm = mm + add`` when ``allow_tf32`` is
-    off (the OF3 fp32 default).  Set to ``0`` to force the legacy path that
-    allocates a fresh ``[B, N, N, c_z]`` output buffer and lets the caller do
-    the outer residual add — useful for correctness bisection, or when a
-    downstream caller does not tolerate ``z`` being mutated in place.  Even
-    when this flag is on, the residual is only fused when the caller passes a
-    non-None ``residual`` argument AND grad is disabled AND the module is in
-    ``eval()`` mode, so training is unaffected regardless of the flag.
-    """
-    return os.environ.get("OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN", "1") in _FLAG_TRUE
-
-
 def _eligible(z: torch.Tensor) -> bool:
     return (
         _ln_triton_available()
@@ -138,7 +122,11 @@ def fused_tri_attn_v1_forward(
     c_hidden = module.c_hidden
     no_heads = module.no_heads
     total_hidden = c_hidden * no_heads
-    if c_z != 128 or c_hidden != 32 or no_heads != 4 or total_hidden != c_z:
+    supported_shape = (c_z, c_hidden, no_heads) in {
+        (64, 16, 4),
+        (128, 32, 4),
+    }
+    if not supported_shape or total_hidden != c_z:
         return None
 
     # ``starting`` denotes the starting-node attention pattern.  For a
@@ -189,8 +177,6 @@ def fused_tri_attn_v1_forward(
     residual_wv: torch.Tensor | None = None
     residual_wv_contig: bool = False
     if residual is not None:
-        if not is_residual_fused_tri_attn_enabled():
-            return None
         if (
             residual.shape != z.shape
             or residual.dtype != z.dtype

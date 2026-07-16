@@ -1,12 +1,15 @@
 """Microbenchmark TriangleAttention.forward in isolation.
 
-Compares V1 cap128 against cuEq default and cuEq cap128 across a small sweep of
-N. Reports per-call wall time and peak transient memory above the resident
-input.
+Compares V1 cap128 against cuEq / eager baselines across a small sweep of N.
+Reports per-call wall time and peak transient memory above the resident input.
 
 Run with:
-    OPENFOLD_CACHE=/.../data/openfold_cache CUBLAS_WORKSPACE_CONFIG=:4096:8 \
     python scripts/dev/bench_tri_attn_module.py --n 384 590 --reps 20
+
+Template-shaped (c_t=64) comparison against the current eager fallback:
+    python scripts/dev/bench_tri_attn_module.py \\
+      --n 384 590 1369 --c_z 64 --c_h 16 --heads 4 \\
+      --skip-cueq --include-eager --include-residual --no-tf32
 
 The dispatch flags are read at call time, so each configuration can be toggled
 within one process. TF32 is enabled by default to match normal OF3 inference;
@@ -44,6 +47,33 @@ def _build_module(c_in: int, c_hidden: int, no_heads: int, starting: bool):
     return module.cuda().eval()
 
 
+def _call(
+    module,
+    x,
+    mask,
+    *,
+    chunk_size: int | None,
+    use_cueq: bool,
+    residual: bool,
+):
+    # Residual path mutates ``x`` in place, matching PairBlock inference.
+    if residual:
+        return module(
+            x,
+            mask=mask,
+            chunk_size=chunk_size,
+            use_cueq_triangle_kernels=use_cueq,
+            inplace_safe=True,
+            residual=x,
+        )
+    return module(
+        x,
+        mask=mask,
+        chunk_size=chunk_size,
+        use_cueq_triangle_kernels=use_cueq,
+    )
+
+
 def _bench_one(
     module,
     x,
@@ -51,15 +81,19 @@ def _bench_one(
     *,
     reps: int,
     chunk_size: int | None,
+    use_cueq: bool,
+    residual: bool,
 ) -> tuple[float, float]:
     """Return (median ms per call, peak transient bytes above input)."""
     with torch.no_grad():
         for _ in range(3):  # warm
-            module(
+            _call(
+                module,
                 x,
-                mask=mask,
+                mask,
                 chunk_size=chunk_size,
-                use_cueq_triangle_kernels=True,
+                use_cueq=use_cueq,
+                residual=residual,
             )
         torch.cuda.synchronize()
 
@@ -73,11 +107,13 @@ def _bench_one(
         ends = [torch.cuda.Event(enable_timing=True) for _ in range(reps)]
         for i in range(reps):
             starts[i].record()
-            module(
+            _call(
+                module,
                 x,
-                mask=mask,
+                mask,
                 chunk_size=chunk_size,
-                use_cueq_triangle_kernels=True,
+                use_cueq=use_cueq,
+                residual=residual,
             )
             ends[i].record()
         torch.cuda.synchronize()
@@ -98,6 +134,8 @@ def _run_config(
     reps: int,
     v1: bool,
     cap: str | None,
+    use_cueq: bool,
+    residual: bool,
 ) -> dict:
     _set_flags(v1=v1, cap=cap)
 
@@ -115,7 +153,15 @@ def _run_config(
         mask = torch.ones(1, N, N, device="cuda", dtype=dtype)
 
         chunk_size = int(cap) if cap not in (None, "") else None
-        ms, peak = _bench_one(module, x, mask, reps=reps, chunk_size=chunk_size)
+        ms, peak = _bench_one(
+            module,
+            x,
+            mask,
+            reps=reps,
+            chunk_size=chunk_size,
+            use_cueq=use_cueq,
+            residual=residual,
+        )
         U = N * N * c_z * x.element_size()
         return {
             "label": label,
@@ -125,6 +171,7 @@ def _run_config(
             "H": H,
             "dtype": str(dtype),
             "starting": starting,
+            "residual": residual,
             "median_ms": ms,
             "peak_transient_bytes": peak,
             "peak_transient_U": peak / U,
@@ -152,6 +199,16 @@ def main() -> None:
         action="store_true",
         help="Skip the cuEq baseline (useful at large N where it OOMs).",
     )
+    parser.add_argument(
+        "--include-eager",
+        action="store_true",
+        help="Include the non-cuEq eager chunked baseline.",
+    )
+    parser.add_argument(
+        "--include-residual",
+        action="store_true",
+        help="Also measure residual-fused V1 (production PairBlock path).",
+    )
     parser.add_argument("--output-json", type=Path, default=None)
     args = parser.parse_args()
 
@@ -160,28 +217,40 @@ def main() -> None:
 
     dtype = torch.float32 if args.dtype == "fp32" else torch.bfloat16
 
+    # (label, v1, cap, use_cueq, residual)
     configs = [
-        # (label, v1, cap)
-        ("cueq_default", False, None),
-        ("cueq_cap128", False, "128"),
-        ("v1_cap128", True, "128"),
+        ("cueq_default", False, None, True, False),
+        ("cueq_cap128", False, "128", True, False),
+        ("v1_cap128", True, "128", False, False),
     ]
+    if args.include_eager:
+        configs.insert(0, ("eager_cap128", False, "128", False, False))
+    if args.include_residual:
+        configs.append(("v1_cap128_production", True, "128", False, True))
     if args.skip_cueq:
         configs = [c for c in configs if not c[0].startswith("cueq")]
 
     results = []
-    print(f"{'config':<14}{'N':>6}{'ms':>10}{'peak U':>10}{'peak MiB':>12}")
+    print(f"{'config':<16}{'N':>6}{'ms':>10}{'peak U':>10}{'peak MiB':>12}")
     for N in args.n:
-        for label, v1, cap in configs:
+        for label, v1, cap, use_cueq, residual in configs:
             r = _run_config(
                 label,
-                N=N, c_z=args.c_z, c_h=args.c_h, H=args.heads,
-                dtype=dtype, starting=not args.ending, reps=args.reps,
-                v1=v1, cap=cap,
+                N=N,
+                c_z=args.c_z,
+                c_h=args.c_h,
+                H=args.heads,
+                dtype=dtype,
+                starting=not args.ending,
+                reps=args.reps,
+                v1=v1,
+                cap=cap,
+                use_cueq=use_cueq,
+                residual=residual,
             )
             results.append(r)
             print(
-                f"{label:<14}{N:>6}{r['median_ms']:>10.2f}"
+                f"{label:<16}{N:>6}{r['median_ms']:>10.2f}"
                 f"{r['peak_transient_U']:>10.2f}"
                 f"{r['peak_transient_bytes'] / 1024**2:>12.1f}"
             )

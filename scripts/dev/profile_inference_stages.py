@@ -140,16 +140,41 @@ def _wrap_tri_pair_block(prof: FastStageProfiler, pair_block, prefix: str) -> No
     )
 
 
-def install_fast_hooks(model, prof: FastStageProfiler, fine: bool = False) -> None:
+def install_fast_hooks(
+    model,
+    prof: FastStageProfiler,
+    fine: bool = False,
+    track_trunk_substages: bool = False,
+) -> None:
     """Install stage hooks for one profiled forward."""
-    prof.wrap(model, "run_trunk", "TRUNK", track_mem=True)
+    prof.wrap(model, "run_trunk", "TRUNK", track_mem=not track_trunk_substages)
     prof.wrap(model.sample_diffusion, "forward", "DIFFUSION", track_mem=True)
     prof.wrap(model.aux_heads, "forward", "CONFIDENCE", track_mem=True)
 
-    prof.wrap(model.input_embedder, "forward", "trunk.input_embedder")
-    prof.wrap(model.template_embedder, "forward", "trunk.template_embedder")
-    prof.wrap(model.msa_module, "forward", "trunk.msa_module")
-    prof.wrap(model.pairformer_stack, "forward", "trunk.pairformer")
+    prof.wrap(
+        model.input_embedder,
+        "forward",
+        "trunk.input_embedder",
+        track_mem=track_trunk_substages,
+    )
+    prof.wrap(
+        model.template_embedder,
+        "forward",
+        "trunk.template_embedder",
+        track_mem=track_trunk_substages,
+    )
+    prof.wrap(
+        model.msa_module,
+        "forward",
+        "trunk.msa_module",
+        track_mem=track_trunk_substages,
+    )
+    prof.wrap(
+        model.pairformer_stack,
+        "forward",
+        "trunk.pairformer",
+        track_mem=track_trunk_substages,
+    )
 
     template_embedder = model.template_embedder
     prof.wrap(
@@ -356,7 +381,12 @@ def profile(args) -> dict:
     print("Hooked stage forward...")
     batch = get_batch(runner, device)
     profiler = FastStageProfiler()
-    install_fast_hooks(model, profiler, fine=args.fine)
+    install_fast_hooks(
+        model,
+        profiler,
+        fine=args.fine,
+        track_trunk_substages=args.track_trunk_substages,
+    )
     try:
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
@@ -408,9 +438,6 @@ def profile(args) -> dict:
                 "OPENFOLD3_FUSED_TEMPLATE_EMBED", "0"
             ),
             "OPENFOLD3_INPLACE_OPM": os.environ.get("OPENFOLD3_INPLACE_OPM", "0"),
-            "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": os.environ.get(
-                "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN", "1"
-            ),
             "OPENFOLD3_TRI_ATTN_CHUNK_CAP": os.environ.get(
                 "OPENFOLD3_TRI_ATTN_CHUNK_CAP"
             ),
@@ -493,6 +520,14 @@ def main() -> None:
         "--fine",
         action="store_true",
         help="Add diffusion submodule timing hooks; still memory-tracks top-level only",
+    )
+    parser.add_argument(
+        "--track-trunk-substages",
+        action="store_true",
+        help=(
+            "Track input/template/MSA/Pairformer memory individually instead of "
+            "tracking aggregate trunk memory"
+        ),
     )
     parser.add_argument("--output-json", type=Path, default=None)
     args = parser.parse_args()
