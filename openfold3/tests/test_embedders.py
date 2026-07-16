@@ -259,7 +259,8 @@ class TestMSAModuleStack:
             "pair_mask": torch.ones(batch_size, n_token, n_token),
         }
 
-    def test_msa_module_stack_offload(self, msa_inputs):
+    def test_msa_module_stack_offload(self, msa_inputs, monkeypatch):
+        monkeypatch.setenv("OPENFOLD3_INPLACE_OPM", "1")
         m = msa_inputs["m"]
         z = msa_inputs["z"]
         msa_mask = msa_inputs["msa_mask"]
@@ -272,12 +273,19 @@ class TestMSAModuleStack:
         stack.eval()
 
         with torch.no_grad():
-            z_no_offload = stack(m=m, z=z, msa_mask=msa_mask, pair_mask=pair_mask)
+            z_no_offload = stack(
+                m=m,
+                z=z,
+                msa_mask=msa_mask,
+                pair_mask=pair_mask,
+                chunk_size=2,
+            )
             # Clone the input tensors since forward_offload will modify them in-place
             z_offload = stack.forward_offload(
                 input_tensors=[m.clone(), z.clone()],
                 msa_mask=msa_mask,
                 pair_mask=pair_mask,
+                chunk_size=2,
             )
 
         assert torch.allclose(z_no_offload, z_offload)

@@ -407,6 +407,7 @@ def profile(args) -> dict:
             "OPENFOLD3_FUSED_TEMPLATE_EMBED": os.environ.get(
                 "OPENFOLD3_FUSED_TEMPLATE_EMBED", "0"
             ),
+            "OPENFOLD3_INPLACE_OPM": os.environ.get("OPENFOLD3_INPLACE_OPM", "0"),
             "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN": os.environ.get(
                 "OPENFOLD3_RESIDUAL_FUSED_TRI_ATTN", "1"
             ),

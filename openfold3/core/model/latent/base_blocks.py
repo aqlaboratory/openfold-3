@@ -29,7 +29,10 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.msa import MSARowAttentionWithPairBias
-from openfold3.core.model.layers.outer_product_mean import OuterProductMean
+from openfold3.core.model.layers.outer_product_mean import (
+    OuterProductMean,
+    is_inplace_opm_enabled,
+)
 from openfold3.core.model.layers.transition import ReLUTransition, SwiGLUTransition
 from openfold3.core.model.layers.triangular_attention import TriangleAttention
 from openfold3.core.model.layers.triangular_multiplicative_update import (
@@ -179,13 +182,31 @@ class MSABlock(nn.Module, ABC):
         Used in the forward pass of the MSABlock.
         """
         m, z = input_tensors
+        accumulate_into_z = (
+            is_inplace_opm_enabled()
+            and inplace_safe
+            and chunk_size is not None
+            and not self.training
+            and not torch.is_grad_enabled()
+            and z.is_contiguous()
+        )
 
-        if _offload_inference and inplace_safe:
+        if _offload_inference and inplace_safe and not accumulate_into_z:
             # m: GPU, z: CPU
             del m, z
             assert_sole_holder(input_tensors[1], in_container=True)
             input_tensors[1] = input_tensors[1].cpu()
             m, z = input_tensors
+
+        if accumulate_into_z:
+            self.outer_product_mean(
+                m,
+                mask=msa_mask,
+                chunk_size=chunk_size,
+                inplace_safe=True,
+                add_to=z,
+            )
+            return m, z
 
         opm = self.outer_product_mean(
             m, mask=msa_mask, chunk_size=chunk_size, inplace_safe=inplace_safe

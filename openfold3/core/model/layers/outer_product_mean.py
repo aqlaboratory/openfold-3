@@ -15,6 +15,7 @@
 
 """Outer product mean layer."""
 
+import os
 from functools import partial
 
 import torch
@@ -23,6 +24,18 @@ import torch.nn as nn
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.chunk_utils import chunk_layer
+
+_INFERENCE_CHUNK_CAP = 64
+
+
+def is_inplace_opm_enabled() -> bool:
+    """Return whether inference OPM updates should accumulate into z."""
+    return os.environ.get("OPENFOLD3_INPLACE_OPM", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 class OuterProductMean(nn.Module):
@@ -58,7 +71,7 @@ class OuterProductMean(nn.Module):
         self.linear_2 = Linear(c_m, c_hidden, **linear_init_params.linear_2)
         self.linear_out = Linear(c_hidden**2, c_z, **linear_init_params.linear_out)
 
-    def _opm(self, a, b):
+    def _opm(self, a, b, norm=None):
         # [*, N_res, N_res, C, C]
         outer = torch.einsum("...bac,...dae->...bdce", a, b)
 
@@ -67,6 +80,8 @@ class OuterProductMean(nn.Module):
 
         # [*, N_res, N_res, C_z]
         outer = self.linear_out(outer)
+        if norm is not None:
+            outer /= norm
 
         return outer
 
@@ -97,12 +112,45 @@ class OuterProductMean(nn.Module):
 
         return outer
 
+    @torch.jit.ignore
+    def _chunk_add(
+        self,
+        a: torch.Tensor,
+        b: torch.Tensor,
+        norm: torch.Tensor,
+        out: torch.Tensor,
+        chunk_size: int,
+    ) -> torch.Tensor:
+        a_reshape = a.reshape((-1,) + a.shape[-3:])
+        b_reshape = b.reshape((-1,) + b.shape[-3:])
+        norm_reshape = norm.reshape((-1,) + norm.shape[-3:])
+        out_reshape = out.reshape((-1,) + out.shape[-3:])
+
+        for a_prime, b_prime, norm_prime, out_prime in zip(
+            a_reshape,
+            b_reshape,
+            norm_reshape,
+            out_reshape,
+            strict=True,
+        ):
+            chunk_layer(
+                partial(self._opm, b=b_prime),
+                {"a": a_prime, "norm": norm_prime},
+                chunk_size=chunk_size,
+                no_batch_dims=1,
+                _out=out_prime,
+                _add_into_out=True,
+            )
+
+        return out
+
     def _forward(
         self,
         m: torch.Tensor,
         mask: torch.Tensor | None = None,
         chunk_size: int | None = None,
         inplace_safe: bool = False,
+        add_to: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -110,11 +158,30 @@ class OuterProductMean(nn.Module):
                 [*, N_seq, N_res, C_m] MSA embedding
             mask:
                 [*, N_seq, N_res] MSA mask
+            add_to:
+                Optional pair tensor updated directly during chunked inference.
         Returns:
             [*, N_res, N_res, C_z] pair embedding update
         """
         if mask is None:
             mask = m.new_ones(m.shape[:-1])
+
+        if add_to is not None:
+            expected_shape = m.shape[:-3] + (m.shape[-2], m.shape[-2], self.c_z)
+            if (
+                self.training
+                or torch.is_grad_enabled()
+                or not inplace_safe
+                or chunk_size is None
+                or not add_to.is_contiguous()
+                or add_to.shape != expected_shape
+                or add_to.device != m.device
+                or add_to.dtype != m.dtype
+            ):
+                raise ValueError(
+                    "Direct OPM accumulation requires eval-mode, no-grad, chunked "
+                    "inference and a contiguous output matching the pair tensor."
+                )
 
         # [*, N_seq, N_res, C_m]
         ln = self.layer_norm(m)
@@ -131,6 +198,17 @@ class OuterProductMean(nn.Module):
 
         a = a.transpose(-2, -3)
         b = b.transpose(-2, -3)
+
+        if add_to is not None:
+            norm = torch.einsum("...abc,...adc->...bdc", mask, mask)
+            norm = norm + self.eps
+            return self._chunk_add(
+                a,
+                b,
+                norm,
+                add_to,
+                min(chunk_size, _INFERENCE_CHUNK_CAP),
+            )
 
         if chunk_size is not None:
             outer = self._chunk(a, b, chunk_size)
@@ -155,5 +233,6 @@ class OuterProductMean(nn.Module):
         mask: torch.Tensor | None = None,
         chunk_size: int | None = None,
         inplace_safe: bool = False,
+        add_to: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        return self._forward(m, mask, chunk_size, inplace_safe)
+        return self._forward(m, mask, chunk_size, inplace_safe, add_to)

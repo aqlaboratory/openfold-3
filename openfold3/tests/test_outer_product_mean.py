@@ -34,6 +34,41 @@ class TestOuterProductMean(unittest.TestCase):
             m.shape == (consts.batch_size, consts.n_res, consts.n_res, consts.c_z)
         )
 
+    def test_chunked_add_to_matches_returned_update(self):
+        opm = OuterProductMean(consts.c_m, consts.c_z, c_hidden=17).eval()
+        m = torch.rand((consts.batch_size, consts.n_seq, consts.n_res, consts.c_m))
+        mask = torch.randint(0, 2, size=(consts.batch_size, consts.n_seq, consts.n_res))
+        z = torch.rand((consts.batch_size, consts.n_res, consts.n_res, consts.c_z))
+
+        with torch.inference_mode():
+            expected = z + opm(
+                m,
+                mask=mask,
+                chunk_size=2,
+                inplace_safe=True,
+            )
+            actual = z.clone()
+            data_ptr = actual.data_ptr()
+            result = opm(
+                m,
+                mask=mask,
+                chunk_size=2,
+                inplace_safe=True,
+                add_to=actual,
+            )
+
+        self.assertIs(result, actual)
+        self.assertEqual(result.data_ptr(), data_ptr)
+        torch.testing.assert_close(result, expected)
+
+    def test_add_to_rejects_grad_enabled_execution(self):
+        opm = OuterProductMean(consts.c_m, consts.c_z, c_hidden=17).eval()
+        m = torch.rand((consts.batch_size, consts.n_seq, consts.n_res, consts.c_m))
+        z = torch.rand((consts.batch_size, consts.n_res, consts.n_res, consts.c_z))
+
+        with self.assertRaisesRegex(ValueError, "Direct OPM accumulation"):
+            opm(m, chunk_size=2, inplace_safe=True, add_to=z)
+
 
 if __name__ == "__main__":
     unittest.main()
