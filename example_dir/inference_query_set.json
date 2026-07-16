@@ -1,0 +1,120 @@
+{
+    "seeds": [
+        42
+    ],
+    "queries": {
+        "5IU0": {
+            "query_name": "5IU0",
+            "chains": [
+                {
+                    "molecule_type": "PROTEIN",
+                    "chain_ids": [
+                        "A"
+                    ],
+                    "description": null,
+                    "sequence": "FKAGVKEYKLTYYTPEYETKDTDILAAFRVTPQPGVPPEEAGAAVAAESSTGTWTTVWTDGLTSLDRYKGRCYHIEPVPGEETQFIAYVAYPLDLFEEGSVTNMFTSIVGNVFGFKALAALRLEDLRIPPAYTKTFQGPPHGIQVERDKLNKYGRPLLGCTIKPKLGLSAKNYGRAVYECLRGGLDFTKDDENVNSQPFMRWRDRFLFCAEAIYKSQAETGEIKGHYLNATAGTCEEMIKRAVFARELGVPIVMHDYLTGGFTANTSLSHYCRDNGLLLHIHRAMHAVIDRQKNHGMHFRVLAKALRLSGGDHIHAGTVVGKLEGDRESTLGFVDLLRDDYVEKDRSRGIFFTQDWVSLPGVLPVASGGIHVWHMPALTEIFGDDSVLQFGGGTLGHPWGNAPGAVANRVALEACVQARNEGRDLAVEGNEIIREACKWSPELAAACEVWKEITFNFPTIDKL",
+                    "non_canonical_residues": null,
+                    "smiles": null,
+                    "ccd_codes": null,
+                    "paired_msa_file_paths": null,
+                    "main_msa_file_paths": [
+                        "/tmp/of3-of-jgut/colabfold_msas/dummy/7fc4f32640302c4472092eff452ddd9b42a1237447fb89ef83fc686bc2f231f0.npz"
+                    ],
+                    "template_alignment_file_path": "/tmp/of3-of-jgut/template_data/template_cache/7fc4f32640302c4472092eff452ddd9b42a1237447fb89ef83fc686bc2f231f0.npz",
+                    "template_entry_chain_ids": [
+                        "5IU0_A"
+                    ],
+                    "template_cif_paths": [
+                        "../example_dir/5IU0.cif"
+                    ],
+                    "template_cif_chain_ids": [
+                        "A"
+                    ],
+                    "sdf_file_path": null
+                },
+                {
+                    "molecule_type": "PROTEIN",
+                    "chain_ids": [
+                        "B"
+                    ],
+                    "description": null,
+                    "sequence": "FKAGVKEYKLTYYTPEYETKDTDILAAFRVTPQPGVPPEEAGAAVAAESSTGTWTTVWTDGLTSLDRYKGRCYHIEPVPGEETQFIAYVAYPLDLFEEGSVTNMFTSIVGNVFGFKALAALRLEDLRIPPAYTKTFQGPPHGIQVERDKLNKYGRPLLGCTIKPKLGLSAKNYGRAVYECLRGGLDFTKDDENVNSQPFMRWRDRFLFCAEAIYKSQAETGEIKGHYLNATAGTCEEMIKRAVFARELGVPIVMHDYLTGGFTANTSLSHYCRDNGLLLHIHRAMHAVIDRQKNHGMHFRVLAKALRLSGGDHIHAGTVVGKLEGDRESTLGFVDLLRDDYVEKDRSRGIFFTQDWVSLPGVLPVASGGIHVWHMPALTEIFGDDSVLQFGGGTLGHPWGNAPGAVANRVALEACVQARNEGRDLAVEGNEIIREACKWSPELAAACEVWKEITFNFPTIDKL",
+                    "non_canonical_residues": null,
+                    "smiles": null,
+                    "ccd_codes": null,
+                    "paired_msa_file_paths": null,
+                    "main_msa_file_paths": [
+                        "/tmp/of3-of-jgut/colabfold_msas/dummy/7fc4f32640302c4472092eff452ddd9b42a1237447fb89ef83fc686bc2f231f0.npz"
+                    ],
+                    "template_alignment_file_path": "/tmp/of3-of-jgut/template_data/template_cache/7fc4f32640302c4472092eff452ddd9b42a1237447fb89ef83fc686bc2f231f0.npz",
+                    "template_entry_chain_ids": [
+                        "5IU0_A"
+                    ],
+                    "template_cif_paths": [
+                        "../example_dir/5IU0.cif"
+                    ],
+                    "template_cif_chain_ids": [
+                        "B"
+                    ],
+                    "sdf_file_path": null
+                },
+                {
+                    "molecule_type": "PROTEIN",
+                    "chain_ids": [
+                        "C"
+                    ],
+                    "description": null,
+                    "sequence": "MKVWPPIGKKKFETLSYLPDLTDVELAKEVDYLLRNKWIPCVEFELEHGFVYREHGNTPGYYDGRYWTMWKLPLFGCTDSAQVLKEVEECKKEYPGAFIRIIGFDNTRQVQCISFIAYKPPSF",
+                    "non_canonical_residues": null,
+                    "smiles": null,
+                    "ccd_codes": null,
+                    "paired_msa_file_paths": null,
+                    "main_msa_file_paths": [
+                        "/tmp/of3-of-jgut/colabfold_msas/dummy/32121440168f8d3d5b21ed66f32081f1aab45b063ae12a9c5fc6ca7a3cac0284.npz"
+                    ],
+                    "template_alignment_file_path": "/tmp/of3-of-jgut/template_data/template_cache/32121440168f8d3d5b21ed66f32081f1aab45b063ae12a9c5fc6ca7a3cac0284.npz",
+                    "template_entry_chain_ids": [
+                        "5IU0_C"
+                    ],
+                    "template_cif_paths": [
+                        "../example_dir/5IU0.cif"
+                    ],
+                    "template_cif_chain_ids": [
+                        "C"
+                    ],
+                    "sdf_file_path": null
+                },
+                {
+                    "molecule_type": "PROTEIN",
+                    "chain_ids": [
+                        "D"
+                    ],
+                    "description": null,
+                    "sequence": "MKVWPPIGKKKFETLSYLPDLTDVELAKEVDYLLRNKWIPCVEFELEHGFVYREHGNTPGYYDGRYWTMWKLPLFGCTDSAQVLKEVEECKKEYPGAFIRIIGFDNTRQVQCISFIAYKPPSF",
+                    "non_canonical_residues": null,
+                    "smiles": null,
+                    "ccd_codes": null,
+                    "paired_msa_file_paths": null,
+                    "main_msa_file_paths": [
+                        "/tmp/of3-of-jgut/colabfold_msas/dummy/32121440168f8d3d5b21ed66f32081f1aab45b063ae12a9c5fc6ca7a3cac0284.npz"
+                    ],
+                    "template_alignment_file_path": "/tmp/of3-of-jgut/template_data/template_cache/32121440168f8d3d5b21ed66f32081f1aab45b063ae12a9c5fc6ca7a3cac0284.npz",
+                    "template_entry_chain_ids": [
+                        "5IU0_C"
+                    ],
+                    "template_cif_paths": [
+                        "../example_dir/5IU0.cif"
+                    ],
+                    "template_cif_chain_ids": [
+                        "D"
+                    ],
+                    "sdf_file_path": null
+                }
+            ],
+            "use_msas": true,
+            "use_paired_msas": true,
+            "use_main_msas": true,
+            "covalent_bonds": null
+        }
+    }
+}

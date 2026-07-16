@@ -1,0 +1,164 @@
+{
+    "experiment_settings": {
+        "mode": "predict",
+        "output_dir": "../example_dir",
+        "log_dir": null,
+        "seeds": [
+            42
+        ],
+        "num_seeds": null,
+        "use_msa_server": false,
+        "use_templates": true,
+        "skip_existing": false
+    },
+    "pl_trainer_args": {
+        "max_epochs": 1000,
+        "accelerator": "gpu",
+        "precision": "32-true",
+        "num_nodes": 1,
+        "devices": 1,
+        "profiler": null,
+        "log_every_n_steps": 1,
+        "enable_checkpointing": true,
+        "enable_model_summary": false,
+        "accumulate_grad_batches": 1,
+        "gradient_clip_val": null,
+        "gradient_clip_algorithm": null,
+        "deepspeed_config_path": null,
+        "distributed_timeout": "PT30M",
+        "mpi_plugin": false,
+        "use_distributed_sampler": true
+    },
+    "model_update": {
+        "presets": [
+            "predict"
+        ],
+        "custom": {}
+    },
+    "inference_ckpt_path": "/home/jgut/.openfold3/of3-p2-155k.pt",
+    "inference_ckpt_name": "openfold3-p2-155k",
+    "cache_path": "/home/jgut/.openfold3",
+    "data_module_args": {
+        "batch_size": 1,
+        "data_seed": 42,
+        "num_workers": 10,
+        "prefetch_factor": null,
+        "num_workers_validation": 4,
+        "prefetch_factor_validation": null,
+        "multiprocessing_context": "openfold-default",
+        "persistent_workers": false,
+        "epoch_len": 4
+    },
+    "dataset_config_kwargs": {
+        "ccd_file_path": null,
+        "msa": {
+            "max_rows_paired": 8191,
+            "max_rows": 16384,
+            "subsample_with_bands": false,
+            "min_chains_paired_partial": 2,
+            "pairing_mask_keys": [
+                "shared_by_two",
+                "less_than_600"
+            ],
+            "max_seq_per_species": 600,
+            "moltypes": [
+                0,
+                1
+            ],
+            "max_seq_counts": {
+                "uniref90_hits": 10000,
+                "uniprot_hits": 50000,
+                "bfd_uniclust_hits": 10000000,
+                "bfd_uniref_hits": 10000000,
+                "cfdb_uniref30": 10000000,
+                "mgnify_hits": 5000,
+                "rfam_hits": 10000,
+                "rnacentral_hits": 10000,
+                "nt_hits": 10000,
+                "concat_cfdb_uniref100_filtered": 10000000,
+                "mmseqs_colabfold": 16384,
+                "colabfold_main": 16384,
+                "colabfold_paired": 8192
+            },
+            "msas_to_pair": [
+                "uniprot_hits",
+                "uniprot"
+            ],
+            "aln_order": [
+                "uniref90_hits",
+                "bfd_uniclust_hits",
+                "bfd_uniref_hits",
+                "cfdb_uniref30",
+                "mgnify_hits",
+                "rfam_hits",
+                "rnacentral_hits",
+                "nt_hits",
+                "concat_cfdb_uniref100_filtered",
+                "mmseqs_colabfold",
+                "colabfold_main",
+                "dummy"
+            ],
+            "subsample_main": false,
+            "keep_subsampled_order": false,
+            "paired_msa_order": [
+                "colabfold_paired"
+            ]
+        },
+        "template": {
+            "n_templates": 4,
+            "take_top_k": true,
+            "min_n_tokens_per_chain": 5,
+            "distogram": {
+                "min_bin": 3.25,
+                "max_bin": 50.75,
+                "n_bins": 39
+            }
+        }
+    },
+    "output_writer_settings": {
+        "structure_format": "cif",
+        "full_confidence_output_format": "json",
+        "full_confidence_output_dtype": "float16",
+        "write_features": false,
+        "write_latent_outputs": false,
+        "write_full_confidence_scores": true
+    },
+    "msa_computation_settings": {
+        "msa_file_format": "npz",
+        "server_user_agent": "openfold",
+        "server_url": "https://api.colabfold.com/",
+        "save_mappings": true,
+        "msa_output_directory": "/tmp/of3-of-jgut/colabfold_msas",
+        "cleanup_msa_dir": true
+    },
+    "template_preprocessor_settings": {
+        "mode": "predict",
+        "moltypes": [
+            0
+        ],
+        "max_sequences_parse": 200,
+        "max_seq_id": null,
+        "min_align": null,
+        "min_len": null,
+        "max_release_date": null,
+        "min_release_date_diff": null,
+        "max_templates": 20,
+        "cif_direct_min_score": 0.1,
+        "min_f_resolved": 0.1,
+        "fetch_missing_structures": true,
+        "create_precache": false,
+        "preparse_structures": false,
+        "create_logs": false,
+        "n_processes": 1,
+        "chunksize": 1,
+        "preprocess_timeout": 60,
+        "structure_directory": "/tmp/of3-of-jgut/template_data/template_structures",
+        "structure_file_format": "cif",
+        "output_directory": "/tmp/of3-of-jgut/template_data",
+        "precache_directory": null,
+        "structure_array_directory": null,
+        "cache_directory": "/tmp/of3-of-jgut/template_data/template_cache",
+        "log_directory": null,
+        "ccd_file_path": null
+    }
+}

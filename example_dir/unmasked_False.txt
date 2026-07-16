@@ -1,0 +1,40 @@
+multichain_pair_mask: tensor([[[[463],
+          [463],
+          [463],
+          ...,
+          [123],
+          [123],
+          [123]]]], device='cuda:0')
+template_unit_vector_shape: torch.Size([1, 4, 1172, 1172, 3])
+template_unit_vector: tensor([-276.5851,  305.0565,  236.7461,  ...,  100.9193,   22.0256,
+        -127.6636], device='cuda:0')
+multichain_pair_mask: tensor([[[[463],
+          [463],
+          [463],
+          ...,
+          [123],
+          [123],
+          [123]]]], device='cuda:0')
+template_unit_vector_shape: torch.Size([1, 4, 1172, 1172, 3])
+template_unit_vector: tensor([-276.5851,  305.0565,  236.7461,  ...,  100.9193,   22.0256,
+        -127.6636], device='cuda:0')
+multichain_pair_mask: tensor([[[[463],
+          [463],
+          [463],
+          ...,
+          [123],
+          [123],
+          [123]]]], device='cuda:0')
+template_unit_vector_shape: torch.Size([1, 4, 1172, 1172, 3])
+template_unit_vector: tensor([-276.5851,  305.0565,  236.7461,  ...,  100.9193,   22.0256,
+        -127.6636], device='cuda:0')
+multichain_pair_mask: tensor([[[[463],
+          [463],
+          [463],
+          ...,
+          [123],
+          [123],
+          [123]]]], device='cuda:0')
+template_unit_vector_shape: torch.Size([1, 4, 1172, 1172, 3])
+template_unit_vector: tensor([-276.5851,  305.0565,  236.7461,  ...,  100.9193,   22.0256,
+        -127.6636], device='cuda:0')
