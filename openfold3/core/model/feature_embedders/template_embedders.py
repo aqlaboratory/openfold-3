@@ -69,6 +69,7 @@ class TemplatePairEmbedderAllAtom(nn.Module):
 
         self.layer_norm_z = LayerNorm(c_in)
         self.linear_z = Linear(c_in, c_out, **linear_init_params.linear_z)
+        self.unmasked = unmasked
 
     def _embed_feats(self, batch: dict):
         dtype = batch["template_unit_vector"].dtype
@@ -94,6 +95,10 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         )[..., None] * multichain_pair_mask
 
         template_unit_vector = batch["template_unit_vector"] * multichain_pair_mask
+        with open(f"../example_dir/unmasked_{self.unmasked}.txt", "a") as f:
+            f.write(f"multichain_pair_mask: {multichain_pair_mask.sum(-2)}\n")
+            f.write(f"template_unit_vector_shape: {template_unit_vector.shape}\n")
+            f.write(f"template_unit_vector: {template_unit_vector[0][0].sum([1,2])}\n")
         x, y, z = template_unit_vector.unbind(dim=-1)
 
         # [*, N_templ, N_token, N_token, 32]

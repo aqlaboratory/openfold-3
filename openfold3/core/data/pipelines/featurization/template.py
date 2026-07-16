@@ -100,12 +100,6 @@ def featurize_template_structures_of3(
     token_starts = token_starts_with_stop[:-1]
     chain_ids_token = atom_array.chain_id[token_starts]
     _, renum_ids = np.unique(chain_ids_token, return_inverse=True)
-    asym_id = pad_token_dim(
-        {"asym_id": torch.tensor(renum_ids + 1, dtype=torch.int32)}, n_tokens
-    )["asym_id"]
-    multichain_pair_mask = (asym_id[..., None] == asym_id[..., None, :])[
-        ..., None, :, :, None
-    ]
 
     # Create features
     features = {}
@@ -124,7 +118,6 @@ def featurize_template_structures_of3(
     features["template_distogram"] = create_template_distogram(
         template_feature_precursor.pseudo_beta_atom_coords,
         features["template_pseudo_beta_mask"],
-        multichain_pair_mask,
         min_bin,
         max_bin,
         n_bins,
@@ -132,6 +125,5 @@ def featurize_template_structures_of3(
     features["template_unit_vector"] = create_template_unit_vector(
         template_feature_precursor.frame_atom_coords,
         features["template_backbone_frame_mask"],
-        multichain_pair_mask,
     )
     return features
