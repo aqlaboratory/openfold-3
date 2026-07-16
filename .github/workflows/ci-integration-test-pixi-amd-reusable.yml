@@ -101,3 +101,16 @@ jobs:
             -v ~/.openfold3:/root/.openfold3 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
             pytest -x openfold3/tests/ -m slow -vvv
+
+      - name: Reclaim workspace ownership
+        # The container runs as root and writes .pytest_cache / __pycache__ into the
+        # bind-mounted workspace, leaving root-owned files that this persistent
+        # self-hosted runner's user cannot delete on the next checkout. Chown them
+        # back to the runner user. Runs on failure too (pytest -x may exit non-zero).
+        if: always()
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/opt/openfold3 \
+            --entrypoint chown \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
+            -R "$(id -u):$(id -g)" /opt/openfold3
