@@ -105,7 +105,7 @@ def _resolve_ligand_reference_molecule(
                 case MoleculeType.PROTEIN | MoleculeType.DNA | MoleculeType.RNA:
                     if chain.sequence is None:
                         raise ValueError(
-                            f"Chain {chain.chain_ids} has no sequence but is "
+                            f"Chain {chain_id} has no sequence but is "
                             "required to resolve pocket sampling reference molecules"
                         )
                     ref_mol_idx += len(chain.sequence)
