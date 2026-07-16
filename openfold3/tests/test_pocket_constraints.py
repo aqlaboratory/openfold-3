@@ -227,6 +227,73 @@ def test_create_pocket_sampling_features_generates_conformers_from_reference_mol
     )
 
 
+@pytest.mark.parametrize(
+    "chains",
+    [
+        [
+            {
+                "molecule_type": "protein",
+                "chain_ids": "A",
+                "sequence": "AC",
+            },
+            {
+                "molecule_type": "ligand",
+                "chain_ids": "X",
+                "smiles": "N#N",
+            },
+            {
+                "molecule_type": "ligand",
+                "chain_ids": "L",
+                "smiles": "CC(=O)O",
+            },
+        ],
+        [
+            {
+                "molecule_type": "ligand",
+                "chain_ids": "L",
+                "smiles": "CC(=O)O",
+            },
+            {
+                "molecule_type": "protein",
+                "chain_ids": "A",
+                "sequence": "AC",
+            },
+            {
+                "molecule_type": "ligand",
+                "chain_ids": "X",
+                "smiles": "N#N",
+            },
+        ],
+    ],
+)
+def test_create_pocket_sampling_features_resolves_ligand_reference_by_query_order(
+    monkeypatch, chains
+):
+    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "1")
+    query = Query.model_validate(
+        {
+            "chains": chains,
+            "pocket_constraint": {
+                "ligand_chain_id": "L",
+                "pocket_residues": [["A", 2]],
+            },
+        }
+    )
+    structure = structure_with_ref_mols_from_query(query)
+    ligand_atom_count = int((structure.atom_array.chain_id == "L").sum())
+
+    features = create_pocket_sampling_features(
+        query=query,
+        atom_array=structure.atom_array,
+        processed_reference_molecules=structure.processed_reference_mols,
+    )
+
+    assert features["pocket_sampling_conformer_rels"].shape[1:] == (
+        ligand_atom_count,
+        3,
+    )
+
+
 def test_create_pocket_sampling_features_generates_conformers_from_ccd_reference_molecule(
     monkeypatch,
 ):
