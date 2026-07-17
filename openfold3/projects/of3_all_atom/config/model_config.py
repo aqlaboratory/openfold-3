@@ -115,7 +115,7 @@ model_config = mlc.ConfigDict(
                     "tune_chunk_size": tune_chunk_size,
                     "use_deepspeed_evo_attention": False,
                     "use_cueq_triangle_kernels": False,
-                    "use_triton_triangle_kernels": _is_rocm,
+                    "use_triton_triangle_kernels": True,
                     "use_lma": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,

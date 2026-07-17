@@ -22,7 +22,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
     remove_crystallization_aids,
     return_on_empty_atom_array,
 )
-from openfold3.tests.custom_assert_utils import assert_atomarray_equal
+from openfold3.tests.utils.custom_assert_utils import assert_atomarray_equal
 
 
 @pytest.fixture
