@@ -302,36 +302,28 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   torch = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
   triton-rocm = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
 
-# ROCm via AMD's TheRock nightly multi-arch index. This is the only path with
-# gfx1151 (Strix Halo / Ryzen AI Max+ 395) support - release-ready per TheRock's
-# SUPPORTED_GPUS.md, unlike the official rocm7.2 wheels used by openfold3-rocm7.
-# Unified multi-arch index + a [device-*] pip extra picks the GPU; the triton
-# package is named `triton` here (not `triton-rocm`), and torch bundles its own
-# ROCm libs (rocm-sdk-*), so no system /opt/rocm is required.
-# N.B. these are nightly (prerelease) wheels pinned in pixi.lock; keep
-# openfold3-rocm7 as the stable fallback. Retarget by changing device-gfx1151.
+# AMD GPU support via TheRock nightly wheels. Adds gfx1151 (Strix Halo) support,
+# which the official rocm7.2 wheels (openfold3-rocm7) lack. Nightly/prerelease,
+# pinned in pixi.lock; keep openfold3-rocm7 as the stable fallback.
 [feature.pytorch-pypi-therock]
 
   platforms = ["linux-64"]
 
   [feature.pytorch-pypi-therock.pypi-options]
-  # TheRock only publishes nightly (prerelease) wheels, including transitive
-  # rocm-sdk-* deps, so a global allow is required (per-dep specs don't cover them).
+  # Nightly wheels (incl. transitive rocm-sdk-*) need a global prerelease allow.
   prerelease-mode = "allow"
-  # torch pins exact rocm[libraries]==<nightly> and amd-torch-device-gfx1151, which
-  # live on the same index. Make it an extra index so those transitive deps resolve.
+  # torch's exact rocm[libraries]/device pins live here too, so make it an index.
   extra-index-urls = ["https://rocm.nightlies.amd.com/whl-multi-arch/"]
   index-strategy = "unsafe-best-match"
 
   [feature.pytorch-pypi-therock.dependencies]
-  # cp314 has no TheRock wheels; cap at 3.13.
-  python = ">=3.12,<3.14"
+  python = ">=3.12,<3.14"  # no cp314 wheels yet
   setuptools = "<82"
-  # Triton JIT-compiles its launcher stub with a host C compiler at runtime.
-  c-compiler = "*"
+  c-compiler = "*"  # Triton JIT needs a host compiler at runtime
   cxx-compiler = "*"
 
   [feature.pytorch-pypi-therock.pypi-dependencies]
+  # Change device-gfx1151 to retarget another AMD GPU.
   torch = { version = "*", extras = ["device-gfx1151"] }
   triton = "*"
 
