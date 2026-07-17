@@ -113,6 +113,7 @@ if _TRITON_AVAILABLE:
         pid_n = tl.program_id(1)
 
         offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+        offs_m_64 = offs_m.to(tl.int64)
         offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
         offs_k = tl.arange(0, BLOCK_K)
 
@@ -121,7 +122,7 @@ if _TRITON_AVAILABLE:
         k_mask = offs_k < K
 
         # Load X tile: [BLOCK_M, BLOCK_K], cast to fp32 in registers.
-        x_ptrs = X_ptr + offs_m[:, None] * stride_x_m + offs_k[None, :] * stride_x_k
+        x_ptrs = X_ptr + offs_m_64[:, None] * stride_x_m + offs_k[None, :] * stride_x_k
         x = tl.load(
             x_ptrs,
             mask=m_mask[:, None] & k_mask[None, :],
@@ -170,7 +171,7 @@ if _TRITON_AVAILABLE:
             acc = acc + bias[None, :]
 
         # Cast to output dtype (matches X dtype).
-        y_ptrs = Y_ptr + offs_m[:, None] * stride_y_m + offs_n[None, :] * stride_y_n
+        y_ptrs = Y_ptr + offs_m_64[:, None] * stride_y_m + offs_n[None, :] * stride_y_n
         tl.store(
             y_ptrs,
             acc.to(Y_ptr.dtype.element_ty),
@@ -236,6 +237,7 @@ if _TRITON_AVAILABLE:
         pid_n = tl.program_id(1)
 
         offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+        offs_m_64 = offs_m.to(tl.int64)
         offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
         offs_k = tl.arange(0, BLOCK_K)
 
@@ -246,7 +248,7 @@ if _TRITON_AVAILABLE:
 
         offs_i = offs_m // J_dim
         offs_j = offs_m - offs_i * J_dim
-        x_base = offs_i * stride_x_i + offs_j * stride_x_j
+        x_base = offs_i.to(tl.int64) * stride_x_i + offs_j.to(tl.int64) * stride_x_j
         x = tl.load(
             X_ptr + x_base[:, None] + offs_k[None, :] * stride_x_k,
             mask=m_mask[:, None] & k_mask[None, :],
@@ -281,7 +283,7 @@ if _TRITON_AVAILABLE:
             acc = acc + bias[None, :]
 
         tl.store(
-            Y_ptr + offs_m[:, None] * stride_y_m + offs_n[None, :] * stride_y_n,
+            Y_ptr + offs_m_64[:, None] * stride_y_m + offs_n[None, :] * stride_y_n,
             acc.to(Y_ptr.dtype.element_ty),
             mask=m_mask[:, None] & n_mask[None, :],
         )

@@ -132,6 +132,7 @@ if _TRITON_AVAILABLE:
         """One program handles BLOCK_M rows; loops over hidden in BLOCK_H chunks."""
         pid_m = tl.program_id(0)
         offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+        offs_m_64 = offs_m.to(tl.int64)
         offs_k = tl.arange(0, BLOCK_K)
         offs_n = tl.arange(0, BLOCK_N)
         m_mask = offs_m < M
@@ -139,7 +140,7 @@ if _TRITON_AVAILABLE:
         n_mask = offs_n < C_OUT
 
         # --- LayerNorm of x[BLOCK_M, K] in fp32 registers (one pass). ---
-        x_ptrs = X_ptr + offs_m[:, None] * stride_x_m + offs_k[None, :] * stride_x_k
+        x_ptrs = X_ptr + offs_m_64[:, None] * stride_x_m + offs_k[None, :] * stride_x_k
         x = tl.load(x_ptrs, mask=m_mask[:, None] & k_mask[None, :], other=0.0).to(
             tl.float32
         )
@@ -207,7 +208,7 @@ if _TRITON_AVAILABLE:
         if HAS_RESIDUAL:
             res_ptrs = (
                 Res_ptr
-                + offs_m[:, None] * stride_res_m
+                + offs_m_64[:, None] * stride_res_m
                 + offs_n[None, :] * stride_res_n
             )
             res = tl.load(
@@ -215,7 +216,7 @@ if _TRITON_AVAILABLE:
             ).to(tl.float32)
             acc_out = acc_out + res
 
-        y_ptrs = Y_ptr + offs_m[:, None] * stride_y_m + offs_n[None, :] * stride_y_n
+        y_ptrs = Y_ptr + offs_m_64[:, None] * stride_y_m + offs_n[None, :] * stride_y_n
         tl.store(
             y_ptrs,
             acc_out.to(Y_ptr.dtype.element_ty),

@@ -43,6 +43,10 @@ import torch
 from openfold3.core.kernels.triton.flash_tri_attn import (
     _flash_tri_attn_kernel,
 )
+from openfold3.core.kernels.triton.fused_relpos_embed import (
+    _fused_relpos_embed_kernel,
+    fused_relpos_embed_add_,
+)
 from openfold3.core.kernels.triton.fused_swiglu_transition import (
     _fused_swiglu_transition_fwd_kernel,
 )
@@ -99,6 +103,7 @@ sw_beta = torch.zeros(128, device="cuda")
 w_a = torch.randn(512, 128, device="cuda") * 0.02
 w_b = torch.randn(512, 128, device="cuda") * 0.02
 w_out = torch.randn(128, 512, device="cuda") * 0.02
+relpos_w = torch.randn(130, 128, device="cuda")
 template_w_dgram = torch.randn(64, 39, device="cuda")
 template_w_scalar = torch.randn(64, 5, device="cuda")
 
@@ -109,6 +114,12 @@ for n in lengths:
 
     assert tri_attn(z, mask=pair_mask, chunk_size=32).shape == z.shape
     clear(_flash_tri_attn_kernel)
+
+    relpos_idx = torch.zeros(1, n, n, dtype=torch.int64, device="cuda")
+    fused_relpos_embed_add_(
+        z, relpos_w, relpos_idx, relpos_idx, relpos_idx, pair_mask, 65
+    )
+    clear(_fused_relpos_embed_kernel)
 
     y = fused_swiglu_transition(x2d, sw_gamma, sw_beta, w_a, w_b, w_out)
     assert y.shape == x2d.shape
@@ -137,6 +148,7 @@ for n in lengths:
 
 counts = {
     "_flash_tri_attn_kernel": count(cache_dir, "_flash_tri_attn_kernel"),
+    "_fused_relpos_embed_kernel": count(cache_dir, "_fused_relpos_embed_kernel"),
     "_fused_swiglu_transition_fwd_kernel": count(
         cache_dir, "_fused_swiglu_transition_fwd_kernel"
     ),
@@ -150,6 +162,7 @@ counts = {
 print(json.dumps({"counts": counts}))
 assert counts == {
     "_flash_tri_attn_kernel": 1,
+    "_fused_relpos_embed_kernel": 1,
     "_fused_swiglu_transition_fwd_kernel": 1,
     "_template_coordinate_projection_kernel": 1,
     "_gated_dual_gemm_kernel": 1,

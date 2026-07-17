@@ -39,16 +39,12 @@ def _fused_relpos_embed_kernel(
     IDX2_ptr,
     IDX3_ptr,
     SAME_ENTITY_ptr,
-    N: tl.constexpr,
     C: tl.constexpr,
     SAME_ENTITY_OFFSET: tl.constexpr,
     BLOCK_C: tl.constexpr,
 ):
-    pid = tl.program_id(0)
-    i = pid // N
-    j = pid % N
-
-    ij_offset = i * N + j
+    # Keep flattened addressing valid when N²*C exceeds signed int32.
+    ij_offset = tl.program_id(0).to(tl.int64)
 
     idx1 = tl.load(IDX1_ptr + ij_offset)
     idx2 = tl.load(IDX2_ptr + ij_offset)
@@ -92,7 +88,6 @@ def fused_relpos_embed_add_(
         same_entity_offset: row index in w for the same-entity embedding.
     """
     assert z.is_contiguous(), "z must be contiguous"
-    N = z.shape[-2]
     C = z.shape[-1]
     M = z.numel() // C  # total number of (i, j) positions
 
@@ -112,7 +107,6 @@ def fused_relpos_embed_add_(
         idx2_flat,
         idx3_flat,
         se_flat,
-        N=N,
         C=C,
         SAME_ENTITY_OFFSET=same_entity_offset,
         BLOCK_C=BLOCK_C,
