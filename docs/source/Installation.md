@@ -109,6 +109,8 @@ For AMD system installation: After installation, verify your ROCm environment is
 validate-openfold3-rocm
 ```
 
+> **AMD APUs / Strix Halo (`gfx1151`)**: the `rocm7.2` wheels above don't cover APUs. Use the `openfold3-therock` pixi environment instead (AMD TheRock nightly). See the [AMD ROCm inference docs](inference.md).
+
 (installation-environment-variables)=
 ### Environment variables
 

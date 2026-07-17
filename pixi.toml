@@ -23,6 +23,7 @@
 #                                                     keeping the environments as sane and consistent as possible
 #                                                     (useful if requiring deps not yet in conda-forge)
 #   - openfold3-rocm7: environment for AMD GPU support with ROCm 7.x (linux-64 only at the moment)
+#   - openfold3-therock: AMD GPU support via TheRock nightly wheels, adds APU/Strix Halo (gfx1151) support (linux-64 only)
 #   - openfold3-msa: environment for OpenFold3 style MSA generation (with snakemake, hmmer, and hhsuite)
 #
 # The current environments pass all inference tests available in each platform.
@@ -161,6 +162,14 @@ openfold3-rocm7 = { no-default-feature = true, features = [
     "openfold3-editable",
     "tests",
 ] }
+openfold3-therock = { no-default-feature = true, features = [
+    "python",
+    "openfold3-cpu",
+    "pytorch-pypi-therock",
+    "not-in-pypi",
+    "openfold3-editable",
+    "tests",
+] }
 openfold3-msa = { no-default-feature = true, features = [
     "openfold3-msa",
 ] }
@@ -292,6 +301,39 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   [feature.pytorch-pypi-rocm7.pypi-dependencies]
   torch = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
   triton-rocm = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
+
+# ROCm via AMD's TheRock nightly multi-arch index. This is the only path with
+# gfx1151 (Strix Halo / Ryzen AI Max+ 395) support - release-ready per TheRock's
+# SUPPORTED_GPUS.md, unlike the official rocm7.2 wheels used by openfold3-rocm7.
+# Unified multi-arch index + a [device-*] pip extra picks the GPU; the triton
+# package is named `triton` here (not `triton-rocm`), and torch bundles its own
+# ROCm libs (rocm-sdk-*), so no system /opt/rocm is required.
+# N.B. these are nightly (prerelease) wheels pinned in pixi.lock; keep
+# openfold3-rocm7 as the stable fallback. Retarget by changing device-gfx1151.
+[feature.pytorch-pypi-therock]
+
+  platforms = ["linux-64"]
+
+  [feature.pytorch-pypi-therock.pypi-options]
+  # TheRock only publishes nightly (prerelease) wheels, including transitive
+  # rocm-sdk-* deps, so a global allow is required (per-dep specs don't cover them).
+  prerelease-mode = "allow"
+  # torch pins exact rocm[libraries]==<nightly> and amd-torch-device-gfx1151, which
+  # live on the same index. Make it an extra index so those transitive deps resolve.
+  extra-index-urls = ["https://rocm.nightlies.amd.com/whl-multi-arch/"]
+  index-strategy = "unsafe-best-match"
+
+  [feature.pytorch-pypi-therock.dependencies]
+  # cp314 has no TheRock wheels; cap at 3.13.
+  python = ">=3.12,<3.14"
+  setuptools = "<82"
+  # Triton JIT-compiles its launcher stub with a host C compiler at runtime.
+  c-compiler = "*"
+  cxx-compiler = "*"
+
+  [feature.pytorch-pypi-therock.pypi-dependencies]
+  torch = { version = "*", extras = ["device-gfx1151"] }
+  triton = "*"
 
 [feature.cuda12]
 

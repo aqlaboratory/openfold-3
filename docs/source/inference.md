@@ -327,6 +327,22 @@ run_openfold predict \
 
 > **Note on first-run compilation**: Triton JIT-compiles kernels on first use and caches them to `~/.triton/cache`. The compilation is a one-time cost per unique sequence length per machine; subsequent runs at the same length incur no overhead.
 
+##### AMD APUs / Strix Halo (gfx1151) via TheRock nightly
+
+The default `openfold3-rocm7` environment uses the official `rocm7.2` PyTorch wheels, which do **not** cover AMD APUs such as Strix Halo (Ryzen AI Max+ 395, Radeon 8060S, `gfx1151`). For those, use the `openfold3-therock` pixi environment, which pulls PyTorch + Triton from AMD's [TheRock](https://github.com/ROCm/TheRock) nightly multi-arch index (`gfx1151` is release-ready per TheRock's `SUPPORTED_GPUS.md`).
+
+```bash
+pixi run -e openfold3-therock validate-openfold3-rocm
+```
+
+All Triton settings above apply unchanged; TheRock's Triton JITs to HIP for `gfx1151`.
+
+> **Version note**: TheRock version strings like `rocm7.13.0a...` / `rocm7.15.0a...` are **nightly build snapshots**, not released ROCm versions (the official line is 7.0 → 7.1 → 7.2). A higher number just means a more recent nightly, not a more qualified release. The exact build is pinned in `pixi.lock` for reproducibility; `pixi update` will move it. Keep `openfold3-rocm7` as the stable fallback.
+>
+> **Host requirement**: only the `amdgpu` kernel driver (`/dev/kfd`, `/dev/dri`) is needed. The ROCm userspace ships inside the torch wheel — no system `/opt/rocm` install required.
+
+For a different AMD GPU, change the `device-gfx1151` extra in the `pytorch-pypi-therock` feature (`pixi.toml`) to your target from TheRock's device table (e.g. `device-gfx1201`).
+
 ---
 
 (inference-cif-direct-templates)=
