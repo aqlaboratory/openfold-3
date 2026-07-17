@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Download only the S3 files needed for a subset of PDB training data.
 
+Reference molecules are downloaded individually for only the CCD codes
+referenced in the cache (plus the 20 standard amino acids), rather than
+syncing the full reference_mols directory (~68k files).
+
 Usage:
     python download_subset.py                  # download missing files
     python download_subset.py --verify         # check all files exist (no download)
-    python download_subset.py --sync-ref-mols  # also sync full reference_mols dir
 """
 
 import argparse
 import json
-import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -22,6 +24,11 @@ BUCKET = "openfold3-data"
 S3_PREFIX = "pdb_training_set"
 ROOT_DIR = Path(__file__).parent
 LOCAL_ROOT = ROOT_DIR / "pdb_training_set"
+
+AMINO_ACID_CCD_CODES = {
+    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
+    "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
+}
 
 
 CACHE_FILES = {
@@ -115,6 +122,19 @@ def build_manifest(ids: dict, template_cache_subdir: str) -> list[tuple[str, Pat
         )
         manifest.append((s3_key, local))
 
+    # Reference mol SDFs: CCD codes from training examples + all 20 amino acids
+    ref_mol_ids = ids["reference_mol_ids"] | AMINO_ACID_CCD_CODES
+    for ccd in sorted(ref_mol_ids):
+        s3_key = f"{S3_PREFIX}/preprocessed_pdb_data/standard/reference_mols/{ccd}.sdf"
+        local = (
+            LOCAL_ROOT
+            / "preprocessed_pdb_data"
+            / "standard"
+            / "reference_mols"
+            / f"{ccd}.sdf"
+        )
+        manifest.append((s3_key, local))
+
     return manifest
 
 
@@ -139,33 +159,10 @@ def verify_manifest(manifest: list[tuple[str, Path]]) -> list[str]:
     return missing
 
 
-def sync_reference_mols():
-    """Sync full reference_mols directory from S3."""
-    local_dir = LOCAL_ROOT / "preprocessed_pdb_data" / "standard" / "reference_mols"
-    local_dir.mkdir(parents=True, exist_ok=True)
-    print(f"\nSyncing reference_mols to {local_dir} ...")
-    subprocess.run(
-        [
-            "aws",
-            "s3",
-            "sync",
-            f"s3://{BUCKET}/{S3_PREFIX}/preprocessed_pdb_data/standard/reference_mols/",
-            str(local_dir) + "/",
-            "--no-sign-request",
-        ],
-        check=True,
-    )
-    n_files = sum(1 for _ in local_dir.iterdir())
-    print(f"reference_mols synced: {n_files} files")
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--verify", action="store_true", help="Only verify, don't download"
-    )
-    parser.add_argument(
-        "--sync-ref-mols", action="store_true", help="Also sync full reference_mols dir"
     )
     parser.add_argument(
         "--workers", type=int, default=8, help="Parallel download threads"
@@ -187,11 +184,15 @@ def main():
         ids = extract_ids_from_cache(cache_path)
         manifest = build_manifest(ids, template_cache_subdir)
 
+        n_ref_mols = len(ids["reference_mol_ids"] | AMINO_ACID_CCD_CODES)
         print(f"\n{split} ({cache_path.name}):")
         print(f"  PDB IDs: {len(ids['pdb_ids'])}")
         print(f"  Alignment rep IDs: {len(ids['alignment_rep_ids'])}")
         print(f"  Template IDs: {len(ids['template_ids'])}")
-        print(f"  Reference mol IDs: {len(ids['reference_mol_ids'])}")
+        print(
+            f"  Reference mol IDs: {len(ids['reference_mol_ids'])} from cache "
+            f"+ 20 amino acids = {n_ref_mols} total"
+        )
         print(f"  Files to download: {len(manifest)}")
 
         all_manifest.extend(manifest)
@@ -250,9 +251,6 @@ def main():
         f"\nDone: {counts['downloaded']} downloaded, "
         f"{counts['skipped']} skipped, {counts['failed']} failed"
     )
-
-    if args.sync_ref_mols:
-        sync_reference_mols()
 
 
 if __name__ == "__main__":
