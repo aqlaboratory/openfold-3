@@ -1,0 +1,3 @@
+datasets/pdb_training_set
+datasets/*json
+datasets/train_pdb_subset.yaml
