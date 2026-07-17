@@ -147,6 +147,10 @@ def process_target_structure_of3(
     # identify which atom names ended up in the crop.
     atom_array = assign_uniquified_atom_names(atom_array)
 
+    # assign is_cyclic values if none assigned
+    if "is_cyclic" not in atom_array.get_annotation_categories():
+        atom_array.set_annotation("is_cyclic", np.zeros(len(atom_array), dtype=bool))
+
     return ProcessedTargetStructure(
         atom_array_gt=atom_array,
         crop_strategy=crop_strategy,
