@@ -42,11 +42,20 @@ from openfold3.tests.data_utils import (
     random_attention_inputs,
 )
 
-# Needed to do backward for cuEq kernels with FP32
-torch.backends.cuda.matmul.allow_tf32 = True
 pytestmark = [pytest.mark.slow]
 
 torch.backends.cuda.preferred_blas_library("cublas")
+
+
+@pytest.fixture(autouse=True)
+def _enable_tf32_for_fp32_cueq_backward():
+    """Enable TF32 without leaking state to tests in other modules."""
+    previous = torch.backends.cuda.matmul.allow_tf32
+    torch.backends.cuda.matmul.allow_tf32 = True
+    try:
+        yield
+    finally:
+        torch.backends.cuda.matmul.allow_tf32 = previous
 
 
 @compare_utils.skip_unless_cuda_available()
@@ -803,11 +812,20 @@ class TestKernels:
 
         block = (
             DiffusionTransformer(
-                c_a=c_a, c_s=c_s, c_z=c_z, c_hidden=48, no_heads=16,
-                no_blocks=2, n_transition=2, use_ada_layer_norm=True,
-                n_query=None, n_key=None, inf=1e9,
+                c_a=c_a,
+                c_s=c_s,
+                c_z=c_z,
+                c_hidden=48,
+                no_heads=16,
+                no_blocks=2,
+                n_transition=2,
+                use_ada_layer_norm=True,
+                n_query=None,
+                n_key=None,
+                inf=1e9,
             )
-            .eval().to(device="cuda", dtype=torch.float32)
+            .eval()
+            .to(device="cuda", dtype=torch.float32)
         )
         self._initialize_model_weights(block)
 
@@ -826,13 +844,20 @@ class TestKernels:
                     out_uncached = block(a=a, s=s, z=z, mask=mask).clone()
                     cache = block.prepare_pair_bias_cache(z)
                     out_cached = block(
-                        a=a, s=s, z=z, mask=mask, pair_bias_cache=cache,
+                        a=a,
+                        s=s,
+                        z=z,
+                        mask=mask,
+                        pair_bias_cache=cache,
                     ).clone()
                 # Both paths consume the same input and call the same kernel
                 # math; the cache only changes WHEN prep_static_pair_bias is
                 # called, not its output. Outputs must be bitwise equal.
                 torch.testing.assert_close(
-                    out_uncached, out_cached, rtol=0, atol=0,
+                    out_uncached,
+                    out_cached,
+                    rtol=0,
+                    atol=0,
                     msg=f"pair-bias cache != uncached (fused_attn={fused_attn})",
                 )
         finally:
@@ -1110,12 +1135,8 @@ class TestKernels:
             "token_mask": torch.ones((batch_size, n_token)),
             "asym_id": torch.ones((batch_size, n_token)),
             "template_restype": torch.ones((batch_size, n_templ, n_token, 32)),
-            "template_pseudo_beta_mask": torch.zeros(
-                (batch_size, n_templ, n_token)
-            ),
-            "template_backbone_frame_mask": torch.zeros(
-                (batch_size, n_templ, n_token)
-            ),
+            "template_pseudo_beta_mask": torch.zeros((batch_size, n_templ, n_token)),
+            "template_backbone_frame_mask": torch.zeros((batch_size, n_templ, n_token)),
             "template_distogram": torch.ones(
                 (batch_size, n_templ, n_token, n_token, 39)
             ),
@@ -1139,7 +1160,12 @@ class TestKernels:
                 chunk_size=4,
             )
 
-        assert out.shape == (batch_size, n_token, n_token, of3_config.architecture.template.c_z)
+        assert out.shape == (
+            batch_size,
+            n_token,
+            n_token,
+            of3_config.architecture.template.c_z,
+        )
         assert out.abs().max() > 0
 
     @compare_utils.skip_unless_cuda_available()
@@ -1155,9 +1181,7 @@ class TestKernels:
         c_in = of3_config.architecture.template.template_pair_embedder.c_in
 
         embedder = (
-            TemplateEmbedderAllAtom(of3_config.architecture.template)
-            .eval()
-            .cuda()
+            TemplateEmbedderAllAtom(of3_config.architecture.template).eval().cuda()
         )
         self._initialize_model_weights(embedder)
 
