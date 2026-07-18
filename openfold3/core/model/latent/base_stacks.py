@@ -28,7 +28,11 @@ import torch
 from torch import nn
 
 from openfold3.core.utils.checkpointing import checkpoint_blocks
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.chunk_utils import (
+    ChunkSizeTuner,
+    apply_transition_chunk_cap,
+    apply_triangle_attn_chunk_cap,
+)
 
 
 # TODO: Rename to CheckpointStack and generalize any kind of block (i.e. remove
@@ -141,6 +145,10 @@ class MSAStack(nn.Module, ABC):
             attn_chunk = (
                 tuned_chunk_size if use_flash_kernels else max(1, tuned_chunk_size // 4)
             )
+            attn_chunk = apply_triangle_attn_chunk_cap(
+                attn_chunk, n_tokens=z.shape[-3]
+            )
+            tuned_chunk_size = apply_transition_chunk_cap(tuned_chunk_size)
             blocks = [
                 partial(
                     b,
