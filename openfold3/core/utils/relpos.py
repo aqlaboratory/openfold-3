@@ -106,7 +106,10 @@ def apply_cyclic_offsets(
 
 
 def relpos_complex(
-    batch: dict, max_relative_idx: int, max_relative_chain: int
+    batch: dict,
+    max_relative_idx: int,
+    max_relative_chain: int,
+    row_slice: slice | None = None,
 ) -> torch.Tensor:
     """
     Args:
@@ -116,18 +119,38 @@ def relpos_complex(
             Maximum relative position and token indices clipped
         max_relative_chain:
             Maximum relative chain indices clipped
+        row_slice:
+            Optional slice over the first spatial dimension (rows of the pair
+            tensor). When provided, returns ``[*, chunk, N_token, C]`` instead
+            of ``[*, N_token, N_token, C]``. Used by the chunked diffusion
+            conditioning path to avoid materializing the full ``[N, N, 139]``
+            relpos tensor.
 
     Returns:
-        [*, N_token, N_token, C_z] Relative position embedding
+        [*, N_token, N_token, C_z] Relative position embedding (or
+        [*, chunk, N_token, C_z] when row_slice is given)
     """
     res_idx = batch["residue_index"]
     asym_id = batch["asym_id"]
     cyclic_mask = batch.get("cyclic_mask")
     entity_id = batch["entity_id"]
-    same_chain = asym_id[..., None] == asym_id[..., None, :]
 
-    same_res = res_idx[..., None] == res_idx[..., None, :]
-    same_entity = entity_id[..., None] == entity_id[..., None, :]
+    if row_slice is not None:
+        row_asym = asym_id[..., row_slice, None]
+        col_asym = asym_id[..., None, :]
+        same_chain = row_asym == col_asym
+
+        row_res = res_idx[..., row_slice, None]
+        col_res = res_idx[..., None, :]
+        same_res = row_res == col_res
+
+        row_entity = entity_id[..., row_slice, None]
+        col_entity = entity_id[..., None, :]
+        same_entity = row_entity == col_entity
+    else:
+        same_chain = asym_id[..., None] == asym_id[..., None, :]
+        same_res = res_idx[..., None] == res_idx[..., None, :]
+        same_entity = entity_id[..., None] == entity_id[..., None, :]
 
     def relpos(
         pos: torch.Tensor,
@@ -153,10 +176,13 @@ def relpos_complex(
             rel_pos:
                 [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
         """
-        offset = pos[..., None] - pos[..., None, :]
-        offset = apply_cyclic_offsets(
-            offset=offset, pos=pos, cyclic_mask=cyclic_mask, asym_id=asym_id
-        )
+        if row_slice is not None:
+            offset = pos[..., row_slice, None] - pos[..., None, :]
+        else:
+            offset = pos[..., None] - pos[..., None, :]
+            offset = apply_cyclic_offsets(
+                offset=offset, pos=pos, cyclic_mask=cyclic_mask, asym_id=asym_id
+            )
 
         clipped_offset = torch.clamp(offset + rel_clip_idx, min=0, max=2 * rel_clip_idx)
         final_offset = torch.where(
