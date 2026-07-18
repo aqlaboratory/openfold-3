@@ -14,6 +14,7 @@
 
 import logging
 import math
+import os
 from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
@@ -24,6 +25,57 @@ from openfold3.core.utils.tensor_utils import (
     tensor_tree_map,
     tree_map,
 )
+
+
+def _positive_env_int(name: str) -> int | None:
+    """Parse a positive int env var; unset/invalid -> None."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    try:
+        val = int(raw)
+    except ValueError:
+        return None
+    return val if val > 0 else None
+
+
+def triangle_attn_chunk_cap() -> int | None:
+    """Optional row cap for triangle attention (``OPENFOLD3_TRI_ATTN_CHUNK_CAP``)."""
+    return _positive_env_int("OPENFOLD3_TRI_ATTN_CHUNK_CAP")
+
+
+def apply_triangle_attn_chunk_cap(
+    attn_chunk: int,
+    n_tokens: int | None = None,
+) -> int:
+    """Cap triangle-attention rows; no-op when ``n_tokens <= cap``."""
+    cap = triangle_attn_chunk_cap()
+    if cap is None:
+        return attn_chunk
+    if n_tokens is not None and n_tokens <= cap:
+        return attn_chunk
+    return min(attn_chunk, cap)
+
+
+def trimul_chunk_cap() -> int | None:
+    """Optional row chunk for trimul (``OPENFOLD3_TRIMUL_CHUNK_CAP``)."""
+    return _positive_env_int("OPENFOLD3_TRIMUL_CHUNK_CAP")
+
+
+def use_chunked_trimul(inplace_safe: bool) -> bool:
+    """Use eager chunked trimul instead of cuEq when a cap is set."""
+    return inplace_safe and trimul_chunk_cap() is not None
+
+
+def transition_chunk_cap() -> int | None:
+    """Optional cap for transition/OPM chunk size (``OPENFOLD3_TRANSITION_CHUNK_CAP``)."""
+    return _positive_env_int("OPENFOLD3_TRANSITION_CHUNK_CAP")
+
+
+def apply_transition_chunk_cap(chunk_size: int) -> int:
+    """Apply ``OPENFOLD3_TRANSITION_CHUNK_CAP`` after chunk-size tuning."""
+    cap = transition_chunk_cap()
+    return chunk_size if cap is None else min(chunk_size, cap)
 
 
 def _fetch_dims(tree):
