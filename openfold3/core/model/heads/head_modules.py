@@ -173,6 +173,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         si_input = si_input.detach().clone()
         si = si.detach().clone()
         zij = zij.detach().clone()
+        del output["zij_trunk"]
         atom_positions_predicted = atom_positions_predicted.detach().clone()
 
         token_mask = batch["token_mask"]

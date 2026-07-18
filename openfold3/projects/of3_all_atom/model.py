@@ -329,6 +329,7 @@ class OpenFold3(nn.Module):
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
         inplace_safe: bool = False,
+        zij_release: list | None = None,
     ) -> dict:
         """
         Mini diffusion rollout described in section 4.1.
@@ -345,6 +346,8 @@ class OpenFold3(nn.Module):
                 [*, N_token, N_token, C_z] Pair representation output from model trunk
             inplace_safe:
                 Whether inplace operations can be performed
+            zij_release:
+                Optional owned trunk-pair slot cleared before confidence.
 
         Returns:
             Output dictionary containing the predicted trunk embeddings,
@@ -413,8 +416,11 @@ class OpenFold3(nn.Module):
             "zij_trunk": zij_trunk,
             "atom_positions_predicted": atom_positions_predicted,
         }
+        del zij_trunk
+        if zij_release is not None:
+            zij_release[0] = None
 
-        cast_dtype = torch.float32 if self.training else si_trunk.dtype
+        cast_dtype = torch.float32 if self.training else output["si_trunk"].dtype
         with torch.amp.autocast(device_type="cuda", dtype=cast_dtype):
             # Compute confidence logits
             output.update(
@@ -671,13 +677,19 @@ class OpenFold3(nn.Module):
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
         batch["ref_space_uid_to_perm"] = ref_space_uid_to_perm
 
+        retain_trunk_pair = self.training or "ground_truth" in batch
+        zij_release = None if retain_trunk_pair else [zij_trunk]
+        if zij_release is not None:
+            del zij_trunk
+
         # Mini rollout
         rollout_output = self._rollout(
             batch=batch,
             si_input=si_input,
             si_trunk=si_trunk,
-            zij_trunk=zij_trunk,
+            zij_trunk=(zij_trunk if retain_trunk_pair else zij_release[0]),
             inplace_safe=inplace_safe,
+            zij_release=zij_release,
         )
 
         output.update(rollout_output)
