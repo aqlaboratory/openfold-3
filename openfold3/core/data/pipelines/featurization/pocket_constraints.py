@@ -264,16 +264,6 @@ def create_pocket_sampling_features(
             ],
             dtype=torch.float32,
         ),
-        "pocket_sampling_translate": torch.tensor(
-            [
-                read_float_env(
-                    "OF3_POCKET_SAMPLING_TRANSLATE",
-                    defaults.DEFAULT_POCKET_SAMPLING_TRANSLATE,
-                    min_value=0.0,
-                )
-            ],
-            dtype=torch.float32,
-        ),
         "pocket_sampling_center_jitter": torch.tensor(
             [
                 read_float_env(

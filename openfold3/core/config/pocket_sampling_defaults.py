@@ -28,10 +28,6 @@ DEFAULT_POCKET_SAMPLING_NOISE_FRAC = 0.75
 # samples from the same seed do not follow identical local trajectories.
 DEFAULT_POCKET_SAMPLING_LIGAND_JITTER = 0.25
 
-# Additional random translation applied during proposal generation. The default
-# is zero because center and surface jitter already provide pocket exploration.
-DEFAULT_POCKET_SAMPLING_TRANSLATE = 0.0
-
 # Pocket-center and pocket-surface proposal jitter in Angstroms. The broader
 # center jitter explores placements around the residue set centroid; the smaller
 # surface jitter explores local contacts around individual pocket atoms.

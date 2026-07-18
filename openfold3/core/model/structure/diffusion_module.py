@@ -111,7 +111,6 @@ def _validate_pocket_sampling_features(batch: dict) -> None:
         "pocket_sampling_candidates",
         "pocket_sampling_start_frac",
         "pocket_sampling_ligand_jitter",
-        "pocket_sampling_translate",
         "pocket_sampling_center_jitter",
         "pocket_sampling_surface_jitter",
         "pocket_sampling_vdw_buffer",
@@ -235,11 +234,6 @@ def _build_pocket_sampling_seeds(
         "pocket_sampling_contact_distance",
         float,
     )
-    translate = _required_batch_scalar(
-        batch,
-        "pocket_sampling_translate",
-        float,
-    )
     center_jitter = _required_batch_scalar(
         batch,
         "pocket_sampling_center_jitter",
@@ -315,10 +309,6 @@ def _build_pocket_sampling_seeds(
                         (1, 3), dtype=atom_mask.dtype, device=atom_mask.device
                     )
                 pose = lig_rel @ rot.transpose(-1, -2) + target
-                if translate > 0:
-                    pose = pose + translate * torch.randn(
-                        (1, 3), dtype=atom_mask.dtype, device=atom_mask.device
-                    )
 
             score, vdw_overlap, min_prot, lig_atoms, contact = _score_ligand_pose(
                 pose,
