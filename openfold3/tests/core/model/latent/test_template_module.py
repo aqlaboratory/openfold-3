@@ -54,6 +54,58 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
 
         self.assertTrue(t.shape == (batch_size, n_token, n_token, c_in))
 
+    def test_streaming_matches_full_batch(self):
+        batch_size = 1
+        n_templ = 3
+        n_token = 8
+
+        of3_proj_entry = OF3ProjectEntry()
+        of3_config = of3_proj_entry.get_model_config_with_presets()
+        c_in = of3_config.architecture.template.template_pair_embedder.c_in
+        embedder = TemplateEmbedderAllAtom(of3_config.architecture.template)
+        embedder.eval()
+
+        torch.manual_seed(0)
+        batch = {
+            "token_mask": torch.ones((batch_size, n_token)),
+            "asym_id": torch.ones((batch_size, n_token)),
+            "template_restype": torch.randn((batch_size, n_templ, n_token, 32)),
+            "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)),
+            "template_backbone_frame_mask": torch.ones((batch_size, n_templ, n_token)),
+            "template_distogram": torch.randn(
+                (batch_size, n_templ, n_token, n_token, 39)
+            ),
+            "template_unit_vector": torch.randn(
+                (batch_size, n_templ, n_token, n_token, 3)
+            ),
+        }
+        z = torch.randn((batch_size, n_token, n_token, c_in))
+        pair_mask = torch.ones((batch_size, n_token, n_token))
+
+        with torch.inference_mode():
+            t_stream = embedder(
+                batch=batch,
+                z=z,
+                pair_mask=pair_mask,
+                chunk_size=4,
+                inplace_safe=True,
+            )
+            t_full = embedder._forward(
+                batch=batch,
+                z=z,
+                pair_mask=pair_mask,
+                chunk_size=4,
+                inplace_safe=True,
+            )
+            t_full = torch.sum(t_full, dim=-4) / n_templ
+            t_full = torch.nn.functional.relu(t_full)
+            t_full = embedder.linear_t(t_full)
+
+        self.assertTrue(
+            torch.allclose(t_stream, t_full, atol=1e-5, rtol=1e-5),
+            f"max abs diff={(t_stream - t_full).abs().max().item():.3e}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
