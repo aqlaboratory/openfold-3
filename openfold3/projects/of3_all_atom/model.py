@@ -577,10 +577,18 @@ class OpenFold3(nn.Module):
                         compute frames
                     "template_distogram" ([*, N_templ, N_token, N_token, 39])
                         A one-hot pairwise feature indicating the distance between
-                        C_beta atoms (C_alpha for glycine) in the template
+                        C_beta atoms (C_alpha for glycine) in the template.
+                        Absent when coordinate-derived template features are used.
                     "template_unit_vector"([*, N_templ, N_token, N_token, 3])
                         The unit vector between pairs of C_alpha atoms within
-                        the local frame of each template residue
+                        the local frame of each template residue.
+                        Absent when coordinate-derived template features are used.
+                    *"template_pseudo_beta_coords" ([*, N_templ, N_token, 3])
+                        Compact pseudo-beta coordinates for the optional
+                        coordinate-derived template path (inference)
+                    *"template_frame_atom_coords" ([*, N_templ, N_token, 3, 3])
+                        Compact N/CA/C coordinates for the optional
+                        coordinate-derived template path (inference)
                     "token_bonds" ([*, N_token, N_token])
                         A 2D matrix indicating if there is a bond between
                         any atom in token i and token j

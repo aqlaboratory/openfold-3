@@ -33,6 +33,9 @@ from openfold3.core.model.feature_embedders.template_embedders import (
 )
 from openfold3.core.model.latent.base_blocks import PairBlock
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.model.primitives.fused_template_coordinate import (
+    fused_template_coordinate_pair_embedder_inference,
+)
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.checkpointing import checkpoint_blocks, checkpoint_section
 from openfold3.core.utils.chunk_utils import (
@@ -621,6 +624,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         inplace_safe: bool = False,
+        use_coordinate_features: bool = False,
     ) -> torch.Tensor:
         """Process templates one-at-a-time and accumulate their stack outputs."""
         n_templ = batch["template_restype"].shape[-3]
@@ -628,18 +632,25 @@ class TemplateEmbedderAllAtom(nn.Module):
         t_sum = None
 
         for i in range(n_templ):
-            batch_templ = {
-                k: (
-                    _slice_template_feature(k, v, i)
-                    if isinstance(v, torch.Tensor) and k.startswith("template_")
-                    else v
+            if use_coordinate_features:
+                t = fused_template_coordinate_pair_embedder_inference(
+                    module=self.template_pair_embedder,
+                    batch=batch,
+                    z=z,
+                    template_index=i,
                 )
-                for k, v in batch.items()
-            }
-
-            t = self.template_pair_embedder(batch=batch_templ, z=z)
-            batch_templ.pop("template_distogram", None)
-            batch_templ.pop("template_unit_vector", None)
+            else:
+                batch_templ = {
+                    k: (
+                        _slice_template_feature(k, v, i)
+                        if isinstance(v, torch.Tensor) and k.startswith("template_")
+                        else v
+                    )
+                    for k, v in batch.items()
+                }
+                t = self.template_pair_embedder(batch=batch_templ, z=z)
+                batch_templ.pop("template_distogram", None)
+                batch_templ.pop("template_unit_vector", None)
 
             t = self.template_pair_stack(
                 t,
@@ -742,7 +753,9 @@ class TemplateEmbedderAllAtom(nn.Module):
         """
         n_templ = batch["template_restype"].shape[-3]
         template_sum_done = False
-        can_stream = (
+        use_coordinate_features = "template_pseudo_beta_coords" in batch
+        # Coordinate inputs are O(N); always stream on GPU and ignore offload.
+        can_stream = use_coordinate_features or (
             inplace_safe
             and not self.training
             and not torch.is_grad_enabled()
@@ -762,6 +775,7 @@ class TemplateEmbedderAllAtom(nn.Module):
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 inplace_safe=inplace_safe,
+                use_coordinate_features=use_coordinate_features,
             )
             template_sum_done = True
         elif offload_inference:
