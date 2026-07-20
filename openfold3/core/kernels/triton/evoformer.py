@@ -936,7 +936,12 @@ if _TRITON_AVAILABLE:
         qT_ptrs = Q + offs_q[None, :] * stride_seq + offs_dim[:, None]
         dO_ptrs = dO + offs_q[:, None] * stride_seq + offs_dim[None, :]
 
-        K_block = K_block * tl.full((1,), softmax_scale, dtype=K_block.dtype)
+        # Recompute the score by scaling Q (not K), matching how the forward built M
+        # (M was computed from round_bf16(softmax_scale*Q) @ K). Scaling K here instead
+        # rounds a different operand, so for sharp attention the recomputed QK can
+        # exceed M, the clamp caps P at 1 imprecisely, and dK/dV grads drift. We
+        # therefore scale qT inside the score dot below; the dK accumulation keeps
+        # its fp32-side scale.
 
         curr_q = 0
         num_steps = (SEQ_LEN + BLOCK_SIZE_Q - 1) // BLOCK_SIZE_Q
@@ -981,9 +986,15 @@ if _TRITON_AVAILABLE:
                         other=0.0,
                     )
 
-            # Compute P^T = K Q^T (transposed attention scores)
+            # Compute P^T = K (scale*Q)^T. Scale qT (not K) so the recompute matches the
+            # forward's M rounding; dK below keeps its scale on the fp32 dot result.
             QK_T_block = (
-                tl.dot(K_block, qT_block) + pair_bias_T_block + res_mask_T_block
+                tl.dot(
+                    K_block,
+                    qT_block * tl.full((1,), softmax_scale, dtype=qT_block.dtype),
+                )
+                + pair_bias_T_block
+                + res_mask_T_block
             )
 
             if not (EVEN_Q & EVEN_KV):
