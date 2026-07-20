@@ -116,12 +116,16 @@ class MsaArray:
             row_slice = slice(row_slice)
         elif not isinstance(row_slice, slice):
             raise ValueError(
-                "Argument max_seq_count should be an integer or a slice."
+                "Argument row_slice should be an integer or a slice."
                 f"but got {type(row_slice)}."
             )
 
-        # Make sure the slice is within the bounds
-        row_slice = slice(min(row_slice.stop, self.__len__()))
+        stop = (
+            self.__len__()
+            if row_slice.stop is None
+            else min(row_slice.stop, self.__len__())
+        )
+        row_slice = slice(row_slice.start, stop, row_slice.step)
 
         # Truncate
         if inplace:
