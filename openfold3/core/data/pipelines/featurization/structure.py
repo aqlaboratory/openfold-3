@@ -191,9 +191,10 @@ def featurize_structure_of3(
             num_atoms_per_token=features["num_atoms_per_token"],
         )
 
-        features["cyclic_mask"] = torch.tensor(
-            atom_array.is_cyclic[token_starts], dtype=torch.bool
-        )
+        if "is_cyclic" in atom_array.get_annotation_categories():
+            features["cyclic_mask"] = torch.tensor(
+                atom_array.is_cyclic[token_starts], dtype=torch.bool
+            )
 
     # Ground-truth-specific features
     # TODO reorganize GT feature logic
