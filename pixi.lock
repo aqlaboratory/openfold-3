@@ -6676,17 +6676,17 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/df/88/09c28dad91e662ccfaa1b78f1c57badde74fc9d0b23e74aef644750ecd73/yarl-1.24.2-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/e5/22/4222d7ddf3da30f363edaa98e329c2bce6c65497c9cb2810931c8b2c0fbc/fsspec-2026.6.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/fb/76/641ae371508676492379f16e2fa48f4e2c11741bd63c48be4b12a6b09cba/aiosignal-1.4.0-py3-none-any.whl
-      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/amd_torch_device_gfx1151-2.14.0a0%2Brocm7.15.0a20260717-cp313-cp313-linux_x86_64.whl
-      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/amd_torch_device_gfx115x-2.14.0a0%2Brocm7.15.0a20260717-cp313-cp313-linux_x86_64.whl
+      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/amd_torch_device_gfx11-2.12.0%2Brocm7.14.0a20260624-cp313-cp313-linux_x86_64.whl
+      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/amd_torch_device_gfx1151-2.12.0%2Brocm7.14.0a20260624-cp313-cp313-linux_x86_64.whl
       - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/mpmath-1.3.0-py3-none-any.whl
-      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm-7.15.0a20260717.tar.gz
+      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm-7.14.0a20260624.tar.gz
       - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_bootstrap-0.1.0-py3-none-any.whl
-      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_core-7.15.0a20260717-py3-none-linux_x86_64.whl
-      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_device_gfx1151-7.15.0a20260717-py3-none-linux_x86_64.whl
-      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_libraries-7.15.0a20260717-py3-none-linux_x86_64.whl
+      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_core-7.14.0a20260624-py3-none-linux_x86_64.whl
+      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_device_gfx1151-7.14.0a20260624-py3-none-linux_x86_64.whl
+      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_libraries-7.14.0a20260624-py3-none-linux_x86_64.whl
       - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/sympy-1.14.0-py3-none-any.whl
-      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/torch-2.14.0a0%2Brocm7.15.0a20260717-cp313-cp313-linux_x86_64.whl
-      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/triton-3.8.0%2Bgit43422b04.rocm7.15.0a20260717-cp313-cp313-linux_x86_64.whl
+      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/torch-2.12.0%2Brocm7.14.0a20260624-cp313-cp313-linux_x86_64.whl
+      - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/triton-3.7.0%2Bgitb4e20bbe.rocm7.14.0a20260624-cp313-cp313-linux_x86_64.whl
 packages:
 - conda: https://conda.anaconda.org/bioconda/linux-64/hhsuite-3.3.0-h503566f_15.tar.bz2
   sha256: 1d7a96783862071c92102bb959a479e04dd25eccebabcadc5d3f18bd8070a67f
@@ -11415,7 +11415,7 @@ packages:
   license: Apache-2.0
   license_family: APACHE
   purls:
-  - pkg:pypi/msgpack?source=compressed-mapping
+  - pkg:pypi/msgpack?source=hash-mapping
   run_exports: {}
   size: 112798
   timestamp: 1782460772873
@@ -30322,19 +30322,19 @@ packages:
   requires_dist:
   - typing-extensions>=4.1.0 ; python_full_version < '3.11'
   requires_python: '>=3.9'
-- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/amd_torch_device_gfx1151-2.14.0a0%2Brocm7.15.0a20260717-cp313-cp313-linux_x86_64.whl
+- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/amd_torch_device_gfx11-2.12.0%2Brocm7.14.0a20260624-cp313-cp313-linux_x86_64.whl
+  name: amd-torch-device-gfx11
+  version: 2.12.0+rocm7.14.0a20260624
+  index: https://rocm.nightlies.amd.com/whl-multi-arch/
+  requires_dist:
+  - torch==2.12.0+rocm7.14.0a20260624
+- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/amd_torch_device_gfx1151-2.12.0%2Brocm7.14.0a20260624-cp313-cp313-linux_x86_64.whl
   name: amd-torch-device-gfx1151
-  version: 2.14.0a0+rocm7.15.0a20260717
+  version: 2.12.0+rocm7.14.0a20260624
   index: https://rocm.nightlies.amd.com/whl-multi-arch/
   requires_dist:
-  - torch==2.14.0a0+rocm7.15.0a20260717
-  - rocm-sdk-device-gfx1151==7.15.0a20260717
-- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/amd_torch_device_gfx115x-2.14.0a0%2Brocm7.15.0a20260717-cp313-cp313-linux_x86_64.whl
-  name: amd-torch-device-gfx115x
-  version: 2.14.0a0+rocm7.15.0a20260717
-  index: https://rocm.nightlies.amd.com/whl-multi-arch/
-  requires_dist:
-  - torch==2.14.0a0+rocm7.15.0a20260717
+  - torch==2.12.0+rocm7.14.0a20260624
+  - rocm-sdk-device-gfx1151==7.14.0a20260624
 - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/mpmath-1.3.0-py3-none-any.whl
   name: mpmath
   version: 1.3.0
@@ -30348,71 +30348,69 @@ packages:
   - sphinx ; extra == 'docs'
   - gmpy2>=2.1.0a4 ; platform_python_implementation != 'PyPy' and extra == 'gmpy'
   - pytest>=4.6 ; extra == 'tests'
-- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm-7.15.0a20260717.tar.gz
+- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm-7.14.0a20260624.tar.gz
   name: rocm
-  version: 7.15.0a20260717
+  version: 7.14.0a20260624
   index: https://rocm.nightlies.amd.com/whl-multi-arch/
   requires_dist:
-  - rocm==7.15.0a20260717
-  - rocm-sdk-core==7.15.0a20260717
-  - rocm-sdk-libraries==7.15.0a20260717 ; extra == 'libraries'
-  - rocm-sdk-device-gfx1010==7.15.0a20260717 ; extra == 'device'
-  - rocm-sdk-devel==7.15.0a20260717 ; extra == 'devel'
-  - rocm-profiler==7.15.0a20260717 ; extra == 'profiler'
-  - rocm-sdk-device-gfx1010==7.15.0a20260717 ; extra == 'device-gfx1010'
-  - rocm-sdk-device-gfx1011==7.15.0a20260717 ; extra == 'device-gfx1011'
-  - rocm-sdk-device-gfx1012==7.15.0a20260717 ; extra == 'device-gfx1012'
-  - rocm-sdk-device-gfx1030==7.15.0a20260717 ; extra == 'device-gfx1030'
-  - rocm-sdk-device-gfx1031==7.15.0a20260717 ; extra == 'device-gfx1031'
-  - rocm-sdk-device-gfx1032==7.15.0a20260717 ; extra == 'device-gfx1032'
-  - rocm-sdk-device-gfx1033==7.15.0a20260717 ; extra == 'device-gfx1033'
-  - rocm-sdk-device-gfx1034==7.15.0a20260717 ; extra == 'device-gfx1034'
-  - rocm-sdk-device-gfx1035==7.15.0a20260717 ; extra == 'device-gfx1035'
-  - rocm-sdk-device-gfx1036==7.15.0a20260717 ; extra == 'device-gfx1036'
-  - rocm-sdk-device-gfx1100==7.15.0a20260717 ; extra == 'device-gfx1100'
-  - rocm-sdk-device-gfx1101==7.15.0a20260717 ; extra == 'device-gfx1101'
-  - rocm-sdk-device-gfx1102==7.15.0a20260717 ; extra == 'device-gfx1102'
-  - rocm-sdk-device-gfx1103==7.15.0a20260717 ; extra == 'device-gfx1103'
-  - rocm-sdk-device-gfx1150==7.15.0a20260717 ; extra == 'device-gfx1150'
-  - rocm-sdk-device-gfx1151==7.15.0a20260717 ; extra == 'device-gfx1151'
-  - rocm-sdk-device-gfx1152==7.15.0a20260717 ; extra == 'device-gfx1152'
-  - rocm-sdk-device-gfx1153==7.15.0a20260717 ; extra == 'device-gfx1153'
-  - rocm-sdk-device-gfx1200==7.15.0a20260717 ; extra == 'device-gfx1200'
-  - rocm-sdk-device-gfx1201==7.15.0a20260717 ; extra == 'device-gfx1201'
-  - rocm-sdk-device-gfx1250==7.15.0a20260717 ; sys_platform == 'linux' and extra == 'device-gfx1250'
-  - rocm-sdk-device-gfx900==7.15.0a20260717 ; extra == 'device-gfx900'
-  - rocm-sdk-device-gfx906==7.15.0a20260717 ; extra == 'device-gfx906'
-  - rocm-sdk-device-gfx908==7.15.0a20260717 ; extra == 'device-gfx908'
-  - rocm-sdk-device-gfx90a==7.15.0a20260717 ; extra == 'device-gfx90a'
-  - rocm-sdk-device-gfx942==7.15.0a20260717 ; sys_platform == 'linux' and extra == 'device-gfx942'
-  - rocm-sdk-device-gfx950==7.15.0a20260717 ; sys_platform == 'linux' and extra == 'device-gfx950'
-  - rocm-sdk-device-gfx1010==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1011==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1012==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1030==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1031==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1032==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1033==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1034==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1035==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1036==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1100==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1101==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1102==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1103==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1150==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1151==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1152==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1153==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1200==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1201==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx1250==7.15.0a20260717 ; sys_platform == 'linux' and extra == 'device-all'
-  - rocm-sdk-device-gfx900==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx906==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx908==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx90a==7.15.0a20260717 ; extra == 'device-all'
-  - rocm-sdk-device-gfx942==7.15.0a20260717 ; sys_platform == 'linux' and extra == 'device-all'
-  - rocm-sdk-device-gfx950==7.15.0a20260717 ; sys_platform == 'linux' and extra == 'device-all'
+  - rocm==7.14.0a20260624
+  - rocm-sdk-core==7.14.0a20260624
+  - rocm-sdk-libraries==7.14.0a20260624 ; extra == 'libraries'
+  - rocm-sdk-device-gfx1010==7.14.0a20260624 ; extra == 'device'
+  - rocm-sdk-devel==7.14.0a20260624 ; extra == 'devel'
+  - rocm-profiler==7.14.0a20260624 ; extra == 'profiler'
+  - rocm-sdk-device-gfx1010==7.14.0a20260624 ; extra == 'device-gfx1010'
+  - rocm-sdk-device-gfx1011==7.14.0a20260624 ; extra == 'device-gfx1011'
+  - rocm-sdk-device-gfx1012==7.14.0a20260624 ; extra == 'device-gfx1012'
+  - rocm-sdk-device-gfx1030==7.14.0a20260624 ; extra == 'device-gfx1030'
+  - rocm-sdk-device-gfx1031==7.14.0a20260624 ; extra == 'device-gfx1031'
+  - rocm-sdk-device-gfx1032==7.14.0a20260624 ; extra == 'device-gfx1032'
+  - rocm-sdk-device-gfx1033==7.14.0a20260624 ; extra == 'device-gfx1033'
+  - rocm-sdk-device-gfx1034==7.14.0a20260624 ; extra == 'device-gfx1034'
+  - rocm-sdk-device-gfx1035==7.14.0a20260624 ; extra == 'device-gfx1035'
+  - rocm-sdk-device-gfx1036==7.14.0a20260624 ; extra == 'device-gfx1036'
+  - rocm-sdk-device-gfx1100==7.14.0a20260624 ; extra == 'device-gfx1100'
+  - rocm-sdk-device-gfx1101==7.14.0a20260624 ; extra == 'device-gfx1101'
+  - rocm-sdk-device-gfx1102==7.14.0a20260624 ; extra == 'device-gfx1102'
+  - rocm-sdk-device-gfx1103==7.14.0a20260624 ; extra == 'device-gfx1103'
+  - rocm-sdk-device-gfx1150==7.14.0a20260624 ; extra == 'device-gfx1150'
+  - rocm-sdk-device-gfx1151==7.14.0a20260624 ; extra == 'device-gfx1151'
+  - rocm-sdk-device-gfx1152==7.14.0a20260624 ; extra == 'device-gfx1152'
+  - rocm-sdk-device-gfx1153==7.14.0a20260624 ; extra == 'device-gfx1153'
+  - rocm-sdk-device-gfx1200==7.14.0a20260624 ; extra == 'device-gfx1200'
+  - rocm-sdk-device-gfx1201==7.14.0a20260624 ; extra == 'device-gfx1201'
+  - rocm-sdk-device-gfx900==7.14.0a20260624 ; extra == 'device-gfx900'
+  - rocm-sdk-device-gfx906==7.14.0a20260624 ; extra == 'device-gfx906'
+  - rocm-sdk-device-gfx908==7.14.0a20260624 ; extra == 'device-gfx908'
+  - rocm-sdk-device-gfx90a==7.14.0a20260624 ; extra == 'device-gfx90a'
+  - rocm-sdk-device-gfx942==7.14.0a20260624 ; sys_platform == 'linux' and extra == 'device-gfx942'
+  - rocm-sdk-device-gfx950==7.14.0a20260624 ; sys_platform == 'linux' and extra == 'device-gfx950'
+  - rocm-sdk-device-gfx1010==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1011==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1012==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1030==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1031==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1032==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1033==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1034==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1035==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1036==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1100==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1101==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1102==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1103==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1150==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1151==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1152==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1153==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1200==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx1201==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx900==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx906==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx908==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx90a==7.14.0a20260624 ; extra == 'device-all'
+  - rocm-sdk-device-gfx942==7.14.0a20260624 ; sys_platform == 'linux' and extra == 'device-all'
+  - rocm-sdk-device-gfx950==7.14.0a20260624 ; sys_platform == 'linux' and extra == 'device-all'
 - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_bootstrap-0.1.0-py3-none-any.whl
   name: rocm-bootstrap
   version: 0.1.0
@@ -30420,19 +30418,19 @@ packages:
   requires_dist:
   - pytest ; extra == 'dev'
   requires_python: '>=3.10'
-- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_core-7.15.0a20260717-py3-none-linux_x86_64.whl
+- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_core-7.14.0a20260624-py3-none-linux_x86_64.whl
   name: rocm-sdk-core
-  version: 7.15.0a20260717
+  version: 7.14.0a20260624
   index: https://rocm.nightlies.amd.com/whl-multi-arch/
-- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_device_gfx1151-7.15.0a20260717-py3-none-linux_x86_64.whl
+- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_device_gfx1151-7.14.0a20260624-py3-none-linux_x86_64.whl
   name: rocm-sdk-device-gfx1151
-  version: 7.15.0a20260717
+  version: 7.14.0a20260624
   index: https://rocm.nightlies.amd.com/whl-multi-arch/
   requires_dist:
-  - rocm-sdk-libraries==7.15.0a20260717
-- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_libraries-7.15.0a20260717-py3-none-linux_x86_64.whl
+  - rocm-sdk-libraries==7.14.0a20260624
+- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/rocm_sdk_libraries-7.14.0a20260624-py3-none-linux_x86_64.whl
   name: rocm-sdk-libraries
-  version: 7.15.0a20260717
+  version: 7.14.0a20260624
   index: https://rocm.nightlies.amd.com/whl-multi-arch/
 - pypi: https://rocm.nightlies.amd.com/whl-multi-arch/sympy-1.14.0-py3-none-any.whl
   name: sympy
@@ -30443,94 +30441,106 @@ packages:
   - pytest>=7.1.0 ; extra == 'dev'
   - hypothesis>=6.70.0 ; extra == 'dev'
   requires_python: '>=3.9'
-- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/torch-2.14.0a0%2Brocm7.15.0a20260717-cp313-cp313-linux_x86_64.whl
+- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/torch-2.12.0%2Brocm7.14.0a20260624-cp313-cp313-linux_x86_64.whl
   name: torch
-  version: 2.14.0a0+rocm7.15.0a20260717
+  version: 2.12.0+rocm7.14.0a20260624
   index: https://rocm.nightlies.amd.com/whl-multi-arch/
   requires_dist:
   - filelock
   - typing-extensions>=4.10.0
-  - setuptools>=77.0.3
+  - setuptools<82
   - sympy>=1.13.3
   - networkx>=2.5.1
   - jinja2
   - fsspec>=0.8.5
-  - rocm[libraries]==7.15.0a20260717
-  - triton==3.8.0+git43422b04.rocm7.15.0a20260717
+  - rocm[libraries]==7.14.0a20260624
+  - triton==3.7.0+gitb4e20bbe.rocm7.14.0a20260624
   - optree>=0.13.0 ; extra == 'optree'
   - opt-einsum>=3.3 ; extra == 'opt-einsum'
   - pyyaml ; extra == 'pyyaml'
   - rocm-bootstrap
-  - amd-torch-device-gfx1010==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1010'
-  - amd-torch-device-gfx1011==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1011'
-  - amd-torch-device-gfx1012==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1012'
-  - amd-torch-device-gfx1030==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1030'
-  - amd-torch-device-gfx1031==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1031'
-  - amd-torch-device-gfx1032==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1032'
-  - amd-torch-device-gfx1033==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1033'
-  - amd-torch-device-gfx1034==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1034'
-  - amd-torch-device-gfx1035==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1035'
-  - amd-torch-device-gfx1036==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1036'
-  - amd-torch-device-gfx1100==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1100'
-  - amd-torch-device-gfx110x==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1100'
-  - amd-torch-device-gfx1101==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1101'
-  - amd-torch-device-gfx110x==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1101'
-  - amd-torch-device-gfx1102==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1102'
-  - amd-torch-device-gfx110x==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1102'
-  - amd-torch-device-gfx1103==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1103'
-  - amd-torch-device-gfx110x==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1103'
-  - amd-torch-device-gfx1150==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1150'
-  - amd-torch-device-gfx115x==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1150'
-  - amd-torch-device-gfx1151==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1151'
-  - amd-torch-device-gfx115x==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1151'
-  - amd-torch-device-gfx1152==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1152'
-  - amd-torch-device-gfx115x==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1152'
-  - amd-torch-device-gfx1153==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1153'
-  - amd-torch-device-gfx115x==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1153'
-  - amd-torch-device-gfx1200==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1200'
-  - amd-torch-device-gfx12-0==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1200'
-  - amd-torch-device-gfx1201==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1201'
-  - amd-torch-device-gfx12-0==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx1201'
-  - amd-torch-device-gfx900==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx900'
-  - amd-torch-device-gfx906==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx906'
-  - amd-torch-device-gfx908==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx908'
-  - amd-torch-device-gfx90a==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx90a'
-  - amd-torch-device-gfx942==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx942'
-  - amd-torch-device-gfx950==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-gfx950'
-  - amd-torch-device-gfx1010==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1011==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1012==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1030==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1031==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1032==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1033==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1034==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1035==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1036==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1100==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1101==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1102==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1103==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx110x==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1150==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1151==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1152==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1153==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx115x==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx12-0==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1200==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx1201==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx900==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx906==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx908==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx90a==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx942==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
-  - amd-torch-device-gfx950==2.14.0a0+rocm7.15.0a20260717 ; extra == 'device-all'
+  - amd-torch-device-gfx1010==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1010'
+  - amd-torch-device-gfx1011==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1011'
+  - amd-torch-device-gfx1012==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1012'
+  - amd-torch-device-gfx1030==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1030'
+  - amd-torch-device-gfx1031==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1031'
+  - amd-torch-device-gfx1032==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1032'
+  - amd-torch-device-gfx1033==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1033'
+  - amd-torch-device-gfx1034==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1034'
+  - amd-torch-device-gfx1035==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1035'
+  - amd-torch-device-gfx1036==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1036'
+  - amd-torch-device-gfx1100==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1100'
+  - amd-torch-device-gfx11==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1100'
+  - amd-torch-device-gfx1101==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1101'
+  - amd-torch-device-gfx11==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1101'
+  - amd-torch-device-gfx1102==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1102'
+  - amd-torch-device-gfx11==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1102'
+  - amd-torch-device-gfx1103==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1103'
+  - amd-torch-device-gfx11==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1103'
+  - amd-torch-device-gfx1150==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1150'
+  - amd-torch-device-gfx11==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1150'
+  - amd-torch-device-gfx1151==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1151'
+  - amd-torch-device-gfx11==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1151'
+  - amd-torch-device-gfx1152==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1152'
+  - amd-torch-device-gfx11==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1152'
+  - amd-torch-device-gfx1153==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1153'
+  - amd-torch-device-gfx11==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1153'
+  - amd-torch-device-gfx1200==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1200'
+  - amd-torch-device-gfx12-0==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1200'
+  - amd-torch-device-gfx1201==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1201'
+  - amd-torch-device-gfx12-0==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx1201'
+  - amd-torch-device-gfx900==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx900'
+  - amd-torch-device-gfx906==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx906'
+  - amd-torch-device-gfx908==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx908'
+  - amd-torch-device-gfx90a==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx90a'
+  - amd-torch-device-gfx942==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx942'
+  - amd-torch-device-gfx950==2.12.0+rocm7.14.0a20260624 ; extra == 'device-gfx950'
+  - amd-torch-device-gfx1010==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1011==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1012==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1030==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1031==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1032==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1033==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1034==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1035==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1036==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx11==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1100==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1101==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1102==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1103==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1150==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1151==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1152==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1153==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx12-0==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1200==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx1201==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx900==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx906==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx908==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx90a==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx942==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
+  - amd-torch-device-gfx950==2.12.0+rocm7.14.0a20260624 ; extra == 'device-all'
   requires_python: '>=3.10'
-- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/triton-3.8.0%2Bgit43422b04.rocm7.15.0a20260717-cp313-cp313-linux_x86_64.whl
+- pypi: https://rocm.nightlies.amd.com/whl-multi-arch/triton-3.7.0%2Bgitb4e20bbe.rocm7.14.0a20260624-cp313-cp313-linux_x86_64.whl
   name: triton
-  version: 3.8.0+git43422b04.rocm7.15.0a20260717
+  version: 3.7.0+gitb4e20bbe.rocm7.14.0a20260624
   index: https://rocm.nightlies.amd.com/whl-multi-arch/
   requires_dist:
   - importlib-metadata ; python_full_version < '3.10'
+  - cmake>=3.20,<4.0 ; extra == 'build'
+  - lit ; extra == 'build'
+  - autopep8 ; extra == 'tests'
+  - isort ; extra == 'tests'
+  - numpy ; extra == 'tests'
+  - pytest ; extra == 'tests'
+  - pytest-forked ; extra == 'tests'
+  - pytest-xdist ; extra == 'tests'
+  - scipy>=1.7.1 ; extra == 'tests'
+  - llnl-hatchet ; extra == 'tests'
+  - matplotlib ; extra == 'tutorials'
+  - pandas ; extra == 'tutorials'
+  - tabulate ; extra == 'tutorials'
   requires_python: '>=3.10,<3.15'
