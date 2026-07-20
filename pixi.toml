@@ -302,21 +302,14 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   torch = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
   triton-rocm = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
 
-# AMD GPU support via TheRock (AMD's production build system as of ROCm 7.14).
-# Adds gfx1151 (Strix Halo) support, which the official rocm7.2 wheels
-# (openfold3-rocm7) lack. gfx1151 wheels are only published to TheRock's
-# multi-arch index and are still prerelease-tagged (+rocmX.Y.0a<date>); there is
-# no PyPI/conda-forge/stable wheel yet. We pin one dated 7.14-line build for
-# reproducibility. Keep openfold3-rocm7 as the stable fallback for other AMD GPUs.
+# gfx1151 (Strix Halo) support via AMD TheRock, which the official rocm7.2
+# wheels (openfold3-rocm7) lack. Prerelease-only; details in inference.md.
 [feature.pytorch-pypi-therock]
 
   platforms = ["linux-64"]
 
   [feature.pytorch-pypi-therock.pypi-options]
-  # TheRock wheels (incl. transitive rocm-sdk-*) carry a prerelease tag, so pip
-  # needs a global prerelease allow even though we pin an exact version below.
-  prerelease-mode = "allow"
-  # torch's exact rocm[libraries]/device pins live here too, so make it an index.
+  prerelease-mode = "allow"  # TheRock wheels + transitive rocm-sdk-* are prerelease-tagged
   extra-index-urls = ["https://rocm.nightlies.amd.com/whl-multi-arch/"]
   index-strategy = "unsafe-best-match"
 
@@ -327,9 +320,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   cxx-compiler = "*"
 
   [feature.pytorch-pypi-therock.pypi-dependencies]
-  # Pinned to the latest ROCm 7.14-line build (torch 2.12 is AMD's top validated
-  # PyTorch for 7.14). Bump the version/date together to move the pin.
-  # Change device-gfx1151 to retarget another AMD GPU.
+  # Pinned to a dated 7.14 build; bump version+date together. device-gfx1151 sets the GPU.
   torch = { version = "==2.12.0+rocm7.14.0a20260624", extras = ["device-gfx1151"] }
   triton = "*"
 
