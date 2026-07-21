@@ -7,4 +7,5 @@ model_update:
       memory:
         eval:
           use_cueq_triangle_kernels: true
-          use_deepspeed_evo_attention: true
+          use_deepspeed_evo_attention: false 
+          use_triton_triangle_kernels: false

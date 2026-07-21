@@ -37,7 +37,7 @@ jobs:
       build_mode: ${{ matrix.build_mode }}
     secrets: inherit
 
-  test-pixi:
+  test-pixi-cuda:
     if: |
       github.event_name != 'schedule' ||
       (github.repository == 'aqlaboratory/openfold-3' && github.event.schedule == '17 3 * * *') ||
@@ -52,9 +52,27 @@ jobs:
           - pixi_env: "openfold3-cuda12"
           - pixi_env: "openfold3-cuda13"
     concurrency:
-      group: ${{ github.workflow }}-pixi-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
+      group: ${{ github.workflow }}-pixi-cuda-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
       cancel-in-progress: true
-    uses: ./.github/workflows/ci-integration-test-pixi-reusable.yml
+    uses: ./.github/workflows/ci-integration-test-pixi-cuda-reusable.yml
+    with:
+      pixi_env: ${{ matrix.pixi_env }}
+    secrets: inherit
+
+  # AMD/ROCm path: runs on the persistent self-hosted runner (label: amd-gpu)
+  # instead of an ephemeral AWS NVIDIA instance — no id-token/AWS OIDC needed.
+  test-pixi-amd:
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - pixi_env: "openfold3-rocm7"
+    concurrency:
+      group: ${{ github.workflow }}-pixi-amd-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/ci-integration-test-pixi-amd-reusable.yml
     with:
       pixi_env: ${{ matrix.pixi_env }}
     secrets: inherit

@@ -1,0 +1,116 @@
+name: Reusable Docker Test for running heavy test loads (Pixi, AMD/ROCm)
+
+on:
+  # Can only be called by another workflow, not directly by the user
+  workflow_call:
+    inputs:
+      pixi_env:
+        description: 'Pixi environment name (ROCm, e.g. openfold3-rocm7)'
+        required: true
+        type: string
+      base_image:
+        description: 'Base Docker image'
+        required: false
+        type: string
+        default: 'ubuntu:22.04'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/openfold3-docker
+
+# Unlike the NVIDIA path, the AMD GPU runner is a persistent self-hosted box
+# (label: amd-gpu), so there is no AWS start/stop lifecycle — the job targets the
+# runner directly and uses ROCm device passthrough instead of `--gpus all`.
+jobs:
+  test-openfold-docker-pixi-amd:
+    runs-on: [self-hosted, amd-gpu]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push test image
+        uses: docker/build-push-action@v7.2.0
+        with:
+          context: .
+          file: docker/Dockerfile.pixi
+          target: test
+          push: true
+          build-args: |
+            PIXI_ENV=${{ inputs.pixi_env }}
+            BASE_IMAGE=${{ inputs.base_image }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }},mode=max
+
+      - name: Create parameter cache directory
+        run: mkdir -p ~/.openfold3
+
+      - name: Cache download of parameters
+        id: cache-openfold_parameters
+        uses: actions/cache@v5
+        with:
+          path: ~/.openfold3/
+          key: shared-params_of3
+          restore-keys: |
+            shared-params_of3
+
+      - name: Download OpenFold parameters
+        if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
+        run: |
+          echo "Cache miss: Downloading OpenFold parameters..."
+          # Public bucket — fetch over HTTPS so the self-hosted runner doesn't
+          # need the AWS CLI installed (equivalent to `aws s3 cp --no-sign-request`).
+          curl -fSL \
+            https://openfold3-data.s3.amazonaws.com/openfold3-parameters/of3-p2-155k.pt \
+            -o ~/.openfold3/of3-p2-155k.pt
+
+      - name: Run integration test
+        run: |
+          # ROCm GPU access is via kfd/dri device passthrough, not the NVIDIA
+          # container toolkit's `--gpus all`. Numeric group IDs grant access to
+          # the render nodes without relying on group names existing in the image.
+          rocm_group_args=()
+          while IFS= read -r gid; do
+            rocm_group_args+=(--group-add "$gid")
+          done < <(
+            for device in /dev/kfd /dev/dri/card* /dev/dri/renderD*; do
+              [ -e "$device" ] && stat -c '%g' "$device"
+            done | sort -u
+          )
+
+          docker run --rm \
+            --device=/dev/kfd \
+            --device=/dev/dri \
+            "${rocm_group_args[@]}" \
+            --ipc=host \
+            --security-opt seccomp=unconfined \
+            -v ${{ github.workspace }}:/opt/openfold3 \
+            -v ~/.openfold3:/root/.openfold3 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
+            pytest -x openfold3/tests/ -m slow -vvv
+
+      - name: Reclaim workspace ownership
+        # The container runs as root and writes .pytest_cache / __pycache__ into the
+        # bind-mounted workspace, leaving root-owned files that this persistent
+        # self-hosted runner's user cannot delete on the next checkout. Chown them
+        # back to the runner user. Runs on failure too (pytest -x may exit non-zero).
+        if: always()
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/opt/openfold3 \
+            --entrypoint chown \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
+            -R "$(id -u):$(id -g)" /opt/openfold3
