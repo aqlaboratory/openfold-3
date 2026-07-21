@@ -1,6 +1,7 @@
 from collections import Counter
 
 import pytest
+from rdkit import Chem
 
 from openfold3.core.data.primitives.structure.query import (
     structure_with_ref_mol_from_ccd_code,
@@ -48,3 +49,36 @@ def test_consistent_structure_from_smiles_and_ccd_code(smiles, ccd_code):
     assert Counter(struct_from_smiles.atom_array.element) == Counter(
         struct_from_ccd.atom_array.element
     )
+
+
+def test_ccd_tetrahedral_stereochemistry_is_preserved():
+    structure = structure_with_ref_mol_from_ccd_code("DAS", chain_id="X")
+    mol = structure.processed_reference_mols[0].mol
+    atom_names = [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
+
+    stereocenters = {
+        atom_names[atom_index]: orientation
+        for atom_index, orientation in Chem.FindMolChiralCenters(
+            mol, includeUnassigned=True
+        )
+    }
+
+    assert stereocenters == {"CA": "R"}
+
+
+def test_ccd_double_bond_stereochemistry_is_preserved():
+    structure = structure_with_ref_mol_from_ccd_code("FUM", chain_id="X")
+    mol = structure.processed_reference_mols[0].mol
+    atom_names = [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
+
+    stereo_bonds = {
+        tuple(
+            sorted(
+                (atom_names[bond.GetBeginAtomIdx()], atom_names[bond.GetEndAtomIdx()])
+            )
+        ): bond.GetStereo()
+        for bond in mol.GetBonds()
+        if bond.GetStereo() != Chem.BondStereo.STEREONONE
+    }
+
+    assert stereo_bonds == {("C4", "C5"): Chem.BondStereo.STEREOE}
