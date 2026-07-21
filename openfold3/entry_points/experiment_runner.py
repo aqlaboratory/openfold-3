@@ -678,7 +678,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         if missing_keys == ["model.version_tensor"] and not unexpected_keys:
             logger.warning(
                 "No version_tensor is found for this checkpoint. "
-                "Assuming the user knows checkpoints are parameters are compatible, "
+                "Assuming the user knows the given checkpoint parameters are compatible with the model, "
                 "continuing..."
             )
             return
