@@ -668,18 +668,27 @@ class InferenceExperimentRunner(ExperimentRunner):
         self, state_dict: dict
     ) -> None:
         """Load state dict, warning if only version_tensor is missing."""
-        try:
-            self.lightning_module.load_state_dict(state_dict, strict=True)
-        except RuntimeError as e:
-            if 'Missing key(s) in state_dict: "model.version_tensor".' in str(e):
-                logger.warning(
-                    "No version_tensor is found for this checkpoint."
-                    "Assuming the user knows checkpoints are parameters are compatible,"
-                    " continuing..."
-                )
-                self.lightning_module.load_state_dict(state_dict, strict=False)
-            else:
-                raise
+        missing_keys, unexpected_keys = self.lightning_module.load_state_dict(state_dict, strict=False)
+
+        # No issues with loaded state dict
+        if not missing_keys and not unexpected_keys:
+            return
+
+        # Only version_tensor is missing
+        if missing_keys == ["model.version_tensor"] and not unexpected_keys:
+            logger.warning(
+                "No version_tensor is found for this checkpoint. "
+                "Assuming the user knows checkpoints are parameters are compatible, "
+                "continuing..."
+            )
+            return
+
+        # There are missing keys other than version_tensor and/or unexpected keys
+        raise RuntimeError(
+            f"Runtime error loading state dict for {self.lightning_module.__class__.__name__}\n"
+            f"Missing keys: {missing_keys}\n"
+            f"Unexpected keys: {unexpected_keys}"
+        )
 
     def setup(self) -> None:
         """Set up environment and load checkpoints."""
