@@ -6,6 +6,7 @@ This file records CI failures caused by AWS infrastructure issues (capacity, GPU
 |------|--------|--------|------------|-------------|
 | 2026-07-14 | [29305629949](https://github.com/aqlaboratory/openfold-3/actions/runs/29305629949) | main | InsufficientInstanceCapacity | test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml), test-pixi (openfold3-cuda13), test-pixi (openfold3-cuda12) |
 | 2026-07-17 | [29554609928](https://github.com/aqlaboratory/openfold-3/actions/runs/29554609928) | main | InsufficientInstanceCapacity | test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml), test-pixi (openfold3-cuda13), test-pixi (openfold3-cuda12) |
+| 2026-07-21 | [29801095059](https://github.com/aqlaboratory/openfold-3/actions/runs/29801095059) | main | InsufficientInstanceCapacity | test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml), test-pixi-cuda (openfold3-cuda13), test-pixi-cuda (openfold3-cuda12) |
 
 ---
 
@@ -42,4 +43,26 @@ This file records CI failures caused by AWS infrastructure issues (capacity, GPU
 - **Skipped (no runner available):**
   - `test-pixi (openfold3-cuda13)` — test-openfold-docker-pixi
   - `test-pixi (openfold3-cuda12)` — test-openfold-docker-pixi
+  - `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml)` — test-openfold-docker
+
+---
+
+### 2026-07-21 — Run [29801095059](https://github.com/aqlaboratory/openfold-3/actions/runs/29801095059)
+
+- **Branch:** main
+- **Scan date:** 2026-07-21
+- **Time:** 2026-07-21T04:22:58Z – 04:24:53Z UTC
+- **Error:** `botocore.exceptions.ClientError: An error occurred (InsufficientInstanceCapacity) when calling the RunInstances operation (reached max retries: 4): Insufficient capacity.`
+- **Root cause:** AWS could not provision GPU EC2 instances (capacity exhaustion in us-east-2). All `start-aws-runner` steps failed; corresponding `stop-aws-runner` and test jobs failed/were skipped as a cascading consequence. AMD GPU job (`test-pixi-amd openfold3-rocm7`) succeeded on separate non-AWS runner.
+- **Failed jobs (start-aws-runner):**
+  - `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml)` — start-aws-runner (job 88542175000)
+  - `test-pixi-cuda (openfold3-cuda13)` — start-aws-runner (job 88542174989)
+  - `test-pixi-cuda (openfold3-cuda12)` — start-aws-runner (job 88542174977)
+- **Cascading failures (stop-aws-runner — no instance to stop):**
+  - `test-pixi-cuda (openfold3-cuda12)` — stop-aws-runner (job 88542258038)
+  - `test-pixi-cuda (openfold3-cuda13)` — stop-aws-runner (job 88542263150)
+  - `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml)` — stop-aws-runner (job 88542296059)
+- **Skipped (no runner available):**
+  - `test-pixi-cuda (openfold3-cuda12)` — test-openfold-docker-pixi
+  - `test-pixi-cuda (openfold3-cuda13)` — test-openfold-docker-pixi
   - `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml)` — test-openfold-docker
