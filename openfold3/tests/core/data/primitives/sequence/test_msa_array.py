@@ -156,7 +156,9 @@ class TestTruncate:
         [
             pytest.param(2, False, 2, id="int_not_inplace"),
             pytest.param(2, True, 2, id="int_inplace"),
-            pytest.param(slice(1, 3), False, 3, id="slice_stop_clamped"),
+            pytest.param(slice(1, 2), False, 1, id="slice_one"),
+            pytest.param(slice(1, 3), False, 2, id="slice_two_stop_clamped"),
+            pytest.param(slice(1, 4), False, 2, id="slice_two_stop_clamped"),
             pytest.param(5, False, 3, id="int_exceeds_length"),
         ],
     )
