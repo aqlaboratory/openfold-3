@@ -20,10 +20,12 @@ from pydantic import (
     DirectoryPath,
     FilePath,
     field_serializer,
+    field_validator,
     model_validator,
 )
 
 from openfold3.core.config import pocket_sampling_config as pocket_defaults
+from openfold3.core.config import ligand_stereochemistry_defaults as stereo_defaults
 from openfold3.core.config.config_utils import (
     _cast_keys_to_int,
     _convert_molecule_type,
@@ -146,6 +148,15 @@ class Query(BaseModel):
     use_main_msas: bool = True
     covalent_bonds: list[Bond] | None = None
     pocket_constraint: PocketConstraint | None = None
+    ligand_stereochemistry_guidance: bool = (
+        stereo_defaults.DEFAULT_LIGAND_STEREOCHEMISTRY_GUIDANCE_ENABLED
+    )
+    ligand_stereochemistry_start_fraction: float = (
+        stereo_defaults.DEFAULT_LIGAND_STEREOCHEMISTRY_START_FRACTION
+    )
+    ligand_stereochemistry_num_gd_steps: int = (
+        stereo_defaults.DEFAULT_LIGAND_STEREOCHEMISTRY_NUM_GD_STEPS
+    )
 
     @model_validator(mode="after")
     def validate_pocket_constraint(self) -> "Query":
@@ -164,6 +175,37 @@ class Query(BaseModel):
             raise ValueError(
                 f"pocket constraint ligand_chain_id {ligand_chain_id!r} does not "
                 "match any ligand chain"
+            )
+        return self
+
+    @field_validator("ligand_stereochemistry_start_fraction")
+    @classmethod
+    def validate_ligand_stereochemistry_start_fraction(cls, v: float) -> float:
+        """Validate the diffusion-progress fraction for stereochemistry guidance."""
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(
+                "'ligand_stereochemistry_start_fraction' must be between 0 and 1."
+            )
+        return v
+
+    @field_validator("ligand_stereochemistry_num_gd_steps")
+    @classmethod
+    def validate_ligand_stereochemistry_num_gd_steps(cls, v: int) -> int:
+        """Validate the number of inner stereochemistry guidance steps."""
+        if v < 1:
+            raise ValueError(
+                "'ligand_stereochemistry_num_gd_steps' must be at least 1."
+            )
+        return v
+
+    @model_validator(mode="after")
+    def validate_ligand_stereochemistry_guidance(self) -> "Query":
+        """Require ligand chemistry when stereochemistry guidance is enabled."""
+        if self.ligand_stereochemistry_guidance and not any(
+            chain.molecule_type == MoleculeType.LIGAND for chain in self.chains
+        ):
+            raise ValueError(
+                "'ligand_stereochemistry_guidance' requires at least one ligand chain."
             )
         return self
 

@@ -38,6 +38,11 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.structure.augmentation import (  # noqa: F401
     centre_random_augmentation,
 )
+from openfold3.core.model.structure.ligand_stereochemistry import (
+    PreparedLigandStereochemistryGuidance,
+    apply_ligand_stereochemistry_guidance,
+    prepare_ligand_stereochemistry_guidance,
+)
 from openfold3.core.model.structure.pocket_constraints import (
     _batch_scalar,
     _build_pocket_sampling_seeds,
@@ -296,6 +301,7 @@ class SampleDiffusion(nn.Module):
         zij_trunk: torch.Tensor,
         noise_schedule: torch.Tensor,
         start_step: int,
+        stereochemistry_guidance: PreparedLigandStereochemistryGuidance | None,
         use_conditioning: bool,
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
@@ -337,6 +343,11 @@ class SampleDiffusion(nn.Module):
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
+            )
+            xl_denoised = apply_ligand_stereochemistry_guidance(
+                xl_denoised=xl_denoised,
+                guidance=stereochemistry_guidance,
+                step_fraction=(tau + 1) / max(len(noise_schedule) - 1, 1),
             )
 
             delta = (xl_noisy - xl_denoised) / t
@@ -395,6 +406,9 @@ class SampleDiffusion(nn.Module):
         """
         atom_mask = batch["atom_mask"]
         batch_dim, num_atoms = atom_mask.shape[0], atom_mask.shape[-1]
+        stereochemistry_guidance = prepare_ligand_stereochemistry_guidance(
+            batch, atom_mask
+        )
 
         total_steps = len(noise_schedule) - 1
 
@@ -411,6 +425,7 @@ class SampleDiffusion(nn.Module):
             "si_trunk": si_trunk,
             "zij_trunk": zij_trunk,
             "noise_schedule": noise_schedule,
+            "stereochemistry_guidance": stereochemistry_guidance,
             "use_conditioning": use_conditioning,
             "chunk_size": chunk_size,
             "use_deepspeed_evo_attention": use_deepspeed_evo_attention,

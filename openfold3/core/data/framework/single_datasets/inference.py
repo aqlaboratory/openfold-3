@@ -36,6 +36,9 @@ from openfold3.core.data.framework.single_datasets.dataset_utils import (
 from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_reference_conformers_of3,
 )
+from openfold3.core.data.pipelines.featurization.ligand_stereochemistry import (
+    featurize_ligand_stereochemistry_guidance,
+)
 from openfold3.core.data.pipelines.featurization.msa import (
     MsaFeaturizerOF3,
     MsaFeaturizerOF3Config,
@@ -325,6 +328,13 @@ class InferenceDataset(Dataset):
             n_tokens=n_tokens,
         )
         features.update(structure_features)
+
+        stereochemistry_features = featurize_ligand_stereochemistry_guidance(
+            query=query,
+            atom_array=preprocessed_atom_array,
+            processed_reference_molecules=processed_reference_molecules,
+        )
+        features.update(stereochemistry_features)
 
         # MSA features
         msa_features = self.create_msa_features(
