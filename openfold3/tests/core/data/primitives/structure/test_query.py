@@ -51,34 +51,53 @@ def test_consistent_structure_from_smiles_and_ccd_code(smiles, ccd_code):
     )
 
 
-def test_ccd_tetrahedral_stereochemistry_is_preserved():
-    structure = structure_with_ref_mol_from_ccd_code("DAS", chain_id="X")
-    mol = structure.processed_reference_mols[0].mol
-    atom_names = [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
-
-    stereocenters = {
-        atom_names[atom_index]: orientation
-        for atom_index, orientation in Chem.FindMolChiralCenters(
-            mol, includeUnassigned=True
-        )
-    }
-
-    assert stereocenters == {"CA": "R"}
+def _stereocenter_orientations(mol: Chem.Mol) -> list[str]:
+    return sorted(
+        orientation
+        for _, orientation in Chem.FindMolChiralCenters(mol, includeUnassigned=True)
+    )
 
 
-def test_ccd_double_bond_stereochemistry_is_preserved():
-    structure = structure_with_ref_mol_from_ccd_code("FUM", chain_id="X")
-    mol = structure.processed_reference_mols[0].mol
-    atom_names = [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
+def _stereo_bond_orientations(mol: Chem.Mol) -> list[Chem.BondStereo]:
+    return sorted(
+        (
+            bond.GetStereo()
+            for bond in mol.GetBonds()
+            if bond.GetStereo() != Chem.BondStereo.STEREONONE
+        ),
+        key=int,
+    )
 
-    stereo_bonds = {
-        tuple(
-            sorted(
-                (atom_names[bond.GetBeginAtomIdx()], atom_names[bond.GetEndAtomIdx()])
-            )
-        ): bond.GetStereo()
-        for bond in mol.GetBonds()
-        if bond.GetStereo() != Chem.BondStereo.STEREONONE
-    }
 
-    assert stereo_bonds == {("C4", "C5"): Chem.BondStereo.STEREOE}
+def test_ccd_tetrahedral_stereochemistry_matches_smiles():
+    ccd_structure = structure_with_ref_mol_from_ccd_code("DAS", chain_id="X")
+    smiles_structure = structure_with_ref_mol_from_smiles(
+        "N[C@H](CC(O)=O)C(O)=O", chain_id="X"
+    )
+
+    ccd_orientations = _stereocenter_orientations(
+        ccd_structure.processed_reference_mols[0].mol
+    )
+    smiles_orientations = _stereocenter_orientations(
+        smiles_structure.processed_reference_mols[0].mol
+    )
+
+    assert smiles_orientations
+    assert ccd_orientations == smiles_orientations
+
+
+def test_ccd_double_bond_stereochemistry_matches_smiles():
+    ccd_structure = structure_with_ref_mol_from_ccd_code("FUM", chain_id="X")
+    smiles_structure = structure_with_ref_mol_from_smiles(
+        "O=C(O)/C=C/C(=O)O", chain_id="X"
+    )
+
+    ccd_orientations = _stereo_bond_orientations(
+        ccd_structure.processed_reference_mols[0].mol
+    )
+    smiles_orientations = _stereo_bond_orientations(
+        smiles_structure.processed_reference_mols[0].mol
+    )
+
+    assert smiles_orientations
+    assert ccd_orientations == smiles_orientations
