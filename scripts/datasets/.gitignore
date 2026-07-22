@@ -1,0 +1,9 @@
+# Downloaded/generated locally by generate_subset_cache.py and download_subset.py.
+# Regenerate with:
+#   python scripts/datasets/generate_subset_cache.py
+#   python scripts/datasets/download_subset.py
+pdb_training_set/
+*_cache_with_templates*.json
+train_pdb_subset.yaml
+
+__pycache__/
