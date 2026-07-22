@@ -23,6 +23,3 @@ cutlass/
 
 # uv environments
 .venv/
-
-# build testing
-test-sdist/
