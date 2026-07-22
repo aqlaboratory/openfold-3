@@ -10,7 +10,6 @@ through the release pipeline once local testing here passes.
 ```bash
 cd ~/workspace/openfold-3
 # make sure you're on the branch/commit you want to test
-
 uv build --python=3.14
 ```
 
@@ -42,10 +41,10 @@ wrong dependency pins — that `python -m build` alone won't surface.
 
 ```bash
 mkdir test-sdist && cd test-sdist
-uv venv
+uv venv --python 3.14
 source .venv/bin/activate
 
-uv pip install ../dist/openfold3-<version>.tar.gz[dev]
+uv pip install "../dist/openfold3-<version>.tar.gz[dev,deepspeed]"
 ```
 
 (Adjust the path/version to match whatever landed in `dist/`.)
@@ -53,7 +52,7 @@ uv pip install ../dist/openfold3-<version>.tar.gz[dev]
 ## 3. Run the test suite against the installed package
 
 ```bash
-pytest --pyargs openfold3
+python -m pytest --pyargs openfold3
 ```
 
 Running with `--pyargs` is important here — it runs tests against the
