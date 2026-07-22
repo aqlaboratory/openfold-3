@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
@@ -29,6 +30,7 @@ from openfold3.core.model.layers.attention_pair_bias import AttentionPairBias
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.utils.checkpointing import checkpoint_blocks
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.device_utils import empty_device_cache
 from openfold3.core.utils.tensor_utils import add
 
 
@@ -283,8 +285,8 @@ class PairFormerStack(nn.Module):
                 torch checkpointing will be used (DeepSpeed does not support
                 this feature)
             clear_cache_between_blocks:
-                Whether to clear CUDA's GPU memory cache between blocks of the
-                stack. Slows down each block but can reduce fragmentation
+                Whether to clear the accelerator's memory cache between blocks
+                of the stack. Slows down each block but can reduce fragmentation
             tune_chunk_size:
                 Whether to dynamically tune the module's chunk size
         """
@@ -358,9 +360,10 @@ class PairFormerStack(nn.Module):
         ]
 
         if self.clear_cache_between_blocks:
+            device = s.device
 
             def block_with_cache_clear(block, *args, **kwargs):
-                torch.cuda.empty_cache()
+                empty_device_cache(device)
                 return block(*args, **kwargs)
 
             blocks = [partial(block_with_cache_clear, b) for b in blocks]

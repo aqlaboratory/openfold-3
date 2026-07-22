@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2026 Advanced Micro Devices, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -40,6 +41,7 @@ from openfold3.core.model.structure.diffusion_module import (
     centre_random_augmentation,
     create_noise_schedule,
 )
+from openfold3.core.utils.device_utils import autocast_device_type, empty_device_cache
 from openfold3.core.utils.permutation_alignment import (
     safe_multi_chain_permutation_alignment,
 )
@@ -381,7 +383,9 @@ class OpenFold3(nn.Module):
         # Compute atom positions
         with (
             torch.no_grad(),
-            torch.amp.autocast(device_type="cuda", dtype=torch.float32),
+            torch.amp.autocast(
+                device_type=autocast_device_type(si_input), dtype=torch.float32
+            ),
         ):
             noise_schedule = create_noise_schedule(
                 no_rollout_steps=no_rollout_steps,
@@ -415,7 +419,9 @@ class OpenFold3(nn.Module):
         }
 
         cast_dtype = torch.float32 if self.training else si_trunk.dtype
-        with torch.amp.autocast(device_type="cuda", dtype=cast_dtype):
+        with torch.amp.autocast(
+            device_type=autocast_device_type(si_trunk), dtype=cast_dtype
+        ):
             # Compute confidence logits
             output.update(
                 self.aux_heads(
@@ -689,7 +695,9 @@ class OpenFold3(nn.Module):
             # critical error)
             with (
                 torch.no_grad(),
-                torch.amp.autocast(device_type="cuda", dtype=torch.float32),
+                torch.amp.autocast(
+                    device_type=autocast_device_type(si_trunk), dtype=torch.float32
+                ),
             ):
                 safe_multi_chain_permutation_alignment(
                     batch=batch,
@@ -700,7 +708,9 @@ class OpenFold3(nn.Module):
 
             if self.training and not self.settings.train_confidence_only:
                 # Run training step (if necessary)
-                with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+                with torch.amp.autocast(
+                    device_type=autocast_device_type(si_trunk), dtype=torch.float32
+                ):
                     diffusion_output = self._train_diffusion(
                         batch=batch,
                         si_input=si_input,
@@ -714,6 +724,6 @@ class OpenFold3(nn.Module):
         # due to different sizes of msa/all-atom tensors used between steps
         # Clear the cache between steps if unallocated reserved mem is high
         if self.settings.clear_cache_between_steps:
-            torch.cuda.empty_cache()
+            empty_device_cache(zij_trunk.device)
 
         return batch, output
