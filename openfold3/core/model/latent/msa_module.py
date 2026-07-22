@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
@@ -30,6 +31,7 @@ from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.layers.msa import MSAPairWeightedAveraging
 from openfold3.core.model.utils import assert_sole_holder
+from openfold3.core.utils.device_utils import empty_device_cache
 from openfold3.core.utils.tensor_utils import add
 
 
@@ -199,8 +201,9 @@ class MSAModuleBlock(MSABlock):
                 # m: GPU, z: CPU
                 del m, z
                 assert_sole_holder(input_tensors[1], in_container=True)
+                accel_device = input_tensors[1].device
                 input_tensors[1] = input_tensors[1].cpu()
-                torch.cuda.empty_cache()
+                empty_device_cache(accel_device)
                 m, z = input_tensors
 
             m = add(
