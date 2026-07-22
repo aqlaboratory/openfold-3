@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -65,7 +66,7 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
-from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,34 @@ def rank_zero_only(fn):
         return None
 
     return wrapper
+
+
+def _accelerator_will_use_mps(accelerator: str) -> bool:
+    """Whether `accelerator` resolves to MPS at runtime.
+
+    True for `"mps"`, and also for `"gpu"`/`"auto"` (PyTorch Lightning's
+    defaults) whenever MPS is the available accelerator.
+    """
+    if accelerator not in ("mps", "gpu", "auto"):
+        return False
+    from pytorch_lightning.accelerators import MPSAccelerator
+
+    return MPSAccelerator.is_available()
+
+
+def _model_update_with_mps_preset(model_update: ModelUpdate) -> ModelUpdate:
+    """Add the `mps` preset to `model_update` unless it's already present.
+
+    `model_update.custom` still overrides any value from the preset, since
+    presets are applied before `custom` (see
+    `ProjectEntry.get_model_config_with_update`).
+    """
+    if "mps" in model_update.presets:
+        return model_update
+    return ModelUpdate(
+        presets=[*model_update.presets, "mps"],
+        custom=model_update.custom,
+    )
 
 
 class ExperimentRunner(ABC):
@@ -116,7 +145,10 @@ class ExperimentRunner(ABC):
     @cached_property
     def model_config(self) -> mlc.ConfigDict:
         """Retrieve the model configuration."""
-        return self.project_entry.get_model_config_with_update(self.model_update)
+        model_update = self.model_update
+        if _accelerator_will_use_mps(self.pl_trainer_args.accelerator):
+            model_update = _model_update_with_mps_preset(model_update)
+        return self.project_entry.get_model_config_with_update(model_update)
 
     @cached_property
     def lightning_module(self) -> pl.LightningModule:
