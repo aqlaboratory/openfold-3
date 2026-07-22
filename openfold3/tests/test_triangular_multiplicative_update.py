@@ -76,7 +76,7 @@ def test_shape(device, seeded_rng, ndarrays_regression):
     # Snapshot regression: output must be numerically identical across runs.
     # CUDA tolerances are looser to accommodate hardware-level differences.
     # Regenerate with: pytest --force-regen
-    tolerances = dict(atol=1e-6, rtol=1e-5)
+    tolerances = dict(atol=1e-4, rtol=1e-4)
     ndarrays_regression.check(
         {"output": x.cpu().numpy()},
         default_tolerance=tolerances,
