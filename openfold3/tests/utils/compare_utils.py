@@ -29,6 +29,15 @@ def skip_if_rocm():
     return pytest.mark.skipif(is_rocm, reason="Not supported on ROCm/HIP")
 
 
+def _no_skip(reason: str):
+    """Return a mark that never skips; ``reason`` records why the guard passed.
+
+    pytest ignores ``reason`` when the condition is false, so this is purely
+    documentation for the reader.
+    """
+    return pytest.mark.skipif(False, reason=reason)
+
+
 @functools.lru_cache(maxsize=1)
 def _ds4s_build_blocker() -> str | None:
     """Return why the evoformer_attn op cannot be JIT built, or None if it can.
@@ -67,6 +76,10 @@ def skip_unless_ds4s_installed():
 
     if not ds4s_is_installed:
         blocker = "Requires DeepSpeed with version ≥ 0.10.4"
+    elif not torch.cuda.is_available():
+        # Checked before probing: the probe shells out to nvcc, and decorator
+        # order cannot spare us that — every guard is called at import time.
+        blocker = "Requires GPU (DeepSpeed evoformer_attn is CUDA-only)"
     elif is_rocm:
         blocker = "DeepSpeed evoformer_attn is not supported on ROCm/HIP"
     else:
@@ -85,7 +98,7 @@ def skip_unless_evo_attn_available():
     """
     is_rocm = torch.cuda.is_available() and torch.version.hip is not None
     if is_rocm:
-        return pytest.mark.skipif(False, reason="")
+        return _no_skip("ROCm uses Triton triangle kernels; DeepSpeed not required")
     return skip_unless_ds4s_installed()
 
 
