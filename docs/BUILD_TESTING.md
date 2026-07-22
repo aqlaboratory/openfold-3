@@ -44,7 +44,7 @@ mkdir test-sdist && cd test-sdist
 uv venv --python 3.14
 source .venv/bin/activate
 
-uv pip install ../dist/openfold3-<version>.tar.gz[dev,deepspeed]
+uv pip install "../dist/openfold3-<version>.tar.gz[dev,deepspeed]" "torch==2.10.0"
 ```
 
 (Adjust the path/version to match whatever landed in `dist/`.)
