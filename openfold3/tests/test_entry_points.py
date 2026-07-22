@@ -621,13 +621,16 @@ class TestInferenceCheckpointLoading:
         assert expt_config.inference_ckpt_path == expected_ckpt_path
         assert expected_ckpt_path.exists()
 
-    def test_checkpoint_version_compatibility(self):
+    @pytest.mark.parametrize(
+        "selected_ckpt_name", ["openfold3-p1", "openfold3-p2-145k", "openfold3-p2-155k"]
+    )
+    def test_checkpoint_version_compatibility(self, selected_ckpt_name):
         # Check that loading old `openfold3-p1` raises version compatibiility error
         with pytest.raises(
-            ValueError, match="Selected checkpoint openfold3-p1 is not compatible"
+            ValueError, match=f"Selected checkpoint {selected_ckpt_name} is not compatible"
         ):
             InferenceExperimentConfig.model_validate(
-                {"inference_ckpt_name": "openfold3-p1"}
+                {"inference_ckpt_name": {selected_ckpt_name}} 
             )
 
 

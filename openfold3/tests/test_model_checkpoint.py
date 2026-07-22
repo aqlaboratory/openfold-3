@@ -124,7 +124,7 @@ class TestOF3ModelCheckpointing:
         reloaded_model = load_checkpoint(param_path)
 
         ema_params = reloaded_model["ema"]["params"]
-        expected_version_number = "1.0.0"
+        expected_version_number = "2.0.0"
         actual_version = ema_params["version_tensor"].long().tolist()
         actual_version_number = (
             f"{actual_version[0]}.{actual_version[1]}.{actual_version[2]}"
@@ -150,7 +150,24 @@ class TestOF3ModelCheckpointing:
             inference_runner.setup()
         warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
         assert any("version_tensor" in msg for msg in warning_messages)
+    
+    def test_load_model_ckpt_with_wrong_version_fails(self, tmp_path, default_ckpt_path):
+        """Test that loading a checkpoint with wrong version_tensor raises an error."""
 
+        # Load checkpoint and modify version_tensor to an incompatible version
+        ckpt = load_checkpoint(default_ckpt_path)
+        ckpt["version_tensor"] = torch.tensor([0, 0, 1])  # Incompatible version
+        ckpt_with_wrong_version_path = tmp_path / "model_weights_wrong_version.ckpt"
+        torch.save(ckpt, ckpt_with_wrong_version_path)
+
+        # Load via InferenceExperimentRunner and assert the error is raised
+        inference_config = InferenceExperimentConfig.model_validate(
+            {"inference_ckpt_path": ckpt_with_wrong_version_path}
+        )
+        inference_runner = InferenceExperimentRunner(inference_config)
+        with pytest.raises(ValueError, match="does not match current model version"):
+            inference_runner.setup()
+    
     def test_load_model_ckpt_with_missing_fields_fails(
         self, tmp_path, default_ckpt_path
     ):
@@ -170,7 +187,7 @@ class TestOF3ModelCheckpointing:
             {"inference_ckpt_path": bad_ckpt_with_missing_fields}
         )
         inference_runner = InferenceExperimentRunner(inference_config)
-        with pytest.raises(RuntimeError):
+        with pytest.raises(ValueError, match="Checkpoint state_dict keys"):
             inference_runner.setup()
 
     def test_inference_load_state_dict_benchmark_under_ten_seconds(
@@ -185,7 +202,7 @@ class TestOF3ModelCheckpointing:
         inference_runner = InferenceExperimentRunner(inference_config)
 
         def _load_state_dict():
-            inference_runner._warn_on_missing_version_tensor_in_load_statedict(
+            inference_runner._check_version_tensor_in_load_statedict(
                 state_dict
             )
 
