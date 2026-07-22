@@ -66,20 +66,26 @@ class TrainCase:
 
 
 CASES = [
-    pytest.param(TrainCase("smoke", overrides={
-        # No dataloader worker subprocesses (each forks a copy of the dataset
-        # cache/process state -- a real contributor to memory blowups on
-        # constrained machines) and a single-batch epoch.
-        "data_module_args": {
-            "num_workers": 0,
-            "num_workers_validation": 0,
-            "epoch_len": 1,
-        },
-        "pl_trainer_args": {
-            "max_epochs": 1,
-            "log_every_n_steps": 1,
-        },
-    }), id="smoke"),
+    pytest.param(
+        TrainCase(
+            "smoke",
+            overrides={
+                # No dataloader worker subprocesses (each forks a copy of the dataset
+                # cache/process state -- a real contributor to memory blowups on
+                # constrained machines) and a single-batch epoch.
+                "data_module_args": {
+                    "num_workers": 0,
+                    "num_workers_validation": 0,
+                    "epoch_len": 1,
+                },
+                "pl_trainer_args": {
+                    "max_epochs": 1,
+                    "log_every_n_steps": 1,
+                },
+            },
+        ),
+        id="smoke",
+    ),
     pytest.param(
         TrainCase("full_subset", timeout_s=1800),
         marks=pytest.mark.slow,
