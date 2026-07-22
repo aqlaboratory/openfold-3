@@ -79,8 +79,7 @@ def main():
     missing = [str(p) for p in cache_files.values() if not p.exists()]
     if missing:
         sys.exit(
-            f"Subset cache(s) not found: {missing}. Run generate_subset_cache.py "
-            "first."
+            f"Subset cache(s) not found: {missing}. Run generate_subset_cache.py first."
         )
 
     # Phase 1: structures, alignment arrays, templates (everything except
@@ -115,8 +114,7 @@ def main():
             deduped.append((s3_key, local_path))
     structure_manifest = deduped
     print(
-        f"\nTotal unique structure/alignment/template files: "
-        f"{len(structure_manifest)}"
+        f"\nTotal unique structure/alignment/template files: {len(structure_manifest)}"
     )
 
     structure_paths = [
