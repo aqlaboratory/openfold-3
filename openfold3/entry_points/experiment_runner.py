@@ -25,7 +25,6 @@ from typing import Any
 
 import ml_collections as mlc
 import pytorch_lightning as pl
-import torch
 import wandb
 from lightning_fabric.utilities.rank_zero import _get_rank
 from pydantic import BaseModel
