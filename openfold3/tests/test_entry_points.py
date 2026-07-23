@@ -345,6 +345,7 @@ class TestModelUpdate:
         ):
             model_cfg = expt_runner.model_config
 
+        assert not model_cfg.settings.memory.eval.use_triton_triangle_kernels
         assert not model_cfg.settings.memory.eval.offload_inference.msa_module
         assert model_cfg.architecture.msa.msa_module.clear_cache_between_blocks
         assert model_cfg.architecture.pairformer.clear_cache_between_blocks

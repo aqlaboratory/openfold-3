@@ -43,6 +43,9 @@ mps:
   settings:
     memory:
       eval:
+        # No Triton on macOS/Apple Silicon so the base `True` default
+        # (model_config.py) always fails.
+        use_triton_triangle_kernels: false
         offload_inference:
           msa_module: false
   architecture:
