@@ -756,6 +756,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         ckpt = load_checkpoint(self.ckpt_path)
         state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
         self._check_version_tensor_in_load_statedict(state_dict)
+        self.lightning_module.load_state_dict(state_dict, strict=True)
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
