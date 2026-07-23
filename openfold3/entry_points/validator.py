@@ -36,7 +36,6 @@ from openfold3.entry_points.parameters import (
     DEFAULT_CACHE_PATH,
     DEFAULT_CHECKPOINT_NAME,
     OPENFOLD_MODEL_CHECKPOINT_REGISTRY,
-    download_model_parameters,
     get_default_checkpoint_dir,
 )
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
@@ -497,8 +496,7 @@ class InferenceExperimentConfig(ExperimentConfig):
         This function will:
         1) Attempt to find the checkpoints in the path specified by
            `cache_path` / `CHECKPOINT_ROOT_FILENAME`,
-        2) If not found, attempt to download the specified checkpoint name
-        (self.inference_ckpt_name to `cache_path` and write the checkpoint root file.
+        2) If not found,raises an error
         3) Set the inference_ckpt_path to the found or downloaded checkpoint path.
         """
         # Skip ckpt selection if ckpt is previously specified
@@ -512,7 +510,12 @@ class InferenceExperimentConfig(ExperimentConfig):
         )
 
         if not path_to_ckpt.exists():
-            download_model_parameters(param_dir, self.inference_ckpt_name)
+            raise ValueError(
+                f"Default checkpoint {self.inference_ckpt_name} not found"
+                f" in {param_dir}, cowardly refusing to perform inference."
+                "Please run `setup_openfold` to download the current default parameters"
+                " or specify a valid checkpoint path with `--inference-ckpt-path`"
+            )
 
         self.inference_ckpt_path = path_to_ckpt
 
