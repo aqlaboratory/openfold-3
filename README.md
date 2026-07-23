@@ -26,7 +26,7 @@ OpenFold3-preview replicates the input features described in the [AlphaFold3](ht
 A summary of our supported features includes:
 - Structure prediction of standard and non-canonical protein, RNA, and DNA chains, and small molecules
 - Pipelines for generating MSAs using the [ColabFold server](https://github.com/sokrypton/ColabFold) or using JackHMMER / hhblits following the AlphaFold3 protocol
-- [Structure templates](https://openfold-3.readthedocs.io/en/latest/template_how_to.html) for protein monomers
+- [Structure templates](https://openfold-3.readthedocs.io/en/latest/template_how_to.html) for proteins
 - Kernel acceleration through [cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) and [DeepSpeed4Science](https://www.deepspeed.ai/tutorials/ds4sci_evoformerattention/) kernels - more details [here](https://openfold-3.readthedocs.io/en/latest/kernels.html)
 - Support for [multi-query jobs](https://openfold-3.readthedocs.io/en/latest/input_format.html) with [distributed predictions across multiple GPUs](https://openfold-3.readthedocs.io/en/latest/inference.html#inference-run-on-multiple-gpus)
 - Custom settings for [memory constrained GPU resources](https://openfold-3.readthedocs.io/en/latest/inference.html#inference-low-memory-mode)
