@@ -54,7 +54,7 @@ DEFAULT_CHECKPOINT_NAME = "openfold3-ob-test"
 
 # These checkpoints are not supported for download and use in the current version,
 # but are left in the registry for record-keeping and compatibility checks.
-LEGACY_CHECKPOINTS = ["openfold3-p1"]
+LEGACY_CHECKPOINTS = ["openfold3-p1", "openfold3-p2-145k", "openfold3-p2-155k"]
 
 
 def download_model_parameters(
