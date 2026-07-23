@@ -49,11 +49,12 @@ Available pixi environments:
 | Environment        | Supported platforms                                | Description                                                          |
 | ------------------ | -------------------------------------------------- | -------------------------------------------------------------------- |
 | `openfold3-cpu`    | `linux-64`, `linux-aarch64`, `osx-64`, `osx-arm64` | CPU-only environment for running OpenFold3 without GPU acceleration. |
+| `openfold3-mps`    | `osx-arm64` | Alias for `openfold3-cpu` (identical environment) provided for clarity on Apple Silicon, where it does get MPS acceleration despite the "cpu" name above. |
 | `openfold3-cuda12` | `linux-64`, `linux-aarch64`                        | NVIDIA GPU environment using CUDA 12.                                |
 | `openfold3-cuda13` | `linux-64`, `linux-aarch64`                        | NVIDIA GPU environment using CUDA 13.                                |
 | `openfold3-rocm7`  | `linux-64`                                         | AMD GPU environment using ROCm 7.                                    |
 
-Choose the environment that matches your system. For example, use `openfold3-cpu` for CPU-only installations, `openfold3-cuda12` or `openfold3-cuda13` for NVIDIA GPU systems, and `openfold3-rocm7` for AMD ROCm systems.
+Choose the environment that matches your system. For example, use `openfold3-cpu` (or `openfold3-mps` on a Mac) for non-CUDA/ROCm installations, `openfold3-cuda12` or `openfold3-cuda13` for NVIDIA GPU systems, and `openfold3-rocm7` for AMD ROCm systems.
 
 For more information, including rationale, tips and tricks, see [Modern Conda Environments with Pixi](./modern-conda-environments-with-pixi.md).
 
