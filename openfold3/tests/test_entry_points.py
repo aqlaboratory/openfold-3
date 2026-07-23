@@ -594,12 +594,12 @@ class TestInferenceCheckpointLoading:
         # specify tmp_path to ensure clean cache directory
         # make a file path to old checkpoint to ensure error still raises when
         # old checkpoints are present
-        outdated_checkpoint_name = "openfold3-p2-155k"
-        outdated_ckpt_path = (
+        legacy_checkpoint_name = "openfold3-p2-155k"
+        legacy_ckpt_path = (
             tmp_path
-            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[outdated_checkpoint_name].file_name
+            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[legacy_checkpoint_name].file_name
         )
-        _create_fake_file(outdated_ckpt_path)
+        _create_fake_file(legacy_ckpt_path)
 
         with pytest.raises(ValueError, match="Default checkpoint .* not found"):
             InferenceExperimentConfig.model_validate({"cache_path": tmp_path})
@@ -625,6 +625,16 @@ class TestInferenceCheckpointLoading:
         expected_ckpt_path = dummy_ckpt_file
         assert expt_config.inference_ckpt_name == dummy_ckpt_name
         assert expt_config.inference_ckpt_path == expected_ckpt_path
+
+    def test_load_legacy_ckpt_name_fails(self):
+        legacy_ckpt_name = "openfold3-p2-155k"
+        with pytest.raises(
+            ValueError,
+            match=f"Selected checkpoint {legacy_ckpt_name} is not compatible",
+        ):
+            InferenceExperimentConfig.model_validate(
+                {"inference_ckpt_name": legacy_ckpt_name}
+            )
 
 
 class TestTemplatePreprocessorSettings:

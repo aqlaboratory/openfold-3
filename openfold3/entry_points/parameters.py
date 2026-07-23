@@ -37,13 +37,13 @@ class CheckpointEntry:
 
 OPENFOLD_MODEL_CHECKPOINT_REGISTRY = {
     "openfold3-ob-test": CheckpointEntry(
-        file_name="ob-rc-v1.pt", version_compatibility=">=0.5"
+        file_name="ob-rc-v1.pt", version_compatibility=">=0.4.4dev0"
     ),
     "openfold3-p2-145k": CheckpointEntry(
-        file_name="of3-p2-145k.pt", version_compatibility=">=0.4,<0.5"
+        file_name="of3-p2-145k.pt", version_compatibility=">=0.4,<0.4.4dev0"
     ),
     "openfold3-p2-155k": CheckpointEntry(
-        file_name="of3-p2-155k.pt", version_compatibility=">=0.4"
+        file_name="of3-p2-155k.pt", version_compatibility=">=0.4,<0.4.4dev0"
     ),
     "openfold3-p1": CheckpointEntry(  # legacy
         file_name="of3_ft3_v1.pt", version_compatibility="<0.4"
