@@ -636,7 +636,9 @@ class InferenceExperimentRunner(ExperimentRunner):
         if use_templates is not None:
             self.experiment_config.experiment_settings.use_templates = use_templates
         if unmasked is not None:
-            self.model_config.architecture.template.template_pair_embedder.unmasked = unmasked
+            self.model_config.architecture.template.template_pair_embedder.unmasked = (
+                unmasked
+            )
 
     @cached_property
     def use_msa_server(self) -> bool:

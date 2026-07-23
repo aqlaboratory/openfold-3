@@ -246,7 +246,10 @@ def create_template_distogram(
         dtype=torch.float,
     )
 
-    return template_distogram * (pseudo_beta_mask[..., None] * pseudo_beta_mask[..., None, :])[..., None]
+    return (
+        template_distogram
+        * (pseudo_beta_mask[..., None] * pseudo_beta_mask[..., None, :])[..., None]
+    )
 
 
 def create_template_unit_vector(

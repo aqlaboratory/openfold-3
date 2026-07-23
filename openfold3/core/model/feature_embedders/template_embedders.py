@@ -76,9 +76,13 @@ class TemplatePairEmbedderAllAtom(nn.Module):
 
         # [*, N_token, N_token]
         if self.unmasked:
-            multichain_pair_mask = ((batch["asym_id"][..., None] == batch["asym_id"][..., None, :]) | (batch["asym_id"][..., None] != batch["asym_id"][..., None, :]))
+            multichain_pair_mask = (
+                batch["asym_id"][..., None] == batch["asym_id"][..., None, :]
+            ) | (batch["asym_id"][..., None] != batch["asym_id"][..., None, :])
         else:
-            multichain_pair_mask = (batch["asym_id"][..., None] == batch["asym_id"][..., None, :])
+            multichain_pair_mask = (
+                batch["asym_id"][..., None] == batch["asym_id"][..., None, :]
+            )
         multichain_pair_mask = multichain_pair_mask[..., None, :, :, None]
 
         # [*, N_templ, N_token, N_token]

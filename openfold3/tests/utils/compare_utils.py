@@ -76,11 +76,11 @@ def assert_max_abs_diff_small(expected, actual, eps):
 def assert_mean_abs_diff_small(expected, actual, eps):
     _assert_abs_diff_small_base(torch.mean, expected, actual, eps)
 
+
 def assert_differences_along_last_dim(expected, actual):
     """Assert every position differs from `expected` somewhere along the last dim.
- 
+
     Used to check that a region carries real, position-specific information rather
     than a constant/masked filler value.
     """
     assert torch.max(torch.not_equal(expected, actual), -1).values.min()
-

@@ -18,7 +18,6 @@ import numpy as np
 import torch
 from biotite.structure import AtomArray
 
-from openfold3.core.data.primitives.featurization.padding import pad_token_dim
 from openfold3.core.data.primitives.featurization.structure import (
     extract_starts_entities,
 )

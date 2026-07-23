@@ -156,9 +156,7 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     "--unmasked",
     type=bool,
     default=None,
-    help=(
-        "Whether to use unmasking for multimer templates."
-    ),
+    help=("Whether to use unmasking for multimer templates."),
 )
 def predict(
     query_json: Path,
