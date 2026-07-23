@@ -95,10 +95,6 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         )[..., None] * multichain_pair_mask
 
         template_unit_vector = batch["template_unit_vector"] * multichain_pair_mask
-        with open(f"../example_dir/unmasked_{self.unmasked}.txt", "a") as f:
-            f.write(f"multichain_pair_mask: {multichain_pair_mask.sum(-2)}\n")
-            f.write(f"template_unit_vector_shape: {template_unit_vector.shape}\n")
-            f.write(f"template_unit_vector: {template_unit_vector[0][0].sum([1,2])}\n")
         x, y, z = template_unit_vector.unbind(dim=-1)
 
         # [*, N_templ, N_token, N_token, 32]
