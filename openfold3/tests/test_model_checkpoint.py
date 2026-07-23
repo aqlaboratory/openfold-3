@@ -150,8 +150,10 @@ class TestOF3ModelCheckpointing:
             inference_runner.setup()
         warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
         assert any("version_tensor" in msg for msg in warning_messages)
-    
-    def test_load_model_ckpt_with_wrong_version_fails(self, tmp_path, default_ckpt_path):
+
+    def test_load_model_ckpt_with_wrong_version_fails(
+        self, tmp_path, default_ckpt_path
+    ):
         """Test that loading a checkpoint with wrong version_tensor raises an error."""
 
         # Load checkpoint and modify version_tensor to an incompatible version
@@ -167,7 +169,7 @@ class TestOF3ModelCheckpointing:
         inference_runner = InferenceExperimentRunner(inference_config)
         with pytest.raises(ValueError, match="does not match current model version"):
             inference_runner.setup()
-    
+
     def test_load_model_ckpt_with_missing_fields_fails(
         self, tmp_path, default_ckpt_path
     ):
@@ -202,9 +204,7 @@ class TestOF3ModelCheckpointing:
         inference_runner = InferenceExperimentRunner(inference_config)
 
         def _load_state_dict():
-            inference_runner._check_version_tensor_in_load_statedict(
-                state_dict
-            )
+            inference_runner._check_version_tensor_in_load_statedict(state_dict)
 
         benchmark.pedantic(
             _load_state_dict,

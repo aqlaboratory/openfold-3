@@ -582,22 +582,23 @@ class TestInferenceCheckpointLoading:
         _create_fake_file(expected_ckpt_path)
 
         # Try to find the chekcpoint path
-        expt_config = InferenceExperimentConfig.model_validate(
-            {"cache_path": tmp_path}
-        )
+        expt_config = InferenceExperimentConfig.model_validate({"cache_path": tmp_path})
         expected_ckpt_path = (
             tmp_path
             / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[DEFAULT_CHECKPOINT_NAME].file_name
         )
         assert expt_config.inference_ckpt_name == DEFAULT_CHECKPOINT_NAME
         assert expt_config.inference_ckpt_path == expected_ckpt_path
-    
+
     def test_inference_errors_when_default_not_found(self, tmp_path):
         # specify tmp_path to ensure clean cache directory
         # make a file path to old checkpoint to ensure error still raises when
         # old checkpoints are present
         outdated_checkpoint_name = "openfold3-p2-155k"
-        outdated_ckpt_path = tmp_path / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[outdated_checkpoint_name].file_name
+        outdated_ckpt_path = (
+            tmp_path
+            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[outdated_checkpoint_name].file_name
+        )
         _create_fake_file(outdated_ckpt_path)
 
         with pytest.raises(ValueError, match="Default checkpoint .* not found"):
@@ -621,7 +622,7 @@ class TestInferenceCheckpointLoading:
                 {"cache_path": tmp_path, "inference_ckpt_name": dummy_ckpt_name}
             )
 
-        expected_ckpt_path = dummy_ckpt_file 
+        expected_ckpt_path = dummy_ckpt_file
         assert expt_config.inference_ckpt_name == dummy_ckpt_name
         assert expt_config.inference_ckpt_path == expected_ckpt_path
 

@@ -61,7 +61,6 @@ from openfold3.entry_points.validator import (
     generate_seeds,
 )
 from openfold3.projects.of3_all_atom import safe_globals  # noqa: F401
-from openfold3.projects.of3_all_atom.model import MODEL_VERSION as OF3_MODEL_VERSION 
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
     InferenceJobConfig,
@@ -70,6 +69,7 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
+from openfold3.projects.of3_all_atom.model import MODEL_VERSION as OF3_MODEL_VERSION
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 logger = logging.getLogger(__name__)
@@ -713,9 +713,7 @@ class InferenceExperimentRunner(ExperimentRunner):
 
         return deduplicated_inference_set
 
-    def _check_version_tensor_in_load_statedict(
-        self, state_dict: dict
-    ) -> None:
+    def _check_version_tensor_in_load_statedict(self, state_dict: dict) -> None:
         """Load state dict, warning if only version_tensor is missing."""
         # perform the key check manually.
         model_keys = set(self.lightning_module.state_dict().keys())
@@ -737,7 +735,7 @@ class InferenceExperimentRunner(ExperimentRunner):
                 f"Checkpoint state_dict keys do not match model state_dict keys. "
                 f"Missing keys: {missing}, Unexpected keys: {unexpected}"
             )
-        
+
         # raise error if version tensor is present but does not match
         loaded_model_version = state_dict.get("model.version_tensor")
         current_model_verison = OF3_MODEL_VERSION
@@ -746,7 +744,7 @@ class InferenceExperimentRunner(ExperimentRunner):
                 f"Loaded checkpoint model version ({loaded_model_version}) does not"
                 f" match current model version ({current_model_verison})."
                 f" Please verify your checkpoint selection."
-            ) 
+            )
         return
 
     def setup(self) -> None:
