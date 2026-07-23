@@ -145,7 +145,9 @@ class TestOF3ModelCheckpointing:
         inference_config = InferenceExperimentConfig.model_validate(
             {"inference_ckpt_path": ckpt_with_no_version_path}
         )
-        inference_runner = InferenceExperimentRunner(inference_config)
+        inference_runner = InferenceExperimentRunner(
+            inference_config, output_dir=tmp_path
+        )
         with patch("openfold3.entry_points.experiment_runner.logger") as mock_logger:
             inference_runner.setup()
         warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
@@ -166,7 +168,9 @@ class TestOF3ModelCheckpointing:
         inference_config = InferenceExperimentConfig.model_validate(
             {"inference_ckpt_path": ckpt_with_wrong_version_path}
         )
-        inference_runner = InferenceExperimentRunner(inference_config)
+        inference_runner = InferenceExperimentRunner(
+            inference_config, output_dir=tmp_path
+        )
         with pytest.raises(ValueError, match="does not match current model version"):
             inference_runner.setup()
 
@@ -188,7 +192,9 @@ class TestOF3ModelCheckpointing:
         inference_config = InferenceExperimentConfig.model_validate(
             {"inference_ckpt_path": bad_ckpt_with_missing_fields}
         )
-        inference_runner = InferenceExperimentRunner(inference_config)
+        inference_runner = InferenceExperimentRunner(
+            inference_config, output_dir=tmp_path
+        )
         with pytest.raises(ValueError, match="Checkpoint state_dict keys"):
             inference_runner.setup()
 
