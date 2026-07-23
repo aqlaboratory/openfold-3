@@ -17,8 +17,7 @@ jobs:
   test-conda:
     if: |
       github.event_name != 'schedule' ||
-      (github.repository == 'aqlaboratory/openfold-3' && github.event.schedule == '17 3 * * *') ||
-      (github.repository != 'aqlaboratory/openfold-3' && github.event.schedule == '17 4 * * *')
+      (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)
     permissions:
       id-token: write
       contents: read
@@ -40,8 +39,7 @@ jobs:
   test-pixi-cuda:
     if: |
       github.event_name != 'schedule' ||
-      (github.repository == 'aqlaboratory/openfold-3' && github.event.schedule == '17 3 * * *') ||
-      (github.repository != 'aqlaboratory/openfold-3' && github.event.schedule == '17 4 * * *')
+      (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)
     permissions:
       id-token: write
       contents: read
