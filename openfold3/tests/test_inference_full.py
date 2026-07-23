@@ -32,7 +32,6 @@ import os
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
-from unittest.mock import patch
 
 import biotite.structure as struc
 import numpy as np
@@ -124,9 +123,7 @@ def _run_inference_helper(
             """)
     runner_yaml.write_text(yaml_str)
 
-    experiment_config = InferenceExperimentConfig(
-        **config_utils.load_yaml(runner_yaml)
-    )
+    experiment_config = InferenceExperimentConfig(**config_utils.load_yaml(runner_yaml))
     runner = InferenceExperimentRunner(
         experiment_config,
         num_diffusion_samples=num_diffusion_samples,
