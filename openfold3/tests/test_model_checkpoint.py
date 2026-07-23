@@ -132,6 +132,41 @@ class TestOF3ModelCheckpointing:
 
         assert actual_version_number == expected_version_number
 
+    def test_load_model_ckpt_populates_model_weights(self, tmp_path, default_ckpt_path):
+        """Test that a valid checkpoint's weights actually land in the model.
+
+        The other tests in this class only cover the paths where setup() rejects or
+        warns about a checkpoint. This covers the success path: validating the key set
+        and the version tensor is not enough, the weights have to be loaded. When they
+        are not, the model silently runs on its random init -- the zero-initialised
+        "final" projections stay at zero, so inference returns structures that ignore
+        the sequence, MSA and templates entirely.
+        """
+        inference_config = InferenceExperimentConfig.model_validate(
+            {"inference_ckpt_path": default_ckpt_path}
+        )
+        inference_runner = InferenceExperimentRunner(
+            inference_config, output_dir=tmp_path
+        )
+        inference_runner.setup()
+
+        ckpt = load_checkpoint(default_ckpt_path)
+        expected, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
+        actual = inference_runner.lightning_module.state_dict()
+
+        assert set(actual) == set(expected)
+
+        # Compare as float so a dtype change alone does not read as "not loaded"
+        mismatched = [
+            key
+            for key, value in expected.items()
+            if not torch.equal(value.cpu().float(), actual[key].cpu().float())
+        ]
+        assert not mismatched, (
+            f"{len(mismatched)}/{len(expected)} tensors differ from the checkpoint "
+            f"after setup(); first few: {sorted(mismatched)[:5]}"
+        )
+
     def test_load_model_ckpt_with_no_version_warns(self, tmp_path, default_ckpt_path):
         """Test that warning is raised if version_tensor is the only key that is missing."""
 
