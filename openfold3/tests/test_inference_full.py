@@ -124,10 +124,9 @@ def _run_inference_helper(
             """)
     runner_yaml.write_text(yaml_str)
 
-    with patch("builtins.input", return_value="no"):
-        experiment_config = InferenceExperimentConfig(
-            **config_utils.load_yaml(runner_yaml)
-        )
+    experiment_config = InferenceExperimentConfig(
+        **config_utils.load_yaml(runner_yaml)
+    )
     runner = InferenceExperimentRunner(
         experiment_config,
         num_diffusion_samples=num_diffusion_samples,
