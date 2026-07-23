@@ -110,7 +110,18 @@ openfold3-cpu = { no-default-feature = true, features = [
     "pytorch-conda",
     "openfold3-editable",
     "tests"
-] }
+], solve-group = "openfold3-cpu" }
+# Alias for openfold3-cpu (identical features and solve-group, so it shares
+# the same locked resolution). Exists because "cpu" is misleading on Apple
+# Silicon: the same conda-forge pytorch dependency always ships Metal (MPS)
+# support, unlike on Linux where it's truly CPU-only.
+openfold3-mps = { no-default-feature = true, features = [
+    "python",
+    "openfold3-cpu",
+    "pytorch-conda",
+    "openfold3-editable",
+    "tests"
+], solve-group = "openfold3-cpu" }
 openfold3-cuda12 = { no-default-feature = true, features = [
     "python",
     "openfold3-cpu",
