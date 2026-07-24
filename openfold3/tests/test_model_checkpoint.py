@@ -245,7 +245,7 @@ class TestOF3ModelCheckpointing:
         inference_runner = InferenceExperimentRunner(inference_config)
 
         def _load_state_dict():
-            inference_runner._check_version_tensor_in_load_statedict(state_dict)
+            inference_runner._load_state_dict_with_version_validation(state_dict)
 
         benchmark.pedantic(
             _load_state_dict,
