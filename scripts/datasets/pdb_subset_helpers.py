@@ -29,11 +29,16 @@ from botocore.config import Config
 BUCKET = "openfold3-data"
 S3_PREFIX = "pdb_training_set"
 
-ROOT_DIR = Path(__file__).parent
-DEFAULT_OUTPUT_DIR = ROOT_DIR / "pdb_training_set"
-DEFAULT_TRAIN_CACHE = ROOT_DIR / "training_cache_with_templates.json"
-DEFAULT_VAL_CACHE = ROOT_DIR / "validation_cache_with_templates.json"
-DEFAULT_RUNNER_YAML = ROOT_DIR / "train_pdb_subset.yaml"
+
+def default_target_dir() -> Path:
+    """Default root directory for generated subset caches/yaml/downloads.
+
+    A `datasets/` directory next to wherever the calling script is invoked
+    from (i.e. relative to the current working directory, not this file's
+    location) -- so running from different directories/checkouts naturally
+    keeps their generated data separate.
+    """
+    return Path.cwd() / "datasets"
 
 AMINO_ACID_CCD_CODES = {
     "ALA",
@@ -108,13 +113,13 @@ def download_full_cache(local_path: Path) -> None:
     local_path.write_text(re.sub(r"\bNaN\b", "null", text))
 
 
-def subset_cache_path(full_cache: Path, size: int) -> Path:
-    """Path a size-N subset cache for `full_cache` would live at.
+def subset_cache_path(full_cache: Path, size: int, target_dir: Path) -> Path:
+    """Path a size-N subset cache for `full_cache` would live at under `target_dir`.
 
     Shared by generate_subset_cache.py (writes it) and download_subset.py
     (reads it) so the naming convention only lives in one place.
     """
-    return ROOT_DIR / f"{full_cache.stem}_subset_{size}.json"
+    return target_dir / f"{full_cache.stem}_subset_{size}.json"
 
 
 def enumerate_structure_ids(path: Path) -> list[str]:

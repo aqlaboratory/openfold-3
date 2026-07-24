@@ -3,14 +3,16 @@
 
 Downloads the full (un-sampled) caches from S3 first if not already present
 locally. Writes training_cache_with_templates_subset_{train_size}.json /
-validation_cache_with_templates_subset_{val_size}.json next to this script,
-plus a run_openfold training runner yaml pointed at them.
+validation_cache_with_templates_subset_{val_size}.json under --target-dir
+(default: ./datasets next to wherever this is invoked from), plus a
+run_openfold training runner yaml pointed at them.
 
 Does not download any of the structure/alignment/template/reference-mol
 files the subset references -- see download_subset.py for that.
 
 Usage:
     python generate_subset_cache.py
+    python generate_subset_cache.py --target-dir /data/of3-subset
     python generate_subset_cache.py --train-size 32 --val-size 16 --seed 1234
     python generate_subset_cache.py --force  # resample even if a cache already exists
 """
@@ -19,11 +21,7 @@ import argparse
 from pathlib import Path
 
 from pdb_subset_helpers import (
-    DEFAULT_OUTPUT_DIR,
-    DEFAULT_RUNNER_YAML,
-    DEFAULT_TRAIN_CACHE,
-    DEFAULT_VAL_CACHE,
-    ROOT_DIR,
+    default_target_dir,
     download_full_cache,
     sample_subset_cache,
     subset_cache_path,
@@ -32,7 +30,7 @@ from pdb_subset_helpers import (
 
 
 def get_or_create_subset_cache(
-    full_cache: Path, size: int, seed: int, force: bool = False
+    full_cache: Path, size: int, seed: int, target_dir: Path, force: bool = False
 ) -> Path:
     """Return the path to a size-N subset cache, generating it if missing.
 
@@ -40,18 +38,28 @@ def get_or_create_subset_cache(
     from S3 first. If `force`, the subset is resampled even if a cache for
     this size already exists.
     """
-    subset_path = subset_cache_path(full_cache, size)
+    subset_path = subset_cache_path(full_cache, size, target_dir)
     if subset_path.exists() and not force:
         return subset_path
 
     download_full_cache(full_cache)
     print(f"Sampling {size} structures from {full_cache.name} with seed={seed}...")
-    sample_subset_cache(full_cache, [size], ROOT_DIR, seed=seed)
+    sample_subset_cache(full_cache, [size], target_dir, seed=seed)
     return subset_path
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--target-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Root directory for the subset cache(s) and runner yaml, and "
+            "(via download_subset.py) the downloaded files -- default: "
+            "./datasets next to wherever this script is invoked from."
+        ),
+    )
     parser.add_argument(
         "--train-size", type=int, default=8, help="Train subset size (default: 8)"
     )
@@ -64,14 +72,20 @@ def main():
     parser.add_argument(
         "--train-cache",
         type=Path,
-        default=DEFAULT_TRAIN_CACHE,
-        help=f"Full training cache to sample from (default: {DEFAULT_TRAIN_CACHE})",
+        default=None,
+        help=(
+            "Full training cache to sample from (default: "
+            "<target-dir>/training_cache_with_templates.json)"
+        ),
     )
     parser.add_argument(
         "--val-cache",
         type=Path,
-        default=DEFAULT_VAL_CACHE,
-        help=f"Full validation cache to sample from (default: {DEFAULT_VAL_CACHE})",
+        default=None,
+        help=(
+            "Full validation cache to sample from (default: "
+            "<target-dir>/validation_cache_with_templates.json)"
+        ),
     )
     parser.add_argument(
         "--force",
@@ -81,34 +95,47 @@ def main():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=DEFAULT_OUTPUT_DIR,
+        default=None,
         help=(
             "Directory download_subset.py will download files into -- baked "
-            f"into the generated runner yaml (default: {DEFAULT_OUTPUT_DIR})"
+            "into the generated runner yaml (default: <target-dir>/pdb_training_set)"
         ),
     )
     parser.add_argument(
         "--runner-yaml",
         type=str,
-        default=str(DEFAULT_RUNNER_YAML),
+        default=None,
         help=(
             "Where to write the run_openfold training runner yaml (default: "
-            f"{DEFAULT_RUNNER_YAML}). Pass an empty string to skip writing it."
+            "<target-dir>/train_pdb_subset.yaml). Pass an empty string to "
+            "skip writing it."
         ),
     )
     args = parser.parse_args()
 
+    target_dir = args.target_dir or default_target_dir()
+    train_cache = args.train_cache or (
+        target_dir / "training_cache_with_templates.json"
+    )
+    val_cache = args.val_cache or (target_dir / "validation_cache_with_templates.json")
+    output_dir = args.output_dir or (target_dir / "pdb_training_set")
+    runner_yaml = (
+        str(target_dir / "train_pdb_subset.yaml")
+        if args.runner_yaml is None
+        else args.runner_yaml
+    )
+
     cache_files = {
         "train": get_or_create_subset_cache(
-            args.train_cache, args.train_size, args.seed, force=args.force
+            train_cache, args.train_size, args.seed, target_dir, force=args.force
         ),
         "val": get_or_create_subset_cache(
-            args.val_cache, args.val_size, args.seed, force=args.force
+            val_cache, args.val_size, args.seed, target_dir, force=args.force
         ),
     }
 
-    if args.runner_yaml:
-        write_runner_yaml(Path(args.runner_yaml), cache_files, args.output_dir)
+    if runner_yaml:
+        write_runner_yaml(Path(runner_yaml), cache_files, output_dir)
 
 
 if __name__ == "__main__":
