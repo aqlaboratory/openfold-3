@@ -45,7 +45,7 @@ from openfold3.core.utils.permutation_alignment import (
 )
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
 
-MODEL_VERSION = torch.tensor([1, 0, 0], dtype=torch.float32)
+MODEL_VERSION = torch.tensor([2, 0, 0], dtype=torch.float32)
 
 
 class OffloadModules(Enum):
@@ -307,8 +307,8 @@ class OpenFold3(nn.Module):
                 s, z = self.pairformer_stack(
                     s=s,
                     z=z,
-                    single_mask=token_mask.to(dtype=z.dtype),
-                    pair_mask=pair_mask.to(dtype=s.dtype),
+                    single_mask=token_mask.to(dtype=s.dtype),
+                    pair_mask=pair_mask.to(dtype=z.dtype),
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
                     use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
@@ -320,7 +320,7 @@ class OpenFold3(nn.Module):
 
         del s_init, z_init
 
-        return s_input, s, z
+        return s_input.float(), s.float(), z.float()
 
     def _rollout(
         self,
@@ -390,6 +390,7 @@ class OpenFold3(nn.Module):
                 device=si_input.device,
             )
 
+            # TODO: Add back triton and cueq APB kernel
             atom_positions_predicted = self.sample_diffusion(
                 batch=batch,
                 si_input=si_input,
@@ -399,10 +400,7 @@ class OpenFold3(nn.Module):
                 no_rollout_samples=no_rollout_samples,
                 use_conditioning=True,
                 chunk_size=mode_mem_settings.chunk_size,
-                use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
-                use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
-                use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
-                use_lma=mode_mem_settings.use_lma,
+                use_high_precision_attention=True,
                 _mask_trans=True,
             )
 
@@ -414,9 +412,17 @@ class OpenFold3(nn.Module):
             "atom_positions_predicted": atom_positions_predicted,
         }
 
-        cast_dtype = torch.float32 if self.training else si_trunk.dtype
-        with torch.amp.autocast(device_type="cuda", dtype=cast_dtype):
-            # Compute confidence logits
+        # Capture dtype before entering fp32 context for the pairformer
+        pairformer_dtype = (
+            torch.get_autocast_dtype("cuda")
+            if torch.is_autocast_enabled()
+            else torch.float32
+        )
+
+        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+            # Compute distogram and confidence logits — pairformer runs in
+            # pairformer_dtype, everything else (distogram, confidence heads)
+            # runs in fp32
             output.update(
                 self.aux_heads(
                     batch=batch,
@@ -431,6 +437,7 @@ class OpenFold3(nn.Module):
                     inplace_safe=inplace_safe,
                     offload_inference=offload_confidence_heads,
                     _mask_trans=True,
+                    pairformer_dtype=pairformer_dtype,
                 )
             )
 

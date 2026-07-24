@@ -18,6 +18,7 @@ Setup script for OpenFold3 parameters.
 Downloads model parameters and runs verification tests.
 """
 
+import importlib.util
 import logging
 import os
 import sys
@@ -211,21 +212,28 @@ def setup_biotite_ccd(*, ccd_path: Path, force_download: bool) -> bool:
 def _run_integration_tests() -> None:
     logger.info("Running integration tests...")
     os.environ["OPENFOLD_SETUP_SCRIPT"] = "1"
-    import unittest
+    try:
+        import pytest
+    except ImportError as e:
+        raise ImportError(
+            "Running integration tests requires pytest, which is not installed. "
+            "Install it with `pip install pytest` or "
+            "with the optional dev dependencies: `pip install openfold3[dev]`."
+            "Then run integration tests with `pytest -m inference_verification`."
+        ) from e
+
+    spec = importlib.util.find_spec("openfold3.tests.test_inference_full")
+    test_module = spec.origin
 
     root_logger = logging.getLogger()
     original_level = root_logger.level
     try:
         root_logger.setLevel(logging.WARNING)
-        program = unittest.main(
-            module="openfold3.tests.test_inference_full",
-            exit=False,
-            verbosity=2,
-        )
+        exit_code = pytest.main(["-v", str(test_module)])
     finally:
         root_logger.setLevel(original_level)
 
-    if not program.result.wasSuccessful():
+    if exit_code != 0:
         logger.error("Integration tests failed. Please check the output above.")
         sys.exit(1)
     logger.info("Integration tests passed!")

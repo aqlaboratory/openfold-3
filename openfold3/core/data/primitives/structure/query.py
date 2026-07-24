@@ -39,7 +39,7 @@ from openfold3.core.data.primitives.structure.conformer import (
 from openfold3.core.data.resources.residues import (
     DNA_RESTYPE_1TO3,
     MOLECULE_TYPE_TO_LEAVING_ATOMS,
-    MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3,
+    MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_3,
     PROTEIN_RESTYPE_1TO3,
     RNA_RESTYPE_1TO3,
     MoleculeType,
@@ -325,7 +325,7 @@ def structure_with_ref_mols_from_sequence(
             raise ValueError(f"Unsupported molecule type: {poly_type}")
 
     # Figure out the unknown residue 3-letter identifier and leaving atom names
-    unk_res = MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3[poly_type]
+    unk_res = MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_3[poly_type]
     base_leaving_atoms = MOLECULE_TYPE_TO_LEAVING_ATOMS[poly_type]
 
     atom_array = None

@@ -15,18 +15,12 @@
 
 """Normalization layers. Includes LayerNorm and AdaptiveLayerNorm."""
 
-import importlib
-
 import torch
 import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives.linear import Linear
-
-deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-if deepspeed_is_installed:
-    import deepspeed
 
 
 class LayerNorm(nn.Module):
@@ -57,32 +51,29 @@ class LayerNorm(nn.Module):
 
     def forward(self, x) -> torch.Tensor:
         d = x.dtype
-        deepspeed_is_initialized = (
-            deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
-        )
 
-        if d is torch.bfloat16 and not deepspeed_is_initialized:
+        # LayerNorm should be upcasted to fp32 anyway in torch
+        # This enforces it if not running with autocast context
+        if d in (torch.bfloat16, torch.float16):
             with torch.amp.autocast("cuda", enabled=False):
-                weight = self.weight.to(dtype=d) if self.weight is not None else None
-                bias = self.bias.to(dtype=d) if self.bias is not None else None
-
+                weight = self.weight.float() if self.weight is not None else None
+                bias = self.bias.float() if self.bias is not None else None
                 out = nn.functional.layer_norm(
-                    input=x,
+                    input=x.float(),
                     normalized_shape=self.c_in,
                     weight=weight,
                     bias=bias,
                     eps=self.eps,
                 )
-        else:
-            out = nn.functional.layer_norm(
-                input=x,
-                normalized_shape=self.c_in,
-                weight=self.weight,
-                bias=self.bias,
-                eps=self.eps,
-            )
+            return out.to(dtype=d)
 
-        return out
+        return nn.functional.layer_norm(
+            input=x,
+            normalized_shape=self.c_in,
+            weight=self.weight,
+            bias=self.bias,
+            eps=self.eps,
+        )
 
 
 class AdaLN(nn.Module):

@@ -165,6 +165,7 @@ model_config = mlc.ConfigDict(
                 "log_grad_norm": False,
                 "log_extra_grad_metrics": False,
                 "profile_grad_logging": False,
+                "log_iteration_time": False,
             },
         },
         "architecture": {
@@ -209,7 +210,6 @@ model_config = mlc.ConfigDict(
                     "n_transition": 2,
                     "n_query": n_query,
                     "n_key": n_key,
-                    "use_ada_layer_norm": True,
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "ckpt_intermediate_steps": ckpt_intermediate_steps,
                     "inf": inf,
@@ -221,7 +221,7 @@ model_config = mlc.ConfigDict(
             "template": {
                 "c_t": c_t,
                 "c_z": c_z,
-                "linear_init_param": lin_init.templ_module_init,
+                "linear_init_params": lin_init.templ_module_init,
                 "template_pair_embedder": {
                     "c_in": c_z,
                     "c_dgram": 39,
@@ -231,8 +231,6 @@ model_config = mlc.ConfigDict(
                 },
                 "template_pair_stack": {
                     "c_t": c_t,
-                    # DISCREPANCY: c_hidden_tri_att here is given in the supplement
-                    # as 64. In the code, it's 16.
                     "c_hidden_tri_att": 16,
                     "c_hidden_tri_mul": 64,
                     "no_blocks": 2,
@@ -264,7 +262,7 @@ model_config = mlc.ConfigDict(
                 "msa_module": {
                     "c_m": c_m,
                     "c_z": c_z,
-                    "c_hidden_msa_att": 8,  # 8 or 32, possible typo in SI
+                    "c_hidden_msa_att": 8,
                     "c_hidden_opm": 32,
                     "c_hidden_mul": 128,
                     "c_hidden_pair_att": 32,
@@ -343,7 +341,6 @@ model_config = mlc.ConfigDict(
                     "n_transition": 2,
                     "n_query": n_query,
                     "n_key": n_key,
-                    "use_ada_layer_norm": True,
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "ckpt_intermediate_steps": ckpt_intermediate_steps,
                     "inf": inf,
@@ -358,7 +355,6 @@ model_config = mlc.ConfigDict(
                     "no_heads": 16,
                     "no_blocks": 24,
                     "n_transition": 2,
-                    "use_ada_layer_norm": True,
                     "n_query": None,
                     "n_key": None,
                     "inf": inf,
@@ -376,7 +372,6 @@ model_config = mlc.ConfigDict(
                     "n_transition": 2,
                     "n_query": n_query,
                     "n_key": n_key,
-                    "use_ada_layer_norm": True,
                     "blocks_per_ckpt": blocks_per_ckpt,
                     "inf": inf,
                     "linear_init_params": lin_init.atom_att_dec_init,
