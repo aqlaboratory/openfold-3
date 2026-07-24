@@ -37,7 +37,8 @@ class CheckpointEntry:
 
 OPENFOLD_MODEL_CHECKPOINT_REGISTRY = {
     "openbind-2025-06-30-174k": CheckpointEntry(
-        file_name="of3-ob-2025-06-30-174k.pt", version_compatibility=">=0.4.4dev0",
+        file_name="of3-ob-2025-06-30-174k.pt",
+        version_compatibility=">=0.4.4dev0",
     ),
     "openfold3-p2-145k": CheckpointEntry(
         file_name="of3-p2-145k.pt", version_compatibility=">=0.4,<0.4.4dev0"
