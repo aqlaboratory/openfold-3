@@ -15,10 +15,11 @@
 """Integration test for training on the small local PDB subset.
 
 Requires the subset produced by ``scripts/datasets/generate_subset_cache.py`` +
-``scripts/datasets/download_subset.py`` to already exist locally (skips otherwise --
-these files are gitignored, not fetched by CI, and must be generated/downloaded by hand).
+``scripts/datasets/download_subset.py`` to already exist locally under
+``<openfold3-directory>/datasets`` (skips otherwise -- these files are gitignored,
+not fetched by CI, and must be generated/downloaded by hand).
 
-The runner yaml (``scripts/datasets/train_pdb_subset.yaml``) already bakes in a small
+The runner yaml (``datasets/train_pdb_subset.yaml``) already bakes in a small
 test case -- 8 train / 4 val structures, gradient checkpointing, small MSA chunk size,
 diffusion loss chunking, etc, picked by ``generate_subset_cache.py``. ``full_subset``
 runs it as checked in (only ``output_dir`` is redirected). ``smoke`` additionally trims
@@ -27,7 +28,9 @@ epoch length/count and disables dataloader workers, for a faster opt-in sanity c
 To mimic a real user's workflow (not just the internal Python API), both cases invoke
 the actual ``run_openfold train --runner-yaml ...`` console script as a subprocess --
 the same command documented in docs/source/training.md -- against a materialized copy
-of the runner yaml with the per-case overrides applied.
+of the runner yaml with the per-case overrides applied. Its output (including
+Lightning's per-step progress bar) streams live to the real terminal via
+``capsys.disabled()``, regardless of pytest's capture mode -- no need for ``-s``.
 
 Run with:
     pytest openfold3/tests/test_training_full.py
@@ -37,12 +40,14 @@ Run with:
 import logging
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 import yaml
 
+import openfold3
 from openfold3.core.config import config_utils
 from openfold3.entry_points.validator import TrainingExperimentConfig
 from openfold3.tests.utils.compare_utils import skip_unless_cuda_available
@@ -50,7 +55,7 @@ from openfold3.tests.utils.compare_utils import skip_unless_cuda_available
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
-DATASETS_DIR = Path(__file__).resolve().parents[2] / "scripts" / "datasets"
+DATASETS_DIR = Path(openfold3.__file__).resolve().parent.parent / "datasets"
 RUNNER_YAML = DATASETS_DIR / "train_pdb_subset.yaml"
 PDB_TRAINING_SET_DIR = DATASETS_DIR / "pdb_training_set"
 
@@ -82,6 +87,19 @@ CASES = [
                     "max_epochs": 1,
                     "log_every_n_steps": 1,
                 },
+                # DeepSpeed's op-builder has failed to link (-laio/-lcufile, missing
+                # dev packages) on at least one machine this was run on; disable it
+                # for the sanity-check case so a build/runtime issue in that custom
+                # kernel isn't a variable while checking for crashes/memory blowups.
+                "model_update": {
+                    "custom": {
+                        "settings": {
+                            "memory": {
+                                "train": {"use_deepspeed_evo_attention": False},
+                            },
+                        },
+                    },
+                },
             },
         ),
         id="smoke",
@@ -103,14 +121,62 @@ def _require_local_subset() -> None:
             f"{', '.join(str(p) for p in missing)}. Run "
             "`python scripts/datasets/generate_subset_cache.py` and "
             "`python scripts/datasets/download_subset.py` first "
-            "(see scripts/datasets/)."
+            "(see scripts/datasets/), or `pixi run setup-pdb-subset`."
         )
+
+
+def _run_streaming(cmd: list[str], timeout_s: int, capsys) -> tuple[int, str]:
+    """Run `cmd`, printing its combined stdout/stderr live as it arrives.
+
+    Unlike `subprocess.run(capture_output=True)`, this gives real-time progress
+    visibility (e.g. Lightning's per-step progress bar) instead of a silent
+    block until the process exits. `capsys.disabled()` forces the output to
+    the real terminal regardless of pytest's capture mode, so it's visible
+    without needing to remember `-s`. A watchdog timer kills the process after
+    `timeout_s` even if it produces no output at all (a true hang), which
+    `for line in proc.stdout` alone wouldn't catch.
+
+    Returns (returncode, combined_output).
+    """
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    timed_out = threading.Event()
+
+    def _kill_on_timeout():
+        timed_out.set()
+        proc.kill()
+
+    timer = threading.Timer(timeout_s, _kill_on_timeout)
+    timer.start()
+
+    lines = []
+    try:
+        with capsys.disabled():
+            for line in proc.stdout:
+                print(line, end="", flush=True)
+                lines.append(line)
+    finally:
+        timer.cancel()
+        proc.wait()
+
+    output = "".join(lines)
+    if timed_out.is_set():
+        pytest.fail(
+            f"`{' '.join(cmd)}` timed out after {timeout_s}s and was killed.\n"
+            f"--- output (last 4000 chars) ---\n{output[-4000:]}"
+        )
+    return proc.returncode, output
 
 
 @skip_unless_cuda_available()
 @pytest.mark.training_verification
 @pytest.mark.parametrize("case", CASES)
-def test_train(case: TrainCase, tmp_path):
+def test_train(case: TrainCase, tmp_path, capsys):
     """`run_openfold train --runner-yaml ...` on the local subset writes a checkpoint."""
     _require_local_subset()
     if RUN_OPENFOLD is None:
@@ -128,16 +194,14 @@ def test_train(case: TrainCase, tmp_path):
     runner_yaml = tmp_path / "runner_config.yaml"
     runner_yaml.write_text(yaml.safe_dump(config_dict, sort_keys=False))
 
-    result = subprocess.run(
+    returncode, output = _run_streaming(
         [RUN_OPENFOLD, "train", "--runner-yaml", str(runner_yaml)],
-        capture_output=True,
-        text=True,
-        timeout=case.timeout_s,
+        case.timeout_s,
+        capsys,
     )
-    assert result.returncode == 0, (
-        f"`run_openfold train` exited {result.returncode}\n"
-        f"--- stdout ---\n{result.stdout[-4000:]}\n"
-        f"--- stderr ---\n{result.stderr[-4000:]}"
+    assert returncode == 0, (
+        f"`run_openfold train` exited {returncode}\n"
+        f"--- output (last 4000 chars) ---\n{output[-4000:]}"
     )
 
     checkpoints = list((tmp_path / "checkpoints").glob("*.ckpt"))
