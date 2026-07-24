@@ -139,6 +139,7 @@ CUDACXX = "/usr/local/cuda/bin/nvcc"
 
 [tool.ruff]
 line-length = 88
+extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = [
