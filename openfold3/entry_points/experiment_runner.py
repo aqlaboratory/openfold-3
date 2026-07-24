@@ -713,8 +713,8 @@ class InferenceExperimentRunner(ExperimentRunner):
 
         return deduplicated_inference_set
 
-    def _check_version_tensor_in_load_statedict(self, state_dict: dict) -> None:
-        """Load state dict, warning if only version_tensor is missing."""
+    def _load_state_dict_with_version_validation(self, state_dict: dict) -> None:
+        """Validate checkpoint keys, warning if only version_tensor is missing."""
         # perform the key check manually.
         model_keys = set(self.lightning_module.state_dict().keys())
         ckpt_keys = set(state_dict.keys())
@@ -730,6 +730,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             )
             self.lightning_module.load_state_dict(state_dict, strict=False)
             return
+
         elif missing or unexpected:
             raise ValueError(
                 f"Checkpoint state_dict keys do not match model state_dict keys. "
@@ -745,6 +746,7 @@ class InferenceExperimentRunner(ExperimentRunner):
                 f" match current model version ({current_model_verison})."
                 f" Please verify your checkpoint selection."
             )
+        self.lightning_module.load_state_dict(state_dict, strict=True)
         return
 
     def setup(self) -> None:
@@ -755,8 +757,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         logger.info(f"Loading weights from {self.ckpt_path}")
         ckpt = load_checkpoint(self.ckpt_path)
         state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
-        self._check_version_tensor_in_load_statedict(state_dict)
-        self.lightning_module.load_state_dict(state_dict, strict=True)
+        self._load_state_dict_with_version_validation(state_dict)
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
