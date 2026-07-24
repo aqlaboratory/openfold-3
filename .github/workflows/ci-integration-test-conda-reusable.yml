@@ -114,7 +114,7 @@ jobs:
         if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
         run: |
           echo "Cache miss: Downloading OpenFold parameters..."
-          aws s3 cp s3://openfold3-data/openfold3-parameters/ob-rc-v1.pt ~/.openfold3/ --no-sign-request
+          aws s3 cp s3://openfold3-data/openfold3-parameters/of3-ob-2025-06-30-174k.pt~/.openfold3/ --no-sign-request
       
       - name: Run integration test
         run: |
