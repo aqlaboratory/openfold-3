@@ -74,7 +74,7 @@ jobs:
           # Public bucket — fetch over HTTPS so the self-hosted runner doesn't
           # need the AWS CLI installed (equivalent to `aws s3 cp --no-sign-request`).
           curl -fSL \
-            https://openfold3-data.s3.amazonaws.com/openfold3-parameters/ob-rc-v1.pt \
+            https://openfold3-data.s3.amazonaws.com/openfold3-parameters/of3-ob-2025-06-30-174k.pt \
             -o ~/.openfold3/ob-rc-v1.pt
 
       - name: Run integration test
