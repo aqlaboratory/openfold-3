@@ -10,9 +10,13 @@ The list of parameters available with OpenFold3 are as follows
   - File Name
   - Version compatibility
   - Number of training steps
-* - **openfold3-p2-155k (default)**
+* - **openbind-2025-06-30-174k (default)**
+  - **`of3-ob-2025-06-30-174k.pt`**
+  - **`>=0.5.0`**
+  - **174,000**
+* - **openfold3-p2-155k (deprecated)**
   - **`of3-p2-155k.pt`**
-  - **`>=0.4.0`**
+  - **`>=0.4,<0.5`**
   - **155,000**
 * - openfold3-p1 _(deprecated)_
   - `of3_ft3_v1.pt`

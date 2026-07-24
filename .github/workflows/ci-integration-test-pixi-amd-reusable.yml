@@ -41,7 +41,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build and push test image
-        uses: docker/build-push-action@v7.2.0
+        uses: docker/build-push-action@v7.3.0
         with:
           context: .
           file: docker/Dockerfile.pixi
@@ -60,7 +60,7 @@ jobs:
 
       - name: Cache download of parameters
         id: cache-openfold_parameters
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.openfold3/
           key: shared-params_of3
@@ -74,8 +74,8 @@ jobs:
           # Public bucket — fetch over HTTPS so the self-hosted runner doesn't
           # need the AWS CLI installed (equivalent to `aws s3 cp --no-sign-request`).
           curl -fSL \
-            https://openfold3-data.s3.amazonaws.com/openfold3-parameters/of3-p2-155k.pt \
-            -o ~/.openfold3/of3-p2-155k.pt
+            https://openfold3-data.s3.amazonaws.com/openfold3-parameters/of3-ob-2025-06-30-174k.pt \
+            -o ~/.openfold3/ob-rc-v1.pt
 
       - name: Run integration test
         run: |

@@ -354,6 +354,13 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   # Change torch extensions cache, used by deepspeed, to be isolated
   env.TORCH_EXTENSIONS_DIR = "$CONDA_PREFIX/caches/torch_extensions"
 
+  # Silence: "nvcc warning : incompatible redefinition for option 'compiler-bindir'".
+  # The conda cuda-nvcc activation prepends `-ccbin=$CXX` (…-c++) via NVCC_PREPEND_FLAGS,
+  # while torch's cpp_extension appends `-ccbin $CC` (…-cc) on the command line; torch's
+  # dedup guard can't see the prepended value, so nvcc gets two conflicting -ccbin. Align
+  # the prepend to $CC so both agree (no behaviour change: nvcc already used $CC last).
+  env.NVCC_PREPEND_FLAGS = "-ccbin=$CC"
+
 
 # --- CuEquivariance
 # https://developer.nvidia.com/cuequivariance#section-get-started

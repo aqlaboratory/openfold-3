@@ -69,6 +69,7 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
+from openfold3.projects.of3_all_atom.model import MODEL_VERSION as OF3_MODEL_VERSION
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 logger = logging.getLogger(__name__)
@@ -712,22 +713,41 @@ class InferenceExperimentRunner(ExperimentRunner):
 
         return deduplicated_inference_set
 
-    def _warn_on_missing_version_tensor_in_load_statedict(
-        self, state_dict: dict
-    ) -> None:
-        """Load state dict, warning if only version_tensor is missing."""
-        try:
-            self.lightning_module.load_state_dict(state_dict, strict=True)
-        except RuntimeError as e:
-            if 'Missing key(s) in state_dict: "model.version_tensor".' in str(e):
-                logger.warning(
-                    "No version_tensor is found for this checkpoint."
-                    "Assuming the user knows checkpoints are parameters are compatible,"
-                    " continuing..."
-                )
-                self.lightning_module.load_state_dict(state_dict, strict=False)
-            else:
-                raise
+    def _load_state_dict_with_version_validation(self, state_dict: dict) -> None:
+        """Validate checkpoint keys, warning if only version_tensor is missing."""
+        # perform the key check manually.
+        model_keys = set(self.lightning_module.state_dict().keys())
+        ckpt_keys = set(state_dict.keys())
+        missing = model_keys - ckpt_keys
+        unexpected = ckpt_keys - model_keys
+
+        # warns on missing version tensor
+        if missing == {"model.version_tensor"} and not unexpected:
+            logger.warning(
+                "No version_tensor found for this checkpoint. "
+                "Assuming the user knows the given checkpoint parameters are compatible"
+                " with the model, continuing..."
+            )
+            self.lightning_module.load_state_dict(state_dict, strict=False)
+            return
+
+        elif missing or unexpected:
+            raise ValueError(
+                f"Checkpoint state_dict keys do not match model state_dict keys. "
+                f"Missing keys: {missing}, Unexpected keys: {unexpected}"
+            )
+
+        # raise error if version tensor is present but does not match
+        loaded_model_version = state_dict.get("model.version_tensor")
+        current_model_verison = OF3_MODEL_VERSION
+        if not torch.equal(loaded_model_version, current_model_verison):
+            raise ValueError(
+                f"Loaded checkpoint model version ({loaded_model_version}) does not"
+                f" match current model version ({current_model_verison})."
+                f" Please verify your checkpoint selection."
+            )
+        self.lightning_module.load_state_dict(state_dict, strict=True)
+        return
 
     def setup(self) -> None:
         """Set up environment and load checkpoints."""
@@ -737,7 +757,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         logger.info(f"Loading weights from {self.ckpt_path}")
         ckpt = load_checkpoint(self.ckpt_path)
         state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
-        self._warn_on_missing_version_tensor_in_load_statedict(state_dict)
+        self._load_state_dict_with_version_validation(state_dict)
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""

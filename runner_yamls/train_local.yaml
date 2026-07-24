@@ -1,0 +1,109 @@
+experiment_settings:
+  mode: train
+  output_dir: ./test_train_output
+  seed: 42
+  restart_checkpoint_path: last
+
+data_module_args:
+  batch_size: 1
+  num_workers: 4
+  epoch_len: 32
+
+logging_config:
+  log_lr: false
+  wandb_config: null
+
+pl_trainer_args:
+  devices: 1
+  num_nodes: 1
+  precision: bf16-mixed
+  max_epochs: 5
+
+  mpi_plugin: false
+  deepspeed_config_path: null
+
+model_update:
+  presets:
+    - train
+  custom:
+    settings:
+      model_selection_weight_scheme: fine_tuning
+      memory:
+        train:
+          msa_module:
+            swiglu_seq_chunk_size: 1024
+          use_cueq_triangle_kernels: False 
+          use_deepspeed_evo_attention: true
+    architecture:
+      shared:
+        use_confidence_emb_prob: 0.8
+        diffusion:
+          use_conditioning_prob: 0.8
+      loss_module:
+        diffusion:
+          chunk_size: 2
+
+
+dataset_configs:
+  train:
+    weighted-pdb:
+      dataset_class: WeightedPDBDataset
+      weight: 0.5
+      config:
+        debug_mode: true
+        template:
+          n_templates: 4
+          take_top_k: false
+        crop:
+          token_crop:
+            enabled: true
+            token_budget: 384
+            crop_weights:
+              contiguous: 0.2
+              spatial: 0.4
+              spatial_interface: 0.4
+          chain_crop:
+            enabled: true
+
+  validation:
+    val-weighted-pdb:
+      dataset_class: ValidationPDBDataset
+      config:
+        debug_mode: true
+        msa:
+          subsample_main: false
+        template:
+          n_templates: 4
+          take_top_k: true
+        crop:
+          token_crop:
+            enabled: false
+
+dataset_paths:
+  weighted-pdb:
+    alignments_directory: none
+    alignment_db_directory: none
+    alignment_array_directory: /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/mini_pdb_training_set/alignment_arrays
+    dataset_cache_file: /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/training_cache_with_templates_subset_128.json
+    target_structures_directory: /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/mini_pdb_training_set/preprocessed_pdb_data/standard/structure_files
+    target_structure_file_format: npz
+    reference_molecule_directory: /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/mini_pdb_training_set/preprocessed_pdb_data/standard/reference_mols
+    template_cache_directory: /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/mini_pdb_training_set/templates/train_template_cache
+    template_structure_array_directory: /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/mini_pdb_training_set/templates/template_structure_arrays
+    template_structures_directory: none
+    template_file_format: npz
+    ccd_file: null
+
+  val-weighted-pdb:
+    alignments_directory: none
+    alignment_db_directory: none
+    alignment_array_directory: /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/mini_pdb_training_set/alignment_arrays
+    dataset_cache_file:  /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/validation_cache_with_templates_subset_32.json
+    target_structures_directory: /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/mini_pdb_training_set/preprocessed_pdb_data/standard/structure_files
+    target_structure_file_format: npz
+    reference_molecule_directory: /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/mini_pdb_training_set/preprocessed_pdb_data/standard/reference_mols
+    template_cache_directory: /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/mini_pdb_training_set/templates/val_template_cache
+    template_structure_array_directory: /home/jnwei/workspace/openfold-research/2026-q1/mini-pdb-dataset/mini_pdb_training_set/templates/template_structure_arrays
+    template_structures_directory: none
+    template_file_format: npz
+    ccd_file: null
