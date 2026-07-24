@@ -496,7 +496,7 @@ class InferenceExperimentConfig(ExperimentConfig):
         This function will:
         1) Attempt to find the checkpoints in the path specified by
            `cache_path` / `CHECKPOINT_ROOT_FILENAME`,
-        2) If not found,raises an error
+        2) If not found, raises an error
         3) Set the inference_ckpt_path to the found or downloaded checkpoint path.
         """
         # Skip ckpt selection if ckpt is previously specified

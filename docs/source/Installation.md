@@ -224,7 +224,7 @@ This script will:
 If preferred, the model parameters (~2GB) for the trained OpenFold3 model can be downloaded from [our AWS RODA bucket](https://registry.opendata.aws/openfold/) using the AWS CLI as follows:
 
 ```bash
-aws s3 cp s3://openfold/staging/ob-rc-v1.pt <dst_path> --no-sign-request
+aws s3 cp s3://openfold3-data/openfold3-parameters/of3-ob-2025-06-30-174k.pt  <dst_path> --no-sign-request
 ```
 
 To use these checkpoints with OpenFold3, it is then necessary to pass in the full path to the parameters through the command line arguments, e.g. `--inference_ckpt_path`. See {ref}`Inference instructions <default-inference>` for more details. 
