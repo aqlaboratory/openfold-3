@@ -38,6 +38,7 @@ Run with:
 """
 
 import logging
+import os
 import shutil
 import subprocess
 import threading
@@ -55,7 +56,13 @@ from openfold3.tests.utils.compare_utils import skip_unless_cuda_available
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
-DATASETS_DIR = Path(openfold3.__file__).resolve().parent.parent / "datasets"
+# OPENFOLD_PDB_SUBSET_DIR lets CI point this at wherever the cached subset
+# lives (e.g. outside the checked-out workspace); defaults to the local dev
+# convention of <openfold3-directory>/datasets otherwise.
+DATASETS_DIR = Path(
+    os.environ.get("OPENFOLD_PDB_SUBSET_DIR")
+    or (Path(openfold3.__file__).resolve().parent.parent / "datasets")
+)
 RUNNER_YAML = DATASETS_DIR / "train_pdb_subset.yaml"
 PDB_TRAINING_SET_DIR = DATASETS_DIR / "pdb_training_set"
 

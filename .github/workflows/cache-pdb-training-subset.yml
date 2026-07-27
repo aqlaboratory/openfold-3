@@ -1,0 +1,140 @@
+name: Cache PDB training subset for the training integration test
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/openfold3-docker
+
+jobs:
+  # Same CPU-only AWS runner as ci-test-pixi-reusable.yml -- generate_subset_cache.py
+  # / download_subset.py only need the openfold3-cpu env (boto3/ijson/pyyaml), no GPU.
+  start-aws-runner:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      mapping: ${{ steps.aws-start.outputs.mapping }}
+      instances: ${{ steps.aws-start.outputs.instances }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
+          aws-region: us-east-1
+      - name: Create cloud runner
+        id: aws-start
+        uses: omsf/start-aws-gha-runner@v1.3.0
+        with:
+          aws_image_id: ami-0754c6e75b3b97dcd  # Deep Learning AMI Neuron (Ubuntu 22.04)
+          aws_instance_type: t3.2xlarge
+          aws_market_type: spot
+          aws_home_dir: /home/ubuntu
+          aws_root_device_size: 200
+          aws_tags: >-
+            [
+              {"Key":"Name","Value":"of-gha-runner"},
+              {"Key":"Repository","Value":"${{ github.repository }}"},
+              {"Key":"Workflow","Value":"${{ github.workflow }}"},
+              {"Key":"RunId","Value":"${{ github.run_id }}"},
+              {"Key":"RunNumber","Value":"${{ github.run_number }}"},
+              {"Key":"RunAttempt","Value":"${{ github.run_attempt }}"},
+              {"Key":"Actor","Value":"${{ github.actor }}"},
+              {"Key":"EventName","Value":"${{ github.event_name }}"},
+              {"Key":"Ref","Value":"${{ github.ref_name }}"},
+              {"Key":"Sha","Value":"${{ github.sha }}"}
+            ]
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+  warm-pdb-subset-cache:
+    runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
+    needs:
+      - start-aws-runner
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push test image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile.pixi
+          target: test
+          push: true
+          build-args: |
+            PIXI_ENV=openfold3-cpu
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-openfold3-cpu-${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-openfold3-cpu
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-openfold3-cpu,mode=max
+
+      - name: Create PDB subset cache directory
+        run: mkdir -p ~/.openfold3-pdb-subset
+
+      # Static key: fully deterministic given the same full caches, --train-size,
+      # and pinned validation set (pdb_subset_helpers.SMOKE_VALIDATION_PDB_IDS).
+      # Bump the -v1 suffix by hand if any of those ever change.
+      - name: Cache PDB training subset
+        id: cache-pdb-subset
+        uses: actions/cache@v6
+        with:
+          path: ~/.openfold3-pdb-subset
+          key: shared-pdb-training-subset-v1
+          restore-keys: |
+            shared-pdb-training-subset-v1
+
+      - name: Generate + download PDB training subset (cache miss)
+        if: steps.cache-pdb-subset.outputs.cache-hit != 'true'
+        run: |
+          echo "Cache miss: generating + downloading PDB training subset..."
+          # Called separately with an explicit --target-dir each, rather than via
+          # the setup-pdb-subset composite task -- pixi's depends-on tasks don't
+          # reliably forward extra CLI args to their constituent tasks (verified:
+          # `pixi run setup-pdb-subset --help` silently ran the whole pipeline
+          # instead of showing help).
+          docker run --rm \
+            -v ~/.openfold3-pdb-subset:/root/.openfold3-pdb-subset \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-openfold3-cpu-${{ github.sha }} \
+            pixi run -e openfold3-cpu generate-pdb-subset --target-dir /root/.openfold3-pdb-subset
+          docker run --rm \
+            -v ~/.openfold3-pdb-subset:/root/.openfold3-pdb-subset \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-openfold3-cpu-${{ github.sha }} \
+            pixi run -e openfold3-cpu download-pdb-subset --target-dir /root/.openfold3-pdb-subset
+
+  stop-aws-runner:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    needs:
+      - start-aws-runner
+      - warm-pdb-subset-cache
+    if: ${{ always() }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
+          aws-region: us-east-1
+      - name: Stop instances
+        uses: omsf/stop-aws-gha-runner@v1.0.0
+        with:
+          instance_mapping: ${{ needs.start-aws-runner.outputs.mapping }}
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
