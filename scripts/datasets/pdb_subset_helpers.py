@@ -40,6 +40,25 @@ def default_target_dir() -> Path:
     """
     return Path.cwd() / "datasets"
 
+
+# Pinned validation set for the training smoke test (see
+# test_training_full.py) -- one small, clean representative per modality
+# (DNA / RNA / protein+ligand / multimer), each well under 300 tokens, so an
+# uncropped validation pass is always cheap regardless of what large
+# structures happen to exist in the full cache. Random sampling (even with a
+# size cap applied at sampling time) was tried and rejected in favor of this:
+# no need to scan/filter the ~1700-structure full cache on every regeneration,
+# just a direct lookup of known-good IDs. Selected by, and documented in
+# detail in, select_smoke_validation_set.py -- rerun that script and update
+# this dict by hand if these ever need to change (e.g. one gets pulled from
+# the upstream cache).
+SMOKE_VALIDATION_PDB_IDS = {
+    "7ohe": "dna",  # DNA duplex, 24 tokens
+    "7kud": "rna",  # RNA, 13 tokens
+    "7vus": "protein_ligand",  # 1 protein chain + 3 ligand chains, 87 tokens
+    "7fb8": "multimer",  # protein homodimer, 53 tokens
+}
+
 AMINO_ACID_CCD_CODES = {
     "ALA",
     "ARG",
@@ -203,6 +222,36 @@ def sample_subset_cache(
             subset_metadata,
             {pid: largest_data[pid] for pid in selected_ids},
         )
+
+
+def build_pinned_subset_cache(
+    input_cache: Path, pdb_ids: dict[str, str] | list[str], output_dir: Path
+) -> Path:
+    """Write a subset cache containing exactly `pdb_ids` -- no random sampling.
+
+    Unlike `sample_subset_cache`, every id in `pdb_ids` must actually be
+    present in `input_cache`; this raises rather than silently writing a
+    smaller-than-expected subset if one goes missing (e.g. pulled from the
+    upstream cache). `pdb_ids` may be a dict (only its keys are used -- lets
+    callers pass e.g. `SMOKE_VALIDATION_PDB_IDS` directly) or a plain list.
+    """
+    ids = sorted(pdb_ids)
+    metadata, data = stream_subset(input_cache, set(ids))
+    missing = set(ids) - set(data)
+    if missing:
+        raise ValueError(
+            f"Pinned PDB ID(s) not found in {input_cache.name}: {sorted(missing)}"
+        )
+
+    stem = input_cache.stem
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_path = output_dir / f"{stem}_subset_{len(ids)}.json"
+    subset_metadata = {
+        **metadata,
+        "name": f"{metadata.get('name', stem)}-pinned-{len(ids)}",
+    }
+    write_subset(out_path, subset_metadata, {pid: data[pid] for pid in ids})
+    return out_path
 
 
 # --------------------------------------------------------------------------
@@ -456,7 +505,7 @@ def build_runner_yaml_config(cache_files: dict[str, Path], local_root: Path) -> 
         "data_module_args": {
             "batch_size": 1,
             "num_workers": 4,
-            "epoch_len": 32,
+            "epoch_len": 4,
         },
         "logging_config": {
             "log_lr": False,
@@ -479,7 +528,12 @@ def build_runner_yaml_config(cache_files: dict[str, Path], local_root: Path) -> 
                         "train": {
                             "msa_module": {"swiglu_seq_chunk_size": 1024},
                             "use_cueq_triangle_kernels": False,
-                            "use_deepspeed_evo_attention": True,
+                            # DeepSpeed's op-builder has failed to link
+                            # (-laio/-lcufile, missing dev packages) on at
+                            # least one machine this integration test runs
+                            # on; disabled so a build/runtime issue in that
+                            # custom kernel isn't a variable.
+                            "use_deepspeed_evo_attention": False,
                         },
                     },
                 },
