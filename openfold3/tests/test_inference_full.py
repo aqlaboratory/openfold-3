@@ -185,11 +185,13 @@ def _assert_inference_writes_outputs(query_set, tmp_path):
         )
 
 
+@pytest.mark.slow
 @skip_unless_cuda_available()
 def test_protein_only(tmp_path):
     _assert_inference_writes_outputs(protein_only_query, tmp_path)
 
 
+@pytest.mark.slow
 @skip_unless_cuda_available()
 def test_protein_and_ligand(tmp_path):
     _assert_inference_writes_outputs(protein_and_ligand_query, tmp_path)
@@ -314,6 +316,7 @@ def _mean_ca_rmsd(
     return float(np.mean(rmsds))
 
 
+@pytest.mark.slow
 @skip_unless_cuda_available()
 @pytest.mark.inference_verification
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c.pdb_id)
