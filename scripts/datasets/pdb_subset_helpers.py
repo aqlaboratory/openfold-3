@@ -124,7 +124,7 @@ def download_full_cache(local_path: Path) -> None:
     local_path.parent.mkdir(parents=True, exist_ok=True)
     s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
 
-    # Report progress every 10% 
+    # Report progress every 10%
     total_bytes = s3.head_object(Bucket=BUCKET, Key=s3_key)["ContentLength"]
     progress = {"downloaded": 0, "last_pct": -1}
 
