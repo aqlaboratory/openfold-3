@@ -211,6 +211,8 @@ def processed_reference_molecule_from_atom_array(
     # Convert to RDKit mol
     mol = to_mol(atom_array, kekulize=True)
     Chem.SanitizeMol(mol)
+    if np.all(atom_array.molecule_type_id == MoleculeType.LIGAND):
+        Chem.AssignStereochemistryFrom3D(mol)
     mol.RemoveConformer(0)
 
     return processed_reference_molecule_from_mol(
