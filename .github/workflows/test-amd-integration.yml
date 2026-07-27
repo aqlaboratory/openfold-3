@@ -1,6 +1,7 @@
 name: Test workflow for running with AMD 
 
 on:
+  push:
   workflow_dispatch:
 
 jobs:
