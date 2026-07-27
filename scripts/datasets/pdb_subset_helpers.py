@@ -123,7 +123,22 @@ def download_full_cache(local_path: Path) -> None:
     )
     local_path.parent.mkdir(parents=True, exist_ok=True)
     s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
-    s3.download_file(BUCKET, s3_key, str(local_path))
+
+    # Report progress every 10% 
+    total_bytes = s3.head_object(Bucket=BUCKET, Key=s3_key)["ContentLength"]
+    progress = {"downloaded": 0, "last_pct": -1}
+
+    def _report_progress(bytes_transferred: int) -> None:
+        progress["downloaded"] += bytes_transferred
+        pct = int(progress["downloaded"] * 100 / total_bytes)
+        if pct >= progress["last_pct"] + 10:
+            print(
+                f"  {local_path.name}: {pct}% "
+                f"({progress['downloaded'] / 1e6:.0f}/{total_bytes / 1e6:.0f} MB)"
+            )
+            progress["last_pct"] = pct
+
+    s3.download_file(BUCKET, s3_key, str(local_path), Callback=_report_progress)
 
     # These cache files contain bare `NaN` literals (e.g. for structures with
     # no resolution data), which is invalid per RFC 8259 and breaks ijson's
@@ -148,6 +163,11 @@ def enumerate_structure_ids(path: Path) -> list[str]:
         for prefix, event, value in ijson.parse(f):
             if prefix == "structure_data" and event == "map_key":
                 ids.append(value)
+                # This is a full streaming pass over a ~1.6GB file (minutes, for
+                # the un-sampled training cache) -- report periodically so it
+                # doesn't read as a silent hang in CI logs.
+                if len(ids) % 20000 == 0:
+                    print(f"  ...enumerated {len(ids)} structure IDs so far")
     return ids
 
 
@@ -160,12 +180,22 @@ def stream_subset(path: Path, selected_ids: set[str]) -> tuple[dict, dict]:
                 metadata[key] = value
 
     selected_data = {}
+    scanned = 0
     with open(path, "rb") as f:
         for pdb_id, data in ijson.kvitems(f, "structure_data"):
+            scanned += 1
             if pdb_id in selected_ids:
                 selected_data[pdb_id] = data
                 if len(selected_data) == len(selected_ids):
                     break
+            # ijson.kvitems has to parse every structure's full nested record
+            # (chains, templates, ...) to check its id, even ones we discard --
+            # this scan is the slowest part of sampling. Report periodically.
+            if scanned % 20000 == 0:
+                print(
+                    f"  ...scanned {scanned} structures, found "
+                    f"{len(selected_data)}/{len(selected_ids)} targets so far"
+                )
     return metadata, selected_data
 
 
