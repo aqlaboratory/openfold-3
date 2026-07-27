@@ -70,6 +70,8 @@ class TrainCase:
     timeout_s: int = 900
 
 
+# The default runner.yaml settings can be found in
+# scripts/datasets/pdb_subset_helpers.py `build_runner_yaml_config` 
 CASES = [
     pytest.param(
         TrainCase(
@@ -87,21 +89,10 @@ CASES = [
                     "max_epochs": 1,
                     "log_every_n_steps": 1,
                 },
-                # DeepSpeed's op-builder has failed to link (-laio/-lcufile, missing
-                # dev packages) on at least one machine this was run on; disable it
-                # for the sanity-check case so a build/runtime issue in that custom
-                # kernel isn't a variable while checking for crashes/memory blowups.
-                "model_update": {
-                    "custom": {
-                        "settings": {
-                            "memory": {
-                                "train": {"use_deepspeed_evo_attention": False},
-                            },
-                        },
-                    },
-                },
             },
+            timeout_s=300,
         ),
+        marks=pytest.mark.slow,
         id="smoke",
     ),
     pytest.param(
