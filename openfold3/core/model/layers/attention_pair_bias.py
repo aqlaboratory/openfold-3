@@ -128,7 +128,7 @@ class AttentionPairBias(nn.Module):
         """
         Args:
             a:
-                [*, N, C_token] Token or atom-level embedding
+                [*, N, C_q] Token or atom-level embedding
             z:
                 [*, N, N, C_z] Pair embedding
             mask:
@@ -196,7 +196,7 @@ class AttentionPairBias(nn.Module):
                 Whether to use LMA
             use_high_precision_attention:
                 Whether to run attention in high precision
-        Returns
+        Returns:
             [*, N, C_q] attention updated token or atom-level embedding
         """
         a = self.layer_norm_a(a, s) if self.use_ada_layer_norm else self.layer_norm_a(a)
@@ -238,8 +238,7 @@ class AttentionPairBias(nn.Module):
 
 class CrossAttentionPairBias(nn.Module):
     """Attention layer with pair bias and neighborhood mask.
-    Unlike AttentionPairBias, inputs are blocked for sequence-local attention
-    and AdaLN is applied by default.
+    Unlike AttentionPairBias, `z` is provided in sequence-local blocks.
 
     Implements AF3 Algorithm 24.
     """
@@ -347,27 +346,34 @@ class CrossAttentionPairBias(nn.Module):
         """
         Args:
             a:
-                [*, N, C_token] Token or atom-level embedding
+                [*, N, C_q] Token or atom-level embedding
             z:
-                [*, N, N, C_z] Pair embedding
+                [*, N_blocks, N_query, N_key, C_z] Blocked pair embedding
             mask:
                 [*, N] Mask for token or atom-level embedding
 
         Returns:
-            List of bias terms. Includes the pair bias and attention mask.
+            a_query:
+                [*, N_blocks, N_query, C_q] Query blocks
+            a_key:
+                [*, N_blocks, N_key, C_q] Key blocks
+            biases:
+                List containing the attention mask with shape
+                [*, N_blocks, 1, N_query, N_key] and projected pair bias with
+                shape [*, N_blocks, no_heads, N_query, N_key]
         """
         a_query, a_key, mask = convert_single_rep_to_blocks(
             ql=a, n_query=self.n_query, n_key=self.n_key, atom_mask=mask
         )
 
-        # [*, 1, 1, N]
+        # [*, N_blocks, 1, N_query, N_key]
         mask_bias = (self.inf * (mask - 1))[..., None, :, :]
         biases = [mask_bias]
 
-        # [*, N, N, no_heads]
+        # [*, N_blocks, N_query, N_key, no_heads]
         z = self.linear_z(z)
 
-        # [*, no_heads, N, N]
+        # [*, N_blocks, no_heads, N_query, N_key]
         z = permute_final_dims(z, [2, 0, 1])
 
         biases.append(z)
@@ -389,7 +395,7 @@ class CrossAttentionPairBias(nn.Module):
             a:
                 [*, N, C_q] Token or atom-level embedding
             z:
-                [*, N, N, C_z] Pair embedding
+                [*, N_blocks, N_query, N_key, C_z] Blocked pair embedding
             s:
                 [*, N, C_s] Single embedding. Used in AdaLN if use_ada_layer_norm is
                 True
@@ -397,7 +403,7 @@ class CrossAttentionPairBias(nn.Module):
                 [*, N] Mask for token or atom-level embedding
             use_high_precision_attention:
                 Whether to run attention in high precision
-        Returns
+        Returns:
             [*, N, C_q] attention updated token or atom-level embedding
         """
         batch_dims = a.shape[:-2]
