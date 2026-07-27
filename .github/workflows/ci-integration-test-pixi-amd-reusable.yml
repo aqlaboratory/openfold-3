@@ -78,47 +78,35 @@ jobs:
             -o ~/.openfold3/of3-p2-155k.pt
 
       - name: Create PDB subset cache directory
-        run: mkdir -p ~/.openfold3-pdb-subset
+        run: mkdir -p /tmp/openfold3-pdb-subset
 
-      # This runner is a persistent self-hosted box, so its local disk already
-      # survives between runs -- check that first before touching the cache
-      # service at all.
       - name: Check for existing PDB training subset on disk
         id: local-pdb-subset
         run: |
-          if [ -n "$(ls -A ~/.openfold3-pdb-subset 2>/dev/null)" ]; then
+          if [ -n "$(ls -A /tmp/openfold3-pdb-subset 2>/dev/null)" ]; then
             echo "hit=true" >> "$GITHUB_OUTPUT"
           else
             echo "hit=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Generation only ever happens in cache-pdb-training-subset.yml, on a
-      # cheap AWS CPU runner -- the calling workflow's warm-pdb-subset-cache
-      # job is a `needs:` of this job, so by the time we get here that key is
-      # guaranteed to exist. This step should just pull it down, never
-      # regenerate: duplicating the generate+download steps here would defeat
-      # the point of having a separate warm-up job.
       - name: Restore PDB training subset
         id: cache-pdb-subset
         if: steps.local-pdb-subset.outputs.hit != 'true'
         uses: actions/cache/restore@v5
         with:
-          path: ~/.openfold3-pdb-subset
+          path: /tmp/openfold3-pdb-subset
           key: shared-pdb-training-subset-v1
           restore-keys: |
             shared-pdb-training-subset-v1
 
       # Should be unreachable: the upstream warm-pdb-subset-cache job already
-      # guarantees this key exists before this job runs. If we get here, the
-      # cache service is disagreeing with itself across runner types (e.g. a
-      # zstd/gzip compression mismatch changing the cache's internal version
-      # hash between the AWS save-runner and this box) -- fail loudly instead
-      # of silently regenerating, so that root cause gets fixed rather than
-      # papered over.
+      # guarantees this key exists before this job runs. If we get here,
+      # fail loudly instead of silently regenerating, so the root cause gets
+      # fixed rather than papered over.
       - name: Fail if PDB training subset is still missing
         if: steps.local-pdb-subset.outputs.hit != 'true' && steps.cache-pdb-subset.outputs.cache-hit != 'true'
         run: |
-          echo "::error::PDB training subset cache miss on this runner even though the upstream warm-pdb-subset-cache job guaranteed key 'shared-pdb-training-subset-v1' exists. This indicates a real cache-restore bug (e.g. cross-runner-type version mismatch), not a normal cold start -- investigate rather than re-adding a local regeneration fallback."
+          echo "::error::PDB training subset cache miss on this runner even though the upstream warm-pdb-subset-cache job guaranteed key 'shared-pdb-training-subset-v1' exists. Investigate rather than re-adding a local regeneration fallback."
           exit 1
 
       - name: Run integration test
@@ -143,15 +131,15 @@ jobs:
             --security-opt seccomp=unconfined \
             -v ${{ github.workspace }}:/opt/openfold3 \
             -v ~/.openfold3:/root/.openfold3 \
-            -v ~/.openfold3-pdb-subset:/root/.openfold3-pdb-subset \
+            -v /tmp/openfold3-pdb-subset:/root/.openfold3-pdb-subset \
             -e OPENFOLD_PDB_SUBSET_DIR=/root/.openfold3-pdb-subset \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
             pytest -x openfold3/tests/ -m slow -vvv
 
       - name: Reclaim workspace ownership
         # The container runs as root and writes .pytest_cache / __pycache__ into the
-        # bind-mounted workspace (and, via the PDB subset fallback/test steps
-        # above, into ~/.openfold3-pdb-subset too), leaving root-owned files this
+        # bind-mounted workspace (and, via the test step above, into
+        # /tmp/openfold3-pdb-subset too), leaving root-owned files this
         # persistent self-hosted runner's user can't delete on the next checkout,
         # or that actions/cache can't read back when saving the subset cache.
         # Chown both back to the runner user. Runs on failure too (pytest -x may
@@ -160,7 +148,7 @@ jobs:
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/opt/openfold3 \
-            -v ~/.openfold3-pdb-subset:/root/.openfold3-pdb-subset \
+            -v /tmp/openfold3-pdb-subset:/root/.openfold3-pdb-subset \
             --entrypoint chown \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
             -R "$(id -u):$(id -g)" /opt/openfold3 /root/.openfold3-pdb-subset

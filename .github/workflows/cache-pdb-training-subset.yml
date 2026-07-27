@@ -18,7 +18,7 @@ jobs:
         id: cache-check
         uses: actions/cache/restore@v6
         with:
-          path: ~/.openfold3-pdb-subset
+          path: /tmp/openfold3-pdb-subset
           key: shared-pdb-training-subset-v1
           lookup-only: true
 
@@ -107,8 +107,16 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-openfold3-cpu
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-openfold3-cpu,mode=max
 
+      # A fixed, home-directory-independent path -- actions/cache bakes
+      # whatever `$HOME` resolves to on the saving runner into the archive's
+      # internal paths, and replays that literally on restore regardless of
+      # the restoring machine's own `$HOME`. This runner runs its steps as
+      # root, so `~` would resolve to `/root`, which a non-root restoring
+      # runner (e.g. the amd-gpu box) has no permission to write to -- a
+      # deterministic restore failure, confirmed via a real run. /tmp is
+      # writable by any user without extra setup, avoiding that entirely.
       - name: Create PDB subset cache directory
-        run: mkdir -p ~/.openfold3-pdb-subset
+        run: mkdir -p /tmp/openfold3-pdb-subset
 
       # Called separately with an explicit --target-dir each, rather than via
       # the setup-pdb-subset composite task -- pixi's depends-on tasks don't
@@ -118,21 +126,21 @@ jobs:
       - name: Sample PDB training subset
         run: |
           docker run --rm \
-            -v ~/.openfold3-pdb-subset:/root/.openfold3-pdb-subset \
+            -v /tmp/openfold3-pdb-subset:/root/.openfold3-pdb-subset \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-openfold3-cpu-${{ github.sha }} \
             pixi run -e openfold3-cpu generate-pdb-subset --target-dir /root/.openfold3-pdb-subset
 
       - name: Download PDB training subset files
         run: |
           docker run --rm \
-            -v ~/.openfold3-pdb-subset:/root/.openfold3-pdb-subset \
+            -v /tmp/openfold3-pdb-subset:/root/.openfold3-pdb-subset \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-openfold3-cpu-${{ github.sha }} \
             pixi run -e openfold3-cpu download-pdb-subset --target-dir /root/.openfold3-pdb-subset
 
       - name: Save PDB training subset cache
         uses: actions/cache/save@v6
         with:
-          path: ~/.openfold3-pdb-subset
+          path: /tmp/openfold3-pdb-subset
           key: shared-pdb-training-subset-v1
 
   stop-aws-runner:
