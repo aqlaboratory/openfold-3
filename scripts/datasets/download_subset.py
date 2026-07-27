@@ -2,18 +2,19 @@
 """Download the files an existing PDB subset cache references.
 
 Requires training_cache_with_templates_subset_{train_size}.json /
-validation_cache_with_templates_subset_{val_size}.json to already exist --
-run generate_subset_cache.py first if they don't.
+validation_cache_with_templates_subset_{val_size}.json to already exist
+under --target-dir -- run generate_subset_cache.py first if they don't.
 
 Downloads target structures, alignment arrays, and templates into
---output-dir, then reference-mol SDFs for only the CCD codes actually
-present in the downloaded structures (not the full ~68k-file reference_mols
-directory) -- see scripts/datasets/README.md for why.
+--output-dir (default: <target-dir>/pdb_training_set), then reference-mol
+SDFs for only the CCD codes actually present in the downloaded structures
+(not the full ~68k-file reference_mols directory) -- see
+scripts/datasets/README.md for why.
 
 Usage:
     python download_subset.py
+    python download_subset.py --target-dir /data/of3-subset
     python download_subset.py --verify           # check completeness, don't download
-    python download_subset.py --output-dir /data/foo
 """
 
 import argparse
@@ -22,12 +23,10 @@ from pathlib import Path
 
 from pdb_subset_helpers import (
     AMINO_ACID_CCD_CODES,
-    DEFAULT_OUTPUT_DIR,
-    DEFAULT_TRAIN_CACHE,
-    DEFAULT_VAL_CACHE,
     STANDARD_NUCLEOTIDE_CCD_CODES,
     build_reference_mol_manifest,
     build_structure_manifest,
+    default_target_dir,
     download_manifest,
     extract_ids_from_cache,
     scan_structure_residue_names,
@@ -46,10 +45,22 @@ def main():
         "--workers", type=int, default=8, help="Parallel download threads"
     )
     parser.add_argument(
+        "--target-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Root directory the subset cache(s) live under -- must match "
+            "whatever generate_subset_cache.py was given (default: "
+            "./datasets next to wherever this script is invoked from)."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-        help=f"Directory to download files into (default: {DEFAULT_OUTPUT_DIR})",
+        default=None,
+        help=(
+            "Directory to download files into (default: <target-dir>/pdb_training_set)"
+        ),
     )
     parser.add_argument(
         "--train-size", type=int, default=8, help="Train subset size (default: 8)"
@@ -60,21 +71,33 @@ def main():
     parser.add_argument(
         "--train-cache",
         type=Path,
-        default=DEFAULT_TRAIN_CACHE,
-        help="Full training cache the subset was sampled from (for naming only)",
+        default=None,
+        help=(
+            "Full training cache the subset was sampled from, for naming "
+            "only (default: <target-dir>/training_cache_with_templates.json)"
+        ),
     )
     parser.add_argument(
         "--val-cache",
         type=Path,
-        default=DEFAULT_VAL_CACHE,
-        help="Full validation cache the subset was sampled from (for naming only)",
+        default=None,
+        help=(
+            "Full validation cache the subset was sampled from, for naming "
+            "only (default: <target-dir>/validation_cache_with_templates.json)"
+        ),
     )
     args = parser.parse_args()
-    local_root = args.output_dir
+
+    target_dir = args.target_dir or default_target_dir()
+    train_cache = args.train_cache or (
+        target_dir / "training_cache_with_templates.json"
+    )
+    val_cache = args.val_cache or (target_dir / "validation_cache_with_templates.json")
+    local_root = args.output_dir or (target_dir / "pdb_training_set")
 
     cache_files = {
-        "train": subset_cache_path(args.train_cache, args.train_size),
-        "val": subset_cache_path(args.val_cache, args.val_size),
+        "train": subset_cache_path(train_cache, args.train_size, target_dir),
+        "val": subset_cache_path(val_cache, args.val_size, target_dir),
     }
     missing = [str(p) for p in cache_files.values() if not p.exists()]
     if missing:
