@@ -9,9 +9,30 @@ env:
   IMAGE_NAME: ${{ github.repository }}/openfold3-docker
 
 jobs:
-  # Same CPU-only AWS runner as ci-test-pixi-reusable.yml -- generate_subset_cache.py
-  # / download_subset.py only need the openfold3-cpu env (boto3/ijson/pyyaml), no GPU.
+  check-pdb-subset-cache:
+    runs-on: ubuntu-latest
+    outputs:
+      cache-hit: ${{ steps.cache-check.outputs.cache-hit }}
+    steps:
+      - name: Check PDB training subset cache
+        id: cache-check
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.openfold3-pdb-subset
+          key: shared-pdb-training-subset-v1
+          lookup-only: true
+
+      - name: Report cache status
+        run: |
+          if [ "${{ steps.cache-check.outputs.cache-hit }}" == "true" ]; then
+            echo "::notice::Cache HIT (key shared-pdb-training-subset-v1) -- PDB training subset already cached, skipping AWS runner + regeneration entirely."
+          else
+            echo "::notice::Cache MISS (key shared-pdb-training-subset-v1) -- spinning up an AWS runner to regenerate."
+          fi
+
   start-aws-runner:
+    needs: check-pdb-subset-cache
+    if: needs.check-pdb-subset-cache.outputs.cache-hit != 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -51,9 +72,11 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
 
   warm-pdb-subset-cache:
-    runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
     needs:
+      - check-pdb-subset-cache
       - start-aws-runner
+    if: needs.check-pdb-subset-cache.outputs.cache-hit != 'true'
+    runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
     permissions:
       contents: read
       packages: write
@@ -87,45 +110,41 @@ jobs:
       - name: Create PDB subset cache directory
         run: mkdir -p ~/.openfold3-pdb-subset
 
-      # Static key: fully deterministic given the same full caches, --train-size,
-      # and pinned validation set (pdb_subset_helpers.SMOKE_VALIDATION_PDB_IDS).
-      # Bump the -v1 suffix by hand if any of those ever change.
-      - name: Cache PDB training subset
-        id: cache-pdb-subset
-        uses: actions/cache@v6
-        with:
-          path: ~/.openfold3-pdb-subset
-          key: shared-pdb-training-subset-v1
-          restore-keys: |
-            shared-pdb-training-subset-v1
-
-      - name: Generate + download PDB training subset (cache miss)
-        if: steps.cache-pdb-subset.outputs.cache-hit != 'true'
+      # Called separately with an explicit --target-dir each, rather than via
+      # the setup-pdb-subset composite task -- pixi's depends-on tasks don't
+      # reliably forward extra CLI args to their constituent tasks (verified:
+      # `pixi run setup-pdb-subset --help` silently ran the whole pipeline
+      # instead of showing help).
+      - name: Sample PDB training subset
         run: |
-          echo "Cache miss: generating + downloading PDB training subset..."
-          # Called separately with an explicit --target-dir each, rather than via
-          # the setup-pdb-subset composite task -- pixi's depends-on tasks don't
-          # reliably forward extra CLI args to their constituent tasks (verified:
-          # `pixi run setup-pdb-subset --help` silently ran the whole pipeline
-          # instead of showing help).
           docker run --rm \
             -v ~/.openfold3-pdb-subset:/root/.openfold3-pdb-subset \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-openfold3-cpu-${{ github.sha }} \
             pixi run -e openfold3-cpu generate-pdb-subset --target-dir /root/.openfold3-pdb-subset
+
+      - name: Download PDB training subset files
+        run: |
           docker run --rm \
             -v ~/.openfold3-pdb-subset:/root/.openfold3-pdb-subset \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-openfold3-cpu-${{ github.sha }} \
             pixi run -e openfold3-cpu download-pdb-subset --target-dir /root/.openfold3-pdb-subset
 
+      - name: Save PDB training subset cache
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.openfold3-pdb-subset
+          key: shared-pdb-training-subset-v1
+
   stop-aws-runner:
+    needs:
+      - check-pdb-subset-cache
+      - start-aws-runner
+      - warm-pdb-subset-cache
+    if: ${{ always() && needs.check-pdb-subset-cache.outputs.cache-hit != 'true' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
-    needs:
-      - start-aws-runner
-      - warm-pdb-subset-cache
-    if: ${{ always() }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
