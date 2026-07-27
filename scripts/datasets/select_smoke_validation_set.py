@@ -56,7 +56,6 @@ import boto3
 import ijson
 from botocore import UNSIGNED
 from botocore.config import Config
-
 from pdb_subset_helpers import BUCKET, S3_PREFIX, default_target_dir
 
 MODALITIES = ("dna", "rna", "protein_ligand", "multimer")
@@ -143,7 +142,10 @@ def main():
         "--val-cache",
         type=Path,
         default=None,
-        help="Full validation cache (default: <target-dir>/validation_cache_with_templates.json)",
+        help=(
+            "Full validation cache"
+            "(default: <target-dir>/validation_cache_with_templates.json)"
+        ),
     )
     parser.add_argument(
         "--max-token-count",
@@ -175,7 +177,10 @@ def main():
 
     candidates = find_candidates(val_cache, args.max_token_count)
     for modality, rows in candidates.items():
-        print(f"=== {modality}: {len(rows)} candidates (<= {args.max_token_count} tokens) ===")
+        print(
+            f"=== {modality}: {len(rows)} candidates "
+            f"(<= {args.max_token_count} tokens) ==="
+        )
         for token_count, pdb_id in rows[: args.top]:
             print(f"  {pdb_id:8s} tokens={token_count}")
 

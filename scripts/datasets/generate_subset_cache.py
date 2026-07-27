@@ -61,12 +61,17 @@ def get_or_create_pinned_validation_cache(
     Always the fixed set in `SMOKE_VALIDATION_PDB_IDS`, not a random sample --
     see that constant's docstring and select_smoke_validation_set.py for why.
     """
-    subset_path = subset_cache_path(full_cache, len(SMOKE_VALIDATION_PDB_IDS), target_dir)
+    subset_path = subset_cache_path(
+        full_cache, len(SMOKE_VALIDATION_PDB_IDS), target_dir
+    )
     if subset_path.exists() and not force:
         return subset_path
 
     download_full_cache(full_cache)
-    print(f"Fetching pinned validation set from {full_cache.name}: {SMOKE_VALIDATION_PDB_IDS}")
+    print(
+        f"Fetching pinned validation set from {full_cache.name}:"
+        f"{SMOKE_VALIDATION_PDB_IDS}"
+    )
     return build_pinned_subset_cache(full_cache, SMOKE_VALIDATION_PDB_IDS, target_dir)
 
 

@@ -71,7 +71,7 @@ class TrainCase:
 
 
 # The default runner.yaml settings can be found in
-# scripts/datasets/pdb_subset_helpers.py `build_runner_yaml_config` 
+# scripts/datasets/pdb_subset_helpers.py `build_runner_yaml_config`
 CASES = [
     pytest.param(
         TrainCase(

@@ -59,8 +59,7 @@ def main():
         type=Path,
         default=None,
         help=(
-            "Directory to download files into (default: "
-            "<target-dir>/pdb_training_set)"
+            "Directory to download files into (default: <target-dir>/pdb_training_set)"
         ),
     )
     parser.add_argument(
