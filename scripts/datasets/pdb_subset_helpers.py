@@ -511,6 +511,10 @@ def build_runner_yaml_config(cache_files: dict[str, Path], local_root: Path) -> 
             "log_lr": False,
             "wandb_config": None,
         },
+        "checkpoint_config": {
+            "save_top_k": 0,
+            "save_last": True,
+        },
         "pl_trainer_args": {
             "devices": 1,
             "num_nodes": 1,
