@@ -3,8 +3,6 @@
 The guidance is applied to the denoised coordinate estimate during reverse diffusion.
 It preserves local ligand chemistry encoded by the input molecule without adding any
 binding-site bias.
-
-Physical guidance is adapted from Boltz. See ``THIRD_PARTY_NOTICES.md``.
 """
 
 from typing import NamedTuple
@@ -244,7 +242,7 @@ def _distance_value_and_gradient(
 def _dihedral_value_and_gradient(
     coords: torch.Tensor, index: torch.Tensor, absolute: bool = False
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return improper dihedrals and Boltz-style analytical gradients."""
+    """Return improper dihedrals and their analytical gradients."""
     r_ij = coords.index_select(-2, index[0]) - coords.index_select(-2, index[1])
     r_kj = coords.index_select(-2, index[2]) - coords.index_select(-2, index[1])
     r_kl = coords.index_select(-2, index[2]) - coords.index_select(-2, index[3])

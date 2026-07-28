@@ -1,7 +1,4 @@
-"""Default settings for inference-time ligand stereochemistry guidance.
-
-Potential parameters are adapted from Boltz. See ``THIRD_PARTY_NOTICES.md``.
-"""
+"""Default settings for inference-time ligand stereochemistry guidance."""
 
 # Guidance is opt-in because it changes the reverse-diffusion trajectory.
 DEFAULT_LIGAND_STEREOCHEMISTRY_GUIDANCE_ENABLED = False
@@ -14,8 +11,8 @@ DEFAULT_LIGAND_STEREOCHEMISTRY_START_FRACTION = 0.725
 # Number of analytic gradient updates applied to each guided denoised estimate.
 DEFAULT_LIGAND_STEREOCHEMISTRY_NUM_GD_STEPS = 20
 
-# Flat-bottom buffers and guidance weights match the corresponding Boltz
-# physical potentials. Angular buffers are in radians.
+# Flat-bottom buffers and guidance weights for the physical potentials.
+# Angular buffers are in radians.
 BOND_BUFFER = 0.125
 ANGLE_BUFFER = 0.125
 CLASH_BUFFER = 0.10

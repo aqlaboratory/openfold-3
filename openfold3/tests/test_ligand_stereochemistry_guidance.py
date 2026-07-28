@@ -919,7 +919,7 @@ def test_prepare_guidance_rejects_constraint_vector_length_mismatch():
         prepare_ligand_stereochemistry_guidance(batch, torch.ones(1, 2))
 
 
-def test_tensorized_distance_bounds_match_boltz_pair_cutoff_rules():
+def test_tensorized_distance_bounds_match_pair_cutoff_rules():
     constraints = featurization._LigandGeometryConstraints(
         bounds_index=[(0, 1), (0, 2), (0, 3), (0, 4)],
         lower_bounds=[1.0] * 4,

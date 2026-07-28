@@ -2,8 +2,13 @@
 
 ## Boltz
 
-Parts of the ligand stereochemistry constraint extraction and physical guidance
-are adapted from Boltz:
+The ligand stereochemistry constraint extraction, physical guidance, and associated
+potential parameters in the following files are adapted from Boltz:
+
+- `openfold3/core/config/ligand_stereochemistry_defaults.py`
+- `openfold3/core/data/pipelines/featurization/ligand_stereochemistry.py`
+- `openfold3/core/model/structure/ligand_stereochemistry.py`
+
 <https://github.com/jwohlwend/boltz>.
 
 MIT License

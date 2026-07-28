@@ -2,10 +2,7 @@
 
 The guidance features are derived from the input ligand chemistry and address only
 local ligand geometry: distance-geometry bounds, assigned tetrahedral chirality,
-assigned E/Z alkene stereochemistry, and double-bond planarity. They are independent
-of binding-site constraints.
-
-Constraint extraction is adapted from Boltz. See ``THIRD_PARTY_NOTICES.md``.
+assigned E/Z alkene stereochemistry, and double-bond planarity.
 """
 
 from dataclasses import dataclass, field, fields
@@ -233,7 +230,7 @@ def _compute_stereo_bond_constraints(
 def _compute_flatness_constraints(
     mol: Mol, idx_map: dict[int, int]
 ) -> list[tuple[int, int, int, int, int, int]]:
-    """Compute Boltz-style double-bond planarity constraints."""
+    """Compute double-bond planarity constraints."""
     planar_double_bond_smarts = Chem.MolFromSmarts("[C;X3;^2](*)(*)=[C;X3;^2](*)(*)")
     constraints = []
     for match in mol.GetSubstructMatches(planar_double_bond_smarts):
