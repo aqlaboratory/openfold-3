@@ -168,10 +168,23 @@ CASES = [
             "ubiquitin": Expectation(
                 ref_cif=MMCIFS_DIR / "1ubq.cif",
                 ref_chains=("A",),
-                # Deliberately unpinned: run the case (see the module docstring) and
-                # record the logged CA-RMSD per mode here, with margin. Until then the
-                # RMSD is measured and logged but nothing is asserted.
-                ca_rmsd_max={},
+                # Measured 2026-07-28 on of3-p2-155k, one diffusion sample, seed 42.
+                # Pinned just above each measurement rather than at a loose common
+                # bound: ubiquitin is easy enough that every mode lands under 1 Å, so a
+                # generous ceiling would accept a real degradation without complaining.
+                ca_rmsd_max={
+                    # measured 0.87 Å (gdt_ts 0.974)
+                    Mode(use_msa_server=False, use_templates=False): 0.9,
+                    # measured 0.87 Å (gdt_ts 0.974) — the same numbers as the row
+                    # above, because without the MSA server template search has nothing
+                    # to draw on, so on a fixed seed this run reduces to that one
+                    Mode(use_msa_server=False, use_templates=True): 0.9,
+                    # measured 0.75 Å (gdt_ts 0.967)
+                    Mode(use_msa_server=True, use_templates=False): 0.8,
+                    # measured 0.79 Å (gdt_ts 0.967) — only 0.01 Å of headroom, the
+                    # first ceiling to revisit if this goes flaky on other hardware
+                    Mode(use_msa_server=True, use_templates=True): 0.8,
+                },
             )
         },
         marks=(requires_examples,),
