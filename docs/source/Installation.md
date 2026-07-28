@@ -119,7 +119,7 @@ OpenFold may need a few environment variables set so CUDA, compilation, and JIT-
 - `CUDA_HOME` should point to the CUDA installation. On many HPC clusters you will this can be set by loading the appropriate toolchain using environment modules, for example `module load cuda`.  If you do not set this you will likely get a `No such file or directory: '/usr/local/cuda/bin/nvcc'` error. 
 - `CUTLASS_PATH` will need to be set for most systems. If you do not set this you will get Deepspeed related errors such as `Error: Unable to JIT load the evoformer_attn op`. Generally this can be set using 
     ```bash
-    # Start your environment which as openfold3 installed
+    # Start your environment which has openfold3 installed
     source .venv/bin/activate
     # Set CUTLASS_PATH using the resolved path  
     export CUTLASS_PATH=$(python - << 'PY'

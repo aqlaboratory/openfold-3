@@ -57,7 +57,7 @@ entry2_B     MK--VVDDARGQGKFT
 //
 ```
 
-Note that the `sto` parser attempts to derive the query-to-template residue correspondences from the existing alignment. If this is not possbile, we realign the template sequences to the provided query sequence using Kalign. More on this in the [template processing explanatory document](template_explanation.md).
+Note that the `sto` parser attempts to derive the query-to-template residue correspondences from the existing alignment. If this is not possible, we realign the template sequences to the provided query sequence using Kalign. More on this in the [template processing explanatory document](template_explanation.md).
 
 #### 1.1.2. A3M
 
