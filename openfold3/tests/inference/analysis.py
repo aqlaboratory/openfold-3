@@ -19,18 +19,21 @@ through :func:`~openfold3.core.metrics.quality.get_superimpose_metrics` — Kabs
 superposition followed by RMSD — so the tests measure agreement with the same primitive
 the model's own validation uses, rather than a second implementation that could drift.
 
-Only protein CA-RMSD lives here for now; ligand RMSD needs symmetry-aware atom matching
-and is deliberately left out.
+Everything here takes :class:`Structure`, never a path: parsing is the expensive step and
+every metric wants the same two structures, so callers parse once at the boundary and
+pass the result down.
 """
 
 import itertools
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 
 import numpy as np
 import torch
+from biotite.structure import AtomArray
 
 from openfold3.core.data.io.structure.cif import parse_mmcif
 from openfold3.core.metrics.quality import get_superimpose_metrics
@@ -48,27 +51,67 @@ logger = logging.getLogger(__name__)
 MAX_PERMUTED_CHAINS = 6
 
 
-def ca_positions_by_chain(cif_path: Path) -> dict[str, dict[int, np.ndarray]]:
-    """Map ``chain_id -> {res_id: CA position}`` over the polymer CAs in *cif_path*.
+@dataclass(frozen=True, eq=False)
+class Structure:
+    """A parsed mmCIF, carrying the path it came from so errors can name the file.
 
-    Keying by residue id (rather than returning a flat array) is what lets a prediction
-    be compared against a reference with unmodelled gaps: only residues present in both
-    are scored.
+    Holding the parsed array rather than re-reading a path matters here: a single scored
+    query superimposes the protein, then reuses that same superposition for the ligand,
+    and each of those steps needs both structures. Passing paths made that four or five
+    parses of the same two files per query.
     """
-    atom_array = parse_mmcif(cif_path).atom_array
-    ca = atom_array[(atom_array.atom_name == "CA") & (~atom_array.hetero)]
-    by_chain: dict[str, dict[int, np.ndarray]] = {}
-    for chain_id, res_id, coord in zip(ca.chain_id, ca.res_id, ca.coord, strict=True):
-        residues = by_chain.setdefault(str(chain_id), {})
-        if int(res_id) in residues:
-            # Insertion codes or altlocs would otherwise silently overwrite, quietly
-            # dropping residues from the comparison instead of failing.
+
+    path: Path
+    atom_array: AtomArray
+
+    @classmethod
+    def from_cif(cls, path: Path) -> "Structure":
+        return cls(path=path, atom_array=parse_mmcif(path).atom_array)
+
+    @cached_property
+    def ca_positions_by_chain(self) -> dict[str, dict[int, np.ndarray]]:
+        """Map ``chain_id -> {res_id: CA position}`` over the polymer CAs.
+
+        Keying by residue id (rather than a flat array) is what lets a prediction be
+        compared against a reference with unmodelled gaps: only residues present in both
+        are scored. Cached because the chain-assignment search reads it repeatedly.
+        """
+        array = self.atom_array
+        ca = array[(array.atom_name == "CA") & (~array.hetero)]
+        by_chain: dict[str, dict[int, np.ndarray]] = {}
+        for chain_id, res_id, coord in zip(
+            ca.chain_id, ca.res_id, ca.coord, strict=True
+        ):
+            residues = by_chain.setdefault(str(chain_id), {})
+            if int(res_id) in residues:
+                # Insertion codes or altlocs would otherwise silently overwrite, quietly
+                # dropping residues from the comparison instead of failing.
+                raise ValueError(
+                    f"{self.path}: chain {chain_id} has more than one CA for residue "
+                    f"{res_id}"
+                )
+            residues[int(res_id)] = coord
+        return by_chain
+
+    def heavy_atoms(self, chain: str) -> AtomArray:
+        """Non-water heavy atoms of one chain, with the intra-chain bond graph kept."""
+        array = self.atom_array
+        selected = array[
+            (array.chain_id == chain)
+            & (array.res_name != "HOH")
+            & (array.element != "H")
+        ]
+        if not len(selected):
             raise ValueError(
-                f"{cif_path}: chain {chain_id} has more than one CA for residue "
-                f"{res_id}"
+                f"{self.path}: chain {chain} holds no non-water heavy atoms; chains "
+                f"present are {sorted(set(map(str, array.chain_id)))}"
             )
-        residues[int(res_id)] = coord
-    return by_chain
+        if selected.bonds is None:
+            raise ValueError(
+                f"{self.path}: chain {chain} carries no bond graph, so ligand atoms "
+                "cannot be matched up by connectivity"
+            )
+        return selected
 
 
 def _paired_positions(
@@ -112,12 +155,12 @@ class CaAlignment:
 
 
 def _best_ca_assignment(
-    pred_cif: Path,
-    ref_cif: Path,
+    pred: Structure,
+    ref: Structure,
     ref_chains: Sequence[str],
     pred_chains: Sequence[str] | None = None,
 ) -> CaAlignment:
-    """Best superposition CA-RMSD (Å) of *pred_cif* against *ref_cif*.
+    """Best superposition CA-RMSD (Å) of *pred* against *ref*.
 
     ``pred_chains`` and ``ref_chains`` are matched as sets, not pairwise: every bijection
     between them is scored and the best is returned. That is what makes a homomer
@@ -125,13 +168,16 @@ def _best_ca_assignment(
     emit carry no information, so pinning a specific pairing would measure label
     agreement rather than structural agreement.
 
-    ``pred_chains`` defaults to every polymer chain in *pred_cif*, which is what a
+    ``pred_chains`` defaults to every polymer chain in *pred*, which is what a
     single-chain prediction wants: the chain id the writer emits is then irrelevant.
 
     Returns the winning assignment's ``rmsd``/``gdt_ts``/``gdt_ha`` and its superposition.
     """
+    pred_by_chain = pred.ca_positions_by_chain
+    ref_by_chain = ref.ca_positions_by_chain
+
     if pred_chains is None:
-        pred_chains = sorted(ca_positions_by_chain(pred_cif))
+        pred_chains = sorted(pred_by_chain)
     if len(pred_chains) != len(ref_chains):
         raise ValueError(
             f"Need equal chain counts to pair up, got predicted {list(pred_chains)} "
@@ -143,17 +189,15 @@ def _best_ca_assignment(
             f"limit is {MAX_PERMUTED_CHAINS}"
         )
 
-    pred_by_chain = ca_positions_by_chain(pred_cif)
-    ref_by_chain = ca_positions_by_chain(ref_cif)
-    for label, wanted, available in (
-        ("predicted", pred_chains, pred_by_chain),
-        ("reference", ref_chains, ref_by_chain),
+    for structure, wanted, available in (
+        (pred, pred_chains, pred_by_chain),
+        (ref, ref_chains, ref_by_chain),
     ):
         missing = sorted(set(wanted) - set(available))
         if missing:
             raise ValueError(
-                f"{label} structure {pred_cif if label == 'predicted' else ref_cif} "
-                f"has no chain(s) {missing}; it holds {sorted(available)}"
+                f"{structure.path} has no chain(s) {missing}; "
+                f"it holds {sorted(available)}"
             )
 
     best_metrics: dict[str, float] | None = None
@@ -163,7 +207,7 @@ def _best_ca_assignment(
         pred_xyz, ref_xyz = _paired_positions(pred_by_chain, ref_by_chain, assignment)
         if not len(pred_xyz):
             raise ValueError(
-                f"No residues in common between {pred_cif} and {ref_cif} "
+                f"No residues in common between {pred.path} and {ref.path} "
                 f"for assignment {assignment}"
             )
         metrics = _superimpose_rmsd(pred_xyz, ref_xyz)
@@ -185,16 +229,16 @@ def _best_ca_assignment(
 
 
 def best_ca_rmsd(
-    pred_cif: Path,
-    ref_cif: Path,
+    pred: Structure,
+    ref: Structure,
     ref_chains: Sequence[str],
     pred_chains: Sequence[str] | None = None,
 ) -> dict[str, float]:
-    """Best superposition CA-RMSD (Å) of *pred_cif* against *ref_cif*.
+    """Best superposition CA-RMSD (Å) of *pred* against *ref*.
 
     See :func:`_best_ca_assignment`; this returns just the metrics.
     """
-    return _best_ca_assignment(pred_cif, ref_cif, ref_chains, pred_chains).metrics
+    return _best_ca_assignment(pred, ref, ref_chains, pred_chains).metrics
 
 
 # ---------------------------------------------------------------------------
@@ -202,28 +246,7 @@ def best_ca_rmsd(
 # ---------------------------------------------------------------------------
 
 
-def _heavy_atoms(cif_path: Path, chain: str):
-    """Non-water heavy atoms of one chain, with the intra-chain bond graph retained."""
-    atom_array = parse_mmcif(cif_path).atom_array
-    selected = atom_array[
-        (atom_array.chain_id == chain)
-        & (atom_array.res_name != "HOH")
-        & (atom_array.element != "H")
-    ]
-    if not len(selected):
-        raise ValueError(
-            f"{cif_path}: chain {chain} holds no non-water heavy atoms; chains present "
-            f"are {sorted(set(map(str, atom_array.chain_id)))}"
-        )
-    if selected.bonds is None:
-        raise ValueError(
-            f"{cif_path}: chain {chain} carries no bond graph, so ligand atoms cannot "
-            "be matched up by connectivity"
-        )
-    return selected
-
-
-def _connectivity_graph(selected):
+def _connectivity_graph(selected: AtomArray):
     """An RDKit molecule holding *only* element identity and connectivity.
 
     Bond orders are dropped deliberately. A prediction built from SMILES and a reference
@@ -244,7 +267,9 @@ def _connectivity_graph(selected):
     return mol
 
 
-def symmetry_mappings(pred_selected, ref_selected) -> list[tuple[int, ...]]:
+def symmetry_mappings(
+    pred_selected: AtomArray, ref_selected: AtomArray
+) -> list[tuple[int, ...]]:
     """Every element- and connectivity-preserving map from reference to predicted atoms.
 
     For toluene this yields the two ring flips; for a fully asymmetric ligand, one. The
@@ -260,8 +285,8 @@ def symmetry_mappings(pred_selected, ref_selected) -> list[tuple[int, ...]]:
 
 
 def ligand_pose_metrics(
-    pred_cif: Path,
-    ref_cif: Path,
+    pred: Structure,
+    ref: Structure,
     *,
     ref_chains: Sequence[str],
     pred_ligand_chain: str,
@@ -280,10 +305,10 @@ def ligand_pose_metrics(
     so it separates "wrong pocket" from "right pocket, flipped"), plus ``n_atoms`` and
     ``n_symmetry_mappings`` for diagnosis.
     """
-    alignment = _best_ca_assignment(pred_cif, ref_cif, ref_chains, pred_chains)
+    alignment = _best_ca_assignment(pred, ref, ref_chains, pred_chains)
 
-    pred_selected = _heavy_atoms(pred_cif, pred_ligand_chain)
-    ref_selected = _heavy_atoms(ref_cif, ref_ligand_chain)
+    pred_selected = pred.heavy_atoms(pred_ligand_chain)
+    ref_selected = ref.heavy_atoms(ref_ligand_chain)
     if len(pred_selected) != len(ref_selected):
         raise ValueError(
             f"Ligand atom count mismatch: predicted chain {pred_ligand_chain} has "

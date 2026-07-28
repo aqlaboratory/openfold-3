@@ -47,7 +47,11 @@ import openfold3
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
-from openfold3.tests.inference.analysis import best_ca_rmsd, ligand_pose_metrics
+from openfold3.tests.inference.analysis import (
+    Structure,
+    best_ca_rmsd,
+    ligand_pose_metrics,
+)
 from openfold3.tests.inference.helpers import (
     MMCIFS_DIR,
     MODES,
@@ -332,13 +336,18 @@ def _assert_within_ceiling(
 
 
 def _assert_protein(
-    expectation: Expectation, query_name: str, mode: Mode, *, pred_cif: Path
+    expectation: Expectation,
+    query_name: str,
+    mode: Mode,
+    *,
+    pred: Structure,
+    ref: Structure,
 ) -> None:
     """Score the protein fold against the reference."""
     protein = expectation.protein
     metrics = best_ca_rmsd(
-        pred_cif=pred_cif,
-        ref_cif=expectation.ref_cif,
+        pred=pred,
+        ref=ref,
         ref_chains=protein.ref_chains,
         pred_chains=protein.pred_chains,
     )
@@ -360,14 +369,19 @@ def _assert_protein(
 
 
 def _assert_ligand(
-    expectation: Expectation, query_name: str, mode: Mode, *, pred_cif: Path
+    expectation: Expectation,
+    query_name: str,
+    mode: Mode,
+    *,
+    pred: Structure,
+    ref: Structure,
 ) -> None:
     """Score the ligand pose in the frame of the superimposed protein."""
     ligand = expectation.ligand
     assert ligand is not None  # guarded by the caller
     metrics = ligand_pose_metrics(
-        pred_cif=pred_cif,
-        ref_cif=expectation.ref_cif,
+        pred=pred,
+        ref=ref,
         ref_chains=expectation.protein.ref_chains,
         pred_chains=expectation.protein.pred_chains,
         pred_ligand_chain=ligand.pred_chain,
@@ -407,9 +421,13 @@ def _maybe_assert_accuracy(
     expectation = case.expectations.get(query_name)
     if expectation is None:
         return
-    _assert_protein(expectation, query_name, mode, pred_cif=pred_cif)
+    # Parsed once here and handed down: the protein and the ligand both need both
+    # structures, and the ligand reuses the protein's superposition.
+    pred = Structure.from_cif(pred_cif)
+    ref = Structure.from_cif(expectation.ref_cif)
+    _assert_protein(expectation, query_name, mode, pred=pred, ref=ref)
     if expectation.ligand is not None:
-        _assert_ligand(expectation, query_name, mode, pred_cif=pred_cif)
+        _assert_ligand(expectation, query_name, mode, pred=pred, ref=ref)
 
 
 @skip_unless_accelerator_available()
