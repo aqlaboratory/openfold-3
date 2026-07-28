@@ -14,9 +14,9 @@
 
 """Shared helpers for the end-to-end inference tests in this package.
 
-Everything here drives a real ``InferenceExperimentRunner``, so it requires a GPU and
-downloaded model weights; the test modules gate on that with
-``skip_unless_cuda_available``.
+Everything here drives a real ``InferenceExperimentRunner``, so it requires an
+accelerator and downloaded model weights; the test modules gate on that with
+``skip_unless_accelerator_available``.
 """
 
 import logging

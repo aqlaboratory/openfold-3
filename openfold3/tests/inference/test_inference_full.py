@@ -19,7 +19,8 @@ and checks the expected output files are written; adding a molecule-type combina
 one row. See ``test_templates.py`` for the functional check that a supplied template
 actually steers the prediction.
 
-These require a GPU and downloaded model weights; they skip otherwise.
+These require an accelerator (CUDA, ROCm or MPS) and downloaded model weights; they skip
+otherwise.
 
 Run with:
     pytest openfold3/tests/inference/test_inference_full.py
@@ -33,7 +34,7 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 from openfold3.tests.inference.helpers import run_inference
-from openfold3.tests.utils.compare_utils import skip_unless_cuda_available
+from openfold3.tests.utils.compare_utils import skip_unless_accelerator_available
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ EXPECTED_OUTPUT_FILES = [
 ]
 
 
-@skip_unless_cuda_available()
+@skip_unless_accelerator_available()
 @pytest.mark.parametrize("chains", CASES)
 def test_inference_writes_outputs(chains, tmp_path):
     """Each query runs end-to-end and writes the expected per-sample outputs."""

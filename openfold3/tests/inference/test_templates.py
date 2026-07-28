@@ -19,7 +19,8 @@ onto the native fold (low CA-RMSD to the reference), whereas without a template 
 single-sequence model can't find it (high CA-RMSD). Parametrized over ``CASES`` so adding
 a PDB is one row + committing its cif.
 
-Requires a GPU and downloaded model weights; skips otherwise.
+Requires an accelerator (CUDA, ROCm or MPS) and downloaded model weights; skips
+otherwise.
 
 Run with:
     pytest openfold3/tests/inference/test_templates.py
@@ -39,7 +40,7 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 from openfold3.tests.inference.helpers import run_inference
-from openfold3.tests.utils.compare_utils import skip_unless_cuda_available
+from openfold3.tests.utils.compare_utils import skip_unless_accelerator_available
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -163,7 +164,7 @@ def _mean_ca_rmsd(
     return float(np.mean(rmsds))
 
 
-@skip_unless_cuda_available()
+@skip_unless_accelerator_available()
 @pytest.mark.inference_verification
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c.pdb_id)
 def test_template_lowers_rmsd(case, tmp_path):
