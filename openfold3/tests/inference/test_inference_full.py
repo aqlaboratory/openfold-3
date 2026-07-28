@@ -26,6 +26,13 @@ otherwise.
 
 Run with:
     pytest openfold3/tests/inference/test_inference_full.py
+
+To calibrate a case's ``ca_rmsd_max`` — run just that case in all four modes and read
+the measured CA-RMSDs off the log (``log_cli_level`` is WARNING by default, so INFO has
+to be asked for):
+
+    pytest openfold3/tests/inference/test_inference_full.py -k ubiquitin \\
+        -v --log-cli-level=INFO
 """
 
 import logging
@@ -42,6 +49,7 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 )
 from openfold3.tests.inference.analysis import best_ca_rmsd
 from openfold3.tests.inference.helpers import (
+    MMCIFS_DIR,
     MODES,
     Mode,
     prediction_dir,
@@ -103,19 +111,19 @@ class Expectation:
     then run the case in the mode you want to pin and read the measured CA-RMSD off the
     log line in :func:`_maybe_assert_ca_rmsd`, leaving margin for hardware variance::
 
-        from openfold3.tests.inference.helpers import MMCIFS_DIR
-
         Expectation(
             ref_cif=MMCIFS_DIR / "1ubq.cif",
-            pred_chains=("A",),
             ref_chains=("A",),
             ca_rmsd_max={Mode(use_msa_server=True, use_templates=True): 2.0},
         )
     """
 
     ref_cif: Path
-    pred_chains: tuple[str, ...]
     ref_chains: tuple[str, ...]
+    #: Predicted chains to pair with ``ref_chains``. ``None`` discovers every polymer
+    #: chain in the prediction, which is what a single-chain query wants — the chain id
+    #: the writer emits then carries no weight.
+    pred_chains: tuple[str, ...] | None = None
     ca_rmsd_max: Mapping[Mode, float] = field(default_factory=dict)
 
 
@@ -154,6 +162,18 @@ CASES = [
     InferenceCase(
         id="ubiquitin",
         build_query_set=partial(_example_query_set, "query_ubiquitin.json"),
+        expectations={
+            # 1ubq chain A is 76 contiguous residues whose sequence is byte-identical
+            # to the query, so every residue takes part in the comparison.
+            "ubiquitin": Expectation(
+                ref_cif=MMCIFS_DIR / "1ubq.cif",
+                ref_chains=("A",),
+                # Deliberately unpinned: run the case (see the module docstring) and
+                # record the logged CA-RMSD per mode here, with margin. Until then the
+                # RMSD is measured and logged but nothing is asserted.
+                ca_rmsd_max={},
+            )
+        },
         marks=(requires_examples,),
     ),
     InferenceCase(
@@ -184,8 +204,8 @@ def _maybe_assert_ca_rmsd(
     metrics = best_ca_rmsd(
         pred_cif=pred_cif,
         ref_cif=expectation.ref_cif,
-        pred_chains=expectation.pred_chains,
         ref_chains=expectation.ref_chains,
+        pred_chains=expectation.pred_chains,
     )
     logger.info(
         "%s [%s] CA-RMSD %.2f Å (gdt_ts %.3f) vs %s",
