@@ -26,6 +26,7 @@ and is deliberately left out.
 import itertools
 import logging
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +34,11 @@ import torch
 
 from openfold3.core.data.io.structure.cif import parse_mmcif
 from openfold3.core.metrics.quality import get_superimpose_metrics
+from openfold3.core.utils.geometry.kabsch_alignment import (
+    Transformation,
+    apply_transformation,
+    get_optimal_transformation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +98,25 @@ def _superimpose_rmsd(pred_xyz: np.ndarray, ref_xyz: np.ndarray) -> dict[str, fl
     return {name: float(value) for name, value in metrics.items()}
 
 
-def best_ca_rmsd(
+@dataclass(frozen=True)
+class CaAlignment:
+    """The chain assignment that won, and the superposition it implies.
+
+    ``transformation`` maps predicted coordinates onto the reference frame, so it can be
+    applied to anything else in the prediction — a ligand, say — to ask where it lands
+    once the protein has been placed.
+    """
+
+    metrics: dict[str, float]
+    transformation: Transformation
+
+
+def _best_ca_assignment(
     pred_cif: Path,
     ref_cif: Path,
     ref_chains: Sequence[str],
     pred_chains: Sequence[str] | None = None,
-) -> dict[str, float]:
+) -> CaAlignment:
     """Best superposition CA-RMSD (Å) of *pred_cif* against *ref_cif*.
 
     ``pred_chains`` and ``ref_chains`` are matched as sets, not pairwise: every bijection
@@ -109,7 +128,7 @@ def best_ca_rmsd(
     ``pred_chains`` defaults to every polymer chain in *pred_cif*, which is what a
     single-chain prediction wants: the chain id the writer emits is then irrelevant.
 
-    Returns the ``rmsd``/``gdt_ts``/``gdt_ha`` of the winning assignment.
+    Returns the winning assignment's ``rmsd``/``gdt_ts``/``gdt_ha`` and its superposition.
     """
     if pred_chains is None:
         pred_chains = sorted(ca_positions_by_chain(pred_cif))
@@ -137,7 +156,8 @@ def best_ca_rmsd(
                 f"has no chain(s) {missing}; it holds {sorted(available)}"
             )
 
-    best: dict[str, float] | None = None
+    best_metrics: dict[str, float] | None = None
+    best_positions: tuple[np.ndarray, np.ndarray] | None = None
     for permuted_ref in itertools.permutations(ref_chains):
         assignment = list(zip(pred_chains, permuted_ref, strict=True))
         pred_xyz, ref_xyz = _paired_positions(pred_by_chain, ref_by_chain, assignment)
@@ -148,8 +168,152 @@ def best_ca_rmsd(
             )
         metrics = _superimpose_rmsd(pred_xyz, ref_xyz)
         logger.debug("assignment %s -> CA-RMSD %.2f", assignment, metrics["rmsd"])
-        if best is None or metrics["rmsd"] < best["rmsd"]:
-            best = metrics
+        if best_metrics is None or metrics["rmsd"] < best_metrics["rmsd"]:
+            best_metrics, best_positions = metrics, (pred_xyz, ref_xyz)
 
-    assert best is not None  # permutations() of a non-empty sequence is non-empty
-    return best
+    assert best_metrics is not None  # permutations() of a non-empty seq is non-empty
+    assert best_positions is not None
+    # Only the winner's transform is needed, so it is derived once here rather than for
+    # every candidate assignment.
+    pred_xyz, ref_xyz = best_positions
+    transformation = get_optimal_transformation(
+        mobile_positions=torch.from_numpy(pred_xyz),
+        target_positions=torch.from_numpy(ref_xyz),
+        positions_mask=torch.ones(len(pred_xyz), dtype=torch.float64),
+    )
+    return CaAlignment(metrics=best_metrics, transformation=transformation)
+
+
+def best_ca_rmsd(
+    pred_cif: Path,
+    ref_cif: Path,
+    ref_chains: Sequence[str],
+    pred_chains: Sequence[str] | None = None,
+) -> dict[str, float]:
+    """Best superposition CA-RMSD (Å) of *pred_cif* against *ref_cif*.
+
+    See :func:`_best_ca_assignment`; this returns just the metrics.
+    """
+    return _best_ca_assignment(pred_cif, ref_cif, ref_chains, pred_chains).metrics
+
+
+# ---------------------------------------------------------------------------
+# Ligand pose
+# ---------------------------------------------------------------------------
+
+
+def _heavy_atoms(cif_path: Path, chain: str):
+    """Non-water heavy atoms of one chain, with the intra-chain bond graph retained."""
+    atom_array = parse_mmcif(cif_path).atom_array
+    selected = atom_array[
+        (atom_array.chain_id == chain)
+        & (atom_array.res_name != "HOH")
+        & (atom_array.element != "H")
+    ]
+    if not len(selected):
+        raise ValueError(
+            f"{cif_path}: chain {chain} holds no non-water heavy atoms; chains present "
+            f"are {sorted(set(map(str, atom_array.chain_id)))}"
+        )
+    if selected.bonds is None:
+        raise ValueError(
+            f"{cif_path}: chain {chain} carries no bond graph, so ligand atoms cannot "
+            "be matched up by connectivity"
+        )
+    return selected
+
+
+def _connectivity_graph(selected):
+    """An RDKit molecule holding *only* element identity and connectivity.
+
+    Bond orders are dropped deliberately. A prediction built from SMILES and a reference
+    built from a CCD definition need not agree on kekulisation or aromatic perception,
+    and none of that changes which atoms are interchangeable by symmetry. Comparing
+    topology alone is the standard basis for a symmetry-corrected RMSD.
+    """
+    from rdkit import Chem
+
+    mol = Chem.RWMol()
+    for element in selected.element:
+        mol.AddAtom(Chem.Atom(str(element).capitalize()))
+    for i, j, _bond_order in selected.bonds.as_array():
+        mol.AddBond(int(i), int(j), Chem.BondType.SINGLE)
+    mol = mol.GetMol()
+    mol.UpdatePropertyCache(strict=False)
+    Chem.FastFindRings(mol)  # substructure matching needs ring perception
+    return mol
+
+
+def symmetry_mappings(pred_selected, ref_selected) -> list[tuple[int, ...]]:
+    """Every element- and connectivity-preserving map from reference to predicted atoms.
+
+    For toluene this yields the two ring flips; for a fully asymmetric ligand, one. The
+    predicted ligand comes from SMILES so its atom *names* are whatever the writer chose
+    — matching has to go through the graph, not the names.
+    """
+    pred_mol = _connectivity_graph(pred_selected)
+    ref_mol = _connectivity_graph(ref_selected)
+    matches = pred_mol.GetSubstructMatches(
+        ref_mol, uniquify=False, useChirality=False, maxMatches=10_000
+    )
+    return [tuple(int(i) for i in match) for match in matches]
+
+
+def ligand_pose_metrics(
+    pred_cif: Path,
+    ref_cif: Path,
+    *,
+    ref_chains: Sequence[str],
+    pred_ligand_chain: str,
+    ref_ligand_chain: str,
+    pred_chains: Sequence[str] | None = None,
+) -> dict[str, float]:
+    """Symmetry-corrected ligand pose accuracy, in the frame of the superimposed protein.
+
+    The protein is superimposed first and that same transform is applied to the predicted
+    ligand — the ligand is *not* aligned to itself. That is the question worth asking of
+    a co-folding model: given the protein placed correctly, does the ligand land in the
+    right pocket in the right orientation. Aligning the ligand separately would score its
+    internal geometry and quietly forgive a pose in the wrong site.
+
+    Returns ``rmsd`` (best over symmetry mappings), ``centroid_distance`` (mapping-free,
+    so it separates "wrong pocket" from "right pocket, flipped"), plus ``n_atoms`` and
+    ``n_symmetry_mappings`` for diagnosis.
+    """
+    alignment = _best_ca_assignment(pred_cif, ref_cif, ref_chains, pred_chains)
+
+    pred_selected = _heavy_atoms(pred_cif, pred_ligand_chain)
+    ref_selected = _heavy_atoms(ref_cif, ref_ligand_chain)
+    if len(pred_selected) != len(ref_selected):
+        raise ValueError(
+            f"Ligand atom count mismatch: predicted chain {pred_ligand_chain} has "
+            f"{len(pred_selected)} heavy atoms, reference chain {ref_ligand_chain} has "
+            f"{len(ref_selected)}"
+        )
+
+    pred_xyz = apply_transformation(
+        positions=torch.from_numpy(pred_selected.coord.astype(float)),
+        transformation=alignment.transformation,
+    ).numpy()
+    ref_xyz = ref_selected.coord.astype(float)
+
+    mappings = symmetry_mappings(pred_selected, ref_selected)
+    if not mappings:
+        raise ValueError(
+            f"No graph match between predicted ligand (chain {pred_ligand_chain}) and "
+            f"reference ligand (chain {ref_ligand_chain}) — different molecules?"
+        )
+
+    best_rmsd = min(
+        float(np.sqrt(((pred_xyz[list(mapping)] - ref_xyz) ** 2).sum(axis=-1).mean()))
+        for mapping in mappings
+    )
+    centroid_distance = float(
+        np.linalg.norm(pred_xyz.mean(axis=0) - ref_xyz.mean(axis=0))
+    )
+    return {
+        "rmsd": best_rmsd,
+        "centroid_distance": centroid_distance,
+        "n_atoms": float(len(ref_selected)),
+        "n_symmetry_mappings": float(len(mappings)),
+    }
