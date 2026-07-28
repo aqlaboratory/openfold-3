@@ -23,6 +23,7 @@ from biotite.structure import AtomArray
 from openfold3.core.data.primitives.featurization.padding import pad_token_dim
 from openfold3.core.data.primitives.featurization.structure import (
     create_atom_to_token_index,
+    create_cyclic_mask,
     create_sym_id,
     create_token_bonds,
     encode_one_hot,
@@ -191,10 +192,7 @@ def featurize_structure_of3(
             num_atoms_per_token=features["num_atoms_per_token"],
         )
 
-        if "is_cyclic" in atom_array.get_annotation_categories():
-            features["cyclic_mask"] = torch.tensor(
-                atom_array.is_cyclic[token_starts], dtype=torch.bool
-            )
+        features["cyclic_mask"] = create_cyclic_mask(atom_array, token_starts)
 
     # Ground-truth-specific features
     # TODO reorganize GT feature logic

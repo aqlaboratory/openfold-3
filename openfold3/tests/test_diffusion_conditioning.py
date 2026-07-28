@@ -52,7 +52,7 @@ class TestDiffusionConditioning(unittest.TestCase):
             "sym_id": torch.zeros((batch_size, n_token)),
             "asym_id": torch.zeros((batch_size, n_token)),
             "entity_id": torch.zeros((batch_size, n_token)),
-            "cyclic_mask": torch.zeros((batch_size, 1, n_token)),
+            "cyclic_mask": torch.zeros((batch_size, 1, n_token), dtype=torch.bool),
         }
 
         si, zij = dc(
@@ -102,7 +102,7 @@ class TestDiffusionConditioning(unittest.TestCase):
             "sym_id": torch.zeros((batch_size, 1, n_token)),
             "asym_id": torch.zeros((batch_size, 1, n_token)),
             "entity_id": torch.zeros((batch_size, 1, n_token)),
-            "cyclic_mask": torch.zeros((batch_size, 1, n_token)),
+            "cyclic_mask": torch.zeros((batch_size, 1, n_token), dtype=torch.bool),
         }
 
         si, zij = dc(
@@ -151,7 +151,7 @@ class TestDiffusionConditioning(unittest.TestCase):
             "sym_id": torch.zeros((batch_size, 1, n_token)),
             "asym_id": torch.zeros((batch_size, 1, n_token)),
             "entity_id": torch.zeros((batch_size, 1, n_token)),
-            "cyclic_mask": torch.zeros((batch_size, 1, n_token)),
+            "cyclic_mask": torch.zeros((batch_size, 1, n_token), dtype=torch.bool),
         }
 
         si, zij = dc(

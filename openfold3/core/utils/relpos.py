@@ -98,8 +98,7 @@ def relpos_complex(
                 [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
         """
         offset = pos[..., None] - pos[..., None, :]
-
-        if cyclic_mask is not None and cyclic_mask.any():
+        if cyclic_mask.any():
             for chain_id in torch.unique(asym_id):
                 chain_cyclic_mask = cyclic_mask & (asym_id == chain_id)
                 pair_cyclic = (

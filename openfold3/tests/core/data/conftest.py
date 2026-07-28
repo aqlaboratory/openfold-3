@@ -8,7 +8,7 @@ def _make_atom_array():
     """Factory fixture for a minimal single-chain, single-residue-type AtomArray.
 
     Returns a callable rather than an AtomArray directly, since each test needs a
-    different atom count / annotations. Shared across pipelines test modules that need
+    different atom count / annotations. Shared across the data test modules that need
     a cheap, hand-built AtomArray instead of a parsed structure.
     """
 
