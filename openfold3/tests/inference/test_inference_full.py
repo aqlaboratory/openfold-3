@@ -15,9 +15,10 @@
 """Smoke tests for inference: small queries run end-to-end.
 
 ``test_inference_writes_outputs`` runs each case in ``CASES`` with MSA server + templates
-and checks the expected output files are written; adding a molecule-type combination is
-one row. See ``test_templates.py`` for the functional check that a supplied template
-actually steers the prediction.
+and checks the expected output files are written for every query it contains. Cases mix
+in-memory query sets with the query JSONs under ``examples/example_inference_inputs``,
+so adding either kind is one row. See ``test_templates.py`` for the functional check that
+a supplied template actually steers the prediction.
 
 These require an accelerator (CUDA, ROCm or MPS) and downloaded model weights; they skip
 otherwise.
@@ -27,9 +28,12 @@ Run with:
 """
 
 import logging
+from functools import partial
+from pathlib import Path
 
 import pytest
 
+import openfold3
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
@@ -38,6 +42,20 @@ from openfold3.tests.utils.compare_utils import skip_unless_accelerator_availabl
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
+
+#: Repo-root ``examples/`` — present in a source checkout, but not shipped in the wheel
+#: (``packages.find`` only picks up ``openfold3*``), so file-backed cases must tolerate
+#: its absence when the suite runs from an install.
+EXAMPLES_DIR = Path(openfold3.__file__).parent / "examples" / "example_inference_inputs"
+
+requires_examples = pytest.mark.skipif(
+    not EXAMPLES_DIR.is_dir(), reason=f"No examples directory at {EXAMPLES_DIR}"
+)
+
+#: Seed the outputs are written under. Comes from ``ExperimentSettings.seeds`` (default
+#: ``[42]``), which the runner yaml in :func:`run_inference` does not override — *not*
+#: from ``InferenceQuerySet.seeds``, which the runner ignores.
+SEED = 42
 
 PROTEIN_CHAIN = {
     "molecule_type": "protein",
@@ -51,28 +69,43 @@ LIGAND_CHAIN = {
     "smiles": "c1ccccc1O",
 }
 
-#: Chain sets to run, all under the query name ``query1`` so they share one expected
-#: output listing. Cases differ only in which molecule types the query contains.
-CASES = [
-    pytest.param([PROTEIN_CHAIN], id="protein_only"),
-    pytest.param([PROTEIN_CHAIN, LIGAND_CHAIN], id="protein_and_ligand"),
-]
 
-EXPECTED_OUTPUT_FILES = [
-    "query1_seed_42_sample_1_confidences.json",
-    "query1_seed_42_sample_1_confidences_aggregated.json",
-    "query1_seed_42_sample_1_model.cif",
-    "timing.json",
+def _inline_query_set(*chains: dict) -> InferenceQuerySet:
+    """Build a single-query set named ``query1`` from raw chain dicts."""
+    return InferenceQuerySet.model_validate(
+        {"queries": {"query1": {"chains": list(chains)}}}
+    )
+
+
+def _example_query_set(filename: str) -> InferenceQuerySet:
+    """Load an example query JSON through the same loader ``run_openfold`` uses."""
+    return InferenceQuerySet.from_json(EXAMPLES_DIR / filename)
+
+
+#: Each case builds an :class:`InferenceQuerySet`, either in memory or from a file in
+#: ``examples/example_inference_inputs``. Construction is deferred behind a callable so
+#: that a missing examples directory skips the case instead of breaking collection.
+#: Expected outputs are derived from the query names, so a case may hold any number of
+#: queries — adding another example is one row.
+CASES = [
+    pytest.param(partial(_inline_query_set, PROTEIN_CHAIN), id="protein_only"),
+    pytest.param(
+        partial(_inline_query_set, PROTEIN_CHAIN, LIGAND_CHAIN),
+        id="protein_and_ligand",
+    ),
+    pytest.param(
+        partial(_example_query_set, "query_protein_ligand_multiple.json"),
+        id="protein_ligand_multiple",
+        marks=requires_examples,
+    ),
 ]
 
 
 @skip_unless_accelerator_available()
-@pytest.mark.parametrize("chains", CASES)
-def test_inference_writes_outputs(chains, tmp_path):
-    """Each query runs end-to-end and writes the expected per-sample outputs."""
-    query_set = InferenceQuerySet.model_validate(
-        {"queries": {"query1": {"chains": chains}}}
-    )
+@pytest.mark.parametrize("build_query_set", CASES)
+def test_inference_writes_outputs(build_query_set, tmp_path):
+    """Every query in the set runs end-to-end and writes the expected per-sample files."""
+    query_set = build_query_set()
     run_inference(
         query_set,
         tmp_path,
@@ -81,11 +114,19 @@ def test_inference_writes_outputs(chains, tmp_path):
         num_diffusion_samples=1,
     )
     logger.info("Checking output contents at %s", tmp_path)
-    seed_dir = tmp_path / "query1" / "seed_42"
-    for name in EXPECTED_OUTPUT_FILES:
-        assert (seed_dir / name).exists(), (
-            f"Expected output file not found: {seed_dir / name}"
-        )
+    for query_name in query_set.queries:
+        seed_dir = tmp_path / query_name / f"seed_{SEED}"
+        stem = f"{query_name}_seed_{SEED}_sample_1"
+        expected_files = [
+            f"{stem}_confidences.json",
+            f"{stem}_confidences_aggregated.json",
+            f"{stem}_model.cif",
+            "timing.json",
+        ]
+        for name in expected_files:
+            assert (seed_dir / name).exists(), (
+                f"Expected output file not found: {seed_dir / name}"
+            )
 
 
 if __name__ == "__main__":
