@@ -175,9 +175,12 @@ CASES = [
                 ca_rmsd_max={
                     # measured 0.87 Å (gdt_ts 0.974)
                     Mode(use_msa_server=False, use_templates=False): 0.9,
-                    # measured 0.87 Å (gdt_ts 0.974) — the same numbers as the row
-                    # above, because without the MSA server template search has nothing
-                    # to draw on, so on a fixed seed this run reduces to that one
+                    # measured 0.87 Å (gdt_ts 0.974) — same numbers as the row above:
+                    # without the MSA server template search has nothing to draw on
+                    # (preprocessing returns within the same second), so both no_msa
+                    # modes are the same computation. They are not bit-identical though
+                    # — 7L39 measures 15.29 vs 15.78 Å across this same pair — they
+                    # agree here because a converged prediction is stable.
                     Mode(use_msa_server=False, use_templates=True): 0.9,
                     # measured 0.75 Å (gdt_ts 0.967)
                     Mode(use_msa_server=True, use_templates=False): 0.8,
@@ -190,10 +193,53 @@ CASES = [
         marks=(requires_examples,),
     ),
     InferenceCase(
-        id="protein_ligand_multiple",
+        id="query_single_protein_single_ligand",
         build_query_set=partial(
-            _example_query_set, "query_protein_ligand_multiple.json"
+            _example_query_set, "query_single_protein_single_ligand.json"
         ),
+        expectations={
+            "pdb_7L39": Expectation(
+                # T4 lysozyme L99A with toluene. The query encodes the L99A mutation
+                # itself (position 99 is A), and 7l39 chain A matches the query sequence
+                # residue-for-residue over all 162 modelled positions — no stray point
+                # mutants, which is the hazard with T4 lysozyme.
+                #
+                # Two equally exact alternatives exist, both also monomeric with toluene
+                # (MBN) bound: 4W53 (1.56 Å, all 164 residues modelled) and 7L3A (1.11 Å,
+                # cryo, toluene the only non-water heteroatom). 7L39 is used because the
+                # query names itself after it. They are not interchangeable to the
+                # precision we assert at — pairwise CA-RMSD among the three runs
+                # 0.24–0.46 Å — so a ceiling recorded here is tied to this reference.
+                ref_cif=MMCIFS_DIR / "7l39.cif",
+                ref_chains=("A",),
+                # Measured 2026-07-28 on of3-p2-155k, one diffusion sample, seed 42:
+                #   no_msa-no_templates  15.29 Å (gdt_ts 0.032)
+                #   no_msa-templates     15.78 Å (gdt_ts 0.039)
+                #   msa-no_templates      0.22 Å (gdt_ts 1.000)
+                #   msa-templates         0.20 Å (gdt_ts 1.000)
+                # Unlike ubiquitin, this target lives or dies on the MSA: single-sequence
+                # the model does not find the fold at all (gdt_ts 0.03), with an MSA it
+                # is essentially exact. Which is the case the per-mode encoding exists
+                # for — one ceiling across all four would have to be ~16 Å and would
+                # then wave through a total collapse of the MSA path.
+                ca_rmsd_max={
+                    # Only the converged modes are pinned, and pinned tight. gdt_ts is
+                    # 1.000 in both, i.e. the prediction is locked onto the reference,
+                    # so the number is reproducible.
+                    Mode(use_msa_server=True, use_templates=False): 0.3,
+                    Mode(use_msa_server=True, use_templates=True): 0.3,
+                    # The two no_msa modes are deliberately left unpinned. Their RMSD is
+                    # the distance to a fold the model never found, which is not a stable
+                    # quantity: the two runs above differ by 0.5 Å despite being the same
+                    # computation (template search finds nothing without the MSA server —
+                    # its preprocessing returns within the same second). Pinning a tight
+                    # ceiling there would buy flakiness and no signal. Asserting these
+                    # properly needs a *floor* — "must be worse than 8 Å without an MSA",
+                    # the way test_templates.py proves its template effect — which
+                    # Expectation cannot express yet.
+                },
+            )
+        },
         marks=(requires_examples,),
     ),
 ]
