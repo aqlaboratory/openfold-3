@@ -515,3 +515,16 @@ tasks.safe-but-slow-update.cmd = [
     "--concurrent-solves",
     "4"
 ]
+
+# Sample + download a small PDB training subset (see scripts/datasets/README.md).
+# Both default to writing/reading ./datasets relative to $PIXI_PROJECT_ROOT, since
+# pixi tasks run with cwd = the project root. Extra CLI args pass through, e.g.
+# `pixi run -e openfold3-cpu generate-pdb-subset -- --train-size 32 --val-size 16`.
+# `-u`: unbuffered stdout -- these scripts' progress prints (sampling/download
+# status over several minutes) would otherwise sit fully buffered and invisible
+# until the buffer fills or the process exits whenever stdout isn't a tty, e.g.
+# piped through `docker run` in CI, which is exactly how the caching workflow
+# invokes them.
+tasks.generate-pdb-subset.cmd = ["python", "-u", "scripts/datasets/generate_subset_cache.py"]
+tasks.download-pdb-subset.cmd = ["python", "-u", "scripts/datasets/download_subset.py"]
+tasks.setup-pdb-subset.depends-on = ["generate-pdb-subset", "download-pdb-subset"]
