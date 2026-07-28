@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Smoke tests for inference: two small queries run end-to-end.
+"""Smoke tests for inference: small queries run end-to-end.
 
-``test_protein_only`` / ``test_protein_and_ligand`` run with MSA server + templates and
-check the expected output files are written. See ``test_templates.py`` for the functional
-check that a supplied template actually steers the prediction.
+``test_inference_writes_outputs`` runs each case in ``CASES`` with MSA server + templates
+and checks the expected output files are written; adding a molecule-type combination is
+one row. See ``test_templates.py`` for the functional check that a supplied template
+actually steers the prediction.
 
-Both require a GPU and downloaded model weights; they skip otherwise.
+These require a GPU and downloaded model weights; they skip otherwise.
 
 Run with:
     pytest openfold3/tests/inference/test_inference_full.py
@@ -37,45 +38,40 @@ from openfold3.tests.utils.compare_utils import skip_unless_cuda_available
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
-protein_only_query = InferenceQuerySet.model_validate(
-    {
-        "queries": {
-            "query1": {
-                "chains": [
-                    {
-                        "molecule_type": "protein",
-                        "chain_ids": ["A", "B"],
-                        "sequence": "XRMKQLEDKVEELLSKNYHLENEVARLKKLVGER",
-                    }
-                ]
-            }
-        }
-    }
-)
+PROTEIN_CHAIN = {
+    "molecule_type": "protein",
+    "chain_ids": ["A", "B"],
+    "sequence": "XRMKQLEDKVEELLSKNYHLENEVARLKKLVGER",
+}
 
-protein_and_ligand_query = InferenceQuerySet.model_validate(
-    {
-        "queries": {
-            "query1": {
-                "chains": [
-                    {
-                        "molecule_type": "protein",
-                        "chain_ids": ["A", "B"],
-                        "sequence": "XRMKQLEDKVEELLSKNYHLENEVARLKKLVGER",
-                    },
-                    {
-                        "molecule_type": "ligand",
-                        "chain_ids": ["C"],
-                        "smiles": "c1ccccc1O",
-                    },
-                ]
-            }
-        }
-    }
-)
+LIGAND_CHAIN = {
+    "molecule_type": "ligand",
+    "chain_ids": ["C"],
+    "smiles": "c1ccccc1O",
+}
+
+#: Chain sets to run, all under the query name ``query1`` so they share one expected
+#: output listing. Cases differ only in which molecule types the query contains.
+CASES = [
+    pytest.param([PROTEIN_CHAIN], id="protein_only"),
+    pytest.param([PROTEIN_CHAIN, LIGAND_CHAIN], id="protein_and_ligand"),
+]
+
+EXPECTED_OUTPUT_FILES = [
+    "query1_seed_42_sample_1_confidences.json",
+    "query1_seed_42_sample_1_confidences_aggregated.json",
+    "query1_seed_42_sample_1_model.cif",
+    "timing.json",
+]
 
 
-def _assert_inference_writes_outputs(query_set, tmp_path):
+@skip_unless_cuda_available()
+@pytest.mark.parametrize("chains", CASES)
+def test_inference_writes_outputs(chains, tmp_path):
+    """Each query runs end-to-end and writes the expected per-sample outputs."""
+    query_set = InferenceQuerySet.model_validate(
+        {"queries": {"query1": {"chains": chains}}}
+    )
     run_inference(
         query_set,
         tmp_path,
@@ -85,26 +81,10 @@ def _assert_inference_writes_outputs(query_set, tmp_path):
     )
     logger.info("Checking output contents at %s", tmp_path)
     seed_dir = tmp_path / "query1" / "seed_42"
-    expected_files = [
-        "query1_seed_42_sample_1_confidences.json",
-        "query1_seed_42_sample_1_confidences_aggregated.json",
-        "query1_seed_42_sample_1_model.cif",
-        "timing.json",
-    ]
-    for name in expected_files:
+    for name in EXPECTED_OUTPUT_FILES:
         assert (seed_dir / name).exists(), (
             f"Expected output file not found: {seed_dir / name}"
         )
-
-
-@skip_unless_cuda_available()
-def test_protein_only(tmp_path):
-    _assert_inference_writes_outputs(protein_only_query, tmp_path)
-
-
-@skip_unless_cuda_available()
-def test_protein_and_ligand(tmp_path):
-    _assert_inference_writes_outputs(protein_and_ligand_query, tmp_path)
 
 
 if __name__ == "__main__":
