@@ -173,6 +173,11 @@ class BaseOF3Dataset(SingleDataset, ABC):
         self.crop = dataset_config.crop.model_dump()
         self.loss = dataset_config.loss.model_dump()
         self.template = dataset_config.template
+        if self.template.use_coordinate_pair_features:
+            raise NotImplementedError(
+                "Coordinate-derived template features are inference-only; "
+                "training support requires a differentiable projection path."
+            )
 
         # Misc
         self.single_moltype = None

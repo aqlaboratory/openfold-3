@@ -33,10 +33,36 @@ from openfold3.core.model.feature_embedders.template_embedders import (
 )
 from openfold3.core.model.latent.base_blocks import PairBlock
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.model.primitives.fused_template_coordinate import (
+    fused_template_coordinate_pair_embedder_inference,
+)
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.checkpointing import checkpoint_blocks, checkpoint_section
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.chunk_utils import (
+    ChunkSizeTuner,
+    apply_transition_chunk_cap,
+    apply_triangle_attn_chunk_cap,
+)
 from openfold3.core.utils.tensor_utils import add
+
+_TEMPLATE_DIM_BY_KEY = {
+    "template_restype": -3,
+    "template_pseudo_beta_mask": -2,
+    "template_backbone_frame_mask": -2,
+    "template_distogram": -4,
+    "template_unit_vector": -4,
+}
+
+
+def _slice_template_feature(k: str, x: torch.Tensor, idx: int) -> torch.Tensor:
+    """Return one template while preserving the singleton template dimension."""
+    template_dim = _TEMPLATE_DIM_BY_KEY.get(k)
+    if template_dim is None:
+        return x
+
+    slices = [slice(None)] * x.dim()
+    slices[template_dim] = slice(idx, idx + 1)
+    return x[tuple(slices)]
 
 
 # TODO: Make arguments match PairBlock
@@ -395,6 +421,10 @@ class TemplatePairStack(nn.Module):
             attn_chunk = (
                 tuned_chunk_size if use_flash_kernels else max(1, tuned_chunk_size // 4)
             )
+            attn_chunk = apply_triangle_attn_chunk_cap(
+                attn_chunk, n_tokens=t.shape[-3]
+            )
+            tuned_chunk_size = apply_transition_chunk_cap(tuned_chunk_size)
             blocks = [
                 partial(
                     b,
@@ -582,6 +612,68 @@ class TemplateEmbedderAllAtom(nn.Module):
 
         return t_out.to(device=out_device)
 
+    def _forward_streaming(
+        self,
+        batch: dict,
+        z: torch.Tensor,
+        pair_mask: torch.Tensor,
+        chunk_size: int | None = None,
+        _mask_trans: bool = True,
+        use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
+        use_lma: bool = False,
+        inplace_safe: bool = False,
+        use_coordinate_features: bool = False,
+    ) -> torch.Tensor:
+        """Process templates one-at-a-time and accumulate their stack outputs."""
+        n_templ = batch["template_restype"].shape[-3]
+        pair_mask = pair_mask[..., None, :, :].to(dtype=z.dtype)
+        t_sum = None
+
+        for i in range(n_templ):
+            if use_coordinate_features:
+                t = fused_template_coordinate_pair_embedder_inference(
+                    module=self.template_pair_embedder,
+                    batch=batch,
+                    z=z,
+                    template_index=i,
+                )
+            else:
+                batch_templ = {
+                    k: (
+                        _slice_template_feature(k, v, i)
+                        if isinstance(v, torch.Tensor) and k.startswith("template_")
+                        else v
+                    )
+                    for k, v in batch.items()
+                }
+                t = self.template_pair_embedder(batch=batch_templ, z=z)
+                batch_templ.pop("template_distogram", None)
+                batch_templ.pop("template_unit_vector", None)
+
+            t = self.template_pair_stack(
+                t,
+                pair_mask,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                _mask_trans=_mask_trans,
+            )
+
+            t = t.squeeze(-4)
+            if t_sum is None:
+                t_sum = t
+            else:
+                t_sum.add_(t)
+            del t
+
+        assert t_sum is not None
+        return t_sum / n_templ
+
     def _forward(
         self,
         batch: dict,
@@ -660,8 +752,33 @@ class TemplateEmbedderAllAtom(nn.Module):
                 [*, N_token, N_token, C_z] Template embedding
         """
         n_templ = batch["template_restype"].shape[-3]
+        template_sum_done = False
+        use_coordinate_features = "template_pseudo_beta_coords" in batch
+        # Coordinate inputs are O(N); always stream on GPU and ignore offload.
+        can_stream = use_coordinate_features or (
+            inplace_safe
+            and not self.training
+            and not torch.is_grad_enabled()
+            and not offload_inference
+            and n_templ > 1
+        )
 
-        if offload_inference:
+        if can_stream:
+            t = self._forward_streaming(
+                batch=batch,
+                z=z,
+                pair_mask=pair_mask,
+                chunk_size=chunk_size,
+                _mask_trans=True,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                inplace_safe=inplace_safe,
+                use_coordinate_features=use_coordinate_features,
+            )
+            template_sum_done = True
+        elif offload_inference:
             t = self._forward_offload(
                 batch=batch,
                 z=z,
@@ -688,8 +805,10 @@ class TemplateEmbedderAllAtom(nn.Module):
                 inplace_safe=inplace_safe,
             )
 
+        if not template_sum_done:
+            t = torch.sum(t, dim=-4) / n_templ
+
         # [*, N_token, N_token, C_z]
-        t = torch.sum(t, dim=-4) / n_templ
         t = torch.nn.functional.relu(t)
         t = self.linear_t(t)
 

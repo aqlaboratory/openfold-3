@@ -412,6 +412,47 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
             aux_out["experimentally_resolved_logits"].shape, expected_shape_exp_res
         )
 
+    def test_releases_trunk_pair_after_confidence_clone(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        n_msa = 10
+        n_templ = 3
+
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
+        batch = random_of3_features(
+            batch_size=batch_size, n_token=n_token, n_msa=n_msa, n_templ=n_templ
+        )
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+
+        heads_config = config.architecture.heads
+        heads_config.pae.enabled = True
+        aux_head = AuxiliaryHeadsAllAtom(heads_config).eval()
+        initialize_model_weights(aux_head)
+
+        outputs = {
+            "si_trunk": torch.ones(
+                batch_size, n_token, config.architecture.shared.c_s
+            ),
+            "zij_trunk": torch.ones(
+                batch_size, n_token, n_token, config.architecture.shared.c_z
+            ),
+            "atom_positions_predicted": torch.randn(batch_size, n_atom, 3),
+        }
+
+        with torch.inference_mode():
+            aux_head(
+                batch,
+                torch.ones(
+                    batch_size, n_token, config.architecture.shared.c_s_input
+                ),
+                outputs,
+                use_zij_trunk_embedding=True,
+                chunk_size=4,
+            )
+
+        self.assertNotIn("zij_trunk", outputs)
+
 
 if __name__ == "__main__":
     unittest.main()
