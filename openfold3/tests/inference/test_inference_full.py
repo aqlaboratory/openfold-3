@@ -14,11 +14,12 @@
 
 """Smoke tests for inference: small queries run end-to-end.
 
-``test_inference_writes_outputs`` runs each case in ``CASES`` with MSA server + templates
-and checks the expected output files are written for every query it contains. Cases mix
-in-memory query sets with the query JSONs under ``examples/example_inference_inputs``,
-so adding either kind is one row. See ``test_templates.py`` for the functional check that
-a supplied template actually steers the prediction.
+``test_inference_writes_outputs`` runs every case in ``CASES`` against every combination
+of ``use_msa_server`` and ``use_templates``, checking the expected output files are
+written for each query the case contains. Cases mix in-memory query sets with the query
+JSONs under ``examples/example_inference_inputs``, so adding either kind is one row —
+and costs four inference runs. See ``test_templates.py`` for the functional check that a
+supplied template actually steers the prediction.
 
 These require an accelerator (CUDA, ROCm or MPS) and downloaded model weights; they skip
 otherwise.
@@ -46,7 +47,9 @@ logger = logging.getLogger(__name__)
 #: Repo-root ``examples/`` — present in a source checkout, but not shipped in the wheel
 #: (``packages.find`` only picks up ``openfold3*``), so file-backed cases must tolerate
 #: its absence when the suite runs from an install.
-EXAMPLES_DIR = Path(openfold3.__file__).parent / "examples" / "example_inference_inputs"
+EXAMPLES_DIR = (
+    Path(openfold3.__file__).parent.parent / "examples" / "example_inference_inputs"
+)
 
 requires_examples = pytest.mark.skipif(
     not EXAMPLES_DIR.is_dir(), reason=f"No examples directory at {EXAMPLES_DIR}"
@@ -103,15 +106,31 @@ CASES = [
 
 @skip_unless_accelerator_available()
 @pytest.mark.parametrize("build_query_set", CASES)
-def test_inference_writes_outputs(build_query_set, tmp_path):
-    """Every query in the set runs end-to-end and writes the expected per-sample files."""
+@pytest.mark.parametrize(
+    "use_templates", [False, True], ids=["no_templates", "templates"]
+)
+@pytest.mark.parametrize("use_msa_server", [False, True], ids=["no_msa", "msa"])
+def test_inference_writes_outputs(
+    build_query_set, use_msa_server, use_templates, tmp_path
+):
+    """Every query in the set writes the expected per-sample files, in every mode.
+
+    The two feature flags are independent branches of ``prepare_data``: without the MSA
+    server the query sequence is used single-sequence, and template preprocessing runs
+    on its own flag. Stacking the three parametrize marks gives the full cartesian
+    product, so each query set is exercised in all four modes.
+    """
     query_set = build_query_set()
     run_inference(
         query_set,
         tmp_path,
-        use_msa_server=True,
-        use_templates=True,
+        use_msa_server=use_msa_server,
+        use_templates=use_templates,
         num_diffusion_samples=1,
+        # Isolate the template cache: without this it lands in a persistent /tmp dir
+        # shared across runs, and the template-enabled cases here would see each
+        # other's leftovers.
+        template_output_dir=tmp_path / "template_data",
     )
     logger.info("Checking output contents at %s", tmp_path)
     for query_name in query_set.queries:
