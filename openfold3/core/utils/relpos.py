@@ -67,7 +67,7 @@ def relpos_complex(
     """
     res_idx = batch["residue_index"]
     asym_id = batch["asym_id"]
-    cyclic_mask = batch["cyclic_mask"]
+    cyclic_mask = batch.get("cyclic_mask", None)
     entity_id = batch["entity_id"]
     same_chain = asym_id[..., None] == asym_id[..., None, :]
 
@@ -98,6 +98,7 @@ def relpos_complex(
                 [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
         """
         offset = pos[..., None] - pos[..., None, :]
+
         if cyclic_mask is not None and cyclic_mask.any():
             for chain_id in torch.unique(asym_id):
                 chain_cyclic_mask = cyclic_mask & (asym_id == chain_id)

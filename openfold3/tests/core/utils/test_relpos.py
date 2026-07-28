@@ -171,3 +171,13 @@ class TestRelposComplex:
         out_false = self._relpos(batch_false)
         out_zeros = self._relpos(batch_zeros)
         assert torch.equal(out_false, out_zeros)
+    
+    def test_cyclic_mask_none_does_not_raise(self):
+        # cyclic_mask=None should run without error and match linear baseline.
+        n = 8
+        batch_false = _make_batch(n, [1] * n, [False] * n)
+        batch_none = _make_batch(n, [1] * n, [False] * n)
+        batch_none.pop("cyclic_mask")  # Remove cyclic_mask from batch_none
+        out_false = self._relpos(batch_false)
+        out_none = self._relpos(batch_none)
+        assert torch.equal(out_false, out_none)
