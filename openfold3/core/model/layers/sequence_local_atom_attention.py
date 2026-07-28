@@ -30,7 +30,9 @@ from openfold3.core.utils.atom_attention_block_utils import (
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
+    aggregate_atom_feat_to_tokens_segmented,
     broadcast_token_feat_to_atoms,
+    broadcast_token_feat_to_atoms_by_index,
 )
 from openfold3.core.utils.checkpointing import checkpoint_section
 
@@ -542,16 +544,25 @@ class AtomAttentionEncoder(nn.Module):
 
         ql = ql * atom_mask.unsqueeze(-1)
 
-        agg_args = (
-            batch["token_mask"],
-            batch["atom_to_token_index"],
-            atom_mask,
-            self.linear_q(ql),
-            -2,
-            "mean",
-        )
+        if not self.training and not torch.is_grad_enabled():
+            aggregate_fn = aggregate_atom_feat_to_tokens_segmented
+            agg_args = (
+                batch["num_atoms_per_token"],
+                atom_mask,
+                self.linear_q(ql),
+            )
+        else:
+            aggregate_fn = aggregate_atom_feat_to_tokens
+            agg_args = (
+                batch["token_mask"],
+                batch["atom_to_token_index"],
+                atom_mask,
+                self.linear_q(ql),
+                -2,
+                "mean",
+            )
         ai = checkpoint_section(
-            fn=aggregate_atom_feat_to_tokens,
+            fn=aggregate_fn,
             args=agg_args,
             apply_ckpt=self.ckpt_intermediate_steps,
             use_reentrant=self.use_reentrant,
@@ -674,11 +685,11 @@ class AtomAttentionDecoder(nn.Module):
         """
         # Broadcast per-token activations to atoms
         # [*, N_atom, c_atom]
-        ql = ql + broadcast_token_feat_to_atoms(
+        ql = ql + broadcast_token_feat_to_atoms_by_index(
             token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
+            atom_to_token_index=batch["atom_to_token_index"],
+            atom_mask=batch["atom_mask"],
             token_feat=self.linear_q_in(ai),
-            token_dim=-2,
         )
 
         # Atom transformer
