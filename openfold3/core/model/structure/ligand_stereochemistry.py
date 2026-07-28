@@ -13,31 +13,32 @@ import torch
 
 from openfold3.core.config import ligand_stereochemistry_defaults as defaults
 
-_INDEX_ARITIES = {
-    "rdkit_bounds_index": 2,
-    "chiral_atom_index": 4,
-    "stereo_bond_index": 4,
-    "planar_bond_index": 6,
+_RESTRAINT_SPECS = {
+    "distance": (2, defaults.POSEBUSTERS_WEIGHT),
+    "signed_dihedral": (4, defaults.CHIRAL_ATOM_WEIGHT),
+    "stereo_dihedral": (4, defaults.STEREO_BOND_WEIGHT),
+    "planar_dihedral": (4, defaults.PLANAR_BOND_WEIGHT),
 }
 
-_VECTOR_KEYS = {
-    "rdkit_lower_bounds",
-    "rdkit_upper_bounds",
-    "rdkit_bounds_bond_mask",
-    "rdkit_bounds_angle_mask",
-    "rdkit_bounds_pair_vdw_cutoff",
-    "chiral_atom_orientations",
-    "stereo_bond_orientations",
-}
+
+class _FlatBottomRestraints(NamedTuple):
+    """Atom indices and bounds for one analytical restraint family."""
+
+    index: torch.Tensor
+    lower: torch.Tensor
+    upper: torch.Tensor
+    weight: float
 
 
 class PreparedLigandStereochemistryGuidance(NamedTuple):
     """Validated, device-local guidance inputs shared across diffusion steps."""
 
-    features: dict[str, torch.Tensor]
     start_fraction: float
     num_gd_steps: int
-    posebusters_bounds: tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    distance: _FlatBottomRestraints
+    signed_dihedral: _FlatBottomRestraints
+    stereo_dihedral: _FlatBottomRestraints
+    planar_dihedral: _FlatBottomRestraints
 
 
 def _strip_leading_singletons(tensor: torch.Tensor, ndim: int) -> torch.Tensor:
@@ -104,109 +105,39 @@ def ligand_stereochemistry_guidance_enabled(batch: dict) -> bool:
     return bool(value)
 
 
-def _guidance_features(batch: dict, device: torch.device) -> dict[str, torch.Tensor]:
-    """Collect stereochemistry feature tensors for a single inference structure."""
-    features = {}
-    for key, arity in _INDEX_ARITIES.items():
-        tensor = _required_batch_feature(batch, key)
-        features[key] = _normalize_index_tensor(tensor, arity, key).to(device)
-    for key in _VECTOR_KEYS:
-        tensor = _required_batch_feature(batch, key)
-        tensor = _strip_leading_singletons(tensor, 1)
-        if tensor.dim() != 1:
-            raise ValueError(f"'{key}' must be a 1D constraint tensor.")
-        features[key] = tensor.to(device)
-    return features
-
-
-def _validate_constraint_group(
-    features: dict[str, torch.Tensor],
-    index_name: str,
-    vector_names: tuple[str, ...],
+def _prepare_restraint(
+    batch: dict,
+    name: str,
+    arity: int,
+    weight: float,
+    device: torch.device,
     num_atoms: int,
-) -> None:
-    """Validate index bounds and vector cardinality for one constraint group."""
-    index = features[index_name]
+) -> _FlatBottomRestraints:
+    """Normalize and validate one emitted flat-bottom restraint family."""
+    prefix = f"ligand_stereochemistry_{name}"
+    index_name = f"{prefix}_index"
+    index = _normalize_index_tensor(
+        _required_batch_feature(batch, index_name), arity, index_name
+    ).to(device)
     num_constraints = index.shape[1]
     if num_constraints > 0 and (int(index.min()) < 0 or int(index.max()) >= num_atoms):
         raise ValueError(f"'{index_name}' contains an out-of-range atom index.")
-    for vector_name in vector_names:
-        if features[vector_name].shape[0] != num_constraints:
+
+    values = {}
+    for suffix in ("lower", "upper"):
+        feature_name = f"{prefix}_{suffix}"
+        value = _strip_leading_singletons(
+            _required_batch_feature(batch, feature_name), 1
+        )
+        if value.dim() != 1:
+            raise ValueError(f"'{feature_name}' must be a 1D constraint tensor.")
+        if value.shape[0] != num_constraints:
             raise ValueError(
-                f"'{vector_name}' must contain one value per {index_name} constraint."
+                f"'{feature_name}' must contain one value per {index_name} constraint."
             )
+        values[suffix] = value.to(device)
 
-
-def _validate_guidance_features(
-    features: dict[str, torch.Tensor], num_atoms: int
-) -> None:
-    """Validate every emitted stereochemistry constraint group."""
-    _validate_constraint_group(
-        features,
-        "rdkit_bounds_index",
-        (
-            "rdkit_lower_bounds",
-            "rdkit_upper_bounds",
-            "rdkit_bounds_bond_mask",
-            "rdkit_bounds_angle_mask",
-            "rdkit_bounds_pair_vdw_cutoff",
-        ),
-        num_atoms,
-    )
-    _validate_constraint_group(
-        features,
-        "chiral_atom_index",
-        ("chiral_atom_orientations",),
-        num_atoms,
-    )
-    _validate_constraint_group(
-        features,
-        "stereo_bond_index",
-        ("stereo_bond_orientations",),
-        num_atoms,
-    )
-    _validate_constraint_group(features, "planar_bond_index", (), num_atoms)
-
-
-def _signed_dihedral(
-    r_kj: torch.Tensor,
-    n_ijk: torch.Tensor,
-    n_jkl: torch.Tensor,
-    r_kj_norm: torch.Tensor,
-    n_ijk_norm: torch.Tensor,
-    n_jkl_norm: torch.Tensor,
-) -> torch.Tensor:
-    """Compute a signed angle while distinguishing exact cis and trans geometry."""
-    denominator = r_kj_norm * n_ijk_norm * n_jkl_norm
-    sin_phi = (r_kj * torch.cross(n_ijk, n_jkl, dim=-1)).sum(dim=-1) / denominator
-    cos_phi = (n_ijk * n_jkl).sum(dim=-1) / (n_ijk_norm * n_jkl_norm)
-    return torch.atan2(sin_phi, cos_phi)
-
-
-def _buffered_rdkit_bounds(
-    features: dict[str, torch.Tensor],
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Apply Boltz PoseBusters buffers and atom-radius cutoffs to RDKit bounds."""
-    index = features["rdkit_bounds_index"].long()
-    lower = features["rdkit_lower_bounds"].clone()
-    upper = features["rdkit_upper_bounds"].clone()
-    bond = features["rdkit_bounds_bond_mask"].bool()
-    angle = features["rdkit_bounds_angle_mask"].bool()
-    pair_vdw_cutoff = features["rdkit_bounds_pair_vdw_cutoff"].to(lower.dtype)
-
-    lower[bond & ~angle] *= 1.0 - defaults.BOND_BUFFER
-    upper[bond & ~angle] *= 1.0 + defaults.BOND_BUFFER
-    lower[~bond & angle] *= 1.0 - defaults.ANGLE_BUFFER
-    upper[~bond & angle] *= 1.0 + defaults.ANGLE_BUFFER
-    shared_buffer = min(defaults.BOND_BUFFER, defaults.ANGLE_BUFFER)
-    lower[bond & angle] *= 1.0 - shared_buffer
-    upper[bond & angle] *= 1.0 + shared_buffer
-    lower[~bond & ~angle] *= 1.0 - defaults.CLASH_BUFFER
-    upper[~bond & ~angle] = float("inf")
-
-    lower[~bond] = torch.maximum(lower[~bond], pair_vdw_cutoff[~bond])
-    upper[bond] = torch.minimum(upper[bond], pair_vdw_cutoff[bond])
-    return index, lower, upper
+    return _FlatBottomRestraints(index=index, weight=weight, **values)
 
 
 def prepare_ligand_stereochemistry_guidance(
@@ -235,27 +166,51 @@ def prepare_ligand_stereochemistry_guidance(
     if num_gd_steps < 1:
         raise ValueError("'ligand_stereochemistry_num_gd_steps' must be at least 1.")
 
-    features = _guidance_features(batch, atom_mask.device)
-    _validate_guidance_features(features, atom_mask.shape[-1])
+    restraints = {
+        name: _prepare_restraint(
+            batch,
+            name,
+            arity,
+            weight,
+            atom_mask.device,
+            atom_mask.shape[-1],
+        )
+        for name, (arity, weight) in _RESTRAINT_SPECS.items()
+    }
+    if not any(restraint.index.shape[1] > 0 for restraint in restraints.values()):
+        return None
+
     return PreparedLigandStereochemistryGuidance(
-        features=features,
         start_fraction=start_fraction,
         num_gd_steps=num_gd_steps,
-        posebusters_bounds=_buffered_rdkit_bounds(features),
+        **restraints,
     )
+
+
+def _signed_dihedral(
+    r_kj: torch.Tensor,
+    n_ijk: torch.Tensor,
+    n_jkl: torch.Tensor,
+    r_kj_norm: torch.Tensor,
+    n_ijk_norm: torch.Tensor,
+    n_jkl_norm: torch.Tensor,
+) -> torch.Tensor:
+    """Compute a signed angle while distinguishing exact cis and trans geometry."""
+    denominator = r_kj_norm * n_ijk_norm * n_jkl_norm
+    sin_phi = (r_kj * torch.cross(n_ijk, n_jkl, dim=-1)).sum(dim=-1) / denominator
+    cos_phi = (n_ijk * n_jkl).sum(dim=-1) / (n_ijk_norm * n_jkl_norm)
+    return torch.atan2(sin_phi, cos_phi)
 
 
 def _flat_bottom_derivative(
     value: torch.Tensor,
-    lower: torch.Tensor | None,
+    lower: torch.Tensor,
     upper: torch.Tensor,
 ) -> torch.Tensor:
     """Derivative of the linear flat-bottom energy with respect to ``value``."""
-    derivative = torch.zeros_like(value)
-    if lower is not None:
-        derivative = derivative - (value < lower.expand_as(value)).to(value.dtype)
-    derivative = derivative + (value > upper.expand_as(value)).to(value.dtype)
-    return derivative
+    return (value > upper.expand_as(value)).to(value.dtype) - (
+        value < lower.expand_as(value)
+    ).to(value.dtype)
 
 
 def _scatter_variable_gradient(
@@ -279,7 +234,7 @@ def _scatter_variable_gradient(
 def _distance_value_and_gradient(
     coords: torch.Tensor, index: torch.Tensor
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return pair distances and analytic coordinate gradients."""
+    """Return pair distances and analytical coordinate gradients."""
     r_ij = coords.index_select(-2, index[0]) - coords.index_select(-2, index[1])
     r_ij_norm = torch.linalg.norm(r_ij, dim=-1).clamp_min(defaults.GEOMETRY_EPS)
     r_hat_ij = r_ij / r_ij_norm.unsqueeze(-1)
@@ -289,7 +244,7 @@ def _distance_value_and_gradient(
 def _dihedral_value_and_gradient(
     coords: torch.Tensor, index: torch.Tensor, absolute: bool = False
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return improper dihedrals and Boltz-style analytic gradients."""
+    """Return improper dihedrals and Boltz-style analytical gradients."""
     r_ij = coords.index_select(-2, index[0]) - coords.index_select(-2, index[1])
     r_kj = coords.index_select(-2, index[2]) - coords.index_select(-2, index[1])
     r_kl = coords.index_select(-2, index[2]) - coords.index_select(-2, index[3])
@@ -334,126 +289,49 @@ def _dihedral_value_and_gradient(
     return phi, gradient
 
 
-def _posebusters_gradient(
+def _restraint_gradient(
     coords: torch.Tensor,
-    features: dict[str, torch.Tensor],
-    buffered_bounds: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
-) -> torch.Tensor | None:
-    """Analytic RDKit bounds gradient for bond, angle, and clash distances."""
-    if buffered_bounds is None:
-        buffered_bounds = _buffered_rdkit_bounds(features)
-    index, lower, upper = buffered_bounds
-    if index.shape[-1] == 0:
-        return None
-
-    value, value_gradient = _distance_value_and_gradient(coords, index)
-    energy_derivative = defaults.POSEBUSTERS_WEIGHT * _flat_bottom_derivative(
-        value, lower, upper
-    )
-    return _scatter_variable_gradient(coords, index, value_gradient, energy_derivative)
-
-
-def _chiral_atom_gradient(
-    coords: torch.Tensor, features: dict[str, torch.Tensor]
-) -> torch.Tensor | None:
-    """Analytic improper-dihedral gradient for tetrahedral stereocenters."""
-    index = features["chiral_atom_index"].long()
-    if index.shape[-1] == 0:
-        return None
-
-    orientations = features["chiral_atom_orientations"].bool()
-    lower = torch.zeros_like(orientations, dtype=coords.dtype)
-    upper = torch.zeros_like(orientations, dtype=coords.dtype)
-    lower[orientations] = defaults.CHIRAL_BUFFER
-    upper[orientations] = float("inf")
-    lower[~orientations] = float("-inf")
-    upper[~orientations] = -defaults.CHIRAL_BUFFER
-
-    value, value_gradient = _dihedral_value_and_gradient(coords, index)
-    energy_derivative = defaults.CHIRAL_ATOM_WEIGHT * _flat_bottom_derivative(
-        value, lower, upper
-    )
-    return _scatter_variable_gradient(coords, index, value_gradient, energy_derivative)
-
-
-def _stereo_bond_gradient(
-    coords: torch.Tensor, features: dict[str, torch.Tensor]
-) -> torch.Tensor | None:
-    """Analytic improper-dihedral gradient for assigned E/Z double bonds."""
-    index = features["stereo_bond_index"].long()
-    if index.shape[-1] == 0:
-        return None
-
-    orientations = features["stereo_bond_orientations"].bool()
-    lower = torch.zeros_like(orientations, dtype=coords.dtype)
-    upper = torch.zeros_like(orientations, dtype=coords.dtype)
-    lower[orientations] = torch.pi - defaults.STEREO_BOND_BUFFER
-    upper[orientations] = float("inf")
-    lower[~orientations] = float("-inf")
-    upper[~orientations] = defaults.STEREO_BOND_BUFFER
-
-    value, value_gradient = _dihedral_value_and_gradient(coords, index, absolute=True)
-    energy_derivative = defaults.STEREO_BOND_WEIGHT * _flat_bottom_derivative(
-        value, lower, upper
-    )
-    return _scatter_variable_gradient(coords, index, value_gradient, energy_derivative)
-
-
-def _planar_bond_gradient(
-    coords: torch.Tensor, features: dict[str, torch.Tensor]
-) -> torch.Tensor | None:
-    """Analytic improper-dihedral gradient for double-bond planarity."""
-    index = features["planar_bond_index"].long()
-    if index.shape[-1] == 0:
-        return None
-
-    double_bond_index = index.T
-    first_improper = double_bond_index[:, [1, 2, 3, 0]]
-    second_improper = double_bond_index[:, [4, 5, 0, 3]]
-    improper_index = torch.cat([first_improper, second_improper], dim=0).T
-    upper = torch.full(
-        (improper_index.shape[-1],),
-        defaults.PLANAR_BOND_BUFFER,
-        dtype=coords.dtype,
-        device=coords.device,
-    )
-
-    value, value_gradient = _dihedral_value_and_gradient(
-        coords, improper_index, absolute=True
-    )
-    energy_derivative = defaults.PLANAR_BOND_WEIGHT * _flat_bottom_derivative(
-        value, None, upper
+    restraints: _FlatBottomRestraints,
+    *,
+    dihedral: bool,
+    absolute: bool = False,
+) -> torch.Tensor:
+    """Evaluate and scatter one prepared flat-bottom restraint family."""
+    if dihedral:
+        value, value_gradient = _dihedral_value_and_gradient(
+            coords, restraints.index, absolute=absolute
+        )
+    else:
+        value, value_gradient = _distance_value_and_gradient(coords, restraints.index)
+    derivative = restraints.weight * _flat_bottom_derivative(
+        value, restraints.lower, restraints.upper
     )
     return _scatter_variable_gradient(
-        coords, improper_index, value_gradient, energy_derivative
+        coords, restraints.index, value_gradient, derivative
     )
 
 
 def ligand_stereochemistry_gradient(
     coords: torch.Tensor,
-    features: dict[str, torch.Tensor],
-    posebusters_bounds: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
-) -> torch.Tensor | None:
-    """Return the analytic ligand stereochemistry guidance gradient."""
-    gradients = [
-        _posebusters_gradient(coords, features, posebusters_bounds),
-        _chiral_atom_gradient(coords, features),
-        _stereo_bond_gradient(coords, features),
-        _planar_bond_gradient(coords, features),
-    ]
-    gradients = [gradient for gradient in gradients if gradient is not None]
-    if not gradients:
-        return None
-    return sum(gradients)
-
-
-def _finite_guidance_update(
-    coords: torch.Tensor, gradient: torch.Tensor, previous: torch.Tensor
+    guidance: PreparedLigandStereochemistryGuidance,
 ) -> torch.Tensor:
-    """Apply the raw analytic update while retaining finite per-particle states."""
-    candidate = coords - gradient
-    finite = torch.isfinite(candidate).all(dim=(-1, -2), keepdim=True)
-    return torch.where(finite, candidate, previous)
+    """Return the analytical ligand stereochemistry guidance gradient."""
+    gradient = torch.zeros_like(coords)
+    restraint_groups = (
+        (guidance.distance, False, False),
+        (guidance.signed_dihedral, True, False),
+        (guidance.stereo_dihedral, True, True),
+        (guidance.planar_dihedral, True, True),
+    )
+    for restraints, is_dihedral, absolute in restraint_groups:
+        if restraints.index.shape[1] > 0:
+            gradient += _restraint_gradient(
+                coords,
+                restraints,
+                dihedral=is_dihedral,
+                absolute=absolute,
+            )
+    return gradient
 
 
 def apply_ligand_stereochemistry_guidance(
@@ -461,33 +339,12 @@ def apply_ligand_stereochemistry_guidance(
     guidance: PreparedLigandStereochemistryGuidance | None,
     step_fraction: float,
 ) -> torch.Tensor:
-    """Apply opt-in ligand stereochemistry guidance to the denoised x0 estimate.
-
-    Args:
-        xl_denoised:
-            Denoised atom coordinates with shape [B, S, N_atom, 3].
-        guidance:
-            Prepared guidance inputs, or ``None`` when guidance is disabled.
-        step_fraction:
-            Fraction of the reverse diffusion trajectory already completed.
-
-    Returns:
-        Guided coordinates with the same shape and dtype as ``xl_denoised``.
-    """
-    if guidance is None:
-        return xl_denoised
-    if step_fraction < guidance.start_fraction:
+    """Apply opt-in ligand stereochemistry guidance to the denoised estimate."""
+    if guidance is None or step_fraction < guidance.start_fraction:
         return xl_denoised
 
     guided = xl_denoised.float()
     for _ in range(guidance.num_gd_steps):
-        gradient = ligand_stereochemistry_gradient(
-            guided,
-            guidance.features,
-            guidance.posebusters_bounds,
-        )
-        if gradient is None:
-            return guided.to(dtype=xl_denoised.dtype)
-        guided = _finite_guidance_update(guided, gradient, guided)
+        guided = guided - ligand_stereochemistry_gradient(guided, guidance)
 
     return guided.to(dtype=xl_denoised.dtype)

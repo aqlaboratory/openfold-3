@@ -8,7 +8,7 @@ of binding-site constraints.
 Constraint extraction is adapted from Boltz. See ``THIRD_PARTY_NOTICES.md``.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, fields
 
 import numpy as np
 import torch
@@ -22,41 +22,35 @@ from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
 )
 from openfold3.core.data.primitives.structure.component import PERIODIC_TABLE
-from openfold3.core.data.primitives.structure.conformer import get_name_match_argsort
-from openfold3.core.data.primitives.structure.labels import uniquify_ids
+from openfold3.core.data.primitives.structure.labels import residue_view_iter
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.of3_all_atom.config.inference_query_format import Query
 
 
-@dataclass(frozen=True)
+@dataclass
 class _LigandGeometryConstraints:
-    bounds_index: list[tuple[int, int]]
-    lower_bounds: list[float]
-    upper_bounds: list[float]
-    bond_mask: list[bool]
-    angle_mask: list[bool]
-    pair_vdw_cutoffs: list[float]
-    chiral_index: list[tuple[int, int, int, int]]
-    chiral_orientations: list[bool]
-    stereo_bond_index: list[tuple[int, int, int, int]]
-    stereo_bond_orientations: list[bool]
-    planar_bond_index: list[tuple[int, int, int, int, int, int]]
+    """Mutable accumulator for constraints from one or more ligand chains."""
 
-
-def _empty_constraints() -> _LigandGeometryConstraints:
-    return _LigandGeometryConstraints(
-        bounds_index=[],
-        lower_bounds=[],
-        upper_bounds=[],
-        bond_mask=[],
-        angle_mask=[],
-        pair_vdw_cutoffs=[],
-        chiral_index=[],
-        chiral_orientations=[],
-        stereo_bond_index=[],
-        stereo_bond_orientations=[],
-        planar_bond_index=[],
+    bounds_index: list[tuple[int, int]] = field(default_factory=list)
+    lower_bounds: list[float] = field(default_factory=list)
+    upper_bounds: list[float] = field(default_factory=list)
+    bond_mask: list[bool] = field(default_factory=list)
+    angle_mask: list[bool] = field(default_factory=list)
+    pair_vdw_cutoffs: list[float] = field(default_factory=list)
+    chiral_index: list[tuple[int, int, int, int]] = field(default_factory=list)
+    chiral_orientations: list[bool] = field(default_factory=list)
+    stereo_bond_index: list[tuple[int, int, int, int]] = field(default_factory=list)
+    stereo_bond_orientations: list[bool] = field(default_factory=list)
+    planar_bond_index: list[tuple[int, int, int, int, int, int]] = field(
+        default_factory=list
     )
+
+    def extend(self, other: "_LigandGeometryConstraints") -> None:
+        """Append constraints while preserving their shared atom-axis mapping."""
+        for constraint_field in fields(self):
+            getattr(self, constraint_field.name).extend(
+                getattr(other, constraint_field.name)
+            )
 
 
 def _compute_geometry_constraints(
@@ -248,116 +242,12 @@ def _compute_flatness_constraints(
     return constraints
 
 
-def _resolve_ligand_reference_molecule(
-    query: Query,
-    processed_reference_molecules: list[ProcessedReferenceMolecule],
-    ligand_chain_id: str,
-) -> ProcessedReferenceMolecule | None:
-    """Find a ligand reference molecule in query construction order."""
-    ref_mol_idx = 0
-    for chain in query.chains:
-        for chain_id in chain.chain_ids:
-            match chain.molecule_type:
-                case MoleculeType.PROTEIN | MoleculeType.DNA | MoleculeType.RNA:
-                    if chain.sequence is None:
-                        raise ValueError(
-                            f"Chain {chain_id} has no sequence but is required to "
-                            "resolve ligand stereochemistry reference molecules"
-                        )
-                    ref_mol_idx += len(chain.sequence)
-                case MoleculeType.LIGAND:
-                    if ref_mol_idx >= len(processed_reference_molecules):
-                        raise ValueError(
-                            "Not enough processed reference molecules to resolve "
-                            f"ligand chain {ligand_chain_id!r}"
-                        )
-                    if chain_id == ligand_chain_id:
-                        return processed_reference_molecules[ref_mol_idx]
-                    ref_mol_idx += 1
-                case _:
-                    raise ValueError(
-                        f"Unsupported molecule type: {chain.molecule_type}"
-                    )
-
-    return None
-
-
-def _ligand_atom_index_map(
-    processed_reference_molecule: ProcessedReferenceMolecule,
-    ligand_atom_array: AtomArray,
-    global_atom_indices: np.ndarray,
-) -> dict[int, int]:
-    """Map reference-molecule atoms to the OF3 global atom axis by atom name."""
-    mol = processed_reference_molecule.mol
-    in_crop_mask = np.asarray(processed_reference_molecule.in_crop_mask, dtype=bool)
-    if in_crop_mask.shape != (mol.GetNumAtoms(),):
-        raise ValueError(
-            "Ligand stereochemistry reference mask must match the reference molecule."
-        )
-    if len(ligand_atom_array) != len(global_atom_indices):
-        raise ValueError(
-            "Ligand stereochemistry atom indices must match the ligand atom array."
-        )
-    if not all(atom.HasProp("annot_atom_name") for atom in mol.GetAtoms()):
-        raise ValueError(
-            "Ligand stereochemistry reference atoms require annotated atom names."
-        )
-
-    reference_names = np.asarray(
-        uniquify_ids([atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]),
-        dtype=object,
-    )
-    ligand_names = np.asarray(
-        uniquify_ids(ligand_atom_array.atom_name.tolist()), dtype=object
-    )
-    cropped_reference_names = reference_names[in_crop_mask]
-    if len(cropped_reference_names) != len(ligand_names):
-        raise ValueError(
-            "Ligand stereochemistry reference atom names do not match the OF3 "
-            "ligand atom names."
-        )
-
-    reference_indices = np.flatnonzero(in_crop_mask)
-    reorder_index = get_name_match_argsort(cropped_reference_names, ligand_names)
-    reference_indices = reference_indices[reorder_index]
-    cropped_reference_names = cropped_reference_names[reorder_index]
-    if not np.array_equal(cropped_reference_names, ligand_names):
-        raise ValueError(
-            "Ligand stereochemistry reference atom names do not match the OF3 "
-            "ligand atom names."
-        )
-
-    idx_map = {
-        int(reference_idx): int(global_index)
-        for reference_idx, global_index in zip(
-            reference_indices, global_atom_indices, strict=True
-        )
-    }
-
-    reference_elements = np.asarray(
-        [
-            mol.GetAtomWithIdx(int(index)).GetSymbol().upper()
-            for index in reference_indices
-        ]
-    )
-    ligand_elements = np.asarray(
-        [str(element).upper() for element in ligand_atom_array.element]
-    )
-    if not np.array_equal(reference_elements, ligand_elements):
-        raise ValueError(
-            "Ligand stereochemistry reference elements do not match the OF3 ligand "
-            "atom elements."
-        )
-
-    return idx_map
-
-
 def _compute_ligand_constraints(
     mol: Mol, idx_map: dict[int, int]
 ) -> _LigandGeometryConstraints:
     """Build all supported stereochemistry guidance constraints for one ligand."""
     if not idx_map:
-        return _empty_constraints()
+        return _LigandGeometryConstraints()
 
     mol = Chem.Mol(mol)
     Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
@@ -392,39 +282,33 @@ def _compute_ligand_constraints(
 
 
 def _empty_feature_tensors() -> dict[str, torch.Tensor]:
+    features = {}
+    for name, arity in (
+        ("distance", 2),
+        ("signed_dihedral", 4),
+        ("stereo_dihedral", 4),
+        ("planar_dihedral", 4),
+    ):
+        prefix = f"ligand_stereochemistry_{name}"
+        features[f"{prefix}_index"] = torch.empty((arity, 0), dtype=torch.long)
+        for suffix in ("lower", "upper"):
+            features[f"{prefix}_{suffix}"] = torch.empty((0,), dtype=torch.float32)
+    return features
+
+
+def _restraint_features(
+    name: str,
+    index: torch.Tensor,
+    lower: torch.Tensor,
+    upper: torch.Tensor,
+) -> dict[str, torch.Tensor]:
+    """Package one prepared flat-bottom restraint family as batch features."""
+    prefix = f"ligand_stereochemistry_{name}"
     return {
-        "rdkit_bounds_index": torch.empty((2, 0), dtype=torch.long),
-        "rdkit_lower_bounds": torch.empty((0,), dtype=torch.float32),
-        "rdkit_upper_bounds": torch.empty((0,), dtype=torch.float32),
-        "rdkit_bounds_bond_mask": torch.empty((0,), dtype=torch.bool),
-        "rdkit_bounds_angle_mask": torch.empty((0,), dtype=torch.bool),
-        "rdkit_bounds_pair_vdw_cutoff": torch.empty((0,), dtype=torch.float32),
-        "chiral_atom_index": torch.empty((4, 0), dtype=torch.long),
-        "chiral_atom_orientations": torch.empty((0,), dtype=torch.bool),
-        "stereo_bond_index": torch.empty((4, 0), dtype=torch.long),
-        "stereo_bond_orientations": torch.empty((0,), dtype=torch.bool),
-        "planar_bond_index": torch.empty((6, 0), dtype=torch.long),
+        f"{prefix}_index": index,
+        f"{prefix}_lower": lower,
+        f"{prefix}_upper": upper,
     }
-
-
-def _append_constraints(
-    accumulator: _LigandGeometryConstraints, constraints: _LigandGeometryConstraints
-) -> _LigandGeometryConstraints:
-    return _LigandGeometryConstraints(
-        bounds_index=accumulator.bounds_index + constraints.bounds_index,
-        lower_bounds=accumulator.lower_bounds + constraints.lower_bounds,
-        upper_bounds=accumulator.upper_bounds + constraints.upper_bounds,
-        bond_mask=accumulator.bond_mask + constraints.bond_mask,
-        angle_mask=accumulator.angle_mask + constraints.angle_mask,
-        pair_vdw_cutoffs=accumulator.pair_vdw_cutoffs + constraints.pair_vdw_cutoffs,
-        chiral_index=accumulator.chiral_index + constraints.chiral_index,
-        chiral_orientations=accumulator.chiral_orientations
-        + constraints.chiral_orientations,
-        stereo_bond_index=accumulator.stereo_bond_index + constraints.stereo_bond_index,
-        stereo_bond_orientations=accumulator.stereo_bond_orientations
-        + constraints.stereo_bond_orientations,
-        planar_bond_index=accumulator.planar_bond_index + constraints.planar_bond_index,
-    )
 
 
 def _tensorize_constraints(
@@ -433,45 +317,88 @@ def _tensorize_constraints(
     features = _empty_feature_tensors()
 
     if constraints.bounds_index:
-        features["rdkit_bounds_index"] = torch.tensor(
-            constraints.bounds_index, dtype=torch.long
-        ).T
-        features["rdkit_lower_bounds"] = torch.tensor(
-            constraints.lower_bounds, dtype=torch.float32
-        )
-        features["rdkit_upper_bounds"] = torch.tensor(
-            constraints.upper_bounds, dtype=torch.float32
-        )
-        features["rdkit_bounds_bond_mask"] = torch.tensor(
-            constraints.bond_mask, dtype=torch.bool
-        )
-        features["rdkit_bounds_angle_mask"] = torch.tensor(
-            constraints.angle_mask, dtype=torch.bool
-        )
-        features["rdkit_bounds_pair_vdw_cutoff"] = torch.tensor(
+        index = torch.tensor(constraints.bounds_index, dtype=torch.long).T
+        lower = torch.tensor(constraints.lower_bounds, dtype=torch.float32)
+        upper = torch.tensor(constraints.upper_bounds, dtype=torch.float32)
+        bond = torch.tensor(constraints.bond_mask, dtype=torch.bool)
+        angle = torch.tensor(constraints.angle_mask, dtype=torch.bool)
+        pair_vdw_cutoff = torch.tensor(
             constraints.pair_vdw_cutoffs, dtype=torch.float32
         )
 
-    if constraints.chiral_index:
-        features["chiral_atom_index"] = torch.tensor(
-            constraints.chiral_index, dtype=torch.long
-        ).T
-        features["chiral_atom_orientations"] = torch.tensor(
-            constraints.chiral_orientations, dtype=torch.bool
-        )
+        lower[bond & ~angle] *= 1.0 - defaults.BOND_BUFFER
+        upper[bond & ~angle] *= 1.0 + defaults.BOND_BUFFER
+        lower[~bond & angle] *= 1.0 - defaults.ANGLE_BUFFER
+        upper[~bond & angle] *= 1.0 + defaults.ANGLE_BUFFER
+        shared_buffer = min(defaults.BOND_BUFFER, defaults.ANGLE_BUFFER)
+        lower[bond & angle] *= 1.0 - shared_buffer
+        upper[bond & angle] *= 1.0 + shared_buffer
+        lower[~bond & ~angle] *= 1.0 - defaults.CLASH_BUFFER
+        upper[~bond & ~angle] = float("inf")
+        lower[~bond] = torch.maximum(lower[~bond], pair_vdw_cutoff[~bond])
+        upper[bond] = torch.minimum(upper[bond], pair_vdw_cutoff[bond])
+        features.update(_restraint_features("distance", index, lower, upper))
 
-    if constraints.stereo_bond_index:
-        features["stereo_bond_index"] = torch.tensor(
-            constraints.stereo_bond_index, dtype=torch.long
-        ).T
-        features["stereo_bond_orientations"] = torch.tensor(
-            constraints.stereo_bond_orientations, dtype=torch.bool
+    chiral_index = (
+        torch.tensor(constraints.chiral_index, dtype=torch.long).reshape(-1, 4).T
+    )
+    chiral_orientations = torch.tensor(
+        constraints.chiral_orientations, dtype=torch.bool
+    )
+    chiral_lower = torch.full(
+        chiral_orientations.shape, float("-inf"), dtype=torch.float32
+    )
+    chiral_upper = torch.full_like(chiral_lower, float("inf"))
+    chiral_lower[chiral_orientations] = defaults.CHIRAL_BUFFER
+    chiral_upper[~chiral_orientations] = -defaults.CHIRAL_BUFFER
+    features.update(
+        _restraint_features(
+            "signed_dihedral",
+            chiral_index,
+            chiral_lower,
+            chiral_upper,
         )
+    )
 
-    if constraints.planar_bond_index:
-        features["planar_bond_index"] = torch.tensor(
-            constraints.planar_bond_index, dtype=torch.long
-        ).T
+    stereo_index = (
+        torch.tensor(constraints.stereo_bond_index, dtype=torch.long).reshape(-1, 4).T
+    )
+    stereo_orientations = torch.tensor(
+        constraints.stereo_bond_orientations, dtype=torch.bool
+    )
+    stereo_lower = torch.full(
+        stereo_orientations.shape, float("-inf"), dtype=torch.float32
+    )
+    stereo_upper = torch.full_like(stereo_lower, float("inf"))
+    stereo_lower[stereo_orientations] = torch.pi - defaults.STEREO_BOND_BUFFER
+    stereo_upper[~stereo_orientations] = defaults.STEREO_BOND_BUFFER
+    features.update(
+        _restraint_features(
+            "stereo_dihedral",
+            stereo_index,
+            stereo_lower,
+            stereo_upper,
+        )
+    )
+
+    planar_index = torch.tensor(
+        constraints.planar_bond_index, dtype=torch.long
+    ).reshape(-1, 6)
+    planar_improper_index = torch.cat(
+        (planar_index[:, [1, 2, 3, 0]], planar_index[:, [4, 5, 0, 3]]), dim=0
+    ).T
+    planar_lower = torch.full(
+        (planar_improper_index.shape[1],), float("-inf"), dtype=torch.float32
+    )
+    planar_upper = torch.full_like(planar_lower, defaults.PLANAR_BOND_BUFFER)
+    features.update(
+        _restraint_features(
+            "planar_dihedral",
+            planar_improper_index,
+            planar_lower,
+            planar_upper,
+        )
+    )
 
     return features
 
@@ -501,38 +428,25 @@ def featurize_ligand_stereochemistry_guidance(
     if not query.ligand_stereochemistry_guidance:
         return features
 
-    all_constraints = _empty_constraints()
-    for chain in query.chains:
-        for chain_id in chain.chain_ids:
-            if chain.molecule_type != MoleculeType.LIGAND:
-                continue
+    all_constraints = _LigandGeometryConstraints()
+    global_atom_indices = np.arange(len(atom_array))
+    for residue, processed_mol in zip(
+        residue_view_iter(atom_array), processed_reference_molecules, strict=True
+    ):
+        if not np.all(residue.molecule_type_id == MoleculeType.LIGAND):
+            continue
 
-            ligand_mask = (atom_array.chain_id == chain_id) & (
-                atom_array.molecule_type_id == MoleculeType.LIGAND
+        reference_indices = np.flatnonzero(processed_mol.in_crop_mask)
+        residue_indices = global_atom_indices[residue.indices]
+        if len(reference_indices) != len(residue_indices):
+            raise ValueError(
+                "Processed ligand reference atoms must match the OF3 residue."
             )
-            if not ligand_mask.any():
-                raise ValueError(
-                    "Ligand stereochemistry guidance could not find ligand chain "
-                    f"{chain_id!r} in the OF3 atom array."
-                )
-            processed_mol = _resolve_ligand_reference_molecule(
-                query=query,
-                processed_reference_molecules=processed_reference_molecules,
-                ligand_chain_id=chain_id,
-            )
-            if processed_mol is None:
-                raise ValueError(
-                    "Ligand stereochemistry guidance could not find a processed "
-                    f"reference molecule for ligand chain {chain_id!r}."
-                )
-            global_indices = np.flatnonzero(ligand_mask)
-            idx_map = _ligand_atom_index_map(
-                processed_reference_molecule=processed_mol,
-                ligand_atom_array=atom_array[ligand_mask],
-                global_atom_indices=global_indices,
-            )
-            constraints = _compute_ligand_constraints(processed_mol.mol, idx_map)
-            all_constraints = _append_constraints(all_constraints, constraints)
+        idx_map = dict(
+            zip(reference_indices.tolist(), residue_indices.tolist(), strict=True)
+        )
+        constraints = _compute_ligand_constraints(processed_mol.mol, idx_map)
+        all_constraints.extend(constraints)
 
     features.update(_tensorize_constraints(all_constraints))
     return features
