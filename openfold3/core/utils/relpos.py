@@ -50,6 +50,61 @@ def cyclic_offset(residue_index: torch.Tensor) -> torch.Tensor:
     return cyclic_offset_array.type(torch.int).to(residue_index.device)
 
 
+def apply_cyclic_offsets(
+    offset: torch.Tensor,
+    pos: torch.Tensor,
+    cyclic_mask: torch.Tensor | None,
+    asym_id: torch.Tensor,
+) -> torch.Tensor:
+    """Replaces the linear offsets of cyclic chains with wrapped cyclic offsets.
+
+    Wrapping is applied per chain, so that a complex may mix cyclic and linear
+    chains. Token pairs that do not lie within the same cyclic chain -- including
+    cross-chain pairs -- keep their linear offset.
+
+    Args:
+        offset:
+            [*, N_token, N_token] Linear token offsets, i.e. pos[i] - pos[j]
+        pos:
+            [*, N_token] Token index the offsets were computed from
+        cyclic_mask:
+            [*, N_token] Boolean tensor for cyclic residues, or None if the feature
+            is absent, in which case every chain is treated as linear
+        asym_id:
+            [*, N_token] Chain index per token
+
+    Returns:
+        [*, N_token, N_token] Offsets, cyclic within each cyclic chain
+    """
+    if cyclic_mask is None or not cyclic_mask.any():
+        return offset
+
+    n_token = cyclic_mask.shape[-1]
+
+    # Chain membership is per sample, so flatten the leading dims and index each
+    # sample separately rather than deriving one set of token indices for the batch.
+    flat_mask = cyclic_mask.reshape(-1, n_token)
+    flat_asym = asym_id.expand_as(cyclic_mask).reshape(-1, n_token)
+    flat_pos = pos.expand_as(cyclic_mask).reshape(-1, n_token)
+
+    cyclic_offsets = offset.clone()
+    flat_offsets = cyclic_offsets.reshape(-1, n_token, n_token)
+
+    for sample_idx in range(flat_mask.shape[0]):
+        sample_mask = flat_mask[sample_idx]
+        sample_asym = flat_asym[sample_idx]
+
+        for chain_id in torch.unique(sample_asym[sample_mask]):
+            cyc_indices = torch.where(sample_mask & (sample_asym == chain_id))[0]
+            cyc_off = cyclic_offset(flat_pos[sample_idx][cyc_indices])
+
+            flat_offsets[sample_idx][cyc_indices[:, None], cyc_indices[None, :]] = (
+                cyc_off.to(dtype=offset.dtype)
+            )
+
+    return flat_offsets.reshape(offset.shape)
+
+
 def relpos_complex(
     batch: dict, max_relative_idx: int, max_relative_chain: int
 ) -> torch.Tensor:
@@ -78,7 +133,7 @@ def relpos_complex(
         pos: torch.Tensor,
         condition: torch.BoolTensor,
         rel_clip_idx: int,
-        cyclic_mask: torch.Tensor,
+        cyclic_mask: torch.Tensor | None,
         asym_id: torch.Tensor,
     ) -> torch.Tensor:
         """
@@ -90,7 +145,8 @@ def relpos_complex(
             rel_clip_idx:
                 Max idx for clipping (max_relative_idx or max_relative_chain)
             cyclic_mask:
-                [*, N_token] Boolean tensor for cyclic residues
+                [*, N_token] Boolean tensor for cyclic residues, or None if the
+                feature is absent from the batch
             asym_id:
                 [*, N_token] Used by cyclic mask for multi-chain cyclic
         Returns:
@@ -98,24 +154,9 @@ def relpos_complex(
                 [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
         """
         offset = pos[..., None] - pos[..., None, :]
-        if cyclic_mask.any():
-            for chain_id in torch.unique(asym_id):
-                chain_cyclic_mask = cyclic_mask & (asym_id == chain_id)
-                pair_cyclic = (
-                    chain_cyclic_mask[..., None] & chain_cyclic_mask[..., None, :]
-                )
-
-                if not pair_cyclic.any():
-                    continue
-                cyc_mask_1d = cyclic_mask.view(-1, cyclic_mask.shape[-1])[0]
-                cyc_indices = torch.where(
-                    cyc_mask_1d & (asym_id.squeeze(0) == chain_id)
-                )[0]
-                cyc_pos = pos.view(-1)[cyc_indices]
-                cyc_off = cyclic_offset(cyc_pos).to(dtype=offset.dtype)
-                full_cyc_off = offset.new_zeros(offset.shape)
-                full_cyc_off[..., cyc_indices[:, None], cyc_indices[None, :]] = cyc_off
-                offset = torch.where(pair_cyclic, full_cyc_off, offset)
+        offset = apply_cyclic_offsets(
+            offset=offset, pos=pos, cyclic_mask=cyclic_mask, asym_id=asym_id
+        )
 
         clipped_offset = torch.clamp(offset + rel_clip_idx, min=0, max=2 * rel_clip_idx)
         final_offset = torch.where(

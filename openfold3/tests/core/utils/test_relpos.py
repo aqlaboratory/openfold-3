@@ -15,7 +15,33 @@
 import pytest
 import torch
 
-from openfold3.core.utils.relpos import cyclic_offset, relpos_complex
+from openfold3.core.utils.relpos import (
+    apply_cyclic_offsets,
+    cyclic_offset,
+    relpos_complex,
+)
+
+
+def _linear_offsets(pos):
+    """The offsets apply_cyclic_offsets is handed: pos[i] - pos[j]."""
+    return pos[..., None] - pos[..., None, :]
+
+
+def _chain_layout(chain_lengths, cyclic_flags):
+    """Build (pos, asym_id, cyclic_mask) for consecutive chains of given lengths."""
+    asym_id = torch.tensor(
+        [i + 1 for i, length in enumerate(chain_lengths) for _ in range(length)]
+    )
+    cyclic_mask = torch.tensor(
+        [
+            flag
+            for flag, length in zip(cyclic_flags, chain_lengths, strict=True)
+            for _ in range(length)
+        ],
+        dtype=torch.bool,
+    )
+    pos = torch.arange(sum(chain_lengths))
+    return pos.unsqueeze(0), asym_id.unsqueeze(0), cyclic_mask.unsqueeze(0)
 
 
 def _make_batch(n_token, asym_ids, cyclic_mask, batch_size=1):
@@ -87,6 +113,103 @@ class TestCyclicOffset:
         assert row0[3] == -3
         assert row0[4] == 2
         assert row0[5] == 1
+
+
+class TestApplyCyclicOffsets:
+    def test_none_mask_is_a_no_op(self):
+        # The feature is optional in the batch; absent means every chain is linear.
+        pos, asym_id, _ = _chain_layout([6], [False])
+        offset = _linear_offsets(pos)
+
+        out = apply_cyclic_offsets(offset, pos, None, asym_id)
+
+        assert torch.equal(out, offset)
+
+    def test_all_linear_mask_is_a_no_op(self):
+        pos, asym_id, cyclic_mask = _chain_layout([6], [False])
+        offset = _linear_offsets(pos)
+
+        out = apply_cyclic_offsets(offset, pos, cyclic_mask, asym_id)
+
+        assert torch.equal(out, offset)
+
+    def test_does_not_mutate_the_input(self):
+        # relpos_complex reuses the linear offsets across three encodings, so wrapping
+        # must not write through to the caller's tensor.
+        pos, asym_id, cyclic_mask = _chain_layout([6], [True])
+        offset = _linear_offsets(pos)
+        before = offset.clone()
+
+        apply_cyclic_offsets(offset, pos, cyclic_mask, asym_id)
+
+        assert torch.equal(offset, before)
+
+    def test_single_cyclic_chain_wraps(self):
+        pos, asym_id, cyclic_mask = _chain_layout([6], [True])
+        offset = _linear_offsets(pos)
+
+        out = apply_cyclic_offsets(offset, pos, cyclic_mask, asym_id)
+
+        expected = cyclic_offset(pos.squeeze(0)).to(dtype=offset.dtype)
+        assert torch.equal(out.squeeze(0), expected)
+        assert out.shape == offset.shape
+        assert out.dtype == offset.dtype
+
+    def test_linear_chain_and_cross_chain_blocks_untouched(self):
+        n_lin, n_cyc = 4, 6
+        pos, asym_id, cyclic_mask = _chain_layout([n_lin, n_cyc], [False, True])
+        offset = _linear_offsets(pos)
+
+        out = apply_cyclic_offsets(offset, pos, cyclic_mask, asym_id)[0]
+        linear = offset[0]
+
+        assert torch.equal(out[:n_lin, :n_lin], linear[:n_lin, :n_lin])
+        assert torch.equal(out[:n_lin, n_lin:], linear[:n_lin, n_lin:])
+        assert torch.equal(out[n_lin:, :n_lin], linear[n_lin:, :n_lin])
+        assert not torch.equal(out[n_lin:, n_lin:], linear[n_lin:, n_lin:])
+
+    def test_each_cyclic_chain_wraps_over_its_own_length(self):
+        # Two cyclic chains of different lengths must each wrap at their own midpoint,
+        # not at the midpoint of the complex.
+        len_a, len_b = 4, 6
+        pos, asym_id, cyclic_mask = _chain_layout([len_a, len_b], [True, True])
+        offset = _linear_offsets(pos)
+
+        out = apply_cyclic_offsets(offset, pos, cyclic_mask, asym_id)[0]
+
+        expected_a = cyclic_offset(pos[0, :len_a]).to(dtype=offset.dtype)
+        expected_b = cyclic_offset(pos[0, len_a:]).to(dtype=offset.dtype)
+        assert torch.equal(out[:len_a, :len_a], expected_a)
+        assert torch.equal(out[len_a:, len_a:], expected_b)
+
+    def test_wraps_each_sample_of_a_batch_independently(self):
+        # Regression: the token indices used to be taken from the first sample's mask
+        # and reused for the whole batch, which zeroed the offsets of any later sample
+        # whose cyclicity differed.
+        n = 6
+        pos = torch.arange(n).unsqueeze(0).repeat(2, 1)
+        asym_id = torch.ones(2, n, dtype=torch.int32)
+        cyclic_mask = torch.tensor([[False] * n, [True] * n])
+        offset = _linear_offsets(pos)
+
+        out = apply_cyclic_offsets(offset, pos, cyclic_mask, asym_id)
+
+        assert torch.equal(out[0], offset[0])
+        assert torch.equal(out[1], cyclic_offset(pos[1]).to(dtype=offset.dtype))
+
+    def test_supports_extra_leading_dims(self):
+        # Regression: features arriving as [B, S, N] rather than [B, N] used to
+        # collapse to row indices and silently produce all-zero offsets.
+        n = 6
+        pos = torch.arange(n).reshape(1, 1, n)
+        asym_id = torch.ones(1, 1, n, dtype=torch.int32)
+        cyclic_mask = torch.ones(1, 1, n, dtype=torch.bool)
+        offset = _linear_offsets(pos)
+
+        out = apply_cyclic_offsets(offset, pos, cyclic_mask, asym_id)
+
+        assert out.shape == offset.shape
+        assert torch.equal(out[0, 0], cyclic_offset(pos.reshape(-1)).to(offset.dtype))
 
 
 class TestRelposComplex:
