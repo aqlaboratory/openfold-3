@@ -1,8 +1,6 @@
 """Inference-time ligand stereochemistry guidance.
 
 The guidance is applied to the denoised coordinate estimate during reverse diffusion.
-It preserves local ligand chemistry encoded by the input molecule without adding any
-binding-site bias.
 """
 
 import math
