@@ -208,24 +208,28 @@ def setup_biotite_ccd(*, ccd_path: Path, force_download: bool) -> bool:
     return False
 
 
+#: End-to-end smoke tests run after a successful download to verify the install. Kept to
+#: the two short queries — the template-effect test alongside it is far too slow (two
+#: multi-sample inference runs per case) to belong in setup.
+INTEGRATION_TEST_PATH = (
+    Path(__file__).parent / "tests" / "inference" / "test_inference_full.py"
+)
+
+
 def _run_integration_tests() -> None:
     logger.info("Running integration tests...")
     os.environ["OPENFOLD_SETUP_SCRIPT"] = "1"
-    import unittest
+    import pytest
 
     root_logger = logging.getLogger()
     original_level = root_logger.level
     try:
         root_logger.setLevel(logging.WARNING)
-        program = unittest.main(
-            module="openfold3.tests.inference.test_inference_full",
-            exit=False,
-            verbosity=2,
-        )
+        exit_code = pytest.main([str(INTEGRATION_TEST_PATH), "-v"])
     finally:
         root_logger.setLevel(original_level)
 
-    if not program.result.wasSuccessful():
+    if exit_code != pytest.ExitCode.OK:
         logger.error("Integration tests failed. Please check the output above.")
         sys.exit(1)
     logger.info("Integration tests passed!")
