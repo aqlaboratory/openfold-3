@@ -114,6 +114,9 @@ class InferenceDataset(Dataset):
         self.template_preprocessor_settings = (
             dataset_config.template_preprocessor_settings
         )
+        self.ligand_stereochemistry_guidance_settings = (
+            dataset_config.ligand_stereochemistry_guidance_settings
+        )
         if self.template_preprocessor_settings.preparse_structures:
             self.template_preprocessor_settings.structure_file_format = "npz"
 
@@ -333,6 +336,7 @@ class InferenceDataset(Dataset):
             query=query,
             atom_array=preprocessed_atom_array,
             processed_reference_molecules=processed_reference_molecules,
+            settings=self.ligand_stereochemistry_guidance_settings,
         )
         features.update(stereochemistry_features)
 

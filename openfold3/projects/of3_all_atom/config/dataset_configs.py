@@ -47,6 +47,9 @@ from openfold3.core.config.config_utils import (
     FilePathOrNone,
     deep_update,
 )
+from openfold3.core.config.ligand_stereochemistry import (
+    LigandStereochemistryGuidanceSettings,
+)
 from openfold3.core.config.pocket_sampling_config import PocketSamplingSettings
 from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
 from openfold3.core.data.pipelines.preprocessing.template import (
@@ -385,6 +388,9 @@ class InferenceJobConfig(BaseModel):
     template: TemplateSettings = TemplateSettings()
     template_preprocessor_settings: TemplatePreprocessorSettings
     pocket_sampling: PocketSamplingSettings = PocketSamplingSettings()
+    ligand_stereochemistry_guidance_settings: LigandStereochemistryGuidanceSettings = (
+        LigandStereochemistryGuidanceSettings()
+    )
 
 
 class InferenceDatasetSpec(DatasetSpec):

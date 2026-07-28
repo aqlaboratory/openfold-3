@@ -28,6 +28,9 @@ from packaging.version import Version
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
+from openfold3.core.config.ligand_stereochemistry import (
+    LigandStereochemistryGuidanceSettings,
+)
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
 )
@@ -429,6 +432,9 @@ class InferenceExperimentConfig(ExperimentConfig):
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
+    ligand_stereochemistry_guidance_settings: LigandStereochemistryGuidanceSettings = (
+        LigandStereochemistryGuidanceSettings()
+    )
     msa_computation_settings: MsaComputationSettings = Field(
         default_factory=MsaComputationSettings
     )

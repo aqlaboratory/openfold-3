@@ -35,9 +35,7 @@ Each query entry is a dictionary with the following structure:
 "query_1": {
   "chains": [ { ... }, { ... } ],
   "pocket_constraint": { ... },
-  "ligand_stereochemistry_guidance": true,
-  "ligand_stereochemistry_start_fraction": 0.725,
-  "ligand_stereochemistry_num_gd_steps": 20,
+  "ligand_stereochemistry_guidance": true
 }
 ```
 
@@ -51,10 +49,6 @@ Optional query-level fields include:
       {ref}`Section 4 <4-pocket-constraints>` for schema details and examples.
   - `ligand_stereochemistry_guidance` *(bool, optional, default = false)*
     - Enables inference-time local geometry guidance for ligand chains. See {ref}`Section 5 <5-ligand-stereochemistry-guidance>`.
-  - `ligand_stereochemistry_start_fraction` *(float, optional, default = 0.725)*
-    - Fraction of reverse diffusion completed before ligand stereochemistry guidance begins. Must be between 0 and 1.
-  - `ligand_stereochemistry_num_gd_steps` *(int, optional, default = 20)*
-    - Number of analytic guidance updates per guided diffusion step. Must be at least 1.
 
 (3-chains)=
 ## 3. Chains
@@ -328,10 +322,18 @@ reference structure; unspecified stereocenters and stereo bonds are not assigned
 targets. The guidance affects local ligand geometry only and does not bias the ligand
 toward a binding site.
 
-The default start fraction and update count are defined in
-`openfold3/core/config/ligand_stereochemistry_defaults.py`. A start fraction of `0`
-applies guidance throughout reverse diffusion, while `1` applies it only to the final
-denoised estimate.
+Guidance settings are configured in the runner YAML and are shared by all enabled
+queries in an inference run:
+
+```yaml
+ligand_stereochemistry_guidance_settings:
+  start_fraction: 0.725
+  num_gd_steps: 20
+```
+
+A start fraction of `0` applies guidance throughout reverse diffusion, while `1`
+applies it only to the final denoised estimate. The complete configuration is
+documented in the [OpenFold3 Configuration Reference](configuration_reference.md).
 
 ## 6. Example Input Json for a Single Query Complex
 

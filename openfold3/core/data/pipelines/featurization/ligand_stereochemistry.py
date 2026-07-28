@@ -14,7 +14,9 @@ from rdkit import Chem
 from rdkit.Chem.rdchem import BondStereo, HybridizationType, Mol
 from rdkit.Chem.rdDistGeom import GetMoleculeBoundsMatrix
 
-from openfold3.core.config import ligand_stereochemistry_defaults as defaults
+from openfold3.core.config.ligand_stereochemistry import (
+    LigandStereochemistryGuidanceSettings,
+)
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
 )
@@ -51,7 +53,9 @@ class _LigandGeometryConstraints:
 
 
 def _compute_geometry_constraints(
-    mol: Mol, idx_map: dict[int, int]
+    mol: Mol,
+    idx_map: dict[int, int],
+    settings: LigandStereochemistryGuidanceSettings,
 ) -> tuple[
     list[tuple[int, int]],
     list[float],
@@ -112,7 +116,7 @@ def _compute_geometry_constraints(
         angle_mask.append(atom_pair in angles)
         pair_radii = [PERIODIC_TABLE.GetRvdw(number) for number in atomic_numbers]
         pair_vdw_cutoffs.append(
-            defaults.VDW_PAIR_CUTOFF_OFFSET + sum(pair_radii) / len(pair_radii)
+            settings.vdw_pair_cutoff_offset + sum(pair_radii) / len(pair_radii)
         )
 
     return (
@@ -240,7 +244,9 @@ def _compute_flatness_constraints(
 
 
 def _compute_ligand_constraints(
-    mol: Mol, idx_map: dict[int, int]
+    mol: Mol,
+    idx_map: dict[int, int],
+    settings: LigandStereochemistryGuidanceSettings,
 ) -> _LigandGeometryConstraints:
     """Build all supported stereochemistry guidance constraints for one ligand."""
     if not idx_map:
@@ -256,7 +262,7 @@ def _compute_ligand_constraints(
         bond_mask,
         angle_mask,
         pair_vdw_cutoffs,
-    ) = _compute_geometry_constraints(mol, idx_map)
+    ) = _compute_geometry_constraints(mol, idx_map, settings)
     chiral_index, chiral_orientations = _compute_chiral_atom_constraints(mol, idx_map)
     stereo_bond_index, stereo_bond_orientations = _compute_stereo_bond_constraints(
         mol, idx_map
@@ -310,6 +316,7 @@ def _restraint_features(
 
 def _tensorize_constraints(
     constraints: _LigandGeometryConstraints,
+    settings: LigandStereochemistryGuidanceSettings,
 ) -> dict[str, torch.Tensor]:
     features = _empty_feature_tensors()
 
@@ -323,14 +330,14 @@ def _tensorize_constraints(
             constraints.pair_vdw_cutoffs, dtype=torch.float32
         )
 
-        lower[bond & ~angle] *= 1.0 - defaults.BOND_BUFFER
-        upper[bond & ~angle] *= 1.0 + defaults.BOND_BUFFER
-        lower[~bond & angle] *= 1.0 - defaults.ANGLE_BUFFER
-        upper[~bond & angle] *= 1.0 + defaults.ANGLE_BUFFER
-        shared_buffer = min(defaults.BOND_BUFFER, defaults.ANGLE_BUFFER)
+        lower[bond & ~angle] *= 1.0 - settings.bond_buffer
+        upper[bond & ~angle] *= 1.0 + settings.bond_buffer
+        lower[~bond & angle] *= 1.0 - settings.angle_buffer
+        upper[~bond & angle] *= 1.0 + settings.angle_buffer
+        shared_buffer = min(settings.bond_buffer, settings.angle_buffer)
         lower[bond & angle] *= 1.0 - shared_buffer
         upper[bond & angle] *= 1.0 + shared_buffer
-        lower[~bond & ~angle] *= 1.0 - defaults.CLASH_BUFFER
+        lower[~bond & ~angle] *= 1.0 - settings.clash_buffer
         upper[~bond & ~angle] = float("inf")
         lower[~bond] = torch.maximum(lower[~bond], pair_vdw_cutoff[~bond])
         upper[bond] = torch.minimum(upper[bond], pair_vdw_cutoff[bond])
@@ -346,8 +353,8 @@ def _tensorize_constraints(
         chiral_orientations.shape, float("-inf"), dtype=torch.float32
     )
     chiral_upper = torch.full_like(chiral_lower, float("inf"))
-    chiral_lower[chiral_orientations] = defaults.CHIRAL_BUFFER
-    chiral_upper[~chiral_orientations] = -defaults.CHIRAL_BUFFER
+    chiral_lower[chiral_orientations] = settings.chiral_buffer
+    chiral_upper[~chiral_orientations] = -settings.chiral_buffer
     features.update(
         _restraint_features(
             "signed_dihedral",
@@ -367,8 +374,8 @@ def _tensorize_constraints(
         stereo_orientations.shape, float("-inf"), dtype=torch.float32
     )
     stereo_upper = torch.full_like(stereo_lower, float("inf"))
-    stereo_lower[stereo_orientations] = torch.pi - defaults.STEREO_BOND_BUFFER
-    stereo_upper[~stereo_orientations] = defaults.STEREO_BOND_BUFFER
+    stereo_lower[stereo_orientations] = torch.pi - settings.stereo_bond_buffer
+    stereo_upper[~stereo_orientations] = settings.stereo_bond_buffer
     features.update(
         _restraint_features(
             "stereo_dihedral",
@@ -387,7 +394,7 @@ def _tensorize_constraints(
     planar_lower = torch.full(
         (planar_improper_index.shape[1],), float("-inf"), dtype=torch.float32
     )
-    planar_upper = torch.full_like(planar_lower, defaults.PLANAR_BOND_BUFFER)
+    planar_upper = torch.full_like(planar_lower, settings.planar_bond_buffer)
     features.update(
         _restraint_features(
             "planar_dihedral",
@@ -404,6 +411,7 @@ def featurize_ligand_stereochemistry_guidance(
     query: Query,
     atom_array: AtomArray,
     processed_reference_molecules: list[ProcessedReferenceMolecule],
+    settings: LigandStereochemistryGuidanceSettings,
 ) -> dict[str, torch.Tensor]:
     """Create inference-time ligand stereochemistry guidance features.
 
@@ -416,11 +424,20 @@ def featurize_ligand_stereochemistry_guidance(
         [query.ligand_stereochemistry_guidance], dtype=torch.bool
     )
     features["ligand_stereochemistry_start_fraction"] = torch.tensor(
-        [query.ligand_stereochemistry_start_fraction], dtype=torch.float32
+        [settings.start_fraction], dtype=torch.float32
     )
     features["ligand_stereochemistry_num_gd_steps"] = torch.tensor(
-        [query.ligand_stereochemistry_num_gd_steps], dtype=torch.long
+        [settings.num_gd_steps], dtype=torch.long
     )
+    for name, weight in (
+        ("distance", settings.distance_weight),
+        ("signed_dihedral", settings.chiral_atom_weight),
+        ("stereo_dihedral", settings.stereo_bond_weight),
+        ("planar_dihedral", settings.planar_bond_weight),
+    ):
+        features[f"ligand_stereochemistry_{name}_weight"] = torch.tensor(
+            [weight], dtype=torch.float32
+        )
 
     if not query.ligand_stereochemistry_guidance:
         return features
@@ -442,8 +459,8 @@ def featurize_ligand_stereochemistry_guidance(
         idx_map = dict(
             zip(reference_indices.tolist(), residue_indices.tolist(), strict=True)
         )
-        constraints = _compute_ligand_constraints(processed_mol.mol, idx_map)
+        constraints = _compute_ligand_constraints(processed_mol.mol, idx_map, settings)
         all_constraints.extend(constraints)
 
-    features.update(_tensorize_constraints(all_constraints))
+    features.update(_tensorize_constraints(all_constraints, settings))
     return features

@@ -5,18 +5,18 @@ It preserves local ligand chemistry encoded by the input molecule without adding
 binding-site bias.
 """
 
+import math
 from typing import NamedTuple
 
 import torch
 
-from openfold3.core.config import ligand_stereochemistry_defaults as defaults
-
 _RESTRAINT_SPECS = {
-    "distance": (2, defaults.POSEBUSTERS_WEIGHT),
-    "signed_dihedral": (4, defaults.CHIRAL_ATOM_WEIGHT),
-    "stereo_dihedral": (4, defaults.STEREO_BOND_WEIGHT),
-    "planar_dihedral": (4, defaults.PLANAR_BOND_WEIGHT),
+    "distance": 2,
+    "signed_dihedral": 4,
+    "stereo_dihedral": 4,
+    "planar_dihedral": 4,
 }
+_GEOMETRY_EPSILON = 1e-6
 
 
 class _FlatBottomRestraints(NamedTuple):
@@ -107,7 +107,6 @@ def _prepare_restraint(
     batch: dict,
     name: str,
     arity: int,
-    weight: float,
     device: torch.device,
     num_atoms: int,
 ) -> _FlatBottomRestraints:
@@ -134,6 +133,10 @@ def _prepare_restraint(
                 f"'{feature_name}' must contain one value per {index_name} constraint."
             )
         values[suffix] = value.to(device)
+
+    weight = _required_batch_scalar(batch, f"{prefix}_weight", float)
+    if not math.isfinite(weight) or weight < 0.0:
+        raise ValueError(f"'{prefix}_weight' must be a finite non-negative value.")
 
     return _FlatBottomRestraints(index=index, weight=weight, **values)
 
@@ -163,17 +166,15 @@ def prepare_ligand_stereochemistry_guidance(
     )
     if num_gd_steps < 1:
         raise ValueError("'ligand_stereochemistry_num_gd_steps' must be at least 1.")
-
     restraints = {
         name: _prepare_restraint(
             batch,
             name,
             arity,
-            weight,
             atom_mask.device,
             atom_mask.shape[-1],
         )
-        for name, (arity, weight) in _RESTRAINT_SPECS.items()
+        for name, arity in _RESTRAINT_SPECS.items()
     }
     if not any(restraint.index.shape[1] > 0 for restraint in restraints.values()):
         return None
@@ -230,17 +231,20 @@ def _scatter_variable_gradient(
 
 
 def _distance_value_and_gradient(
-    coords: torch.Tensor, index: torch.Tensor
+    coords: torch.Tensor,
+    index: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Return pair distances and analytical coordinate gradients."""
     r_ij = coords.index_select(-2, index[0]) - coords.index_select(-2, index[1])
-    r_ij_norm = torch.linalg.norm(r_ij, dim=-1).clamp_min(defaults.GEOMETRY_EPS)
+    r_ij_norm = torch.linalg.norm(r_ij, dim=-1).clamp_min(_GEOMETRY_EPSILON)
     r_hat_ij = r_ij / r_ij_norm.unsqueeze(-1)
     return r_ij_norm, torch.stack((r_hat_ij, -r_hat_ij), dim=-3)
 
 
 def _dihedral_value_and_gradient(
-    coords: torch.Tensor, index: torch.Tensor, absolute: bool = False
+    coords: torch.Tensor,
+    index: torch.Tensor,
+    absolute: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Return improper dihedrals and their analytical gradients."""
     r_ij = coords.index_select(-2, index[0]) - coords.index_select(-2, index[1])
@@ -250,9 +254,9 @@ def _dihedral_value_and_gradient(
     n_ijk = torch.cross(r_ij, r_kj, dim=-1)
     n_jkl = torch.cross(r_kj, r_kl, dim=-1)
 
-    r_kj_norm = torch.linalg.norm(r_kj, dim=-1).clamp_min(defaults.GEOMETRY_EPS)
-    n_ijk_norm = torch.linalg.norm(n_ijk, dim=-1).clamp_min(defaults.GEOMETRY_EPS)
-    n_jkl_norm = torch.linalg.norm(n_jkl, dim=-1).clamp_min(defaults.GEOMETRY_EPS)
+    r_kj_norm = torch.linalg.norm(r_kj, dim=-1).clamp_min(_GEOMETRY_EPSILON)
+    n_ijk_norm = torch.linalg.norm(n_ijk, dim=-1).clamp_min(_GEOMETRY_EPSILON)
+    n_jkl_norm = torch.linalg.norm(n_jkl, dim=-1).clamp_min(_GEOMETRY_EPSILON)
 
     phi = _signed_dihedral(
         r_kj,
@@ -297,7 +301,9 @@ def _restraint_gradient(
     """Evaluate and scatter one prepared flat-bottom restraint family."""
     if dihedral:
         value, value_gradient = _dihedral_value_and_gradient(
-            coords, restraints.index, absolute=absolute
+            coords,
+            restraints.index,
+            absolute=absolute,
         )
     else:
         value, value_gradient = _distance_value_and_gradient(coords, restraints.index)

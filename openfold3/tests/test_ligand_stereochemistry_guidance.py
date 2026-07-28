@@ -5,7 +5,9 @@ import pytest
 import torch
 from rdkit import Chem
 
-from openfold3.core.config import ligand_stereochemistry_defaults as defaults
+from openfold3.core.config.ligand_stereochemistry import (
+    LigandStereochemistryGuidanceSettings,
+)
 from openfold3.core.data.pipelines.featurization import (
     ligand_stereochemistry as featurization,
 )
@@ -37,7 +39,14 @@ from openfold3.core.model.structure.ligand_stereochemistry import (
     ligand_stereochemistry_guidance_enabled,
     prepare_ligand_stereochemistry_guidance,
 )
-from openfold3.projects.of3_all_atom.config.inference_query_format import Query
+from openfold3.entry_points.experiment_runner import InferenceExperimentRunner
+from openfold3.entry_points.validator import InferenceExperimentConfig
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
+    Query,
+)
+
+_DEFAULT_SETTINGS = LigandStereochemistryGuidanceSettings()
 
 
 def _ligand_query(smiles: str, guidance: bool = True) -> Query:
@@ -55,7 +64,11 @@ def _ligand_query(smiles: str, guidance: bool = True) -> Query:
     )
 
 
-def _features_for_smiles(smiles: str, guidance: bool = True) -> dict[str, torch.Tensor]:
+def _features_for_smiles(
+    smiles: str,
+    guidance: bool = True,
+    settings: LigandStereochemistryGuidanceSettings = _DEFAULT_SETTINGS,
+) -> dict[str, torch.Tensor]:
     query = _ligand_query(smiles, guidance=guidance)
     structure = structure_with_ref_mols_from_query(query)
     tokenize_atom_array(structure.atom_array)
@@ -64,6 +77,7 @@ def _features_for_smiles(smiles: str, guidance: bool = True) -> dict[str, torch.
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
+        settings=settings,
     )
 
 
@@ -100,6 +114,7 @@ def _empty_guidance_batch(
     enabled: bool = True,
     start_fraction: float = 0.0,
     num_gd_steps: int = 1,
+    settings: LigandStereochemistryGuidanceSettings = _DEFAULT_SETTINGS,
 ) -> dict[str, torch.Tensor]:
     batch = _empty_feature_tensors()
     batch.update(
@@ -107,6 +122,18 @@ def _empty_guidance_batch(
             "ligand_stereochemistry_guidance_enabled": torch.tensor([enabled]),
             "ligand_stereochemistry_start_fraction": torch.tensor([start_fraction]),
             "ligand_stereochemistry_num_gd_steps": torch.tensor([num_gd_steps]),
+            "ligand_stereochemistry_distance_weight": torch.tensor(
+                [settings.distance_weight]
+            ),
+            "ligand_stereochemistry_signed_dihedral_weight": torch.tensor(
+                [settings.chiral_atom_weight]
+            ),
+            "ligand_stereochemistry_stereo_dihedral_weight": torch.tensor(
+                [settings.stereo_bond_weight]
+            ),
+            "ligand_stereochemistry_planar_dihedral_weight": torch.tensor(
+                [settings.planar_bond_weight]
+            ),
         }
     )
     return batch
@@ -149,9 +176,9 @@ def _reference_dihedral(coords: torch.Tensor, index: torch.Tensor) -> torch.Tens
     r_kl = coords.index_select(-2, index[2]) - coords.index_select(-2, index[3])
     n_ijk = torch.cross(r_ij, r_kj, dim=-1)
     n_jkl = torch.cross(r_kj, r_kl, dim=-1)
-    r_kj_norm = torch.linalg.norm(r_kj, dim=-1).clamp_min(defaults.GEOMETRY_EPS)
-    n_ijk_norm = torch.linalg.norm(n_ijk, dim=-1).clamp_min(defaults.GEOMETRY_EPS)
-    n_jkl_norm = torch.linalg.norm(n_jkl, dim=-1).clamp_min(defaults.GEOMETRY_EPS)
+    r_kj_norm = torch.linalg.norm(r_kj, dim=-1).clamp_min(1e-6)
+    n_ijk_norm = torch.linalg.norm(n_ijk, dim=-1).clamp_min(1e-6)
+    n_jkl_norm = torch.linalg.norm(n_jkl, dim=-1).clamp_min(1e-6)
     sin_phi = (r_kj * torch.cross(n_ijk, n_jkl, dim=-1)).sum(dim=-1) / (
         r_kj_norm * n_ijk_norm * n_jkl_norm
     )
@@ -179,7 +206,7 @@ def _reference_ligand_stereochemistry_energy(
     if guidance.distance.index.shape[1] > 0:
         index = guidance.distance.index
         diff = coords.index_select(-2, index[0]) - coords.index_select(-2, index[1])
-        value = torch.linalg.norm(diff, dim=-1).clamp_min(defaults.GEOMETRY_EPS)
+        value = torch.linalg.norm(diff, dim=-1).clamp_min(1e-6)
         energies.append(
             (
                 guidance.distance.weight
@@ -298,6 +325,7 @@ def test_emitted_stereo_targets_match_processed_reference_molecule(
         query,
         structure.atom_array,
         structure.processed_reference_mols,
+        _DEFAULT_SETTINGS,
     )
     coords = _reference_coords_in_atom_array_order(structure, "L")
     guidance = _prepare_guidance(features, num_atoms=len(structure.atom_array))
@@ -339,6 +367,7 @@ def test_multi_ligand_features_keep_constraints_on_their_source_ligand():
         query,
         structure.atom_array,
         structure.processed_reference_mols,
+        _DEFAULT_SETTINGS,
     )
     ligand_l = set(np.flatnonzero(structure.atom_array.chain_id == "L"))
     ligand_m = set(np.flatnonzero(structure.atom_array.chain_id == "M"))
@@ -391,7 +420,9 @@ def test_unspecified_stereochemistry_does_not_create_guidance_targets(
 ):
     mol = Chem.MolFromSmiles(smiles)
     constraints = _compute_ligand_constraints(
-        mol, {atom.GetIdx(): atom.GetIdx() for atom in mol.GetAtoms()}
+        mol,
+        {atom.GetIdx(): atom.GetIdx() for atom in mol.GetAtoms()},
+        _DEFAULT_SETTINGS,
     )
 
     assert getattr(constraints, constraint_name) == []
@@ -406,6 +437,7 @@ def test_ligand_stereochemistry_energy_prefers_input_chirality():
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
+        settings=_DEFAULT_SETTINGS,
     )
 
     conformer = structure.processed_reference_mols[0].mol.GetConformer()
@@ -478,7 +510,7 @@ def test_ligand_stereochemistry_dihedral_gradient_matches_autograd():
                 [[0], [1], [2], [3]]
             ),
             "ligand_stereochemistry_signed_dihedral_lower": torch.tensor(
-                [defaults.CHIRAL_BUFFER]
+                [_DEFAULT_SETTINGS.chiral_buffer]
             ),
             "ligand_stereochemistry_signed_dihedral_upper": torch.tensor(
                 [float("inf")]
@@ -498,34 +530,65 @@ def test_ligand_stereochemistry_dihedral_gradient_matches_autograd():
     )
 
 
-def test_ligand_stereochemistry_query_validates_guidance_settings():
+def test_ligand_stereochemistry_settings_validate_guidance_schedule():
     with pytest.raises(ValueError, match="start_fraction"):
-        Query.model_validate(
-            {
-                "chains": [
-                    {
-                        "molecule_type": "ligand",
-                        "chain_ids": ["L"],
-                        "smiles": "CCO",
-                    }
-                ],
-                "ligand_stereochemistry_start_fraction": 1.5,
-            }
-        )
+        LigandStereochemistryGuidanceSettings.model_validate({"start_fraction": 1.5})
 
     with pytest.raises(ValueError, match="num_gd_steps"):
-        Query.model_validate(
-            {
-                "chains": [
-                    {
-                        "molecule_type": "ligand",
-                        "chain_ids": ["L"],
-                        "smiles": "CCO",
-                    }
-                ],
-                "ligand_stereochemistry_num_gd_steps": 0,
-            }
-        )
+        LigandStereochemistryGuidanceSettings.model_validate({"num_gd_steps": 0})
+
+    with pytest.raises(ValueError, match="extra_forbidden"):
+        LigandStereochemistryGuidanceSettings.model_validate({"unknown": 1})
+
+
+def test_inference_experiment_records_and_routes_guidance_settings(tmp_path):
+    checkpoint = tmp_path / "model.pt"
+    checkpoint.touch()
+    experiment = InferenceExperimentConfig(
+        inference_ckpt_path=checkpoint,
+        cache_path=tmp_path,
+        ligand_stereochemistry_guidance_settings={
+            "start_fraction": 0.8,
+            "num_gd_steps": 7,
+            "chiral_atom_weight": 0.2,
+        },
+    )
+    serialized = experiment.model_dump()
+
+    assert serialized["ligand_stereochemistry_guidance_settings"] == (
+        experiment.ligand_stereochemistry_guidance_settings.model_dump()
+    )
+
+    runner = InferenceExperimentRunner(experiment)
+    runner.inference_query_set = InferenceQuerySet(
+        queries={"ligand": _ligand_query("C[C@H](O)C(=O)O")}
+    )
+    inference_job = runner.data_module_config.datasets[0].config
+
+    assert (
+        inference_job.ligand_stereochemistry_guidance_settings
+        == experiment.ligand_stereochemistry_guidance_settings
+    )
+
+
+def test_custom_guidance_settings_are_emitted_and_prepared():
+    settings = LigandStereochemistryGuidanceSettings(
+        start_fraction=0.6,
+        num_gd_steps=4,
+        distance_weight=0.02,
+        chiral_atom_weight=0.2,
+        stereo_bond_weight=0.15,
+        planar_bond_weight=0.12,
+    )
+    features = _features_for_smiles("C[C@H](O)C(=O)O", settings=settings)
+    guidance = _prepare_guidance(features, num_atoms=6)
+
+    assert guidance.start_fraction == pytest.approx(settings.start_fraction)
+    assert guidance.num_gd_steps == settings.num_gd_steps
+    assert guidance.distance.weight == pytest.approx(settings.distance_weight)
+    assert guidance.signed_dihedral.weight == pytest.approx(settings.chiral_atom_weight)
+    assert guidance.stereo_dihedral.weight == pytest.approx(settings.stereo_bond_weight)
+    assert guidance.planar_dihedral.weight == pytest.approx(settings.planar_bond_weight)
 
 
 def test_ligand_stereochemistry_guidance_is_noop_when_disabled():
@@ -574,7 +637,7 @@ def test_ligand_stereochemistry_guidance_accepts_collated_restraints():
                 [[0, 1, 2, 3]]
             ),
             "ligand_stereochemistry_signed_dihedral_lower": torch.tensor(
-                [defaults.CHIRAL_BUFFER]
+                [_DEFAULT_SETTINGS.chiral_buffer]
             ),
             "ligand_stereochemistry_signed_dihedral_upper": torch.tensor(
                 [float("inf")]
@@ -609,21 +672,12 @@ def test_ligand_stereochemistry_guidance_runs_inside_inference_mode():
     assert not torch.equal(guided, coords)
 
 
-def test_ligand_stereochemistry_query_uses_central_defaults():
+def test_ligand_stereochemistry_query_only_controls_enablement():
     query = _ligand_query("CC", guidance=False)
 
-    assert (
-        query.ligand_stereochemistry_guidance
-        == defaults.DEFAULT_LIGAND_STEREOCHEMISTRY_GUIDANCE_ENABLED
-    )
-    assert (
-        query.ligand_stereochemistry_start_fraction
-        == defaults.DEFAULT_LIGAND_STEREOCHEMISTRY_START_FRACTION
-    )
-    assert (
-        query.ligand_stereochemistry_num_gd_steps
-        == defaults.DEFAULT_LIGAND_STEREOCHEMISTRY_NUM_GD_STEPS
-    )
+    assert not query.ligand_stereochemistry_guidance
+    assert "ligand_stereochemistry_start_fraction" not in Query.model_fields
+    assert "ligand_stereochemistry_num_gd_steps" not in Query.model_fields
 
 
 def test_ligand_stereochemistry_query_requires_a_ligand_when_enabled():
@@ -644,7 +698,7 @@ def test_ligand_stereochemistry_query_requires_a_ligand_when_enabled():
 
 def test_geometry_constraints_handle_single_atom_and_cropped_pairs():
     single_atom = Chem.MolFromSmiles("[Na+]")
-    assert _compute_geometry_constraints(single_atom, {0: 4}) == (
+    assert _compute_geometry_constraints(single_atom, {0: 4}, _DEFAULT_SETTINGS) == (
         [],
         [],
         [],
@@ -654,11 +708,11 @@ def test_geometry_constraints_handle_single_atom_and_cropped_pairs():
     )
 
     mol = Chem.MolFromSmiles("CCO")
-    constraints = _compute_geometry_constraints(mol, {0: 10, 2: 12})
+    constraints = _compute_geometry_constraints(mol, {0: 10, 2: 12}, _DEFAULT_SETTINGS)
     assert constraints[0] == [(10, 12)]
     periodic_table = Chem.GetPeriodicTable()
     expected_vdw_cutoff = (
-        defaults.VDW_PAIR_CUTOFF_OFFSET
+        _DEFAULT_SETTINGS.vdw_pair_cutoff_offset
         + (periodic_table.GetRvdw(6) + periodic_table.GetRvdw(8)) / 2
     )
     assert constraints[5] == pytest.approx([expected_vdw_cutoff])
@@ -668,7 +722,7 @@ def test_geometry_constraints_reject_unsupported_atomic_numbers():
     mol = Chem.MolFromSmiles("*C")
 
     with pytest.raises(ValueError, match="supported atomic numbers"):
-        _compute_geometry_constraints(mol, {0: 0, 1: 1})
+        _compute_geometry_constraints(mol, {0: 0, 1: 1}, _DEFAULT_SETTINGS)
 
 
 def test_constraint_extractors_handle_unassigned_and_uncropped_chemistry():
@@ -679,7 +733,7 @@ def test_constraint_extractors_handle_unassigned_and_uncropped_chemistry():
     assert _compute_chiral_atom_constraints(mol, {}) == ([], [])
     assert _compute_stereo_bond_constraints(mol, {}) == ([], [])
     assert (
-        _compute_ligand_constraints(mol, {})
+        _compute_ligand_constraints(mol, {}, _DEFAULT_SETTINGS)
         == featurization._LigandGeometryConstraints()
     )
 
@@ -761,7 +815,9 @@ def test_chiral_constraint_extractor_skips_non_tetrahedral_centers(monkeypatch):
 def test_compute_ligand_constraints_without_reference_conformer():
     mol = Chem.MolFromSmiles("CCO")
 
-    constraints = _compute_ligand_constraints(mol, {0: 0, 1: 1, 2: 2})
+    constraints = _compute_ligand_constraints(
+        mol, {0: 0, 1: 1, 2: 2}, _DEFAULT_SETTINGS
+    )
 
     assert constraints.bounds_index
     assert constraints.chiral_index == []
@@ -778,7 +834,7 @@ def test_featurization_rejects_misaligned_reference_atoms():
 
     with pytest.raises(ValueError, match="must match the OF3 residue"):
         featurize_ligand_stereochemistry_guidance(
-            query, structure.atom_array, [malformed]
+            query, structure.atom_array, [malformed], _DEFAULT_SETTINGS
         )
 
 
@@ -787,7 +843,9 @@ def test_featurization_rejects_missing_reference_molecule():
     structure = structure_with_ref_mols_from_query(query)
 
     with pytest.raises(ValueError, match=r"zip\(\) argument"):
-        featurize_ligand_stereochemistry_guidance(query, structure.atom_array, [])
+        featurize_ligand_stereochemistry_guidance(
+            query, structure.atom_array, [], _DEFAULT_SETTINGS
+        )
 
 
 def test_normalize_index_tensor_handles_collated_and_transposed_shapes():
@@ -868,6 +926,11 @@ def test_prepare_guidance_rejects_multiple_queries():
             torch.tensor([0]),
             "at least 1",
         ),
+        (
+            "ligand_stereochemistry_distance_weight",
+            torch.tensor([-0.1]),
+            "finite non-negative",
+        ),
     ],
 )
 def test_prepare_guidance_rejects_invalid_settings(feature_name, value, match):
@@ -929,7 +992,7 @@ def test_tensorized_distance_bounds_match_pair_cutoff_rules():
         pair_vdw_cutoffs=[2.0] * 4,
     )
 
-    features = featurization._tensorize_constraints(constraints)
+    features = featurization._tensorize_constraints(constraints, _DEFAULT_SETTINGS)
 
     torch.testing.assert_close(
         features["ligand_stereochemistry_distance_index"],
@@ -965,10 +1028,14 @@ def test_stereo_bond_gradient_matches_autograd(is_e):
                 [[0], [1], [2], [3]]
             ),
             "ligand_stereochemistry_stereo_dihedral_lower": torch.tensor(
-                [torch.pi - defaults.STEREO_BOND_BUFFER if is_e else float("-inf")]
+                [
+                    torch.pi - _DEFAULT_SETTINGS.stereo_bond_buffer
+                    if is_e
+                    else float("-inf")
+                ]
             ),
             "ligand_stereochemistry_stereo_dihedral_upper": torch.tensor(
-                [float("inf") if is_e else defaults.STEREO_BOND_BUFFER]
+                [float("inf") if is_e else _DEFAULT_SETTINGS.stereo_bond_buffer]
             ),
         }
     )
@@ -1013,7 +1080,7 @@ def test_planar_bond_gradient_matches_autograd():
                 (2,), float("-inf")
             ),
             "ligand_stereochemistry_planar_dihedral_upper": torch.full(
-                (2,), defaults.PLANAR_BOND_BUFFER
+                (2,), _DEFAULT_SETTINGS.planar_bond_buffer
             ),
         }
     )
