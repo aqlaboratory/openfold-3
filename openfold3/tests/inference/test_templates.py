@@ -12,190 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Integration tests for inference.
+"""Template-effect RMSD test (PR #306).
 
-- ``test_protein_only`` / ``test_protein_and_ligand``: two small queries run end-to-end
-  (with MSA server + templates), checking the expected output files are written.
-- ``test_template_lowers_rmsd``: functional check for PR #306 — with no MSA, supplying a
-  template must pull the prediction onto the native fold (low CA-RMSD to the reference),
-  whereas without a template the single-sequence model can't find it (high CA-RMSD).
-  Parametrized over ``CASES`` so adding a PDB is one row + committing its cif.
+``test_template_lowers_rmsd``: with no MSA, supplying a template must pull the prediction
+onto the native fold (low CA-RMSD to the reference), whereas without a template the
+single-sequence model can't find it (high CA-RMSD). Parametrized over ``CASES`` so adding
+a PDB is one row + committing its cif.
 
-All of these require a GPU and downloaded model weights; they skip otherwise.
+Requires a GPU and downloaded model weights; skips otherwise.
 
 Run with:
-    pytest openfold3/tests/test_inference_full.py
+    pytest openfold3/tests/inference/test_templates.py
 """
 
 import logging
-import os
-import textwrap
 from dataclasses import dataclass
 from pathlib import Path
-from unittest.mock import patch
 
 import biotite.structure as struc
 import numpy as np
 import pytest
 
-from openfold3.core.config import config_utils
+import openfold3
 from openfold3.core.data.io.structure.cif import parse_mmcif
-from openfold3.entry_points.experiment_runner import InferenceExperimentRunner
-from openfold3.entry_points.validator import (
-    InferenceExperimentConfig,
-)
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
+from openfold3.tests.inference.helpers import run_inference
 from openfold3.tests.utils.compare_utils import skip_unless_cuda_available
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
-MMCIFS_DIR = Path(__file__).parent / "test_data" / "mmcifs"
-
-protein_only_query = InferenceQuerySet.model_validate(
-    {
-        "queries": {
-            "query1": {
-                "chains": [
-                    {
-                        "molecule_type": "protein",
-                        "chain_ids": ["A", "B"],
-                        "sequence": "XRMKQLEDKVEELLSKNYHLENEVARLKKLVGER",
-                    }
-                ]
-            }
-        }
-    }
-)
-
-protein_and_ligand_query = InferenceQuerySet.model_validate(
-    {
-        "queries": {
-            "query1": {
-                "chains": [
-                    {
-                        "molecule_type": "protein",
-                        "chain_ids": ["A", "B"],
-                        "sequence": "XRMKQLEDKVEELLSKNYHLENEVARLKKLVGER",
-                    },
-                    {
-                        "molecule_type": "ligand",
-                        "chain_ids": ["C"],
-                        "smiles": "c1ccccc1O",
-                    },
-                ]
-            }
-        }
-    }
-)
-
-inference_test_yaml_str = textwrap.dedent("""\
-    model_update:
-      presets:
-        - predict
-        - low_mem
-    """)
-
-
-def _run_inference_helper(
-    query_set,
-    output_dir: Path,
-    *,
-    use_msa_server: bool,
-    use_templates: bool,
-    num_diffusion_samples: int = 1,
-    template_output_dir: Path | None = None,
-) -> Path:
-    """Run one inference job into ``output_dir`` and return it.
-
-    Skips (``pytest.skip``) if no model checkpoint is available (escalated to a hard
-    failure when ``OPENFOLD_SETUP_SCRIPT=1``). ``template_output_dir`` isolates the
-    template cache per run (otherwise it lands in a persistent ``/tmp`` dir shared across
-    runs and same-sequence queries).
-    """
-    runner_yaml = output_dir / "runner_config.yaml"
-    yaml_str = inference_test_yaml_str
-    if template_output_dir is not None:
-        yaml_str += textwrap.dedent(f"""\
-            template_preprocessor_settings:
-              output_directory: {template_output_dir}
-            """)
-    runner_yaml.write_text(yaml_str)
-
-    with patch("builtins.input", return_value="no"):
-        experiment_config = InferenceExperimentConfig(
-            **config_utils.load_yaml(runner_yaml)
-        )
-    runner = InferenceExperimentRunner(
-        experiment_config,
-        num_diffusion_samples=num_diffusion_samples,
-        output_dir=output_dir,
-        use_msa_server=use_msa_server,
-        use_templates=use_templates,
-    )
-    try:
-        runner.setup()
-    except ValueError as e:
-        if "is not a valid file or directory" in str(e):
-            if os.environ.get("OPENFOLD_SETUP_SCRIPT") == "1":
-                raise AssertionError(
-                    "No checkpoint files found after running setup script. "
-                    "Please check that the download completed successfully."
-                ) from None
-            logger.warning(
-                "No checkpoint files found, skipping. Use the setup script to "
-                "download the weights."
-            )
-            pytest.skip("No checkpoint files available")
-        raise
-
-    runner.run(query_set)
-    runner.cleanup()
-
-    err_log_dir = output_dir / "logs"
-    if err_log_dir.exists():
-        raise RuntimeError(
-            f"Found error logs in directory {err_log_dir}, "
-            "check for errors in inference."
-        )
-    return output_dir
-
-
-def _assert_inference_writes_outputs(query_set, tmp_path):
-    _run_inference_helper(
-        query_set,
-        tmp_path,
-        use_msa_server=True,
-        use_templates=True,
-        num_diffusion_samples=1,
-    )
-    logger.info("Checking output contents at %s", tmp_path)
-    seed_dir = tmp_path / "query1" / "seed_42"
-    expected_files = [
-        "query1_seed_42_sample_1_confidences.json",
-        "query1_seed_42_sample_1_confidences_aggregated.json",
-        "query1_seed_42_sample_1_model.cif",
-        "timing.json",
-    ]
-    for name in expected_files:
-        assert (seed_dir / name).exists(), (
-            f"Expected output file not found: {seed_dir / name}"
-        )
-
-
-@skip_unless_cuda_available()
-def test_protein_only(tmp_path):
-    _assert_inference_writes_outputs(protein_only_query, tmp_path)
-
-
-@skip_unless_cuda_available()
-def test_protein_and_ligand(tmp_path):
-    _assert_inference_writes_outputs(protein_and_ligand_query, tmp_path)
-
-
-# --- Template-effect RMSD test (PR #306) -----------------------------------------------
+MMCIFS_DIR = Path(openfold3.__file__).parent / "tests" / "test_data" / "mmcifs"
 
 # Number of diffusion samples per condition. The user's experiments show the samples
 # cluster (all near the reference with a template, all far without), so the mean over
@@ -297,7 +146,7 @@ def _mean_ca_rmsd(
     query_set, key = _make_query(case, with_template=with_template)
     out_dir = tmp_path / key
     out_dir.mkdir(parents=True, exist_ok=True)
-    _run_inference_helper(
+    run_inference(
         query_set,
         out_dir,
         use_msa_server=False,

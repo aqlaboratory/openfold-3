@@ -218,7 +218,7 @@ def _run_integration_tests() -> None:
     try:
         root_logger.setLevel(logging.WARNING)
         program = unittest.main(
-            module="openfold3.tests.test_inference_full",
+            module="openfold3.tests.inference.test_inference_full",
             exit=False,
             verbosity=2,
         )
