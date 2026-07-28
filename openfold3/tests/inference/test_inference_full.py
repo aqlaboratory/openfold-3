@@ -29,6 +29,8 @@ Run with:
 """
 
 import logging
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from functools import partial
 from pathlib import Path
 
@@ -38,7 +40,15 @@ import openfold3
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
-from openfold3.tests.inference.helpers import run_inference
+from openfold3.tests.inference.analysis import best_ca_rmsd
+from openfold3.tests.inference.helpers import (
+    MODES,
+    Mode,
+    prediction_dir,
+    prediction_stem,
+    query_set_from_chains,
+    run_inference,
+)
 from openfold3.tests.utils.compare_utils import skip_unless_accelerator_available
 
 logging.basicConfig(level=logging.WARNING)
@@ -55,17 +65,14 @@ requires_examples = pytest.mark.skipif(
     not EXAMPLES_DIR.is_dir(), reason=f"No examples directory at {EXAMPLES_DIR}"
 )
 
-#: Seed the outputs are written under. Comes from ``ExperimentSettings.seeds`` (default
-#: ``[42]``), which the runner yaml in :func:`run_inference` does not override — *not*
-#: from ``InferenceQuerySet.seeds``, which the runner ignores.
-SEED = 42
-
+# Leucine zipper protein fragment
 PROTEIN_CHAIN = {
     "molecule_type": "protein",
     "chain_ids": ["A", "B"],
     "sequence": "XRMKQLEDKVEELLSKNYHLENEVARLKKLVGER",
 }
 
+# Phenol
 LIGAND_CHAIN = {
     "molecule_type": "ligand",
     "chain_ids": ["C"],
@@ -73,59 +80,148 @@ LIGAND_CHAIN = {
 }
 
 
-def _inline_query_set(*chains: dict) -> InferenceQuerySet:
-    """Build a single-query set named ``query1`` from raw chain dicts."""
-    return InferenceQuerySet.model_validate(
-        {"queries": {"query1": {"chains": list(chains)}}}
-    )
-
-
 def _example_query_set(filename: str) -> InferenceQuerySet:
     """Load an example query JSON through the same loader ``run_openfold`` uses."""
     return InferenceQuerySet.from_json(EXAMPLES_DIR / filename)
 
 
+@dataclass(frozen=True)
+class Expectation:
+    """How closely one query's prediction must match an experimental structure.
+
+    ``ca_rmsd_max`` maps a :class:`Mode` to an Ångström ceiling on the protein CA-RMSD.
+    A mode *absent* from it is run but not scored — the outputs are still checked, the
+    test just makes no accuracy claim there. That absence is the point of keying on
+    ``Mode``: how close a prediction lands depends strongly on whether it had an MSA and
+    a template, so no single ceiling per target is right across all four, and a ceiling
+    is only worth asserting once it has been *measured* in that mode.
+
+    ``pred_chains``/``ref_chains`` are matched as sets by :func:`best_ca_rmsd`, so
+    interchangeable copies need no particular order.
+
+    To score a query: commit its experimental structure under ``test_data/mmcifs/``,
+    then run the case in the mode you want to pin and read the measured CA-RMSD off the
+    log line in :func:`_maybe_assert_ca_rmsd`, leaving margin for hardware variance::
+
+        from openfold3.tests.inference.helpers import MMCIFS_DIR
+
+        Expectation(
+            ref_cif=MMCIFS_DIR / "1ubq.cif",
+            pred_chains=("A",),
+            ref_chains=("A",),
+            ca_rmsd_max={Mode(use_msa_server=True, use_templates=True): 2.0},
+        )
+    """
+
+    ref_cif: Path
+    pred_chains: tuple[str, ...]
+    ref_chains: tuple[str, ...]
+    ca_rmsd_max: Mapping[Mode, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class InferenceCase:
+    """A query set to run, plus optional per-query accuracy expectations.
+
+    ``build_query_set`` is deferred behind a callable so a missing examples directory
+    skips the case instead of breaking collection.
+    """
+
+    id: str
+    build_query_set: Callable[[], InferenceQuerySet]
+    #: Query name -> expectation. Queries absent are run but not scored — the default,
+    #: since scoring one needs a reference structure committed under
+    #: ``test_data/mmcifs/`` and a ceiling measured per mode.
+    expectations: Mapping[str, Expectation] = field(default_factory=dict)
+    marks: tuple = ()
+
+
 #: Each case builds an :class:`InferenceQuerySet`, either in memory or from a file in
-#: ``examples/example_inference_inputs``. Construction is deferred behind a callable so
-#: that a missing examples directory skips the case instead of breaking collection.
-#: Expected outputs are derived from the query names, so a case may hold any number of
-#: queries — adding another example is one row.
+#: ``examples/example_inference_inputs``. Expected outputs are derived from the query
+#: names, so a case may hold any number of queries — adding another example is one row,
+#: and costs one inference run per mode.
 CASES = [
-    pytest.param(partial(_inline_query_set, PROTEIN_CHAIN), id="protein_only"),
-    pytest.param(
-        partial(_inline_query_set, PROTEIN_CHAIN, LIGAND_CHAIN),
-        id="protein_and_ligand",
+    InferenceCase(
+        id="protein_only",
+        build_query_set=partial(query_set_from_chains, "query1", PROTEIN_CHAIN),
     ),
-    pytest.param(
-        partial(_example_query_set, "query_protein_ligand_multiple.json"),
+    InferenceCase(
+        id="protein_and_ligand",
+        build_query_set=partial(
+            query_set_from_chains, "query1", PROTEIN_CHAIN, LIGAND_CHAIN
+        ),
+    ),
+    InferenceCase(
+        id="ubiquitin",
+        build_query_set=partial(_example_query_set, "query_ubiquitin.json"),
+        marks=(requires_examples,),
+    ),
+    InferenceCase(
         id="protein_ligand_multiple",
-        marks=requires_examples,
+        build_query_set=partial(
+            _example_query_set, "query_protein_ligand_multiple.json"
+        ),
+        marks=(requires_examples,),
     ),
 ]
 
+CASE_PARAMS = [pytest.param(case, id=case.id, marks=case.marks) for case in CASES]
+MODE_PARAMS = [pytest.param(mode, id=mode.id) for mode in MODES]
+
+
+def _maybe_assert_ca_rmsd(
+    case: InferenceCase, query_name: str, mode: Mode, *, pred_cif: Path
+) -> None:
+    """Score one prediction against its reference, when the case declares one.
+
+    Always logs the measured CA-RMSD when a reference exists, so a run in an unscored
+    mode still tells you what ceiling to record for it.
+    """
+    expectation = case.expectations.get(query_name)
+    if expectation is None:
+        return
+
+    metrics = best_ca_rmsd(
+        pred_cif=pred_cif,
+        ref_cif=expectation.ref_cif,
+        pred_chains=expectation.pred_chains,
+        ref_chains=expectation.ref_chains,
+    )
+    logger.info(
+        "%s [%s] CA-RMSD %.2f Å (gdt_ts %.3f) vs %s",
+        query_name,
+        mode.id,
+        metrics["rmsd"],
+        metrics["gdt_ts"],
+        expectation.ref_cif.name,
+    )
+
+    ceiling = expectation.ca_rmsd_max.get(mode)
+    if ceiling is None:
+        return
+    assert metrics["rmsd"] < ceiling, (
+        f"{query_name} [{mode.id}]: CA-RMSD {metrics['rmsd']:.2f} Å against "
+        f"{expectation.ref_cif.name} exceeds the {ceiling} Å ceiling for this mode"
+    )
+
 
 @skip_unless_accelerator_available()
-@pytest.mark.parametrize("build_query_set", CASES)
-@pytest.mark.parametrize(
-    "use_templates", [False, True], ids=["no_templates", "templates"]
-)
-@pytest.mark.parametrize("use_msa_server", [False, True], ids=["no_msa", "msa"])
-def test_inference_writes_outputs(
-    build_query_set, use_msa_server, use_templates, tmp_path
-):
+@pytest.mark.parametrize("case", CASE_PARAMS)
+@pytest.mark.parametrize("mode", MODE_PARAMS)
+def test_inference_writes_outputs(case, mode, tmp_path):
     """Every query in the set writes the expected per-sample files, in every mode.
 
-    The two feature flags are independent branches of ``prepare_data``: without the MSA
-    server the query sequence is used single-sequence, and template preprocessing runs
-    on its own flag. Stacking the three parametrize marks gives the full cartesian
-    product, so each query set is exercised in all four modes.
+    Then, where the case declares an :class:`Expectation` for that query *and* that
+    mode, the prediction is scored against the experimental structure. Without that the
+    suite only shows inference ran, not that it produced something consistent with
+    experiment.
     """
-    query_set = build_query_set()
+    query_set = case.build_query_set()
     run_inference(
         query_set,
         tmp_path,
-        use_msa_server=use_msa_server,
-        use_templates=use_templates,
+        use_msa_server=mode.use_msa_server,
+        use_templates=mode.use_templates,
         num_diffusion_samples=1,
         # Isolate the template cache: without this it lands in a persistent /tmp dir
         # shared across runs, and the template-enabled cases here would see each
@@ -134,8 +230,8 @@ def test_inference_writes_outputs(
     )
     logger.info("Checking output contents at %s", tmp_path)
     for query_name in query_set.queries:
-        seed_dir = tmp_path / query_name / f"seed_{SEED}"
-        stem = f"{query_name}_seed_{SEED}_sample_1"
+        seed_dir = prediction_dir(tmp_path, query_name)
+        stem = prediction_stem(query_name, sample=1)
         expected_files = [
             f"{stem}_confidences.json",
             f"{stem}_confidences_aggregated.json",
@@ -146,6 +242,9 @@ def test_inference_writes_outputs(
             assert (seed_dir / name).exists(), (
                 f"Expected output file not found: {seed_dir / name}"
             )
+        _maybe_assert_ca_rmsd(
+            case, query_name, mode, pred_cif=seed_dir / f"{stem}_model.cif"
+        )
 
 
 if __name__ == "__main__":

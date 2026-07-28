@@ -22,18 +22,100 @@ accelerator and downloaded model weights; the test modules gate on that with
 import logging
 import os
 import textwrap
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+import openfold3
 from openfold3.core.config import config_utils
 from openfold3.entry_points.experiment_runner import InferenceExperimentRunner
 from openfold3.entry_points.validator import (
     InferenceExperimentConfig,
 )
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
+)
 
 logger = logging.getLogger(__name__)
+
+#: Committed experimental structures, used both as template inputs and RMSD references.
+MMCIFS_DIR = Path(openfold3.__file__).parent / "tests" / "test_data" / "mmcifs"
+
+#: Seed the outputs are written under. Comes from ``ExperimentSettings.seeds`` (default
+#: ``[42]``), which the runner yaml in :func:`run_inference` does not override — *not*
+#: from ``InferenceQuerySet.seeds``, which the runner ignores.
+SEED = 42
+
+
+@dataclass(frozen=True)
+class Mode:
+    """One inference feature combination.
+
+    These are the two independent branches of the data module's ``prepare_data``, and
+    each materially changes how close a prediction lands to the experimental structure:
+    with neither, the model runs single-sequence and for most targets misses the native
+    fold entirely. So this is the axis accuracy expectations are keyed on — a single
+    RMSD ceiling per target would be meaningless across all four.
+
+    Frozen (and therefore hashable) so it can key a per-mode threshold table.
+    """
+
+    use_msa_server: bool
+    use_templates: bool
+
+    @property
+    def id(self) -> str:
+        """Short label used for the pytest parameter id."""
+        msa = "msa" if self.use_msa_server else "no_msa"
+        templates = "templates" if self.use_templates else "no_templates"
+        return f"{msa}-{templates}"
+
+
+#: Every combination — the axis inference cases are parametrized over.
+MODES = tuple(
+    Mode(use_msa_server=use_msa_server, use_templates=use_templates)
+    for use_msa_server in (False, True)
+    for use_templates in (False, True)
+)
+
+
+def query_set_from_chains(query_name: str, *chains: Mapping) -> InferenceQuerySet:
+    """Build a single-query :class:`InferenceQuerySet` from raw chain dicts."""
+    return InferenceQuerySet.model_validate(
+        {"queries": {query_name: {"chains": list(chains)}}}
+    )
+
+
+def prediction_dir(output_dir: Path, query_name: str, *, seed: int = SEED) -> Path:
+    """Directory the runner writes one query's predictions into.
+
+    Mirrors ``InferenceExperimentRunner``: ``<output_dir>/<query>/seed_<seed>/``.
+    """
+    return output_dir / query_name / f"seed_{seed}"
+
+
+def prediction_stem(query_name: str, sample: int, *, seed: int = SEED) -> str:
+    """Filename prefix shared by one diffusion sample's output files."""
+    return f"{query_name}_seed_{seed}_sample_{sample}"
+
+
+def predicted_structure_cifs(
+    output_dir: Path, query_name: str, *, seed: int = SEED
+) -> list[Path]:
+    """Predicted model cifs for one query, ordered by diffusion sample number.
+
+    Sorted numerically rather than lexicographically so sample 10 does not land between
+    1 and 2.
+    """
+    directory = prediction_dir(output_dir, query_name, seed=seed)
+    return sorted(
+        directory.glob(f"{query_name}_seed_{seed}_sample_*_model.cif"),
+        key=lambda path: int(path.stem.rsplit("_sample_", 1)[1].split("_")[0]),
+    )
+
 
 inference_test_yaml_str = textwrap.dedent("""\
     model_update:
