@@ -1,7 +1,9 @@
 msa_computation_settings:
   msa_output_directory: ./colabfold_msas
-  cleanup_msa_dir: False
-  save_mappings: True 
+  msa_file_format: a3m
+  cleanup_msa_dir: false
+  save_mappings: true
+  # Move or delete raw/ before reusing this directory for another server request.
 
 template_preprocessor_settings:
   output_directory: ./colabfold_templates

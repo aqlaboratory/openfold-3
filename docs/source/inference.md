@@ -406,21 +406,32 @@ All settings for the ColabFold server and outputs can be set under [`msa_computa
 (34-saving-msa-outputs)=
 #### Saving MSA outputs
 
-By default, MSA outputs are written to a temporary directory and are deleted after prediction is complete. 
+By default, MSA outputs are written to a temporary directory. When a run uses
+the ColabFold MSA server, rank zero deletes the entire MSA directory after
+prediction if `cleanup_msa_dir` is `true`.
 
-These settings can be saved by changing the following fields:
+To keep both the processed MSAs and the raw response, use a persistent directory
+and disable cleanup:
 
 ```yaml
 msa_computation_settings:
   msa_output_directory: <custom path>
-  cleanup_msa_dir: False  # If False, msa paths will not be deleted between runs 
-  save_mappings: True 
+  msa_file_format: a3m
+  cleanup_msa_dir: false
+  save_mappings: true
 
 template_preprocessor_settings:
-  output_directory: <custom path> 
+  output_directory: <custom path>
 ```
 
-MSAs per chain are saved using a file / directory name that is the hash of the sequence. Mappings between the chain name, sequence, and representative ids can be saved via the `save_mappings` field. 
+The reusable per-sequence MSAs are stored under `main/` and `paired/` using
+representative IDs. The raw ColabFold files are kept under `raw/`.
+`save_mappings` records how the input chain names and sequences map to those
+representative IDs.
+
+The MSA client will not overwrite an existing `raw/` directory. Move or delete
+it, or choose a new `msa_output_directory`, before starting another server
+request.
 
 ---
 
@@ -433,8 +444,12 @@ msa_computation_settings:
 
 ---
 
-#### Save MSAs in A3M Format
-Choose the file format for saving MSAs retrieved from ColabFold:
+#### Choose the Processed MSA Format
+
+Choose the format for the reusable per-sequence MSAs under `main/` and
+`paired/`. Both formats can be passed to another OpenFold3 run. Use `a3m` for
+portable, inspectable text alignments; `npz` is the compressed default and is
+faster to parse:
 ```yaml
 msa_computation_settings:
   msa_file_format: a3m     # Options: a3m, npz (default: npz)
@@ -495,17 +510,24 @@ Each seed produces `l` (number of diffusion samples) structure predictions, and 
 
 ### 4.2 Processed MSAs (`main/` and `paired/`)
 Only created if `--use-msa-server=True`. <br/>
-Processed MSAs for each unique chain are saved as `.npz` files used to create input features for OpenFold3. 
+Processed MSAs for each unique chain are saved in the selected `npz` or `a3m`
+format and can be reused in another OpenFold3 run.
 If a chain is reused across multiple queries, its MSA is only computed once and named after the first occurrence. This reduces the number of queries to the ColabFold server.
 
 
-For a sequence with two representative chains, the final output directory would have this format:
+For two representative chains, the combined illustration below shows both
+possible layouts. A run writes only the format selected by `msa_file_format`;
+the `npz` files and `a3m` directories do not appear together:
 
 ```bash
 <msa_output_directory>
 ├── main
-│   ├── <hash of sequence A>.npz
-│   └── <hash of sequence B>.npz
+│   ├── <hash of sequence A>.npz                         # npz
+│   ├── <hash of sequence B>.npz
+│   ├── <hash of sequence A>                             # a3m
+│   │   └── colabfold_main.a3m
+│   └── <hash of sequence B>
+│       └── colabfold_main.a3m
 ├── mappings
 │   ├── chain_id_to_rep_id.json
 │   ├── query_name_to_complex_id.json
@@ -514,41 +536,56 @@ For a sequence with two representative chains, the final output directory would 
 │   └── seq_to_rep_id.json
 └── paired
     └── <hash of concatenation of sequences A and B>
-        ├── <hash of sequence A>.npz
-        └── <hash of sequence B>.npz
+        ├── <hash of sequence A>.npz                     # npz
+        ├── <hash of sequence B>.npz
+        ├── <hash of sequence A>                         # a3m
+        │   └── colabfold_paired.a3m
+        └── <hash of sequence B>
+            └── colabfold_paired.a3m
 ```
 
 
 If a query is a heteromeric protein complex (has at least two different protein chains) and `--use-msa-server` is enabled, **paired MSAs** are also generated. 
 If a set of chains with a specific stoichiometry is reused across multiple queries, for example if the same heterodimer is screened against multiple small molecule ligands, its set of paired MSAs is only computed once and named after the first occurrence. This reduces the number of queries to the ColabFold server. 
 
+The paired portion of the same combined illustration is:
+
 ```bash
 <msa_output_directory>
- ├── paired
-    └── <hash of concatenation of sequences A and B> 
-        ├── <hash of sequence A>.npz
-        └── <hash of sequence B>.npz
+└── paired
+    └── <hash of concatenation of sequences A and B>
+        ├── <hash of sequence A>.npz                     # npz
+        ├── <hash of sequence B>.npz
+        ├── <hash of sequence A>                         # a3m
+        │   └── colabfold_paired.a3m
+        └── <hash of sequence B>
+            └── colabfold_paired.a3m
 ```
 
-In summary, we submit a total of 1 + n queries to the ColabFold MSA server per run - one query for the set of all unqiue protein sequences in the inference query json file (unpaired/main MSAs) and n additional queries for the collection of unqiue protein chain combinations for heteromeric complexes (paired MSAs).
+In summary, we submit a total of 1 + n queries to the ColabFold MSA server per run - one query for the set of all unique protein sequences in the inference query json file (unpaired/main MSAs) and n additional queries for the collection of unique protein chain combinations for heteromeric complexes (paired MSAs).
 
 The MSA deduplication behavior is also present for precomputed MSAs. See the {ref}`chain deduplication utility <4-msa-reusing-utility>` section for details.
 
-Note: The raw ColabFold MSA `.a3m` alignment files and scripts are saved to `<msa_output_directory>/raw/`. <br/> 
-This directory is then deleted upon completion of MSA processing by the OpenFold3 workflow to avoid disruption to future inference submissions. <br/>
+The raw ColabFold `.a3m` files and helper scripts are stored in
+`<msa_output_directory>/raw/`. Set `cleanup_msa_dir: false` to keep them after
+prediction. Before submitting another server request to the same output
+directory, move or delete `raw/`.
 
-To manually keep the raw ColabFold outputs, remove this line here [here](https://github.com/aqlaboratory/openfold-3/blob/9d3ff681560cdd65fa92f80f08a4ab5becaebf87/openfold3/core/data/tools/colabfold_msa_server.py#L933). <br/>
+### 4.3 Mapping outputs (`mappings/`)
 
-### 4.3 Mapping outputs (`mapping/`)
-
-If the same `msa_output_directory` is used between runs, the `rep_id_to_seq.json` and `seq_to_rep_id.json` mappings are updated with the new sequences, while the other mappings are overwritten.
+If the same `msa_output_directory` is used between runs, the
+`rep_id_to_seq.json` and `seq_to_rep_id.json` mappings are updated with the new
+sequences, while the other mappings are overwritten. A preserved `raw/`
+directory must first be moved or deleted before a new server request.
 
 ```bash
 <msa_output_directory>
- ├── paired
-    └── <hash of concatenation of sequences A and B> 
-        ├── <hash of sequence A>.npz
-        └── <hash of sequence B>.npz
+└── mappings
+    ├── chain_id_to_rep_id.json
+    ├── query_name_to_complex_id.json
+    ├── README.md
+    ├── rep_id_to_seq.json
+    └── seq_to_rep_id.json
 ```
 
 ### 4.4 Query Metadata 

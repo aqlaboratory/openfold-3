@@ -229,12 +229,12 @@ Configures the ColabFold MSA server integration.
 **Pydantic Model**: [`MsaComputationSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py#L904)
 
 **All Options**:
-- `msa_file_format` *(Literal["npz", "a3m"])*: Format for saved MSAs (default: `npz`)
+- `msa_file_format` *(Literal["npz", "a3m"])*: Format for reusable per-sequence MSAs under `main/` and `paired/`; `a3m` is portable, inspectable text, while `npz` is the compressed default and is faster to parse (default: `npz`)
 - `server_user_agent` *(str)*: User agent string (default: `openfold`)
 - `server_url` *(Url)*: ColabFold server URL (default: `https://api.colabfold.com`)
 - `save_mappings` *(bool)*: Save sequence ID mappings (default: `true`)
 - `msa_output_directory` *(Path)*: Directory for MSA outputs (default: `temporary directory/of3-of-<user>/colabfold_msas`)
-- `cleanup_msa_dir` *(bool)*: Delete MSAs after processing (default: `true`)
+- `cleanup_msa_dir` *(bool)*: Delete the entire MSA output directory after a successful prediction; when `false`, move or delete the preserved `raw/` directory before another server request (default: `true`)
 
 **Example**:
 ```yaml
@@ -295,4 +295,3 @@ For the complete list of default values, see the Pydantic model classes in:
 - [`openfold3/projects/of3_all_atom/config/dataset_config_components.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py) - MSA and template settings
 - [`openfold3/core/data/tools/colabfold_msa_server.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py) - MSA server settings
 - [`openfold3/core/data/pipelines/preprocessing/template.py`](http://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py) - Template preprocessing settings
-

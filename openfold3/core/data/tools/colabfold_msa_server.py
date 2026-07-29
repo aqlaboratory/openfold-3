@@ -1160,6 +1160,11 @@ def preprocess_colabfold_msas(
         InferenceQuerySet:
             The updated inference query set with the MSA file paths added.
 
+    Raises:
+        FileExistsError:
+            If `output_directory/raw` already exists. Move or remove that directory
+            before retrying.
+
     Mapping:
         First, maps each sequence to a representative ID (deduplicate repeated
         sequences). Then maps each set of sequences in a structure to a representative
@@ -1200,19 +1205,21 @@ def preprocess_colabfold_msas(
     output_directory = compute_settings.msa_output_directory
     logger.warning(f"Using output directory: {output_directory} for ColabFold MSAs.")
 
+    raw_dir = output_directory / "raw"
+    try:
+        # Creating `raw/` is the reservation. A second process fails here.
+        raw_dir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        raise FileExistsError(
+            f"ColabFold raw output directory already exists: {raw_dir}\n"
+            "Move or remove it before starting another MSA-server run with this "
+            "output directory. OpenFold3 will not overwrite or reuse existing raw "
+            "output because it may belong to a different query."
+        ) from None
+
     # Save mappings to file
     if compute_settings.save_mappings:
         save_colabfold_mappings(colabfold_mapper, output_directory)
-
-    # Abort early if a stale raw directory exists — it contains unvalidated
-    # out.tar.gz files that would be silently reused for the wrong query.
-    raw_dir = output_directory / "raw"
-    if raw_dir.exists():
-        raise FileExistsError(
-            f"ColabFold raw directory already exists: {raw_dir}\n"
-            "This is likely left over from a previous failed run. "
-            "Please remove it before starting a new run."
-        )
 
     # Run batch queries for main and paired MSAs
     colabfold_query_runner = ColabFoldQueryRunner(

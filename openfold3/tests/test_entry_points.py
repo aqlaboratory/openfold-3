@@ -630,6 +630,79 @@ class TestInferenceCommandLineSettings:
         assert expt_config.data_module_args.data_seed == expected_data_seed
 
 
+class TestInferenceCleanup:
+    @pytest.mark.parametrize(
+        "cleanup_msa_dir,use_msa_server,rank,should_remove",
+        [
+            pytest.param(False, True, 0, False, id="preserve"),
+            pytest.param(True, True, 0, True, id="remove"),
+            pytest.param(True, True, 1, False, id="nonzero-rank"),
+            pytest.param(True, False, 0, False, id="msa-server-disabled"),
+        ],
+    )
+    def test_cleanup_respects_msa_output_lifecycle(
+        self,
+        cleanup_msa_dir,
+        use_msa_server,
+        rank,
+        should_remove,
+        tmp_path,
+        dummy_ckpt_file,
+        capsys,
+    ):
+        msa_output_dir = tmp_path / "msa"
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            cache_path=tmp_path / "cache",
+            experiment_settings={
+                "output_dir": tmp_path / "inference",
+                "log_dir": tmp_path / "logs",
+                "use_msa_server": use_msa_server,
+                "use_templates": False,
+            },
+            msa_computation_settings={
+                "msa_output_directory": msa_output_dir,
+                "cleanup_msa_dir": cleanup_msa_dir,
+            },
+            template_preprocessor_settings={
+                "output_directory": tmp_path / "templates",
+            },
+        )
+        expt_runner = InferenceExperimentRunner(expt_config)
+
+        sentinel_contents = {
+            Path("raw/main/out.tar.gz"): b"raw server response",
+            Path("main/rep.npz"): b"main alignment",
+            Path("paired/complex/rep.npz"): b"paired alignment",
+            Path("mappings/seq_to_rep_id.json"): b'{"sequence": "rep"}\n',
+        }
+        for relative_path, contents in sentinel_contents.items():
+            sentinel_path = msa_output_dir / relative_path
+            sentinel_path.parent.mkdir(parents=True, exist_ok=True)
+            sentinel_path.write_bytes(contents)
+
+        # Keep this test focused on MSA cleanup instead of empty-log cleanup.
+        (expt_runner.log_dir / "keep.log").write_text("keep")
+
+        with patch(
+            "openfold3.entry_points.experiment_runner._get_rank",
+            return_value=rank,
+        ):
+            expt_runner.cleanup()
+
+        captured = capsys.readouterr()
+        if should_remove:
+            assert not msa_output_dir.exists()
+        else:
+            assert msa_output_dir.is_dir()
+            assert {
+                path.relative_to(msa_output_dir): path.read_bytes()
+                for path in msa_output_dir.rglob("*")
+                if path.is_file()
+            } == sentinel_contents
+            assert "Cleaning up MSA directories..." not in captured.out
+
+
 class TestInferenceCheckpointLoading:
     def test_inference_ckpt_path_user_defined(self, dummy_ckpt_file):
         expt_config = InferenceExperimentConfig.model_validate(

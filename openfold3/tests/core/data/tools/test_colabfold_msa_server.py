@@ -59,6 +59,9 @@ _MOCK_FETCH_TARGET = (
 _MOCK_QUERY_TARGET = (
     "openfold3.core.data.tools.colabfold_msa_server.query_colabfold_msa_server"
 )
+_MOCK_SAVE_MAPPINGS_TARGET = (
+    "openfold3.core.data.tools.colabfold_msa_server.save_colabfold_mappings"
+)
 
 # Realistic label->author mappings for test PDB entries.
 # 1RNB: label B -> author A (protein), label A -> author C (DNA)
@@ -532,28 +535,149 @@ class TestColabFoldQueryRunner:
                     f"is empty, but got {chain.template_entry_chain_ids}"
                 )
 
-    def test_preprocess_raises_if_raw_dir_exists(self, tmp_path):
-        """preprocess_colabfold_msas should raise FileExistsError if raw/ exists.
-
-        A leftover raw/ directory from a prior crashed run contains stale
-        out.tar.gz files that would be silently reused for the wrong query.
-        """
+    @pytest.mark.parametrize(
+        "raw_payload",
+        [
+            pytest.param(None, id="empty"),
+            pytest.param(b"existing raw output", id="populated"),
+        ],
+    )
+    @patch(_MOCK_QUERY_TARGET)
+    def test_preprocess_rejects_raw_dir_before_side_effects(
+        self, mock_query, tmp_path, raw_payload
+    ):
+        """Existing raw output should stop preprocessing before disk writes."""
         query = self._construct_monomer_query("TESTSEQUENCE")
         msa_compute_settings = MsaComputationSettings(
             msa_file_format="npz",
             server_user_agent="test-agent",
             server_url="https://dummy.url",
+            save_mappings=True,
             msa_output_directory=tmp_path,
             cleanup_msa_dir=False,
         )
 
+        mapping_contents = {
+            "seq_to_rep_id.json": b'{"existing-sequence": "existing-rep"}\n',
+            "rep_id_to_seq.json": b'{"existing-rep": "existing-sequence"}\n',
+            "chain_id_to_rep_id.json": b'{"existing-chain": "existing-rep"}\n',
+            "query_name_to_complex_id.json": b'{"existing-query": "existing-complex"}\n',
+            "README.md": b"# Existing mapping files\n",
+        }
+        mappings_dir = tmp_path / "mappings"
+        mappings_dir.mkdir(parents=True)
+        for filename, contents in mapping_contents.items():
+            (mappings_dir / filename).write_bytes(contents)
+
         stale_raw_dir = tmp_path / "raw"
         stale_raw_dir.mkdir(parents=True)
+        if raw_payload is not None:
+            (stale_raw_dir / "out.tar.gz").write_bytes(raw_payload)
+        raw_contents = {
+            path.relative_to(stale_raw_dir): path.read_bytes()
+            for path in stale_raw_dir.rglob("*")
+            if path.is_file()
+        }
 
         with pytest.raises(FileExistsError, match="raw"):
             preprocess_colabfold_msas(
                 inference_query_set=query, compute_settings=msa_compute_settings
             )
+
+        mock_query.assert_not_called()
+        assert stale_raw_dir.is_dir()
+        assert {
+            path.relative_to(stale_raw_dir): path.read_bytes()
+            for path in stale_raw_dir.rglob("*")
+            if path.is_file()
+        } == raw_contents
+        assert {
+            path.name: path.read_bytes()
+            for path in mappings_dir.iterdir()
+            if path.is_file()
+        } == mapping_contents
+
+    @patch(_MOCK_QUERY_TARGET)
+    @patch(_MOCK_SAVE_MAPPINGS_TARGET)
+    def test_preprocess_reserves_raw_dir_before_mapping_write(
+        self, mock_save_mappings, mock_query, tmp_path
+    ):
+        """The raw directory should be claimed before persistent writes begin."""
+        query = self._construct_monomer_query("TESTSEQUENCE")
+        msa_compute_settings = MsaComputationSettings(
+            msa_file_format="npz",
+            server_user_agent="test-agent",
+            server_url="https://dummy.url",
+            save_mappings=True,
+            msa_output_directory=tmp_path,
+            cleanup_msa_dir=False,
+        )
+        retry_settings = msa_compute_settings.model_copy(
+            update={"save_mappings": False}
+        )
+        raw_dir = tmp_path / "raw"
+
+        def observe_reservation(*_args):
+            assert raw_dir.is_dir()
+            # Re-enter at the first persistent write. The second call must see
+            # the reservation before either caller reaches the server.
+            with pytest.raises(FileExistsError, match="raw output directory"):
+                preprocess_colabfold_msas(
+                    inference_query_set=query,
+                    compute_settings=retry_settings,
+                )
+            raise RuntimeError("reservation observed")
+
+        mock_save_mappings.side_effect = observe_reservation
+
+        with pytest.raises(RuntimeError, match="reservation observed"):
+            preprocess_colabfold_msas(
+                inference_query_set=query,
+                compute_settings=msa_compute_settings,
+            )
+
+        mock_save_mappings.assert_called_once()
+        mock_query.assert_not_called()
+        assert raw_dir.is_dir()
+
+    @patch(_MOCK_QUERY_TARGET)
+    def test_preprocess_validates_query_before_raw_dir(self, mock_query, tmp_path):
+        """Query validation should keep precedence over the raw-output guard."""
+        duplicate_chain_query = InferenceQuerySet.model_validate(
+            {
+                "queries": {
+                    "query1": {
+                        "chains": [
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": ["A"],
+                                "sequence": "FIRST",
+                            },
+                            {
+                                "molecule_type": "protein",
+                                "chain_ids": ["A"],
+                                "sequence": "FIRST",
+                            },
+                        ]
+                    }
+                }
+            }
+        )
+        msa_compute_settings = MsaComputationSettings(
+            server_user_agent="test-agent",
+            server_url="https://dummy.url",
+            msa_output_directory=tmp_path,
+            cleanup_msa_dir=False,
+        )
+        (tmp_path / "raw").mkdir(parents=True)
+
+        with pytest.raises(RuntimeError, match="Duplicate chain IDs"):
+            preprocess_colabfold_msas(
+                inference_query_set=duplicate_chain_query,
+                compute_settings=msa_compute_settings,
+            )
+
+        mock_query.assert_not_called()
 
 
 class _ValidationCase(NamedTuple):
