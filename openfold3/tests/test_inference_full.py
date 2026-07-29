@@ -243,6 +243,34 @@ CASES = [
         with_template_rmsd_max_angstrom=2.0,
         rmsd_separation_min_angstrom=5.0,
     ),
+    # Human HCK (SH3-SH2-kinase) templated on c-Src 1Y57 — a *homologous* template
+    # (61.7% identity to 1Y57_A, with indels), unlike 1a8q's self-template. This is the
+    # realistic user-supplied-template case, and the one that regressed in issue #294:
+    # gapped alignment columns reached the template cache, the query/template residue
+    # counts disagreed, and the template was silently dropped.
+    #
+    # Observed on of3-p2-155k (5 samples each): off mean 23.7 Å (21.8-26.1), on mean
+    # 12.7 Å (8.6-22.6). Expect partial improvement, not the near-native fit of a
+    # self-template, and note the on-condition samples spread widely (one lands near
+    # the no-template value), so the mean is the meaningful quantity and the
+    # with-template bound is deliberately loose. If templates are ignored again,
+    # on collapses onto off (~23.7 Å) and both the max and separation checks fail.
+    TemplateRmsdCase(
+        pdb_id="1y57",
+        chain="A",
+        sequence=(
+            "DIIVVALYDYEAIHHEDLSFQKGDQMVVLEESGEWWKARSLATRKEGYIPSNYVARVDSLETEEWFFKGIS"
+            "RKDAERQLLAPGNMLGSFMIRDSETTKGSYSLSVRDYDPRQGDTVKHYKIRTLDNGGFYISPRSTFSTLQE"
+            "LVDHYKKGNDGLCQKLSVPCMSSKPQKPWEKDAWEIPRESLKLEKKLGAGQFGEVWMATYNKHTKVAVKTM"
+            "KPGSMSVEAFLAEANVMKTLQHDKLVKLHAVVTKEPIYIITEFMAKGSLLDFLKSDEGSKQPLPKLIDFSA"
+            "QIAEGMAFIEQRNYIHRDLRAANILVSASLVCKIADFGLARVIEDNEYTAREGAKFPIKWTAPEAINFGSF"
+            "TIKSDVWSFGILLMEIVTYGRIPYPGMSNPEVIRALERGYRMPRPENCPEELYNIMMRCWKNRPEERPTFE"
+            "YIQSVLDDFYTATESQYQQQP"
+        ),
+        no_template_rmsd_min_angstrom=15.0,
+        with_template_rmsd_max_angstrom=18.0,
+        rmsd_separation_min_angstrom=4.0,
+    ),
 ]
 
 
