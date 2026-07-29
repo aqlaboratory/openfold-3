@@ -77,9 +77,6 @@ optional-dependencies.cuequivariance = [
 optional-dependencies.deepspeed = [
     "deepspeed>=0.18.7",
 ]
-optional-dependencies.smooth-lddt-kernel = [
-    "ninja",
-]
 
 [project.scripts]
 run_openfold="openfold3.run_openfold:cli"
