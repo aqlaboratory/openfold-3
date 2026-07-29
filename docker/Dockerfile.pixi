@@ -17,7 +17,7 @@ ARG BASE_IMAGE=ubuntu:22.04
 # === Builder stage: install pixi and resolve environment ===
 FROM ${BASE_IMAGE} AS builder
 
-ARG PIXI_VERSION=v0.68.0
+ARG PIXI_VERSION=v0.72.0
 ARG PIXI_ENV=openfold3-cuda12
 
 # Install minimal system dependencies
@@ -39,22 +39,21 @@ WORKDIR /opt/pixi-project
 COPY pixi.toml pixi.lock pyproject.toml ./
 COPY openfold3/__init__.py ./openfold3/
 
-# Bypass GPU detection during build — pixi's cuda12/cuda13 features declare
-# system-requirements.cuda which would fail without a GPU driver present.
-# Extract the CUDA feature name from PIXI_ENV (e.g., "openfold3-cuda12" -> "cuda12")
-# and look up its system-requirements.cuda value from pixi.toml.
-RUN CUDA_FEATURE=$(echo "${PIXI_ENV}" | grep -oP 'cuda\d+') && \
-    if [ -n "${CUDA_FEATURE}" ]; then \
-        CUDA_VERSION=$(grep -A1 "\[feature\.${CUDA_FEATURE}\.system-requirements\]" pixi.toml \
-            | grep -oP 'cuda\s*=\s*"\K[^"]+') && \
-        export CONDA_OVERRIDE_CUDA="${CUDA_VERSION}"; \
-    fi && \
+# Bypass GPU detection during build: the cuda12/cuda13 environments declare a
+# `cuda` system requirement that pixi/rattler validates against the host's
+# virtual packages, which fails on a GPU-less build machine. Advertise a matching
+# CUDA version via CONDA_OVERRIDE_CUDA so the frozen install is accepted. This has
+# no effect on what gets installed — `--frozen` installs exactly from pixi.lock.
+RUN case "${PIXI_ENV}" in \
+        *cuda12*) export CONDA_OVERRIDE_CUDA=12.0 ;; \
+        *cuda13*) export CONDA_OVERRIDE_CUDA=13.0 ;; \
+    esac && \
     pixi install --frozen -e ${PIXI_ENV}
 
 # === Devel stage: lean runtime image with pixi activation ===
 FROM ${BASE_IMAGE} AS devel
 
-ARG PIXI_VERSION=v0.68.0
+ARG PIXI_VERSION=v0.72.0
 ARG PIXI_ENV=openfold3-cuda12
 
 # Install runtime system dependencies
@@ -82,12 +81,11 @@ RUN mkdir -p ./.pixi/envs/${PIXI_ENV}/caches/triton \
 
 # Generate activation script — this sets all env vars from pixi.toml features
 # (CUTLASS_PATH, TRITON_PTXAS_PATH, TRITON_CACHE_DIR, TORCH_EXTENSIONS_DIR, etc.)
-RUN CUDA_FEATURE=$(echo "${PIXI_ENV}" | grep -oP 'cuda\d+') && \
-    if [ -n "${CUDA_FEATURE}" ]; then \
-        CUDA_VERSION=$(grep -A1 "\[feature\.${CUDA_FEATURE}\.system-requirements\]" pixi.toml \
-            | grep -oP 'cuda\s*=\s*"\K[^"]+') && \
-        export CONDA_OVERRIDE_CUDA="${CUDA_VERSION}"; \
-    fi && \
+# CONDA_OVERRIDE_CUDA bypasses GPU detection during build (see builder stage).
+RUN case "${PIXI_ENV}" in \
+        *cuda12*) export CONDA_OVERRIDE_CUDA=12.0 ;; \
+        *cuda13*) export CONDA_OVERRIDE_CUDA=13.0 ;; \
+    esac && \
     pixi shell-hook -e ${PIXI_ENV} -s bash > /opt/activate.sh
 
 # These env vars are not managed by pixi activation

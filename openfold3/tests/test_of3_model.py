@@ -20,9 +20,9 @@ from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
-from openfold3.tests import compare_utils
 from openfold3.tests.config import consts
-from openfold3.tests.data_utils import random_of3_features
+from openfold3.tests.utils import compare_utils
+from openfold3.tests.utils.data_utils import random_of3_features
 
 
 class TestOF3Model:
@@ -37,6 +37,7 @@ class TestOF3Model:
         reduce_model_size=True,
         use_deepspeed_evo_attention=False,
         use_triton_triangle_kernels=False,
+        chunk_size=None,
     ):
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -59,8 +60,13 @@ class TestOF3Model:
             use_deepspeed_evo_attention
         )
 
-        if use_triton_triangle_kernels:
-            config.settings.memory.eval.use_triton_triangle_kernels = True
+        config.settings.memory.eval.use_triton_triangle_kernels = (
+            use_triton_triangle_kernels
+        )
+        if chunk_size is not None:
+            config.settings.memory.eval.chunk_size = chunk_size
+            assert not train
+
         config.architecture.loss_module.diffusion.chunk_size = 16
 
         of3 = OpenFold3AllAtom(config).to(device=device, dtype=dtype)
@@ -153,8 +159,28 @@ class TestOF3Model:
             use_deepspeed_evo_attention=False,
         )
 
+    def test_shape_small_chunk_size_one(self):
+        batch_size = consts.batch_size
+        n_token = 18
+        n_msa = 10
+        n_templ = 3
+
+        self.run_model(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=n_msa,
+            n_templ=n_templ,
+            dtype=torch.float32,
+            train=False,
+            reduce_model_size=True,
+            use_deepspeed_evo_attention=False,
+            use_triton_triangle_kernels=False,
+            chunk_size=1,
+        )
+
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_evo_attn_available()
     @pytest.mark.parametrize(
         "dtype", [torch.float32, torch.bfloat16], ids=lambda d: f"dtype={d}"
     )
@@ -184,6 +210,7 @@ class TestOF3Model:
     @pytest.mark.slow
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_evo_attn_available()
     @pytest.mark.parametrize(
         "dtype", [torch.float32, torch.bfloat16], ids=lambda d: f"dtype={d}"
     )
@@ -208,6 +235,7 @@ class TestOF3Model:
 
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_evo_attn_available()
     def test_shape_large_bf16_train(self):
         batch_size = 1
         n_token = 384

@@ -11,8 +11,11 @@ predict:
   settings:
     memory:
       eval:
-        # This chunk size is the minimum value, it will be auto-tuned by default
-        chunk_size: 4
+        # When chunk-size tuning is enabled (the default), this is the maximum
+        # tried; the tuner chooses the largest power of 2 up to this (plus the
+        # value itself if not a power of 2) that doesn't OOM. When tuning is
+        # disabled, this value is used as-is.
+        chunk_size: 1024
         offload_inference:
           confidence_heads: true
           token_cutoff: 2800

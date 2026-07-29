@@ -72,13 +72,31 @@ conda create -n openfold3 python=3.13
 pip install openfold3
 ```
 
-to install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, use: 
+### Installation with kernels
+
+Using Attention kernels compatible with your system can provide 4-5x speedup for inference on long (>1000 residue) sequences. We currently support 3 different kernels 
+
+**Deepspeed** 
+Installation of Deepspeed requires installation of [Nvidia CUTLASS](https://github.com/NVIDIA/cutlass)
+
+Nvidia CUTLASS may be installed [directly from source](https://docs.nvidia.com/cutlass/latest/media/docs/cpp/quickstart.html). 
+
+Alternatively, a [pypi package of nvidia-cutlass](https://pypi.org/project/nvidia-cutlass/) is available, but it is no longer being maintained after version 4.2.0. To use this package, run `pip install nvidia-cutlass && export CUTLASS_PATH=DS_USE_CUTLASS_PYTHON_BINDINGS`
+
+Once nvidia cutlass is installed, the deepspeed extension may be installed with
+
+```bash
+pip install openfold3[deepspeed]
+```
+
+**cuEquivariance** 
+To install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, use: 
 
 ```bash
 pip install openfold3[cuequivariance]
 ```
 
-To use AMD ROCm-compatible Triton kernels, first install the ROCm PyTorch wheel (which bundles ROCm Triton), then install openfold3:
+**Triton** To use AMD ROCm-compatible Triton kernels, first install the ROCm PyTorch wheel (which bundles ROCm Triton), then install openfold3:
 
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
@@ -101,7 +119,7 @@ OpenFold may need a few environment variables set so CUDA, compilation, and JIT-
 - `CUDA_HOME` should point to the CUDA installation. On many HPC clusters you will this can be set by loading the appropriate toolchain using environment modules, for example `module load cuda`.  If you do not set this you will likely get a `No such file or directory: '/usr/local/cuda/bin/nvcc'` error. 
 - `CUTLASS_PATH` will need to be set for most systems. If you do not set this you will get Deepspeed related errors such as `Error: Unable to JIT load the evoformer_attn op`. Generally this can be set using 
     ```bash
-    # Start your environment which as openfold3 installed
+    # Start your environment which has openfold3 installed
     source .venv/bin/activate
     # Set CUTLASS_PATH using the resolved path  
     export CUTLASS_PATH=$(python - << 'PY'
@@ -161,7 +179,7 @@ gh auth token | docker login ghcr.io -u $(gh api user --jq .login) --password-st
 Pull the image itself 
 
 ```bash
-docker pull ghcr.io/aqlaboratory/openfold-3/openfold3-docker:0.4.1
+docker pull ghcr.io/aqlaboratory/openfold-3/openfold3-docker:0.4.2
 ```
 
 ### Building the OpenFold3 Docker Image 
@@ -179,10 +197,16 @@ On the first inference run, default model parameters will be downloaded to the `
 
 ### Using `setup_openfold` 
 
-We provide a one-stop binary that sets up openfold and runs integration tests. This binary can be called with:
+We provide a one-stop binary that sets up openfold and runs integration tests.
 
-```bash
-setup_openfold
+```
+Usage: setup_openfold [OPTIONS]
+
+Options:
+  --non-interactive  Non-interactively run setup using all default config
+                     values.
+  --config FILE      Path to a JSON file containing an OpenFoldSetupConfig.
+  --help             Show this message and exit.
 ```
 
 This script will:

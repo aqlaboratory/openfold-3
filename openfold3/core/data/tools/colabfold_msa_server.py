@@ -53,6 +53,15 @@ TQDM_BAR_FORMAT = (
 )
 
 
+class ColabFoldServerResultError(RuntimeError):
+    """Raised when a ColabFold MSA server download is missing expected outputs.
+
+    The public ColabFold server can return the wrong cached job for a ticket --
+    e.g. an unpaired MSA (no ``pair.a3m``) in response to a paired request -- which
+    otherwise surfaces as an opaque ``FileNotFoundError`` downstream (issue #269).
+    """
+
+
 class MsaServerPairingStrategy(IntEnum):
     """Enum for MSA server pairing strategy."""
 
@@ -61,6 +70,50 @@ class MsaServerPairingStrategy(IntEnum):
 
     def __str__(self) -> str:
         return self.name.lower()
+
+
+def _validate_expected_msa_files(
+    a3m_files: list[str], tar_gz_file: str, *, use_pairing: bool
+) -> None:
+    """Verify the download produced every expected a3m file (present and non-empty).
+
+    Guards against the ColabFold server returning an unexpected or incomplete result
+    (issue #269): instead of letting a later ``open()`` raise a bare
+    ``FileNotFoundError``, raise a clear error naming the expected files, the missing
+    ones, and what the downloaded tarball actually contained.
+
+    Args:
+        a3m_files: Absolute paths of the a3m files this query is expected to yield.
+        tar_gz_file: Path of the downloaded ``out.tar.gz`` (read only for diagnostics).
+        use_pairing: Whether this was a paired query (used only for the message).
+
+    Raises:
+        ColabFoldServerResultError: If any expected file is missing or empty.
+    """
+    missing: list[str] = [
+        f for f in a3m_files if not os.path.isfile(f) or os.path.getsize(f) == 0
+    ]
+    if not missing:
+        return
+
+    try:
+        with tarfile.open(tar_gz_file) as tar_gz:
+            members: list[str] = sorted(m.name for m in tar_gz.getmembers())
+    except (tarfile.TarError, OSError):
+        members = ["<missing or unreadable out.tar.gz>"]
+
+    query_kind = "paired" if use_pairing else "unpaired"
+    raise ColabFoldServerResultError(
+        f"ColabFold {query_kind} MSA query returned an unexpected or incomplete "
+        "result.\n"
+        f"  expected (non-empty): {[os.path.basename(f) for f in a3m_files]}\n"
+        f"  missing/empty:        {[os.path.basename(f) for f in missing]}\n"
+        f"  tarball contained:    {members}\n"
+        f"  download:             {tar_gz_file}\n"
+        "The MSA server likely returned the wrong cached job for this query "
+        "(e.g. an unpaired result for a paired request; see issue #269). Delete the "
+        "raw output directory and retry."
+    )
 
 
 def query_colabfold_msa_server(
@@ -338,6 +391,10 @@ def query_colabfold_msa_server(
     if any(not os.path.isfile(a3m_file) for a3m_file in a3m_files):
         with tarfile.open(tar_gz_file) as tar_gz:
             tar_gz.extractall(path)
+
+    # Validate the download produced the expected outputs before any downstream
+    # code blindly opens them (issue #269).
+    _validate_expected_msa_files(a3m_files, tar_gz_file, use_pairing=use_pairing)
 
     # Process templates
     if use_templates:

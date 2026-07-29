@@ -258,7 +258,7 @@ class InferenceDataset(Dataset):
             n_templates=self.template_settings.n_templates,
             take_top_k=self.template_settings.take_top_k,
             min_n_tokens_per_chain=self.template_settings.min_n_tokens_per_chain,
-            template_cache_directory=None,
+            template_cache_directory=self.template_preprocessor_settings.cache_directory,
             assembly_data=assembly_data,
             template_structures_directory=self.template_preprocessor_settings.structure_directory,
             template_structure_array_directory=self.template_preprocessor_settings.structure_array_directory,

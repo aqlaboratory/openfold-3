@@ -192,8 +192,13 @@ def chain_connected_molecule_iter(
     root_atoms = chain_starts[:-1]
     root_atom_repeated = np.repeat(root_atoms, np.diff(chain_starts))
 
-    # Like [(0, 0), (0, 1), ..., (N, N), (N, N+1), ...]
-    root_atom_bond_pairs = np.column_stack((root_atom_repeated, np.arange(n_atoms)))
+    # Creates root atom bond list [(0, 1), (0, 2), (1, 2), ..., (N, N+1), ...]
+    # Exclude self-bonds (i, i) that occur at each chain's first atom
+    all_indices = np.arange(n_atoms)
+    non_self = root_atom_repeated != all_indices
+    root_atom_bond_pairs = np.column_stack(
+        (root_atom_repeated[non_self], all_indices[non_self])
+    )
 
     # Add the artificial bonds to the pseudo-copy, which will keep the original bond
     # list unaffected

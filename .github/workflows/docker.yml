@@ -32,12 +32,25 @@ jobs:
           aws-region: us-east-1
       - name: Create cloud runner
         id: aws-start
-        uses: omsf/start-aws-gha-runner@v1.1.1
+        uses: omsf/start-aws-gha-runner@v1.3.0
         with:
           aws_image_id: ami-0754c6e75b3b97dcd  # Deep Learning AMI Neuron (Ubuntu 22.04)
           aws_instance_type: trn1.2xlarge
           aws_home_dir: /home/ubuntu
           aws_root_device_size: 200
+          aws_tags: >-
+            [
+              {"Key":"Name","Value":"of-gha-runner"},
+              {"Key":"Repository","Value":"${{ github.repository }}"},
+              {"Key":"Workflow","Value":"${{ github.workflow }}"},
+              {"Key":"RunId","Value":"${{ github.run_id }}"},
+              {"Key":"RunNumber","Value":"${{ github.run_number }}"},
+              {"Key":"RunAttempt","Value":"${{ github.run_attempt }}"},
+              {"Key":"Actor","Value":"${{ github.actor }}"},
+              {"Key":"EventName","Value":"${{ github.event_name }}"},
+              {"Key":"Ref","Value":"${{ github.ref_name }}"},
+              {"Key":"Sha","Value":"${{ github.sha }}"}
+            ]
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
 
@@ -53,7 +66,7 @@ jobs:
       id-token: write
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -76,7 +89,7 @@ jobs:
 
       - name: Extract metadata for conda image
         id: meta-conda
-        uses: docker/metadata-action@3caf19fbe3db1a1a6a8bdce189e09ac0ed35d513
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
         with:
           images: |
             name=ghcr.io/${{ github.repository }}/openfold3-docker
@@ -88,7 +101,7 @@ jobs:
 
       - name: Build and push conda image
         id: push-conda
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
           file: docker/Dockerfile.conda
@@ -109,7 +122,7 @@ jobs:
 
       - name: Extract metadata for pixi image
         id: meta-pixi
-        uses: docker/metadata-action@3caf19fbe3db1a1a6a8bdce189e09ac0ed35d513
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
         with:
           images: |
             name=ghcr.io/${{ github.repository }}/openfold3-docker
@@ -121,7 +134,7 @@ jobs:
 
       - name: Build and push pixi image
         id: push-pixi
-        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
           context: .
           file: docker/Dockerfile.pixi

@@ -23,7 +23,7 @@ import pytest
 import torch
 from torch.nn import functional as F
 
-import openfold3.tests.compare_utils as compare_utils
+import openfold3.tests.utils.compare_utils as compare_utils
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
 from openfold3.core.model.layers.diffusion_transformer import DiffusionTransformer
@@ -35,7 +35,7 @@ from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.tests.config import consts
-from openfold3.tests.data_utils import (
+from openfold3.tests.utils.data_utils import (
     random_attention_inputs,
 )
 
