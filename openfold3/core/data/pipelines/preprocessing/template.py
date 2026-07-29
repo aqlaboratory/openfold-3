@@ -1479,6 +1479,35 @@ def preprocess_template_structures(
             wrapped_template_structure_preprocessor(template_pdb_id)
 
 
+def build_residue_idx_map(template: TemplateData) -> np.ndarray:
+    """Builds the query-to-template residue index map for a template cache entry.
+
+    `TemplateData.query_aln_pos` and `TemplateData.aln_pos` are per-alignment-column
+    residue indices that use -1 where the query resp. the template has a gap. The
+    template cache contract (see `map_token_pos_to_template_residues`) is one row per
+    aligned residue *pair*, so the gapped columns are dropped here. Keeping them makes
+    the number of selected template residues disagree with the number of aligned query
+    tokens downstream, which silently discards the template.
+
+    Args:
+        template (TemplateData):
+            The parsed template hit.
+
+    Returns:
+        np.ndarray:
+            An n_aligned_pairs-by-2 array with the 1-based global residue indices of the
+            query (1st col) and the template (2nd col).
+    """
+    idx_map = np.concatenate(
+        [
+            template.query_aln_pos[:, np.newaxis],
+            template.aln_pos[:, np.newaxis],
+        ],
+        axis=1,
+    )
+    return idx_map[(idx_map >= 0).all(axis=1)]
+
+
 # New template preprocessing pipelines
 # TODO: replace old versions from above with these new ones
 class TemplatePreprocessorInputTrain(BaseModel):
@@ -1796,6 +1825,15 @@ class TemplatePreprocessor:
         for query_name, query in self.input_set.queries.items():
             for idx, chain in enumerate(query.chains):
                 if chain.molecule_type not in self.moltypes:
+                    continue
+                # The cache is keyed by sequence hash alone, so a chain that did not
+                # ask for templates would otherwise inherit the cache entry of another
+                # query that happens to share its sequence. Only write back to chains
+                # that actually declared a template source.
+                if (
+                    chain.template_alignment_file_path is None
+                    and chain.template_cif_paths is None
+                ):
                     continue
                 # Add new npz file path to the chain
                 query_seq_hash = get_sequence_hash(chain.sequence)
@@ -2260,16 +2298,18 @@ class TemplatePreprocessor:
                     continue
 
                 # H. Add to cache entry
+                idx_map = build_residue_idx_map(template)
+                if idx_map.shape[0] == 0:
+                    if self.create_logs:
+                        worker_logger.info(
+                            f"{template.entry_id} {template.chain_id} has no aligned"
+                            " residue pairs."
+                        )
+                    continue
                 cache_entry_data = {
                     "index": template.index,
                     "release_date": release_date,
-                    "idx_map": np.concatenate(
-                        [
-                            template.query_aln_pos[:, np.newaxis],
-                            template.aln_pos[:, np.newaxis],
-                        ],
-                        axis=1,
-                    ),
+                    "idx_map": idx_map,
                 }
                 # Store CIF path for CIF-direct mode
                 if template.cif_path is not None:

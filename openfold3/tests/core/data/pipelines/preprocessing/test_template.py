@@ -24,13 +24,15 @@ network ``fetch``) are intentionally out of scope.
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-from openfold3.core.data.io.sequence.template import TemplateData
+from openfold3.core.data.io.sequence.template import TemplateData, calculate_ids_hit
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessor,
     TemplatePreprocessorInputInference,
     TemplatePreprocessorSettings,
+    build_residue_idx_map,
     collate_data_logs,
     data_log_to_tsv,
     fails_template_release_date_checks,
@@ -286,6 +288,66 @@ def test_match_template_seq_from_aln_to_struc(
     assert match_template_seq_from_aln_to_struc(template, chain_id_seq_map) == expected
 
 
+def _template_with_alignment(query_aln: str, template_aln: str) -> TemplateData:
+    query_arr = np.fromiter(query_aln, dtype="<U1", count=len(query_aln))
+    template_arr = np.fromiter(template_aln, dtype="<U1", count=len(template_aln))
+    query_ids_hit, template_ids_hit = calculate_ids_hit(
+        q=query_arr, t=template_arr, query_start=1, template_start=1
+    )
+    return TemplateData(
+        index=0,
+        entry_id="1abc",
+        chain_id="A",
+        query_aln_pos=query_ids_hit,
+        aln_pos=template_ids_hit,
+        seq_id=1.0,
+        q_cov=1.0,
+        seq=template_aln.replace("-", ""),
+    )
+
+
+@pytest.mark.parametrize(
+    "query_aln, template_aln, expected",
+    [
+        pytest.param(
+            "ACDEF",
+            "ACDEF",
+            [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5]],
+            id="ungapped_alignment_is_identity",
+        ),
+        pytest.param(
+            # query    A C D - - E F G H I K
+            # template A C D E F G H - - I K
+            "ACD--EFGHIK",
+            "ACDEFGH--IK",
+            [[1, 1], [2, 2], [3, 3], [4, 6], [5, 7], [8, 8], [9, 9]],
+            id="gaps_on_both_sides_dropped",
+        ),
+        pytest.param(
+            "ACD--",
+            "--DEF",
+            [[3, 1]],
+            id="offset_alignment_keeps_single_overlap",
+        ),
+        pytest.param(
+            "AC--",
+            "--DE",
+            [],
+            id="no_overlapping_columns_gives_empty_map",
+        ),
+    ],
+)
+def test_build_residue_idx_map_drops_gapped_columns(query_aln, template_aln, expected):
+    """Gapped alignment columns must not reach the cache: downstream featurization
+    requires one row per aligned residue pair."""
+    idx_map = build_residue_idx_map(_template_with_alignment(query_aln, template_aln))
+
+    assert (idx_map >= 0).all()
+    np.testing.assert_array_equal(
+        idx_map, np.array(expected, dtype=idx_map.dtype).reshape(len(expected), 2)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tier B: pydantic validators
 # ---------------------------------------------------------------------------
@@ -513,11 +575,23 @@ def test_update_inference_query_set(tmp_path):
     hash_present = get_sequence_hash(seq_present)
     # Create the cache entry only for the present sequence.
     _write_file(tmp_path / f"{hash_present}.npz")
+    aln_present = _write_file(tmp_path / "present.sto")
+    aln_missing = _write_file(tmp_path / "missing.sto")
 
     query = Query(
         chains=[
-            Chain(molecule_type="protein", chain_ids=["A"], sequence=seq_present),
-            Chain(molecule_type="protein", chain_ids=["B"], sequence=seq_missing),
+            Chain(
+                molecule_type="protein",
+                chain_ids=["A"],
+                sequence=seq_present,
+                template_alignment_file_path=aln_present,
+            ),
+            Chain(
+                molecule_type="protein",
+                chain_ids=["B"],
+                sequence=seq_missing,
+                template_alignment_file_path=aln_missing,
+            ),
         ]
     )
     iqs = InferenceQuerySet(queries={"q0": query})
@@ -535,6 +609,48 @@ def test_update_inference_query_set(tmp_path):
     assert chains[0].template_entry_chain_ids == ["1abc_A", "2def_B"]
     assert chains[1].template_alignment_file_path is None
     assert chains[1].template_entry_chain_ids == []
+
+
+def test_update_inference_query_set_skips_chains_without_template_input(tmp_path):
+    """A chain that asked for no templates must not inherit another query's cache
+    entry just because the two share a sequence."""
+    seq = "ACDEFGHIK"
+    seq_hash = get_sequence_hash(seq)
+    _write_file(tmp_path / f"{seq_hash}.npz")
+    cif_path = _write_file(tmp_path / "1abc.cif")
+
+    iqs = InferenceQuerySet(
+        queries={
+            "with_templates": Query(
+                chains=[
+                    Chain(
+                        molecule_type="protein",
+                        chain_ids=["A"],
+                        sequence=seq,
+                        template_cif_paths=[cif_path],
+                    )
+                ]
+            ),
+            "without_templates": Query(
+                chains=[Chain(molecule_type="protein", chain_ids=["A"], sequence=seq)]
+            ),
+        }
+    )
+    pre = _make_bare_preprocessor(
+        input_set=iqs,
+        moltypes=[MoleculeType.PROTEIN],
+        cache_directory=tmp_path,
+        hash_template_id_map={seq_hash: ["1abc_A"]},
+    )
+
+    pre._update_inference_query_set()
+
+    with_templates = pre.input_set.queries["with_templates"].chains[0]
+    without_templates = pre.input_set.queries["without_templates"].chains[0]
+    assert with_templates.template_alignment_file_path == tmp_path / f"{seq_hash}.npz"
+    assert with_templates.template_entry_chain_ids == ["1abc_A"]
+    assert without_templates.template_alignment_file_path is None
+    assert without_templates.template_entry_chain_ids is None
 
 
 # ---------------------------------------------------------------------------
