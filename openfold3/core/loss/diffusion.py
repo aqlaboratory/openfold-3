@@ -473,9 +473,11 @@ def get_smooth_lddt_loss_fn(smooth_lddt_backend: str) -> Callable:
         if not is_smooth_lddt_kernel_installed():
             raise RuntimeError(
                 "smooth_lddt_backend='ball_query' requires the smooth lDDT "
-                "CUDA extension, which is not installed. Install with "
-                '`pip install "openfold3[smooth-lddt-kernel]"` (needs ninja + '
-                "CUDA sources under openfold3/core/kernels/smooth_lddt/ball_query_ext)."
+                "CUDA extension, which is not installed. Use a pixi CUDA "
+                "environment (openfold3-cuda12 or openfold3-cuda13), or "
+                "install ninja and a matching CUDA toolchain when building "
+                "from source (sources under "
+                "openfold3/core/kernels/smooth_lddt/ball_query_ext)."
             )
         if not is_smooth_lddt_kernel_available():
             raise RuntimeError(

@@ -32,7 +32,7 @@ from openfold3.tests.config import consts
 
 BALL_QUERY_SKIP_REASON = (
     "Ball-query smooth lDDT requires CUDA and the compiled ball-query extension "
-    "(install with `pip install openfold3[smooth-lddt-kernel]`)."
+    "(use pixi env openfold3-cuda12/openfold3-cuda13, or install ninja + CUDA)."
 )
 
 

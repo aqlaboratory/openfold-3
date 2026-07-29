@@ -81,13 +81,13 @@ orthogonal to these internal optimizations and the restriction is unchanged.
 ## Build / debug
 
 JIT-compiled on first use via `torch.utils.cpp_extension.load`. The kernel is
-opt-in and not part of the default install — `ninja` is required only for
-this backend. Install it directly (`pip install ninja`) or via the dedicated
-extra (`pip install -e ".[smooth-lddt-kernel]"`).
-Set `OPENFOLD3_SMOOTH_LDDT_VERBOSE=1` to
-get the full nvcc build log on first call. The compute capability is read
-from `torch.cuda.get_device_capability()` and exported as
-`TORCH_CUDA_ARCH_LIST` only when the user has not set it explicitly.
+opt-in and not part of the default install — `ninja` and a matching CUDA
+toolchain are required only for this backend. Prefer a pixi CUDA environment
+(`openfold3-cuda12` or `openfold3-cuda13`), which already ships these
+dependencies. Set `OPENFOLD3_SMOOTH_LDDT_VERBOSE=1` to get the full nvcc
+build log on first call. The compute capability is read from
+`torch.cuda.get_device_capability()` and exported as `TORCH_CUDA_ARCH_LIST`
+only when the user has not set it explicitly.
 
 ## Tests
 
