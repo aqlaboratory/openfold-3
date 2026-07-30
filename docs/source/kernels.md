@@ -59,7 +59,7 @@ validate-openfold3-rocm
 
 OF3 supports a CUDA ball-query backend for the smooth lDDT loss. For long targets (roughly `n_atom >= 1500`), it replaces the `O(N^2)` dense pairwise-distance scan with a sparse `[N, K]` neighbor list. The default backend remains `dense`. Enabling the kernel is opt-in.
 
-The kernel is JIT-compiled with `ninja` on first use. Install via pixi: the `openfold3-cuda12` and `openfold3-cuda13` environments already include `ninja`, `nvcc`, and the required CUDA headers, so no extra system setup is needed:
+The kernel is JIT-compiled with `ninja` on first use. Install via pixi only: the existing CUDA environments (`openfold3-cuda12`, `openfold3-cuda13`, `openfold3-cuda12-pypi`, `openfold3-cuda13-pypi`) already include the `smooth-lddt-kernel` feature (`ninja`, `nvcc`, and the required CUDA headers). No separate env names or pip extra are needed.
 
 ```bash
 pixi run -e openfold3-cuda12 pytest openfold3/tests/test_diffusion_loss.py -v

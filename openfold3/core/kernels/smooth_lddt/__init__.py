@@ -24,7 +24,15 @@
 # The checkpointed scoring stage and the bf16-native pred-distance path
 # are OpenFold3-specific additions.
 
-"""Smooth lDDT CUDA kernel helpers."""
+"""Smooth lDDT CUDA kernel helpers.
+
+Set ``OPENFOLD3_SMOOTH_LDDT_IMPL=triton`` to use the independent Triton
+backend in ``openfold3.core.kernels.triton.smooth_lddt_ball_query``.
+"""
+
+from __future__ import annotations
+
+import os
 
 import torch
 import torch.utils.checkpoint
@@ -38,14 +46,32 @@ from openfold3.core.kernels.smooth_lddt.ball_query import (
 
 MAX_SMOOTH_LDDT_RADIUS = 30.0
 
+_IMPL_ENV = "OPENFOLD3_SMOOTH_LDDT_IMPL"
+
+
+def _use_triton() -> bool:
+    return os.environ.get(_IMPL_ENV, "cuda").strip().lower() == "triton"
+
 
 def is_smooth_lddt_kernel_installed() -> bool:
-    """Return whether the CUDA ball-query smooth lDDT backend can be built."""
+    """Return whether the selected ball-query backend can be built/imported."""
+    if _use_triton():
+        from openfold3.core.kernels.triton.smooth_lddt_ball_query import (
+            is_ball_query_triton_installed,
+        )
+
+        return is_ball_query_triton_installed()
     return is_ball_query_installed()
 
 
 def is_smooth_lddt_kernel_available() -> bool:
-    """Return whether the CUDA ball-query smooth lDDT backend is usable now."""
+    """Return whether the selected ball-query backend is usable now."""
+    if _use_triton():
+        from openfold3.core.kernels.triton.smooth_lddt_ball_query import (
+            is_ball_query_triton_available,
+        )
+
+        return is_ball_query_triton_available()
     return is_ball_query_available()
 
 
@@ -166,21 +192,38 @@ def ball_query_smooth_lddt_loss(
     seed: int = 0,
 ) -> torch.Tensor:
     """
-    Compute smooth lDDT using the CUDA ball-query kernel.
+    Compute smooth lDDT using a ball-query kernel.
 
-    Uses the warp-cooperative kernel with reservoir sampling for unbiased
-    random neighbor selection when more than ``top_k`` atoms qualify within
-    the radius. The ``seed`` parameter controls the RNG for reproducibility
-    (e.g. pass the training step number).
+    Default backend is CUDA. Set ``OPENFOLD3_SMOOTH_LDDT_IMPL=triton`` to use
+    the independent Triton module
+    (``openfold3.core.kernels.triton.smooth_lddt_ball_query``).
+
+    Uses reservoir sampling for unbiased random neighbor selection when more
+    than ``top_k`` atoms qualify within the radius. The ``seed`` parameter
+    controls the RNG for reproducibility (e.g. pass the training step number).
 
     The result is exact relative to dense smooth lDDT when ``top_k`` covers
     every in-radius neighbor for each atom.
 
-    Internal optimizations (forward kernel emits ``dists_pred`` directly +
-    custom backward + checkpointed scoring) eliminate the ``x_j`` gather
-    and all autograd-saved scoring intermediates. Backward uses ``atomicAdd``
-    in fp32 and is therefore inherently nondeterministic.
+    Backward uses ``atomicAdd`` in fp32 and is therefore inherently
+    nondeterministic.
     """
+    if _use_triton():
+        from openfold3.core.kernels.triton.smooth_lddt_ball_query import (
+            ball_query_smooth_lddt_loss as triton_ball_query_smooth_lddt_loss,
+        )
+
+        return triton_ball_query_smooth_lddt_loss(
+            x=x,
+            x_gt=x_gt,
+            atom_mask_gt=atom_mask_gt,
+            is_nucleotide=is_nucleotide,
+            loss_atom_mask=loss_atom_mask,
+            eps=eps,
+            top_k=top_k,
+            seed=seed,
+        )
+
     if not x.is_cuda:
         raise RuntimeError("Ball-query smooth lDDT requires CUDA tensors")
 

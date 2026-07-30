@@ -36,7 +36,8 @@ VERBOSE = bool(int(os.environ.get("OPENFOLD3_SMOOTH_LDDT_VERBOSE", "0")))
 
 INSTALL_HINT = (
     "smooth lDDT ball-query extension is not installed. "
-    "Use a pixi CUDA environment (openfold3-cuda12 or openfold3-cuda13), "
+    "Use an existing pixi CUDA environment (openfold3-cuda12, "
+    "openfold3-cuda13, openfold3-cuda12-pypi, or openfold3-cuda13-pypi), "
     "or install ninja and a matching CUDA toolchain when building from "
     "source, and ensure the CUDA sources under "
     "openfold3/core/kernels/smooth_lddt/ball_query_ext are present."

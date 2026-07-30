@@ -472,17 +472,20 @@ def get_smooth_lddt_loss_fn(smooth_lddt_backend: str) -> Callable:
     if smooth_lddt_backend == "ball_query":
         if not is_smooth_lddt_kernel_installed():
             raise RuntimeError(
-                "smooth_lddt_backend='ball_query' requires the smooth lDDT "
-                "CUDA extension, which is not installed. Use a pixi CUDA "
-                "environment (openfold3-cuda12 or openfold3-cuda13), or "
-                "install ninja and a matching CUDA toolchain when building "
+                "smooth_lddt_backend='ball_query' requires a ball-query "
+                "backend. Use a pixi CUDA environment (openfold3-cuda12, "
+                "openfold3-cuda13, or the corresponding *-pypi envs), set "
+                "OPENFOLD3_SMOOTH_LDDT_IMPL=triton, or install ninja and a "
+                "matching CUDA toolchain when building the CUDA extension "
                 "from source (sources under "
                 "openfold3/core/kernels/smooth_lddt/ball_query_ext)."
             )
         if not is_smooth_lddt_kernel_available():
             raise RuntimeError(
                 "smooth_lddt_backend='ball_query' requires a CUDA device at "
-                "runtime, but torch.cuda.is_available() is False."
+                "runtime, but the selected implementation is not available "
+                "(check torch.cuda.is_available() and "
+                "OPENFOLD3_SMOOTH_LDDT_IMPL)."
             )
         return smooth_lddt_loss_ball_query
 
