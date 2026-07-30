@@ -73,6 +73,41 @@ warnings.filterwarnings(
 
 REFERENCE_CONFIG_PATH = Path(__file__).parent.resolve() / "config/reference_config.yml"
 
+CONFIDENCE_GROUP = "confidence"
+
+# Named groups of submodules that can be trained or frozen as a unit through the
+# settings.train_only_modules and settings.freeze_modules settings.
+#
+# The confidence group sits behind a stop-grad on the trunk outputs, so it can be
+# trained or frozen independently of the rest of the model. Note the distogram
+# head is not part of it: that head is computed before the stop-grad and is
+# trained with the trunk.
+MODULE_GROUPS = {
+    CONFIDENCE_GROUP: (
+        "aux_heads.pairformer_embedding",
+        "aux_heads.pde",
+        "aux_heads.plddt",
+        "aux_heads.experimentally_resolved",
+        "aux_heads.pae",
+    ),
+}
+
+
+def resolve_module_group_paths(group_names: list[str]) -> list[str]:
+    """Maps module group names to the submodule paths they contain.
+
+    Raises:
+        ValueError: If any of the group names is not a known module group.
+    """
+    unknown = [name for name in group_names if name not in MODULE_GROUPS]
+    if unknown:
+        raise ValueError(
+            f"Unknown module group(s) {unknown}. "
+            f"Available groups are {sorted(MODULE_GROUPS)}."
+        )
+
+    return [path for name in group_names for path in MODULE_GROUPS[name]]
+
 
 class OpenFold3AllAtom(ModelRunner):
     def __init__(self, model_config, log_dir: Path = None):
@@ -110,16 +145,8 @@ class OpenFold3AllAtom(ModelRunner):
         self._setup_train_metrics()
         self._setup_val_metrics()
 
-        # Keep grads enabled for confidence head parameters only
-        if stage == "fit" and self.config.settings.train_confidence_only:
-            exempt_submodule = [
-                self.model.aux_heads.pairformer_embedding,
-                self.model.aux_heads.pde,
-                self.model.aux_heads.plddt,
-                self.model.aux_heads.experimentally_resolved,
-                self.model.aux_heads.pae,
-            ]
-            self._freeze_model_params(exempt_submodule=exempt_submodule)
+        if stage == "fit":
+            self._apply_module_freezing()
 
         # Initialize the gradient manager if doing per-sample grad clipping
         if self.per_sample_grad_clipping:
@@ -127,6 +154,49 @@ class OpenFold3AllAtom(ModelRunner):
                 model=self.model, trainer=self.trainer, logger=self.logger
             )
             self._identify_confidence_params()
+
+    def _apply_module_freezing(self):
+        """Applies the train_only_modules and freeze_modules settings.
+
+        Both settings take a list of module group names. Freezing a group only
+        stops its own parameters from being updated: the losses it contributes
+        to are still computed and logged.
+        """
+        train_only_modules = list(self.config.settings.train_only_modules)
+        freeze_modules = list(self.config.settings.freeze_modules)
+
+        if train_only_modules and freeze_modules:
+            raise ValueError(
+                "train_only_modules and freeze_modules are mutually exclusive, "
+                f"got train_only_modules={train_only_modules} and "
+                f"freeze_modules={freeze_modules}."
+            )
+
+        if train_only_modules:
+            self._freeze_model_params(
+                exempt_submodule=self._get_group_submodules(train_only_modules)
+            )
+            logger.info(f"Training module groups {train_only_modules} only.")
+        elif freeze_modules:
+            for layer in self._get_group_submodules(freeze_modules):
+                for param in layer.parameters():
+                    param.requires_grad = False
+            logger.info(f"Froze module groups {freeze_modules}.")
+
+    def _get_group_submodules(self, group_names: list[str]) -> list[torch.nn.Module]:
+        """Returns the submodules belonging to the given module groups.
+
+        Submodules that are not instantiated for the current config, such as the
+        PAE head when it is disabled, are skipped.
+        """
+        submodules = []
+        for path in resolve_module_group_paths(group_names):
+            try:
+                submodules.append(self.model.get_submodule(path))
+            except AttributeError:
+                logger.info(f"Submodule {path} is not present, skipping.")
+
+        return submodules
 
     def _freeze_model_params(self, exempt_submodule: list[torch.nn.Module]):
         """Freeze all model parameters excluding those specified in exempt_submodule."""
@@ -142,20 +212,13 @@ class OpenFold3AllAtom(ModelRunner):
         """
         Identifies which parameters belong to confidence heads.
         """
-        confidence_modules_prefixes = [
-            "aux_heads.pairformer_embedding",
-            "aux_heads.pde",
-            "aux_heads.plddt",
-            "aux_heads.experimentally_resolved",
-            "aux_heads.pae",
-        ]
-
         self.confidence_param_names = set()
 
         for name, _ in self.model.named_parameters():
             # Check if this param belongs to confidence module
             is_confidence = any(
-                name.startswith(f"{prefix}.") for prefix in confidence_modules_prefixes
+                name.startswith(f"{prefix}.")
+                for prefix in MODULE_GROUPS[CONFIDENCE_GROUP]
             )
             if is_confidence:
                 self.confidence_param_names.add(name)

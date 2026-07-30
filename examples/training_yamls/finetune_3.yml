@@ -46,7 +46,8 @@ model_update:
     - train 
   custom:
     settings:
-      train_confidence_only: true
+      train_only_modules:
+        - confidence
       model_selection_weight_scheme: fine_tuning
       ema:
         submodules_to_update:

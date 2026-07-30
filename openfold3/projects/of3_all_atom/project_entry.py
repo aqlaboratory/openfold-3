@@ -23,7 +23,11 @@ from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import load_yaml
 from openfold3.projects.of3_all_atom.config.model_config import model_config
-from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
+from openfold3.projects.of3_all_atom.runner import (
+    CONFIDENCE_GROUP,
+    OpenFold3AllAtom,
+    resolve_module_group_paths,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -97,10 +101,44 @@ class OF3ProjectEntry:
             "are set to True. At most one subsampling strategy can be enabled."
         )
 
+        settings = model_config.settings
+        assert not (settings.train_only_modules and settings.freeze_modules), (
+            "Invalid configuration: both `train_only_modules` and `freeze_modules` "
+            "are set. They are mutually exclusive, set one or the other."
+        )
+
+        # Raises on unknown group names
+        resolve_module_group_paths(list(settings.train_only_modules))
+        resolve_module_group_paths(list(settings.freeze_modules))
+
     def get_model_config_with_update(self, model_update: ModelUpdate) -> ConfigDict:
         """Returns a model config with updates applied."""
+        self._check_for_removed_settings(model_update.custom)
+
         model_config = self.get_model_config_with_presets(model_update.presets)
         model_config.update(model_update.custom)
         self.validate_model_config(model_config)
 
+        # Derived rather than user-facing: training the confidence module alone
+        # means the diffusion and distogram compute can be skipped entirely.
+        model_config.settings.train_confidence_only = list(
+            model_config.settings.train_only_modules
+        ) == [CONFIDENCE_GROUP]
+
         return model_config
+
+    @staticmethod
+    def _check_for_removed_settings(custom: dict) -> None:
+        """Points users of removed settings at their replacement."""
+        replacements = {
+            "train_confidence_only": f"train_only_modules: [{CONFIDENCE_GROUP}]",
+            "freeze_confidence_heads": f"freeze_modules: [{CONFIDENCE_GROUP}]",
+        }
+
+        settings = custom.get("settings", {})
+        for removed, replacement in replacements.items():
+            if removed in settings:
+                raise KeyError(
+                    f"The `{removed}` model setting has been removed, "
+                    f"use `{replacement}` instead."
+                )

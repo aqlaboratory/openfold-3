@@ -43,6 +43,7 @@ n_query = mlc.FieldReference(32, field_type=int)
 n_key = mlc.FieldReference(128, field_type=int)
 
 # Model components
+# Derived from settings.train_only_modules, see OF3ProjectEntry. Not user-facing.
 train_confidence_only = mlc.FieldReference(False, field_type=bool)
 pae_head_enabled = mlc.FieldReference(True, field_type=bool)
 
@@ -138,6 +139,15 @@ model_config = mlc.ConfigDict(
             "blocks_per_ckpt": blocks_per_ckpt,
             "ckpt_intermediate_steps": ckpt_intermediate_steps,
             "clear_cache_between_steps": False,
+            # Names of the module groups to train, freezing everything else.
+            # Valid names are the keys of MODULE_GROUPS in the project runner.
+            # Mutually exclusive with freeze_modules.
+            "train_only_modules": [],
+            # Names of the module groups to freeze, training everything else.
+            "freeze_modules": [],
+            # Derived from train_only_modules, do not set directly. A run that
+            # trains only the confidence module can skip the diffusion and
+            # distogram compute entirely.
             "train_confidence_only": train_confidence_only,
             "optimizer": {
                 "learning_rate": 1.8e-3,

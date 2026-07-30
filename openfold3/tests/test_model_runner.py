@@ -17,8 +17,13 @@ from unittest.mock import patch
 import pytest
 import torch
 
-from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
-from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom, logger
+from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
+from openfold3.projects.of3_all_atom.runner import (
+    CONFIDENCE_GROUP,
+    MODULE_GROUPS,
+    OpenFold3AllAtom,
+    logger,
+)
 
 
 def mock_forward_with_name_based_oom(batch):
@@ -131,3 +136,94 @@ def test_version_registration():
     # Check that the version property returns the expected version string
     expected_version = "1.0.0"
     assert model_runner.version == expected_version
+
+
+def _is_confidence_param(name: str) -> bool:
+    return any(
+        name.startswith(f"{prefix}.") for prefix in MODULE_GROUPS[CONFIDENCE_GROUP]
+    )
+
+
+@pytest.mark.parametrize(
+    ("freezing_settings", "expect_frozen"),
+    [
+        ({}, lambda name: False),
+        ({"freeze_modules": [CONFIDENCE_GROUP]}, _is_confidence_param),
+        (
+            {"train_only_modules": [CONFIDENCE_GROUP]},
+            lambda name: not _is_confidence_param(name),
+        ),
+    ],
+    ids=["no_freezing", "freeze_confidence", "train_confidence_only"],
+)
+def test_module_freezing(freezing_settings, expect_frozen):
+    """Exactly the requested module groups lose their grads."""
+    project_entry = OF3ProjectEntry()
+    config = project_entry.get_model_config_with_update(
+        ModelUpdate(
+            presets=["train"],
+            custom={
+                "settings": {
+                    # The grad manager requires an attached trainer
+                    "gradient_clipping": {"per_sample_clipping": False},
+                    **freezing_settings,
+                }
+            },
+        )
+    )
+    model_runner = OpenFold3AllAtom(model_config=config)
+
+    model_runner.setup(stage="fit")
+
+    frozen = {
+        name
+        for name, param in model_runner.model.named_parameters()
+        if not param.requires_grad
+    }
+    expected = {
+        name for name, _ in model_runner.model.named_parameters() if expect_frozen(name)
+    }
+
+    assert frozen == expected
+
+
+@pytest.mark.parametrize(
+    ("settings", "error", "match"),
+    [
+        (
+            {
+                "train_only_modules": [CONFIDENCE_GROUP],
+                "freeze_modules": [CONFIDENCE_GROUP],
+            },
+            AssertionError,
+            "mutually exclusive",
+        ),
+        ({"freeze_modules": ["diffusion"]}, ValueError, "Unknown module group"),
+        ({"train_confidence_only": True}, KeyError, "has been removed"),
+    ],
+    ids=["mutually_exclusive", "unknown_group", "removed_setting"],
+)
+def test_module_freezing_config_validation(settings, error, match):
+    project_entry = OF3ProjectEntry()
+
+    with pytest.raises(error, match=match):
+        project_entry.get_model_config_with_update(
+            ModelUpdate(custom={"settings": settings})
+        )
+
+
+@pytest.mark.parametrize(
+    ("train_only_modules", "expected"),
+    [([], False), ([CONFIDENCE_GROUP], True)],
+    ids=["default", "confidence_only"],
+)
+def test_train_confidence_only_is_derived(train_only_modules, expected):
+    """The internal compute-skipping flag follows train_only_modules."""
+    project_entry = OF3ProjectEntry()
+    config = project_entry.get_model_config_with_update(
+        ModelUpdate(custom={"settings": {"train_only_modules": train_only_modules}})
+    )
+
+    assert config.settings.train_confidence_only == expected
+    # The loss module shares the setting through a field reference
+    assert config.architecture.loss_module.train_confidence_only == expected
