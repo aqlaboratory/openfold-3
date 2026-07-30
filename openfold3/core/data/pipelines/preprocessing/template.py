@@ -2088,16 +2088,20 @@ class TemplatePreprocessor:
                 # (highest-ranked) occurrence. Without this, multiple hits that cover
                 # the same query region with identical residues (e.g. several crystal
                 # forms of the same complex) each consume a separate template slot.
-                if self.deduplicate_sequences:
-                    if template.seq in seen_sequences:
-                        if self.create_logs:
-                            worker_logger.info(
-                                f"{template.entry_id} {template.chain_id} is a"
-                                " sequence duplicate of an already-accepted"
-                                " template."
-                            )
-                        continue
-                    seen_sequences.add(template.seq)
+                # NOTE: only checked here; `seen_sequences` is populated in step H,
+                # once a template from this sequence is actually accepted. Marking it
+                # seen here (before the availability/release-date/match checks below
+                # run) would permanently block every later same-sequence hit even when
+                # this one is rejected for an unrelated reason -- e.g. a query's own
+                # self-hit ranks first, fails a later check, and would otherwise
+                # blackhole every other real hit sharing that common sequence.
+                if self.deduplicate_sequences and template.seq in seen_sequences:
+                    if self.create_logs:
+                        worker_logger.info(
+                            f"{template.entry_id} {template.chain_id} is a"
+                            " sequence duplicate of an already-accepted template."
+                        )
+                    continue
 
                 # B. Get which files are available
                 template_structure_file = (
@@ -2302,6 +2306,8 @@ class TemplatePreprocessor:
                     cache_entry_data
                 )
                 template_ids.append(f"{template.entry_id}_{chain_id_matched}")
+                if self.deduplicate_sequences:
+                    seen_sequences.add(template.seq)
                 if self.create_logs:
                     worker_logger.info(
                         f"{template.entry_id} {template.chain_id} added to cache."
