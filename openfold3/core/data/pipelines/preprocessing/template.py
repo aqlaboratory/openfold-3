@@ -1793,7 +1793,8 @@ class TemplatePreprocessor:
         else:
             self.ccd = BiotiteCCDWrapper()
 
-        self.inputs = []  # replaced below by the parsers
+        # Cache key -> input; replaced below by the parsers
+        self.inputs = {}
         # Both replaced in __call__ by manager dicts; keyed by cache key, see
         # `build_template_cache_key`
         self.processed_cache_keys = {}
@@ -1811,8 +1812,7 @@ class TemplatePreprocessor:
         raise NotImplementedError
 
     def _parse_inference_query_set(self) -> None:
-        keys_seen = set()
-        inputs = []
+        inputs: dict[str, TemplatePreprocessorInputInference] = {}
         for query_name, query in self.input_set.queries.items():
             for chain in query.chains:
                 if chain.molecule_type not in self.moltypes:
@@ -1844,12 +1844,9 @@ class TemplatePreprocessor:
                     )
                     continue
 
-                # Deduplicate on the full cache key, so chains only collapse into one
-                # input when both their sequence and their template source match
-                cache_key = template_input.cache_key
-                if cache_key not in keys_seen:
-                    keys_seen.add(cache_key)
-                    inputs.append(template_input)
+                # Chains collapse into one input only when both their sequence and
+                # their template source match, so first one wins per cache key
+                inputs.setdefault(template_input.cache_key, template_input)
 
         self.inputs = inputs
 
@@ -1903,7 +1900,9 @@ class TemplatePreprocessor:
                 for _ in tqdm(
                     pool.imap_unordered(
                         self.preprocess_templates,
-                        self.inputs,
+                        # .values(): iterating the mapping itself would hand the
+                        # workers cache-key strings
+                        self.inputs.values(),
                         chunksize=self.chunksize,
                     ),
                     total=len(self.inputs),

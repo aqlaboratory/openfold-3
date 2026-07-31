@@ -453,9 +453,12 @@ def test_parse_inference_query_set_alignment_mode_dedup(tmp_path):
     pre._parse_inference_query_set()
 
     assert len(pre.inputs) == 1
-    assert pre.inputs[0].aln_path == Path(aln)
-    assert pre.inputs[0].query_seq_str == "ACDEF"
-    assert pre.inputs[0].template_entry_chain_ids == ["1abc_A"]
+    (template_input,) = pre.inputs.values()
+    assert template_input.aln_path == Path(aln)
+    assert template_input.query_seq_str == "ACDEF"
+    assert template_input.template_entry_chain_ids == ["1abc_A"]
+    # The mapping is keyed by cache key, which is what makes it the dedup bookkeeping.
+    assert set(pre.inputs) == {template_input.cache_key}
 
 
 def test_parse_inference_query_set_cif_mode_dedup(tmp_path):
@@ -495,7 +498,8 @@ def test_parse_inference_query_set_cif_mode_dedup(tmp_path):
     pre._parse_inference_query_set()
 
     assert len(pre.inputs) == 2
-    assert all(inp.template_cif_paths is not None for inp in pre.inputs)
+    assert all(inp.template_cif_paths is not None for inp in pre.inputs.values())
+    assert set(pre.inputs) == {inp.cache_key for inp in pre.inputs.values()}
 
 
 def test_parse_inference_query_set_no_template_data_skipped(tmp_path):
@@ -510,7 +514,7 @@ def test_parse_inference_query_set_no_template_data_skipped(tmp_path):
 
     pre._parse_inference_query_set()
 
-    assert pre.inputs == []
+    assert pre.inputs == {}
 
 
 def test_update_inference_query_set(tmp_path):
@@ -520,7 +524,7 @@ def test_update_inference_query_set(tmp_path):
     seq_missing = "KLMNPQRST"
     aln_present = _write_file(tmp_path / "present.sto")
     aln_missing = _write_file(tmp_path / "missing.sto")
-    key_present = build_template_cache_key(seq_present, aln_path=aln_present)
+    key_present = build_template_cache_key(sequence=seq_present, aln_path=aln_present)
     # Create the cache entry only for the present sequence.
     _write_file(tmp_path / f"{key_present}.npz")
 
@@ -562,7 +566,7 @@ def test_update_inference_query_set_skips_chains_without_template_input(tmp_path
     entry just because the two share a sequence."""
     seq = "ACDEFGHIK"
     cif_path = _write_file(tmp_path / "1abc.cif")
-    key = build_template_cache_key(seq, cif_paths=[cif_path])
+    key = build_template_cache_key(sequence=seq, cif_paths=[cif_path])
     _write_file(tmp_path / f"{key}.npz")
 
     iqs = InferenceQuerySet(
