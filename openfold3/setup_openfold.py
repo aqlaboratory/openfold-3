@@ -18,6 +18,7 @@ Setup script for OpenFold3 parameters.
 Downloads model parameters and runs verification tests.
 """
 
+import importlib.util
 import logging
 import os
 import sys
@@ -216,10 +217,32 @@ INTEGRATION_TEST_PATH = (
 )
 
 
+def _require_pytest() -> None:
+    """Exit with an actionable message unless pytest can be imported.
+
+    pytest is deliberately *not* a core dependency: it is a large install and would
+    bloat every downstream package that depends on openfold3, so it lives in the ``dev``
+    extra. That makes its availability a runtime question, and this is where it gets
+    asked — up front, before anything is downloaded, so a missing test dependency
+    surfaces in seconds rather than after a multi-gigabyte parameter download.
+
+    Probing with ``find_spec`` rather than importing keeps this cheap and side-effect
+    free; the actual import happens in :func:`_run_integration_tests`.
+    """
+    if importlib.util.find_spec("pytest") is not None:
+        return
+    logger.error(
+        "Integration tests were requested but pytest is not installed. Install it "
+        "with `pip install 'openfold3[dev]'`, or re-run setup without integration "
+        "tests."
+    )
+    sys.exit(1)
+
+
 def _run_integration_tests() -> None:
     logger.info("Running integration tests...")
     os.environ["OPENFOLD_SETUP_SCRIPT"] = "1"
-    import pytest
+    import pytest  # availability already established by _require_pytest
 
     root_logger = logging.getLogger()
     original_level = root_logger.level
@@ -242,6 +265,12 @@ def _run_integration_tests() -> None:
 
 def run_setup(config: OpenFoldSetupConfig) -> None:
     """Execute the setup described by *config* without any interactive prompts."""
+    # Validated before any download so an unusable request fails immediately. Every
+    # entry point — --config, --non-interactive and the interactive prompt — reaches
+    # setup through here, so this is the one place the check has to live.
+    if config.run_integration_tests:
+        _require_pytest()
+
     config.openfold_cache.mkdir(parents=True, exist_ok=True)
     os.environ["OPENFOLD_CACHE"] = str(config.openfold_cache)
 
