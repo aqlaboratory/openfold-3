@@ -16,17 +16,22 @@
 
 Scope (see plan): the side-effect-free helpers, the pydantic validators, the no-IO
 instance methods (built via ``object.__new__`` to bypass ``__init__``'s multiprocessing
-and file IO), and the legacy TSV log helpers. The heavy ``__call__`` /
-``_preprocess_templates_for_query`` orchestrators (``mp.Pool``, ``func_timeout``,
-network ``fetch``) are intentionally out of scope.
+and file IO), and the legacy TSV log helpers.
+
+Tier E is the exception: cross-query template source isolation is only observable
+end to end, so those tests run the real ``__call__``. They stay offline by pre-seeding
+the template structure directory and setting ``fetch_missing_structures=False``.
 """
 
+import shutil
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
+import openfold3
 from openfold3.core.data.io.sequence.template import TemplateData
+from openfold3.core.data.io.structure.cif import _load_ciffile
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessor,
     TemplatePreprocessorInputInference,
@@ -39,6 +44,9 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     remap_template_chain_id,
 )
 from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
+from openfold3.core.data.primitives.structure.metadata import (
+    get_asym_id_to_canonical_seq_dict,
+)
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Chain,
@@ -629,3 +637,99 @@ def test_collate_data_logs_merges_and_unlinks(tmp_path):
     # Source per-worker logs are consumed.
     assert not f1.exists()
     assert not f2.exists()
+
+
+# ---------------------------------------------------------------------------
+# Tier E: cross-query template source isolation (integration, runs __call__)
+# ---------------------------------------------------------------------------
+
+MMCIFS_DIR = Path(openfold3.__file__).parent / "tests" / "test_data" / "mmcifs"
+TEMPLATE_CIF = "2q2k.cif"
+
+
+def _two_source_query_set(tmp_path: Path, order: list[str]) -> InferenceQuerySet:
+    """Two queries sharing one sequence, each with a different template source.
+
+    2q2k chains B and C are identical 70-residue proteins, so both are valid
+    templates for the same query sequence and the two sources stay distinguishable:
+
+      q_custom     CIF-direct, chain B pinned      -> 2q2k_B
+      q_colabfold  alignment (.m8) hitting 2q2k_C  -> 2q2k_C
+
+    Each yields exactly that when it is the only query in the set.
+    """
+    cif_path = tmp_path / TEMPLATE_CIF
+    shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, cif_path)
+    seq = get_asym_id_to_canonical_seq_dict(_load_ciffile(cif_path))["B"]
+
+    # Minimal ColabFold-style m8: one full-length, identical hit against chain C.
+    n = len(seq)
+    aln_path = _write_file(
+        tmp_path / "colabfold_template.m8",
+        f"101\t2q2k_C\t1.000\t{n}\t0\t0\t1\t{n}\t1\t{n}\t1.0E-40\t300\t{n}M\n",
+    )
+
+    sources = {
+        "q_custom": {"template_cif_paths": [cif_path], "template_cif_chain_ids": ["B"]},
+        "q_colabfold": {"template_alignment_file_path": aln_path},
+    }
+    return InferenceQuerySet(
+        queries={
+            name: Query(
+                chains=[
+                    Chain(
+                        molecule_type="protein",
+                        chain_ids=["A"],
+                        sequence=seq,
+                        **sources[name],
+                    )
+                ]
+            )
+            for name in order
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "order",
+    [
+        pytest.param(["q_custom", "q_colabfold"], id="custom_declared_first"),
+        pytest.param(["q_colabfold", "q_custom"], id="colabfold_declared_first"),
+    ],
+)
+def test_template_sources_do_not_collide_across_queries(tmp_path, order):
+    """Queries sharing a sequence must each keep their own template source.
+
+    The cache entry file, the "already processed" set and the template-id write-back
+    are all keyed by sequence hash alone, so whichever query is declared first claims
+    the sequence and the other silently inherits its templates. Which one wins is
+    pure declaration order, so this is asserted both ways round.
+    """
+    iqs = _two_source_query_set(tmp_path, order)
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir()
+    shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, structure_dir / TEMPLATE_CIF)
+
+    settings = TemplatePreprocessorSettings(
+        mode="predict",
+        output_directory=tmp_path / "template_data",
+        # Pre-seeded structures + no fetching keeps this offline.
+        structure_directory=structure_dir,
+        fetch_missing_structures=False,
+        n_processes=1,
+    )
+
+    TemplatePreprocessor(input_set=iqs, config=settings)()
+
+    custom = iqs.queries["q_custom"].chains[0]
+    colabfold = iqs.queries["q_colabfold"].chains[0]
+
+    assert custom.template_entry_chain_ids == ["2q2k_B"], (
+        "the custom CIF query did not get its own template"
+    )
+    assert colabfold.template_entry_chain_ids == ["2q2k_C"], (
+        "the ColabFold query did not get its own template"
+    )
+    assert (
+        custom.template_alignment_file_path != colabfold.template_alignment_file_path
+    ), "both queries were pointed at the same template cache entry"
