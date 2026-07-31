@@ -2,7 +2,9 @@ import numpy as np
 import pytest
 import torch
 
-from openfold3.core.data.primitives.featurization.structure import create_cyclic_mask
+from openfold3.core.data.primitives.featurization.structure import (
+    maybe_create_cyclic_mask,
+)
 
 
 class TestCreateCyclicMask:
@@ -13,7 +15,7 @@ class TestCreateCyclicMask:
         n_atoms = 6
         atom_array = _make_atom_array(n_atoms)
 
-        mask = create_cyclic_mask(atom_array, np.arange(n_atoms))
+        mask = maybe_create_cyclic_mask(atom_array, np.arange(n_atoms))
 
         assert mask.dtype == torch.bool
         assert mask.shape == (n_atoms,)
@@ -24,7 +26,7 @@ class TestCreateCyclicMask:
         n_atoms = 6
         atom_array = _make_atom_array(n_atoms, is_cyclic=[is_cyclic] * n_atoms)
 
-        mask = create_cyclic_mask(atom_array, np.arange(n_atoms))
+        mask = maybe_create_cyclic_mask(atom_array, np.arange(n_atoms))
 
         assert mask.dtype == torch.bool
         assert mask.tolist() == [is_cyclic] * n_atoms
@@ -38,7 +40,7 @@ class TestCreateCyclicMask:
         atom_array = _make_atom_array(n_atoms, is_cyclic=per_atom)
         token_starts = np.array([0, 3])
 
-        mask = create_cyclic_mask(atom_array, token_starts)
+        mask = maybe_create_cyclic_mask(atom_array, token_starts)
 
         assert mask.tolist() == [True, True]
 
@@ -48,7 +50,7 @@ class TestCreateCyclicMask:
         n_atoms = 4
         atom_array = _make_atom_array(n_atoms, is_cyclic=np.array([1, 1, 0, 0]))
 
-        mask = create_cyclic_mask(atom_array, np.arange(n_atoms))
+        mask = maybe_create_cyclic_mask(atom_array, np.arange(n_atoms))
 
         assert mask.dtype == torch.bool
         assert mask.tolist() == [True, True, False, False]
@@ -56,7 +58,7 @@ class TestCreateCyclicMask:
     def test_empty_token_starts(self, _make_atom_array):
         atom_array = _make_atom_array(4, is_cyclic=[True] * 4)
 
-        mask = create_cyclic_mask(atom_array, np.array([], dtype=int))
+        mask = maybe_create_cyclic_mask(atom_array, np.array([], dtype=int))
 
         assert mask.shape == (0,)
         assert mask.dtype == torch.bool
