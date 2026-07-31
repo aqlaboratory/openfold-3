@@ -26,12 +26,14 @@ the template structure directory and setting ``fetch_missing_structures=False``.
 import shutil
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 import openfold3
 from openfold3.core.data.io.sequence.template import TemplateData
 from openfold3.core.data.io.structure.cif import _load_ciffile
+from openfold3.core.data.pipelines.preprocessing import template as template_module
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessor,
     TemplatePreprocessorInputInference,
@@ -44,6 +46,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     match_template_seq_from_aln_to_struc,
     remap_template_chain_id,
 )
+from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
 from openfold3.core.data.primitives.structure.metadata import (
     get_asym_id_to_canonical_seq_dict,
 )
@@ -292,6 +295,119 @@ def test_match_template_seq_from_aln_to_struc(
 ):
     template = _make_template(chain_id=chain_id, seq=seq)
     assert match_template_seq_from_aln_to_struc(template, chain_id_seq_map) == expected
+
+
+def _visible_content_hash(*parts) -> str:
+    """Stand-in for `get_file_content_hash` that echoes what it was handed.
+
+    Keeps these tests free of file IO and, more usefully, makes the argument order
+    `build_template_cache_key` builds up visible in the asserted key.
+    """
+    return "|".join(
+        "None" if part is None else part.name if isinstance(part, Path) else str(part)
+        for part in parts
+    )
+
+
+_SEQ = "ACDEF"
+_SEQ_PART = f"seq-{get_sequence_hash(_SEQ)}"
+
+# Applied per test so no file is ever opened; the stub's echo shows, in the asserted
+# key, exactly which parts `build_template_cache_key` hands to the content hasher.
+_no_file_io = patch.object(
+    template_module, "get_file_content_hash", _visible_content_hash
+)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({}, id="no_source_declared"),
+        pytest.param({"cif_paths": []}, id="empty_cif_list"),
+        pytest.param({"cif_paths": None}, id="explicit_none"),
+    ],
+)
+def test_build_template_cache_key_without_a_source_is_none(kwargs):
+    """A chain that declares no template source has no cache entry to look up."""
+    assert build_template_cache_key(sequence=_SEQ, **kwargs) is None
+
+
+@pytest.mark.parametrize(
+    "kwargs, expected_source_part",
+    [
+        pytest.param(
+            {"aln_path": Path("/msas/rep0/colabfold_template.m8")},
+            "aln-colabfold_template.m8",
+            id="alignment_mode_colabfold_m8",
+        ),
+        pytest.param(
+            {"cif_paths": [Path("/templates/1y57.cif")], "cif_chain_ids": ["A"]},
+            "cif-1y57.cif|A",
+            id="cif_direct_chain_pinned",
+        ),
+        pytest.param(
+            {"cif_paths": [Path("/templates/1y57.cif")]},
+            "cif-1y57.cif|None",
+            id="cif_direct_chain_auto_selected",
+        ),
+        pytest.param(
+            {
+                "cif_paths": [Path("/t/a.cif"), Path("/t/b.cif")],
+                "cif_chain_ids": ["A", "B"],
+            },
+            "cif-a.cif|A|b.cif|B",
+            id="cif_direct_two_files",
+        ),
+        pytest.param(
+            # Declared in the other order, same (file, chain) pairing -> same key.
+            {
+                "cif_paths": [Path("/t/b.cif"), Path("/t/a.cif")],
+                "cif_chain_ids": ["B", "A"],
+            },
+            "cif-a.cif|A|b.cif|B",
+            id="cif_declaration_order_is_irrelevant",
+        ),
+        pytest.param(
+            # Chain IDs are positional, so swapping them is a different request.
+            {
+                "cif_paths": [Path("/t/a.cif"), Path("/t/b.cif")],
+                "cif_chain_ids": ["B", "A"],
+            },
+            "cif-a.cif|B|b.cif|A",
+            id="cif_chain_pairing_is_preserved",
+        ),
+    ],
+)
+@_no_file_io
+def test_build_template_cache_key_shape(kwargs, expected_source_part):
+    """`seq-<hash of the sequence>.<aln|cif>-<hash of the source>`."""
+    key = build_template_cache_key(sequence=_SEQ, **kwargs)
+
+    assert key == f"{_SEQ_PART}.{expected_source_part}"
+
+
+@_no_file_io
+def test_build_template_cache_key_separates_sources_for_one_sequence():
+    """The regression this key exists for (issue #294 follow-up).
+
+    Queries sharing a sequence but declaring different template sources must not
+    share a cache entry, while the shared `seq-` half stays visible so a directory
+    listing still shows they are the same sequence.
+    """
+    keys = [
+        build_template_cache_key(sequence=_SEQ, aln_path=Path("/msas/cf.m8")),
+        build_template_cache_key(sequence=_SEQ, cif_paths=[Path("/t/1y57.cif")]),
+        build_template_cache_key(sequence=_SEQ, cif_paths=[Path("/t/2src.cif")]),
+    ]
+
+    assert all(key.startswith(f"{_SEQ_PART}.") for key in keys)
+    assert len(set(keys)) == 3
+
+    # ...and the same source under a different sequence is a different entry too.
+    other_sequence = build_template_cache_key(
+        sequence="GHIKL", cif_paths=[Path("/t/1y57.cif")]
+    )
+    assert not other_sequence.startswith(f"{_SEQ_PART}.")
 
 
 # ---------------------------------------------------------------------------
