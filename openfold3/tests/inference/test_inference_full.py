@@ -44,13 +44,13 @@ from pathlib import Path
 import pytest
 
 import openfold3
-from openfold3.projects.of3_all_atom.config.inference_query_format import (
-    InferenceQuerySet,
-)
-from openfold3.tests.inference.analysis import (
+from openfold3.core.metrics.alignment import (
     Structure,
     best_ca_rmsd,
     ligand_pose_metrics,
+)
+from openfold3.projects.of3_all_atom.config.inference_query_format import (
+    InferenceQuerySet,
 )
 from openfold3.tests.inference.helpers import (
     MMCIFS_DIR,

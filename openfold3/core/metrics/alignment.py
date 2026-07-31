@@ -19,9 +19,9 @@ through :func:`~openfold3.core.metrics.quality.get_superimpose_metrics` — Kabs
 superposition followed by RMSD — so the tests measure agreement with the same primitive
 the model's own validation uses, rather than a second implementation that could drift.
 
-Everything here takes :class:`Structure`, never a path: parsing is the expensive step and
-every metric wants the same two structures, so callers parse once at the boundary and
-pass the result down.
+Everything here takes :class:`Structure`, never a path: parsing is the expensive step
+and every metric wants the same two structures, so callers parse once at the boundary
+and pass the result down.
 """
 
 import itertools
@@ -119,7 +119,10 @@ def _paired_positions(
     ref_by_chain: Mapping[str, Mapping[int, np.ndarray]],
     assignment: Sequence[tuple[str, str]],
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Stack the CAs shared by each ``(pred_chain, ref_chain)`` pair, in matching order."""
+    """Stack the CAs shared by each ``(pred_chain, ref_chain)`` pair.
+
+    The two returned arrays come back in matching order.
+    """
     pred_xyz: list[np.ndarray] = []
     ref_xyz: list[np.ndarray] = []
     for pred_chain, ref_chain in assignment:
@@ -162,16 +165,22 @@ def _best_ca_assignment(
 ) -> CaAlignment:
     """Best superposition CA-RMSD (Å) of *pred* against *ref*.
 
-    ``pred_chains`` and ``ref_chains`` are matched as sets, not pairwise: every bijection
-    between them is scored and the best is returned. That is what makes a homomer
-    meaningful — with N interchangeable copies the chain labels a prediction happens to
-    emit carry no information, so pinning a specific pairing would measure label
-    agreement rather than structural agreement.
+    ``pred_chains`` and ``ref_chains`` are matched as sets, not pairwise: every
+    bijection between them is scored and the best is returned. That is what makes a
+    homomer meaningful — with N interchangeable copies the chain labels a prediction
+    happens to emit carry no information, so pinning a specific pairing would measure
+    label agreement rather than structural agreement.
 
     ``pred_chains`` defaults to every polymer chain in *pred*, which is what a
     single-chain prediction wants: the chain id the writer emits is then irrelevant.
 
-    Returns the winning assignment's ``rmsd``/``gdt_ts``/``gdt_ha`` and its superposition.
+    Returns the winning assignment's ``rmsd``/``gdt_ts``/``gdt_ha`` and its
+    superposition.
+
+    Partial duplication with
+    ``core.utils.permutation_alignment.find_greedy_optimal_mol_permutation``: that one
+    is greedy, whereas this brute-forces every assignment, which suits post-processing
+    analysis.
     """
     pred_by_chain = pred.ca_positions_by_chain
     ref_by_chain = ref.ca_positions_by_chain
@@ -275,6 +284,10 @@ def symmetry_mappings(
     For toluene this yields the two ring flips; for a fully asymmetric ligand, one. The
     predicted ligand comes from SMILES so its atom *names* are whatever the writer chose
     — matching has to go through the graph, not the names.
+
+    Partial duplication with
+    ``core.data.primitives.structure.conformer.get_cropped_permutations``, which
+    enumerates equivalent orderings but does not hand back the matches themselves.
     """
     pred_mol = _connectivity_graph(pred_selected)
     ref_mol = _connectivity_graph(ref_selected)
@@ -293,13 +306,13 @@ def ligand_pose_metrics(
     ref_ligand_chain: str,
     pred_chains: Sequence[str] | None = None,
 ) -> dict[str, float]:
-    """Symmetry-corrected ligand pose accuracy, in the frame of the superimposed protein.
+    """Symmetry-corrected ligand pose accuracy, in the superimposed protein's frame.
 
-    The protein is superimposed first and that same transform is applied to the predicted
-    ligand — the ligand is *not* aligned to itself. That is the question worth asking of
-    a co-folding model: given the protein placed correctly, does the ligand land in the
-    right pocket in the right orientation. Aligning the ligand separately would score its
-    internal geometry and quietly forgive a pose in the wrong site.
+    The protein is superimposed first and that same transform is applied to the
+    predicted ligand — the ligand is *not* aligned to itself. That is the question worth
+    asking of a co-folding model: given the protein placed correctly, does the ligand
+    land in the right pocket in the right orientation. Aligning the ligand separately
+    would score its internal geometry and quietly forgive a pose in the wrong site.
 
     Returns ``rmsd`` (best over symmetry mappings), ``centroid_distance`` (mapping-free,
     so it separates "wrong pocket" from "right pocket, flipped"), plus ``n_atoms`` and
@@ -336,6 +349,7 @@ def ligand_pose_metrics(
     centroid_distance = float(
         np.linalg.norm(pred_xyz.mean(axis=0) - ref_xyz.mean(axis=0))
     )
+
     return {
         "rmsd": best_rmsd,
         "centroid_distance": centroid_distance,

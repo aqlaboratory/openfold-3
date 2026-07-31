@@ -33,7 +33,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from openfold3.tests.inference.analysis import Structure, best_ca_rmsd
+from openfold3.core.metrics.alignment import Structure, best_ca_rmsd
 from openfold3.tests.inference.helpers import (
     MMCIFS_DIR,
     Mode,
