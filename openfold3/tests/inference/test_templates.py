@@ -139,9 +139,7 @@ def _mean_ca_rmsd(case: TemplateRmsdCase, *, mode: Mode, tmp_path: Path) -> floa
     # no information here.
     reference = Structure.from_cif(_ref_cif(case))
     rmsds = [
-        best_ca_rmsd(Structure.from_cif(cif), reference, ref_chains=(case.chain,))[
-            "rmsd"
-        ]
+        best_ca_rmsd(Structure.from_cif(cif), reference, ref_chains=(case.chain,)).rmsd
         for cif in sample_cifs
     ]
     logger.info("%s [%s] per-sample RMSDs: %s", key, mode.id, rmsds)

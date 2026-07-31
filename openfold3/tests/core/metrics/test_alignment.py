@@ -52,7 +52,7 @@ ZERO_RMSD_TOL = 1e-4
 
 
 @cache
-def load(pdb_id: str) -> Structure:
+def load_structure(pdb_id: str) -> Structure:
     """Parse a committed reference, once per session — parsing dominates runtime."""
     return Structure.from_cif(MMCIFS_DIR / f"{pdb_id}.cif")
 
@@ -121,12 +121,12 @@ CA_COUNT_CASES = [
 
 @pytest.mark.parametrize(("pdb_id", "expected"), CA_COUNT_CASES)
 def test_ca_positions_by_chain_counts(pdb_id, expected):
-    positions = load(pdb_id).ca_positions_by_chain
+    positions = load_structure(pdb_id).ca_positions_by_chain
     assert {chain: len(res) for chain, res in positions.items()} == expected
 
 
 def test_from_cif_keeps_the_source_path():
-    structure = load("1ubq")
+    structure = load_structure("1ubq")
     assert structure.path == MMCIFS_DIR / "1ubq.cif"
     assert len(structure.atom_array) > 0
 
@@ -138,7 +138,7 @@ def test_ca_positions_are_cached():
 
 def test_ca_positions_reject_duplicate_residues():
     """Two CAs for one residue would silently drop residues, so it must raise."""
-    array = load("1ubq").atom_array
+    array = load_structure("1ubq").atom_array
     ca = array[(array.atom_name == "CA") & (~array.hetero)]
     duplicated = Structure(
         path=Path("duplicated.cif"), atom_array=struc.concatenate([ca, ca])
@@ -158,7 +158,7 @@ HEAVY_ATOM_CASES = [
 
 @pytest.mark.parametrize(("pdb_id", "chain", "res_name", "n_atoms"), HEAVY_ATOM_CASES)
 def test_heavy_atoms_selects_the_ligand(pdb_id, chain, res_name, n_atoms):
-    selected = load(pdb_id).heavy_atoms(chain)
+    selected = load_structure(pdb_id).heavy_atoms(chain)
     assert len(selected) == n_atoms
     assert set(map(str, selected.res_name)) == {res_name}
     assert "H" not in set(map(str, selected.element))
@@ -167,12 +167,12 @@ def test_heavy_atoms_selects_the_ligand(pdb_id, chain, res_name, n_atoms):
 def test_heavy_atoms_excludes_water():
     """7l39 chain F is solvent only, so nothing is left to compare."""
     with pytest.raises(ValueError, match="no non-water heavy atoms"):
-        load("7l39").heavy_atoms("F")
+        load_structure("7l39").heavy_atoms("F")
 
 
 def test_heavy_atoms_unknown_chain_names_the_file():
     with pytest.raises(ValueError, match="7l39.cif"):
-        load("7l39").heavy_atoms("ZZ")
+        load_structure("7l39").heavy_atoms("ZZ")
 
 
 # ---------------------------------------------------------------------------
@@ -189,13 +189,13 @@ IDENTITY_CASES = [
 
 @pytest.mark.parametrize(("pdb_id", "ref_chains"), IDENTITY_CASES)
 def test_structure_against_itself_scores_zero(pdb_id, ref_chains):
-    structure = load(pdb_id)
+    structure = load_structure(pdb_id)
     metrics = best_ca_rmsd(
         structure, structure, ref_chains=ref_chains, pred_chains=ref_chains
     )
-    assert metrics["rmsd"] == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
-    assert metrics["gdt_ts"] == pytest.approx(1.0)
-    assert metrics["gdt_ha"] == pytest.approx(1.0)
+    assert metrics.rmsd == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
+    assert metrics.gdt_ts == pytest.approx(1.0)
+    assert metrics.gdt_ha == pytest.approx(1.0)
 
 
 RIGID_MOTION_CASES = [
@@ -215,10 +215,10 @@ RIGID_MOTION_CASES = [
 @pytest.mark.parametrize(("rotation", "translation"), RIGID_MOTION_CASES)
 def test_rmsd_is_invariant_under_rigid_motion(rotation, translation):
     """Superposition must remove any rigid motion, however large."""
-    reference = load("1ubq")
+    reference = load_structure("1ubq")
     prediction = moved(reference, rotation=rotation, translation=translation)
     metrics = best_ca_rmsd(prediction, reference, ref_chains=("A",))
-    assert metrics["rmsd"] == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
+    assert metrics.rmsd == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
 
 
 SCRAMBLE_CASES = [
@@ -233,18 +233,17 @@ SCRAMBLE_CASES = [
 @pytest.mark.parametrize(("pdb_id", "pred_chains", "ref_chains"), SCRAMBLE_CASES)
 def test_finds_the_matching_chain_assignment(pdb_id, pred_chains, ref_chains):
     """Chains are paired as sets, so a scrambled reference order still scores zero."""
-    structure = load(pdb_id)
+    structure = load_structure(pdb_id)
     metrics = best_ca_rmsd(
         structure, structure, ref_chains=ref_chains, pred_chains=pred_chains
     )
-    assert metrics["rmsd"] == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
+    assert metrics.rmsd == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
 
 
 def test_pred_chains_default_to_every_polymer_chain():
-    structure = load("1ubq")
-    assert best_ca_rmsd(structure, structure, ref_chains=("A",))[
-        "rmsd"
-    ] == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
+    structure = load_structure("1ubq")
+    metrics = best_ca_rmsd(structure, structure, ref_chains=("A",))
+    assert metrics.rmsd == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
 
 
 BIOTITE_AGREEMENT_CASES = [
@@ -259,7 +258,7 @@ BIOTITE_AGREEMENT_CASES = [
 @pytest.mark.parametrize(("pdb_id", "pred_chain", "ref_chain"), BIOTITE_AGREEMENT_CASES)
 def test_agrees_with_biotite_superimposition(pdb_id, pred_chain, ref_chain):
     """Cross-check the repo primitive against an independent implementation."""
-    structure = load(pdb_id)
+    structure = load_structure(pdb_id)
     array = structure.atom_array
 
     def sorted_ca(chain):
@@ -277,18 +276,18 @@ def test_agrees_with_biotite_superimposition(pdb_id, pred_chain, ref_chain):
 
     measured = best_ca_rmsd(
         structure, structure, ref_chains=(ref_chain,), pred_chains=(pred_chain,)
-    )["rmsd"]
+    ).rmsd
     assert measured == pytest.approx(expected, abs=1e-4)
 
 
 def test_only_residues_present_in_both_are_scored():
     """4i6p chain B is missing two residues that chain A models; the pair still scores."""
-    structure = load("4i6p")
+    structure = load_structure("4i6p")
     positions = structure.ca_positions_by_chain
     shared = set(positions["A"]) & set(positions["B"])
     assert len(shared) == 82 < len(positions["A"])
     metrics = best_ca_rmsd(structure, structure, ref_chains=("B",), pred_chains=("A",))
-    assert metrics["rmsd"] > 0.0
+    assert metrics.rmsd > 0.0
 
 
 REJECTION_CASES = [
@@ -304,7 +303,7 @@ REJECTION_CASES = [
     ("pdb_id", "pred_chains", "ref_chains", "message"), REJECTION_CASES
 )
 def test_rejects_unusable_chain_selections(pdb_id, pred_chains, ref_chains, message):
-    structure = load(pdb_id)
+    structure = load_structure(pdb_id)
     with pytest.raises(ValueError, match=message):
         best_ca_rmsd(
             structure, structure, ref_chains=ref_chains, pred_chains=pred_chains
@@ -313,7 +312,7 @@ def test_rejects_unusable_chain_selections(pdb_id, pred_chains, ref_chains, mess
 
 def test_rejects_more_chains_than_brute_force_allows():
     """5kc1 has 12 polymer chains; 12! assignments is not a search worth attempting."""
-    structure = load("5kc1")
+    structure = load_structure("5kc1")
     assert len(structure.ca_positions_by_chain) > MAX_PERMUTED_CHAINS
     with pytest.raises(ValueError, match="Refusing to brute-force"):
         best_ca_rmsd(
@@ -323,7 +322,7 @@ def test_rejects_more_chains_than_brute_force_allows():
 
 def test_rejects_chains_with_no_residues_in_common():
     """5kc1 chains A and B share no residue ids, so there is nothing to superimpose."""
-    structure = load("5kc1")
+    structure = load_structure("5kc1")
     positions = structure.ca_positions_by_chain
     assert not set(positions["A"]) & set(positions["B"])
     with pytest.raises(ValueError, match="No residues in common"):
@@ -338,7 +337,7 @@ def test_rejects_chains_with_no_residues_in_common():
 @pytest.mark.parametrize(("rotation", "translation"), RIGID_MOTION_CASES)
 def test_alignment_transformation_maps_prediction_onto_reference(rotation, translation):
     """The returned transform is what carries a ligand into the reference frame."""
-    reference = load("1ubq")
+    reference = load_structure("1ubq")
     prediction = moved(reference, rotation=rotation, translation=translation)
     alignment = _best_ca_assignment(prediction, reference, ref_chains=("A",))
 
@@ -371,21 +370,21 @@ SYMMETRY_CASES = [
 
 @pytest.mark.parametrize(("pdb_id", "chain", "expected"), SYMMETRY_CASES)
 def test_symmetry_group_size(pdb_id, chain, expected):
-    ligand = load(pdb_id).heavy_atoms(chain)
+    ligand = load_structure(pdb_id).heavy_atoms(chain)
     assert len(symmetry_mappings(ligand, ligand)) == expected
 
 
 @pytest.mark.parametrize(("pdb_id", "chain", "expected"), SYMMETRY_CASES)
 def test_symmetry_mappings_are_bijections(pdb_id, chain, expected):
-    ligand = load(pdb_id).heavy_atoms(chain)
+    ligand = load_structure(pdb_id).heavy_atoms(chain)
     for mapping in symmetry_mappings(ligand, ligand):
         assert sorted(mapping) == list(range(len(ligand)))
 
 
 def test_symmetry_mappings_are_empty_for_different_molecules():
     """Toluene is not a subgraph of mercaptoethanol, so nothing matches."""
-    toluene = load("7l39").heavy_atoms("D")
-    mercaptoethanol = load("7l39").heavy_atoms("E")
+    toluene = load_structure("7l39").heavy_atoms("D")
+    mercaptoethanol = load_structure("7l39").heavy_atoms("E")
     assert symmetry_mappings(mercaptoethanol, toluene) == []
 
 
@@ -395,7 +394,7 @@ def test_symmetry_mappings_are_empty_for_different_molecules():
 
 
 def test_identical_pose_scores_zero():
-    structure = load("7l39")
+    structure = load_structure("7l39")
     metrics = ligand_pose_metrics(
         structure,
         structure,
@@ -404,10 +403,10 @@ def test_identical_pose_scores_zero():
         pred_ligand_chain="D",
         ref_ligand_chain="D",
     )
-    assert metrics["rmsd"] == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
-    assert metrics["centroid_distance"] == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
-    assert metrics["n_atoms"] == 7
-    assert metrics["n_symmetry_mappings"] == 2
+    assert metrics.rmsd == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
+    assert metrics.centroid_distance == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
+    assert metrics.n_atoms == 7
+    assert metrics.n_symmetry_mappings == 2
 
 
 LIGAND_OFFSET_CASES = [
@@ -425,7 +424,7 @@ def test_displacing_only_the_ligand_shows_up_in_full(offset, expected):
     Symmetry cannot absorb a rigid displacement, so both the pose RMSD and the
     mapping-free centroid distance must equal the displacement exactly.
     """
-    reference = load("7l39")
+    reference = load_structure("7l39")
     prediction = with_chain_translated(reference, "D", offset)
     metrics = ligand_pose_metrics(
         prediction,
@@ -435,13 +434,13 @@ def test_displacing_only_the_ligand_shows_up_in_full(offset, expected):
         pred_ligand_chain="D",
         ref_ligand_chain="D",
     )
-    assert metrics["rmsd"] == pytest.approx(expected, abs=1e-3)
-    assert metrics["centroid_distance"] == pytest.approx(expected, abs=1e-3)
+    assert metrics.rmsd == pytest.approx(expected, abs=1e-3)
+    assert metrics.centroid_distance == pytest.approx(expected, abs=1e-3)
 
 
 def test_symmetry_equivalent_relabelling_scores_zero():
     """A ring-flipped toluene is the same pose; only the atom order differs."""
-    reference = load("7l39")
+    reference = load_structure("7l39")
     ligand = reference.heavy_atoms("D")
     flip = next(
         mapping
@@ -467,11 +466,11 @@ def test_symmetry_equivalent_relabelling_scores_zero():
         pred_ligand_chain="D",
         ref_ligand_chain="D",
     )
-    assert metrics["rmsd"] == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
+    assert metrics.rmsd == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
 
 
 def test_rejects_ligands_of_different_size():
-    structure = load("7l39")
+    structure = load_structure("7l39")
     with pytest.raises(ValueError, match="Ligand atom count mismatch"):
         ligand_pose_metrics(
             structure,
@@ -485,7 +484,7 @@ def test_rejects_ligands_of_different_size():
 
 def test_rejects_ligands_that_do_not_match_as_graphs():
     """Same atom count, unrelated topology: EDO (C2O2) against NO3 (NO3)."""
-    structure = load("5kc1")
+    structure = load_structure("5kc1")
     with pytest.raises(ValueError, match="No graph match"):
         ligand_pose_metrics(
             structure,

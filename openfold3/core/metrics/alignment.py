@@ -134,14 +134,48 @@ def _paired_positions(
     return np.asarray(pred_xyz, dtype=float), np.asarray(ref_xyz, dtype=float)
 
 
-def _superimpose_rmsd(pred_xyz: np.ndarray, ref_xyz: np.ndarray) -> dict[str, float]:
-    """Kabsch-superimpose *pred_xyz* onto *ref_xyz* and return rmsd/gdt_ts/gdt_ha."""
+@dataclass(frozen=True)
+class SuperpositionMetrics:
+    """How well a superimposed prediction agrees with its reference.
+
+    All in Ångström for ``rmsd``; the GDT scores are fractions in ``[0, 1]``.
+    """
+
+    rmsd: float
+    gdt_ts: float
+    gdt_ha: float
+
+
+@dataclass(frozen=True)
+class LigandPoseMetrics:
+    """How well a predicted ligand pose agrees with its reference.
+
+    ``rmsd`` is the best over the symmetry mappings, ``centroid_distance`` is
+    mapping-free and so separates "wrong pocket" from "right pocket, flipped". The two
+    counts are diagnostics: how much ligand was compared, and how much symmetry the
+    matching had to consider.
+    """
+
+    rmsd: float
+    centroid_distance: float
+    n_atoms: int
+    n_symmetry_mappings: int
+
+
+def _superimpose_rmsd(
+    pred_xyz: np.ndarray, ref_xyz: np.ndarray
+) -> SuperpositionMetrics:
+    """Kabsch-superimpose *pred_xyz* onto *ref_xyz* and score the result."""
     metrics = get_superimpose_metrics(
         all_atom_pred_pos=torch.from_numpy(pred_xyz),
         all_atom_gt_pos=torch.from_numpy(ref_xyz),
         all_atom_mask=torch.ones(len(pred_xyz), dtype=torch.float64),
     )
-    return {name: float(value) for name, value in metrics.items()}
+    return SuperpositionMetrics(
+        rmsd=float(metrics["rmsd"]),
+        gdt_ts=float(metrics["gdt_ts"]),
+        gdt_ha=float(metrics["gdt_ha"]),
+    )
 
 
 @dataclass(frozen=True)
@@ -153,7 +187,7 @@ class CaAlignment:
     once the protein has been placed.
     """
 
-    metrics: dict[str, float]
+    metrics: SuperpositionMetrics
     transformation: Transformation
 
 
@@ -209,7 +243,7 @@ def _best_ca_assignment(
                 f"it holds {sorted(available)}"
             )
 
-    best_metrics: dict[str, float] | None = None
+    best_metrics: SuperpositionMetrics | None = None
     best_positions: tuple[np.ndarray, np.ndarray] | None = None
     for permuted_ref in itertools.permutations(ref_chains):
         assignment = list(zip(pred_chains, permuted_ref, strict=True))
@@ -220,8 +254,8 @@ def _best_ca_assignment(
                 f"for assignment {assignment}"
             )
         metrics = _superimpose_rmsd(pred_xyz, ref_xyz)
-        logger.debug("assignment %s -> CA-RMSD %.2f", assignment, metrics["rmsd"])
-        if best_metrics is None or metrics["rmsd"] < best_metrics["rmsd"]:
+        logger.debug("assignment %s -> CA-RMSD %.2f", assignment, metrics.rmsd)
+        if best_metrics is None or metrics.rmsd < best_metrics.rmsd:
             best_metrics, best_positions = metrics, (pred_xyz, ref_xyz)
 
     assert best_metrics is not None  # permutations() of a non-empty seq is non-empty
@@ -242,7 +276,7 @@ def best_ca_rmsd(
     ref: Structure,
     ref_chains: Sequence[str],
     pred_chains: Sequence[str] | None = None,
-) -> dict[str, float]:
+) -> SuperpositionMetrics:
     """Best superposition CA-RMSD (Å) of *pred* against *ref*.
 
     See :func:`_best_ca_assignment`; this returns just the metrics.
@@ -305,7 +339,7 @@ def ligand_pose_metrics(
     pred_ligand_chain: str,
     ref_ligand_chain: str,
     pred_chains: Sequence[str] | None = None,
-) -> dict[str, float]:
+) -> LigandPoseMetrics:
     """Symmetry-corrected ligand pose accuracy, in the superimposed protein's frame.
 
     The protein is superimposed first and that same transform is applied to the
@@ -313,10 +347,6 @@ def ligand_pose_metrics(
     asking of a co-folding model: given the protein placed correctly, does the ligand
     land in the right pocket in the right orientation. Aligning the ligand separately
     would score its internal geometry and quietly forgive a pose in the wrong site.
-
-    Returns ``rmsd`` (best over symmetry mappings), ``centroid_distance`` (mapping-free,
-    so it separates "wrong pocket" from "right pocket, flipped"), plus ``n_atoms`` and
-    ``n_symmetry_mappings`` for diagnosis.
     """
     alignment = _best_ca_assignment(pred, ref, ref_chains, pred_chains)
 
@@ -350,9 +380,9 @@ def ligand_pose_metrics(
         np.linalg.norm(pred_xyz.mean(axis=0) - ref_xyz.mean(axis=0))
     )
 
-    return {
-        "rmsd": best_rmsd,
-        "centroid_distance": centroid_distance,
-        "n_atoms": float(len(ref_selected)),
-        "n_symmetry_mappings": float(len(mappings)),
-    }
+    return LigandPoseMetrics(
+        rmsd=best_rmsd,
+        centroid_distance=centroid_distance,
+        n_atoms=len(ref_selected),
+        n_symmetry_mappings=len(mappings),
+    )

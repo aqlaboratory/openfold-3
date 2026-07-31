@@ -355,12 +355,12 @@ def _assert_protein(
         "%s [%s] CA-RMSD %.2f Å (gdt_ts %.3f) vs %s",
         query_name,
         mode.id,
-        metrics["rmsd"],
-        metrics["gdt_ts"],
+        metrics.rmsd,
+        metrics.gdt_ts,
         expectation.ref_cif.name,
     )
     _assert_within_ceiling(
-        metrics["rmsd"],
+        metrics.rmsd,
         protein.rmsd_max.get(mode),
         what=f"CA-RMSD against {expectation.ref_cif.name}",
         query_name=query_name,
@@ -392,15 +392,15 @@ def _assert_ligand(
         "vs %s chain %s",
         query_name,
         mode.id,
-        metrics["rmsd"],
-        metrics["centroid_distance"],
-        int(metrics["n_atoms"]),
-        int(metrics["n_symmetry_mappings"]),
+        metrics.rmsd,
+        metrics.centroid_distance,
+        metrics.n_atoms,
+        metrics.n_symmetry_mappings,
         expectation.ref_cif.name,
         ligand.ref_chain,
     )
     _assert_within_ceiling(
-        metrics["rmsd"],
+        metrics.rmsd,
         ligand.rmsd_max.get(mode),
         what=(
             f"ligand RMSD against {expectation.ref_cif.name} chain {ligand.ref_chain}"
