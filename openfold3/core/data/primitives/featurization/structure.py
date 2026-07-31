@@ -71,7 +71,9 @@ def create_sym_id(
     return sym_id_per_atom[token_starts]
 
 
-def create_cyclic_mask(atom_array: AtomArray, token_starts: np.ndarray) -> torch.Tensor:
+def maybe_create_cyclic_mask(
+    atom_array: AtomArray, token_starts: np.ndarray
+) -> torch.Tensor:
     """Creates the per-token cyclic mask used by the relative position encoding.
 
     Only queries built from the inference JSON carry an ``is_cyclic`` annotation;
