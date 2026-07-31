@@ -98,6 +98,9 @@ class ModelRunner(pl.LightningModule):
             )
 
     def training_step(self, batch, batch_idx):
+        if not self.ema.params:
+            self.ema.init_params(self.model)
+            
         example_feat = next(
             iter(v for v in batch.values() if isinstance(v, torch.Tensor))
         )
@@ -134,7 +137,8 @@ class ModelRunner(pl.LightningModule):
                 return t.detach().clone()
 
             self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
-            self.model.load_state_dict(self.ema.state_dict()["params"])
+            if self.ema.params:
+                self.model.load_state_dict(self.ema.state_dict()["params"])
 
         # Run the model
         outputs = self(batch)
