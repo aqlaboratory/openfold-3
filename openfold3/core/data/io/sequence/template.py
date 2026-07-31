@@ -382,6 +382,30 @@ class TemplateData(NamedTuple):
     seq: str | None
     cif_path: Path | None = None
 
+    def build_residue_idx_map(self) -> np.ndarray:
+        """Builds the query-to-template residue index map for a template cache entry.
+
+        `query_aln_pos` and `aln_pos` are per-alignment-column residue indices that use
+        -1 where the query resp. the template has a gap. The template cache contract
+        (see `map_token_pos_to_template_residues`) is one row per aligned residue
+        *pair*, so the gapped columns are dropped here. Keeping them makes the number of
+        selected template residues disagree with the number of aligned query tokens
+        downstream, which silently discards the template.
+
+        Returns:
+            np.ndarray:
+                An n_aligned_pairs-by-2 array with the 1-based global residue indices of
+                the query (1st col) and the template (2nd col).
+        """
+        idx_map = np.concatenate(
+            [
+                self.query_aln_pos[:, np.newaxis],
+                self.aln_pos[:, np.newaxis],
+            ],
+            axis=1,
+        )
+        return idx_map[(idx_map >= 0).all(axis=1)]
+
 
 def calculate_ids_hit(
     q: np.ndarray, t: np.ndarray, query_start: int, template_start: int

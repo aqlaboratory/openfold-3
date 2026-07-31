@@ -85,7 +85,10 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_cif_block,
     get_release_date,
 )
-from openfold3.core.data.primitives.structure.template import clean_template_atom_array
+from openfold3.core.data.primitives.structure.template import (
+    TemplateCacheEntry,
+    clean_template_atom_array,
+)
 from openfold3.core.data.resources.residues import (
     MoleculeType,
 )
@@ -1479,35 +1482,6 @@ def preprocess_template_structures(
             wrapped_template_structure_preprocessor(template_pdb_id)
 
 
-def build_residue_idx_map(template: TemplateData) -> np.ndarray:
-    """Builds the query-to-template residue index map for a template cache entry.
-
-    `TemplateData.query_aln_pos` and `TemplateData.aln_pos` are per-alignment-column
-    residue indices that use -1 where the query resp. the template has a gap. The
-    template cache contract (see `map_token_pos_to_template_residues`) is one row per
-    aligned residue *pair*, so the gapped columns are dropped here. Keeping them makes
-    the number of selected template residues disagree with the number of aligned query
-    tokens downstream, which silently discards the template.
-
-    Args:
-        template (TemplateData):
-            The parsed template hit.
-
-    Returns:
-        np.ndarray:
-            An n_aligned_pairs-by-2 array with the 1-based global residue indices of the
-            query (1st col) and the template (2nd col).
-    """
-    idx_map = np.concatenate(
-        [
-            template.query_aln_pos[:, np.newaxis],
-            template.aln_pos[:, np.newaxis],
-        ],
-        axis=1,
-    )
-    return idx_map[(idx_map >= 0).all(axis=1)]
-
-
 # New template preprocessing pipelines
 # TODO: replace old versions from above with these new ones
 class TemplatePreprocessorInputTrain(BaseModel):
@@ -2298,7 +2272,7 @@ class TemplatePreprocessor:
                     continue
 
                 # H. Add to cache entry
-                idx_map = build_residue_idx_map(template)
+                idx_map = template.build_residue_idx_map()
                 if idx_map.shape[0] == 0:
                     if self.create_logs:
                         worker_logger.info(
@@ -2306,16 +2280,16 @@ class TemplatePreprocessor:
                             " residue pairs."
                         )
                     continue
-                cache_entry_data = {
-                    "index": template.index,
-                    "release_date": release_date,
-                    "idx_map": idx_map,
-                }
-                # Store CIF path for CIF-direct mode
-                if template.cif_path is not None:
-                    cache_entry_data["cif_path"] = str(template.cif_path)
+                # `cif_path` is only set in CIF-direct mode and is dropped by `to_dict`
+                # when absent
+                cache_entry = TemplateCacheEntry(
+                    index=template.index,
+                    release_date=release_date,
+                    idx_map=idx_map,
+                    cif_path=template.cif_path,
+                )
                 template_cache_entry[f"{template.entry_id}_{chain_id_matched}"] = (
-                    cache_entry_data
+                    cache_entry.to_dict()
                 )
                 template_ids.append(f"{template.entry_id}_{chain_id_matched}")
                 if self.create_logs:

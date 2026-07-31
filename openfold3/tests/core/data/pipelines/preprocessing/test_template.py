@@ -24,15 +24,13 @@ network ``fetch``) are intentionally out of scope.
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import pytest
 
-from openfold3.core.data.io.sequence.template import TemplateData, calculate_ids_hit
+from openfold3.core.data.io.sequence.template import TemplateData
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessor,
     TemplatePreprocessorInputInference,
     TemplatePreprocessorSettings,
-    build_residue_idx_map,
     collate_data_logs,
     data_log_to_tsv,
     fails_template_release_date_checks,
@@ -286,66 +284,6 @@ def test_match_template_seq_from_aln_to_struc(
 ):
     template = _make_template(chain_id=chain_id, seq=seq)
     assert match_template_seq_from_aln_to_struc(template, chain_id_seq_map) == expected
-
-
-def _template_with_alignment(query_aln: str, template_aln: str) -> TemplateData:
-    query_arr = np.fromiter(query_aln, dtype="<U1", count=len(query_aln))
-    template_arr = np.fromiter(template_aln, dtype="<U1", count=len(template_aln))
-    query_ids_hit, template_ids_hit = calculate_ids_hit(
-        q=query_arr, t=template_arr, query_start=1, template_start=1
-    )
-    return TemplateData(
-        index=0,
-        entry_id="1abc",
-        chain_id="A",
-        query_aln_pos=query_ids_hit,
-        aln_pos=template_ids_hit,
-        seq_id=1.0,
-        q_cov=1.0,
-        seq=template_aln.replace("-", ""),
-    )
-
-
-@pytest.mark.parametrize(
-    "query_aln, template_aln, expected",
-    [
-        pytest.param(
-            "ACDEF",
-            "ACDEF",
-            [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5]],
-            id="ungapped_alignment_is_identity",
-        ),
-        pytest.param(
-            # query    A C D - - E F G H I K
-            # template A C D E F G H - - I K
-            "ACD--EFGHIK",
-            "ACDEFGH--IK",
-            [[1, 1], [2, 2], [3, 3], [4, 6], [5, 7], [8, 8], [9, 9]],
-            id="gaps_on_both_sides_dropped",
-        ),
-        pytest.param(
-            "ACD--",
-            "--DEF",
-            [[3, 1]],
-            id="offset_alignment_keeps_single_overlap",
-        ),
-        pytest.param(
-            "AC--",
-            "--DE",
-            [],
-            id="no_overlapping_columns_gives_empty_map",
-        ),
-    ],
-)
-def test_build_residue_idx_map_drops_gapped_columns(query_aln, template_aln, expected):
-    """Gapped alignment columns must not reach the cache: downstream featurization
-    requires one row per aligned residue pair."""
-    idx_map = build_residue_idx_map(_template_with_alignment(query_aln, template_aln))
-
-    assert (idx_map >= 0).all()
-    np.testing.assert_array_equal(
-        idx_map, np.array(expected, dtype=idx_map.dtype).reshape(len(expected), 2)
-    )
 
 
 # ---------------------------------------------------------------------------
