@@ -36,6 +36,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessor,
     TemplatePreprocessorInputInference,
     TemplatePreprocessorSettings,
+    build_template_cache_key,
     collate_data_logs,
     data_log_to_tsv,
     fails_template_release_date_checks,
@@ -43,7 +44,6 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     match_template_seq_from_aln_to_struc,
     remap_template_chain_id,
 )
-from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
 from openfold3.core.data.primitives.structure.metadata import (
     get_asym_id_to_canonical_seq_dict,
 )
@@ -518,11 +518,11 @@ def test_update_inference_query_set(tmp_path):
     None."""
     seq_present = "ACDEFGHIK"
     seq_missing = "KLMNPQRST"
-    hash_present = get_sequence_hash(seq_present)
-    # Create the cache entry only for the present sequence.
-    _write_file(tmp_path / f"{hash_present}.npz")
     aln_present = _write_file(tmp_path / "present.sto")
     aln_missing = _write_file(tmp_path / "missing.sto")
+    key_present = build_template_cache_key(seq_present, aln_path=aln_present)
+    # Create the cache entry only for the present sequence.
+    _write_file(tmp_path / f"{key_present}.npz")
 
     query = Query(
         chains=[
@@ -545,13 +545,13 @@ def test_update_inference_query_set(tmp_path):
         input_set=iqs,
         moltypes=[MoleculeType.PROTEIN],
         cache_directory=tmp_path,
-        hash_template_id_map={hash_present: ["1abc_A", "2def_B"]},
+        template_ids_by_cache_key={key_present: ["1abc_A", "2def_B"]},
     )
 
     pre._update_inference_query_set()
 
     chains = pre.input_set.queries["q0"].chains
-    assert chains[0].template_alignment_file_path == tmp_path / f"{hash_present}.npz"
+    assert chains[0].template_alignment_file_path == tmp_path / f"{key_present}.npz"
     assert chains[0].template_entry_chain_ids == ["1abc_A", "2def_B"]
     assert chains[1].template_alignment_file_path is None
     assert chains[1].template_entry_chain_ids == []
@@ -561,9 +561,9 @@ def test_update_inference_query_set_skips_chains_without_template_input(tmp_path
     """A chain that asked for no templates must not inherit another query's cache
     entry just because the two share a sequence."""
     seq = "ACDEFGHIK"
-    seq_hash = get_sequence_hash(seq)
-    _write_file(tmp_path / f"{seq_hash}.npz")
     cif_path = _write_file(tmp_path / "1abc.cif")
+    key = build_template_cache_key(seq, cif_paths=[cif_path])
+    _write_file(tmp_path / f"{key}.npz")
 
     iqs = InferenceQuerySet(
         queries={
@@ -586,14 +586,14 @@ def test_update_inference_query_set_skips_chains_without_template_input(tmp_path
         input_set=iqs,
         moltypes=[MoleculeType.PROTEIN],
         cache_directory=tmp_path,
-        hash_template_id_map={seq_hash: ["1abc_A"]},
+        template_ids_by_cache_key={key: ["1abc_A"]},
     )
 
     pre._update_inference_query_set()
 
     with_templates = pre.input_set.queries["with_templates"].chains[0]
     without_templates = pre.input_set.queries["without_templates"].chains[0]
-    assert with_templates.template_alignment_file_path == tmp_path / f"{seq_hash}.npz"
+    assert with_templates.template_alignment_file_path == tmp_path / f"{key}.npz"
     assert with_templates.template_entry_chain_ids == ["1abc_A"]
     assert without_templates.template_alignment_file_path is None
     assert without_templates.template_entry_chain_ids is None
