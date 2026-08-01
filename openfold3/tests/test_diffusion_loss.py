@@ -14,9 +14,13 @@
 
 import unittest
 
+import pytest
 import torch
 import torch.nn.functional as F
 
+from openfold3.core.kernels.triton.smooth_lddt_ball_query import (
+    is_ball_query_triton_available,
+)
 from openfold3.core.loss.diffusion import (
     bond_loss,
     diffusion_loss,
@@ -29,6 +33,17 @@ from openfold3.tests.config import consts
 
 
 class TestDiffusionLoss(unittest.TestCase):
+    @staticmethod
+    def to_device(obj, device):
+        if isinstance(obj, torch.Tensor):
+            return obj.to(device)
+        if isinstance(obj, dict):
+            return {
+                key: TestDiffusionLoss.to_device(value, device)
+                for key, value in obj.items()
+            }
+        return obj
+
     def setup_features(self):
         # Example: UNK UNK UNK ALA GLY/A A DT
         # NumAtoms: 1 1 1 5 4 22 21
@@ -192,6 +207,71 @@ class TestDiffusionLoss(unittest.TestCase):
 
         assert torch.equal(torch.nonzero(loss_masked), torch.nonzero(mostly_zeros_mask))
         assert torch.all(torch.not_equal(loss_masked, loss))
+
+    def test_diffusion_loss_ball_query_matches_dense(self):
+        if not is_ball_query_triton_available():
+            pytest.skip("Triton ball-query smooth lDDT requires Triton and CUDA")
+
+        sigma_data = 16
+        device = torch.device("cuda")
+        batch = self.to_device(self.setup_features(), device)
+        x_gt = batch["ground_truth"]["atom_positions"]
+        x = x_gt[:, None] + 0.1 * torch.randn((1, 2, *x_gt.shape[-2:]), device=device)
+        t = sigma_data * torch.exp(torch.randn(x.shape[0], device=device))
+
+        dense_loss, dense_breakdown = diffusion_loss(
+            batch=batch,
+            x=x,
+            t=t,
+            sigma_data=sigma_data,
+            smooth_lddt_backend="dense",
+        )
+        ball_query_loss, ball_query_breakdown = diffusion_loss(
+            batch=batch,
+            x=x,
+            t=t,
+            sigma_data=sigma_data,
+            smooth_lddt_backend="ball_query",
+        )
+
+        torch.testing.assert_close(ball_query_loss, dense_loss, atol=1e-5, rtol=1e-5)
+        torch.testing.assert_close(
+            ball_query_breakdown["smooth_lddt_loss"],
+            dense_breakdown["smooth_lddt_loss"],
+            atol=1e-5,
+            rtol=1e-5,
+        )
+
+    def test_diffusion_loss_rejects_unknown_smooth_lddt_backend(self):
+        batch = self.setup_features()
+        x_gt = batch["ground_truth"]["atom_positions"]
+        x = x_gt[:, None].expand(-1, 2, -1, -1)
+        t = torch.ones(x.shape[0])
+
+        with pytest.raises(ValueError, match="smooth_lddt_backend"):
+            diffusion_loss(
+                batch=batch,
+                x=x,
+                t=t,
+                sigma_data=16,
+                smooth_lddt_backend="unknown",
+            )
+
+    def test_diffusion_loss_ball_query_rejects_chunking(self):
+        batch = self.setup_features()
+        x_gt = batch["ground_truth"]["atom_positions"]
+        x = x_gt[:, None].expand(-1, 2, -1, -1)
+        t = torch.ones(x.shape[0])
+
+        with pytest.raises(ValueError, match="chunked loss execution"):
+            diffusion_loss(
+                batch=batch,
+                x=x,
+                t=t,
+                sigma_data=16,
+                chunk_size=1,
+                smooth_lddt_backend="ball_query",
+            )
 
     def _test_diffusion_loss(self, batch):
         n_sample = 2

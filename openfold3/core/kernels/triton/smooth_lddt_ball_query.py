@@ -608,7 +608,7 @@ def ball_query_smooth_lddt_loss(
     is_nucleotide: torch.Tensor,
     loss_atom_mask: torch.Tensor,
     eps: float,
-    top_k: int | None,
+    top_k: int | None = 512,
     seed: int = 0,
     radius_protein: float = DEFAULT_RADIUS_PROTEIN,
     radius_nucleotide: float = DEFAULT_RADIUS_NUCLEOTIDE,

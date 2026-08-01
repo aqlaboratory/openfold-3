@@ -174,7 +174,6 @@ def test_forward_and_backward_match_dense():
         is_nucleotide=is_nucleotide,
         loss_atom_mask=loss_atom_mask,
         eps=eps,
-        top_k=x_gt.shape[-2] - 1,
     )
     dense_loss = _dense_smooth_lddt_loss(
         x=x_dense,

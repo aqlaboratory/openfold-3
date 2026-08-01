@@ -416,6 +416,54 @@ def smooth_lddt_loss(
     return 1 - lddt
 
 
+def smooth_lddt_loss_ball_query(
+    x: torch.Tensor,
+    batch: dict,
+    loss_token_mask: torch.Tensor,
+    eps: float,
+    top_k: int | None,
+) -> torch.Tensor:
+    """Compute smooth lDDT with the Triton ball-query backend."""
+    from openfold3.core.kernels.triton.smooth_lddt_ball_query import (
+        ball_query_smooth_lddt_loss,
+        is_ball_query_triton_available,
+        is_ball_query_triton_installed,
+    )
+
+    if not is_ball_query_triton_installed():
+        raise RuntimeError(
+            "smooth_lddt_backend='ball_query' requires Triton to be installed"
+        )
+    if not is_ball_query_triton_available():
+        raise RuntimeError(
+            "smooth_lddt_backend='ball_query' requires a CUDA device at runtime"
+        )
+
+    x_gt = batch["ground_truth"]["atom_positions"]
+    atom_mask_gt = batch["ground_truth"]["atom_resolved_mask"]
+    is_nucleotide = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=batch["is_dna"] + batch["is_rna"],
+    )
+    loss_atom_mask = broadcast_token_feat_to_atoms(
+        token_mask=batch["token_mask"],
+        num_atoms_per_token=batch["num_atoms_per_token"],
+        token_feat=loss_token_mask,
+    )
+    loss_atom_mask = loss_atom_mask * atom_mask_gt
+
+    return ball_query_smooth_lddt_loss(
+        x=x,
+        x_gt=x_gt,
+        atom_mask_gt=atom_mask_gt,
+        is_nucleotide=is_nucleotide,
+        loss_atom_mask=loss_atom_mask,
+        eps=eps,
+        top_k=top_k,
+    )
+
+
 def run_low_mem_loss_fn(
     loss_fn: Callable, x: torch.Tensor, kwargs: dict, chunk_size: int
 ) -> torch.Tensor:
@@ -459,6 +507,8 @@ def diffusion_loss(
     eps: float = 1e-8,
     chunk_size: int | None = None,
     use_sparse_loss: bool | None = False,
+    smooth_lddt_backend: str = "dense",
+    smooth_lddt_top_k: int | None = 512,
     **kwargs,
 ) -> [torch.Tensor, dict]:
     """
@@ -486,6 +536,11 @@ def diffusion_loss(
             for smooth lddt and bond loss. Defaults to no chunking.
         use_sparse_loss:
             Whether to use sparse loss. Currently only implemented for bond_loss.
+        smooth_lddt_backend:
+            Smooth lDDT implementation to use. Options are "dense" and "ball_query".
+        smooth_lddt_top_k:
+            Maximum sampled in-radius neighbors per query atom for ball-query
+            smooth lDDT.
     Returns:
         mean_loss:
             Diffusion loss
@@ -523,15 +578,36 @@ def diffusion_loss(
     l_bond = 0.0
     l_smooth_lddt = 0.0
     bond_loss_fn = bond_loss if not use_sparse_loss else bond_loss_sparse
+    if smooth_lddt_backend not in {"dense", "ball_query"}:
+        raise ValueError(
+            "smooth_lddt_backend must be one of {'dense', 'ball_query'}, "
+            f"got {smooth_lddt_backend!r}"
+        )
+    if smooth_lddt_backend == "ball_query" and chunk_size is not None:
+        raise ValueError(
+            "Ball-query smooth lDDT does not support chunked loss execution. "
+            "Set architecture.loss_module.diffusion.chunk_size to null when "
+            'using smooth_lddt_backend="ball_query".'
+        )
+
     if chunk_size is None:
         if bond_weight.any():
             l_bond = bond_loss_fn(x=x, batch=batch, eps=eps)
             loss_breakdown["bond"] = l_bond.detach().clone().mean(dim=-1)
 
         if smooth_lddt_weight.any():
-            l_smooth_lddt = smooth_lddt_loss(
-                x=x, batch=batch, loss_token_mask=loss_token_mask, eps=eps
-            )
+            if smooth_lddt_backend == "ball_query":
+                l_smooth_lddt = smooth_lddt_loss_ball_query(
+                    x=x,
+                    batch=batch,
+                    loss_token_mask=loss_token_mask,
+                    eps=eps,
+                    top_k=smooth_lddt_top_k,
+                )
+            else:
+                l_smooth_lddt = smooth_lddt_loss(
+                    x=x, batch=batch, loss_token_mask=loss_token_mask, eps=eps
+                )
 
             # Mean over diffusion sample dimension
             loss_breakdown["smooth_lddt"] = l_smooth_lddt.detach().clone().mean(dim=-1)
