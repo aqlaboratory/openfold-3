@@ -629,11 +629,16 @@ def extract_alignments_to_pair(
             m = rep_msa_map_per_chain.get(msa_name)
             if m is not None:
                 # exclude query from subsequent MSAs
-                if len(msa_arrays_to_pair_i) > 0:
-                    non_query_mask = np.bool([1] * len(m.msa.shape[0]))
-                    len(m.msa.shape[0])[0] = False
+                is_first_pairable_source = len(msa_arrays_to_pair_i) == 0
+                if not is_first_pairable_source:
+                    non_query_mask = np.ones(m.msa.shape[0], dtype=bool)
+                    non_query_mask[0] = False
                     m = m.subset(non_query_mask)
-                if len(m) > 1:
+                # The first source still includes its query row, so it needs at
+                # least 2 rows to have any real hit; later sources already had
+                # their query row stripped above, so 1 row is enough.
+                min_rows = 1 if is_first_pairable_source else 0
+                if len(m) > min_rows:
                     msa_arrays_to_pair_i.append(m)
 
         if len(msa_arrays_to_pair_i) > 0:
