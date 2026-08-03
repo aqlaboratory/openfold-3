@@ -256,18 +256,20 @@ BIOTITE_AGREEMENT_CASES = [
 
 
 @pytest.mark.parametrize(("pdb_id", "pred_chain", "ref_chain"), BIOTITE_AGREEMENT_CASES)
-def test_agrees_with_biotite_superimposition(pdb_id, pred_chain, ref_chain):
+def test_best_ca_rmsd_agrees_with_biotite_superimposition(
+    pdb_id, pred_chain, ref_chain
+):
     """Cross-check the repo primitive against an independent implementation."""
     structure = load_structure(pdb_id)
     array = structure.atom_array
 
-    def sorted_ca(chain):
+    def _sorted_ca(chain):
         selected = array[
             (array.atom_name == "CA") & (~array.hetero) & (array.chain_id == chain)
         ]
         return selected[np.argsort(selected.res_id)]
 
-    pred, ref = sorted_ca(pred_chain), sorted_ca(ref_chain)
+    pred, ref = _sorted_ca(pred_chain), _sorted_ca(ref_chain)
     shared = np.intersect1d(pred.res_id, ref.res_id)
     pred = pred[np.isin(pred.res_id, shared)]
     ref = ref[np.isin(ref.res_id, shared)]
