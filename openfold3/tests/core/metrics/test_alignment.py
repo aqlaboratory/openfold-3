@@ -440,25 +440,91 @@ def test_displacing_only_the_ligand_shows_up_in_full(offset, expected):
     assert metrics.centroid_distance == pytest.approx(expected, abs=1e-3)
 
 
-def test_symmetry_equivalent_relabelling_scores_zero():
-    """A ring-flipped toluene is the same pose; only the atom order differs."""
+#: Toluene (MBN), 7l39 chain D, in file order: a methyl carbon ``C`` on a benzene ring
+#: whose carbons run ``C1`` (the one bearing the methyl) round to ``C6``.
+TOLUENE_ATOM_ORDER = ("C", "C1", "C2", "C3", "C4", "C5", "C6")
+
+#: The same molecule with the ring read the other way round. ``C``, ``C1`` and the para
+#: carbon ``C4`` lie on the mirror axis and stay put; the two pairs either side of it
+#: swap — ``C2``<->``C6`` and ``C3``<->``C5``. This is toluene's only non-trivial
+#: automorphism.
+TOLUENE_RING_FLIP = ("C", "C1", "C6", "C5", "C4", "C3", "C2")
+
+#: Smallest atom movement among the non-symmetry relabellings below (~0.74 Å). Scoring
+#: any of them near zero would mean a genuine mismatch had been wrongly forgiven.
+MIN_MISMATCH_RMSD = 0.5
+
+
+def toluene_indices(atom_order: tuple[str, ...]) -> tuple[int, ...]:
+    """An atom order as indices into ``TOLUENE_ATOM_ORDER``.
+
+    That index form is what :func:`with_chain_relabelled` and :func:`symmetry_mappings`
+    both speak; names are used above because a flip is legible and ``(0, 1, 6, 5, 4, 3,
+    2)`` is not.
+    """
+    return tuple(TOLUENE_ATOM_ORDER.index(name) for name in atom_order)
+
+
+def test_symmetry_mappings_finds_the_ring_flip():
+    """Toluene has exactly two automorphisms: the identity and the mirror.
+
+    Pins the atom order the constants above are written against, so they cannot quietly
+    drift out of step with the committed cif.
+    """
+    ligand = load_structure("7l39").heavy_atoms("D")
+    assert tuple(str(name) for name in ligand.atom_name) == TOLUENE_ATOM_ORDER
+
+    found = {
+        tuple(TOLUENE_ATOM_ORDER[index] for index in mapping)
+        for mapping in symmetry_mappings(ligand, ligand)
+    }
+    assert found == {TOLUENE_ATOM_ORDER, TOLUENE_RING_FLIP}
+
+
+RELABELLING_CASES = [
+    pytest.param(TOLUENE_ATOM_ORDER, True, id="unchanged"),
+    pytest.param(TOLUENE_RING_FLIP, True, id="ring-flip"),
+    # Ortho and meta carbons are not interchangeable with each other, so swapping a
+    # neighbouring pair is a real error however the molecule is read.
+    pytest.param(
+        ("C", "C1", "C3", "C2", "C4", "C5", "C6"), False, id="adjacent-carbons-swapped"
+    ),
+    # Benzene alone would be invariant under this; the methyl is what breaks it.
+    pytest.param(
+        ("C", "C2", "C3", "C4", "C5", "C6", "C1"), False, id="ring-rotated-under-methyl"
+    ),
+    pytest.param(
+        ("C4", "C1", "C2", "C3", "C", "C5", "C6"), False, id="methyl-swapped-into-ring"
+    ),
+    # Reversed about the wrong axis: close enough to the true mirror that the symmetry
+    # search cuts the error roughly in half, but it never reaches zero.
+    pytest.param(
+        ("C", "C6", "C5", "C4", "C3", "C2", "C1"), False, id="ring-reversed-wrong-axis"
+    ),
+]
+
+
+@pytest.mark.parametrize(("atom_order", "is_symmetry"), RELABELLING_CASES)
+def test_relabelling_is_forgiven_only_when_it_is_a_symmetry(atom_order, is_symmetry):
+    """Reordering a ligand's atoms is free exactly when the reordering is a symmetry.
+
+    Each case rewrites chain D's coordinates into ``atom_order`` — the pose is untouched,
+    only which atom sits where changes. Toluene's mirror must score zero; anything else
+    must not, or the metric would forgive genuinely misplaced atoms.
+    """
     reference = load_structure("7l39")
     ligand = reference.heavy_atoms("D")
-    flip = next(
-        mapping
-        for mapping in symmetry_mappings(ligand, ligand)
-        if list(mapping) != sorted(mapping)
-    )
-    prediction = with_chain_relabelled(reference, "D", flip)
+    prediction = with_chain_relabelled(reference, "D", toluene_indices(atom_order))
 
     naive = float(
         np.sqrt(
             ((prediction.heavy_atoms("D").coord - ligand.coord) ** 2).sum(-1).mean()
         )
     )
-    assert naive > 1.0, (
-        "the relabelling must actually move atoms for this to prove anything"
-    )
+    if atom_order != TOLUENE_ATOM_ORDER:
+        assert naive > MIN_MISMATCH_RMSD, (
+            "the relabelling must actually move atoms for this to prove anything"
+        )
 
     metrics = ligand_pose_metrics(
         prediction,
@@ -468,7 +534,18 @@ def test_symmetry_equivalent_relabelling_scores_zero():
         pred_ligand_chain="D",
         ref_ligand_chain="D",
     )
-    assert metrics.rmsd == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
+
+    if is_symmetry:
+        assert metrics.rmsd == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
+    else:
+        assert metrics.rmsd > MIN_MISMATCH_RMSD
+
+    # Reordering atoms cannot move their centre of mass, so the mapping-free half of the
+    # metric stays at zero throughout: every case above is the right pocket, and the RMSD
+    # signal is purely about which atom went where.
+    assert metrics.centroid_distance == pytest.approx(0.0, abs=ZERO_RMSD_TOL)
+    # Searching symmetries can only ever improve the score, never worsen it.
+    assert metrics.rmsd <= naive + ZERO_RMSD_TOL
 
 
 def test_rejects_ligands_of_different_size():
