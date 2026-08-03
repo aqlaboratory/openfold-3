@@ -40,16 +40,17 @@ This runner.yml is specifically for inference, but similar settings can be used 
 
 ## Smooth lDDT Ball-Query Kernel
 
-OpenFold3 includes an opt-in Triton ball-query backend for the smooth lDDT
-training loss. It replaces the dense all-pairs distance tensors with at most
-`K` sampled in-radius neighbors per atom. The dense implementation remains the
-default.
+OpenFold3 includes a Triton ball-query backend for the smooth lDDT training
+loss. It replaces dense all-pairs distance tensors with sampled in-radius
+neighbors and is the all-atom model default. Dense remains available as the
+exact reference and chunked-execution fallback.
 
-The backend requires Triton and a CUDA device. The existing
-`openfold3-cuda12`, `openfold3-cuda13`, and corresponding `*-pypi` pixi
-environments provide the required runtime.
+The backend requires Triton and a PyTorch-visible GPU. The existing
+`openfold3-cuda12`, `openfold3-cuda13`, corresponding `*-pypi`, and
+`openfold3-rocm7` pixi environments provide the required dependencies. ROCm
+support must be verified by running the focused loss tests on AMD hardware.
 
-Enable it through the diffusion-loss configuration:
+Configure it through the diffusion loss:
 
 ```yaml
 model_update:
@@ -62,11 +63,24 @@ model_update:
           smooth_lddt_top_k: 512
 ```
 
-`smooth_lddt_top_k` is the maximum number of non-self neighbors sampled within
-the 15 Å protein or 30 Å nucleotide radius for each query atom and defaults to
-512. If it covers every in-radius neighbor, the result matches the dense loss
-up to floating-point reduction order. Lower values reduce memory and runtime
-but increase sampling error; higher values move the result toward dense parity.
+`smooth_lddt_top_k` defaults to 512. `ball_query` retains up to 512 in-radius
+neighbors per atom: 15 Å for non-nucleotide centers and 30 Å for nucleotide
+centers. Exact rows retain unit weight. For truncated rows, the base pair
+weights use cap-dependent scaling with a lower bound of 1:
 
-The ball-query backend does not support the diffusion loss `chunk_size` path;
-set `architecture.loss_module.diffusion.chunk_size` to `null` when enabling it.
+```text
+protein weight    = max(1, 512 / K)
+nucleotide weight = max(1, 2048 / K)
+```
+
+For `K = 256, 512, 1024, 2048`, the protein/nucleotide weights are respectively
+`2/8`, `1/4`, `1/2`, and `1/1`. The same pair weight is applied to the
+score numerator and pair-count denominator, keeping the loss normalized.
+
+The legacy and current ball-query paths use the same `A * K` reservoir capacity.
+The current reduction keeps only `O(A)` additional row metadata for reweighting,
+so both have the same dominant `O(A * K)` storage at the same `K`.
+
+Ball-query does not support the diffusion loss `chunk_size` path directly. If
+`chunk_size` is non-null, the diffusion loss automatically uses the chunked
+dense smooth lDDT calculation. Set `chunk_size: null` to run ball-query.

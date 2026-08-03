@@ -537,10 +537,13 @@ def diffusion_loss(
         use_sparse_loss:
             Whether to use sparse loss. Currently only implemented for bond_loss.
         smooth_lddt_backend:
-            Smooth lDDT implementation to use. Options are "dense" and "ball_query".
+            Smooth lDDT implementation to use. Options are "dense" and
+            "ball_query". The ball-query option uses top-k-adjusted type
+            reweighting. When chunk_size is set, it automatically
+            falls back to
+            the dense implementation for chunked execution.
         smooth_lddt_top_k:
-            Maximum sampled in-radius neighbors per query atom for ball-query
-            smooth lDDT.
+            Maximum sampled neighbors stored for every query atom.
     Returns:
         mean_loss:
             Diffusion loss
@@ -578,18 +581,12 @@ def diffusion_loss(
     l_bond = 0.0
     l_smooth_lddt = 0.0
     bond_loss_fn = bond_loss if not use_sparse_loss else bond_loss_sparse
-    if smooth_lddt_backend not in {"dense", "ball_query"}:
+    valid_backends = {"dense", "ball_query"}
+    if smooth_lddt_backend not in valid_backends:
         raise ValueError(
-            "smooth_lddt_backend must be one of {'dense', 'ball_query'}, "
+            f"smooth_lddt_backend must be one of {sorted(valid_backends)}, "
             f"got {smooth_lddt_backend!r}"
         )
-    if smooth_lddt_backend == "ball_query" and chunk_size is not None:
-        raise ValueError(
-            "Ball-query smooth lDDT does not support chunked loss execution. "
-            "Set architecture.loss_module.diffusion.chunk_size to null when "
-            'using smooth_lddt_backend="ball_query".'
-        )
-
     if chunk_size is None:
         if bond_weight.any():
             l_bond = bond_loss_fn(x=x, batch=batch, eps=eps)
@@ -624,6 +621,8 @@ def diffusion_loss(
             loss_breakdown["bond"] = l_bond.detach().clone().mean(dim=-1)
 
         if smooth_lddt_weight.any():
+            # Ball-query does not support sample-dimension chunking. Use the dense
+            # loss automatically when chunking is requested.
             l_smooth_lddt = run_low_mem_loss_fn(
                 loss_fn=smooth_lddt_loss,
                 x=x,

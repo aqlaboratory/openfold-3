@@ -69,6 +69,20 @@ def main():
         "--val-size", type=int, default=4, help="Validation subset size (default: 4)"
     )
     parser.add_argument(
+        "--val-subset-cache",
+        type=Path,
+        default=None,
+        help=(
+            "Explicit validation subset cache path. Overrides the path inferred "
+            "from --val-cache and --val-size."
+        ),
+    )
+    parser.add_argument(
+        "--skip-train",
+        action="store_true",
+        help="Download only validation assets; do not require a training subset cache.",
+    )
+    parser.add_argument(
         "--train-cache",
         type=Path,
         default=None,
@@ -95,10 +109,14 @@ def main():
     val_cache = args.val_cache or (target_dir / "validation_cache_with_templates.json")
     local_root = args.output_dir or (target_dir / "pdb_training_set")
 
-    cache_files = {
-        "train": subset_cache_path(train_cache, args.train_size, target_dir),
-        "val": subset_cache_path(val_cache, args.val_size, target_dir),
-    }
+    cache_files = {}
+    if not args.skip_train:
+        cache_files["train"] = subset_cache_path(
+            train_cache, args.train_size, target_dir
+        )
+    cache_files["val"] = args.val_subset_cache or subset_cache_path(
+        val_cache, args.val_size, target_dir
+    )
     missing = [str(p) for p in cache_files.values() if not p.exists()]
     if missing:
         sys.exit(

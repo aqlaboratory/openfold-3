@@ -29,6 +29,8 @@ Radii default to protein 15 Å / nucleotide 30 Å.
 
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.utils.checkpoint
 
@@ -50,6 +52,8 @@ _BWD_BLOCK = 128
 
 DEFAULT_RADIUS_PROTEIN = 15.0
 DEFAULT_RADIUS_NUCLEOTIDE = 30.0
+DEFAULT_NEIGHBOR_CAP_PROTEIN = 512
+DEFAULT_NEIGHBOR_CAP_NUCLEOTIDE = 2048
 
 
 def is_ball_query_triton_installed() -> bool:
@@ -84,6 +88,7 @@ if _TRITON_AVAILABLE:
         do_not_specialize=[
             "N",
             "P1",
+            "P2",
             "K",
             "radius_protein",
             "radius_nucleotide",
@@ -101,13 +106,16 @@ if _TRITON_AVAILABLE:
         predy_ptr,
         predz_ptr,
         is_nuc_ptr,
+        query_idx_ptr,
         lengths1_ptr,
         lengths2_ptr,
         idx_ptr,
         dists_gt_ptr,
         dists_pred_ptr,
+        neighbor_count_ptr,
         N,
         P1,
+        P2,
         K,
         radius_protein,
         radius_nucleotide,
@@ -130,26 +138,28 @@ if _TRITON_AVAILABLE:
 
         len2 = tl.load(lengths2_ptr + n)
 
+        qi = tl.load(query_idx_ptr + n * P1 + i)
         is_nuc = tl.load(is_nuc_ptr + n * P1 + i)
         radius = tl.where(is_nuc > 0.5, radius_nucleotide, radius_protein)
         radius2 = radius * radius
 
         qi_base = n * P1 + i
+        pred_qi_base = n * P2 + qi
         qi_x = tl.load(p1x_ptr + qi_base)
         qi_y = tl.load(p1y_ptr + qi_base)
         qi_z = tl.load(p1z_ptr + qi_base)
 
         if PRED_IS_BF16:
-            pi_x = tl.load(predx_ptr + qi_base).to(tl.float32)
-            pi_y = tl.load(predy_ptr + qi_base).to(tl.float32)
-            pi_z = tl.load(predz_ptr + qi_base).to(tl.float32)
+            pi_x = tl.load(predx_ptr + pred_qi_base).to(tl.float32)
+            pi_y = tl.load(predy_ptr + pred_qi_base).to(tl.float32)
+            pi_z = tl.load(predz_ptr + pred_qi_base).to(tl.float32)
         else:
-            pi_x = tl.load(predx_ptr + qi_base)
-            pi_y = tl.load(predy_ptr + qi_base)
-            pi_z = tl.load(predz_ptr + qi_base)
+            pi_x = tl.load(predx_ptr + pred_qi_base)
+            pi_y = tl.load(predy_ptr + pred_qi_base)
+            pi_z = tl.load(predz_ptr + pred_qi_base)
 
         out_base = (n * P1 + i) * K
-        row_base = n * P1
+        row_base = n * P2
 
         count = tl.full((), 0, tl.int32)
         seen = tl.full((), 0, tl.int32)
@@ -173,7 +183,7 @@ if _TRITON_AVAILABLE:
             dist2_gt = dx * dx + dy * dy + dz * dz
             in_ball = (
                 in_range
-                & (offs != i)
+                & (offs != qi)
                 & (tl.abs(dx) <= radius)
                 & (tl.abs(dy) <= radius)
                 & (tl.abs(dz) <= radius)
@@ -235,7 +245,7 @@ if _TRITON_AVAILABLE:
                         d2g = ddx * ddx + ddy * ddy + ddz * ddz
                         ib = (
                             ok
-                            & (j != i)
+                            & (j != qi)
                             & (tl.abs(ddx) <= radius)
                             & (tl.abs(ddy) <= radius)
                             & (tl.abs(ddz) <= radius)
@@ -290,7 +300,7 @@ if _TRITON_AVAILABLE:
                     d2g = ddx * ddx + ddy * ddy + ddz * ddz
                     ib = (
                         ok
-                        & (j != i)
+                        & (j != qi)
                         & (tl.abs(ddx) <= radius)
                         & (tl.abs(ddy) <= radius)
                         & (tl.abs(ddz) <= radius)
@@ -324,16 +334,20 @@ if _TRITON_AVAILABLE:
                             else:
                                 tl.store(dists_pred_ptr + out_base + slot, s_d2p)
 
-    @triton.jit(do_not_specialize=["N", "P1", "K", "total"])
+        tl.store(neighbor_count_ptr + n * P1 + i, seen)
+
+    @triton.jit(do_not_specialize=["N", "P1", "P2", "K", "total"])
     def _ball_query_backward_kernel(
         predx_ptr,
         predy_ptr,
         predz_ptr,
         idx_ptr,
+        query_idx_ptr,
         grad_dists_ptr,
         grad_pred_ptr,
         N,
         P1,
+        P2,
         K,
         total,
         PRED_IS_BF16: tl.constexpr,
@@ -350,11 +364,12 @@ if _TRITON_AVAILABLE:
         i = rem // K
 
         j = tl.load(idx_ptr + offs, mask=mask, other=-1)
+        qi = tl.load(query_idx_ptr + n * P1 + i, mask=mask, other=-1)
         g = tl.load(grad_dists_ptr + offs, mask=mask, other=0.0)
-        active = mask & (j >= 0) & (g != 0.0)
+        active = mask & (j >= 0) & (qi >= 0) & (g != 0.0)
 
-        base_i = n * P1 + i
-        base_j = n * P1 + j
+        base_i = n * P2 + qi
+        base_j = n * P2 + j
         # grad_pred is still AoS [N,P,3]
         gbase_i = base_i * 3
         gbase_j = base_j * 3
@@ -385,19 +400,20 @@ if _TRITON_AVAILABLE:
         tl.atomic_add(grad_pred_ptr + gbase_j + 2, -gz, mask=active)
 
 
-def _query_with_pred(
+def _query_with_pred_compact(
     p1: torch.Tensor,
     p2: torch.Tensor,
     pred: torch.Tensor,
     is_nucleotide: torch.Tensor,
+    query_indices: torch.Tensor,
     lengths1: torch.Tensor,
     lengths2: torch.Tensor,
     k: int,
     radius_protein: float = DEFAULT_RADIUS_PROTEIN,
     radius_nucleotide: float = DEFAULT_RADIUS_NUCLEOTIDE,
     seed: int = 0,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Launch forward kernel; returns ``(idx, dists_gt, dists_pred)``."""
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Query compact rows; return indices, squared distances, and true counts."""
     if not is_ball_query_triton_available():
         raise RuntimeError(
             "Triton ball-query smooth lDDT requires Triton and a CUDA device"
@@ -415,17 +431,24 @@ def _query_with_pred(
     p2 = p2.contiguous()
     pred = pred.contiguous()
     is_nucleotide = is_nucleotide.contiguous().to(dtype=torch.float32)
+    query_indices = query_indices.contiguous().long()
     lengths1 = lengths1.contiguous().long()
     lengths2 = lengths2.contiguous().long()
 
-    n_batch, n_atom, _ = p1.shape
-    idxs = torch.full((n_batch, n_atom, k), -1, device=p1.device, dtype=torch.long)
-    dists_gt = torch.zeros((n_batch, n_atom, k), device=p1.device, dtype=torch.float32)
-    dists_pred = torch.zeros((n_batch, n_atom, k), device=pred.device, dtype=pred.dtype)
+    n_batch, n_query, _ = p1.shape
+    n_atom = p2.shape[1]
+    idxs = torch.full((n_batch, n_query, k), -1, device=p1.device, dtype=torch.long)
+    dists_gt = torch.zeros((n_batch, n_query, k), device=p1.device, dtype=torch.float32)
+    dists_pred = torch.zeros(
+        (n_batch, n_query, k), device=pred.device, dtype=pred.dtype
+    )
+    neighbor_count = torch.zeros(
+        (n_batch, n_query), device=p1.device, dtype=torch.int32
+    )
 
-    total_atoms = n_batch * n_atom
+    total_atoms = n_batch * n_query
     if total_atoms == 0 or idxs.numel() == 0:
-        return idxs, dists_gt, dists_pred
+        return idxs, dists_gt, dists_pred, neighbor_count
 
     p1x, p1y, p1z = _as_soa(p1)
     p2x, p2y, p2z = _as_soa(p2)
@@ -442,12 +465,15 @@ def _query_with_pred(
         predy,
         predz,
         is_nucleotide,
+        query_indices,
         lengths1,
         lengths2,
         idxs,
         dists_gt,
         dists_pred,
+        neighbor_count,
         n_batch,
+        n_query,
         n_atom,
         k,
         float(radius_protein),
@@ -457,12 +483,44 @@ def _query_with_pred(
         BLOCK_J=_BLOCK_J,
         num_warps=_FWD_NUM_WARPS,
     )
-    return idxs, dists_gt, dists_pred
+    return idxs, dists_gt, dists_pred, neighbor_count
+
+
+def _query_with_pred(
+    p1: torch.Tensor,
+    p2: torch.Tensor,
+    pred: torch.Tensor,
+    is_nucleotide: torch.Tensor,
+    lengths1: torch.Tensor,
+    lengths2: torch.Tensor,
+    k: int,
+    radius_protein: float = DEFAULT_RADIUS_PROTEIN,
+    radius_nucleotide: float = DEFAULT_RADIUS_NUCLEOTIDE,
+    seed: int = 0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Backward-compatible full-row query entry point."""
+    n_batch, n_query, _ = p1.shape
+    query_indices = torch.arange(n_query, device=p1.device).expand(n_batch, -1)
+    idx, dists_gt, dists_pred, _ = _query_with_pred_compact(
+        p1=p1,
+        p2=p2,
+        pred=pred,
+        is_nucleotide=is_nucleotide,
+        query_indices=query_indices,
+        lengths1=lengths1,
+        lengths2=lengths2,
+        k=k,
+        radius_protein=radius_protein,
+        radius_nucleotide=radius_nucleotide,
+        seed=seed,
+    )
+    return idx, dists_gt, dists_pred
 
 
 def _pred_backward(
     pred: torch.Tensor,
     idxs: torch.Tensor,
+    query_indices: torch.Tensor,
     grad_dists: torch.Tensor,
 ) -> torch.Tensor:
     """Backward for predicted squared distances (fp32 atomic scatter)."""
@@ -475,15 +533,17 @@ def _pred_backward(
 
     pred = pred.contiguous()
     idxs = idxs.contiguous().long()
+    query_indices = query_indices.contiguous().long()
     grad_dists = grad_dists.contiguous().float()
 
     n_batch, n_atom, _ = pred.shape
+    n_query = idxs.shape[1]
     k = idxs.shape[-1]
     grad_pred = torch.zeros(
         (n_batch, n_atom, 3), device=pred.device, dtype=torch.float32
     )
 
-    total = n_batch * n_atom * k
+    total = n_batch * n_query * k
     if total == 0:
         return grad_pred
 
@@ -494,9 +554,11 @@ def _pred_backward(
         predy,
         predz,
         idxs,
+        query_indices,
         grad_dists,
         grad_pred,
         n_batch,
+        n_query,
         n_atom,
         k,
         total,
@@ -527,6 +589,23 @@ def _validate_top_k(top_k: int | None, n_atom: int) -> int:
     return min(top_k, max(n_atom - 1, 0))
 
 
+def _validate_nucleotide_scale(nucleotide_scale: float) -> float:
+    if (
+        isinstance(nucleotide_scale, bool)
+        or not isinstance(nucleotide_scale, int | float)
+        or not math.isfinite(nucleotide_scale)
+        or nucleotide_scale < 1.0
+    ):
+        raise ValueError("smooth_lddt_nucleotide_scale must be finite and >= 1")
+    return float(nucleotide_scale)
+
+
+def _type_aware_top_ks(top_k: int, nucleotide_scale: float) -> tuple[int, int]:
+    """Return non-nucleotide and nucleotide capacities for a reference ``K``."""
+    protein_top_k = max(1, math.ceil(top_k / nucleotide_scale))
+    return protein_top_k, top_k
+
+
 class _BallQueryWithPredDist(torch.autograd.Function):
     @staticmethod
     def forward(
@@ -535,6 +614,7 @@ class _BallQueryWithPredDist(torch.autograd.Function):
         p1_gt,
         p2_gt,
         is_nucleotide,
+        query_indices,
         lengths1,
         lengths2,
         k,
@@ -542,11 +622,12 @@ class _BallQueryWithPredDist(torch.autograd.Function):
         radius_nucleotide,
         seed,
     ):
-        idx, dists_gt, dists_pred = _query_with_pred(
+        idx, dists_gt, dists_pred, neighbor_count = _query_with_pred_compact(
             p1=p1_gt,
             p2=p2_gt,
             pred=pred,
             is_nucleotide=is_nucleotide,
+            query_indices=query_indices,
             lengths1=lengths1,
             lengths2=lengths2,
             k=k,
@@ -554,16 +635,30 @@ class _BallQueryWithPredDist(torch.autograd.Function):
             radius_nucleotide=radius_nucleotide,
             seed=seed,
         )
-        ctx.save_for_backward(pred, idx)
-        ctx.mark_non_differentiable(idx, dists_gt)
-        return dists_pred, dists_gt, idx
+        ctx.save_for_backward(pred, idx, query_indices)
+        ctx.mark_non_differentiable(idx, dists_gt, neighbor_count)
+        return dists_pred, dists_gt, idx, neighbor_count
 
     @staticmethod
     @torch.autograd.function.once_differentiable
-    def backward(ctx, grad_dists_pred, grad_dists_gt, grad_idx):
-        pred, idx = ctx.saved_tensors
-        grad_pred = _pred_backward(pred, idx, grad_dists_pred).to(pred.dtype)
-        return grad_pred, None, None, None, None, None, None, None, None, None
+    def backward(ctx, grad_dists_pred, grad_dists_gt, grad_idx, grad_neighbor_count):
+        pred, idx, query_indices = ctx.saved_tensors
+        grad_pred = _pred_backward(pred, idx, query_indices, grad_dists_pred).to(
+            pred.dtype
+        )
+        return (
+            grad_pred,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
 
 def _score_from_dists(
@@ -601,7 +696,7 @@ def _score_from_dists(
     return (1 - lddt).reshape(out_shape)
 
 
-def ball_query_smooth_lddt_loss(
+def _legacy_ball_query_smooth_lddt_loss(
     x: torch.Tensor,
     x_gt: torch.Tensor,
     atom_mask_gt: torch.Tensor,
@@ -613,7 +708,7 @@ def ball_query_smooth_lddt_loss(
     radius_protein: float = DEFAULT_RADIUS_PROTEIN,
     radius_nucleotide: float = DEFAULT_RADIUS_NUCLEOTIDE,
 ) -> torch.Tensor:
-    """Smooth lDDT via Triton ball-query.
+    """Legacy ball-query smooth lDDT retained for benchmark comparisons.
 
     Same argument contract as the CUDA package entry point. Radii default to
     15 Å (protein) / 30 Å (nucleotide).
@@ -653,11 +748,13 @@ def ball_query_smooth_lddt_loss(
         torch.full_like(flat_x_gt, 1.0e6),
     )
 
-    dists_pred, dists_gt, idx = _BallQueryWithPredDist.apply(
+    query_indices = torch.arange(n_atom, device=x.device).expand(flat_batch, -1)
+    dists_pred, dists_gt, idx, _ = _BallQueryWithPredDist.apply(
         flat_x,
         flat_x_gt,
         p2,
         flat_is_nucleotide,
+        query_indices,
         lengths,
         lengths,
         k,
@@ -694,3 +791,503 @@ def ball_query_smooth_lddt_loss(
             use_reentrant=False,
         )
     return _score_from_dists(*score_args)
+
+
+def _compact_query_group(
+    coordinates: torch.Tensor,
+    query_mask: torch.Tensor,
+    is_nucleotide: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Compact selected query atoms and retain their global atom indices."""
+    lengths = query_mask.sum(dim=1, dtype=torch.long)
+    max_queries = int(lengths.max().item()) if lengths.numel() else 0
+    if max_queries == 0:
+        shape = (coordinates.shape[0], 0)
+        return (
+            coordinates[:, :0],
+            torch.empty(shape, device=coordinates.device, dtype=torch.long),
+            is_nucleotide[:, :0],
+            lengths,
+        )
+
+    order = torch.argsort((~query_mask).to(torch.int8), dim=1, stable=True)
+    query_indices = order[:, :max_queries]
+    gather_idx = query_indices[..., None].expand(-1, -1, 3)
+    query_coordinates = torch.gather(coordinates, 1, gather_idx)
+    query_is_nucleotide = torch.gather(is_nucleotide, 1, query_indices)
+    return query_coordinates, query_indices, query_is_nucleotide, lengths
+
+
+def _query_group_with_pred(
+    flat_x: torch.Tensor,
+    flat_x_gt: torch.Tensor,
+    valid_atom: torch.Tensor,
+    flat_is_nucleotide: torch.Tensor,
+    query_mask: torch.Tensor,
+    top_k: int,
+    query_radius_protein: float,
+    query_radius_nucleotide: float,
+    seed: int,
+) -> tuple[torch.Tensor, ...]:
+    query_gt, query_indices, query_is_nucleotide, query_lengths = _compact_query_group(
+        flat_x_gt, query_mask, flat_is_nucleotide
+    )
+    if query_gt.shape[1] == 0:
+        empty = flat_x.new_empty((flat_x.shape[0], 0, top_k))
+        return (
+            empty,
+            empty.float(),
+            torch.empty_like(empty, dtype=torch.long),
+            torch.empty(empty.shape[:-1], device=flat_x.device, dtype=torch.int32),
+            query_indices,
+            query_is_nucleotide,
+        )
+
+    candidates_gt = torch.where(
+        valid_atom[..., None], flat_x_gt, torch.full_like(flat_x_gt, 1.0e6)
+    )
+    candidate_lengths = torch.full(
+        (flat_x.shape[0],),
+        flat_x.shape[1],
+        device=flat_x.device,
+        dtype=torch.long,
+    )
+    dists_pred, dists_gt, idx, neighbor_count = _BallQueryWithPredDist.apply(
+        flat_x,
+        query_gt,
+        candidates_gt,
+        query_is_nucleotide,
+        query_indices,
+        query_lengths,
+        candidate_lengths,
+        top_k,
+        float(query_radius_protein),
+        float(query_radius_nucleotide),
+        seed,
+    )
+    return (
+        dists_pred,
+        dists_gt,
+        idx,
+        neighbor_count,
+        query_indices,
+        query_is_nucleotide,
+    )
+
+
+def _top_k_adjusted_type_group_weights(
+    top_k: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Return dynamically scaled type weights with a lower bound of one."""
+    protein_weight = max(
+        1.0,
+        DEFAULT_NEIGHBOR_CAP_PROTEIN / top_k,
+    )
+    nucleotide_weight = max(
+        1.0,
+        DEFAULT_NEIGHBOR_CAP_NUCLEOTIDE / top_k,
+    )
+    return torch.tensor(
+        (1.0, protein_weight, nucleotide_weight),
+        device=device,
+        dtype=dtype,
+    )
+
+
+def _top_k_adjusted_type_row_weights(
+    neighbor_count: torch.Tensor,
+    retained_count: torch.Tensor,
+    query_is_nucleotide: torch.Tensor,
+    top_k: int,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Return dynamically scaled, lower-bounded weights for truncated rows."""
+    group_weight = _top_k_adjusted_type_group_weights(
+        top_k, neighbor_count.device, dtype
+    )
+    adjusted_weight = torch.where(
+        query_is_nucleotide.bool(), group_weight[2], group_weight[1]
+    )
+    truncated = neighbor_count > retained_count
+    return torch.where(truncated, adjusted_weight, group_weight[0])
+
+
+def _type_group_indices(
+    neighbor_count: torch.Tensor,
+    query_is_nucleotide: torch.Tensor,
+    top_k: int,
+) -> torch.Tensor:
+    """Map rows to exact=0, truncated protein=1, or truncated nucleotide=2."""
+    truncated = (neighbor_count > top_k).long()
+    return truncated * (1 + query_is_nucleotide.long())
+
+
+def _group_row_sums(
+    dists_pred: torch.Tensor,
+    dists_gt: torch.Tensor,
+    idx: torch.Tensor,
+    query_is_nucleotide: torch.Tensor,
+    eps: float,
+    score_radius_protein: float,
+    score_radius_nucleotide: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Reduce retained pairs to one score and count per query atom."""
+    dx = torch.sqrt(eps + dists_pred.clamp_min(0.0))
+    dx_gt = torch.sqrt(eps + dists_gt.clamp_min(0.0))
+    delta = torch.abs(dx_gt - dx)
+    score = 0.25 * (
+        torch.sigmoid(0.5 - delta)
+        + torch.sigmoid(1.0 - delta)
+        + torch.sigmoid(2.0 - delta)
+        + torch.sigmoid(4.0 - delta)
+    )
+    cutoff = torch.where(
+        query_is_nucleotide.bool(),
+        torch.as_tensor(score_radius_nucleotide, device=dx.device, dtype=dx_gt.dtype),
+        torch.as_tensor(score_radius_protein, device=dx.device, dtype=dx_gt.dtype),
+    )
+    retained = idx >= 0
+    valid = retained & (dx_gt < cutoff[..., None])
+    return (
+        torch.sum(score * valid.to(score.dtype), dim=-1),
+        torch.sum(valid, dim=-1, dtype=score.dtype),
+    )
+
+
+def _type_group_sums(
+    dists_pred: torch.Tensor,
+    dists_gt: torch.Tensor,
+    idx: torch.Tensor,
+    query_is_nucleotide: torch.Tensor,
+    type_group_index: torch.Tensor,
+    eps: float,
+    score_radius_protein: float,
+    score_radius_nucleotide: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Aggregate query rows into the three reweighting categories."""
+    row_score_sum, row_pair_count = _group_row_sums(
+        dists_pred,
+        dists_gt,
+        idx,
+        query_is_nucleotide,
+        eps,
+        score_radius_protein,
+        score_radius_nucleotide,
+    )
+    out_shape = (*row_score_sum.shape[:-1], 3)
+    score_sum = torch.zeros(
+        out_shape, device=row_score_sum.device, dtype=row_score_sum.dtype
+    )
+    pair_count = torch.zeros_like(score_sum)
+    return (
+        score_sum.scatter_add(-1, type_group_index, row_score_sum),
+        pair_count.scatter_add(-1, type_group_index, row_pair_count),
+    )
+
+
+def _combine_type_group_sums(
+    score_sum: torch.Tensor,
+    pair_count: torch.Tensor,
+    top_k: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Apply the three scalar category weights after pair reduction."""
+    group_weight = _top_k_adjusted_type_group_weights(
+        top_k, score_sum.device, score_sum.dtype
+    )
+    return (
+        torch.sum(score_sum * group_weight, dim=-1),
+        torch.sum(pair_count * group_weight, dim=-1),
+    )
+
+
+def _top_k_adjusted_type_reweighted_group_sums(
+    dists_pred: torch.Tensor,
+    dists_gt: torch.Tensor,
+    idx: torch.Tensor,
+    neighbor_count: torch.Tensor,
+    query_is_nucleotide: torch.Tensor,
+    top_k: int,
+    eps: float,
+    score_radius_protein: float,
+    score_radius_nucleotide: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Apply type weights to three aggregate statistics."""
+    type_group_index = _type_group_indices(neighbor_count, query_is_nucleotide, top_k)
+    score_sum, pair_count = _type_group_sums(
+        dists_pred,
+        dists_gt,
+        idx,
+        query_is_nucleotide,
+        type_group_index,
+        eps,
+        score_radius_protein,
+        score_radius_nucleotide,
+    )
+    return _combine_type_group_sums(score_sum, pair_count, top_k)
+
+
+def _unweighted_group_sums(
+    dists_pred: torch.Tensor,
+    dists_gt: torch.Tensor,
+    idx: torch.Tensor,
+    query_is_nucleotide: torch.Tensor,
+    eps: float,
+    score_radius_protein: float,
+    score_radius_nucleotide: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    row_score_sum, row_pair_count = _group_row_sums(
+        dists_pred,
+        dists_gt,
+        idx,
+        query_is_nucleotide,
+        eps,
+        score_radius_protein,
+        score_radius_nucleotide,
+    )
+    return row_score_sum.sum(dim=-1), row_pair_count.sum(dim=-1)
+
+
+def _checkpointed_group_row_sums(
+    dists_pred: torch.Tensor,
+    dists_gt: torch.Tensor,
+    idx: torch.Tensor,
+    query_is_nucleotide: torch.Tensor,
+    eps: float,
+    score_radius_protein: float,
+    score_radius_nucleotide: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    args = (
+        dists_pred,
+        dists_gt,
+        idx,
+        query_is_nucleotide,
+        eps,
+        score_radius_protein,
+        score_radius_nucleotide,
+    )
+    if dists_pred.requires_grad:
+        return torch.utils.checkpoint.checkpoint(
+            _group_row_sums, *args, use_reentrant=False
+        )
+    return _group_row_sums(*args)
+
+
+def _checkpointed_type_group_sums(
+    dists_pred: torch.Tensor,
+    dists_gt: torch.Tensor,
+    idx: torch.Tensor,
+    query_is_nucleotide: torch.Tensor,
+    type_group_index: torch.Tensor,
+    eps: float,
+    score_radius_protein: float,
+    score_radius_nucleotide: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    args = (
+        dists_pred,
+        dists_gt,
+        idx,
+        query_is_nucleotide,
+        type_group_index,
+        eps,
+        score_radius_protein,
+        score_radius_nucleotide,
+    )
+    if dists_pred.requires_grad:
+        return torch.utils.checkpoint.checkpoint(
+            _type_group_sums, *args, use_reentrant=False
+        )
+    return _type_group_sums(*args)
+
+
+def _checkpointed_top_k_adjusted_type_reweighted_group_sums(
+    dists_pred: torch.Tensor,
+    dists_gt: torch.Tensor,
+    idx: torch.Tensor,
+    neighbor_count: torch.Tensor,
+    query_is_nucleotide: torch.Tensor,
+    top_k: int,
+    eps: float,
+    score_radius_protein: float,
+    score_radius_nucleotide: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    type_group_index = _type_group_indices(neighbor_count, query_is_nucleotide, top_k)
+    score_sum, pair_count = _checkpointed_type_group_sums(
+        dists_pred,
+        dists_gt,
+        idx,
+        query_is_nucleotide,
+        type_group_index,
+        eps,
+        score_radius_protein,
+        score_radius_nucleotide,
+    )
+    return _combine_type_group_sums(score_sum, pair_count, top_k)
+
+
+def _checkpointed_unweighted_group_sums(
+    dists_pred: torch.Tensor,
+    dists_gt: torch.Tensor,
+    idx: torch.Tensor,
+    query_is_nucleotide: torch.Tensor,
+    eps: float,
+    score_radius_protein: float,
+    score_radius_nucleotide: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    row_score_sum, row_pair_count = _checkpointed_group_row_sums(
+        dists_pred,
+        dists_gt,
+        idx,
+        query_is_nucleotide,
+        eps,
+        score_radius_protein,
+        score_radius_nucleotide,
+    )
+    return row_score_sum.sum(dim=-1), row_pair_count.sum(dim=-1)
+
+
+def _finish_weighted_lddt(
+    score_sum: torch.Tensor,
+    pair_count: torch.Tensor,
+    valid_atom: torch.Tensor,
+    eps: float,
+    out_shape: tuple[int, ...],
+) -> torch.Tensor:
+    valid_count = valid_atom.sum(dim=-1).to(score_sum.dtype)
+    all_pair_count = valid_count * (valid_count - 1).clamp_min(0)
+    normalizer = all_pair_count + eps
+    score_mean = score_sum / normalizer
+    local_pair_mean = pair_count / normalizer
+    return (1 - score_mean / (local_pair_mean + eps)).reshape(out_shape)
+
+
+def _prepare_sparse_inputs(
+    x: torch.Tensor,
+    x_gt: torch.Tensor,
+    atom_mask_gt: torch.Tensor,
+    is_nucleotide: torch.Tensor,
+    loss_atom_mask: torch.Tensor,
+) -> tuple[torch.Tensor, ...]:
+    x_gt = _expand_to_x_batch(x_gt, x, trailing_dims=2)
+    atom_mask_gt = _expand_to_x_batch(atom_mask_gt, x, trailing_dims=1)
+    is_nucleotide = _expand_to_x_batch(is_nucleotide, x, trailing_dims=1)
+    loss_atom_mask = _expand_to_x_batch(loss_atom_mask, x, trailing_dims=1)
+    valid_atom = (loss_atom_mask * atom_mask_gt).bool()
+    return (
+        _flatten_batch(x, trailing_dims=2),
+        _flatten_batch(x_gt, trailing_dims=2),
+        _flatten_batch(valid_atom, trailing_dims=1),
+        _flatten_batch(is_nucleotide, trailing_dims=1),
+    )
+
+
+def ball_query_smooth_lddt_loss(
+    x: torch.Tensor,
+    x_gt: torch.Tensor,
+    atom_mask_gt: torch.Tensor,
+    is_nucleotide: torch.Tensor,
+    loss_atom_mask: torch.Tensor,
+    eps: float,
+    top_k: int | None = 512,
+    seed: int = 0,
+    radius_protein: float = DEFAULT_RADIUS_PROTEIN,
+    radius_nucleotide: float = DEFAULT_RADIUS_NUCLEOTIDE,
+) -> torch.Tensor:
+    """Estimate smooth lDDT with top-k-adjusted type reweighting."""
+    if not is_ball_query_triton_available() or not x.is_cuda:
+        raise RuntimeError(
+            "Triton ball-query smooth lDDT requires Triton and a CUDA device"
+        )
+    if radius_protein <= 0 or radius_nucleotide <= 0:
+        raise ValueError("radius_protein and radius_nucleotide must be positive")
+    k = _validate_top_k(top_k, x.shape[-2])
+    if k == 0:
+        return torch.ones(x.shape[:-2], device=x.device, dtype=x.dtype) + x.sum() * 0
+    flat_x, flat_x_gt, valid_atom, flat_is_nucleotide = _prepare_sparse_inputs(
+        x, x_gt, atom_mask_gt, is_nucleotide, loss_atom_mask
+    )
+    group = _query_group_with_pred(
+        flat_x,
+        flat_x_gt,
+        valid_atom,
+        flat_is_nucleotide,
+        valid_atom,
+        k,
+        radius_protein,
+        radius_nucleotide,
+        seed,
+    )
+    score_sum, pair_count = _checkpointed_top_k_adjusted_type_reweighted_group_sums(
+        group[0],
+        group[1],
+        group[2],
+        group[3],
+        group[5],
+        k,
+        eps,
+        radius_protein,
+        radius_nucleotide,
+    )
+    return _finish_weighted_lddt(score_sum, pair_count, valid_atom, eps, x.shape[:-2])
+
+
+def _type_aware_ball_query_smooth_lddt_loss(
+    x: torch.Tensor,
+    x_gt: torch.Tensor,
+    atom_mask_gt: torch.Tensor,
+    is_nucleotide: torch.Tensor,
+    loss_atom_mask: torch.Tensor,
+    eps: float,
+    top_k: int | None = 2048,
+    nucleotide_scale: float = 4.0,
+    seed: int = 0,
+    radius_protein: float = DEFAULT_RADIUS_PROTEIN,
+    radius_nucleotide: float = DEFAULT_RADIUS_NUCLEOTIDE,
+) -> torch.Tensor:
+    """Use ``K / s`` non-nucleotide and ``K`` nucleotide neighbors."""
+    if not is_ball_query_triton_available() or not x.is_cuda:
+        raise RuntimeError(
+            "Triton ball-query smooth lDDT requires Triton and a CUDA device"
+        )
+    if radius_protein <= 0 or radius_nucleotide <= 0:
+        raise ValueError("radius_protein and radius_nucleotide must be positive")
+    scale = _validate_nucleotide_scale(nucleotide_scale)
+    nucleotide_top_k = _validate_top_k(top_k, x.shape[-2])
+    if nucleotide_top_k == 0:
+        return torch.ones(x.shape[:-2], device=x.device, dtype=x.dtype) + x.sum() * 0
+    protein_top_k, nucleotide_top_k = _type_aware_top_ks(nucleotide_top_k, scale)
+    flat_x, flat_x_gt, valid_atom, flat_is_nucleotide = _prepare_sparse_inputs(
+        x, x_gt, atom_mask_gt, is_nucleotide, loss_atom_mask
+    )
+
+    score_sum = torch.zeros(flat_x.shape[0], device=x.device, dtype=x.dtype)
+    pair_count = torch.zeros_like(score_sum)
+    query_groups = (
+        (valid_atom & ~flat_is_nucleotide.bool(), protein_top_k),
+        (valid_atom & flat_is_nucleotide.bool(), nucleotide_top_k),
+    )
+    for group_index, (query_mask, group_top_k) in enumerate(query_groups):
+        group = _query_group_with_pred(
+            flat_x,
+            flat_x_gt,
+            valid_atom,
+            flat_is_nucleotide,
+            query_mask,
+            group_top_k,
+            radius_protein,
+            radius_nucleotide,
+            seed + group_index,
+        )
+        group_score_sum, group_pair_count = _checkpointed_unweighted_group_sums(
+            group[0],
+            group[1],
+            group[2],
+            group[5],
+            eps,
+            radius_protein,
+            radius_nucleotide,
+        )
+        score_sum = score_sum + group_score_sum
+        pair_count = pair_count + group_pair_count
+    return _finish_weighted_lddt(score_sum, pair_count, valid_atom, eps, x.shape[:-2])

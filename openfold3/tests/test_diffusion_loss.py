@@ -208,7 +208,7 @@ class TestDiffusionLoss(unittest.TestCase):
         assert torch.equal(torch.nonzero(loss_masked), torch.nonzero(mostly_zeros_mask))
         assert torch.all(torch.not_equal(loss_masked, loss))
 
-    def test_diffusion_loss_ball_query_matches_dense(self):
+    def test_diffusion_loss_top_k_adjusted_matches_dense(self):
         if not is_ball_query_triton_available():
             pytest.skip("Triton ball-query smooth lDDT requires Triton and CUDA")
 
@@ -248,30 +248,48 @@ class TestDiffusionLoss(unittest.TestCase):
         x = x_gt[:, None].expand(-1, 2, -1, -1)
         t = torch.ones(x.shape[0])
 
-        with pytest.raises(ValueError, match="smooth_lddt_backend"):
-            diffusion_loss(
-                batch=batch,
-                x=x,
-                t=t,
-                sigma_data=16,
-                smooth_lddt_backend="unknown",
-            )
+        for backend in (
+            "unknown",
+            "ball_query_type_aware",
+            "ball_query_type_reweighted",
+        ):
+            with pytest.raises(ValueError, match="smooth_lddt_backend"):
+                diffusion_loss(
+                    batch=batch,
+                    x=x,
+                    t=t,
+                    sigma_data=16,
+                    smooth_lddt_backend=backend,
+                )
 
-    def test_diffusion_loss_ball_query_rejects_chunking(self):
+    def test_diffusion_loss_top_k_adjusted_falls_back_with_chunking(self):
         batch = self.setup_features()
         x_gt = batch["ground_truth"]["atom_positions"]
         x = x_gt[:, None].expand(-1, 2, -1, -1)
         t = torch.ones(x.shape[0])
 
-        with pytest.raises(ValueError, match="chunked loss execution"):
-            diffusion_loss(
-                batch=batch,
-                x=x,
-                t=t,
-                sigma_data=16,
-                chunk_size=1,
-                smooth_lddt_backend="ball_query",
-            )
+        dense_loss, dense_breakdown = diffusion_loss(
+            batch=batch,
+            x=x,
+            t=t,
+            sigma_data=16,
+            chunk_size=1,
+            smooth_lddt_backend="dense",
+        )
+        fallback_loss, fallback_breakdown = diffusion_loss(
+            batch=batch,
+            x=x,
+            t=t,
+            sigma_data=16,
+            chunk_size=1,
+            smooth_lddt_backend="ball_query",
+        )
+
+        torch.testing.assert_close(fallback_loss, dense_loss)
+        torch.testing.assert_close(
+            fallback_breakdown["smooth_lddt_loss"],
+            dense_breakdown["smooth_lddt_loss"],
+        )
 
     def _test_diffusion_loss(self, batch):
         n_sample = 2

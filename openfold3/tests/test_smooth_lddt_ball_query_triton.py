@@ -4,7 +4,12 @@ import pytest
 import torch
 
 from openfold3.core.kernels.triton.smooth_lddt_ball_query import (
+    _legacy_ball_query_smooth_lddt_loss,
     _query_with_pred,
+    _top_k_adjusted_type_reweighted_group_sums,
+    _top_k_adjusted_type_row_weights,
+    _type_aware_top_ks,
+    _validate_nucleotide_scale,
     ball_query_smooth_lddt_loss,
     is_ball_query_triton_available,
     is_ball_query_triton_installed,
@@ -90,6 +95,154 @@ def test_unavailable_backend_has_clear_error():
             eps=1e-8,
             top_k=1,
         )
+
+
+@pytest.mark.parametrize("scale", [True, "4", 0.5, float("nan"), float("inf")])
+def test_rejects_invalid_nucleotide_scale(scale):
+    with pytest.raises(ValueError, match="smooth_lddt_nucleotide_scale"):
+        _validate_nucleotide_scale(scale)
+
+
+def test_type_aware_top_ks_apply_scale_to_non_nucleotide_capacity():
+    assert _type_aware_top_ks(top_k=128, nucleotide_scale=4.0) == (32, 128)
+    assert _type_aware_top_ks(top_k=3, nucleotide_scale=4.0) == (1, 3)
+
+
+def test_top_k_adjusted_type_weights_use_default_k_scaling():
+    neighbor_count = torch.tensor([[2, 1024, 2, 1024]])
+    retained_count = torch.tensor([[2, 512, 2, 512]])
+    is_nucleotide = torch.tensor([[False, False, True, True]])
+
+    weights = _top_k_adjusted_type_row_weights(
+        neighbor_count,
+        retained_count,
+        is_nucleotide,
+        top_k=512,
+        dtype=torch.float32,
+    )
+
+    torch.testing.assert_close(weights, torch.tensor([[1.0, 1.0, 1.0, 4.0]]))
+
+
+@pytest.mark.parametrize(
+    ("top_k", "expected"),
+    [
+        (256, (2.0, 8.0)),
+        (512, (1.0, 4.0)),
+        (1024, (1.0, 2.0)),
+        (2048, (1.0, 1.0)),
+        (4096, (1.0, 1.0)),
+    ],
+)
+def test_top_k_adjusted_type_weights_follow_lower_bounds(top_k, expected):
+    neighbor_count = torch.tensor([[top_k + 1, top_k + 1]])
+    retained_count = torch.tensor([[top_k, top_k]])
+    is_nucleotide = torch.tensor([[False, True]])
+
+    weights = _top_k_adjusted_type_row_weights(
+        neighbor_count,
+        retained_count,
+        is_nucleotide,
+        top_k=top_k,
+        dtype=torch.float32,
+    )
+
+    torch.testing.assert_close(weights, torch.tensor([expected]))
+
+
+def test_top_k_adjusted_type_reweighting_preserves_default_pair_mass():
+    eps = 1e-8
+    dists_gt = torch.ones((1, 3, 2))
+    dists_pred = torch.tensor([[[1.0, 1.0], [4.0, 4.0], [9.0, 9.0]]])
+    idx = torch.tensor([[[1, 2], [0, 2], [0, 1]]])
+    neighbor_count = torch.tensor([[1024, 1024, 2]])
+    query_is_nucleotide = torch.tensor([[False, True, True]])
+
+    score_sum, pair_count = _top_k_adjusted_type_reweighted_group_sums(
+        dists_pred=dists_pred,
+        dists_gt=dists_gt,
+        idx=idx,
+        neighbor_count=neighbor_count,
+        query_is_nucleotide=query_is_nucleotide,
+        top_k=512,
+        eps=eps,
+        score_radius_protein=15.0,
+        score_radius_nucleotide=30.0,
+    )
+
+    distance_errors = torch.tensor([0.0, 1.0, 2.0])
+    row_scores = 0.25 * sum(
+        torch.sigmoid(threshold - distance_errors) for threshold in (0.5, 1.0, 2.0, 4.0)
+    )
+    expected_score_sum = 2 * row_scores[0] + 8 * row_scores[1] + 2 * row_scores[2]
+
+    torch.testing.assert_close(score_sum, expected_score_sum[None])
+    torch.testing.assert_close(pair_count, torch.tensor([12.0]))
+
+
+def test_row_reweighting_matches_pairwise_reference_and_gradient():
+    eps = 1e-8
+    top_k = 512
+    dists_gt = torch.tensor(
+        [
+            [
+                [1.0, 4.0, 9.0],
+                [4.0, 9.0, 16.0],
+                [1.0, 9.0, 25.0],
+                [4.0, 16.0, 36.0],
+            ]
+        ]
+    )
+    base_dists_pred = dists_gt + torch.tensor(
+        [
+            [
+                [0.2, -0.1, 0.3],
+                [0.4, 0.2, -0.3],
+                [-0.2, 0.1, 0.5],
+                [0.3, -0.4, 0.2],
+            ]
+        ]
+    )
+    idx = torch.tensor([[[1, 2, -1], [0, 2, 3], [0, 1, 3], [0, 1, -1]]])
+    neighbor_count = torch.tensor([[2, 700, 700, 2]])
+    query_is_nucleotide = torch.tensor([[False, False, True, True]])
+
+    dists_pred = base_dists_pred.clone().requires_grad_(True)
+    score_sum, pair_count = _top_k_adjusted_type_reweighted_group_sums(
+        dists_pred=dists_pred,
+        dists_gt=dists_gt,
+        idx=idx,
+        neighbor_count=neighbor_count,
+        query_is_nucleotide=query_is_nucleotide,
+        top_k=top_k,
+        eps=eps,
+        score_radius_protein=15.0,
+        score_radius_nucleotide=30.0,
+    )
+
+    reference_dists_pred = base_dists_pred.clone().requires_grad_(True)
+    dx = torch.sqrt(eps + reference_dists_pred)
+    dx_gt = torch.sqrt(eps + dists_gt)
+    delta = torch.abs(dx_gt - dx)
+    score = 0.25 * sum(
+        torch.sigmoid(threshold - delta) for threshold in (0.5, 1.0, 2.0, 4.0)
+    )
+    row_weight = _top_k_adjusted_type_row_weights(
+        neighbor_count,
+        neighbor_count.clamp_max(top_k),
+        query_is_nucleotide,
+        top_k,
+        reference_dists_pred.dtype,
+    )
+    pair_weight = (idx >= 0).to(score.dtype) * row_weight[..., None]
+    reference_score_sum = (score * pair_weight).sum(dim=(-1, -2))
+    reference_pair_count = pair_weight.sum(dim=(-1, -2))
+
+    torch.testing.assert_close(score_sum, reference_score_sum)
+    torch.testing.assert_close(pair_count, reference_pair_count)
+    score_sum.sum().backward()
+    reference_score_sum.sum().backward()
+    torch.testing.assert_close(dists_pred.grad, reference_dists_pred.grad)
 
 
 @requires_triton_cuda
@@ -317,3 +470,73 @@ def test_adjustable_radius_changes_loss():
     assert torch.isfinite(default_loss).all()
     assert torch.isfinite(tight_loss).all()
     assert not torch.allclose(default_loss, tight_loss, atol=1e-6, rtol=1e-6)
+
+
+@requires_triton_cuda
+def test_top_k_adjusted_backend_matches_dense_with_exhaustive_reservoir():
+    torch.manual_seed(21)
+    n_atom = 48
+    x_gt = torch.randn((2, n_atom, 3), device="cuda") * 4.0
+    atom_mask = torch.ones((2, n_atom), device="cuda")
+    atom_mask[0, -3:] = 0
+    is_nucleotide = torch.zeros_like(atom_mask)
+    is_nucleotide[:, n_atom // 2 :] = 1
+    base = x_gt + 0.2 * torch.randn_like(x_gt)
+    x_dense = base.clone().requires_grad_(True)
+    x_sparse = base.clone().requires_grad_(True)
+
+    dense = _dense_smooth_lddt_loss(
+        x=x_dense,
+        x_gt=x_gt,
+        atom_mask=atom_mask,
+        is_nucleotide=is_nucleotide,
+        loss_atom_mask=atom_mask,
+        eps=1e-8,
+    )
+    sparse = ball_query_smooth_lddt_loss(
+        x=x_sparse,
+        x_gt=x_gt,
+        atom_mask_gt=atom_mask,
+        is_nucleotide=is_nucleotide,
+        loss_atom_mask=atom_mask,
+        eps=1e-8,
+        top_k=n_atom - 1,
+    )
+    dense.sum().backward()
+    sparse.sum().backward()
+
+    torch.testing.assert_close(sparse, dense, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(x_sparse.grad, x_dense.grad, atol=1e-3, rtol=5e-3)
+
+
+@requires_triton_cuda
+def test_type_reweighting_increases_high_degree_row_influence():
+    torch.manual_seed(22)
+    protein_atoms = 9
+    nucleotide_atoms = 33
+    protein = torch.randn((protein_atoms, 3), device="cuda")
+    nucleotide = torch.randn((nucleotide_atoms, 3), device="cuda") + torch.tensor(
+        [100.0, 0.0, 0.0], device="cuda"
+    )
+    x_gt = torch.cat((protein, nucleotide))[None]
+    atom_mask = torch.ones((1, protein_atoms + nucleotide_atoms), device="cuda")
+    is_nucleotide = torch.zeros_like(atom_mask)
+    is_nucleotide[:, protein_atoms:] = 1
+    x = x_gt.clone()
+    x[:, :protein_atoms] += 0.01 * torch.randn_like(x[:, :protein_atoms])
+    x[:, protein_atoms:] += 2.0 * torch.randn_like(x[:, protein_atoms:])
+
+    kwargs = {
+        "x": x,
+        "x_gt": x_gt,
+        "atom_mask_gt": atom_mask,
+        "is_nucleotide": is_nucleotide,
+        "loss_atom_mask": atom_mask,
+        "eps": 1e-8,
+        "top_k": 8,
+        "seed": 3,
+    }
+    unweighted = _legacy_ball_query_smooth_lddt_loss(**kwargs)
+    reweighted = ball_query_smooth_lddt_loss(**kwargs)
+
+    assert reweighted.item() > unweighted.item()
