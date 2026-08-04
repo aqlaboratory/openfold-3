@@ -56,6 +56,8 @@ NUM_DIFFUSION_SAMPLES = 5
 TEMPLATE_OFF = Mode(use_msa_server=False, use_templates=False)
 TEMPLATE_ON = Mode(use_msa_server=False, use_templates=True)
 
+pytestmark = [pytest.mark.slow]
+
 
 @dataclass(frozen=True)
 class TemplateRmsdCase:
