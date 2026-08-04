@@ -1,0 +1,45 @@
+name: Type checking code
+
+on: [push, pull_request]
+
+# Unlike the ruff job this one installs a ~2.5 GB environment, so do not leave
+# superseded runs going on a branch that was just pushed to again.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # mypy needs the real dependency tree to reproduce the baseline: the
+      # entries in mypy-baseline.txt were recorded with torch, numpy, biotite &
+      # co. importable, so a bare `pip install mypy` would report a completely
+      # different set of errors and the baseline would be meaningless.
+      # openfold3-cpu is the smallest environment that provides them.
+      - name: Set up the pixi environment
+        uses: prefix-dev/setup-pixi@v0.10.0
+        with:
+          environments: openfold3-cpu
+          # Fail rather than re-solve if pixi.lock is out of date with pixi.toml.
+          locked: true
+          # Only refresh the environment cache from the default branch, so that
+          # PR branches can read it but cannot evict the other caches this repo
+          # relies on (e.g. the shared-params_of3 checkpoint).
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+
+      # `typecheck` runs `mypy | mypy-baseline filter`, so the baseline decides:
+      # only errors absent from mypy-baseline.txt fail the job. It also fails
+      # when the baseline still lists errors that have since been fixed -- the
+      # message below covers both directions.
+      - name: Type check with mypy against the baseline
+        run: pixi run --locked -e openfold3-cpu typecheck
+
+      - name: Explain how to update the baseline
+        if: failure()
+        run: |
+          echo "::notice::mypy reported violations that do not match mypy-baseline.txt."
+          echo "::notice::New errors: fix them, or (if intentional) run 'pixi run -e openfold3-cpu typecheck-sync' and commit mypy-baseline.txt."
+          echo "::notice::Resolved errors: run 'pixi run -e openfold3-cpu typecheck-sync' and commit mypy-baseline.txt so the baseline stops shrinking silently."
