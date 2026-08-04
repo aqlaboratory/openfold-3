@@ -65,6 +65,12 @@ def _normalize_index_tensor(
             Number of atom indices defining each constraint.
         name:
             Batch feature name used in validation errors.
+
+    Raises:
+        ValueError:
+            If the tensor does not contain integer indices in a two-dimensional
+            layout with the requested arity.
+
     Returns:
         Integer index tensor with the atom arity on its first axis.
     """
@@ -94,6 +100,11 @@ def _required_batch_feature(batch: dict, name: str):
             Collated model feature dictionary.
         name:
             Required batch feature name.
+
+    Raises:
+        ValueError:
+            If the required feature is absent from the batch.
+
     Returns:
         The requested batch feature.
     """
@@ -114,6 +125,11 @@ def _required_batch_scalar(batch: dict, name: str, dtype: type):
             Required scalar feature name.
         dtype:
             Python type used to convert the scalar value.
+
+    Raises:
+        ValueError:
+            If the required feature is absent or is not scalar.
+
     Returns:
         Converted scalar setting.
     """
@@ -133,6 +149,11 @@ def ligand_stereochemistry_guidance_enabled(batch: dict) -> bool:
     Args:
         batch:
             Collated model feature dictionary.
+
+    Raises:
+        ValueError:
+            If the enabled feature is present but is not scalar.
+
     Returns:
         Whether ligand stereochemistry guidance is enabled for the batch.
     """
@@ -168,6 +189,12 @@ def _prepare_restraint(
             Device on which guidance calculations will run.
         num_atoms:
             Size of the model atom axis used for index validation.
+
+    Raises:
+        ValueError:
+            If a required restraint feature is absent, malformed, inconsistent with
+            the model atom axis, or has an invalid weight.
+
     Returns:
         Validated device-local atom indices, bounds, and restraint weight.
     """
@@ -212,6 +239,12 @@ def prepare_ligand_stereochemistry_guidance(
             Collated model feature dictionary.
         atom_mask:
             Atom mask defining batch size and the model atom axis.
+
+    Raises:
+        ValueError:
+            If enabled guidance features are missing or malformed, the settings are
+            invalid, or the model batch contains more than one query.
+
     Returns:
         Prepared guidance inputs, or ``None`` when guidance is disabled or no
         usable constraints are present.

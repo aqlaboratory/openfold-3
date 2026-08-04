@@ -71,6 +71,11 @@ def _compute_geometry_constraints(
             Mapping from reference-molecule atom indices to model atom indices.
         settings:
             Validated settings controlling geometry buffers and VDW cutoffs.
+
+    Raises:
+        ValueError:
+            If a mapped ligand atom has an unsupported atomic number.
+
     Returns:
         Distance bounds, pair classifications, and VDW cutoffs for mapped atoms.
     """
@@ -515,6 +520,12 @@ def featurize_ligand_stereochemistry_guidance(
             Reference molecules aligned with residues in ``atom_array``.
         settings:
             Validated settings shared by enabled queries in the inference run.
+
+    Raises:
+        ValueError:
+            If reference molecules do not align one-to-one with the atom-array
+            residues, or if a mapped ligand atom has an unsupported atomic number.
+
     Returns:
         Shape-stable restraint and sampler-setting tensors for the inference batch.
     """
