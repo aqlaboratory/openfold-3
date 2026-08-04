@@ -45,7 +45,12 @@ class _LigandGeometryConstraints:
     )
 
     def extend(self, other: "_LigandGeometryConstraints") -> None:
-        """Append constraints while preserving their shared atom-axis mapping."""
+        """Append constraints while preserving their shared atom-axis mapping.
+
+        Args:
+            other:
+                Constraints to append to this accumulator.
+        """
         for constraint_field in fields(self):
             getattr(self, constraint_field.name).extend(
                 getattr(other, constraint_field.name)
@@ -57,7 +62,18 @@ def _compute_geometry_constraints(
     idx_map: dict[int, int],
     settings: LigandStereochemistryGuidanceSettings,
 ) -> _LigandGeometryConstraints:
-    """Compute RDKit distance-geometry bounds in the model atom axis."""
+    """Compute RDKit distance-geometry bounds in the model atom axis.
+
+    Args:
+        mol:
+            RDKit reference molecule containing the ligand bond graph.
+        idx_map:
+            Mapping from reference-molecule atom indices to model atom indices.
+        settings:
+            Validated settings controlling geometry buffers and VDW cutoffs.
+    Returns:
+        Distance bounds, pair classifications, and VDW cutoffs for mapped atoms.
+    """
     constraints = _LigandGeometryConstraints()
     if mol.GetNumAtoms() <= 1:
         return constraints
@@ -117,7 +133,16 @@ def _compute_geometry_constraints(
 def _compute_chiral_atom_constraints(
     mol: Mol, idx_map: dict[int, int]
 ) -> _LigandGeometryConstraints:
-    """Compute improper-dihedral constraints for assigned tetrahedral stereocenters."""
+    """Compute improper-dihedral constraints for assigned tetrahedral stereocenters.
+
+    Args:
+        mol:
+            RDKit reference molecule with assigned CIP stereochemistry.
+        idx_map:
+            Mapping from reference-molecule atom indices to model atom indices.
+    Returns:
+        Mapped tetrahedral atom indices and their assigned orientations.
+    """
     constraints = _LigandGeometryConstraints()
     if not all(atom.HasProp("_CIPRank") for atom in mol.GetAtoms()):
         return constraints
@@ -178,7 +203,16 @@ def _compute_chiral_atom_constraints(
 def _compute_stereo_bond_constraints(
     mol: Mol, idx_map: dict[int, int]
 ) -> _LigandGeometryConstraints:
-    """Compute improper-dihedral constraints for assigned E/Z double bonds."""
+    """Compute improper-dihedral constraints for assigned E/Z double bonds.
+
+    Args:
+        mol:
+            RDKit reference molecule with assigned bond stereochemistry.
+        idx_map:
+            Mapping from reference-molecule atom indices to model atom indices.
+    Returns:
+        Mapped double-bond atom indices and their assigned E/Z orientations.
+    """
     constraints = _LigandGeometryConstraints()
     if not all(atom.HasProp("_CIPRank") for atom in mol.GetAtoms()):
         return constraints
@@ -251,7 +285,16 @@ def _compute_stereo_bond_constraints(
 def _compute_flatness_constraints(
     mol: Mol, idx_map: dict[int, int]
 ) -> _LigandGeometryConstraints:
-    """Compute double-bond planarity constraints."""
+    """Compute double-bond planarity constraints.
+
+    Args:
+        mol:
+            RDKit reference molecule containing the ligand bond graph.
+        idx_map:
+            Mapping from reference-molecule atom indices to model atom indices.
+    Returns:
+        Six-atom patterns defining mapped planar double bonds.
+    """
     planar_double_bond_smarts = Chem.MolFromSmarts("[C;X3;^2](*)(*)=[C;X3;^2](*)(*)")
     constraints = _LigandGeometryConstraints()
     for match in mol.GetSubstructMatches(planar_double_bond_smarts):
@@ -275,7 +318,18 @@ def _compute_ligand_constraints(
     idx_map: dict[int, int],
     settings: LigandStereochemistryGuidanceSettings,
 ) -> _LigandGeometryConstraints:
-    """Build all supported stereochemistry guidance constraints for one ligand."""
+    """Build all supported stereochemistry guidance constraints for one ligand.
+
+    Args:
+        mol:
+            Processed RDKit reference molecule for one ligand residue.
+        idx_map:
+            Mapping from reference-molecule atom indices to model atom indices.
+        settings:
+            Validated settings controlling restraint bounds.
+    Returns:
+        Combined geometry, chirality, E/Z, and planarity constraints.
+    """
     if not idx_map:
         return _LigandGeometryConstraints()
 
@@ -290,6 +344,11 @@ def _compute_ligand_constraints(
 
 
 def _empty_feature_tensors() -> dict[str, torch.Tensor]:
+    """Create shape-stable empty tensors for every restraint family.
+
+    Returns:
+        Empty index and bound tensors keyed by batch feature name.
+    """
     features = {}
     for name, arity in (
         ("distance", 2),
@@ -310,7 +369,20 @@ def _restraint_features(
     lower: torch.Tensor,
     upper: torch.Tensor,
 ) -> dict[str, torch.Tensor]:
-    """Package one prepared flat-bottom restraint family as batch features."""
+    """Package one prepared flat-bottom restraint family as batch features.
+
+    Args:
+        name:
+            Restraint-family name used in emitted feature keys.
+        index:
+            Atom indices for all constraints in the family.
+        lower:
+            Lower bound for each constraint.
+        upper:
+            Upper bound for each constraint.
+    Returns:
+        Index and bound tensors keyed for the inference batch.
+    """
     prefix = f"ligand_stereochemistry_{name}"
     return {
         f"{prefix}_index": index,
@@ -323,6 +395,16 @@ def _tensorize_constraints(
     constraints: _LigandGeometryConstraints,
     settings: LigandStereochemistryGuidanceSettings,
 ) -> dict[str, torch.Tensor]:
+    """Convert accumulated constraints into flat-bottom restraint tensors.
+
+    Args:
+        constraints:
+            Ligand constraints expressed in the model atom axis.
+        settings:
+            Validated settings controlling restraint buffers.
+    Returns:
+        Batch feature tensors for distance and dihedral restraint families.
+    """
     features = _empty_feature_tensors()
 
     if constraints.bounds_index:
@@ -423,6 +505,18 @@ def featurize_ligand_stereochemistry_guidance(
     The query flag controls whether the sampler uses the emitted constraints. Empty
     tensors are returned when guidance is disabled so the downstream hook remains
     shape-stable and no-ops safely.
+
+    Args:
+        query:
+            Validated inference query containing the per-query guidance flag.
+        atom_array:
+            Preprocessed structure whose atom axis is used by model features.
+        processed_reference_molecules:
+            Reference molecules aligned with residues in ``atom_array``.
+        settings:
+            Validated settings shared by enabled queries in the inference run.
+    Returns:
+        Shape-stable restraint and sampler-setting tensors for the inference batch.
     """
     features = _empty_feature_tensors()
     features["ligand_stereochemistry_guidance_enabled"] = torch.tensor(

@@ -38,7 +38,16 @@ class PreparedLigandStereochemistryGuidance(NamedTuple):
 
 
 def _strip_leading_singletons(tensor: torch.Tensor, ndim: int) -> torch.Tensor:
-    """Strip collator/model singleton axes until the tensor has the expected rank."""
+    """Strip collator/model singleton axes until a tensor has the expected rank.
+
+    Args:
+        tensor:
+            Collated batch tensor to normalize.
+        ndim:
+            Maximum expected number of dimensions.
+    Returns:
+        Tensor with removable leading singleton dimensions stripped.
+    """
     while tensor.dim() > ndim and tensor.shape[0] == 1:
         tensor = tensor[0]
     return tensor
@@ -47,7 +56,18 @@ def _strip_leading_singletons(tensor: torch.Tensor, ndim: int) -> torch.Tensor:
 def _normalize_index_tensor(
     tensor: torch.Tensor, arity: int, name: str
 ) -> torch.Tensor:
-    """Normalize an index tensor to shape ``[arity, n_constraints]``."""
+    """Normalize an index tensor to shape ``[arity, n_constraints]``.
+
+    Args:
+        tensor:
+            Collated atom-index tensor.
+        arity:
+            Number of atom indices defining each constraint.
+        name:
+            Batch feature name used in validation errors.
+    Returns:
+        Integer index tensor with the atom arity on its first axis.
+    """
     tensor = _strip_leading_singletons(tensor, 2)
     if tensor.dtype not in {
         torch.int8,
@@ -67,7 +87,16 @@ def _normalize_index_tensor(
 
 
 def _required_batch_feature(batch: dict, name: str):
-    """Return a required guidance feature or raise a descriptive error."""
+    """Return a required guidance feature.
+
+    Args:
+        batch:
+            Collated model feature dictionary.
+        name:
+            Required batch feature name.
+    Returns:
+        The requested batch feature.
+    """
     if name not in batch:
         raise ValueError(
             f"Ligand stereochemistry guidance requires batch feature {name!r}."
@@ -76,7 +105,18 @@ def _required_batch_feature(batch: dict, name: str):
 
 
 def _required_batch_scalar(batch: dict, name: str, dtype: type):
-    """Read a required scalar setting from a collated guidance batch."""
+    """Read a required scalar setting from a collated guidance batch.
+
+    Args:
+        batch:
+            Collated model feature dictionary.
+        name:
+            Required scalar feature name.
+        dtype:
+            Python type used to convert the scalar value.
+    Returns:
+        Converted scalar setting.
+    """
     value = _required_batch_feature(batch, name)
     if torch.is_tensor(value):
         if value.numel() != 1:
@@ -88,7 +128,14 @@ def _required_batch_scalar(batch: dict, name: str, dtype: type):
 
 
 def ligand_stereochemistry_guidance_enabled(batch: dict) -> bool:
-    """Return whether a batch requests ligand stereochemistry guidance."""
+    """Return whether a batch requests ligand stereochemistry guidance.
+
+    Args:
+        batch:
+            Collated model feature dictionary.
+    Returns:
+        Whether ligand stereochemistry guidance is enabled for the batch.
+    """
     value = batch.get("ligand_stereochemistry_guidance_enabled")
     if value is None:
         return False
@@ -108,7 +155,22 @@ def _prepare_restraint(
     device: torch.device,
     num_atoms: int,
 ) -> _FlatBottomRestraints:
-    """Normalize and validate one emitted flat-bottom restraint family."""
+    """Normalize and validate one emitted flat-bottom restraint family.
+
+    Args:
+        batch:
+            Collated model feature dictionary.
+        name:
+            Restraint-family name used in batch feature keys.
+        arity:
+            Number of atom indices defining each constraint.
+        device:
+            Device on which guidance calculations will run.
+        num_atoms:
+            Size of the model atom axis used for index validation.
+    Returns:
+        Validated device-local atom indices, bounds, and restraint weight.
+    """
     prefix = f"ligand_stereochemistry_{name}"
     index_name = f"{prefix}_index"
     index = _normalize_index_tensor(
@@ -143,7 +205,17 @@ def prepare_ligand_stereochemistry_guidance(
     batch: dict,
     atom_mask: torch.Tensor,
 ) -> PreparedLigandStereochemistryGuidance | None:
-    """Validate and prepare invariant guidance inputs before diffusion."""
+    """Validate and prepare invariant guidance inputs before diffusion.
+
+    Args:
+        batch:
+            Collated model feature dictionary.
+        atom_mask:
+            Atom mask defining batch size and the model atom axis.
+    Returns:
+        Prepared guidance inputs, or ``None`` when guidance is disabled or no
+        usable constraints are present.
+    """
     if not ligand_stereochemistry_guidance_enabled(batch):
         return None
     if atom_mask.shape[0] != 1:
@@ -192,7 +264,24 @@ def _signed_dihedral(
     n_ijk_norm: torch.Tensor,
     n_jkl_norm: torch.Tensor,
 ) -> torch.Tensor:
-    """Compute a signed angle while distinguishing exact cis and trans geometry."""
+    """Compute a signed angle while distinguishing exact cis and trans geometry.
+
+    Args:
+        r_kj:
+            Vector along the central bond of each dihedral.
+        n_ijk:
+            Normal vector for the first dihedral plane.
+        n_jkl:
+            Normal vector for the second dihedral plane.
+        r_kj_norm:
+            Norm of each central-bond vector.
+        n_ijk_norm:
+            Norm of each first-plane normal.
+        n_jkl_norm:
+            Norm of each second-plane normal.
+    Returns:
+        Signed dihedral angles in radians.
+    """
     denominator = r_kj_norm * n_ijk_norm * n_jkl_norm
     sin_phi = (r_kj * torch.cross(n_ijk, n_jkl, dim=-1)).sum(dim=-1) / denominator
     cos_phi = (n_ijk * n_jkl).sum(dim=-1) / (n_ijk_norm * n_jkl_norm)
@@ -204,7 +293,18 @@ def _flat_bottom_derivative(
     lower: torch.Tensor,
     upper: torch.Tensor,
 ) -> torch.Tensor:
-    """Derivative of the linear flat-bottom energy with respect to ``value``."""
+    """Compute the derivative of a linear flat-bottom restraint.
+
+    Args:
+        value:
+            Current geometric value for each restraint.
+        lower:
+            Lower bound for each restraint.
+        upper:
+            Upper bound for each restraint.
+    Returns:
+        Derivative with respect to each geometric value.
+    """
     return (value > upper.expand_as(value)).to(value.dtype) - (
         value < lower.expand_as(value)
     ).to(value.dtype)
@@ -216,7 +316,20 @@ def _scatter_variable_gradient(
     value_gradient: torch.Tensor,
     energy_derivative: torch.Tensor,
 ) -> torch.Tensor:
-    """Scatter pair/dihedral gradients back to the full atom coordinate axis."""
+    """Scatter restraint gradients back to the full atom coordinate axis.
+
+    Args:
+        coords:
+            Full model coordinates used to size the output gradient.
+        index:
+            Atom indices defining each restraint.
+        value_gradient:
+            Derivative of each geometric value with respect to its indexed atoms.
+        energy_derivative:
+            Derivative of the restraint energy with respect to each value.
+    Returns:
+        Coordinate gradient accumulated over all restraints.
+    """
     gradient = torch.zeros_like(coords)
     scaled_gradient = value_gradient * energy_derivative.unsqueeze(-2).unsqueeze(-1)
     for atom_slot in range(index.shape[0]):
@@ -232,7 +345,16 @@ def _distance_value_and_gradient(
     coords: torch.Tensor,
     index: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return pair distances and analytical coordinate gradients."""
+    """Compute pair distances and their analytical coordinate gradients.
+
+    Args:
+        coords:
+            Full model coordinates.
+        index:
+            Two atom indices for each distance restraint.
+    Returns:
+        Pair distances and derivatives with respect to both indexed atoms.
+    """
     r_ij = coords.index_select(-2, index[0]) - coords.index_select(-2, index[1])
     r_ij_norm = torch.linalg.norm(r_ij, dim=-1).clamp_min(_GEOMETRY_EPSILON)
     r_hat_ij = r_ij / r_ij_norm.unsqueeze(-1)
@@ -244,7 +366,18 @@ def _dihedral_value_and_gradient(
     index: torch.Tensor,
     absolute: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Return improper dihedrals and their analytical gradients."""
+    """Compute improper dihedrals and their analytical coordinate gradients.
+
+    Args:
+        coords:
+            Full model coordinates.
+        index:
+            Four atom indices for each dihedral restraint.
+        absolute:
+            Whether to return absolute rather than signed angles.
+    Returns:
+        Dihedral angles and derivatives with respect to all indexed atoms.
+    """
     r_ij = coords.index_select(-2, index[0]) - coords.index_select(-2, index[1])
     r_kj = coords.index_select(-2, index[2]) - coords.index_select(-2, index[1])
     r_kl = coords.index_select(-2, index[2]) - coords.index_select(-2, index[3])
@@ -296,7 +429,20 @@ def _restraint_gradient(
     dihedral: bool,
     absolute: bool = False,
 ) -> torch.Tensor:
-    """Evaluate and scatter one prepared flat-bottom restraint family."""
+    """Evaluate and scatter one prepared flat-bottom restraint family.
+
+    Args:
+        coords:
+            Full model coordinates.
+        restraints:
+            Prepared indices, bounds, and weight for one restraint family.
+        dihedral:
+            Whether the restraints act on dihedrals rather than distances.
+        absolute:
+            Whether dihedral restraints use absolute angles.
+    Returns:
+        Coordinate gradient for the restraint family.
+    """
     if dihedral:
         value, value_gradient = _dihedral_value_and_gradient(
             coords,
@@ -317,7 +463,16 @@ def ligand_stereochemistry_gradient(
     coords: torch.Tensor,
     guidance: PreparedLigandStereochemistryGuidance,
 ) -> torch.Tensor:
-    """Return the analytical ligand stereochemistry guidance gradient."""
+    """Compute the analytical ligand stereochemistry guidance gradient.
+
+    Args:
+        coords:
+            Current denoised coordinates.
+        guidance:
+            Prepared restraint families and guidance settings.
+    Returns:
+        Coordinate gradient accumulated over all active restraint families.
+    """
     gradient = torch.zeros_like(coords)
     restraint_groups = (
         (guidance.distance, False, False),
@@ -341,7 +496,18 @@ def apply_ligand_stereochemistry_guidance(
     guidance: PreparedLigandStereochemistryGuidance | None,
     step_fraction: float,
 ) -> torch.Tensor:
-    """Apply opt-in ligand stereochemistry guidance to the denoised estimate."""
+    """Apply ligand stereochemistry guidance to a denoised estimate.
+
+    Args:
+        xl_denoised:
+            Clean coordinate estimate produced by the diffusion module.
+        guidance:
+            Prepared guidance inputs, or ``None`` when guidance is inactive.
+        step_fraction:
+            Fraction of reverse-diffusion steps completed.
+    Returns:
+        Guided coordinates, or the original estimate outside the guidance window.
+    """
     if guidance is None or step_fraction < guidance.start_fraction:
         return xl_denoised
 
