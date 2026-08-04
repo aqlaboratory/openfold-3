@@ -17,6 +17,7 @@
 import dataclasses
 import logging
 import pickle as pkl
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -48,17 +49,23 @@ from openfold3.core.data.resources.residues import (
 logger = logging.getLogger(__name__)
 
 
-@dataclasses.dataclass(frozen=False)
+@dataclasses.dataclass(frozen=True)
 class TemplateCacheEntry:
     """Class storing the template alignment and query-to-template map.
+
+    This is the in-memory form of a single entry in a per-chain template cache npz,
+    used both when writing the cache during preprocessing and when reading it back
+    during sample processing. Instances are immutable; use `dataclasses.replace` to
+    derive a modified entry (see `subset_template_index_map`).
 
     Attributes:
         template_pdb_chain_id (str):
             The PDB+chain ID of the template structure.
         index (int):
             The row index of the template hit in the hmmsearch+hmmalign alignment.
-        release_date (str):
-            The release date of the template structure.
+        release_date (datetime | str):
+            The release date of the template structure. The legacy training pipeline
+            writes a "%Y-%m-%d" string, the inference pipeline a datetime.
         idx_map (np.ndarray[int]):
             Dictionary mapping tokens that fall into the crop to corresponding residue
             indices in the matching alignment.
@@ -66,9 +73,24 @@ class TemplateCacheEntry:
             Original CIF file path for CIF-direct mode."""
 
     index: int
-    release_date: str
+    release_date: datetime | str
     idx_map: np.ndarray[int]
     cif_path: Path | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serializes to the plain dict stored under one template ID in the cache npz.
+
+        None-valued fields are omitted so entries stay minimal, and `cif_path` is
+        written as a string.
+        """
+        data = {
+            "index": self.index,
+            "release_date": self.release_date,
+            "idx_map": self.idx_map,
+        }
+        if self.cif_path is not None:
+            data["cif_path"] = str(self.cif_path)
+        return data
 
 
 @dataclasses.dataclass(frozen=False)
@@ -248,6 +270,7 @@ def sample_templates(
                 index=template_cache_entry[template_id]["index"],
                 release_date=template_cache_entry[template_id]["release_date"],
                 idx_map=template_cache_entry[template_id]["idx_map"],
+                # TODO: this will never read cif_path from the cache
             )
             for template_id in sampled_template_ids
         }
@@ -258,11 +281,8 @@ def sample_templates(
 
 def subset_template_index_map(
     template_cache_entry: TemplateCacheEntry, atom_array_query_chain: AtomArray
-) -> bool:
+) -> TemplateCacheEntry | None:
     """Subsets the idx map to template residues that align to the query chain.
-
-    The return value also determines whether the template is outside the crop during
-    training.
 
     Args:
         template_cache_entry (TemplateCacheEntry):
@@ -275,9 +295,10 @@ def subset_template_index_map(
             all residues of the query chain.
 
     Returns:
-        bool:
-            True if for training samples where the template falls outside the crop,
-            False otherwise.
+        TemplateCacheEntry | None:
+            A copy of the entry whose idx map is restricted to the query chain, or None
+            if nothing aligns into it (for training samples, where the template falls
+            outside the crop).
     """
     idx_map = template_cache_entry.idx_map
     idx_map = idx_map[idx_map[:, 0] != -1, :]
@@ -286,10 +307,11 @@ def subset_template_index_map(
     res_in_query = np.unique(atom_array_query_chain.res_id.astype(int))
     idx_map_in_crop = idx_map[np.where(np.isin(idx_map[:, 0], res_in_query))[0]]
 
-    # Update template cache entry with idx map in crop
-    template_cache_entry.idx_map = idx_map_in_crop
+    # Zero (query, template) residue pairs in the crop
+    if idx_map_in_crop.shape[0] == 0:
+        return None
 
-    return template_cache_entry.idx_map.shape[0] == 0
+    return dataclasses.replace(template_cache_entry, idx_map=idx_map_in_crop)
 
 
 @log_runtime_memory(
@@ -626,7 +648,10 @@ def align_template_to_query(
     for template_pdb_chain_id, template_cache_entry in sampled_template_data.items():
         # Subset the idx map to template residues that align to the query crop for
         # training and skip if the template is outside the crop
-        if subset_template_index_map(template_cache_entry, atom_array_query_chain):
+        cropped_cache_entry = subset_template_index_map(
+            template_cache_entry, atom_array_query_chain
+        )
+        if cropped_cache_entry is None:
             continue
 
         # Parse the template structure
@@ -637,7 +662,7 @@ def align_template_to_query(
             template_file_format,
             ccd,
             cif_assembly_cache=cif_assembly_cache,
-            cif_path=template_cache_entry.cif_path,
+            cif_path=cropped_cache_entry.cif_path,
         )
         if not atom_array_template_chain:
             continue
@@ -645,7 +670,7 @@ def align_template_to_query(
         # Create query token position to template residue ID map
         map_token_pos_to_template_residues(
             template_slices,
-            template_cache_entry,
+            cropped_cache_entry,
             atom_array_query_chain,
             atom_array_template_chain,
         )
