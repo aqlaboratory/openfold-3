@@ -23,7 +23,7 @@ from pydantic import (
     model_validator,
 )
 
-from openfold3.core.config import pocket_sampling_defaults as pocket_defaults
+from openfold3.core.config import pocket_sampling_config as pocket_defaults
 from openfold3.core.config.config_utils import (
     _cast_keys_to_int,
     _convert_molecule_type,

@@ -114,6 +114,9 @@ class InferenceDataset(Dataset):
         if self.template_preprocessor_settings.preparse_structures:
             self.template_preprocessor_settings.structure_file_format = "npz"
 
+        # Pocket sampling
+        self.pocket_sampling_settings = dataset_config.pocket_sampling
+
         # Parse CCD
         if dataset_config.ccd_file_path is not None:
             logger.debug("Parsing CCD file.")
@@ -282,8 +285,8 @@ class InferenceDataset(Dataset):
 
         return template_features
 
-    @staticmethod
     def _pocket_sampling_features(
+        self,
         query: Query,
         atom_array: AtomArray,
         processed_reference_molecules: list[ProcessedReferenceMolecule],
@@ -293,6 +296,7 @@ class InferenceDataset(Dataset):
             query=query,
             atom_array=atom_array,
             processed_reference_molecules=processed_reference_molecules,
+            settings=self.pocket_sampling_settings,
         )
 
     def create_all_features(

@@ -1,13 +1,12 @@
 """Featurization helpers for query-level ligand pocket constraints."""
 
 import logging
-import os
 
 import numpy as np
 import torch
 from biotite.structure import AtomArray
 
-from openfold3.core.config import pocket_sampling_defaults as defaults
+from openfold3.core.config.pocket_sampling_config import PocketSamplingSettings
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
 )
@@ -30,66 +29,6 @@ VDW_RADII = {
     "I": 1.98,
 }
 DEFAULT_VDW_RADIUS = VDW_RADII["C"]
-
-
-def read_bool_env(name: str, default: bool) -> bool:
-    """Read a boolean environment override with explicit validation."""
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    value = value.strip().lower()
-    if value in ("1", "true", "yes", "on"):
-        return True
-    if value in ("0", "false", "no", "off"):
-        return False
-    raise ValueError(
-        f"{name} must be one of 1/0, true/false, yes/no, or on/off; got {value!r}"
-    )
-
-
-def read_int_env(
-    name: str,
-    default: int,
-    *,
-    min_value: int | None = None,
-) -> int:
-    """Read an integer environment override with explicit validation."""
-    value = os.environ.get(name)
-    if value is None:
-        parsed = default
-    else:
-        try:
-            parsed = int(value)
-        except ValueError as exc:
-            raise ValueError(f"{name} must be an integer; got {value!r}") from exc
-    if min_value is not None and parsed < min_value:
-        raise ValueError(f"{name} must be >= {min_value}; got {parsed}")
-    return parsed
-
-
-def read_float_env(
-    name: str,
-    default: float,
-    *,
-    min_value: float | None = None,
-    max_value: float | None = None,
-) -> float:
-    """Read a float environment override with explicit validation."""
-    value = os.environ.get(name)
-    if value is None:
-        parsed = default
-    else:
-        try:
-            parsed = float(value)
-        except ValueError as exc:
-            raise ValueError(f"{name} must be a finite float; got {value!r}") from exc
-    if not np.isfinite(parsed):
-        raise ValueError(f"{name} must be a finite float; got {parsed!r}")
-    if min_value is not None and parsed < min_value:
-        raise ValueError(f"{name} must be >= {min_value}; got {parsed}")
-    if max_value is not None and parsed > max_value:
-        raise ValueError(f"{name} must be <= {max_value}; got {parsed}")
-    return parsed
 
 
 def _resolve_ligand_reference_molecule(
@@ -168,19 +107,19 @@ def create_pocket_sampling_features(
     query: Query,
     atom_array: AtomArray,
     processed_reference_molecules: list[ProcessedReferenceMolecule] | None = None,
+    settings: PocketSamplingSettings | None = None,
 ) -> dict[str, torch.Tensor]:
     """Create sampler features for pocket proposal and partial-diffusion refinement.
 
     Runs automatically when a query provides pocket_constraint. The sampler
     receives the ligand mask, user-pocket atom mask, VDW radii, and optional
-    RDKit ligand conformers from the OF3 reference molecule. OF3_POCKET_SAMPLING remains
-    available as an explicit boolean override.
+    RDKit ligand conformers from the OF3 reference molecule. `settings.enabled`
+    remains available as an explicit boolean override.
     """
     if query.pocket_constraint is None:
         return {}
-    if not read_bool_env(
-        "OF3_POCKET_SAMPLING", default=defaults.DEFAULT_POCKET_SAMPLING_ENABLED
-    ):
+    settings = settings if settings is not None else PocketSamplingSettings()
+    if not settings.enabled:
         return {}
 
     constraint = query.pocket_constraint
@@ -200,7 +139,7 @@ def create_pocket_sampling_features(
         pocket_mask |= residue_mask
     if not lig_mask.any() or not pocket_mask.any():
         raise ValueError(
-            "OF3_POCKET_SAMPLING requested but ligand or pocket mask is empty"
+            "pocket sampling requested but ligand or pocket mask is empty"
         )
 
     def _vdw_radius(element: object) -> float:
@@ -224,108 +163,36 @@ def create_pocket_sampling_features(
             [float(constraint.max_distance)], dtype=torch.float32
         ),
         "pocket_sampling_num_parents": torch.tensor(
-            [
-                read_int_env(
-                    "OF3_POCKET_SAMPLING_NUM_PARENTS",
-                    defaults.DEFAULT_POCKET_SAMPLING_NUM_PARENTS,
-                    min_value=1,
-                )
-            ],
-            dtype=torch.long,
+            [settings.num_parents], dtype=torch.long
         ),
         "pocket_sampling_candidates": torch.tensor(
-            [
-                read_int_env(
-                    "OF3_POCKET_SAMPLING_CANDIDATES",
-                    defaults.DEFAULT_POCKET_SAMPLING_CANDIDATES,
-                    min_value=1,
-                )
-            ],
-            dtype=torch.long,
+            [settings.candidates], dtype=torch.long
         ),
         "pocket_sampling_start_frac": torch.tensor(
-            [
-                read_float_env(
-                    "OF3_POCKET_SAMPLING_NOISE_FRAC",
-                    defaults.DEFAULT_POCKET_SAMPLING_NOISE_FRAC,
-                    min_value=0.0,
-                    max_value=1.0,
-                )
-            ],
-            dtype=torch.float32,
+            [settings.noise_frac], dtype=torch.float32
         ),
         "pocket_sampling_ligand_jitter": torch.tensor(
-            [
-                read_float_env(
-                    "OF3_POCKET_SAMPLING_LIGAND_JITTER",
-                    defaults.DEFAULT_POCKET_SAMPLING_LIGAND_JITTER,
-                    min_value=0.0,
-                )
-            ],
-            dtype=torch.float32,
+            [settings.ligand_jitter], dtype=torch.float32
         ),
         "pocket_sampling_center_jitter": torch.tensor(
-            [
-                read_float_env(
-                    "OF3_POCKET_SAMPLING_CENTER_JITTER",
-                    defaults.DEFAULT_POCKET_SAMPLING_CENTER_JITTER,
-                    min_value=0.0,
-                )
-            ],
-            dtype=torch.float32,
+            [settings.center_jitter], dtype=torch.float32
         ),
         "pocket_sampling_surface_jitter": torch.tensor(
-            [
-                read_float_env(
-                    "OF3_POCKET_SAMPLING_SURFACE_JITTER",
-                    defaults.DEFAULT_POCKET_SAMPLING_SURFACE_JITTER,
-                    min_value=0.0,
-                )
-            ],
-            dtype=torch.float32,
+            [settings.surface_jitter], dtype=torch.float32
         ),
         "pocket_sampling_vdw_buffer": torch.tensor(
-            [
-                read_float_env(
-                    "OF3_POCKET_SAMPLING_VDW_BUFFER",
-                    defaults.DEFAULT_POCKET_SAMPLING_VDW_BUFFER,
-                    min_value=0.0,
-                )
-            ],
-            dtype=torch.float32,
+            [settings.vdw_buffer], dtype=torch.float32
         ),
         "pocket_sampling_diversity_rmsd": torch.tensor(
-            [
-                read_float_env(
-                    "OF3_POCKET_SAMPLING_DIVERSITY_RMSD",
-                    defaults.DEFAULT_POCKET_SAMPLING_DIVERSITY_RMSD,
-                    min_value=0.0,
-                )
-            ],
-            dtype=torch.float32,
+            [settings.diversity_rmsd], dtype=torch.float32
         ),
     }
 
-    n_conformers = read_int_env(
-        "OF3_POCKET_SAMPLING_NUM_CONFORMERS",
-        defaults.DEFAULT_POCKET_SAMPLING_NUM_CONFORMERS,
-        min_value=0,
-    )
+    n_conformers = settings.num_conformers
     if n_conformers > 0 and processed_reference_molecules is not None:
-        conformer_rng = read_int_env(
-            "OF3_POCKET_SAMPLING_CONFORMER_RNG",
-            defaults.DEFAULT_POCKET_SAMPLING_CONFORMER_RNG,
-        )
-        conformer_prune_rmsd = read_float_env(
-            "OF3_POCKET_SAMPLING_CONFORMER_PRUNE_RMSD",
-            defaults.DEFAULT_POCKET_SAMPLING_CONFORMER_PRUNE_RMSD,
-            min_value=0.0,
-        )
-        conformer_max_iters = read_int_env(
-            "OF3_POCKET_SAMPLING_CONFORMER_MAX_ITERS",
-            defaults.DEFAULT_POCKET_SAMPLING_CONFORMER_MAX_ITERS,
-            min_value=1,
-        )
+        conformer_rng = settings.conformer_rng
+        conformer_prune_rmsd = settings.conformer_prune_rmsd
+        conformer_max_iters = settings.conformer_max_iters
         try:
             from rdkit import Chem
             from rdkit.Chem import AllChem

@@ -17,15 +17,18 @@ import textwrap
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
 from openfold3.core.config import config_utils
+from openfold3.core.config.pocket_sampling_config import PocketSamplingSettings
 from openfold3.core.data.framework.data_module import (
     DataModuleConfig,
     InferenceDataModule,
 )
+from openfold3.core.data.framework.single_datasets.inference import InferenceDataset
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
 )
 from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
+    InferenceDatasetConfigKwargs,
     InferenceDatasetSpec,
     InferenceJobConfig,
     TrainingDatasetPaths,

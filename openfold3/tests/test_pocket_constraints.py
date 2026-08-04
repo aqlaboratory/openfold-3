@@ -4,11 +4,11 @@ import torch
 from biotite.structure import AtomArray
 from pydantic import ValidationError
 
-from openfold3.core.config import pocket_sampling_defaults as defaults
+from openfold3.core.config import pocket_sampling_config
+from openfold3.core.config.pocket_sampling_config import PocketSamplingSettings
 from openfold3.core.data.pipelines.featurization import pocket_constraints
 from openfold3.core.data.pipelines.featurization.pocket_constraints import (
     create_pocket_sampling_features,
-    read_bool_env,
 )
 from openfold3.core.data.primitives.structure.query import (
     structure_with_ref_mols_from_query,
@@ -79,7 +79,7 @@ def test_pocket_constraints_default_max_distance():
     query = Query.model_validate(payload)
 
     assert query.pocket_constraint.max_distance == pytest.approx(
-        defaults.DEFAULT_POCKET_CONSTRAINT_MAX_DISTANCE
+        pocket_sampling_config.DEFAULT_POCKET_CONSTRAINT_MAX_DISTANCE
     )
 
 
@@ -116,14 +116,13 @@ def test_pocket_constraints_ligand_chain_must_reference_ligand():
     with pytest.raises(ValidationError, match="does not match any ligand chain"):
         Query.model_validate(payload)
 
-
-def test_create_pocket_sampling_features_uses_defaults(monkeypatch):
-    monkeypatch.delenv("OF3_POCKET_SAMPLING", raising=False)
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "0")
+def test_create_pocket_sampling_features_uses_defaults():
+    settings = PocketSamplingSettings(num_conformers=0)
 
     features = create_pocket_sampling_features(
         query=_query_with_pocket_constraint(),
         atom_array=_atom_array(),
+        settings=settings,
     )
 
     assert features["pocket_sampling_enabled"].item() is True
@@ -146,31 +145,25 @@ def test_create_pocket_sampling_features_uses_defaults(monkeypatch):
         0.0,
     ]
     assert features["pocket_sampling_contact_distance"].item() == pytest.approx(3.5)
-    assert (
-        features["pocket_sampling_num_parents"].item()
-        == defaults.DEFAULT_POCKET_SAMPLING_NUM_PARENTS
-    )
-    assert (
-        features["pocket_sampling_candidates"].item()
-        == defaults.DEFAULT_POCKET_SAMPLING_CANDIDATES
-    )
+    assert features["pocket_sampling_num_parents"].item() == settings.num_parents
+    assert features["pocket_sampling_candidates"].item() == settings.candidates
     assert features["pocket_sampling_start_frac"].item() == pytest.approx(
-        defaults.DEFAULT_POCKET_SAMPLING_NOISE_FRAC
+        settings.noise_frac
     )
     assert features["pocket_sampling_ligand_jitter"].item() == pytest.approx(
-        defaults.DEFAULT_POCKET_SAMPLING_LIGAND_JITTER
+        settings.ligand_jitter
     )
     assert features["pocket_sampling_center_jitter"].item() == pytest.approx(
-        defaults.DEFAULT_POCKET_SAMPLING_CENTER_JITTER
+        settings.center_jitter
     )
     assert features["pocket_sampling_surface_jitter"].item() == pytest.approx(
-        defaults.DEFAULT_POCKET_SAMPLING_SURFACE_JITTER
+        settings.surface_jitter
     )
     assert features["pocket_sampling_vdw_buffer"].item() == pytest.approx(
-        defaults.DEFAULT_POCKET_SAMPLING_VDW_BUFFER
+        settings.vdw_buffer
     )
     assert features["pocket_sampling_diversity_rmsd"].item() == pytest.approx(
-        defaults.DEFAULT_POCKET_SAMPLING_DIVERSITY_RMSD
+        settings.diversity_rmsd
     )
     assert "pocket_sampling_conformer_rels" not in features
 
@@ -191,8 +184,7 @@ def test_create_pocket_sampling_features_without_constraint_is_noop():
     assert create_pocket_sampling_features(query=query, atom_array=_atom_array()) == {}
 
 
-def test_create_pocket_sampling_features_rejects_missing_pocket_residue(monkeypatch):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "0")
+def test_create_pocket_sampling_features_rejects_missing_pocket_residue():
     payload = _query_with_pocket_constraint().model_dump()
     payload["pocket_constraint"]["pocket_residues"].append(("A", 99))
 
@@ -200,11 +192,11 @@ def test_create_pocket_sampling_features_rejects_missing_pocket_residue(monkeypa
         create_pocket_sampling_features(
             query=Query.model_validate(payload),
             atom_array=_atom_array(),
+            settings=PocketSamplingSettings(num_conformers=0),
         )
 
 
-def test_create_pocket_sampling_features_rejects_empty_ligand_mask(monkeypatch):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "0")
+def test_create_pocket_sampling_features_rejects_empty_ligand_mask():
     atom_array = _atom_array()
     atom_array.molecule_type_id[atom_array.chain_id == "L"] = MoleculeType.PROTEIN
 
@@ -212,19 +204,18 @@ def test_create_pocket_sampling_features_rejects_empty_ligand_mask(monkeypatch):
         create_pocket_sampling_features(
             query=_query_with_pocket_constraint(),
             atom_array=atom_array,
+            settings=PocketSamplingSettings(num_conformers=0),
         )
 
 
-def test_create_pocket_sampling_features_uses_carbon_radius_for_unknown_elements(
-    monkeypatch,
-):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "0")
+def test_create_pocket_sampling_features_uses_carbon_radius_for_unknown_elements():
     atom_array = _atom_array()
     atom_array.element[0] = "Xx"
 
     features = create_pocket_sampling_features(
         query=_query_with_pocket_constraint(),
         atom_array=atom_array,
+        settings=PocketSamplingSettings(num_conformers=0),
     )
 
     assert features["pocket_sampling_vdw_radii"][0].item() == pytest.approx(
@@ -232,10 +223,7 @@ def test_create_pocket_sampling_features_uses_carbon_radius_for_unknown_elements
     )
 
 
-def test_create_pocket_sampling_features_uses_default_vdw_radius_for_non_string_element(
-    monkeypatch,
-):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "0")
+def test_create_pocket_sampling_features_uses_default_vdw_radius_for_non_string_element():
     atom_array = _atom_array()
     atom_array.element = atom_array.element.astype(object)
     atom_array.element[0] = None
@@ -243,6 +231,7 @@ def test_create_pocket_sampling_features_uses_default_vdw_radius_for_non_string_
     features = create_pocket_sampling_features(
         query=_query_with_pocket_constraint(),
         atom_array=atom_array,
+        settings=PocketSamplingSettings(num_conformers=0),
     )
 
     assert features["pocket_sampling_vdw_radii"][0].item() == pytest.approx(
@@ -316,10 +305,7 @@ def test_resolve_ligand_reference_molecule_rejects_unsupported_molecule_type():
         )
 
 
-def test_create_pocket_sampling_features_skips_conformers_for_bad_atom_names(
-    monkeypatch,
-):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "1")
+def test_create_pocket_sampling_features_skips_conformers_for_bad_atom_names():
     query = _query_with_pocket_constraint()
     structure = structure_with_ref_mols_from_query(query)
     atom_array = structure.atom_array.copy()
@@ -330,15 +316,13 @@ def test_create_pocket_sampling_features_skips_conformers_for_bad_atom_names(
         query=query,
         atom_array=atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
+        settings=PocketSamplingSettings(num_conformers=1),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
 
 
-def test_create_pocket_sampling_features_skips_conformers_for_bad_atom_elements(
-    monkeypatch,
-):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "1")
+def test_create_pocket_sampling_features_skips_conformers_for_bad_atom_elements():
     query = _query_with_pocket_constraint()
     structure = structure_with_ref_mols_from_query(query)
     atom_array = structure.atom_array.copy()
@@ -349,16 +333,13 @@ def test_create_pocket_sampling_features_skips_conformers_for_bad_atom_elements(
         query=query,
         atom_array=atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
+        settings=PocketSamplingSettings(num_conformers=1),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
 
 
-def test_create_pocket_sampling_features_generates_conformers_from_reference_molecule(
-    monkeypatch,
-):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "2")
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_CONFORMER_RNG", "17")
+def test_create_pocket_sampling_features_generates_conformers_from_reference_molecule():
     query = _query_with_pocket_constraint()
     structure = structure_with_ref_mols_from_query(query)
     lig_mask = structure.atom_array.chain_id == "L"
@@ -367,6 +348,7 @@ def test_create_pocket_sampling_features_generates_conformers_from_reference_mol
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
+        settings=PocketSamplingSettings(num_conformers=2, conformer_rng=17),
     )
 
     rels = features["pocket_sampling_conformer_rels"]
@@ -419,9 +401,8 @@ def test_create_pocket_sampling_features_generates_conformers_from_reference_mol
     ],
 )
 def test_create_pocket_sampling_features_resolves_ligand_reference_by_query_order(
-    monkeypatch, chains
+    chains,
 ):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "1")
     query = Query.model_validate(
         {
             "chains": chains,
@@ -438,6 +419,7 @@ def test_create_pocket_sampling_features_resolves_ligand_reference_by_query_orde
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
+        settings=PocketSamplingSettings(num_conformers=1),
     )
 
     assert features["pocket_sampling_conformer_rels"].shape[1:] == (
@@ -446,11 +428,7 @@ def test_create_pocket_sampling_features_resolves_ligand_reference_by_query_orde
     )
 
 
-def test_create_pocket_sampling_features_generates_conformers_from_ccd_reference_molecule(
-    monkeypatch,
-):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "2")
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_CONFORMER_RNG", "17")
+def test_create_pocket_sampling_features_generates_conformers_from_ccd_reference_molecule():
     query = Query.model_validate(
         {
             "chains": [
@@ -478,6 +456,7 @@ def test_create_pocket_sampling_features_generates_conformers_from_ccd_reference
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
+        settings=PocketSamplingSettings(num_conformers=2, conformer_rng=17),
     )
 
     rels = features["pocket_sampling_conformer_rels"]
@@ -485,14 +464,11 @@ def test_create_pocket_sampling_features_generates_conformers_from_ccd_reference
     assert rels.shape[1:] == (int(lig_mask.sum()), 3)
 
 
-def test_create_pocket_sampling_features_skips_conformers_without_reference_molecules(
-    monkeypatch,
-):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "2")
-
+def test_create_pocket_sampling_features_skips_conformers_without_reference_molecules():
     features = create_pocket_sampling_features(
         query=_query_with_pocket_constraint(),
         atom_array=_atom_array(),
+        settings=PocketSamplingSettings(num_conformers=2),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
@@ -501,7 +477,6 @@ def test_create_pocket_sampling_features_skips_conformers_without_reference_mole
 def test_create_pocket_sampling_features_skips_conformers_when_ligand_ref_is_missing(
     monkeypatch,
 ):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "1")
     monkeypatch.setattr(
         pocket_constraints,
         "_resolve_ligand_reference_molecule",
@@ -514,6 +489,7 @@ def test_create_pocket_sampling_features_skips_conformers_when_ligand_ref_is_mis
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
+        settings=PocketSamplingSettings(num_conformers=1),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
@@ -522,7 +498,6 @@ def test_create_pocket_sampling_features_skips_conformers_when_ligand_ref_is_mis
 def test_create_pocket_sampling_features_skips_conformers_for_hydrogen_atom_order(
     monkeypatch,
 ):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "1")
     monkeypatch.setattr(
         pocket_constraints,
         "_atom_order_from_reference_molecule",
@@ -537,6 +512,7 @@ def test_create_pocket_sampling_features_skips_conformers_for_hydrogen_atom_orde
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
+        settings=PocketSamplingSettings(num_conformers=1),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
@@ -547,7 +523,6 @@ def test_create_pocket_sampling_features_can_use_uff_conformer_optimization(
 ):
     from rdkit.Chem import AllChem
 
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "1")
     monkeypatch.setattr(AllChem, "MMFFHasAllMoleculeParams", lambda _mol: False)
     query = _query_with_pocket_constraint()
     structure = structure_with_ref_mols_from_query(query)
@@ -556,6 +531,7 @@ def test_create_pocket_sampling_features_can_use_uff_conformer_optimization(
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
+        settings=PocketSamplingSettings(num_conformers=1),
     )
 
     assert features["pocket_sampling_conformer_rels"].shape[0] == 1
@@ -564,7 +540,6 @@ def test_create_pocket_sampling_features_can_use_uff_conformer_optimization(
 def test_create_pocket_sampling_features_skips_conformers_on_generation_error(
     monkeypatch,
 ):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING_NUM_CONFORMERS", "1")
     monkeypatch.setattr(
         pocket_constraints,
         "_atom_order_from_reference_molecule",
@@ -579,104 +554,47 @@ def test_create_pocket_sampling_features_skips_conformers_on_generation_error(
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
+        settings=PocketSamplingSettings(num_conformers=1),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
 
 
-def test_create_pocket_sampling_features_respects_disable_env(monkeypatch):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING", "0")
-
+def test_create_pocket_sampling_features_respects_disabled_setting():
     assert (
         create_pocket_sampling_features(
             query=_query_with_pocket_constraint(),
             atom_array=_atom_array(),
+            settings=PocketSamplingSettings(enabled=False),
         )
         == {}
     )
 
 
-def test_create_pocket_sampling_features_validates_boolean_env(monkeypatch):
-    monkeypatch.setenv("OF3_POCKET_SAMPLING", "maybe")
-
-    with pytest.raises(ValueError, match="OF3_POCKET_SAMPLING must be one of"):
-        create_pocket_sampling_features(
-            query=_query_with_pocket_constraint(),
-            atom_array=_atom_array(),
-        )
+def test_pocket_sampling_settings_rejects_invalid_enabled_value():
+    with pytest.raises(ValidationError, match="enabled"):
+        PocketSamplingSettings(enabled="maybe")
 
 
 @pytest.mark.parametrize(
-    ("name", "value", "match"),
+    ("field", "value", "match"),
     [
-        (
-            "OF3_POCKET_SAMPLING_NUM_PARENTS",
-            "zero",
-            "OF3_POCKET_SAMPLING_NUM_PARENTS must be an integer",
-        ),
-        (
-            "OF3_POCKET_SAMPLING_NOISE_FRAC",
-            "1.5",
-            "OF3_POCKET_SAMPLING_NOISE_FRAC must be <= 1.0",
-        ),
-        (
-            "OF3_POCKET_SAMPLING_LIGAND_JITTER",
-            "-1",
-            "OF3_POCKET_SAMPLING_LIGAND_JITTER must be >= 0.0",
-        ),
-        (
-            "OF3_POCKET_SAMPLING_CENTER_JITTER",
-            "not-a-float",
-            "OF3_POCKET_SAMPLING_CENTER_JITTER must be a finite float",
-        ),
-        (
-            "OF3_POCKET_SAMPLING_SURFACE_JITTER",
-            "nan",
-            "OF3_POCKET_SAMPLING_SURFACE_JITTER must be a finite float",
-        ),
-        (
-            "OF3_POCKET_SAMPLING_CONFORMER_MAX_ITERS",
-            "0",
-            "OF3_POCKET_SAMPLING_CONFORMER_MAX_ITERS must be >= 1",
-        ),
+        ("num_parents", "zero", "num_parents"),
+        ("noise_frac", 1.5, "less than or equal to 1"),
+        ("ligand_jitter", -1.0, "greater than or equal to 0"),
+        ("center_jitter", float("inf"), "center_jitter must be a finite float"),
+        ("surface_jitter", float("inf"), "surface_jitter must be a finite float"),
+        ("conformer_max_iters", 0, "greater than or equal to 1"),
     ],
 )
-def test_create_pocket_sampling_features_validates_numeric_env(
-    monkeypatch, name, value, match
-):
-    monkeypatch.setenv(name, value)
-    query = _query_with_pocket_constraint()
-    kwargs = {
-        "query": query,
-        "atom_array": _atom_array(),
-    }
-    if name.startswith("OF3_POCKET_SAMPLING_CONFORMER"):
-        structure = structure_with_ref_mols_from_query(query)
-        kwargs = {
-            "query": query,
-            "atom_array": structure.atom_array,
-            "processed_reference_molecules": structure.processed_reference_mols,
-        }
-
-    with pytest.raises(ValueError, match=match):
-        create_pocket_sampling_features(**kwargs)
+def test_pocket_sampling_settings_validates_numeric_fields(field, value, match):
+    with pytest.raises(ValidationError, match=match):
+        PocketSamplingSettings(**{field: value})
 
 
-def test_read_bool_env_accepts_expected_values(monkeypatch):
-    monkeypatch.delenv("OF3_POCKET_SAMPLING", raising=False)
-    assert (
-        read_bool_env(
-            "OF3_POCKET_SAMPLING",
-            default=defaults.DEFAULT_POCKET_SAMPLING_ENABLED,
-        )
-        is True
-    )
-
-    monkeypatch.setenv("OF3_POCKET_SAMPLING", "off")
-    assert read_bool_env("OF3_POCKET_SAMPLING", default=True) is False
-
-    monkeypatch.setenv("OF3_POCKET_SAMPLING", "YES")
-    assert read_bool_env("OF3_POCKET_SAMPLING", default=False) is True
+def test_pocket_sampling_settings_rejects_unknown_field():
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        PocketSamplingSettings(not_a_real_field=1)
 
 
 def test_create_noise_schedule_matches_expected_endpoints():
