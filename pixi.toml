@@ -246,10 +246,18 @@ pytest-vcr = "*"
 # --- Dev and documentation optionals
 # We do not put on a feature to avoid combinatorial explosion.
 ruff = "*"
+mypy = "*"
 sphinx = "*"
 myst-parser = "*"
 furo = "*"
 pre-commit = "*"
+
+
+# mypy-baseline is not packaged in conda-forge, so it comes from pypi.
+# It lets us record the current type errors in a baseline file and only fail
+# on newly introduced ones.
+[feature.openfold3-cpu.pypi-dependencies]
+mypy-baseline = "*"
 
 
 [feature.openfold3-cpu.target.linux-64.dependencies]

@@ -61,6 +61,8 @@ optional-dependencies.dev = [
     "pytest-regressions",
     "pytest-vcr",
     "ruff",
+    "mypy",
+    "mypy-baseline",
     "pre-commit",
 
     # used for documentation
