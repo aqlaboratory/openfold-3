@@ -94,13 +94,13 @@ platforms = [
 #   https://github.com/prefix-dev/pixi/blob/main/CHANGELOG.md#-highlights-1
 # - as our lockfiles are now v7
 # - as we will use cuda support in build
-# - 0.72.0:
+# - 0.73.0:
 #   * as we now use rich platform support
 #     arguably definition got more complex with this
 #     maybe we should lobby for system-requiremets to be an alternative
 #     and not deprecated
 #   * as we now use wildcard platform target selectors (this helped)
-requires-pixi = ">=0.72.0"
+requires-pixi = ">=0.73.0"
 
 # --- Environments
 
