@@ -14,7 +14,7 @@ from rdkit import Chem
 from rdkit.Chem.rdchem import BondStereo, HybridizationType, Mol
 from rdkit.Chem.rdDistGeom import GetMoleculeBoundsMatrix
 
-from openfold3.core.config.ligand_stereochemistry import (
+from openfold3.core.config.ligand_stereochemistry_config import (
     LigandStereochemistryGuidanceSettings,
 )
 from openfold3.core.data.pipelines.sample_processing.conformer import (

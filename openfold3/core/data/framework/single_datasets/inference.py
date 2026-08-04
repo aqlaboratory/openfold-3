@@ -115,7 +115,7 @@ class InferenceDataset(Dataset):
             dataset_config.template_preprocessor_settings
         )
         self.ligand_stereochemistry_guidance_settings = (
-            dataset_config.ligand_stereochemistry_guidance_settings
+            dataset_config.ligand_stereochemistry_guidance
         )
         if self.template_preprocessor_settings.preparse_structures:
             self.template_preprocessor_settings.structure_file_format = "npz"

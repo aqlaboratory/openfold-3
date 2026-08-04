@@ -132,6 +132,23 @@ dataset_config_kwargs:
     rdkit_conformer_prune_rmsd: 0.0
     rdkit_conformer_max_iters: 200
 
+  # LigandStereochemistryGuidanceSettings
+  # Configure local ligand-geometry guidance for queries that enable it.
+  ligand_stereochemistry_guidance:
+    start_fraction: 0.725
+    num_gd_steps: 20
+    bond_buffer: 0.125
+    angle_buffer: 0.125
+    clash_buffer: 0.10
+    chiral_buffer: 0.52360
+    stereo_bond_buffer: 0.52360
+    planar_bond_buffer: 0.26180
+    distance_weight: 0.01
+    chiral_atom_weight: 0.1
+    stereo_bond_weight: 0.05
+    planar_bond_weight: 0.05
+    vdw_pair_cutoff_offset: 0.35
+
 # OutputWriterSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141
 # Configure the output formats / content
 output_writer_settings: 
@@ -141,23 +158,6 @@ output_writer_settings:
   write_features: false
   write_latent_outputs: false
   write_full_confidence_scores: true
-
-# LigandStereochemistryGuidanceSettings
-# Configure local ligand-geometry guidance for queries that enable it.
-ligand_stereochemistry_guidance_settings:
-  start_fraction: 0.725
-  num_gd_steps: 20
-  bond_buffer: 0.125
-  angle_buffer: 0.125
-  clash_buffer: 0.10
-  chiral_buffer: 0.52360
-  stereo_bond_buffer: 0.52360
-  planar_bond_buffer: 0.26180
-  distance_weight: 0.01
-  chiral_atom_weight: 0.1
-  stereo_bond_weight: 0.05
-  planar_bond_weight: 0.05
-  vdw_pair_cutoff_offset: 0.35
 
 # MSAComputationSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py
 # Configure MSA server settings for colabfold 

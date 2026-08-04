@@ -325,9 +325,10 @@ Guidance settings are configured in the runner YAML and are shared by all enable
 queries in an inference run:
 
 ```yaml
-ligand_stereochemistry_guidance_settings:
-  start_fraction: 0.725
-  num_gd_steps: 20
+dataset_config_kwargs:
+  ligand_stereochemistry_guidance:
+    start_fraction: 0.725
+    num_gd_steps: 20
 ```
 
 A start fraction of `0` applies guidance throughout reverse diffusion, while `1`

@@ -328,7 +328,7 @@ template_preprocessor_settings:
 
 ---
 
-### 3.10. Ligand Stereochemistry Guidance Settings (`ligand_stereochemistry_guidance_settings`)
+### 3.10. Ligand Stereochemistry Guidance Settings (`dataset_config_kwargs.ligand_stereochemistry_guidance`)
 
 Configures local ligand-geometry guidance for queries with
 `ligand_stereochemistry_guidance: true`.
@@ -352,9 +352,10 @@ Configures local ligand-geometry guidance for queries with
 
 **Example**:
 ```yaml
-ligand_stereochemistry_guidance_settings:
-  start_fraction: 0.725
-  num_gd_steps: 20
+dataset_config_kwargs:
+  ligand_stereochemistry_guidance:
+    start_fraction: 0.725
+    num_gd_steps: 20
 ```
 
 ---
@@ -367,4 +368,4 @@ For the complete list of default values, see the Pydantic model classes in:
 - [`openfold3/core/data/tools/colabfold_msa_server.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py) - MSA server settings
 - [`openfold3/core/data/pipelines/preprocessing/template.py`](http://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py) - Template preprocessing settings
 - [`openfold3/core/config/pocket_sampling_config.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/pocket_sampling_config.py) - Pocket sampling settings
-- `openfold3/core/config/ligand_stereochemistry.py` - Ligand stereochemistry guidance settings
+- `openfold3/core/config/ligand_stereochemistry_config.py` - Ligand stereochemistry guidance settings

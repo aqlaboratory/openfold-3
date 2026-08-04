@@ -5,7 +5,7 @@ import pytest
 import torch
 from rdkit import Chem
 
-from openfold3.core.config.ligand_stereochemistry import (
+from openfold3.core.config.ligand_stereochemistry_config import (
     LigandStereochemistryGuidanceSettings,
 )
 from openfold3.core.data.pipelines.featurization import (
@@ -547,16 +547,18 @@ def test_inference_experiment_records_and_routes_guidance_settings(tmp_path):
     experiment = InferenceExperimentConfig(
         inference_ckpt_path=checkpoint,
         cache_path=tmp_path,
-        ligand_stereochemistry_guidance_settings={
-            "start_fraction": 0.8,
-            "num_gd_steps": 7,
-            "chiral_atom_weight": 0.2,
+        dataset_config_kwargs={
+            "ligand_stereochemistry_guidance": {
+                "start_fraction": 0.8,
+                "num_gd_steps": 7,
+                "chiral_atom_weight": 0.2,
+            }
         },
     )
     serialized = experiment.model_dump()
 
-    assert serialized["ligand_stereochemistry_guidance_settings"] == (
-        experiment.ligand_stereochemistry_guidance_settings.model_dump()
+    assert serialized["dataset_config_kwargs"]["ligand_stereochemistry_guidance"] == (
+        experiment.dataset_config_kwargs.ligand_stereochemistry_guidance.model_dump()
     )
 
     runner = InferenceExperimentRunner(experiment)
@@ -566,8 +568,8 @@ def test_inference_experiment_records_and_routes_guidance_settings(tmp_path):
     inference_job = runner.data_module_config.datasets[0].config
 
     assert (
-        inference_job.ligand_stereochemistry_guidance_settings
-        == experiment.ligand_stereochemistry_guidance_settings
+        inference_job.ligand_stereochemistry_guidance
+        == experiment.dataset_config_kwargs.ligand_stereochemistry_guidance
     )
 
 

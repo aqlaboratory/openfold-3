@@ -841,7 +841,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             template=self.dataset_config_kwargs.template,
             template_preprocessor_settings=self.experiment_config.template_preprocessor_settings,
             pocket_sampling=self.dataset_config_kwargs.pocket_sampling,
-            ligand_stereochemistry_guidance_settings=self.experiment_config.ligand_stereochemistry_guidance_settings,
+            ligand_stereochemistry_guidance=self.dataset_config_kwargs.ligand_stereochemistry_guidance,
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(

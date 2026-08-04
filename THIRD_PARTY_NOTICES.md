@@ -5,7 +5,7 @@
 The ligand stereochemistry constraint extraction, physical guidance, and associated
 potential parameters in the following files are adapted from Boltz:
 
-- `openfold3/core/config/ligand_stereochemistry.py`
+- `openfold3/core/config/ligand_stereochemistry_config.py`
 - `openfold3/core/data/pipelines/featurization/ligand_stereochemistry.py`
 - `openfold3/core/model/structure/ligand_stereochemistry.py`
 
