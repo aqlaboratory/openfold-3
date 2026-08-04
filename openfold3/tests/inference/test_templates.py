@@ -97,6 +97,42 @@ CASES = [
         with_template_rmsd_max_angstrom=2.0,
         rmsd_separation_min_angstrom=5.0,
     ),
+    # Human HCK (SH3-SH2-kinase) templated on c-Src 1Y57 — a *homologous* template
+    # (61.7% identity to 1Y57_A, with indels), unlike 1a8q's self-template. This is the
+    # realistic user-supplied-template case, and the one that regressed in issue #294:
+    # gapped alignment columns reached the template cache, the query/template residue
+    # counts disagreed, and the template was silently dropped.
+    #
+    # Expect partial improvement, not the near-native fit of a self-template. The
+    # on-condition samples are bimodal — four cluster at 8.6-12.6 Å and one lands near
+    # the no-template value — so the mean, not any single sample, is the meaningful
+    # quantity. If templates are ignored again, on collapses onto off (~23.7 Å) and
+    # both the max and separation checks fail.
+    #
+    # Three runs on of3-p2-155k, 5 samples each (one on the original hardware, two on
+    # an NVIDIA GB10) put the means in a narrow band:
+    #     off mean  23.39 / 23.70 / 23.83   (per-sample 21.8-26.1)
+    #     on  mean  12.70 / 12.74 / 12.78   (per-sample  8.6-22.8)
+    #     off - on  10.61 / 11.00 / 11.09
+    # Bounds below leave >=23% headroom to the nearest observation. The with-template
+    # max is the tightest of the three because the on mean moves ~2 Å for each extra
+    # sample that lands in the bad mode; 16.0 Å absorbs one such sample, 3 would fail.
+    TemplateRmsdCase(
+        pdb_id="1y57",
+        chain="A",
+        sequence=(
+            "DIIVVALYDYEAIHHEDLSFQKGDQMVVLEESGEWWKARSLATRKEGYIPSNYVARVDSLETEEWFFKGIS"
+            "RKDAERQLLAPGNMLGSFMIRDSETTKGSYSLSVRDYDPRQGDTVKHYKIRTLDNGGFYISPRSTFSTLQE"
+            "LVDHYKKGNDGLCQKLSVPCMSSKPQKPWEKDAWEIPRESLKLEKKLGAGQFGEVWMATYNKHTKVAVKTM"
+            "KPGSMSVEAFLAEANVMKTLQHDKLVKLHAVVTKEPIYIITEFMAKGSLLDFLKSDEGSKQPLPKLIDFSA"
+            "QIAEGMAFIEQRNYIHRDLRAANILVSASLVCKIADFGLARVIEDNEYTAREGAKFPIKWTAPEAINFGSF"
+            "TIKSDVWSFGILLMEIVTYGRIPYPGMSNPEVIRALERGYRMPRPENCPEELYNIMMRCWKNRPEERPTFE"
+            "YIQSVLDDFYTATESQYQQQP"
+        ),
+        no_template_rmsd_min_angstrom=18.0,
+        with_template_rmsd_max_angstrom=16.0,
+        rmsd_separation_min_angstrom=6.0,
+    ),
 ]
 
 

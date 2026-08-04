@@ -20,7 +20,6 @@ the per-chain cache npz (keyed by template id) and the preparsed structure-array
 because callers use them at parametrize/collection time.
 """
 
-import dataclasses
 from pathlib import Path
 
 import numpy as np
@@ -41,10 +40,7 @@ def make_cache_entry(
 
 def write_cache_npz(path: Path, entries: dict[str, TemplateCacheEntry]) -> Path:
     npz = {
-        template_id: np.array(
-            {k: v for k, v in dataclasses.asdict(entry).items() if v is not None},
-            dtype=object,
-        )
+        template_id: np.array(entry.to_dict(), dtype=object)
         for template_id, entry in entries.items()
     }
     np.savez(path, **npz)
