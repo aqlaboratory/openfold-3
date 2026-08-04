@@ -312,6 +312,7 @@ class SampleDiffusion(nn.Module):
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """Run the standard OF3 denoising loop from a chosen schedule index."""
+        num_denoising_steps = len(noise_schedule) - 1
         for tau, c_tau in enumerate(noise_schedule[1:]):
             if tau < start_step:
                 continue
@@ -347,7 +348,7 @@ class SampleDiffusion(nn.Module):
             xl_denoised = apply_ligand_stereochemistry_guidance(
                 xl_denoised=xl_denoised,
                 guidance=stereochemistry_guidance,
-                step_fraction=(tau + 1) / max(len(noise_schedule) - 1, 1),
+                step_fraction=(tau + 1) / max(num_denoising_steps, 1),
             )
 
             delta = (xl_noisy - xl_denoised) / t
