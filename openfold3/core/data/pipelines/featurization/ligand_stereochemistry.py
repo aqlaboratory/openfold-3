@@ -56,17 +56,11 @@ def _compute_geometry_constraints(
     mol: Mol,
     idx_map: dict[int, int],
     settings: LigandStereochemistryGuidanceSettings,
-) -> tuple[
-    list[tuple[int, int]],
-    list[float],
-    list[float],
-    list[bool],
-    list[bool],
-    list[float],
-]:
+) -> _LigandGeometryConstraints:
     """Compute RDKit distance-geometry bounds in the model atom axis."""
+    constraints = _LigandGeometryConstraints()
     if mol.GetNumAtoms() <= 1:
-        return [], [], [], [], [], []
+        return constraints
 
     mapped_atomic_numbers = {
         atom_idx: mol.GetAtomWithIdx(atom_idx).GetAtomicNum() for atom_idx in idx_map
@@ -98,87 +92,96 @@ def _compute_geometry_constraints(
         for match in mol.GetSubstructMatches(Chem.MolFromSmarts("*~*~*"))
     }
 
-    bounds_index = []
-    lower_bounds = []
-    upper_bounds = []
-    bond_mask = []
-    angle_mask = []
-    pair_vdw_cutoffs = []
     for i, j in zip(*np.triu_indices(mol.GetNumAtoms(), k=1), strict=True):
-        if i not in idx_map or j not in idx_map:
+        i_idx, j_idx = int(i), int(j)
+        if i_idx not in idx_map or j_idx not in idx_map:
             continue
-        atomic_numbers = (mapped_atomic_numbers[i], mapped_atomic_numbers[j])
-        atom_pair = tuple(sorted((i, j)))
-        bounds_index.append((idx_map[i], idx_map[j]))
-        upper_bounds.append(float(bounds[i, j]))
-        lower_bounds.append(float(bounds[j, i]))
-        bond_mask.append(atom_pair in bonds)
-        angle_mask.append(atom_pair in angles)
+        atomic_numbers = (
+            mapped_atomic_numbers[i_idx],
+            mapped_atomic_numbers[j_idx],
+        )
+        atom_pair = tuple(sorted((i_idx, j_idx)))
+        constraints.bounds_index.append((idx_map[i_idx], idx_map[j_idx]))
+        constraints.upper_bounds.append(float(bounds[i_idx, j_idx]))
+        constraints.lower_bounds.append(float(bounds[j_idx, i_idx]))
+        constraints.bond_mask.append(atom_pair in bonds)
+        constraints.angle_mask.append(atom_pair in angles)
         pair_radii = [PERIODIC_TABLE.GetRvdw(number) for number in atomic_numbers]
-        pair_vdw_cutoffs.append(
+        constraints.pair_vdw_cutoffs.append(
             settings.vdw_pair_cutoff_offset + sum(pair_radii) / len(pair_radii)
         )
 
-    return (
-        bounds_index,
-        lower_bounds,
-        upper_bounds,
-        bond_mask,
-        angle_mask,
-        pair_vdw_cutoffs,
-    )
+    return constraints
 
 
 def _compute_chiral_atom_constraints(
     mol: Mol, idx_map: dict[int, int]
-) -> tuple[list[tuple[int, int, int, int]], list[bool]]:
+) -> _LigandGeometryConstraints:
     """Compute improper-dihedral constraints for assigned tetrahedral stereocenters."""
-    constraints = []
-    orientations = []
+    constraints = _LigandGeometryConstraints()
     if not all(atom.HasProp("_CIPRank") for atom in mol.GetAtoms()):
-        return constraints, orientations
+        return constraints
 
     for center_idx, orientation in Chem.FindMolChiralCenters(
         mol, includeUnassigned=False
     ):
         center = mol.GetAtomWithIdx(center_idx)
-        neighbors = [
+        ranked_neighbors = [
             (neighbor.GetIdx(), int(neighbor.GetProp("_CIPRank")))
             for neighbor in center.GetNeighbors()
         ]
-        neighbors = sorted(neighbors, key=lambda neighbor: neighbor[1], reverse=True)
-        neighbors = tuple(neighbor[0] for neighbor in neighbors)
+        ranked_neighbors.sort(key=lambda neighbor: neighbor[1], reverse=True)
+        neighbor_indices = tuple(neighbor[0] for neighbor in ranked_neighbors)
 
-        if len(neighbors) > 4 or center.GetHybridization() != HybridizationType.SP3:
+        if (
+            len(neighbor_indices) not in {3, 4}
+            or center.GetHybridization() != HybridizationType.SP3
+        ):
             continue
 
-        atom_idxs = (*neighbors[:3], center_idx)
+        first, second, third = neighbor_indices[:3]
+        atom_idxs = (first, second, third, center_idx)
         if all(i in idx_map for i in atom_idxs):
-            constraints.append(tuple(idx_map[i] for i in atom_idxs))
-            orientations.append(orientation == "R")
+            constraints.chiral_index.append(
+                (
+                    idx_map[first],
+                    idx_map[second],
+                    idx_map[third],
+                    idx_map[center_idx],
+                )
+            )
+            constraints.chiral_orientations.append(orientation == "R")
 
-        if len(neighbors) == 4:
+        if len(neighbor_indices) == 4:
             for skip_idx in range(3):
-                chiral_set = neighbors[:skip_idx] + neighbors[skip_idx + 1 :]
+                chiral_set = (
+                    neighbor_indices[:skip_idx] + neighbor_indices[skip_idx + 1 :]
+                )
                 if skip_idx % 2 == 0:
-                    atom_idxs = chiral_set[::-1] + (center_idx,)
-                else:
-                    atom_idxs = chiral_set + (center_idx,)
+                    chiral_set = chiral_set[::-1]
+                first, second, third = chiral_set
+                atom_idxs = (first, second, third, center_idx)
                 if all(i in idx_map for i in atom_idxs):
-                    constraints.append(tuple(idx_map[i] for i in atom_idxs))
-                    orientations.append(orientation == "R")
+                    constraints.chiral_index.append(
+                        (
+                            idx_map[first],
+                            idx_map[second],
+                            idx_map[third],
+                            idx_map[center_idx],
+                        )
+                    )
+                    constraints.chiral_orientations.append(orientation == "R")
 
-    return constraints, orientations
+    return constraints
 
 
 def _compute_stereo_bond_constraints(
     mol: Mol, idx_map: dict[int, int]
-) -> tuple[list[tuple[int, int, int, int]], list[bool]]:
+) -> _LigandGeometryConstraints:
     """Compute improper-dihedral constraints for assigned E/Z double bonds."""
-    constraints = []
-    orientations = []
+    constraints = _LigandGeometryConstraints()
     if not all(atom.HasProp("_CIPRank") for atom in mol.GetAtoms()):
-        return constraints, orientations
+        return constraints
 
     for bond in mol.GetBonds():
         stereo = bond.GetStereo()
@@ -187,59 +190,83 @@ def _compute_stereo_bond_constraints(
 
         start_atom_idx = bond.GetBeginAtomIdx()
         end_atom_idx = bond.GetEndAtomIdx()
-        start_neighbors = [
+        ranked_start_neighbors = [
             (neighbor.GetIdx(), int(neighbor.GetProp("_CIPRank")))
             for neighbor in mol.GetAtomWithIdx(start_atom_idx).GetNeighbors()
             if neighbor.GetIdx() != end_atom_idx
         ]
-        start_neighbors = sorted(
-            start_neighbors, key=lambda neighbor: neighbor[1], reverse=True
-        )
-        start_neighbors = [neighbor[0] for neighbor in start_neighbors]
-        end_neighbors = [
+        ranked_start_neighbors.sort(key=lambda neighbor: neighbor[1], reverse=True)
+        start_neighbors = [neighbor[0] for neighbor in ranked_start_neighbors]
+        ranked_end_neighbors = [
             (neighbor.GetIdx(), int(neighbor.GetProp("_CIPRank")))
             for neighbor in mol.GetAtomWithIdx(end_atom_idx).GetNeighbors()
             if neighbor.GetIdx() != start_atom_idx
         ]
-        end_neighbors = sorted(
-            end_neighbors, key=lambda neighbor: neighbor[1], reverse=True
-        )
-        end_neighbors = [neighbor[0] for neighbor in end_neighbors]
+        ranked_end_neighbors.sort(key=lambda neighbor: neighbor[1], reverse=True)
+        end_neighbors = [neighbor[0] for neighbor in ranked_end_neighbors]
         is_e = stereo == BondStereo.STEREOE
 
+        start_substituent = start_neighbors[0]
+        end_substituent = end_neighbors[0]
         atom_idxs = (
-            start_neighbors[0],
+            start_substituent,
             start_atom_idx,
             end_atom_idx,
-            end_neighbors[0],
+            end_substituent,
         )
         if all(i in idx_map for i in atom_idxs):
-            constraints.append(tuple(idx_map[i] for i in atom_idxs))
-            orientations.append(is_e)
+            constraints.stereo_bond_index.append(
+                (
+                    idx_map[start_substituent],
+                    idx_map[start_atom_idx],
+                    idx_map[end_atom_idx],
+                    idx_map[end_substituent],
+                )
+            )
+            constraints.stereo_bond_orientations.append(is_e)
 
         if len(start_neighbors) == 2 and len(end_neighbors) == 2:
+            start_substituent = start_neighbors[1]
+            end_substituent = end_neighbors[1]
             atom_idxs = (
-                start_neighbors[1],
+                start_substituent,
                 start_atom_idx,
                 end_atom_idx,
-                end_neighbors[1],
+                end_substituent,
             )
             if all(i in idx_map for i in atom_idxs):
-                constraints.append(tuple(idx_map[i] for i in atom_idxs))
-                orientations.append(is_e)
+                constraints.stereo_bond_index.append(
+                    (
+                        idx_map[start_substituent],
+                        idx_map[start_atom_idx],
+                        idx_map[end_atom_idx],
+                        idx_map[end_substituent],
+                    )
+                )
+                constraints.stereo_bond_orientations.append(is_e)
 
-    return constraints, orientations
+    return constraints
 
 
 def _compute_flatness_constraints(
     mol: Mol, idx_map: dict[int, int]
-) -> list[tuple[int, int, int, int, int, int]]:
+) -> _LigandGeometryConstraints:
     """Compute double-bond planarity constraints."""
     planar_double_bond_smarts = Chem.MolFromSmarts("[C;X3;^2](*)(*)=[C;X3;^2](*)(*)")
-    constraints = []
+    constraints = _LigandGeometryConstraints()
     for match in mol.GetSubstructMatches(planar_double_bond_smarts):
+        first, second, third, fourth, fifth, sixth = match
         if all(i in idx_map for i in match):
-            constraints.append(tuple(idx_map[i] for i in match))
+            constraints.planar_bond_index.append(
+                (
+                    idx_map[first],
+                    idx_map[second],
+                    idx_map[third],
+                    idx_map[fourth],
+                    idx_map[fifth],
+                    idx_map[sixth],
+                )
+            )
     return constraints
 
 
@@ -255,33 +282,11 @@ def _compute_ligand_constraints(
     mol = Chem.Mol(mol)
     Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
 
-    (
-        bounds_index,
-        lower_bounds,
-        upper_bounds,
-        bond_mask,
-        angle_mask,
-        pair_vdw_cutoffs,
-    ) = _compute_geometry_constraints(mol, idx_map, settings)
-    chiral_index, chiral_orientations = _compute_chiral_atom_constraints(mol, idx_map)
-    stereo_bond_index, stereo_bond_orientations = _compute_stereo_bond_constraints(
-        mol, idx_map
-    )
-    planar_bond_index = _compute_flatness_constraints(mol, idx_map)
-
-    return _LigandGeometryConstraints(
-        bounds_index=bounds_index,
-        lower_bounds=lower_bounds,
-        upper_bounds=upper_bounds,
-        bond_mask=bond_mask,
-        angle_mask=angle_mask,
-        pair_vdw_cutoffs=pair_vdw_cutoffs,
-        chiral_index=chiral_index,
-        chiral_orientations=chiral_orientations,
-        stereo_bond_index=stereo_bond_index,
-        stereo_bond_orientations=stereo_bond_orientations,
-        planar_bond_index=planar_bond_index,
-    )
+    constraints = _compute_geometry_constraints(mol, idx_map, settings)
+    constraints.extend(_compute_chiral_atom_constraints(mol, idx_map))
+    constraints.extend(_compute_stereo_bond_constraints(mol, idx_map))
+    constraints.extend(_compute_flatness_constraints(mol, idx_map))
+    return constraints
 
 
 def _empty_feature_tensors() -> dict[str, torch.Tensor]:

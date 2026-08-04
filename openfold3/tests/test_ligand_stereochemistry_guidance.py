@@ -700,24 +700,20 @@ def test_ligand_stereochemistry_query_requires_a_ligand_when_enabled():
 
 def test_geometry_constraints_handle_single_atom_and_cropped_pairs():
     single_atom = Chem.MolFromSmiles("[Na+]")
-    assert _compute_geometry_constraints(single_atom, {0: 4}, _DEFAULT_SETTINGS) == (
-        [],
-        [],
-        [],
-        [],
-        [],
-        [],
+    assert (
+        _compute_geometry_constraints(single_atom, {0: 4}, _DEFAULT_SETTINGS)
+        == featurization._LigandGeometryConstraints()
     )
 
     mol = Chem.MolFromSmiles("CCO")
     constraints = _compute_geometry_constraints(mol, {0: 10, 2: 12}, _DEFAULT_SETTINGS)
-    assert constraints[0] == [(10, 12)]
+    assert constraints.bounds_index == [(10, 12)]
     periodic_table = Chem.GetPeriodicTable()
     expected_vdw_cutoff = (
         _DEFAULT_SETTINGS.vdw_pair_cutoff_offset
         + (periodic_table.GetRvdw(6) + periodic_table.GetRvdw(8)) / 2
     )
-    assert constraints[5] == pytest.approx([expected_vdw_cutoff])
+    assert constraints.pair_vdw_cutoffs == pytest.approx([expected_vdw_cutoff])
 
 
 def test_geometry_constraints_reject_unsupported_atomic_numbers():
@@ -732,8 +728,14 @@ def test_constraint_extractors_handle_unassigned_and_uncropped_chemistry():
     for atom in mol.GetAtoms():
         if atom.HasProp("_CIPRank"):
             atom.ClearProp("_CIPRank")
-    assert _compute_chiral_atom_constraints(mol, {}) == ([], [])
-    assert _compute_stereo_bond_constraints(mol, {}) == ([], [])
+    assert (
+        _compute_chiral_atom_constraints(mol, {})
+        == featurization._LigandGeometryConstraints()
+    )
+    assert (
+        _compute_stereo_bond_constraints(mol, {})
+        == featurization._LigandGeometryConstraints()
+    )
     assert (
         _compute_ligand_constraints(mol, {}, _DEFAULT_SETTINGS)
         == featurization._LigandGeometryConstraints()
@@ -755,11 +757,11 @@ def test_constraint_extractors_skip_only_constraints_with_cropped_atoms():
         if atom.GetIdx() != neighbors[0].GetIdx()
     }
 
-    chiral_constraints, _ = _compute_chiral_atom_constraints(
+    chiral_constraints = _compute_chiral_atom_constraints(
         chiral_mol, cropped_chiral_map
     )
 
-    assert len(chiral_constraints) == 1
+    assert len(chiral_constraints.chiral_index) == 1
 
     stereo_mol = Chem.MolFromSmiles("F/C(Cl)=C(Br)/I")
     Chem.AssignStereochemistry(stereo_mol, cleanIt=True, force=True)
@@ -785,22 +787,25 @@ def test_constraint_extractors_skip_only_constraints_with_cropped_atoms():
     without_low_priority = full_map.copy()
     del without_low_priority[start_neighbors[1].GetIdx()]
 
-    high_priority_cropped, _ = _compute_stereo_bond_constraints(
+    high_priority_cropped = _compute_stereo_bond_constraints(
         stereo_mol, without_high_priority
     )
-    low_priority_cropped, _ = _compute_stereo_bond_constraints(
+    low_priority_cropped = _compute_stereo_bond_constraints(
         stereo_mol, without_low_priority
     )
 
-    assert len(high_priority_cropped) == 1
-    assert len(low_priority_cropped) == 1
+    assert len(high_priority_cropped.stereo_bond_index) == 1
+    assert len(low_priority_cropped.stereo_bond_index) == 1
 
     planar_match = stereo_mol.GetSubstructMatch(
         Chem.MolFromSmarts("[C;X3;^2](*)(*)=[C;X3;^2](*)(*)")
     )
     cropped_planar_map = full_map.copy()
     del cropped_planar_map[planar_match[0]]
-    assert _compute_flatness_constraints(stereo_mol, cropped_planar_map) == []
+    assert (
+        _compute_flatness_constraints(stereo_mol, cropped_planar_map)
+        == featurization._LigandGeometryConstraints()
+    )
 
 
 def test_chiral_constraint_extractor_skips_non_tetrahedral_centers(monkeypatch):
@@ -811,7 +816,10 @@ def test_chiral_constraint_extractor_skips_non_tetrahedral_centers(monkeypatch):
         Chem, "FindMolChiralCenters", lambda *_args, **_kwargs: [(0, "R")]
     )
 
-    assert _compute_chiral_atom_constraints(mol, {0: 0, 1: 1}) == ([], [])
+    assert (
+        _compute_chiral_atom_constraints(mol, {0: 0, 1: 1})
+        == featurization._LigandGeometryConstraints()
+    )
 
 
 def test_compute_ligand_constraints_without_reference_conformer():
