@@ -431,14 +431,8 @@ def _dihedral_value_and_gradient(
         n_jkl_norm,
     )
 
-    a = (
-        (r_ij.unsqueeze(-2) @ r_kj.unsqueeze(-1)).squeeze(-1).squeeze(-1)
-        / r_kj_norm.square()
-    ).unsqueeze(-1)
-    b = (
-        (r_kl.unsqueeze(-2) @ r_kj.unsqueeze(-1)).squeeze(-1).squeeze(-1)
-        / r_kj_norm.square()
-    ).unsqueeze(-1)
+    a = (r_ij * r_kj).sum(dim=-1, keepdim=True) / r_kj_norm.square().unsqueeze(-1)
+    b = (r_kl * r_kj).sum(dim=-1, keepdim=True) / r_kj_norm.square().unsqueeze(-1)
 
     grad_i = n_ijk * (r_kj_norm / n_ijk_norm.square()).unsqueeze(-1)
     grad_l = -n_jkl * (r_kj_norm / n_jkl_norm.square()).unsqueeze(-1)
