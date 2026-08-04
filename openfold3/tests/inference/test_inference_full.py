@@ -63,7 +63,6 @@ from openfold3.tests.inference.helpers import (
 )
 from openfold3.tests.utils.compare_utils import skip_unless_accelerator_available
 
-
 pytestmark = [pytest.mark.slow]
 
 
