@@ -30,13 +30,15 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import pytest
 
 from openfold3.core.metrics.alignment import Structure, best_ca_rmsd
 from openfold3.tests.inference.helpers import (
     MMCIFS_DIR,
+    SCORED_DIFFUSION_SAMPLES,
     Mode,
+    SampleScores,
+    measure_samples,
     predicted_structure_cifs,
     query_set_from_chains,
     run_inference,
@@ -46,10 +48,11 @@ from openfold3.tests.utils.compare_utils import skip_unless_accelerator_availabl
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# Number of diffusion samples per condition. The user's experiments show the samples
-# cluster (all near the reference with a template, all far without), so the mean over
-# samples is representative and robust.
-NUM_DIFFUSION_SAMPLES = 5
+# Number of diffusion samples per condition. The samples cluster (all near the reference
+# with a template, all far without), so the mean over samples is representative and
+# robust. Shared with test_inference_full so the two cannot drift — see
+# SCORED_DIFFUSION_SAMPLES for why a single sample is not a portable measurement.
+NUM_DIFFUSION_SAMPLES = SCORED_DIFFUSION_SAMPLES
 
 #: The two conditions compared. Both run single-sequence, so the template flag is the
 #: only difference between them — that is what makes the RMSD gap attributable to it.
@@ -134,18 +137,18 @@ def _mean_ca_rmsd(case: TemplateRmsdCase, *, mode: Mode, tmp_path: Path) -> floa
         template_output_dir=out_dir / "template_data",
     )
 
-    sample_cifs = predicted_structure_cifs(out_dir, key)
-    assert sample_cifs, f"No predicted structures found under {out_dir / key}"
     # The reference is parsed once for the whole batch of samples; the prediction is a
     # monomer, so let its chains be discovered — the chain id the writer emits carries
     # no information here.
     reference = Structure.from_cif(_ref_cif(case))
-    rmsds = [
-        best_ca_rmsd(Structure.from_cif(cif), reference, ref_chains=(case.chain,)).rmsd
-        for cif in sample_cifs
-    ]
-    logger.info("%s [%s] per-sample RMSDs: %s", key, mode.id, rmsds)
-    return float(np.mean(rmsds))
+    metrics = measure_samples(
+        predicted_structure_cifs(out_dir, key),
+        lambda pred: best_ca_rmsd(pred, reference, ref_chains=(case.chain,)),
+        expected_samples=NUM_DIFFUSION_SAMPLES,
+    )
+    rmsds = SampleScores.of(metrics, lambda m: m.rmsd)
+    logger.info("%s [%s] CA-RMSD %s", key, mode.id, rmsds)
+    return rmsds.mean
 
 
 @skip_unless_accelerator_available()
