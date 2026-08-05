@@ -542,7 +542,7 @@ def test_parse_inference_query_set_alignment_mode_dedup(tmp_path):
     query = Query(
         chains=[
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["A"],
                 sequence="ACDEF",
                 template_alignment_file_path=aln,
@@ -550,14 +550,14 @@ def test_parse_inference_query_set_alignment_mode_dedup(tmp_path):
             ),
             # Same alignment path -> deduplicated.
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["B"],
                 sequence="ACDEF",
                 template_alignment_file_path=aln,
             ),
             # Non-protein -> skipped before template fields are read.
             Chain(
-                molecule_type="dna",
+                molecule_type=MoleculeType.DNA,
                 chain_ids=["C"],
                 sequence="ACGT",
                 template_alignment_file_path=aln,
@@ -585,7 +585,7 @@ def test_parse_inference_query_set_cif_mode_dedup(tmp_path):
     query = Query(
         chains=[
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["A"],
                 sequence="ACDEF",
                 template_cif_paths=[cif1, cif2],
@@ -593,7 +593,7 @@ def test_parse_inference_query_set_cif_mode_dedup(tmp_path):
             ),
             # Same path set + chain ids -> deduplicated.
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["B"],
                 sequence="ACDEF",
                 template_cif_paths=[cif1, cif2],
@@ -601,7 +601,7 @@ def test_parse_inference_query_set_cif_mode_dedup(tmp_path):
             ),
             # Same paths, different chain ids -> distinct key, kept.
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["D"],
                 sequence="GHIKL",
                 template_cif_paths=[cif1, cif2],
@@ -623,7 +623,9 @@ def test_parse_inference_query_set_no_template_data_skipped(tmp_path):
     """A chain with neither alignment nor CIF produces no input."""
     query = Query(
         chains=[
-            Chain(molecule_type="protein", chain_ids=["A"], sequence="ACDEF"),
+            Chain(
+                molecule_type=MoleculeType.PROTEIN, chain_ids=["A"], sequence="ACDEF"
+            ),
         ]
     )
     iqs = InferenceQuerySet(queries={"q0": query})
@@ -648,13 +650,13 @@ def test_update_inference_query_set(tmp_path):
     query = Query(
         chains=[
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["A"],
                 sequence=seq_present,
                 template_alignment_file_path=aln_present,
             ),
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["B"],
                 sequence=seq_missing,
                 template_alignment_file_path=aln_missing,
@@ -691,7 +693,7 @@ def test_update_inference_query_set_skips_chains_without_template_input(tmp_path
             "with_templates": Query(
                 chains=[
                     Chain(
-                        molecule_type="protein",
+                        molecule_type=MoleculeType.PROTEIN,
                         chain_ids=["A"],
                         sequence=seq,
                         template_cif_paths=[cif_path],
@@ -699,7 +701,13 @@ def test_update_inference_query_set_skips_chains_without_template_input(tmp_path
                 ]
             ),
             "without_templates": Query(
-                chains=[Chain(molecule_type="protein", chain_ids=["A"], sequence=seq)]
+                chains=[
+                    Chain(
+                        molecule_type=MoleculeType.PROTEIN,
+                        chain_ids=["A"],
+                        sequence=seq,
+                    )
+                ]
             ),
         }
     )
@@ -799,7 +807,7 @@ def _two_source_query_set(tmp_path: Path, order: list[str]) -> InferenceQuerySet
             name: Query(
                 chains=[
                     Chain(
-                        molecule_type="protein",
+                        molecule_type=MoleculeType.PROTEIN,
                         chain_ids=["A"],
                         sequence=seq,
                         **sources[name],
