@@ -75,6 +75,8 @@ dataset_configs:
         template:
           n_templates: 4
           take_top_k: false
+          # Optional: O(N) coords + online pair projection (see kernels.md)
+          # use_coordinate_pair_features: true
         crop:
           token_crop:
             enabled: true
@@ -96,6 +98,7 @@ dataset_configs:
         template:
           n_templates: 4
           take_top_k: true
+          # use_coordinate_pair_features: true
         crop:
           token_crop:
             enabled: false

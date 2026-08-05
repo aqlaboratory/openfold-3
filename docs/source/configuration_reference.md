@@ -188,6 +188,7 @@ Controls template structure processing.
   - `min_bin` *(float)*: Minimum distance bin (default: `3.25`)
   - `max_bin` *(float)*: Maximum distance bin (default: `50.75`)
   - `n_bins` *(int)*: Number of bins (default: `39`)
+- `use_coordinate_pair_features` *(bool)*: Build template pair features online from compact O(N) coordinates instead of materializing N² distogram / unit-vector tensors (default: `false`). Supported for both inference and training. Requires the default distogram bins (`3.25` / `50.75` / `39`). See {doc}`kernels` for the Triton projection path and `OPENFOLD3_FUSED_TEMPLATE_COORD`.
 
 **Example**:
 ```yaml
@@ -195,7 +196,10 @@ dataset_config_kwargs:
   template:
     n_templates: 4
     take_top_k: true
+    use_coordinate_pair_features: true
 ```
+
+For training, set the same flag under each dataset’s `config.template` block in `dataset_configs`.
 
 ---
 

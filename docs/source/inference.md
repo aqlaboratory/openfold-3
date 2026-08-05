@@ -198,6 +198,7 @@ We provide several example runner files in our [examples directory](https://gith
 - Customizing output formats
 - Enabling cuEquivariance kernels
 - Enabling AMD ROCm Triton kernels
+- Enabling online template coordinate pair features (`template.use_coordinate_pair_features`)
 - Saving MSA and Template processing outputs
 - And more
 
