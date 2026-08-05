@@ -46,6 +46,26 @@ def is_triton_available() -> bool:
 
 if _TRITON_AVAILABLE:
 
+    # Large tiles win on high-SMEM GPUs; (16, 32) / (16, 16) keep the
+    # ieee / large-c_in specializations under T4's 64 KiB opt-in limit.
+    # num_stages stays 1: the LN reduction is one-pass in registers, so
+    # pipelining only doubles SMEM.
+    _LN_LINEAR_AUTOTUNE_CONFIGS = [
+        triton.Config({"BLOCK_M": 64, "BLOCK_N": 64}, num_warps=4, num_stages=1),
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 64}, num_warps=4, num_stages=1),
+        triton.Config({"BLOCK_M": 16, "BLOCK_N": 64}, num_warps=4, num_stages=1),
+        triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_M": 16, "BLOCK_N": 32}, num_warps=2, num_stages=1),
+        triton.Config({"BLOCK_M": 16, "BLOCK_N": 16}, num_warps=2, num_stages=1),
+    ]
+
+    @triton.autotune(
+        configs=_LN_LINEAR_AUTOTUNE_CONFIGS,
+        # Retune per (c_out, c_in, tf32): ieee / large-K specializations
+        # prune big tiles via OutOfResources; tf32 keeps larger winners.
+        key=["N", "K", "ALLOW_TF32"],
+        restore_value=["Y_ptr", "Mean_ptr", "Rstd_ptr"],
+    )
     @triton.jit(
         do_not_specialize=[
             "stride_x_m",
@@ -178,6 +198,11 @@ if _TRITON_AVAILABLE:
             mask=m_mask[:, None] & n_mask[None, :],
         )
 
+    @triton.autotune(
+        configs=_LN_LINEAR_AUTOTUNE_CONFIGS,
+        key=["N", "K", "ALLOW_TF32"],
+        restore_value=["Y_ptr"],
+    )
     @triton.jit(
         do_not_specialize=[
             "I_dim",
@@ -322,48 +347,22 @@ if _TRITON_AVAILABLE:
         mean = torch.empty((M,), dtype=torch.float32, device=x.device)
         rstd = torch.empty((M,), dtype=torch.float32, device=x.device)
 
-        # Block sizes. BLOCK_K must cover the full reduction (one-pass LN).
+        # BLOCK_K must cover the full reduction (one-pass LN). Tile sizes
+        # (BLOCK_M / BLOCK_N / warps) come from @triton.autotune.
         BLOCK_K = _next_power_of_two(K)
         # Cap BLOCK_K to avoid register pressure on large c_in (833 -> 1024 ok).
         # If c_in ever exceeds 4096 we'd need a K-loop; assert instead so we notice.
         assert BLOCK_K <= 4096, f"BLOCK_K={BLOCK_K} too large for one-pass LN"
 
-        # M, N block sizes — picked from a hand-tuned sweep across the shapes
-        # the model actually exercises. Two regimes:
-        #
-        #   * Pair-tensor scale (M = N_token^2 ~= 80k):
-        #     bigger tiles win; tensor-core utilization dominates.
-        #   * Per-token scale (M = N_token ~= 256):
-        #     small tiles match because the work is launch-bound.
-        #
-        # The (BLOCK_M, BLOCK_N, num_warps) we land on is the empirical
-        # winner for each (BLOCK_K, M-regime) bucket. SMEM stays under
-        # ~80KB for SM89/SM86 across all configs.
-        allow_tf32 = bool(torch.backends.cuda.matmul.allow_tf32)
-        is_pair_scale = M >= 4096
-        if BLOCK_K >= 1024:        # c_in in (513, 1024]; only when fallback is off
-            BLOCK_M, BLOCK_N, num_warps = (32, 64, 4) if is_pair_scale else (16, 32, 2)
-        elif BLOCK_K >= 512:       # c_in in (256, 512]
-            BLOCK_M, BLOCK_N, num_warps = (16, 64, 4) if is_pair_scale else (16, 32, 2)
-        elif BLOCK_K >= 256:       # c_in in (128, 256]
-            BLOCK_M, BLOCK_N, num_warps = (32, 64, 4) if is_pair_scale else (32, 64, 4)
-        else:                      # c_in <= 128
-            BLOCK_M, BLOCK_N, num_warps = (64, 64, 4) if is_pair_scale else (32, 32, 2)
-        if N <= 64:
-            BLOCK_N = max(16, _next_power_of_two(N))
-            if BLOCK_N <= 32:
-                num_warps = min(num_warps, 2)
-        if not allow_tf32 and BLOCK_K >= 512 and is_pair_scale:
-            BLOCK_N = min(BLOCK_N, 32)
-
         # tl.dot requires its first operand's K (BLOCK_K) and second's K
         # to match. Both are BLOCK_K here. Triton requires BLOCK_K >= 16
         # for tl.dot.
         BLOCK_K_DOT = max(BLOCK_K, 16)
+        allow_tf32 = bool(torch.backends.cuda.matmul.allow_tf32)
 
-        grid = (
-            triton.cdiv(M, BLOCK_M),
-            triton.cdiv(N, BLOCK_N),
+        grid = lambda meta: (
+            triton.cdiv(M, meta["BLOCK_M"]),
+            triton.cdiv(N, meta["BLOCK_N"]),
         )
 
         # Bias / beta nullity: pass dummy 1-elem tensors when absent so
@@ -374,10 +373,6 @@ if _TRITON_AVAILABLE:
 
         # gamma / beta cast to fp32 happens inside the kernel via .to(tl.float32).
         # Caller is responsible for passing matching-rank / contiguous inputs.
-        # num_stages=1 keeps SMEM single-buffered. The whole reduction
-        # fits in registers in one pass, so there's no pipeline to
-        # hide latency — multi-stage just doubles SMEM and risks OOM
-        # on large c_in.
         _fused_ln_linear_fwd_kernel[grid](
             x_2d,
             weight,
@@ -400,11 +395,7 @@ if _TRITON_AVAILABLE:
             HAS_LN_BIAS=beta is not None,
             HAS_LIN_BIAS=bias is not None,
             ALLOW_TF32=allow_tf32,
-            BLOCK_M=BLOCK_M,
-            BLOCK_N=BLOCK_N,
             BLOCK_K=BLOCK_K_DOT,
-            num_stages=1,
-            num_warps=num_warps,
         )
 
         y = y.view(*orig_shape[:-1], N)
@@ -507,9 +498,10 @@ class _FusedLNLinearFn(torch.autograd.Function):
         return dx, d_gamma, d_beta, d_weight, d_bias, None
 
 
-# Above this c_in the one-pass kernel cannot fit two fp32 tiles in SMEM
-# on SM89/SM86 (~100KB). Larger c_in falls back to F.layer_norm + F.linear.
-# All openfold3 pair-tensor LN sites have c_in <= 384.
+# Above this c_in the one-pass kernel cannot keep a useful TILE in SMEM
+# even with the smallest @triton.autotune configs. Larger c_in falls back
+# to F.layer_norm + F.linear. All openfold3 pair-tensor LN sites have
+# c_in <= 384.
 _MAX_FUSED_C_IN = 512
 
 # Below this row count, the autograd-Function dispatch + Triton launch
@@ -637,23 +629,14 @@ def pair_ln_linear_inference(
     BLOCK_K = max(_next_power_of_two(K), 16)
     assert BLOCK_K <= 4096, f"BLOCK_K={BLOCK_K} too large for one-pass LN"
     allow_tf32 = bool(torch.backends.cuda.matmul.allow_tf32)
-    is_pair_scale = I_dim * J_dim >= 4096
-    if BLOCK_K >= 512:
-        BLOCK_M, BLOCK_N, num_warps = (16, 64, 4) if is_pair_scale else (16, 32, 2)
-    elif BLOCK_K >= 256:
-        BLOCK_M, BLOCK_N, num_warps = (32, 64, 4)
-    else:
-        BLOCK_M, BLOCK_N, num_warps = (
-            (64, 64, 4) if is_pair_scale else (32, 32, 2)
-        )
-    if N <= 64:
-        BLOCK_N = max(16, _next_power_of_two(N))
-        if BLOCK_N <= 32:
-            num_warps = min(num_warps, 2)
 
     beta_ptr = beta_d if beta_d is not None else x.new_zeros(1)
     bias_ptr = bias_d if bias_d is not None else x.new_zeros(1)
-    grid = (triton.cdiv(I_dim * J_dim, BLOCK_M), triton.cdiv(N, BLOCK_N))
+    # BLOCK_M / BLOCK_N / warps come from @triton.autotune.
+    grid = lambda meta: (
+        triton.cdiv(I_dim * J_dim, meta["BLOCK_M"]),
+        triton.cdiv(N, meta["BLOCK_N"]),
+    )
     _pair_ln_linear_fwd_kernel[grid](
         x,
         weight_d,
@@ -676,10 +659,6 @@ def pair_ln_linear_inference(
         HAS_LN_BIAS=beta is not None,
         HAS_LIN_BIAS=bias is not None,
         ALLOW_TF32=allow_tf32,
-        BLOCK_M=BLOCK_M,
-        BLOCK_N=BLOCK_N,
         BLOCK_K=BLOCK_K,
-        num_stages=1,
-        num_warps=num_warps,
     )
     return y

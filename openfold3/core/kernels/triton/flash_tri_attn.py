@@ -44,6 +44,18 @@ def is_triton_available() -> bool:
 
 if _TRITON_AVAILABLE:
 
+    @triton.autotune(
+        configs=[
+            triton.Config({"BLOCK_M": 128, "BLOCK_N": 16}, num_warps=4, num_stages=2),
+            triton.Config({"BLOCK_M": 128, "BLOCK_N": 16}, num_warps=4, num_stages=1),
+            triton.Config({"BLOCK_M": 64, "BLOCK_N": 16}, num_warps=4, num_stages=2),
+            triton.Config({"BLOCK_M": 64, "BLOCK_N": 16}, num_warps=4, num_stages=1),
+            triton.Config({"BLOCK_M": 32, "BLOCK_N": 16}, num_warps=4, num_stages=2),
+            triton.Config({"BLOCK_M": 32, "BLOCK_N": 16}, num_warps=4, num_stages=1),
+        ],
+        key=[],
+        restore_value=["OUT_ptr"],
+    )
     @triton.jit(
         do_not_specialize=[
             "I_dim",
@@ -276,6 +288,18 @@ if _TRITON_AVAILABLE:
 
 
 
+    @triton.autotune(
+        configs=[
+            triton.Config({"BLOCK_M": 128, "BLOCK_N": 16}, num_warps=4, num_stages=2),
+            triton.Config({"BLOCK_M": 128, "BLOCK_N": 16}, num_warps=4, num_stages=1),
+            triton.Config({"BLOCK_M": 64, "BLOCK_N": 16}, num_warps=4, num_stages=2),
+            triton.Config({"BLOCK_M": 64, "BLOCK_N": 16}, num_warps=4, num_stages=1),
+            triton.Config({"BLOCK_M": 32, "BLOCK_N": 16}, num_warps=4, num_stages=2),
+            triton.Config({"BLOCK_M": 32, "BLOCK_N": 16}, num_warps=4, num_stages=1),
+        ],
+        key=[],
+        restore_value=["Q_ptr", "OUT_ptr"],
+    )
     @triton.jit(
         do_not_specialize=[
             "I_dim",
@@ -565,9 +589,10 @@ def flash_tri_attn_v1_block(
         and gate.data_ptr() - q.data_ptr() == 3 * H * CH * elem_size
         and out.data_ptr() == q.data_ptr()
     ):
-        BLOCK_M = 128
-        BLOCK_N = 16
-        grid = (triton.cdiv(J_dim, BLOCK_M), triton.cdiv(rows, 2) * H)
+        grid = lambda meta: (
+            triton.cdiv(J_dim, meta["BLOCK_M"]),
+            triton.cdiv(rows, 2) * H,
+        )
         _flash_tri_attn_v1_group_i2_kernel[grid](
             q,
             k,
@@ -585,17 +610,13 @@ def flash_tri_attn_v1_block(
             HAS_MASK=has_mask,
             CH=CH,
             QKVG_ROW_STRIDE=qkvg_row_stride,
-            BLOCK_M=BLOCK_M,
-            BLOCK_N=BLOCK_N,
-            num_warps=4,
-            num_stages=2,
         )
         return out
 
-    BLOCK_M = 128
-    BLOCK_N = 16
-    num_stages = 2 if q.dtype in (torch.float16, torch.bfloat16) else 1
-    grid = (triton.cdiv(J_dim, BLOCK_M), B * rows * H)
+    grid = lambda meta: (
+        triton.cdiv(J_dim, meta["BLOCK_M"]),
+        B * rows * H,
+    )
 
     s_q_b, s_q_i, s_q_j, s_q_h, s_q_c = q.stride()
     s_k_b, s_k_i, s_k_j, s_k_h, s_k_c = k.stride()
@@ -654,9 +675,5 @@ def flash_tri_attn_v1_block(
         HAS_GATE=True,
         ALLOW_TF32=allow_tf32,
         CH=CH,
-        BLOCK_M=BLOCK_M,
-        BLOCK_N=BLOCK_N,
-        num_warps=4,
-        num_stages=num_stages,
     )
     return out

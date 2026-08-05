@@ -55,6 +55,18 @@ def _next_power_of_two(n: int) -> int:
 
 if _TRITON_AVAILABLE:
 
+    @triton.autotune(
+        configs=[
+            triton.Config({"BLOCK_M": 128, "BLOCK_N": 64}, num_warps=4, num_stages=2),
+            triton.Config({"BLOCK_M": 128, "BLOCK_N": 64}, num_warps=4, num_stages=1),
+            triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_warps=4, num_stages=2),
+            triton.Config({"BLOCK_M": 64, "BLOCK_N": 32}, num_warps=4, num_stages=1),
+            triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=4, num_stages=2),
+            triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=4, num_stages=1),
+        ],
+        key=[],
+        restore_value=["OUT_ptr"],
+    )
     @triton.jit(
         do_not_specialize=[
             "N_CTX",
@@ -289,49 +301,16 @@ def flash_diffusion_attn(
     out = torch.empty_like(q)
 
     # Keep sequence length out of constexprs.  CH/BLOCK_C specialize by model
-    # signature, but not by target length.
+    # signature, but not by target length. Tile sizes come from @triton.autotune.
     block_c = _next_power_of_two(CH)
     if block_c > 128:
         raise ValueError(f"head dim {CH} is unsupported")
 
-    # Per-dtype launch config picked by the offline sweep in
-    # data/inference_outputs/kernel_dev/sweep_diff_attn_configs.py.
-    # Compiles at most once per dtype: same (BLOCK_M, BLOCK_N, num_warps,
-    # num_stages) is used at every sequence length and at S=1 and S>=2
-    # (winners coincided across both samples classes within each dtype).
-    #
-    # fp32 must use the smaller (64, 32) tile: the bf16 (128, 64, _, 2)
-    # config exceeds SM89's dynamic shared-memory budget at fp32 and the
-    # Triton kernel raises OutOfResources.
-    block_m, block_n, num_warps, num_stages = _pick_diff_attn_config(q.dtype, block_c)
-
     return _flash_diffusion_attn_launch(
         q, k, v, mask_bias, pair_bias, out, softmax_scale,
         B=B, S=S, H=H, N=N, CH=CH,
-        block_m=block_m, block_n=block_n, block_c=block_c,
-        num_warps=num_warps, num_stages=num_stages,
+        block_c=block_c,
     )
-
-
-# Per-dtype launch config table populated by
-# data/inference_outputs/kernel_dev/sweep_diff_attn_configs.py
-# (run on RTX 4090 / SM89, CH=48, no_heads=16, CZ_diff=128).
-# Tuple is (BLOCK_M, BLOCK_N, num_warps, num_stages).
-_DIFF_ATTN_CONFIG: dict[torch.dtype, tuple[int, int, int, int]] = {
-    torch.bfloat16: (128, 64, 4, 2),
-    torch.float16: (128, 64, 4, 2),
-    torch.float32: (64, 32, 4, 1),
-}
-
-
-def _pick_diff_attn_config(
-    dtype: torch.dtype, block_c: int
-) -> tuple[int, int, int, int]:
-    if dtype in _DIFF_ATTN_CONFIG:
-        return _DIFF_ATTN_CONFIG[dtype]
-    # Conservative fallback for any unswept dtype: small tile, low stages.
-    num_warps = 4 if block_c <= 64 else 8
-    return (64, 32, num_warps, 1)
 
 
 def _flash_diffusion_attn_launch(
@@ -348,24 +327,13 @@ def _flash_diffusion_attn_launch(
     H: int,
     N: int,
     CH: int,
-    block_m: int,
-    block_n: int,
     block_c: int,
-    num_warps: int,
-    num_stages: int,
 ) -> torch.Tensor:
-    """Internal launch shim with explicit launch-config overrides.
-
-    Exposed for offline config sweeps (``data/inference_outputs/kernel_dev/
-    sweep_diff_attn_configs.py``). The public ``flash_diffusion_attn`` always
-    uses the table-picked config; this entry point lets the sweep drive
-    arbitrary tile sizes / warps / stages to find the best combination per
-    samples_class × dtype.
-    """
+    """Launch shim; BLOCK_M/BLOCK_N/warps/stages come from @triton.autotune."""
     pair_s_stride = pair_bias.stride(1) if pair_bias.shape[1] == S else 0
     mask_s_stride = mask_bias.stride(1) if mask_bias.shape[1] == S else 0
 
-    grid = (triton.cdiv(N, block_m), B * S * H)
+    grid = lambda meta: (triton.cdiv(N, meta["BLOCK_M"]), B * S * H)
     allow_tf32 = bool(torch.backends.cuda.matmul.allow_tf32)
 
     _flash_diffusion_attn_kernel[grid](
@@ -382,11 +350,7 @@ def _flash_diffusion_attn_launch(
         H=H,
         BLOCK_C=block_c,
         CH=CH,
-        BLOCK_M=block_m,
-        BLOCK_N=block_n,
         ALLOW_TF32=allow_tf32,
-        num_warps=num_warps,
-        num_stages=num_stages,
     )
 
     return out

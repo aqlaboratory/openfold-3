@@ -72,9 +72,16 @@ from openfold3.core.model.primitives.fused_swiglu_transition import (
 from openfold3.core.model.primitives.fused_trimul import fused_trimul_update
 
 
+def jit_device_caches(fn):
+    # Autotuner wraps JITFunction; device_caches lives on .fn.
+    if hasattr(fn, "device_caches"):
+        return fn.device_caches
+    return fn.fn.device_caches
+
+
 def clear(*jit_fns):
     for fn in jit_fns:
-        fn.device_caches.clear()
+        jit_device_caches(fn).clear()
 
 
 def count(cache_dir, kernel_name):
@@ -160,15 +167,15 @@ counts = {
     "_ln_stats_kernel": count(cache_dir, "_ln_stats_kernel"),
 }
 print(json.dumps({"counts": counts}))
-assert counts == {
-    "_flash_tri_attn_kernel": 1,
-    "_fused_relpos_embed_kernel": 1,
-    "_fused_swiglu_transition_fwd_kernel": 1,
-    "_template_coordinate_projection_kernel": 1,
-    "_gated_dual_gemm_kernel": 1,
-    "_gated_out_from_dm_kernel": 1,
-    "_ln_stats_kernel": 1,
-}, counts
+# Autotuned kernels compile one artifact per surviving config; non-autotuned
+# kernels stay at 1. Length changes must not grow either class.
+assert counts["_fused_relpos_embed_kernel"] == 1, counts
+assert counts["_template_coordinate_projection_kernel"] == 1, counts
+assert counts["_gated_dual_gemm_kernel"] == 1, counts
+assert counts["_gated_out_from_dm_kernel"] == 1, counts
+assert counts["_ln_stats_kernel"] == 1, counts
+assert counts["_flash_tri_attn_kernel"] >= 1, counts
+assert counts["_fused_swiglu_transition_fwd_kernel"] >= 1, counts
 """
     env = os.environ.copy()
     env.update(
@@ -229,7 +236,10 @@ NAMES = tuple(kernel.fn.__name__ for kernel in KERNELS)
 
 def clear():
     for kernel in KERNELS:
-        kernel.device_caches.clear()
+        caches = getattr(kernel, "device_caches", None)
+        if caches is None:
+            caches = kernel.fn.device_caches
+        caches.clear()
 
 
 def counts(cache_dir):
@@ -336,6 +346,15 @@ from openfold3.core.kernels.triton.fused_ln_linear import (
     fused_ln_linear_inference,
 )
 
+def clear(fn):
+    caches = getattr(fn, "device_caches", None)
+    if caches is None:
+        caches = fn.fn.device_caches
+    caches.clear()
+
+def n_json(cache_dir, name):
+    return len(list(Path(cache_dir).rglob(f"{name}.json")))
+
 torch.manual_seed(13)
 torch.set_grad_enabled(False)
 cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
@@ -344,15 +363,19 @@ gamma = torch.ones(128, device="cuda")
 beta = torch.zeros(128, device="cuda")
 weight = torch.randn(128, 128, device="cuda") * 0.02
 
+stable = None
 for n in (192, 224, 255):
     x = torch.randn(n * n, 128, device="cuda")
     y = fused_ln_linear_inference(x, gamma, beta, weight, None)
     assert y.shape == x.shape
-    _fused_ln_linear_fwd_kernel.device_caches.clear()
+    clear(_fused_ln_linear_fwd_kernel)
+    cur = n_json(cache_dir, "_fused_ln_linear_fwd_kernel")
+    if stable is None:
+        stable = cur
+    assert cur == stable, (cur, stable)
 
-count = len(list(cache_dir.rglob("_fused_ln_linear_fwd_kernel.json")))
-print(json.dumps({"_fused_ln_linear_fwd_kernel": count}))
-assert count == 1, count
+print(json.dumps({"_fused_ln_linear_fwd_kernel": stable}))
+assert stable >= 1, stable
 """
     env = os.environ.copy()
     env.update(
@@ -370,7 +393,7 @@ assert count == 1, count
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert payload["_fused_ln_linear_fwd_kernel"] == 1
+    assert payload["_fused_ln_linear_fwd_kernel"] >= 1
 
 
 def test_msa_pair_bias_ln_linear_reuses_compile_across_lengths(tmp_path):
@@ -388,6 +411,15 @@ from openfold3.core.kernels.triton.fused_ln_linear import (
     fused_ln_linear_inference,
 )
 
+def clear(fn):
+    caches = getattr(fn, "device_caches", None)
+    if caches is None:
+        caches = fn.fn.device_caches
+    caches.clear()
+
+def n_json(cache_dir, name):
+    return len(list(Path(cache_dir).rglob(f"{name}.json")))
+
 torch.manual_seed(23)
 torch.set_grad_enabled(False)
 cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
@@ -397,15 +429,19 @@ beta = torch.zeros(128, device="cuda")
 weight = torch.randn(4, 128, device="cuda") * 0.02
 bias = torch.randn(4, device="cuda") * 0.02
 
+stable = None
 for n in (64, 96, 127):
     z = torch.randn(1, n, n, 128, device="cuda")
     y = fused_ln_linear_inference(z, gamma, beta, weight, bias)
     assert y.shape == (1, n, n, 4)
-    _fused_ln_linear_fwd_kernel.device_caches.clear()
+    clear(_fused_ln_linear_fwd_kernel)
+    cur = n_json(cache_dir, "_fused_ln_linear_fwd_kernel")
+    if stable is None:
+        stable = cur
+    assert cur == stable, (cur, stable)
 
-count = len(list(cache_dir.rglob("_fused_ln_linear_fwd_kernel.json")))
-print(json.dumps({"_fused_ln_linear_fwd_kernel": count}))
-assert count == 1, count
+print(json.dumps({"_fused_ln_linear_fwd_kernel": stable}))
+assert stable >= 1, stable
 """
     env = os.environ.copy()
     env.update(
@@ -423,7 +459,7 @@ assert count == 1, count
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert payload["_fused_ln_linear_fwd_kernel"] == 1
+    assert payload["_fused_ln_linear_fwd_kernel"] >= 1
 
 
 def test_pair_ln_linear_reuses_compile_across_lengths(tmp_path):
@@ -441,6 +477,15 @@ from openfold3.core.kernels.triton.fused_ln_linear import (
     pair_ln_linear_inference,
 )
 
+def clear(fn):
+    caches = getattr(fn, "device_caches", None)
+    if caches is None:
+        caches = fn.fn.device_caches
+    caches.clear()
+
+def n_json(cache_dir, name):
+    return len(list(Path(cache_dir).rglob(f"{name}.json")))
+
 torch.manual_seed(37)
 torch.set_grad_enabled(False)
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -450,15 +495,19 @@ gamma = torch.ones(128, device="cuda")
 beta = torch.zeros(128, device="cuda")
 weight = torch.randn(384, 128, device="cuda") * 0.02
 
+stable = None
 for n in (192, 224, 255):
     x = torch.randn(1, n, n, 128, device="cuda").transpose(-2, -3)
     y = pair_ln_linear_inference(x, gamma, beta, weight, None)
     assert y.shape == (n * n, 384)
-    _pair_ln_linear_fwd_kernel.device_caches.clear()
+    clear(_pair_ln_linear_fwd_kernel)
+    cur = n_json(cache_dir, "_pair_ln_linear_fwd_kernel")
+    if stable is None:
+        stable = cur
+    assert cur == stable, (cur, stable)
 
-count = len(list(cache_dir.rglob("_pair_ln_linear_fwd_kernel.json")))
-print(json.dumps({"_pair_ln_linear_fwd_kernel": count}))
-assert count == 1, count
+print(json.dumps({"_pair_ln_linear_fwd_kernel": stable}))
+assert stable >= 1, stable
 """
     env = os.environ.copy()
     env.update({"TRITON_CACHE_DIR": str(cache_dir)})
@@ -471,7 +520,7 @@ assert count == 1, count
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert payload["_pair_ln_linear_fwd_kernel"] == 1
+    assert payload["_pair_ln_linear_fwd_kernel"] >= 1
 
 
 def test_v1_tri_attn_reuses_compile_across_lengths(tmp_path):
@@ -487,6 +536,15 @@ import torch
 from openfold3.core.kernels.triton.flash_tri_attn import _flash_tri_attn_kernel
 from openfold3.core.model.layers.triangular_attention import TriangleAttention
 
+def clear(fn):
+    caches = getattr(fn, "device_caches", None)
+    if caches is None:
+        caches = fn.fn.device_caches
+    caches.clear()
+
+def n_json(cache_dir, name):
+    return len(list(Path(cache_dir).rglob(f"{name}.json")))
+
 torch.manual_seed(37)
 torch.set_grad_enabled(False)
 cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
@@ -495,15 +553,19 @@ with torch.no_grad():
     tri_attn.mha.linear_o.weight.normal_(0, 0.02)
     tri_attn.mha.linear_g.weight.normal_(0, 0.02)
 
+stable = None
 for n in (192, 224, 255):
     z = torch.randn(1, n, n, 128, device="cuda")
     pair_mask = torch.ones(1, n, n, device="cuda")
     assert tri_attn(z, mask=pair_mask, chunk_size=128).shape == z.shape
-    _flash_tri_attn_kernel.device_caches.clear()
+    clear(_flash_tri_attn_kernel)
+    cur = n_json(cache_dir, "_flash_tri_attn_kernel")
+    if stable is None:
+        stable = cur
+    assert cur == stable, (cur, stable)
 
-count = len(list(cache_dir.rglob("_flash_tri_attn_kernel.json")))
-print(json.dumps({"_flash_tri_attn_kernel": count}))
-assert count == 1, count
+print(json.dumps({"_flash_tri_attn_kernel": stable}))
+assert stable >= 1, stable
 """
     env = os.environ.copy()
     env.update(
@@ -522,7 +584,7 @@ assert count == 1, count
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert payload["_flash_tri_attn_kernel"] == 1
+    assert payload["_flash_tri_attn_kernel"] >= 1
 
 
 def test_v1_template_tri_attn_reuses_compile_across_lengths(tmp_path):
@@ -538,6 +600,15 @@ import torch
 from openfold3.core.kernels.triton.flash_tri_attn import _flash_tri_attn_kernel
 from openfold3.core.model.layers.triangular_attention import TriangleAttention
 
+def clear(fn):
+    caches = getattr(fn, "device_caches", None)
+    if caches is None:
+        caches = fn.fn.device_caches
+    caches.clear()
+
+def n_json(cache_dir, name):
+    return len(list(Path(cache_dir).rglob(f"{name}.json")))
+
 torch.manual_seed(41)
 torch.set_grad_enabled(False)
 cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
@@ -546,15 +617,19 @@ with torch.no_grad():
     tri_attn.mha.linear_o.weight.normal_(0, 0.02)
     tri_attn.mha.linear_g.weight.normal_(0, 0.02)
 
+stable = None
 for n in (192, 224, 255):
     z = torch.randn(1, n, n, 64, device="cuda")
     pair_mask = torch.ones(1, n, n, device="cuda")
     assert tri_attn(z, mask=pair_mask, chunk_size=128).shape == z.shape
-    _flash_tri_attn_kernel.device_caches.clear()
+    clear(_flash_tri_attn_kernel)
+    cur = n_json(cache_dir, "_flash_tri_attn_kernel")
+    if stable is None:
+        stable = cur
+    assert cur == stable, (cur, stable)
 
-count = len(list(cache_dir.rglob("_flash_tri_attn_kernel.json")))
-print(json.dumps({"_flash_tri_attn_kernel": count}))
-assert count == 1, count
+print(json.dumps({"_flash_tri_attn_kernel": stable}))
+assert stable >= 1, stable
 """
     env = os.environ.copy()
     env.update(
@@ -573,7 +648,7 @@ assert count == 1, count
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert payload["_flash_tri_attn_kernel"] == 1
+    assert payload["_flash_tri_attn_kernel"] >= 1
 
 
 def test_attention_pair_bias_reuses_fused_pair_projection_across_lengths(tmp_path):
@@ -588,6 +663,15 @@ import torch
 
 from openfold3.core.kernels.triton.fused_ln_linear import _fused_ln_linear_fwd_kernel
 from openfold3.core.model.layers.attention_pair_bias import AttentionPairBias
+
+def clear(fn):
+    caches = getattr(fn, "device_caches", None)
+    if caches is None:
+        caches = fn.fn.device_caches
+    caches.clear()
+
+def n_json(cache_dir, name):
+    return len(list(Path(cache_dir).rglob(f"{name}.json")))
 
 torch.manual_seed(19)
 torch.set_grad_enabled(False)
@@ -604,15 +688,19 @@ module = AttentionPairBias(
     use_ada_layer_norm=True,
 ).cuda().eval()
 
+stable = None
 for n in (64, 96, 127):
     z = torch.randn(1, 1, n, n, 128, device="cuda")
     pair_bias = module.prep_static_pair_bias(z)
     assert pair_bias.shape == (1, 1, 16, n, n)
-    _fused_ln_linear_fwd_kernel.device_caches.clear()
+    clear(_fused_ln_linear_fwd_kernel)
+    cur = n_json(cache_dir, "_fused_ln_linear_fwd_kernel")
+    if stable is None:
+        stable = cur
+    assert cur == stable, (cur, stable)
 
-count = len(list(cache_dir.rglob("_fused_ln_linear_fwd_kernel.json")))
-print(json.dumps({"_fused_ln_linear_fwd_kernel": count}))
-assert count == 1, count
+print(json.dumps({"_fused_ln_linear_fwd_kernel": stable}))
+assert stable >= 1, stable
 """
     env = os.environ.copy()
     env.update(
@@ -630,7 +718,7 @@ assert count == 1, count
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert payload["_fused_ln_linear_fwd_kernel"] == 1
+    assert payload["_fused_ln_linear_fwd_kernel"] >= 1
 
 
 def test_fused_softmax_reuses_compile_across_lengths(tmp_path):
@@ -848,10 +936,20 @@ from openfold3.core.kernels.triton.flash_diffusion_attn import (
     flash_diffusion_attn,
 )
 
+def clear(fn):
+    caches = getattr(fn, "device_caches", None)
+    if caches is None:
+        caches = fn.fn.device_caches
+    caches.clear()
+
+def n_json(cache_dir, name):
+    return len(list(Path(cache_dir).rglob(f"{name}.json")))
+
 torch.manual_seed(41)
 torch.set_grad_enabled(False)
 cache_dir = Path(os.environ["TRITON_CACHE_DIR"])
 
+stable = None
 for n in (64, 96, 127):
     q = torch.randn(1, 2, 4, n, 32, device="cuda", dtype=torch.bfloat16)
     k = torch.randn_like(q)
@@ -871,11 +969,14 @@ for n in (64, 96, 127):
     )
     assert y.shape == q.shape
     torch.testing.assert_close(y, ref, atol=5e-2, rtol=5e-2)
-    _flash_diffusion_attn_kernel.device_caches.clear()
+    clear(_flash_diffusion_attn_kernel)
+    cur = n_json(cache_dir, "_flash_diffusion_attn_kernel")
+    if stable is None:
+        stable = cur
+    assert cur == stable, (cur, stable)
 
-count = len(list(cache_dir.rglob("_flash_diffusion_attn_kernel.json")))
-print(json.dumps({"_flash_diffusion_attn_kernel": count}))
-assert count == 1, count
+print(json.dumps({"_flash_diffusion_attn_kernel": stable}))
+assert stable >= 1, stable
 """
     env = os.environ.copy()
     env.update({"TRITON_CACHE_DIR": str(cache_dir)})
@@ -888,4 +989,4 @@ assert count == 1, count
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
-    assert payload["_flash_diffusion_attn_kernel"] == 1
+    assert payload["_flash_diffusion_attn_kernel"] >= 1
