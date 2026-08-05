@@ -222,7 +222,10 @@ def assert_gt_crop_slice(features):
 
 def assert_shape(features, token_budget, n_templates):
     """Asserts the shape of the features."""
+    _assert_template_feature_representation(features)
     for k, v in FULL_TOKEN_DIM_INDEX_MAP.items():
+        if k in TEMPLATE_ALTERNATIVE_FEATURES and k not in features:
+            continue
         for i in v:
             assert features[k].shape[i] == token_budget, (
                 f"Token shape mismatch for key '{k}'."
@@ -231,11 +234,15 @@ def assert_shape(features, token_budget, n_templates):
         for i in v:
             assert features[k].shape[i] <= 16384, f"MSA shape '{k}' larger than 16384."
     for k, v in FULL_TEMPLATE_DIM_INDEX_MAP.items():
+        if k in TEMPLATE_ALTERNATIVE_FEATURES and k not in features:
+            continue
         for i in v:
             assert features[k].shape[i] == n_templates, (
                 f"Template shape '{k}' shape mismatch."
             )
     for k, v in FULL_OTHER_DIM_INDEX_MAP.items():
+        if k in TEMPLATE_ALTERNATIVE_FEATURES and k not in features:
+            continue
         for i in v:
             assert features[k].shape[i] == FULL_OTHER_DIM_SIZE_MAP[k][i], (
                 f"Other shape '{k}' shape mismatch."
@@ -244,7 +251,10 @@ def assert_shape(features, token_budget, n_templates):
 
 def assert_dtype(features):
     """Asserts the dtype of the features."""
+    _assert_template_feature_representation(features)
     for k, v in (FEATURE_CORE_DTYPES | FEATURE_OTHER_DTYPES).items():
+        if k in TEMPLATE_ALTERNATIVE_FEATURES and k not in features:
+            continue
         assert features[k].dtype == v, f"Cropped feature '{k}' dtype mismatch."
     for k, v in (FEATURE_CORE_DTYPES | FEATURE_GT_DTYPES).items():
         assert features["ground_truth"][k].dtype == v, (
@@ -254,6 +264,20 @@ def assert_dtype(features):
         assert features["loss_weights"][k].dtype == v, (
             f"Loss feature '{k}' dtype mismatch."
         )
+
+
+def _assert_template_feature_representation(features: dict) -> None:
+    legacy_count = sum(k in features for k in TEMPLATE_LEGACY_PAIR_FEATURES)
+    coordinate_count = sum(k in features for k in TEMPLATE_COORDINATE_FEATURES)
+    assert legacy_count in (0, len(TEMPLATE_LEGACY_PAIR_FEATURES)), (
+        "Template legacy pair features are incomplete."
+    )
+    assert coordinate_count in (0, len(TEMPLATE_COORDINATE_FEATURES)), (
+        "Template coordinate features are incomplete."
+    )
+    assert (legacy_count > 0) != (coordinate_count > 0), (
+        "Exactly one template pair-feature representation is required."
+    )
 
 
 def assert_resid_same_in_tokenid(features):
@@ -322,6 +346,18 @@ ENSEMBLED_ASSERTS = [
     assert_profile_sum,
 ]
 
+TEMPLATE_LEGACY_PAIR_FEATURES = (
+    "template_distogram",
+    "template_unit_vector",
+)
+TEMPLATE_COORDINATE_FEATURES = (
+    "template_pseudo_beta_coords",
+    "template_frame_atom_coords",
+)
+TEMPLATE_ALTERNATIVE_FEATURES = frozenset(
+    TEMPLATE_LEGACY_PAIR_FEATURES + TEMPLATE_COORDINATE_FEATURES
+)
+
 FULL_TOKEN_DIM_INDEX_MAP = {
     "residue_index": [-1],
     "token_index": [-1],
@@ -347,6 +383,8 @@ FULL_TOKEN_DIM_INDEX_MAP = {
     "template_backbone_frame_mask": [-1],
     "template_distogram": [-2, -3],
     "template_unit_vector": [-2, -3],
+    "template_pseudo_beta_coords": [-2],
+    "template_frame_atom_coords": [-3],
 }
 FULL_MSA_DIM_INDEX_MAP = {
     "msa": [-3],
@@ -359,6 +397,8 @@ FULL_TEMPLATE_DIM_INDEX_MAP = {
     "template_backbone_frame_mask": [-2],
     "template_distogram": [-4],
     "template_unit_vector": [-4],
+    "template_pseudo_beta_coords": [-3],
+    "template_frame_atom_coords": [-4],
 }
 FULL_OTHER_DIM_INDEX_MAP = {
     "restype": [-1],
@@ -369,6 +409,8 @@ FULL_OTHER_DIM_INDEX_MAP = {
     "template_restype": [-1],
     "template_distogram": [-1],
     "template_unit_vector": [-1],
+    "template_pseudo_beta_coords": [-1],
+    "template_frame_atom_coords": [-1, -2],
 }
 FULL_OTHER_DIM_SIZE_MAP = {
     "restype": [32],
@@ -379,6 +421,8 @@ FULL_OTHER_DIM_SIZE_MAP = {
     "template_restype": [32],
     "template_distogram": [39],
     "template_unit_vector": [3],
+    "template_pseudo_beta_coords": [3],
+    "template_frame_atom_coords": [3, 3],
 }
 
 FEATURE_CORE_DTYPES = {
@@ -419,6 +463,8 @@ FEATURE_OTHER_DTYPES = {
     "template_backbone_frame_mask": torch.float32,
     "template_distogram": torch.float32,
     "template_unit_vector": torch.float32,
+    "template_pseudo_beta_coords": torch.float32,
+    "template_frame_atom_coords": torch.float32,
     "msa_mask": torch.float32,
     "num_paired_seqs": torch.int32,
 }

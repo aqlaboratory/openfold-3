@@ -51,6 +51,8 @@ feature_dict = mlc.ConfigDict(
             "template_backbone_frame_mask": [NUM_TEMPLATES, NUM_TOKENS],
             "template_distogram": [NUM_TEMPLATES, NUM_TOKENS, NUM_TOKENS, 39],
             "template_unit_vector": [NUM_TEMPLATES, NUM_TOKENS, NUM_TOKENS, 3],
+            "template_pseudo_beta_coords": [NUM_TEMPLATES, NUM_TOKENS, 3],
+            "template_frame_atom_coords": [NUM_TEMPLATES, NUM_TOKENS, 3, 3],
             "token_bonds": [NUM_TOKENS, NUM_TOKENS],
             # Features not included in AF3 docs
             "num_atoms_per_token": [NUM_TOKENS],

@@ -173,11 +173,6 @@ class BaseOF3Dataset(SingleDataset, ABC):
         self.crop = dataset_config.crop.model_dump()
         self.loss = dataset_config.loss.model_dump()
         self.template = dataset_config.template
-        if self.template.use_coordinate_pair_features:
-            raise NotImplementedError(
-                "Coordinate-derived template features are inference-only; "
-                "training support requires a differentiable projection path."
-            )
 
         # Misc
         self.single_moltype = None
@@ -311,6 +306,7 @@ class BaseOF3Dataset(SingleDataset, ABC):
             min_bin=self.template.distogram.min_bin,
             max_bin=self.template.distogram.max_bin,
             n_bins=self.template.distogram.n_bins,
+            use_coordinate_pair_features=self.template.use_coordinate_pair_features,
         )
 
         return template_features

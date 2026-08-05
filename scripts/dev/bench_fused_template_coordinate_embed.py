@@ -117,7 +117,7 @@ def _bench_length(n_token: int, warmups: int, reps: int) -> dict:
         TemplatePairEmbedderAllAtom,
     )
     from openfold3.core.model.primitives.fused_template_coordinate import (
-        fused_template_coordinate_pair_embedder_inference,
+        fused_template_coordinate_pair_embedder,
     )
 
     torch.manual_seed(0)
@@ -131,7 +131,7 @@ def _bench_length(n_token: int, warmups: int, reps: int) -> dict:
         return module(precomputed_gpu, z)
 
     def coordinate_compute():
-        return fused_template_coordinate_pair_embedder_inference(
+        return fused_template_coordinate_pair_embedder(
             module, coordinate_gpu, z, template_index=0
         )
 

@@ -34,7 +34,7 @@ from openfold3.core.model.feature_embedders.template_embedders import (
 from openfold3.core.model.latent.base_blocks import PairBlock
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.primitives.fused_template_coordinate import (
-    fused_template_coordinate_pair_embedder_inference,
+    fused_template_coordinate_pair_embedder,
 )
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.checkpointing import checkpoint_blocks, checkpoint_section
@@ -633,7 +633,7 @@ class TemplateEmbedderAllAtom(nn.Module):
 
         for i in range(n_templ):
             if use_coordinate_features:
-                t = fused_template_coordinate_pair_embedder_inference(
+                t = fused_template_coordinate_pair_embedder(
                     module=self.template_pair_embedder,
                     batch=batch,
                     z=z,
@@ -667,8 +667,10 @@ class TemplateEmbedderAllAtom(nn.Module):
             t = t.squeeze(-4)
             if t_sum is None:
                 t_sum = t
-            else:
+            elif inplace_safe:
                 t_sum.add_(t)
+            else:
+                t_sum = t_sum + t
             del t
 
         assert t_sum is not None
