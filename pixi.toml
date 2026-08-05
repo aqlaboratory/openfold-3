@@ -246,10 +246,30 @@ pytest-vcr = "*"
 # --- Dev and documentation optionals
 # We do not put on a feature to avoid combinatorial explosion.
 ruff = "*"
+mypy = "*"
 sphinx = "*"
 myst-parser = "*"
 furo = "*"
 pre-commit = "*"
+
+
+# mypy-baseline is not packaged in conda-forge, so it comes from pypi.
+# It lets us record the current type errors in a baseline file and only fail
+# on newly introduced ones.
+[feature.openfold3-cpu.pypi-dependencies]
+mypy-baseline = "*"
+
+# mypy configuration lives in pyproject.toml ([tool.mypy] / [tool.mypy-baseline]),
+# the baseline itself in mypy-baseline.txt.
+# As with the test task, these are attached to a feature so they are runnable
+# from the environments that include it, e.g.
+#   pixi run -e openfold3-cpu typecheck
+[feature.openfold3-cpu.tasks]
+# Report only the type errors that are not already in the baseline.
+typecheck = "mypy | mypy-baseline filter"
+# Rewrite the baseline from the current state of the code. Run this after
+# fixing errors (it drops them) or after a mypy/dependency bump.
+typecheck-sync = "mypy | mypy-baseline sync"
 
 
 [feature.openfold3-cpu.target.linux-64.dependencies]
