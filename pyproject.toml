@@ -181,11 +181,37 @@ files = ["openfold3", "scripts"]
 # together with a `typecheck-sync`, when the environments move to a new Python.
 # Note this means the `requires-python = ">=3.10"` floor above is not type-checked.
 python_version = "3.14"
+# The baseline is recorded on, and enforced by, linux-64 CI. Without pinning the
+# platform, `sys.platform` branches (device selection, MPS vs CUDA fallbacks) are
+# analysed on a developer's mac and skipped in CI, so a mac run reports errors
+# that CI never sees and vice versa. The cost is that darwin-only branches are
+# not type-checked anywhere; consistency with the enforcing platform wins.
+platform = "linux"
 # Most of our scientific dependencies (rdkit, biotite, pdbeccdutils, wandb, ...)
 # ship no stubs. Without this, the baseline would be dominated by import noise.
 ignore_missing_imports = true
 # mypy-baseline parses one error per line, so the compact format is required.
 pretty = false
+
+# rdkit and gemmi are compiled extension modules whose conda-forge builds ship
+# inline .pyi stubs on linux-64 but not on osx-arm64 -- same package version,
+# different build contents. mypy therefore introspects them in CI and treats
+# them as Any on a mac, which made ~15 baseline entries platform-dependent
+# (e.g. `Module has no attribute "EmbedMolecule"`, or `tuple[Mol, str]` where a
+# mac reports `tuple[Any, str]`). Skipping the import forces Any everywhere, so
+# the baseline records the same errors no matter where it is generated. Drop
+# this once both builds ship stubs and the stubs are accurate enough to type
+# against.
+#
+# `follow_imports = "skip"` alone is not enough: mypy fully analyses stub files
+# regardless of that setting unless `follow_imports_for_stubs` is also on. The
+# latter is a no-op for every other module, since `follow_imports` stays at its
+# default of "normal" outside this override.
+follow_imports_for_stubs = true
+
+[[tool.mypy.overrides]]
+module = ["rdkit.*", "gemmi.*"]
+follow_imports = "skip"
 
 [tool.mypy-baseline]
 # Keep the baseline sorted so its diffs stay reviewable.
