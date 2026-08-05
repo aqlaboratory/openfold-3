@@ -18,9 +18,10 @@ Scope (see plan): the side-effect-free helpers, the pydantic validators, the no-
 instance methods (built via ``object.__new__`` to bypass ``__init__``'s multiprocessing
 and file IO), and the legacy TSV log helpers.
 
-Tier E is the exception: cross-query template source isolation is only observable
-end to end, so those tests run the real ``__call__``. They stay offline by pre-seeding
-the template structure directory and setting ``fetch_missing_structures=False``.
+Tier E is the exception: cross-query template source isolation and sequence
+deduplication are only observable end to end, so those tests run the real ``__call__``.
+They stay offline by pre-seeding the template structure directory and setting
+``fetch_missing_structures=False``.
 """
 
 import shutil
@@ -853,3 +854,153 @@ def test_template_sources_do_not_collide_across_queries(tmp_path, order):
     assert (
         custom.template_alignment_file_path != colabfold.template_alignment_file_path
     ), "both queries were pointed at the same template cache entry"
+
+
+# ---------------------------------------------------------------------------
+# Tier E: sequence deduplication (end to end)
+# ---------------------------------------------------------------------------
+
+DEDUP_CIF = "1kd8.cif"
+# 1kd8 is a coiled-coil bundle of two alternating 36-residue chains: A/C/F share one
+# sequence and B/D/E share another. That gives both an identical pair (A, C) and a
+# distinct pair (A, B) as templates for the same query, from a single structure file.
+DEDUP_IDENTICAL_HITS = ["1kd8_A", "1kd8_C"]
+DEDUP_DISTINCT_HITS = ["1kd8_A", "1kd8_B"]
+
+
+def _write_colabfold_m8(path: Path, query_seq: str, hits: list[str]) -> Path:
+    """ColabFold-style .m8, one full-length ungapped hit per entry.
+
+    Parsed by ``M8Parser``, which leaves ``TemplateData.seq`` unset -- the sequence is
+    recovered later from the structure file (step E of the preprocessing loop).
+    """
+    n = len(query_seq)
+    return _write_file(
+        path,
+        "".join(
+            f"101\t{hit}\t1.000\t{n}\t0\t0\t1\t{n}\t1\t{n}\t1.0E-40\t300\t{n}M\n"
+            for hit in hits
+        ),
+    )
+
+
+def _write_a3m(path: Path, query_seq: str, hits: list[str], seqs: dict) -> Path:
+    """A3M with the query first and coordinate-bearing headers.
+
+    Parsed by ``A3mParser``, which does populate ``TemplateData.seq``. Contrast with
+    ``_write_colabfold_m8``: same templates, but the hit sequence is known up front.
+    """
+    lines = [f">query_X/1-{len(query_seq)}", query_seq]
+    for hit in hits:
+        hit_seq = str(seqs[hit.split("_")[1]])
+        lines += [f">{hit}/1-{len(hit_seq)}", hit_seq]
+    return _write_file(path, "\n".join(lines) + "\n")
+
+
+def _run_dedup_preprocessor(
+    tmp_path: Path, aln_format: str, hits: list[str], *, deduplicate_sequences: bool
+) -> list[str]:
+    """Preprocess one query whose alignment holds `hits`, return its template ids."""
+    cif_src = MMCIFS_DIR / DEDUP_CIF
+    seqs = get_asym_id_to_canonical_seq_dict(_load_ciffile(cif_src))
+    query_seq = str(seqs["A"])
+
+    if aln_format == "m8":
+        aln_path = _write_colabfold_m8(tmp_path / "template.m8", query_seq, hits)
+    else:
+        aln_path = _write_a3m(tmp_path / "template.a3m", query_seq, hits, seqs)
+
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir()
+    shutil.copy(cif_src, structure_dir / DEDUP_CIF)
+
+    iqs = InferenceQuerySet(
+        queries={
+            "q": Query(
+                chains=[
+                    Chain(
+                        molecule_type="protein",
+                        chain_ids=["A"],
+                        sequence=query_seq,
+                        template_alignment_file_path=aln_path,
+                    )
+                ]
+            )
+        }
+    )
+    settings = TemplatePreprocessorSettings(
+        mode="predict",
+        output_directory=tmp_path / "template_data",
+        # Pre-seeded structures + no fetching keeps this offline.
+        structure_directory=structure_dir,
+        fetch_missing_structures=False,
+        n_processes=1,
+        deduplicate_sequences=deduplicate_sequences,
+    )
+
+    TemplatePreprocessor(input_set=iqs, config=settings)()
+
+    return iqs.queries["q"].chains[0].template_entry_chain_ids or []
+
+
+@pytest.mark.parametrize("aln_format", ["m8", "a3m"])
+@pytest.mark.parametrize("deduplicate_sequences", [False, True])
+def test_dedup_keeps_hits_with_distinct_sequences(
+    tmp_path, aln_format, deduplicate_sequences
+):
+    """Deduplication must never drop a hit whose sequence has not been seen before.
+
+    Guards the direction that would silently shrink every template set: 1kd8 chains A
+    and B are different sequences, so both survive regardless of the setting.
+    """
+    got = _run_dedup_preprocessor(
+        tmp_path,
+        aln_format,
+        DEDUP_DISTINCT_HITS,
+        deduplicate_sequences=deduplicate_sequences,
+    )
+    assert got == DEDUP_DISTINCT_HITS, (
+        f"distinct-sequence hits were not both kept (dedup={deduplicate_sequences})"
+    )
+
+
+@pytest.mark.parametrize(
+    "aln_format",
+    [
+        pytest.param("a3m", id="a3m"),
+        pytest.param(
+            "m8",
+            id="m8",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason=(
+                    "M8Parser leaves TemplateData.seq unset, so the dedup check in "
+                    "step A2 compares None while step H records the sequence "
+                    "recovered by the step E realignment. The check never matches and "
+                    "deduplicate_sequences is a no-op on the ColabFold path."
+                ),
+            ),
+        ),
+    ],
+)
+def test_dedup_drops_hits_with_identical_sequences(tmp_path, aln_format):
+    """With deduplication on, only the first of several same-sequence hits is kept.
+
+    1kd8 chains A and C are the same 36-residue sequence, so they are interchangeable
+    as templates and the second one only consumes a slot.
+    """
+    got = _run_dedup_preprocessor(
+        tmp_path, aln_format, DEDUP_IDENTICAL_HITS, deduplicate_sequences=True
+    )
+    assert got == ["1kd8_A"], "the duplicate-sequence hit was not deduplicated"
+
+
+@pytest.mark.parametrize("aln_format", ["m8", "a3m"])
+def test_dedup_disabled_keeps_hits_with_identical_sequences(tmp_path, aln_format):
+    """Pre-deduplication behaviour: same-sequence hits each take a template slot."""
+    got = _run_dedup_preprocessor(
+        tmp_path, aln_format, DEDUP_IDENTICAL_HITS, deduplicate_sequences=False
+    )
+    assert got == DEDUP_IDENTICAL_HITS, (
+        "disabling deduplication did not restore the pre-deduplication behaviour"
+    )
