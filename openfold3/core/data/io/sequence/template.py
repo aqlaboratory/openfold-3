@@ -354,19 +354,19 @@ class TemplateData(NamedTuple):
             Query ID for the query or PDB entry ID for the other template rows.
         chain_id (str):
             Chain ID of the chain. Uses label_asym_id for templates.
-        query_ids_hit (np.ndarray):
-            Residue indices of the query sequence aligned to the template sequence.
-            1-based.
-        template_ids_hit (np.ndarray):
-            Residue indices of the template sequence aligned to the query sequence.
-            1-based. -1 for template positions aligned to gaps in the query.
-        sequence_identity (float):
+        query_aln_pos (np.ndarray):
+            One entry per alignment column: the 1-based residue index in the query
+            sequence, or -1 in columns where the query has a gap.
+        aln_pos (np.ndarray):
+            One entry per alignment column: the 1-based residue index in the template
+            sequence, or -1 in columns where the template has a gap.
+        seq_id (float):
             Sequence identity of the template hit with respect to the query sequence.
             Calculated as the number of identical residues in the alignment divided by
             the number of query residues in the alignment.
         q_cov (float | None):
             Coverage of the full query sequence in the template alignment.
-        template_sequence (str | None):
+        seq (str | None):
             The ungapped template sequence.
         cif_path (Path | None):
             Original CIF file path for CIF-direct mode.
@@ -381,6 +381,31 @@ class TemplateData(NamedTuple):
     q_cov: float | None
     seq: str | None
     cif_path: Path | None = None
+
+    def build_residue_idx_map(self) -> np.ndarray:
+        """Builds the query-to-template residue index map for a template cache entry.
+
+        `query_aln_pos` and `aln_pos` hold one residue index per alignment column:
+        `query_aln_pos` is -1 in columns where the query has a gap, and `aln_pos` is -1
+        in columns where the template has a gap. The template cache contract (see
+        `map_token_pos_to_template_residues`) is one row per aligned residue *pair*, so
+        those gapped columns are dropped here. Keeping them makes the number of selected
+        template residues disagree with the number of aligned query tokens downstream,
+        which silently discards the template.
+
+        Returns:
+            np.ndarray:
+                An n_aligned_pairs-by-2 array with the 1-based global residue indices of
+                the query (1st col) and the template (2nd col).
+        """
+        idx_map = np.concatenate(
+            [
+                self.query_aln_pos[:, np.newaxis],
+                self.aln_pos[:, np.newaxis],
+            ],
+            axis=1,
+        )
+        return idx_map[(idx_map >= 0).all(axis=1)]
 
 
 def calculate_ids_hit(

@@ -18,6 +18,7 @@ Setup script for OpenFold3 parameters.
 Downloads model parameters and runs verification tests.
 """
 
+import importlib.util
 import logging
 import os
 import sys
@@ -148,8 +149,13 @@ def _prompt_for_config() -> OpenFoldSetupConfig:
     ).strip()
     force_download_parameters = force_input.lower() in ["yes", "y"]
 
-    confirm = input("Run integration tests? (yes/no) ").strip()
-    run_integration_tests = confirm.lower() in ["yes", "y"]
+    if _pytest_is_installed():
+        confirm = input("Run integration tests? (yes/no) ").strip()
+        run_integration_tests = confirm.lower() in ["yes", "y"]
+    else:
+        # Don't ask a question whose answer could not be honoured either way.
+        logger.warning(PYTEST_MISSING_MESSAGE)
+        run_integration_tests = False
 
     return OpenFoldSetupConfig(
         openfold_cache=openfold_cache,
@@ -208,24 +214,48 @@ def setup_biotite_ccd(*, ccd_path: Path, force_download: bool) -> bool:
     return False
 
 
+#: End-to-end smoke tests run after a successful download to verify the install. Kept to
+#: the two short queries — the template-effect test alongside it is far too slow (two
+#: multi-sample inference runs per case) to belong in setup.
+INTEGRATION_TEST_PATH = (
+    Path(__file__).parent / "tests" / "inference" / "test_inference_full.py"
+)
+
+
+#: Shown wherever integration tests are wanted but cannot run.
+PYTEST_MISSING_MESSAGE = (
+    "pytest is not installed, so the integration tests cannot run. Install it with "
+    "`pip install 'openfold3[dev]'` and re-run setup to verify the installation."
+)
+
+
+def _pytest_is_installed() -> bool:
+    """Whether pytest can be imported.
+
+    pytest is deliberately *not* a core dependency: it is a large install and would
+    bloat every downstream package that depends on openfold3, so it lives in the ``dev``
+    extra. That makes its availability a runtime question rather than a given.
+
+    Probing with ``find_spec`` instead of importing keeps this cheap and side-effect
+    free; the actual import happens in :func:`_run_integration_tests`.
+    """
+    return importlib.util.find_spec("pytest") is not None
+
+
 def _run_integration_tests() -> None:
     logger.info("Running integration tests...")
     os.environ["OPENFOLD_SETUP_SCRIPT"] = "1"
-    import unittest
+    import pytest  # availability already established by the caller
 
     root_logger = logging.getLogger()
     original_level = root_logger.level
     try:
         root_logger.setLevel(logging.WARNING)
-        program = unittest.main(
-            module="openfold3.tests.test_inference_full",
-            exit=False,
-            verbosity=2,
-        )
+        exit_code = pytest.main([str(INTEGRATION_TEST_PATH), "-v"])
     finally:
         root_logger.setLevel(original_level)
 
-    if not program.result.wasSuccessful():
+    if exit_code != pytest.ExitCode.OK:
         logger.error("Integration tests failed. Please check the output above.")
         sys.exit(1)
     logger.info("Integration tests passed!")
@@ -238,6 +268,16 @@ def _run_integration_tests() -> None:
 
 def run_setup(config: OpenFoldSetupConfig) -> None:
     """Execute the setup described by *config* without any interactive prompts."""
+    # Resolved before any download so the warning lands in seconds rather than after a
+    # multi-gigabyte transfer. Setting openfold3 up does not need pytest, so a missing
+    # test dependency downgrades the request instead of throwing the whole run away.
+    # Every entry point — --config, --non-interactive and the interactive prompt —
+    # reaches setup through here, so this is the one place the check has to live.
+    run_integration_tests = config.run_integration_tests
+    if run_integration_tests and not _pytest_is_installed():
+        logger.warning(PYTEST_MISSING_MESSAGE)
+        run_integration_tests = False
+
     config.openfold_cache.mkdir(parents=True, exist_ok=True)
     os.environ["OPENFOLD_CACHE"] = str(config.openfold_cache)
 
@@ -253,7 +293,7 @@ def run_setup(config: OpenFoldSetupConfig) -> None:
     )
     setup_biotite_ccd(ccd_path=biotite.setup_ccd.OUTPUT_CCD, force_download=False)
 
-    if config.run_integration_tests:
+    if run_integration_tests:
         _run_integration_tests()
     else:
         logger.info("Skipping integration tests.")
