@@ -1,6 +1,11 @@
 name: Type checking code
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  # Lets the job be re-run on demand from the Actions tab, e.g. after
+  # regenerating mypy-baseline.txt, without pushing an empty commit.
+  workflow_dispatch:
 
 # Unlike the ruff job this one installs a ~2.5 GB environment, so do not leave
 # superseded runs going on a branch that was just pushed to again.
