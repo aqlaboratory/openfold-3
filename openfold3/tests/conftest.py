@@ -233,6 +233,35 @@ def pytest_configure(config):
     )
 
 
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(config, items):
+    """Pin every ``slow`` test to a single xdist worker.
+
+    Under ``-n <N> --dist loadgroup`` all tests sharing a group name run on the
+    same worker, so this serialises the slow tests against each other while the
+    rest of the suite still fans out across the remaining workers.
+
+    That combination is what lets one pytest invocation cover both tiers on a GPU
+    runner: the slow tests each load the model onto the one accelerator, so
+    running them concurrently would exhaust its memory, while the rest of the
+    suite is CPU-bound and gains nothing from being serialised alongside them.
+
+    ``tryfirst`` is load-bearing, not decoration. xdist implements grouping by
+    appending ``@<group>`` to each item's nodeid from its *own*
+    ``pytest_collection_modifyitems``; a marker added after that hook has run is
+    never seen, and the tests silently scatter across workers exactly as if this
+    function did not exist. Verified both ways -- without ``tryfirst`` the slow
+    tests land on 4 of 4 workers, with it they land on 1.
+
+    A no-op unless ``--dist loadgroup`` is in play: ``xdist_group`` is ignored by
+    the other distribution modes and by a non-xdist run, so local ``pytest``
+    behaviour is unchanged.
+    """
+    for item in items:
+        if item.get_closest_marker("slow"):
+            item.add_marker(pytest.mark.xdist_group("slow-serial"))
+
+
 @pytest.fixture(scope="session", autouse=True)
 def ensure_biotite_ccd(request):
     """Download CCD file before any tests run (once per test session)."""

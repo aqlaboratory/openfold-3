@@ -47,14 +47,25 @@ jobs:
     strategy:
       matrix:
         include:
+          # One entry carries coverage. It is a matrix field rather than a
+          # separate job so the number costs no extra GPU runner, and cuda12
+          # rather than cuda13 only because it is the primary environment.
+          #
+          # This entry stops being a fail-fast gate: it runs the whole suite
+          # without -x, so it takes appreciably longer and reports every failure
+          # instead of the first. cuda13 keeps the original `-x -m slow` form, so
+          # a quick red signal is still available from this workflow.
           - pixi_env: "openfold3-cuda12"
+            coverage: true
           - pixi_env: "openfold3-cuda13"
+            coverage: false
     concurrency:
       group: ${{ github.workflow }}-pixi-cuda-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
       cancel-in-progress: true
     uses: ./.github/workflows/ci-integration-test-pixi-cuda-reusable.yml
     with:
       pixi_env: ${{ matrix.pixi_env }}
+      coverage: ${{ matrix.coverage }}
     secrets: inherit
 
   # AMD/ROCm path: runs on the persistent self-hosted runner (label: amd-gpu)
