@@ -19,12 +19,6 @@ import torch
 import torch.nn.functional as F
 
 from openfold3.core.kernels.smooth_lddt import is_smooth_lddt_kernel_available
-from openfold3.core.kernels.triton.smooth_lddt_ball_query import (
-    ball_query_smooth_lddt_loss as triton_ball_query_smooth_lddt_loss,
-)
-from openfold3.core.kernels.triton.smooth_lddt_ball_query import (
-    is_ball_query_triton_available,
-)
 from openfold3.core.loss.diffusion import (
     bond_loss,
     diffusion_loss,
@@ -37,9 +31,8 @@ from openfold3.core.model.structure.diffusion_module import centre_random_augmen
 from openfold3.tests.config import consts
 
 BALL_QUERY_SKIP_REASON = (
-    "Ball-query smooth lDDT requires CUDA and a ball-query backend "
-    "(pixi CUDA envs openfold3-cuda12/13 or *-pypi, "
-    "OPENFOLD3_SMOOTH_LDDT_IMPL=triton, or ninja + CUDA for the extension)."
+    "Ball-query smooth lDDT requires CUDA and the compiled ball-query extension "
+    "(use pixi env openfold3-cuda12/openfold3-cuda13, or install ninja + CUDA)."
 )
 
 
@@ -387,45 +380,6 @@ class TestDiffusionLoss(unittest.TestCase):
             loss_bf.float(), loss_fp.float(), atol=5e-3, rtol=5e-3
         )
         torch.testing.assert_close(x_bf.grad.float(), x_fp.grad, atol=5e-2, rtol=5e-2)
-
-    def test_smooth_lddt_triton_adjustable_radius(self):
-        """Triton module accepts optional radii (defaults 15/30)."""
-        if not is_ball_query_triton_available():
-            pytest.skip("Triton ball-query not available")
-
-        device = torch.device("cuda")
-        batch = self.to_device(self.setup_features(), device)
-        n_atom = batch["ground_truth"]["atom_positions"].shape[-2]
-        coords = torch.zeros((1, n_atom, 3), device=device)
-        coords[0, :, 0] = torch.arange(n_atom, device=device, dtype=torch.float32) * 6.0
-        atom_mask = torch.ones((1, n_atom), device=device)
-        is_nuc = torch.zeros((1, n_atom), device=device)
-        x = coords + 0.05 * torch.randn_like(coords)
-        top_k = n_atom - 1
-
-        loss_default = triton_ball_query_smooth_lddt_loss(
-            x=x,
-            x_gt=coords,
-            atom_mask_gt=atom_mask,
-            is_nucleotide=is_nuc,
-            loss_atom_mask=atom_mask,
-            eps=consts.eps,
-            top_k=top_k,
-        )
-        loss_tight = triton_ball_query_smooth_lddt_loss(
-            x=x,
-            x_gt=coords,
-            atom_mask_gt=atom_mask,
-            is_nucleotide=is_nuc,
-            loss_atom_mask=atom_mask,
-            eps=consts.eps,
-            top_k=top_k,
-            radius_protein=5.0,
-            radius_nucleotide=5.0,
-        )
-        assert torch.isfinite(loss_default).all()
-        assert torch.isfinite(loss_tight).all()
-        assert not torch.allclose(loss_default, loss_tight, atol=1e-6, rtol=1e-6)
 
     def _test_diffusion_loss(self, batch):
         n_sample = 2

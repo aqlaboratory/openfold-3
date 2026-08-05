@@ -76,18 +76,16 @@ orthogonal to these internal optimizations and the restriction is unchanged.
 | `ball_query_ext/ball_query.h` | C++ declarations + thin `is_cuda` checks. |
 | `ball_query_ext/binding.cpp` | pybind11 bindings (`ball_query`, `ball_query_coop`, `ball_query_coop_with_pred`, `ball_query_pred_backward`). |
 | `ball_query.py` | JIT loader (`torch.utils.cpp_extension.load`) + Python wrappers. |
-| `__init__.py` | CUDA autograd + scoring + `ball_query_smooth_lddt_loss` (optional `OPENFOLD3_SMOOTH_LDDT_IMPL=triton` dispatch). |
-| `../triton/smooth_lddt_ball_query.py` | Independent Triton backend (kernels + full loss). |
+| `__init__.py` | `_BallQueryWithPredDist` autograd Function, `_score_from_dists` checkpointed scoring, `ball_query_smooth_lddt_loss` entry point. |
 
 ## Build / debug
 
 JIT-compiled on first use via `torch.utils.cpp_extension.load`. The kernel is
 opt-in and not part of the default install — `ninja` and a matching CUDA
-toolchain are required only for this backend. Prefer an existing pixi CUDA
-environment (`openfold3-cuda12`, `openfold3-cuda13`, or the `*-pypi`
-variants), which already include the `smooth-lddt-kernel` feature. Set
-`OPENFOLD3_SMOOTH_LDDT_VERBOSE=1` to get the full nvcc build log on first
-call. The compute capability is read from
+toolchain are required only for this backend. Prefer a pixi CUDA environment
+(`openfold3-cuda12` or `openfold3-cuda13`), which already ships these
+dependencies. Set `OPENFOLD3_SMOOTH_LDDT_VERBOSE=1` to get the full nvcc
+build log on first call. The compute capability is read from
 `torch.cuda.get_device_capability()` and exported as `TORCH_CUDA_ARCH_LIST`
 only when the user has not set it explicitly.
 

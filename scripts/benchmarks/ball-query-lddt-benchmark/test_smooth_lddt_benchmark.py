@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from pathlib import Path
 
 import numpy as np
@@ -25,10 +24,7 @@ from openfold3.core.data.resources.residues import (
     STANDARD_PROTEIN_RESIDUES_3,
     STANDARD_RNA_RESIDUES,
 )
-from openfold3.core.kernels.smooth_lddt.ball_query import is_ball_query_available
-from openfold3.core.kernels.triton.smooth_lddt_ball_query import (
-    is_ball_query_triton_available,
-)
+from openfold3.core.kernels.smooth_lddt import is_smooth_lddt_kernel_available
 from openfold3.core.loss.diffusion import (
     smooth_lddt_loss,
     smooth_lddt_loss_ball_query,
@@ -44,22 +40,24 @@ MINIMAL_TRAINING_ROOT = (
 )
 MINIMAL_TRAINING_SAMPLE_IDS = ["102m", "12e8", "134d", "17ra", "1tii", "1xfy"]
 
-# (backend, top_k, impl)  impl is None for dense; "cuda"/"triton" for ball_query
-_TOP_KS = (128, 256, 512, 1024, 2048)
-BACKENDS = [("dense", None, None)]
-if is_ball_query_available():
-    BACKENDS += [("ball_query", k, "cuda") for k in _TOP_KS]
-if is_ball_query_triton_available():
-    BACKENDS += [("ball_query", k, "triton") for k in _TOP_KS]
+BACKENDS = [
+    ("dense", None),
+    ("ball_query", 128),
+    ("ball_query", 256),
+    ("ball_query", 512),
+    ("ball_query", 1024),
+    ("ball_query", 2048),
+]
 
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.benchmark,
     pytest.mark.skipif(
-        not (is_ball_query_available() or is_ball_query_triton_available()),
+        not is_smooth_lddt_kernel_available(),
         reason=(
-            "Ball-query smooth lDDT requires CUDA and either the compiled "
-            "CUDA extension or Triton."
+            "Ball-query smooth lDDT requires CUDA and the compiled "
+            "ball-query extension (install with "
+            "use pixi env openfold3-cuda12/openfold3-cuda13, or install ninja + CUDA)."
         ),
     ),
 ]
@@ -110,53 +108,44 @@ def _minimal_training_batch(sample_id: str) -> dict:
     }
 
 
-def _forward(x, batch, loss_token_mask, backend, top_k, impl=None):
+def _forward(x, batch, loss_token_mask, backend, top_k):
     if backend == "dense":
         return smooth_lddt_loss(
             x=x, batch=batch, loss_token_mask=loss_token_mask, eps=1e-8
         )
-    prev = os.environ.get("OPENFOLD3_SMOOTH_LDDT_IMPL")
-    if impl is not None:
-        os.environ["OPENFOLD3_SMOOTH_LDDT_IMPL"] = impl
-    try:
-        return smooth_lddt_loss_ball_query(
-            x=x,
-            batch=batch,
-            loss_token_mask=loss_token_mask,
-            eps=1e-8,
-            top_k=top_k,
-        )
-    finally:
-        if prev is None:
-            os.environ.pop("OPENFOLD3_SMOOTH_LDDT_IMPL", None)
-        else:
-            os.environ["OPENFOLD3_SMOOTH_LDDT_IMPL"] = prev
+    return smooth_lddt_loss_ball_query(
+        x=x,
+        batch=batch,
+        loss_token_mask=loss_token_mask,
+        eps=1e-8,
+        top_k=top_k,
+    )
 
 
-def _backend_label(backend, top_k, impl):
+def _backend_label(backend, top_k):
     if backend == "dense":
         return "dense"
-    return f"bq-{impl} K={top_k}"
+    return f"bq K={top_k}"
 
 
-def _time_fwd_bwd(x_base, batch, loss_token_mask, backend, top_k, dtype, impl=None):
+def _time_fwd_bwd(x_base, batch, loss_token_mask, backend, top_k, dtype):
     x = x_base.detach().to(dtype).clone().requires_grad_(True)
     torch.cuda.synchronize()
     start = torch.cuda.Event(enable_timing=True)
     end = torch.cuda.Event(enable_timing=True)
     start.record()
-    loss = _forward(x, batch, loss_token_mask, backend, top_k, impl=impl)
+    loss = _forward(x, batch, loss_token_mask, backend, top_k)
     loss.sum().backward()
     end.record()
     torch.cuda.synchronize()
     return start.elapsed_time(end), loss, x.grad
 
 
-def _measure_peak_memory(x_base, batch, loss_token_mask, backend, top_k, impl=None):
+def _measure_peak_memory(x_base, batch, loss_token_mask, backend, top_k):
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats()
     x = x_base.detach().clone().requires_grad_(True)
-    loss = _forward(x, batch, loss_token_mask, backend, top_k, impl=impl)
+    loss = _forward(x, batch, loss_token_mask, backend, top_k)
     loss.sum().backward()
     torch.cuda.synchronize()
     return torch.cuda.max_memory_allocated()
@@ -177,20 +166,19 @@ def test_smooth_lddt_benchmark(sample_id):
     loss_token_mask = torch.ones_like(batch["is_protein"])
 
     # Warmup all backends
-    for backend, top_k, impl in BACKENDS:
+    for backend, top_k in BACKENDS:
         _forward(
             x_base.detach().clone().requires_grad_(True),
             batch,
             loss_token_mask,
             backend,
             top_k,
-            impl=impl,
         )
         torch.cuda.synchronize()
 
     rows = []
-    for backend, top_k, impl in BACKENDS:
-        label = _backend_label(backend, top_k, impl)
+    for backend, top_k in BACKENDS:
+        label = _backend_label(backend, top_k)
         time_fp32, loss, grad = _time_fwd_bwd(
             x_base,
             batch,
@@ -198,7 +186,6 @@ def test_smooth_lddt_benchmark(sample_id):
             backend,
             top_k,
             torch.float32,
-            impl=impl,
         )
         assert loss.shape == (1, n_sample)
         assert grad is not None
@@ -209,7 +196,6 @@ def test_smooth_lddt_benchmark(sample_id):
             backend,
             top_k,
             torch.bfloat16,
-            impl=impl,
         )
         peak = _measure_peak_memory(
             x_base,
@@ -217,7 +203,6 @@ def test_smooth_lddt_benchmark(sample_id):
             loss_token_mask,
             backend,
             top_k,
-            impl=impl,
         )
         rows.append((label, time_fp32, time_bf16, peak))
 
@@ -225,12 +210,12 @@ def test_smooth_lddt_benchmark(sample_id):
     dense_mem = rows[0][3]
 
     header = (
-        f"\n{'=' * 90}\n"
+        f"\n{'=' * 78}\n"
         f"  sample={sample_id}  n_atom={n_atom}  n_sample={n_sample}\n"
-        f"{'=' * 90}\n"
-        f"  {'backend':<18s} {'fp32 (ms)':>10s} {'bf16 (ms)':>10s}"
+        f"{'=' * 78}\n"
+        f"  {'backend':<12s} {'fp32 (ms)':>10s} {'bf16 (ms)':>10s}"
         f" {'peak mem':>10s} {'speedup':>8s} {'mem save':>9s}\n"
-        f"  {'-' * 18} {'-' * 10} {'-' * 10}"
+        f"  {'-' * 12} {'-' * 10} {'-' * 10}"
         f" {'-' * 10} {'-' * 8} {'-' * 9}"
     )
     print(header)
@@ -238,7 +223,7 @@ def test_smooth_lddt_benchmark(sample_id):
         speedup = f"{dense_time / t32:.1f}x" if t32 > 0 else "—"
         mem_save = f"{dense_mem / mem:.1f}x" if mem > 0 else "—"
         print(
-            f"  {label:<18s} {t32:>10.2f} {t16:>10.2f}"
+            f"  {label:<12s} {t32:>10.2f} {t16:>10.2f}"
             f" {mem / 1e6:>9.1f}M {speedup:>8s} {mem_save:>9s}"
         )
     print()
