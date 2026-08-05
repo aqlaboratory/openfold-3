@@ -919,7 +919,7 @@ def _run_dedup_preprocessor(
             "q": Query(
                 chains=[
                     Chain(
-                        molecule_type="protein",
+                        molecule_type=MoleculeType.PROTEIN,
                         chain_ids=["A"],
                         sequence=query_seq,
                         template_alignment_file_path=aln_path,
