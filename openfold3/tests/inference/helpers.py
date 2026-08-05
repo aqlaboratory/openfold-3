@@ -21,16 +21,19 @@ accelerator and downloaded model weights; the test modules gate on that with
 
 import logging
 import os
+import statistics
 import textwrap
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeVar
 from unittest.mock import patch
 
 import pytest
 
 import openfold3
 from openfold3.core.config import config_utils
+from openfold3.core.metrics.alignment import Structure
 from openfold3.entry_points.experiment_runner import InferenceExperimentRunner
 from openfold3.entry_points.validator import (
     InferenceExperimentConfig,
@@ -41,6 +44,10 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 
 logger = logging.getLogger(__name__)
 
+#: The metrics object a per-sample measurement returns — whatever ``core.metrics``
+#: hands back (``SuperpositionMetrics``, ``LigandPoseMetrics``, ...).
+T = TypeVar("T")
+
 #: Committed experimental structures, used both as template inputs and RMSD references.
 MMCIFS_DIR = Path(openfold3.__file__).parent / "tests" / "test_data" / "mmcifs"
 
@@ -48,6 +55,21 @@ MMCIFS_DIR = Path(openfold3.__file__).parent / "tests" / "test_data" / "mmcifs"
 #: ``[42]``), which the runner yaml in :func:`run_inference` does not override — *not*
 #: from ``InferenceQuerySet.seeds``, which the runner ignores.
 SEED = 42
+
+#: Diffusion samples drawn for a case whose prediction is scored against experiment.
+#:
+#: Accuracy is asserted on the *mean* over this many samples, never on one of them.
+#: A single sample's RMSD is not reproducible across backends: diffusion noise is drawn
+#: on-device (``diffusion_module.sample_diffusion``, ``centre_random_augmentation``), so
+#: each accelerator has its own RNG stream and the same seed replays a different draw.
+#: On ubiquitin the per-sample CA-RMSD spans 0.79-1.72 Å, an order of magnitude wider
+#: than the accuracy differences these tests exist to detect.
+#:
+#: 8 rather than more because the samples share one trunk pass: raising N shrinks only
+#: the within-trunk spread, and the run-to-run and cross-device terms — which it cannot
+#: touch — are already the larger ones. Costs ~1.4 s per extra sample against a ~36 s
+#: trunk, so the whole increase is a rounding error on an already-slow test.
+SCORED_DIFFUSION_SAMPLES = 8
 
 
 @dataclass(frozen=True)
@@ -115,6 +137,64 @@ def predicted_structure_cifs(
         directory.glob(f"{query_name}_seed_{seed}_sample_*_model.cif"),
         key=lambda path: int(path.stem.rsplit("_sample_", 1)[1].split("_")[0]),
     )
+
+
+@dataclass(frozen=True)
+class SampleScores:
+    """One metric measured on every diffusion sample of a single prediction.
+
+    ``mean`` is what accuracy is asserted on; ``values`` and ``sd`` exist to be logged,
+    since recalibrating a threshold needs the spread, not just the centre.
+    """
+
+    values: tuple[float, ...]
+
+    @classmethod
+    def of(
+        cls, measurements: Iterable[T], select: Callable[[T], float]
+    ) -> "SampleScores":
+        """Pull one field out of per-sample measurements already taken."""
+        return cls(tuple(select(measurement) for measurement in measurements))
+
+    @property
+    def mean(self) -> float:
+        return statistics.fmean(self.values)
+
+    @property
+    def sd(self) -> float:
+        """Sample standard deviation, or 0.0 when there is only one sample."""
+        return statistics.stdev(self.values) if len(self.values) > 1 else 0.0
+
+    def __str__(self) -> str:
+        joined = ", ".join(f"{value:.2f}" for value in self.values)
+        return (
+            f"mean {self.mean:.2f} (sd {self.sd:.2f}, n={len(self.values)}) [{joined}]"
+        )
+
+
+def measure_samples(
+    sample_cifs: Sequence[Path],
+    measure: Callable[[Structure], T],
+    *,
+    expected_samples: int,
+) -> list[T]:
+    """Apply ``measure`` to every predicted sample, parsing each cif exactly once.
+
+    ``measure`` takes the parsed prediction and returns whatever metrics object the
+    caller wants — pull the individual fields out with :meth:`SampleScores.of` rather
+    than calling this once per field, since parsing dominates the cost and the reference
+    is the same for every sample (see ``core.metrics.alignment``).
+
+    ``expected_samples`` is checked rather than trusted. Scoring whatever landed on disk
+    would hide a partial write, and hide it in the worst direction: fewer samples widen
+    the mean's standard error, so a run that lost samples is *less* likely to trip a
+    ceiling than one that did not.
+    """
+    assert len(sample_cifs) == expected_samples, (
+        f"Expected {expected_samples} predicted samples, found {len(sample_cifs)}: "
+        f"{[cif.name for cif in sample_cifs]}"
+    )
+    return [measure(Structure.from_cif(cif)) for cif in sample_cifs]
 
 
 inference_test_yaml_str = textwrap.dedent("""\

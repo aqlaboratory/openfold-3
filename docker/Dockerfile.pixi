@@ -17,7 +17,7 @@ ARG BASE_IMAGE=ubuntu:22.04
 # === Builder stage: install pixi and resolve environment ===
 FROM ${BASE_IMAGE} AS builder
 
-ARG PIXI_VERSION=v0.72.0
+ARG PIXI_VERSION=v0.76.0
 ARG PIXI_ENV=openfold3-cuda12
 
 # Install minimal system dependencies
@@ -53,7 +53,7 @@ RUN case "${PIXI_ENV}" in \
 # === Devel stage: lean runtime image with pixi activation ===
 FROM ${BASE_IMAGE} AS devel
 
-ARG PIXI_VERSION=v0.72.0
+ARG PIXI_VERSION=v0.76.0
 ARG PIXI_ENV=openfold3-cuda12
 
 # Install runtime system dependencies

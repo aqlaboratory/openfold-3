@@ -23,11 +23,11 @@ jobs:
       # entries in mypy-baseline.txt were recorded with torch, numpy, biotite &
       # co. importable, so a bare `pip install mypy` would report a completely
       # different set of errors and the baseline would be meaningless.
-      # openfold3-cpu is the smallest environment that provides them.
+      # openfold3-base is the smallest environment that provides them.
       - name: Set up the pixi environment
         uses: prefix-dev/setup-pixi@v0.10.0
         with:
-          environments: openfold3-cpu
+          environments: openfold3-base
           # Fail rather than re-solve if pixi.lock is out of date with pixi.toml.
           locked: true
           # Only refresh the environment cache from the default branch, so that
@@ -40,11 +40,11 @@ jobs:
       # when the baseline still lists errors that have since been fixed -- the
       # message below covers both directions.
       - name: Type check with mypy against the baseline
-        run: pixi run --locked -e openfold3-cpu typecheck
+        run: pixi run --locked -e openfold3-base typecheck
 
       - name: Explain how to update the baseline
         if: failure()
         run: |
           echo "::notice::mypy reported violations that do not match mypy-baseline.txt."
-          echo "::notice::New errors: fix them, or (if intentional) run 'pixi run -e openfold3-cpu typecheck-sync' and commit mypy-baseline.txt."
-          echo "::notice::Resolved errors: run 'pixi run -e openfold3-cpu typecheck-sync' and commit mypy-baseline.txt so the baseline stops shrinking silently."
+          echo "::notice::New errors: fix them, or (if intentional) run 'pixi run -e openfold3-base typecheck-sync' and commit mypy-baseline.txt."
+          echo "::notice::Resolved errors: run 'pixi run -e openfold3-base typecheck-sync' and commit mypy-baseline.txt so the baseline stops shrinking silently."

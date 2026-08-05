@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,6 +36,7 @@ from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
     TrainingExperimentRunner,
     WandbHandler,
+    _accelerator_will_use_mps,
     skip_random_init,
 )
 from openfold3.entry_points.parameters import (
@@ -328,6 +330,67 @@ class TestModelUpdate:
             ModelUpdate.model_validate({"presets": ["predict", "pae_enabled"]})
         warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
         assert any("model preset is deprecated" in msg for msg in warning_messages)
+
+    def test_mps_preset_applied_for_default_accelerator(self, dummy_ckpt_file):
+        """Default pl_trainer_args.accelerator ("gpu") resolves to MPS
+        whenever MPS is available, so the mps preset must apply even without
+        an explicit accelerator: mps override.
+        """
+        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
+        expt_runner = InferenceExperimentRunner(expt_config)
+
+        with patch(
+            "openfold3.entry_points.experiment_runner._accelerator_will_use_mps",
+            return_value=True,
+        ):
+            model_cfg = expt_runner.model_config
+
+        assert not model_cfg.settings.memory.eval.use_triton_triangle_kernels
+        assert not model_cfg.settings.memory.eval.offload_inference.msa_module
+        assert model_cfg.architecture.msa.msa_module.clear_cache_between_blocks
+        assert model_cfg.architecture.pairformer.clear_cache_between_blocks
+        assert model_cfg.architecture.template.template_pair_stack.clear_cache_between_blocks
+
+    def test_mps_preset_not_applied_when_mps_wont_run(self, dummy_ckpt_file):
+        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
+        expt_runner = InferenceExperimentRunner(expt_config)
+
+        with patch(
+            "openfold3.entry_points.experiment_runner._accelerator_will_use_mps",
+            return_value=False,
+        ):
+            model_cfg = expt_runner.model_config
+
+        assert model_cfg.settings.memory.eval.use_triton_triangle_kernels
+        assert not model_cfg.architecture.msa.msa_module.clear_cache_between_blocks
+        assert not model_cfg.architecture.pairformer.clear_cache_between_blocks
+
+
+class TestAcceleratorWillUseMps:
+    """_accelerator_will_use_mps mirrors PyTorch Lightning's own accelerator
+    resolution, so MPS-specific defaults aren't silently skipped when a user
+    runs with the default ("gpu") or "auto" instead of explicitly typing
+    "mps".
+    """
+
+    @pytest.mark.parametrize("accelerator", ["cpu", "cuda"])
+    def test_explicit_non_mps_accelerator_never_matches(self, accelerator):
+        with patch(
+            "pytorch_lightning.accelerators.MPSAccelerator.is_available",
+            return_value=True,
+        ):
+            assert not _accelerator_will_use_mps(accelerator)
+
+    @pytest.mark.parametrize("mps_available", [True, False])
+    @pytest.mark.parametrize("accelerator", ["mps", "gpu", "auto"])
+    def test_resolving_accelerator_follows_mps_availability(
+        self, accelerator, mps_available
+    ):
+        with patch(
+            "pytorch_lightning.accelerators.MPSAccelerator.is_available",
+            return_value=mps_available,
+        ):
+            assert _accelerator_will_use_mps(accelerator) is mps_available
 
 
 class DummyWandbExperiment:

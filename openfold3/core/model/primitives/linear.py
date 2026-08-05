@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +30,7 @@ from openfold3.core.model.primitives.initialization import (
     kaiming_normal_init_,
     lecun_normal_init_,
 )
+from openfold3.core.utils.device_utils import autocast_device_type
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
@@ -120,7 +122,7 @@ class Linear(nn.Linear):
             deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
         )
         if self.precision is not None:
-            with torch.amp.autocast("cuda", enabled=False):
+            with torch.amp.autocast(autocast_device_type(input), enabled=False):
                 bias = (
                     self.bias.to(dtype=self.precision)
                     if self.bias is not None
@@ -133,7 +135,7 @@ class Linear(nn.Linear):
                 ).to(dtype=d)
 
         if d is torch.bfloat16 and not deepspeed_is_initialized:
-            with torch.amp.autocast("cuda", enabled=False):
+            with torch.amp.autocast(autocast_device_type(input), enabled=False):
                 bias = self.bias.to(dtype=d) if self.bias is not None else None
                 return nn.functional.linear(input, self.weight.to(dtype=d), bias)
 

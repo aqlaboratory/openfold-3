@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2026 Advanced Micro Devices, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -247,6 +248,7 @@ model_config = mlc.ConfigDict(
                     "inf": inf,
                     "linear_init_params": lin_init.pair_block_init,
                     "use_reentrant": False,
+                    "clear_cache_between_blocks": False,
                     "tune_chunk_size": tune_chunk_size,
                 },
             },

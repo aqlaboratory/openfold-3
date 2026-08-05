@@ -267,7 +267,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/46/a9/cfa3f43930da59b04f29947d18708c8f20245613510ba273ffcb1b9f4100/py_rattler-0.24.0-cp38-abi3-manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/92/b5/47e807c2623074914e29dabd16cbbdd4bf5e9b2db9f8090fa64411fc5382/pyyaml-6.0.3-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/c9/c6/fe148fe748cfcf1326f2df2fabe639aedac066b75c3ac0b4f8834f7003ad/pixi_to_conda_lock-0.4.5-py3-none-any.whl
-  openfold3-cpu:
+  openfold3-base:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
     - url: https://conda.anaconda.org/bioconda/

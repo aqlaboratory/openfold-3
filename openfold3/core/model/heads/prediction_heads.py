@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
@@ -23,6 +24,7 @@ from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.atomize_utils import max_atom_per_token_masked_select
+from openfold3.core.utils.device_utils import autocast_device_type
 
 
 class PairformerEmbedding(nn.Module):
@@ -83,7 +85,9 @@ class PairformerEmbedding(nn.Module):
         x_pred: torch.Tensor,
     ):
         orig_dtype = zij.dtype
-        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+        with torch.amp.autocast(
+            device_type=autocast_device_type(zij), dtype=torch.float32
+        ):
             # si projection to zij
             zij = (
                 zij

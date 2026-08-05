@@ -27,12 +27,21 @@ otherwise.
 Run with:
     pytest openfold3/tests/inference/test_inference_full.py
 
-To calibrate a case's ``ca_rmsd_max`` — run just that case in all four modes and read
-the measured CA-RMSDs off the log (``log_cli_level`` is WARNING by default, so INFO has
-to be asked for):
+Accuracy is asserted on the **mean over** ``SCORED_DIFFUSION_SAMPLES`` **diffusion
+samples**, never on a single one — see that constant for why a single sample's RMSD is
+not a portable quantity. Thresholds follow from the measured distribution rather than
+from one observation: see :class:`ProteinExpectation` for the rule.
+
+To calibrate a case — run it in all four modes and read the per-sample values, mean and
+sd off the log (``log_cli_level`` is WARNING by default, so INFO has to be asked for),
+then apply the rule in :class:`ProteinExpectation`:
 
     pytest openfold3/tests/inference/test_inference_full.py -k ubiquitin \\
         -v --log-cli-level=INFO
+
+Every measurement is logged before it is asserted, so a run that trips a threshold still
+prints everything needed to recalibrate it. Drop ``-x`` when calibrating: fail-fast stops
+at the first tripped mode and leaves the others unmeasured.
 """
 
 import logging
@@ -55,13 +64,20 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 from openfold3.tests.inference.helpers import (
     MMCIFS_DIR,
     MODES,
+    SCORED_DIFFUSION_SAMPLES,
     Mode,
+    SampleScores,
+    measure_samples,
+    predicted_structure_cifs,
     prediction_dir,
     prediction_stem,
     query_set_from_chains,
     run_inference,
 )
 from openfold3.tests.utils.compare_utils import skip_unless_accelerator_available
+
+pytestmark = [pytest.mark.slow]
+
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -101,11 +117,36 @@ def _example_query_set(filename: str) -> InferenceQuerySet:
 class ProteinExpectation:
     """Which protein chains to score, and how closely they must match.
 
-    ``rmsd_max`` bounds the superposition CA-RMSD in Ångström, keyed by :class:`Mode`.
-    A mode *absent* from it is measured and logged but not asserted — that absence is
-    the point of keying on ``Mode``: how close a prediction lands depends strongly on
-    whether it had an MSA and a template, so no single ceiling is right across all four,
-    and a ceiling is only worth asserting once it has been *measured* in that mode.
+    Both bounds apply to the **mean CA-RMSD over diffusion samples**, in Ångström, keyed
+    by :class:`Mode`. A mode absent from a mapping is measured and logged but not
+    asserted by it — how close a prediction lands depends strongly on whether it had an
+    MSA and a template, so no single bound is right across all four, and a bound is only
+    worth asserting once it has been *measured* in that mode.
+
+    ``rmsd_max`` is a ceiling: the prediction must be at least this good.
+    ``rmsd_min`` is a floor — the prediction must be at least this *bad*. That is not a
+    perverse assertion but the positive control for the MSA path: some targets are not
+    solvable single-sequence, and pinning "without an MSA this must stay ~15 Å out"
+    catches an MSA pipeline that silently stops contributing, which no ceiling can.
+    ``test_templates.py`` makes the same argument for templates.
+
+    Calibrating a bound
+    -------------------
+    Run the mode, read the logged mean and sd, and take::
+
+        ceiling = round_up_0.1(max(mean + 4 * sd / sqrt(n), 1.5 * mean))
+
+    The ``4 * SE`` term covers the noise of the mean itself. The ``1.5 x`` term covers
+    what more samples cannot: run-to-run variation, live MSA-server payload differences,
+    and the fact that backends do not run identical kernels — the ``mps`` preset
+    disables the fused triton triangle kernels that CUDA uses, so the two compute
+    genuinely different fp32 results before any noise is drawn.
+
+    A bound is only valid for the backend it was measured on until a *wider*
+    distribution turns up elsewhere. Ceilings are one-sided, so calibrating on the widest
+    backend seen so far is automatically safe for every more accurate one; the values
+    here were measured on MPS, which is currently the widest. Do not tighten a ceiling to
+    a narrower backend's numbers — that is exactly how these came to be CUDA-only.
 
     ``ref_chains`` and ``pred_chains`` are matched as sets by :func:`best_ca_rmsd`, so
     interchangeable copies need no particular order.
@@ -117,16 +158,17 @@ class ProteinExpectation:
     #: the writer emits then carries no weight.
     pred_chains: tuple[str, ...] | None = None
     rmsd_max: Mapping[Mode, float] = field(default_factory=dict)
+    rmsd_min: Mapping[Mode, float] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class LigandExpectation:
     """Which ligand to score, and how close its pose must be.
 
-    ``rmsd_max`` follows the same measured-before-pinned rule as
-    :class:`ProteinExpectation`, but bounds the ligand pose RMSD: measured in the frame
-    of the superimposed protein, so it asks whether the ligand landed in the right pocket
-    the right way round, not merely whether its internal geometry is sane.
+    ``rmsd_max`` follows the same mean-over-samples convention and the same calibration
+    rule as :class:`ProteinExpectation`, but bounds the ligand pose RMSD: measured in the
+    frame of the superimposed protein, so it asks whether the ligand landed in the right
+    pocket the right way round, not merely whether its internal geometry is sane.
 
     Chains are named rather than discovered: a prediction may carry several ligands, and
     a reference typically carries buffer components and ions too, so which pair is meant
@@ -147,8 +189,8 @@ class Expectation:
     ``ref_cif``.
 
     To score a query: commit its experimental structure under ``test_data/mmcifs/``, then
-    run the case in the mode you want to pin and read the measurement off the log line in
-    :func:`_maybe_assert_accuracy`, leaving margin for hardware variance::
+    run the case in the mode you want to pin, read the logged mean and sd, and apply the
+    calibration rule in :class:`ProteinExpectation`::
 
         Expectation(
             ref_cif=MMCIFS_DIR / "1ubq.cif",
@@ -176,9 +218,18 @@ class InferenceCase:
     build_query_set: Callable[[], InferenceQuerySet]
     #: Query name -> expectation. Queries absent are run but not scored — the default,
     #: since scoring one needs a reference structure committed under
-    #: ``test_data/mmcifs/`` and a ceiling measured per mode.
+    #: ``test_data/mmcifs/`` and a bound measured per mode.
     expectations: Mapping[str, Expectation] = field(default_factory=dict)
     marks: tuple = ()
+
+    @property
+    def num_diffusion_samples(self) -> int:
+        """Samples to draw: enough to average over when scored, otherwise one.
+
+        A case with no expectations only proves inference ran and wrote its files, and
+        one sample proves that as well as eight — so the unscored cases stay cheap.
+        """
+        return SCORED_DIFFUSION_SAMPLES if self.expectations else 1
 
 
 #: Each case builds an :class:`InferenceQuerySet`, either in memory or from a file in
@@ -206,25 +257,27 @@ CASES = [
                 ref_cif=MMCIFS_DIR / "1ubq.cif",
                 protein=ProteinExpectation(
                     ref_chains=("A",),
-                    # Measured 2026-07-28 on of3-p2-155k, one diffusion sample, seed 42.
-                    # Pinned just above each measurement rather than at a loose common
-                    # bound: ubiquitin is easy enough that every mode lands under 1 Å, so
-                    # a generous ceiling would accept a real degradation unnoticed.
+                    # Measured 2026-08-04 on of3-p2-155k, MPS, 8 samples, seed 42, as
+                    # mean ± sd. Ubiquitin is a *wide* fixture, not an inaccurate one:
+                    # single-sequence it scores avg_plddt 78.6 / ptm 0.67, so the model
+                    # is genuinely unsure and the samples scatter accordingly (gdt_ts
+                    # 0.888-0.974). Averaging over 8 is what makes it assertable at all.
                     rmsd_max={
-                        # measured 0.87 Å (gdt_ts 0.974)
-                        Mode(use_msa_server=False, use_templates=False): 0.9,
-                        # measured 0.87 Å (gdt_ts 0.974) — same numbers as the row
-                        # above: without the MSA server template search has nothing to
-                        # draw on (preprocessing returns within the same second), so
-                        # both no_msa modes are the same computation. Not bit-identical
-                        # though — 7L39 moves between runs across this same pair — they
-                        # agree here because a converged prediction is stable.
-                        Mode(use_msa_server=False, use_templates=True): 0.9,
-                        # measured 0.75 Å (gdt_ts 0.967)
-                        Mode(use_msa_server=True, use_templates=False): 0.8,
-                        # measured 0.79 Å (gdt_ts 0.967) — only 0.01 Å of headroom, the
-                        # first ceiling to revisit if this goes flaky on other hardware
-                        Mode(use_msa_server=True, use_templates=True): 0.8,
+                        # 1.197 ± 0.273
+                        Mode(use_msa_server=False, use_templates=False): 1.8,
+                        # 1.197 ± 0.273 — identical to the row above, to every decimal
+                        # place: without the MSA server template search has nothing to
+                        # draw on, so both no_msa modes are literally the same
+                        # computation. (Verified on MPS, where inference is run-to-run
+                        # deterministic at a fixed seed.)
+                        Mode(use_msa_server=False, use_templates=True): 1.8,
+                        # 1.224 ± 0.456
+                        Mode(use_msa_server=True, use_templates=False): 1.9,
+                        # 1.193 ± 0.447. Note the MSA buys ubiquitin nothing here — all
+                        # four modes land within 0.03 Å of each other — while nearly
+                        # doubling the spread. Unexplained; the wider ceiling on the msa
+                        # modes is that extra variance, not a laxer accuracy claim.
+                        Mode(use_msa_server=True, use_templates=True): 1.9,
                     },
                 ),
             )
@@ -252,36 +305,36 @@ CASES = [
                 ref_cif=MMCIFS_DIR / "7l39.cif",
                 protein=ProteinExpectation(
                     ref_chains=("A",),
-                    # Measured 2026-07-28 on of3-p2-155k, one diffusion sample, seed 42,
-                    # over two separate runs:
-                    #   no_msa-no_templates  15.29 / 14.85 Å (gdt_ts 0.032 / 0.054)
-                    #   no_msa-templates     15.78 / 15.91 Å (gdt_ts 0.039 / 0.039)
-                    #   msa-no_templates      0.22 /  0.22 Å (gdt_ts 1.000)
-                    #   msa-templates         0.20 /  0.20 Å (gdt_ts 1.000)
-                    # The repeat is the evidence for how these are pinned: the converged
-                    # modes reproduced to the last printed digit, while the failed ones
-                    # moved by up to 0.44 Å between runs.
+                    # Measured 2026-08-04 on of3-p2-155k, MPS, 8 samples, seed 42, as
+                    # mean ± sd:
+                    #   no_msa-no_templates  16.002 ± 0.388 (gdt_ts 0.042)
+                    #   no_msa-templates     16.002 ± 0.388 (gdt_ts 0.042)
+                    #   msa-no_templates      0.367 ± 0.049 (gdt_ts 0.993)
+                    #   msa-templates         0.247 ± 0.065 (gdt_ts 0.999)
                     #
                     # Unlike ubiquitin, this target lives or dies on the MSA:
                     # single-sequence the model does not find the fold at all (gdt_ts
-                    # 0.03), with an MSA it is essentially exact. Which is the case the
-                    # per-mode encoding exists for — one ceiling across all four would
-                    # have to be ~16 Å and would then wave through a total collapse of
+                    # 0.04), with an MSA it is essentially exact. Which is what the
+                    # per-mode encoding exists for — one bound across all four would
+                    # have to be ~24 Å and would then wave through a total collapse of
                     # the MSA path.
                     rmsd_max={
-                        # Only the converged modes are pinned, and pinned tight. gdt_ts
-                        # is 1.000 in both, i.e. the prediction is locked onto the
-                        # reference, so the number is reproducible.
-                        Mode(use_msa_server=True, use_templates=False): 0.3,
-                        Mode(use_msa_server=True, use_templates=True): 0.3,
-                        # The two no_msa modes are deliberately left unpinned. Their
-                        # RMSD is the distance to a fold the model never found, which is
-                        # not a stable quantity — see the run-to-run spread above.
-                        # Pinning a tight ceiling there would buy flakiness and no
-                        # signal. Asserting these properly needs a *floor* — "must be
-                        # worse than 8 Å without an MSA", the way test_templates.py
-                        # proves its template effect — which ProteinExpectation cannot
-                        # express yet.
+                        Mode(use_msa_server=True, use_templates=False): 0.6,
+                        # Tighter than its no_templates twin because the template
+                        # measurably helps here (0.247 vs 0.367) — each mode is bounded
+                        # by its own distribution, not by a shared worst case.
+                        Mode(use_msa_server=True, use_templates=True): 0.4,
+                    },
+                    # The converse claim, and the one no ceiling can make: without an
+                    # MSA this target must *stay* unsolved. If the MSA path silently
+                    # stopped contributing, every mode would collapse to this one and a
+                    # ceiling-only test would still pass. Pinned at half the measured
+                    # 16.0 Å, the same margin test_templates.py uses for its template
+                    # floor — the failure it guards against is a 40x move, so the exact
+                    # value is not delicate.
+                    rmsd_min={
+                        Mode(use_msa_server=False, use_templates=False): 8.0,
+                        Mode(use_msa_server=False, use_templates=True): 8.0,
                     },
                 ),
                 # Toluene (CCD MBN), 7 heavy atoms, sitting in the engineered L99A
@@ -293,20 +346,30 @@ CASES = [
                 ligand=LigandExpectation(
                     ref_chain="D",
                     pred_chain="X",
-                    # Measured 2026-07-28, same runs as the CA-RMSD above:
-                    #   no_msa-no_templates  25.76 Å (centroid 25.65)
-                    #   no_msa-templates     16.45 Å (centroid 16.35)
-                    #   msa-no_templates      0.30 Å (centroid  0.27)
-                    #   msa-templates         0.27 Å (centroid  0.26)
+                    # Measured 2026-08-04, same runs as the CA-RMSD above, mean ± sd:
+                    #   no_msa-no_templates  20.217 ± 3.727 (centroid 20.1)
+                    #   no_msa-templates     20.212 ± 3.719 (centroid 20.1)
+                    #   msa-no_templates      0.240 ± 0.045 (centroid  0.21)
+                    #   msa-templates         0.427 ± 0.304 (centroid  0.23)
                     # The pose tracks the fold exactly as expected: with an MSA the
                     # ligand sits sub-Ångström in the cavity, far inside the 2 Å that
                     # normally counts as a correct pose; without one the centroid alone
-                    # is 16-26 Å off, i.e. the ligand is not in a pocket at all because
-                    # there is no pocket. Only the converged modes are pinned, for the
-                    # same reason as the protein.
+                    # is ~20 Å off, i.e. the ligand is not in a pocket at all because
+                    # there is no pocket. No floor is pinned here — the protein's floor
+                    # already asserts the no-MSA modes fail, and a ligand cannot find a
+                    # pocket that was never folded.
                     rmsd_max={
                         Mode(use_msa_server=True, use_templates=False): 0.4,
-                        Mode(use_msa_server=True, use_templates=True): 0.4,
+                        # Six times the spread of its no_templates twin, and the outlier
+                        # is orientational rather than positional: the centroid holds at
+                        # 0.16-0.29 Å across all 8 samples while the RMSD reaches 1.06 Å
+                        # on two of them. The ring is in the cavity but turned within it,
+                        # beyond the 2-fold flip the symmetry search folds out. So this
+                        # ceiling bounds a pose that is correct by any practical
+                        # criterion; it is wide because toluene's orientation in a
+                        # hydrophobic cavity is genuinely underdetermined, not because
+                        # the prediction is worse.
+                        Mode(use_msa_server=True, use_templates=True): 0.9,
                     },
                 ),
             )
@@ -319,20 +382,32 @@ CASE_PARAMS = [pytest.param(case, id=case.id, marks=case.marks) for case in CASE
 MODE_PARAMS = [pytest.param(mode, id=mode.id) for mode in MODES]
 
 
-def _assert_within_ceiling(
-    measured: float, ceiling: float | None, *, what: str, query_name: str, mode: Mode
+def _assert_within_band(
+    scores: SampleScores,
+    *,
+    ceiling: float | None,
+    floor: float | None = None,
+    what: str,
+    query_name: str,
+    mode: Mode,
 ) -> None:
-    """Enforce one ceiling, when this mode has one pinned.
+    """Enforce whichever bounds this mode pins, on the mean over samples.
 
-    ``None`` means the mode is measured but makes no accuracy claim, which is the
-    default until a number has actually been observed for it.
+    ``None`` on either side means the mode is measured but makes no claim in that
+    direction, which is the default until a number has been observed for it.
     """
-    if ceiling is None:
-        return
-    assert measured < ceiling, (
-        f"{query_name} [{mode.id}]: {what} {measured:.2f} Å exceeds the "
-        f"{ceiling} Å ceiling for this mode"
-    )
+    measured = scores.mean
+    if ceiling is not None:
+        assert measured < ceiling, (
+            f"{query_name} [{mode.id}]: mean {what} {measured:.2f} Å exceeds the "
+            f"{ceiling} Å ceiling for this mode — {scores}"
+        )
+    if floor is not None:
+        assert measured > floor, (
+            f"{query_name} [{mode.id}]: mean {what} {measured:.2f} Å is below the "
+            f"{floor} Å floor for this mode, i.e. the prediction is better than this "
+            f"mode should be able to manage — {scores}"
+        )
 
 
 def _assert_protein(
@@ -340,28 +415,39 @@ def _assert_protein(
     query_name: str,
     mode: Mode,
     *,
-    pred: Structure,
+    sample_cifs: list[Path],
+    expected_samples: int,
     ref: Structure,
 ) -> None:
-    """Score the protein fold against the reference."""
+    """Score the protein fold against the reference, averaged over diffusion samples."""
     protein = expectation.protein
-    metrics = best_ca_rmsd(
-        pred=pred,
-        ref=ref,
-        ref_chains=protein.ref_chains,
-        pred_chains=protein.pred_chains,
+    metrics = measure_samples(
+        sample_cifs,
+        lambda pred: best_ca_rmsd(
+            pred=pred,
+            ref=ref,
+            ref_chains=protein.ref_chains,
+            pred_chains=protein.pred_chains,
+        ),
+        expected_samples=expected_samples,
     )
+    ca_rmsd = SampleScores.of(metrics, lambda m: m.rmsd)
+    # gdt_ts comes free with the RMSD and is logged for context, but is not asserted:
+    # it saturates on a converged target (7L39 spans 0.991-0.998 while its RMSD moves
+    # by 50%), so it would add a calibration surface without adding sensitivity.
+    gdt_ts = SampleScores.of(metrics, lambda m: m.gdt_ts)
     logger.info(
-        "%s [%s] CA-RMSD %.2f Å (gdt_ts %.3f) vs %s",
+        "%s [%s] CA-RMSD %s vs %s | gdt_ts %s",
         query_name,
         mode.id,
-        metrics.rmsd,
-        metrics.gdt_ts,
+        ca_rmsd,
         expectation.ref_cif.name,
+        gdt_ts,
     )
-    _assert_within_ceiling(
-        metrics.rmsd,
-        protein.rmsd_max.get(mode),
+    _assert_within_band(
+        ca_rmsd,
+        ceiling=protein.rmsd_max.get(mode),
+        floor=protein.rmsd_min.get(mode),
         what=f"CA-RMSD against {expectation.ref_cif.name}",
         query_name=query_name,
         mode=mode,
@@ -373,35 +459,39 @@ def _assert_ligand(
     query_name: str,
     mode: Mode,
     *,
-    pred: Structure,
+    sample_cifs: list[Path],
+    expected_samples: int,
     ref: Structure,
 ) -> None:
-    """Score the ligand pose in the frame of the superimposed protein."""
+    """Score the ligand pose in the frame of the superimposed protein, over samples."""
     ligand = expectation.ligand
     assert ligand is not None  # guarded by the caller
-    metrics = ligand_pose_metrics(
-        pred=pred,
-        ref=ref,
-        ref_chains=expectation.protein.ref_chains,
-        pred_chains=expectation.protein.pred_chains,
-        pred_ligand_chain=ligand.pred_chain,
-        ref_ligand_chain=ligand.ref_chain,
+    metrics = measure_samples(
+        sample_cifs,
+        lambda pred: ligand_pose_metrics(
+            pred=pred,
+            ref=ref,
+            ref_chains=expectation.protein.ref_chains,
+            pred_chains=expectation.protein.pred_chains,
+            pred_ligand_chain=ligand.pred_chain,
+            ref_ligand_chain=ligand.ref_chain,
+        ),
+        expected_samples=expected_samples,
     )
+    rmsd = SampleScores.of(metrics, lambda m: m.rmsd)
+    centroid = SampleScores.of(metrics, lambda m: m.centroid_distance)
     logger.info(
-        "%s [%s] ligand RMSD %.2f Å (centroid %.2f Å, %d atoms, %d symmetry mappings) "
-        "vs %s chain %s",
+        "%s [%s] ligand RMSD %s (centroid %s) vs %s chain %s",
         query_name,
         mode.id,
-        metrics.rmsd,
-        metrics.centroid_distance,
-        metrics.n_atoms,
-        metrics.n_symmetry_mappings,
+        rmsd,
+        centroid,
         expectation.ref_cif.name,
         ligand.ref_chain,
     )
-    _assert_within_ceiling(
-        metrics.rmsd,
-        ligand.rmsd_max.get(mode),
+    _assert_within_band(
+        rmsd,
+        ceiling=ligand.rmsd_max.get(mode),
         what=(
             f"ligand RMSD against {expectation.ref_cif.name} chain {ligand.ref_chain}"
         ),
@@ -411,23 +501,42 @@ def _assert_ligand(
 
 
 def _maybe_assert_accuracy(
-    case: InferenceCase, query_name: str, mode: Mode, *, pred_cif: Path
+    case: InferenceCase,
+    query_name: str,
+    mode: Mode,
+    *,
+    output_dir: Path,
 ) -> None:
     """Score one prediction against its reference, when the case declares one.
 
-    Always logs what it measures, whether or not a ceiling is pinned for this mode, so a
-    run in an unscored mode still tells you what to record for it.
+    Always logs what it measures, whether or not this mode pins a bound, so a run in an
+    unpinned mode still tells you what to record for it — and a run that trips a bound
+    still prints the distribution needed to recalibrate.
     """
     expectation = case.expectations.get(query_name)
     if expectation is None:
         return
-    # Parsed once here and handed down: the protein and the ligand both need both
-    # structures, and the ligand reuses the protein's superposition.
-    pred = Structure.from_cif(pred_cif)
+    sample_cifs = predicted_structure_cifs(output_dir, query_name)
+    # Parsed once here and handed down: every sample scores against the same reference,
+    # and parsing is the expensive step (see core.metrics.alignment).
     ref = Structure.from_cif(expectation.ref_cif)
-    _assert_protein(expectation, query_name, mode, pred=pred, ref=ref)
+    _assert_protein(
+        expectation,
+        query_name,
+        mode,
+        sample_cifs=sample_cifs,
+        expected_samples=case.num_diffusion_samples,
+        ref=ref,
+    )
     if expectation.ligand is not None:
-        _assert_ligand(expectation, query_name, mode, pred=pred, ref=ref)
+        _assert_ligand(
+            expectation,
+            query_name,
+            mode,
+            sample_cifs=sample_cifs,
+            expected_samples=case.num_diffusion_samples,
+            ref=ref,
+        )
 
 
 @skip_unless_accelerator_available()
@@ -447,7 +556,7 @@ def test_inference_writes_outputs(case, mode, tmp_path):
         tmp_path,
         use_msa_server=mode.use_msa_server,
         use_templates=mode.use_templates,
-        num_diffusion_samples=1,
+        num_diffusion_samples=case.num_diffusion_samples,
         # Isolate the template cache: without this it lands in a persistent /tmp dir
         # shared across runs, and the template-enabled cases here would see each
         # other's leftovers.
@@ -456,20 +565,23 @@ def test_inference_writes_outputs(case, mode, tmp_path):
     logger.info("Checking output contents at %s", tmp_path)
     for query_name in query_set.queries:
         seed_dir = prediction_dir(tmp_path, query_name)
-        stem = prediction_stem(query_name, sample=1)
-        expected_files = [
-            f"{stem}_confidences.json",
-            f"{stem}_confidences_aggregated.json",
-            f"{stem}_model.cif",
-            "timing.json",
-        ]
-        for name in expected_files:
-            assert (seed_dir / name).exists(), (
-                f"Expected output file not found: {seed_dir / name}"
-            )
-        _maybe_assert_accuracy(
-            case, query_name, mode, pred_cif=seed_dir / f"{stem}_model.cif"
+        assert (seed_dir / "timing.json").exists(), (
+            f"Expected output file not found: {seed_dir / 'timing.json'}"
         )
+        # Every sample writes its own trio, so a case that draws several must find all
+        # of them — checking only sample 1 would let a partial write through, and the
+        # accuracy mean is computed over exactly this set.
+        for sample in range(1, case.num_diffusion_samples + 1):
+            stem = prediction_stem(query_name, sample=sample)
+            for name in (
+                f"{stem}_confidences.json",
+                f"{stem}_confidences_aggregated.json",
+                f"{stem}_model.cif",
+            ):
+                assert (seed_dir / name).exists(), (
+                    f"Expected output file not found: {seed_dir / name}"
+                )
+        _maybe_assert_accuracy(case, query_name, mode, output_dir=tmp_path)
 
 
 if __name__ == "__main__":

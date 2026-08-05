@@ -16,7 +16,9 @@
 # ------------------------------
 # We support linux-64, linux-aarch64, osx-64 and osx-arm64 platforms and provide the following environments:
 #   - default: an environment to maintain the rest of environments
-#   - openfold3-cpu: base environment without CUDA, to enable developing without GPU
+#   - openfold3-base: base environment without CUDA or ROCm, to enable developing without GPU.
+#                     On Apple Silicon the same conda-forge pytorch always ships Metal (MPS)
+#                     support, so this environment is not CPU-only there.
 #   - openfold3-cuda12 and openfold-cuda13: environments with cuda, deepspeed and cuequivariance
 #   - openfold3-cuda12-pypi and openfold-cuda13-pypi: environments with python and cuda from conda,
 #                                                     everything else from pypi
@@ -92,28 +94,31 @@ platforms = [
 #   https://github.com/prefix-dev/pixi/blob/main/CHANGELOG.md#-highlights-1
 # - as our lockfiles are now v7
 # - as we will use cuda support in build
-# - 0.72.0:
+# - 0.73.0:
 #   * as we now use rich platform support
 #     arguably definition got more complex with this
 #     maybe we should lobby for system-requiremets to be an alternative
 #     and not deprecated
 #   * as we now use wildcard platform target selectors (this helped)
-requires-pixi = ">=0.72.0"
+requires-pixi = ">=0.73.0"
 
 # --- Environments
 
 [environments]
 default = { features = [ "python", "pixi-to-conda-lock" ] }
-openfold3-cpu = { no-default-feature = true, features = [
+# The non-CUDA/non-ROCm environment. Deliberately not called "cpu": on Apple
+# Silicon the same conda-forge pytorch dependency always ships Metal (MPS)
+# support, unlike on Linux where it is truly CPU-only.
+openfold3-base = { no-default-feature = true, features = [
     "python",
-    "openfold3-cpu",
+    "openfold3-base",
     "pytorch-conda",
     "openfold3-editable",
     "tests"
 ] }
 openfold3-cuda12 = { no-default-feature = true, features = [
     "python",
-    "openfold3-cpu",
+    "openfold3-base",
     "cuda12",
     "pytorch-conda-cuda",
     "deepspeed",
@@ -124,7 +129,7 @@ openfold3-cuda12 = { no-default-feature = true, features = [
 ] }
 openfold3-cuda13 = { no-default-feature = true, features = [
     "python",
-    "openfold3-cpu",
+    "openfold3-base",
     "cuda13",
     "pytorch-conda-cuda",
     "deepspeed",
@@ -155,7 +160,7 @@ openfold3-cuda13-pypi = { no-default-feature = true, features = [
 ] }
 openfold3-rocm7 = { no-default-feature = true, features = [
     "python",
-    "openfold3-cpu",
+    "openfold3-base",
     "pytorch-pypi-rocm7",
     "not-in-pypi",
     "openfold3-editable",
@@ -168,7 +173,7 @@ openfold3-msa = { no-default-feature = true, features = [
 # Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
 # N.B. at the moment all these are editable installs
 
-# --- CPU dependencies (excluding torch-related)
+# --- Base dependencies (excluding torch-related)
 
 # --- OpenFold3 in editable mode
 # The goal here would be to avoid getting anything installed from pypi in this step.
@@ -198,7 +203,7 @@ python = "*"
 pip = "*"
 
 
-[feature.openfold3-cpu.dependencies]
+[feature.openfold3-base.dependencies]
 
 # Explicit basics that could get anyway installed
 numpy = "*"
@@ -256,15 +261,15 @@ pre-commit = "*"
 # mypy-baseline is not packaged in conda-forge, so it comes from pypi.
 # It lets us record the current type errors in a baseline file and only fail
 # on newly introduced ones.
-[feature.openfold3-cpu.pypi-dependencies]
+[feature.openfold3-base.pypi-dependencies]
 mypy-baseline = "*"
 
 # mypy configuration lives in pyproject.toml ([tool.mypy] / [tool.mypy-baseline]),
 # the baseline itself in mypy-baseline.txt.
 # As with the test task, these are attached to a feature so they are runnable
 # from the environments that include it, e.g.
-#   pixi run -e openfold3-cpu typecheck
-[feature.openfold3-cpu.tasks]
+#   pixi run -e openfold3-base typecheck
+[feature.openfold3-base.tasks]
 # Report only the type errors that are not already in the baseline.
 typecheck = "mypy | mypy-baseline filter"
 # Rewrite the baseline from the current state of the code. Run this after
@@ -272,7 +277,7 @@ typecheck = "mypy | mypy-baseline filter"
 typecheck-sync = "mypy | mypy-baseline sync"
 
 
-[feature.openfold3-cpu.target.linux-64.dependencies]
+[feature.openfold3-base.target.linux-64.dependencies]
 mkl = "*"
 
 
@@ -440,7 +445,7 @@ pixi-to-conda-lock = ">=0.4.3"
 [tasks]
 
 export-conda.args = [
-    { "arg" = "environment", "default" = "openfold3-cpu" },
+    { "arg" = "environment", "default" = "openfold3-base" },
     { "arg" = "platform", "default" = "linux-64" },
 ]
 export-conda.cmd = [
@@ -460,10 +465,10 @@ export-conda.cmd = [
 ]
 
 export-conda-all.depends-on = [
-    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "linux-64" } ]},
-    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "linux-aarch64" } ]},
-    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "osx-64" } ]},
-    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "osx-arm64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-base" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-base" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-base" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-base" }, { platform = "osx-arm64" } ]},
     { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "linux-64" } ]},
     { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "linux-aarch64" } ]},
     { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "osx-64" } ]},
@@ -483,7 +488,7 @@ export-conda-all.depends-on = [
 ]
 
 export-conda-lock.args = [
-    { "arg" = "environment", "default" = "openfold3-cpu" },
+    { "arg" = "environment", "default" = "openfold3-base" },
 ]
 export-conda-lock.cmd = [
     "pixi-to-conda-lock",
@@ -497,7 +502,7 @@ export-conda-lock.cmd = [
 ]
 
 export-conda-lock-all.depends-on = [
-    { task = "export-conda-lock", args = [ { environment = "openfold3-cpu" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-base" } ]},
     { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12" } ]},
     { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12-pypi" } ]},
     { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13" } ]},
@@ -539,7 +544,7 @@ tasks.safe-but-slow-update.cmd = [
 # Sample + download a small PDB training subset (see scripts/datasets/README.md).
 # Both default to writing/reading ./datasets relative to $PIXI_PROJECT_ROOT, since
 # pixi tasks run with cwd = the project root. Extra CLI args pass through, e.g.
-# `pixi run -e openfold3-cpu generate-pdb-subset -- --train-size 32 --val-size 16`.
+# `pixi run -e openfold3-base generate-pdb-subset -- --train-size 32 --val-size 16`.
 # `-u`: unbuffered stdout -- these scripts' progress prints (sampling/download
 # status over several minutes) would otherwise sit fully buffered and invisible
 # until the buffer fills or the process exits whenever stdout isn't a tty, e.g.
