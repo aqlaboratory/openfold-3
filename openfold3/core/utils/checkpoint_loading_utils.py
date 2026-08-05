@@ -12,20 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib
 import logging
 from pathlib import Path
 
 import torch
 
-deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-if deepspeed_is_installed:
-    from deepspeed.utils import zero_to_fp32
-
 logger = logging.getLogger(__name__)
 
 
 def load_model_state_dict_from_ds_checkpoint(checkpoint_dir: Path) -> dict:
+    # Imported lazily so the module does not trigger deepspeed's import-time side
+    # effects; only DeepSpeed ZeRO checkpoint directories reach this function.
+    from deepspeed.utils import zero_to_fp32
+
     latest_path = checkpoint_dir / "latest"
     if latest_path.is_file():
         with open(latest_path) as fd:

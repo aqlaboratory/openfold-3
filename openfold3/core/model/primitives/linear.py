@@ -15,7 +15,6 @@
 
 """Linear layer with nonstandard initializations."""
 
-import importlib
 from collections.abc import Callable
 
 import torch
@@ -29,10 +28,7 @@ from openfold3.core.model.primitives.initialization import (
     kaiming_normal_init_,
     lecun_normal_init_,
 )
-
-deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-if deepspeed_is_installed:
-    import deepspeed
+from openfold3.core.utils.deepspeed_utils import deepspeed_is_initialized
 
 
 class Linear(nn.Linear):
@@ -116,9 +112,6 @@ class Linear(nn.Linear):
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         d = input.dtype
-        deepspeed_is_initialized = (
-            deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
-        )
         if self.precision is not None:
             with torch.amp.autocast("cuda", enabled=False):
                 bias = (
@@ -132,7 +125,7 @@ class Linear(nn.Linear):
                     bias,
                 ).to(dtype=d)
 
-        if d is torch.bfloat16 and not deepspeed_is_initialized:
+        if d is torch.bfloat16 and not deepspeed_is_initialized():
             with torch.amp.autocast("cuda", enabled=False):
                 bias = self.bias.to(dtype=d) if self.bias is not None else None
                 return nn.functional.linear(input, self.weight.to(dtype=d), bias)
