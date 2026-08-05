@@ -1428,13 +1428,10 @@ openfold3/core/data/resources/residues.py:0: error: Type argument "int" of "ndar
 openfold3/core/data/resources/residues.py:0: error: Type argument "str" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: "append" of "list" does not return a value (it only ever returns None)  [func-returns-value]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: "str" not callable  [operator]
-openfold3/core/data/tools/colabfold_msa_server.py:0: error: Argument "output_directory" to "ColabFoldQueryRunner" has incompatible type "Path | None"; expected "Path"  [arg-type]
-openfold3/core/data/tools/colabfold_msa_server.py:0: error: Argument "output_directory" to "add_msa_paths_to_iqs" has incompatible type "Path | None"; expected "Path"  [arg-type]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: Argument 1 to "append" of "list" has incompatible type "None"; expected "str"  [arg-type]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: Argument 1 to "append" of "list" has incompatible type "str | None"; expected "str"  [arg-type]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: Argument 1 to "append" of "list" has incompatible type "str"; expected "ChainInput"  [arg-type]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: Argument 1 to "get_sequence_hash" has incompatible type "str | None"; expected "str"  [arg-type]
-openfold3/core/data/tools/colabfold_msa_server.py:0: error: Argument 2 to "save_colabfold_mappings" has incompatible type "Path | None"; expected "Path"  [arg-type]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: Argument 2 to "savez_compressed" has incompatible type "**dict[str, dict[Any, Any]]"; expected "Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str]"  [arg-type]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: Argument 2 to "savez_compressed" has incompatible type "**dict[str, dict[Any, Any]]"; expected "bool"  [arg-type]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: Argument 3 to "ChainInput" has incompatible type "str | None"; expected "str"  [arg-type]
@@ -1461,12 +1458,7 @@ openfold3/core/data/tools/colabfold_msa_server.py:0: error: Need type annotation
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: Need type annotation for "chain_inputs_seen" (hint: "chain_inputs_seen: set[<type>] = ...")  [var-annotated]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: Need type annotation for "template_paths_" (hint: "template_paths_: list[<type>] = ...")  [var-annotated]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: Need type annotation for "templates" (hint: "templates: dict[<type>, <type>] = ...")  [var-annotated]
-openfold3/core/data/tools/colabfold_msa_server.py:0: error: Unsupported left operand type for / ("None")  [operator]
-openfold3/core/data/tools/colabfold_msa_server.py:0: error: Unsupported left operand type for / ("None")  [operator]
 openfold3/core/data/tools/colabfold_msa_server.py:0: error: Unsupported operand types for + ("str" and "None")  [operator]
-openfold3/core/data/tools/colabfold_msa_server.py:0: note: Left operand is of type "Path | Any"
-openfold3/core/data/tools/colabfold_msa_server.py:0: note: Left operand is of type "Path | None"
-openfold3/core/data/tools/colabfold_msa_server.py:0: note: Left operand is of type "Path | None"
 openfold3/core/data/tools/colabfold_msa_server.py:0: note: Right operand is of type "str | None"
 openfold3/core/data/tools/jackhmmer.py:0: error: Incompatible return value type (got "list[Mapping[str, Any]]", expected "Sequence[Sequence[Mapping[str, Any]]]")  [return-value]
 openfold3/core/data/tools/jackhmmer.py:0: error: Need type annotation for "chunked_outputs"  [var-annotated]

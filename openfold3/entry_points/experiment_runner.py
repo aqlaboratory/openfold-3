@@ -596,6 +596,8 @@ class InferenceExperimentRunner(ExperimentRunner):
             use_msa_server,
             use_templates,
         )
+        msa_settings = experiment_config.msa_computation_settings
+        msa_settings.set_saved_output_root(self.output_dir / "msas")
 
     def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
         update_dict = {
@@ -801,28 +803,31 @@ class InferenceExperimentRunner(ExperimentRunner):
         if path.exists():
             shutil.rmtree(path)
 
+    def cleanup_msa_workspace(self):
+        """Remove the temporary MSA workspace created by this run."""
+        msa_settings = self.experiment_config.msa_computation_settings
+        if msa_settings.cleanup_workspace():
+            logger.info(
+                f"Removed temporary MSA directory: {msa_settings.workspace_directory}"
+            )
+
     def cleanup(self):
-        """Clean up temporary inference directories."""
+        """Cleanup directories from colabfold MSA"""
+        self.cleanup_msa_workspace()
+        msa_settings = self.experiment_config.msa_computation_settings
+
         if self.is_rank_zero and self.log_dir.is_dir() and not os.listdir(self.log_dir):
             print("Removing empty log directory...")
             self.log_dir.rmdir()
 
         if (
-            self.use_msa_server
-            and self.is_rank_zero
-            and self.experiment_config.msa_computation_settings.cleanup_msa_dir
+            self.is_rank_zero
+            and self.use_msa_server
+            and msa_settings.cleanup_msa_dir
+            and self.use_templates
         ):
-            print("Cleaning up MSA directories...")
-            msa_output_dir = (
-                self.experiment_config.msa_computation_settings.msa_output_directory
-            )
-            # Raw and normalized MSAs share this directory, so the flag
-            # governs their lifecycle together.
-            logger.info(f"Removing MSA output directory: {msa_output_dir}")
-            self._maybe_remove_dir(msa_output_dir)
-            if self.use_templates:
-                template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
-                self._maybe_remove_dir(template_dir)
+            template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
+            self._maybe_remove_dir(template_dir)
 
 
 class WandbHandler:

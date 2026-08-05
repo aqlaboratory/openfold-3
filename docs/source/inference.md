@@ -400,38 +400,47 @@ template_preprocessor_settings:
 
 ### 3.4 Customized ColabFold MSA Server Settings Using `runner.yml` 
 
-All settings for the ColabFold server and outputs can be set under [`msa_computation_settings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py#L904)
+All settings for the ColabFold server and outputs can be set under [`msa_computation_settings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py)
 
 
 (34-saving-msa-outputs)=
 #### Saving MSA outputs
 
-By default, MSA outputs are written to a temporary directory. When a run uses
-the ColabFold MSA server, rank zero deletes the entire MSA directory after
-prediction if `cleanup_msa_dir` is `true`.
+OpenFold saves both forms of MSA output by default:
 
-To keep both the processed MSAs and the raw response, use a persistent directory
-and disable cleanup:
+- OpenFold-formatted alignments are saved to `<output_dir>/msas/<run-id>`.
+- Raw ColabFold server outputs are saved to `<output_dir>/msas/raw/<run-id>`.
+
+When temporary MSA work is needed, each run uses a unique workspace. OpenFold removes that workspace when the command finishes normally or exits through a handled error. The saved files are a record of that run. OpenFold does not automatically reuse them as a cache.
+
+You can turn off either output in `runner.yml`:
 
 ```yaml
 msa_computation_settings:
-  msa_output_directory: <custom path>
-  msa_file_format: a3m
-  cleanup_msa_dir: false
-  save_mappings: true
-
-template_preprocessor_settings:
-  output_directory: <custom path>
+  save_openfold_outputs: true
+  save_colabfold_outputs: false
 ```
 
-The reusable per-sequence MSAs are stored under `main/` and `paired/` using
-representative IDs. The raw ColabFold files are kept under `raw/`.
-`save_mappings` records how the input chain names and sequences map to those
-representative IDs.
+For multi-node inference that generates MSAs, keep `save_openfold_outputs` enabled and put the output directory on storage that every node can read. Rank zero broadcasts its alignment paths to the other ranks, and the temporary workspace may be local to the node that created it.
 
-The MSA client will not overwrite an existing `raw/` directory. Move or delete
-it, or choose a new `msa_output_directory`, before starting another server
-request.
+Set `colabfold_output_dir` when raw records need a different parent directory.
+Each run still receives its own child directory there.
+
+OpenFold copies raw files as soon as the ColabFold server query finishes. It saves the formatted alignments after MSA processing completes. Each per-chain file or directory uses the sequence hash as its name. `save_mappings` includes the chain, sequence, and representative ID mappings in the organized OpenFold record.
+
+Set `msa_output_directory` to save the OpenFold-formatted alignments to an exact directory instead of the default per-run directory. OpenFold still uses and removes a separate temporary workspace. If `colabfold_output_dir` is not set, the raw files are saved under `<msa_output_directory>/raw`. Existing exact destinations remain supported, but OpenFold does not automatically read them as a cache.
+
+##### Running the MSA server separately
+
+Use `align-msa-server` when you want to generate alignments before running prediction. Put all queries for the job in one query JSON so OpenFold can deduplicate the server requests across that set.
+
+```bash
+run_openfold align-msa-server \
+    --query-json queries.json \
+    --output-dir output/alignments
+```
+
+The command writes the alignments and `query_msa.json` under `output/alignments`. The paths in that JSON remain valid after the separate temporary workspace is removed. The command always saves the organized alignments because the JSON depends on them. Pass this JSON to `predict` with `--use-msa-server false` to use the saved alignments without querying the server again.
 
 ---
 
@@ -444,12 +453,8 @@ msa_computation_settings:
 
 ---
 
-#### Choose the Processed MSA Format
-
-Choose the format for the reusable per-sequence MSAs under `main/` and
-`paired/`. Both formats can be passed to another OpenFold3 run. Use `a3m` for
-portable, inspectable text alignments; `npz` is the compressed default and is
-faster to parse:
+#### Save MSAs in A3M Format
+Choose the file format for saving MSAs retrieved from ColabFold:
 ```yaml
 msa_computation_settings:
   msa_file_format: a3m     # Options: a3m, npz (default: npz)
@@ -457,7 +462,7 @@ msa_computation_settings:
 
 ## 4. Model Outputs
 
-In the inference pipeline, we generate a dedicated output directory for each query, named by the corresponding query key (e.g., `query_1` or `3hfm`, if the PDB ID is provided). Each such directory will contain prediction results, MSAs, and intermediate files for MSA and template processing:
+The inference pipeline creates a dedicated output directory for each query, named by the corresponding query key (for example, `query_1` or `3hfm` when a PDB ID is provided). Prediction results are stored there. By default, saved MSA records are stored under `<output_dir>/msas`.
 
 (41-prediction-outputs)=
 ### 4.1 Prediction Outputs (`query/seed/`)
@@ -510,24 +515,17 @@ Each seed produces `l` (number of diffusion samples) structure predictions, and 
 
 ### 4.2 Processed MSAs (`main/` and `paired/`)
 Only created if `--use-msa-server=True`. <br/>
-Processed MSAs for each unique chain are saved in the selected `npz` or `a3m`
-format and can be reused in another OpenFold3 run.
+Processed MSAs for each unique chain are saved as `.npz` files used to create input features for OpenFold3. 
 If a chain is reused across multiple queries, its MSA is only computed once and named after the first occurrence. This reduces the number of queries to the ColabFold server.
 
 
-For two representative chains, the combined illustration below shows both
-possible layouts. A run writes only the format selected by `msa_file_format`;
-the `npz` files and `a3m` directories do not appear together:
+For a sequence with two representative chains, the final output directory would have this format:
 
 ```bash
-<msa_output_directory>
+<output_dir>/msas/<run-id>
 ├── main
-│   ├── <hash of sequence A>.npz                         # npz
-│   ├── <hash of sequence B>.npz
-│   ├── <hash of sequence A>                             # a3m
-│   │   └── colabfold_main.a3m
-│   └── <hash of sequence B>
-│       └── colabfold_main.a3m
+│   ├── <hash of sequence A>.npz
+│   └── <hash of sequence B>.npz
 ├── mappings
 │   ├── chain_id_to_rep_id.json
 │   ├── query_name_to_complex_id.json
@@ -536,56 +534,38 @@ the `npz` files and `a3m` directories do not appear together:
 │   └── seq_to_rep_id.json
 └── paired
     └── <hash of concatenation of sequences A and B>
-        ├── <hash of sequence A>.npz                     # npz
-        ├── <hash of sequence B>.npz
-        ├── <hash of sequence A>                         # a3m
-        │   └── colabfold_paired.a3m
-        └── <hash of sequence B>
-            └── colabfold_paired.a3m
+        ├── <hash of sequence A>.npz
+        └── <hash of sequence B>.npz
 ```
 
 
 If a query is a heteromeric protein complex (has at least two different protein chains) and `--use-msa-server` is enabled, **paired MSAs** are also generated. 
 If a set of chains with a specific stoichiometry is reused across multiple queries, for example if the same heterodimer is screened against multiple small molecule ligands, its set of paired MSAs is only computed once and named after the first occurrence. This reduces the number of queries to the ColabFold server. 
 
-The paired portion of the same combined illustration is:
-
 ```bash
-<msa_output_directory>
-└── paired
-    └── <hash of concatenation of sequences A and B>
-        ├── <hash of sequence A>.npz                     # npz
-        ├── <hash of sequence B>.npz
-        ├── <hash of sequence A>                         # a3m
-        │   └── colabfold_paired.a3m
-        └── <hash of sequence B>
-            └── colabfold_paired.a3m
+<output_dir>/msas/<run-id>
+ ├── paired
+    └── <hash of concatenation of sequences A and B> 
+        ├── <hash of sequence A>.npz
+        └── <hash of sequence B>.npz
 ```
 
-In summary, we submit a total of 1 + n queries to the ColabFold MSA server per run - one query for the set of all unique protein sequences in the inference query json file (unpaired/main MSAs) and n additional queries for the collection of unique protein chain combinations for heteromeric complexes (paired MSAs).
+In summary, we submit a total of 1 + n queries to the ColabFold MSA server per run - one query for the set of all unqiue protein sequences in the inference query json file (unpaired/main MSAs) and n additional queries for the collection of unqiue protein chain combinations for heteromeric complexes (paired MSAs).
 
 The MSA deduplication behavior is also present for precomputed MSAs. See the {ref}`chain deduplication utility <4-msa-reusing-utility>` section for details.
 
-The raw ColabFold `.a3m` files and helper scripts are stored in
-`<msa_output_directory>/raw/`. Set `cleanup_msa_dir: false` to keep them after
-prediction. Before submitting another server request to the same output
-directory, move or delete `raw/`.
+Raw ColabFold `.a3m` files and helper scripts are saved under `<colabfold_output_dir>/<run-id>`. During inference, the parent defaults to `<output_dir>/msas/raw` when `msa_output_directory` is not set.
 
 ### 4.3 Mapping outputs (`mappings/`)
 
-If the same `msa_output_directory` is used between runs, the
-`rep_id_to_seq.json` and `seq_to_rep_id.json` mappings are updated with the new
-sequences, while the other mappings are overwritten. A preserved `raw/`
-directory must first be moved or deleted before a new server request.
+The mapping files describe the sequences and representative IDs in the saved MSA record. When the same explicit `msa_output_directory` is reused, the `rep_id_to_seq.json` and `seq_to_rep_id.json` mappings gain the new sequences, while the other mappings are overwritten.
 
 ```bash
-<msa_output_directory>
-└── mappings
-    ├── chain_id_to_rep_id.json
-    ├── query_name_to_complex_id.json
-    ├── README.md
-    ├── rep_id_to_seq.json
-    └── seq_to_rep_id.json
+<output_dir>/msas/<run-id>
+ ├── paired
+    └── <hash of concatenation of sequences A and B> 
+        ├── <hash of sequence A>.npz
+        └── <hash of sequence B>.npz
 ```
 
 ### 4.4 Query Metadata 
@@ -621,13 +601,6 @@ This file representing the full input query in a validated internal format defin
 
   Note: Refer to the {doc}`Template How-To Documentation <template_how_to>` for how to specify these fields if you want to use precomputed template alignments instead of Colabfold alignments for template inputs, or see {ref}`CIF Direct Template Mode <inference-cif-direct-templates>` for using template structures directly without alignments.
 
-Note: If MSA and template files are persisted between runs, the same `inference_query_set.json` file can be used to resubmit the query without needing to rerun the template and MSA pipelines. To do so:
-
-1. Turn off the [MSA cleanup option](34-saving-msa-outputs).
-2. pass in the generated `inference_query_set.json` as the `query.json` and use `--use-msa-server=False` and `--use-templates=True`.
-
-Model seeds should still be set either from the command line or using the `seeds` field under `experiment_settings` in the `runner.yml`.
-
 (442-model-config-json)=
 #### 4.4.2 Model Config (`model_config.json`)
 
@@ -642,7 +615,7 @@ This file records the entire state of the experiment, as defined by the [Inferen
 
 **🔗 Example:**
 
-See the full multimer output for [Deoxy human hemoglobin](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/output_multimer_with_colabfold_msas), which were generated with `run_multimer.sh`. For this example, the colabfold_msas and colabfold_template directories are stored in the same outbut directory. 
+See the full multimer output for [Deoxy human hemoglobin](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/output_multimer_with_colabfold_msas), generated with `run_multimer.sh`. This published example predates the per-run MSA directory layout described above, so it keeps the `colabfold_msas` and `colabfold_templates` directories directly in the output directory.
 
 
 When processing multimer inputs (e.g., hemoglobin α + β chains), OpenFold3 automatically:

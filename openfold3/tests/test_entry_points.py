@@ -29,7 +29,7 @@ from click.testing import CliRunner
 from pytorch_lightning.loggers import WandbLogger
 
 import openfold3.core.model.primitives.initialization as initialization
-from openfold3 import setup_openfold
+from openfold3 import run_openfold, setup_openfold
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModuleConfig
 from openfold3.entry_points.experiment_runner import (
@@ -64,6 +64,16 @@ def dummy_ckpt_file(tmp_path: Path) -> Path:
     dummy_ckpt = tmp_path / "dummy.ckpt"
     dummy_ckpt.write_text("dummy content")
     return dummy_ckpt
+
+
+@pytest.fixture
+def minimal_query_json(tmp_path: Path) -> Path:
+    query_json = tmp_path / "query.json"
+    query_json.write_text(
+        '{"queries":{"query":{"chains":[{"molecule_type":"protein",'
+        '"chain_ids":["A"],"sequence":"TEST"}]}}}'
+    )
+    return query_json
 
 
 def _create_fake_file(path: Path) -> None:
@@ -578,6 +588,86 @@ class TestInferenceCommandLineSettings:
         num_seeds = 7
         expt_runner = InferenceExperimentRunner(expt_config, num_model_seeds=num_seeds)
         assert len(expt_runner.seeds) == num_seeds
+        msa_settings = expt_config.msa_computation_settings
+        assert msa_settings.saved_output_directory == (
+            expt_runner.output_dir / "msas" / msa_settings.run_directory_name
+        )
+
+    def test_predict_calls_cleanup_after_failure(
+        self, minimal_query_json, dummy_ckpt_file
+    ):
+        with (
+            patch("openfold3.run_openfold._torch_gpu_setup"),
+            patch(
+                "openfold3.entry_points.experiment_runner.InferenceExperimentRunner"
+            ) as mock_runner_class,
+        ):
+            mock_runner_class.return_value.run.side_effect = RuntimeError("failed")
+            result = CliRunner().invoke(
+                run_openfold.cli,
+                [
+                    "predict",
+                    "--query-json",
+                    str(minimal_query_json),
+                    "--inference-ckpt-path",
+                    str(dummy_ckpt_file),
+                ],
+            )
+
+        assert result.exit_code != 0
+        mock_runner_class.return_value.cleanup_msa_workspace.assert_called_once()
+
+    @pytest.mark.parametrize("fails", [False, True])
+    def test_align_msa_server_always_cleans_its_workspace(
+        self, tmp_path, minimal_query_json, fails
+    ):
+        output_dir = tmp_path / "alignments"
+        settings_yaml = tmp_path / "msa-settings.yml"
+        settings_yaml.write_text(f"msa_output_directory: {output_dir}\n")
+        workspaces = []
+
+        def fake_preprocess(inference_query_set, compute_settings):
+            workspace = compute_settings.workspace_directory
+            workspaces.append(workspace)
+            compute_settings.create_workspace()
+            if fails:
+                raise RuntimeError("failed")
+
+            compute_settings.saved_output_directory.mkdir(parents=True)
+            saved_msa = compute_settings.saved_output_directory / "main/alignment.a3m"
+            saved_msa.parent.mkdir(parents=True)
+            saved_msa.write_text(">query\nTEST")
+            inference_query_set.queries["query"].chains[0].main_msa_file_paths = [
+                saved_msa
+            ]
+            return inference_query_set
+
+        with (
+            patch("openfold3.run_openfold._torch_gpu_setup"),
+            patch(
+                "openfold3.core.data.tools.colabfold_msa_server.preprocess_colabfold_msas",
+                side_effect=fake_preprocess,
+            ),
+        ):
+            result = CliRunner().invoke(
+                run_openfold.cli,
+                [
+                    "align-msa-server",
+                    "--query-json",
+                    str(minimal_query_json),
+                    "--output-dir",
+                    str(output_dir),
+                    "--msa-computation-settings-yaml",
+                    str(settings_yaml),
+                ],
+            )
+
+        assert result.exit_code == (1 if fails else 0)
+        assert workspaces and not workspaces[0].exists()
+        if not fails:
+            saved_query = InferenceQuerySet.from_json(output_dir / "query_msa.json")
+            for chain in saved_query.queries["query"].chains:
+                assert all(path.exists() for path in chain.main_msa_file_paths)
 
     def test_seeding_from_list(self, tmp_path, dummy_ckpt_file):
         test_yaml_str = textwrap.dedent("""\
@@ -628,79 +718,6 @@ class TestInferenceCommandLineSettings:
         )
         assert expt_config.experiment_settings.seeds == [model_seed, 101]
         assert expt_config.data_module_args.data_seed == expected_data_seed
-
-
-class TestInferenceCleanup:
-    @pytest.mark.parametrize(
-        "cleanup_msa_dir,use_msa_server,rank,should_remove",
-        [
-            pytest.param(False, True, 0, False, id="preserve"),
-            pytest.param(True, True, 0, True, id="remove"),
-            pytest.param(True, True, 1, False, id="nonzero-rank"),
-            pytest.param(True, False, 0, False, id="msa-server-disabled"),
-        ],
-    )
-    def test_cleanup_respects_msa_output_lifecycle(
-        self,
-        cleanup_msa_dir,
-        use_msa_server,
-        rank,
-        should_remove,
-        tmp_path,
-        dummy_ckpt_file,
-        capsys,
-    ):
-        msa_output_dir = tmp_path / "msa"
-        expt_config = InferenceExperimentConfig(
-            inference_ckpt_path=dummy_ckpt_file,
-            cache_path=tmp_path / "cache",
-            experiment_settings={
-                "output_dir": tmp_path / "inference",
-                "log_dir": tmp_path / "logs",
-                "use_msa_server": use_msa_server,
-                "use_templates": False,
-            },
-            msa_computation_settings={
-                "msa_output_directory": msa_output_dir,
-                "cleanup_msa_dir": cleanup_msa_dir,
-            },
-            template_preprocessor_settings={
-                "output_directory": tmp_path / "templates",
-            },
-        )
-        expt_runner = InferenceExperimentRunner(expt_config)
-
-        sentinel_contents = {
-            Path("raw/main/out.tar.gz"): b"raw server response",
-            Path("main/rep.npz"): b"main alignment",
-            Path("paired/complex/rep.npz"): b"paired alignment",
-            Path("mappings/seq_to_rep_id.json"): b'{"sequence": "rep"}\n',
-        }
-        for relative_path, contents in sentinel_contents.items():
-            sentinel_path = msa_output_dir / relative_path
-            sentinel_path.parent.mkdir(parents=True, exist_ok=True)
-            sentinel_path.write_bytes(contents)
-
-        # Keep this test focused on MSA cleanup instead of empty-log cleanup.
-        (expt_runner.log_dir / "keep.log").write_text("keep")
-
-        with patch(
-            "openfold3.entry_points.experiment_runner._get_rank",
-            return_value=rank,
-        ):
-            expt_runner.cleanup()
-
-        captured = capsys.readouterr()
-        if should_remove:
-            assert not msa_output_dir.exists()
-        else:
-            assert msa_output_dir.is_dir()
-            assert {
-                path.relative_to(msa_output_dir): path.read_bytes()
-                for path in msa_output_dir.rglob("*")
-                if path.is_file()
-            } == sentinel_contents
-            assert "Cleaning up MSA directories..." not in captured.out
 
 
 class TestInferenceCheckpointLoading:
