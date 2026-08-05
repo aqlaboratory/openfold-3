@@ -61,6 +61,8 @@ optional-dependencies.dev = [
     "pytest-regressions",
     "pytest-vcr",
     "ruff",
+    "mypy",
+    "mypy-baseline",
     "pre-commit",
 
     # used for documentation
@@ -169,6 +171,25 @@ ban-relative-imports = "all"
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["E501"]
+
+[tool.mypy]
+# So that a bare `mypy` (as used by the typecheck tasks) checks the whole project.
+files = ["openfold3", "scripts"]
+# The version every pixi environment currently resolves to, and the only one CI
+# runs. Pinning it (rather than following the active interpreter) keeps the
+# baseline from drifting on an unrelated `pixi update`; bump it deliberately,
+# together with a `typecheck-sync`, when the environments move to a new Python.
+# Note this means the `requires-python = ">=3.10"` floor above is not type-checked.
+python_version = "3.14"
+# Most of our scientific dependencies (rdkit, biotite, pdbeccdutils, wandb, ...)
+# ship no stubs. Without this, the baseline would be dominated by import noise.
+ignore_missing_imports = true
+# mypy-baseline parses one error per line, so the compact format is required.
+pretty = false
+
+[tool.mypy-baseline]
+# Keep the baseline sorted so its diffs stay reviewable.
+sort_baseline = true
 
 [tool.pytest.ini_options]
 log_cli = true

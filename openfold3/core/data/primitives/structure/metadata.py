@@ -418,7 +418,9 @@ def get_chain_to_three_letter_codes_dict(
     return chain_to_3l_codes_dict
 
 
-def get_ccd_atom_pair_to_bond_dict(ccd_entry: CIFBlock) -> dict[(str, str), BondType]:
+def get_ccd_atom_pair_to_bond_dict(
+    ccd_entry: CIFBlock,
+) -> dict[tuple[str, str], BondType]:
     """Gets the list of bonds from a CCD entry.
 
     Args:
