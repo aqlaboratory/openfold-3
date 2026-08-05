@@ -362,8 +362,8 @@ class TemplatePairStack(nn.Module):
 
     def _prep_blocks(
         self,
-        t: torch.tensor,
-        mask: torch.tensor,
+        t: torch.Tensor,
+        mask: torch.Tensor,
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
@@ -424,8 +424,8 @@ class TemplatePairStack(nn.Module):
 
     def forward(
         self,
-        t: torch.tensor,
-        mask: torch.tensor,
+        t: torch.Tensor,
+        mask: torch.Tensor,
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,

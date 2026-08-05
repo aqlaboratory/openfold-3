@@ -1774,19 +1774,6 @@ openfold3/core/model/latent/msa_module.py:0: error: Value of type "Sequence[Tens
 openfold3/core/model/latent/msa_module.py:0: error: Value of type "Sequence[Tensor] | None" is not indexable  [index]
 openfold3/core/model/latent/msa_module.py:0: error: Value of type "Sequence[Tensor] | None" is not indexable  [index]
 openfold3/core/model/latent/pairformer.py:0: error: Argument "args" to "tune_chunk_size" of "ChunkSizeTuner" has incompatible type "tuple[Tensor, Tensor]"; expected "tuple[Any]"  [arg-type]
-openfold3/core/model/latent/template_module.py:0: error: Function "torch._C._VariableFunctions.tensor" is not valid as a type  [valid-type]
-openfold3/core/model/latent/template_module.py:0: error: Function "torch._C._VariableFunctions.tensor" is not valid as a type  [valid-type]
-openfold3/core/model/latent/template_module.py:0: error: Function "torch._C._VariableFunctions.tensor" is not valid as a type  [valid-type]
-openfold3/core/model/latent/template_module.py:0: error: Function "torch._C._VariableFunctions.tensor" is not valid as a type  [valid-type]
-openfold3/core/model/latent/template_module.py:0: error: torch.tensor? has no attribute "clone"  [attr-defined]
-openfold3/core/model/latent/template_module.py:0: error: torch.tensor? has no attribute "expand"  [attr-defined]
-openfold3/core/model/latent/template_module.py:0: error: torch.tensor? has no attribute "shape"  [attr-defined]
-openfold3/core/model/latent/template_module.py:0: error: torch.tensor? has no attribute "shape"  [attr-defined]
-openfold3/core/model/latent/template_module.py:0: error: torch.tensor? has no attribute "shape"  [attr-defined]
-openfold3/core/model/latent/template_module.py:0: note: Perhaps you need "Callable[...]" or a callback protocol?
-openfold3/core/model/latent/template_module.py:0: note: Perhaps you need "Callable[...]" or a callback protocol?
-openfold3/core/model/latent/template_module.py:0: note: Perhaps you need "Callable[...]" or a callback protocol?
-openfold3/core/model/latent/template_module.py:0: note: Perhaps you need "Callable[...]" or a callback protocol?
 openfold3/core/model/layers/attention_pair_bias.py:0: error: Argument "n_key" to "convert_single_rep_to_blocks" has incompatible type "int | None"; expected "int"  [arg-type]
 openfold3/core/model/layers/attention_pair_bias.py:0: error: Argument "n_key" to "convert_single_rep_to_blocks" has incompatible type "int | None"; expected "int"  [arg-type]
 openfold3/core/model/layers/attention_pair_bias.py:0: error: Argument "n_query" to "convert_single_rep_to_blocks" has incompatible type "int | None"; expected "int"  [arg-type]

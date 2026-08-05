@@ -147,9 +147,12 @@ class EvoformerBlock(MSABlock):
 
         if _offload_inference and inplace_safe:
             # m: GPU, z: CPU
+            # Read the device before dropping the reference — this holds a
+            # torch.device, not the tensor, so assert_sole_holder still sees the
+            # container as the only holder.
+            accel_device = z.device
             del m, z
             assert_sole_holder(input_tensors[1], in_container=True)
-            accel_device = input_tensors[1].device
             input_tensors[1] = input_tensors[1].cpu()
             empty_device_cache(accel_device)
             m, z = input_tensors
