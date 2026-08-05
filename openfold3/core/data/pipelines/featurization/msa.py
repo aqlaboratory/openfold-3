@@ -95,10 +95,13 @@ class MsaFeaturizerOF3:
             raise NotImplementedError("Subsampling with bands is not implemented yet.")
 
         features = {}
+        # Allocate int32 directly: a float32 one-hot of shape [R, N, 32] for
+        # R≈16k / N≈1500 is ~3GB, and `.to(int32)` briefly doubles that peak.
         features["msa"] = encode_one_hot(
             torch.tensor(msa_feature_precursor.msa_index, dtype=torch.int64),
             len(STANDARD_RESIDUES_WITH_GAP_1),
-        ).to(torch.int32)
+            dtype=torch.int32,
+        )
         deletion_matrix = torch.tensor(
             msa_feature_precursor.deletion_matrix, dtype=torch.int64
         )
@@ -106,6 +109,7 @@ class MsaFeaturizerOF3:
         features["deletion_value"] = torch.atan(deletion_matrix / 3.0) * (
             2.0 / torch.acos(torch.zeros(1, device=deletion_matrix.device)) * 2
         ).to(torch.float32)
+        del deletion_matrix
         features["deletion_mean"] = torch.tensor(
             msa_feature_precursor.deletion_mean, dtype=torch.float32
         )
@@ -120,6 +124,15 @@ class MsaFeaturizerOF3:
         features["msa_mask"] = torch.tensor(
             msa_feature_precursor.msa_mask, dtype=torch.float32
         )
+
+        # Drop numpy precursor storage once torch features exist (host-RAM critical
+        # for long sequences with deep MSAs).
+        msa_feature_precursor.msa = None
+        msa_feature_precursor.msa_index = None
+        msa_feature_precursor.deletion_matrix = None
+        msa_feature_precursor.msa_mask = None
+        msa_feature_precursor.msa_profile = None
+        msa_feature_precursor.deletion_mean = None
 
         return features
 

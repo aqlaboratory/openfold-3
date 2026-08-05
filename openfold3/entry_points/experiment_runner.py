@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import contextlib
+import gc
 import json
 import logging
 import operator
@@ -698,14 +699,44 @@ class InferenceExperimentRunner(ExperimentRunner):
                 raise
 
     def setup(self) -> None:
-        """Set up environment and load checkpoints."""
+        """Set up environment and load checkpoints.
+
+        Inference loads EMA weights directly into the model and never updates
+        EMA, so the shadow-parameter copy allocated in ``ModelRunner`` is
+        discarded before the checkpoint is read. That avoids holding
+        model + EMA + checkpoint simultaneously on host RAM (a common Colab
+        OOM mode before the first GPU forward).
+        """
         super().setup()
         self._log_experiment_config()
         self._log_model_config()
+
+        # Build the module first, then free unused EMA weights before torch.load.
+        module = self.lightning_module
+        ema = getattr(module, "ema", None)
+        if ema is not None and getattr(ema, "params", None):
+            ema.params.clear()
+            ema.params = {}
+            gc.collect()
+
         logger.info(f"Loading weights from {self.ckpt_path}")
         ckpt = load_checkpoint(self.ckpt_path)
-        state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
-        self._warn_on_missing_version_tensor_in_load_statedict(state_dict)
+        try:
+            state_dict, _ = get_state_dict_from_checkpoint(
+                ckpt, init_from_ema_weights=True
+            )
+        finally:
+            # Drop the raw checkpoint mapping as soon as state_dict is built.
+            # For flat EMA-only checkpoints, tensors are shared with state_dict
+            # until load_state_dict copies them into the module.
+            del ckpt
+            gc.collect()
+
+        try:
+            self._warn_on_missing_version_tensor_in_load_statedict(state_dict)
+        finally:
+            del state_dict
+            gc.collect()
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""

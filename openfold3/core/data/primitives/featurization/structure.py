@@ -27,7 +27,11 @@ from openfold3.core.data.primitives.structure.labels import get_token_starts
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 
 
-def encode_one_hot(x: torch.Tensor, num_classes: int) -> torch.Tensor:
+def encode_one_hot(
+    x: torch.Tensor,
+    num_classes: int,
+    dtype: torch.dtype = torch.float32,
+) -> torch.Tensor:
     """Encodes a tensor of indices as a one-hot tensor.
 
     Args:
@@ -35,12 +39,16 @@ def encode_one_hot(x: torch.Tensor, num_classes: int) -> torch.Tensor:
             Tensor of numerically encoded residues.
         num_classes (int):
             Number of classes to encode.
+        dtype (torch.dtype):
+            Output dtype. Prefer the final dtype (e.g. ``torch.int32`` for MSA
+            features) to avoid a temporary float32 allocation of the same shape.
 
     Returns:
         torch.Tensor:
             One-hot encoded tensor.
     """
-    x_one_hot = torch.zeros(*x.shape, num_classes, device=x.device)
+    x_one_hot = torch.zeros(*x.shape, num_classes, device=x.device, dtype=dtype)
+    # Use a Python scalar so scatter_ broadcasts like the historical float32 path.
     x_one_hot.scatter_(-1, x.unsqueeze(-1), 1)
     return x_one_hot
 
