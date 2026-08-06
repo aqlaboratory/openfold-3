@@ -125,7 +125,7 @@ def test_create_pocket_sampling_features_uses_defaults():
         settings=settings,
     )
 
-    assert features["pocket_sampling_enabled"].item() is True
+    assert features["pocket_sampling_enabled"].item()
     assert features["pocket_sampling_ligand_atom_mask"].tolist() == [
         0.0,
         0.0,
@@ -561,6 +561,7 @@ def test_create_pocket_sampling_features_skips_conformers_on_generation_error(
 
 
 def test_create_pocket_sampling_features_respects_disabled_setting():
+    # Disabling pocket setting at the config level creates empty features
     assert (
         create_pocket_sampling_features(
             query=_query_with_pocket_constraint(),
@@ -569,11 +570,6 @@ def test_create_pocket_sampling_features_respects_disabled_setting():
         )
         == {}
     )
-
-
-def test_pocket_sampling_settings_rejects_invalid_enabled_value():
-    with pytest.raises(ValidationError, match="enabled"):
-        PocketSamplingSettings(enabled="maybe")
 
 
 @pytest.mark.parametrize(

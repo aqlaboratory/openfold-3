@@ -116,10 +116,8 @@ def create_pocket_sampling_features(
     RDKit ligand conformers from the OF3 reference molecule. `settings.enabled`
     remains available as an explicit boolean override.
     """
-    if query.pocket_constraint is None:
-        return {}
     settings = settings if settings is not None else PocketSamplingSettings()
-    if not settings.enabled:
+    if query.pocket_constraint is None or not settings.enabled:
         return {}
 
     constraint = query.pocket_constraint
