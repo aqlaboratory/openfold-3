@@ -737,6 +737,11 @@ def test_sample_diffusion_runs_second_pass_when_pocket_sampling_enabled():
 
 
 def test_sample_diffusion_requires_complete_pocket_sampling_features():
+    """Pocket sampling features are assumed complete (see pocket_constraints.py
+
+    docstring); a malformed batch fails with a plain KeyError once the missing
+    feature is actually read, not via upfront validation.
+    """
     sampler = SampleDiffusion(
         gamma_0=0.0,
         gamma_min=0.0,
@@ -747,7 +752,7 @@ def test_sample_diffusion_requires_complete_pocket_sampling_features():
     batch = _pocket_sampling_batch()
     del batch["pocket_sampling_vdw_buffer"]
 
-    with pytest.raises(ValueError, match="pocket_sampling_vdw_buffer"):
+    with pytest.raises(KeyError, match="pocket_sampling_vdw_buffer"):
         sampler(
             batch=batch,
             si_input=torch.zeros(1, 1, 1),
@@ -756,7 +761,9 @@ def test_sample_diffusion_requires_complete_pocket_sampling_features():
             noise_schedule=torch.tensor([1.0, 0.5, 0.1]),
             no_rollout_samples=2,
         )
-    assert sampler.diffusion_module.calls == 0
+    # The first (unconstrained) rollout already ran before the missing
+    # feature was discovered while building the pocket-sampling seeds.
+    assert sampler.diffusion_module.calls == 2
 
 
 def test_sample_diffusion_rejects_multi_query_pocket_sampling_batch():
