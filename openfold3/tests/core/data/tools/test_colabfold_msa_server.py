@@ -14,11 +14,13 @@
 
 """Tests for the ColabFold MSA server module."""
 
+import getpass
 import io
 import json
 import shutil
 import tarfile
 import textwrap
+from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 from unittest.mock import patch
@@ -45,7 +47,6 @@ from openfold3.core.data.tools.colabfold_msa_server import (
     query_colabfold_msa_server,
     remap_colabfold_template_chain_ids,
 )
-from openfold3.entry_points.validator import InferenceExperimentConfig
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
@@ -395,6 +396,8 @@ class TestColabFoldQueryRunner:
         )
         saved_raw = settings.saved_colabfold_output_directory / "main/server-output.a3m"
 
+        settings.cleanup_workspace()
+
         assert saved_main.exists() is save_openfold
         assert saved_raw.exists() is save_colabfold
         assert (saved_output / "mappings/seq_to_rep_id.json").exists() is save_openfold
@@ -405,7 +408,6 @@ class TestColabFoldQueryRunner:
             .main_msa_file_paths[0]
             .is_relative_to(expected_root)
         )
-        assert settings.cleanup_workspace()
 
     @patch(_MOCK_QUERY_TARGET)
     def test_explicit_output_directory_survives_workspace_cleanup(
@@ -424,7 +426,7 @@ class TestColabFoldQueryRunner:
 
         query = self._construct_monomer_query("TEST")
         processed = preprocess_colabfold_msas(query, settings)
-        assert settings.cleanup_workspace()
+        settings.cleanup_workspace()
 
         saved_msa = (
             output_directory / "main" / get_sequence_hash("TEST") / "colabfold_main.a3m"
@@ -510,7 +512,7 @@ class TestColabFoldQueryRunner:
         assert expected_file == paths_in_augmented[0], (
             f"Unexpected MSA path in augmented query set: {paths_in_augmented[0]}"
         )
-        assert not msa_compute_settings.cleanup_workspace()
+        msa_compute_settings.cleanup_workspace()
         assert expected_file.exists()
 
     @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
@@ -571,7 +573,7 @@ class TestColabFoldQueryRunner:
                 assert t == t_expected, f"Target length mismatch: {t} != {t_expected}"
                 assert e == e_expected, f"Feature size mismatch: {e} != {e_expected}"
 
-            assert msa_compute_settings.cleanup_workspace()
+            msa_compute_settings.cleanup_workspace()
 
         with open(tmp_path / "mappings/seq_to_rep_id.json") as f:
             assert set(json.load(f)) == set(test_sequences)
@@ -662,7 +664,7 @@ class TestColabFoldQueryRunner:
 
         mock_query.assert_not_called()
         assert not (workspace / "mappings").exists()
-        assert not msa_compute_settings.cleanup_workspace()
+        msa_compute_settings.cleanup_workspace()
         assert sentinel.exists()
         shutil.rmtree(workspace)
 
@@ -816,20 +818,25 @@ class TestMsaComputationSettings:
         settings = MsaComputationSettings(cleanup_msa_dir=cleanup_msa_dir)
         settings.create_workspace()
 
-        assert settings.cleanup_workspace()
+        settings.cleanup_workspace()
 
         assert not settings.workspace_directory.exists()
-        assert not settings.cleanup_workspace()
+        settings.cleanup_workspace()
+        assert not settings.workspace_directory.exists()
 
-    def test_workspace_cleanup_reports_a_failed_removal(self):
+    def test_workspace_cleanup_raises_and_can_retry_after_failed_removal(self):
         settings = MsaComputationSettings()
         settings.create_workspace()
 
-        with patch("shutil.rmtree"):
-            assert not settings.cleanup_workspace()
+        with (
+            patch("shutil.rmtree", side_effect=OSError("failed")),
+            pytest.raises(OSError, match="failed"),
+        ):
+            settings.cleanup_workspace()
 
         assert settings.workspace_directory.exists()
-        assert settings.cleanup_workspace()
+        settings.cleanup_workspace()
+        assert not settings.workspace_directory.exists()
 
     def test_cli_output_dir_is_persistent(self, tmp_path):
         test_yaml_str = textwrap.dedent("""\
@@ -862,20 +869,41 @@ class TestMsaComputationSettings:
                 tmp_path / "cli-output", config_file
             )
 
-    def test_workspace_and_default_records_share_one_run_id(self, tmp_path):
-        config = InferenceExperimentConfig.model_construct()
-        other_config = InferenceExperimentConfig.model_construct()
-        settings = config.msa_computation_settings
-        other_settings = other_config.msa_computation_settings
-        settings.set_saved_output_root(tmp_path / "saved")
+    def test_msa_settings_keep_output_state_separate_with_readable_run_names(
+        self, tmp_path
+    ):
+        output_directory = tmp_path / "saved"
+        fixed_time = datetime.fromisoformat("2026-08-06T12:00:00+00:00")
+        with (
+            patch(
+                "openfold3.core.data.tools.colabfold_msa_server.datetime"
+            ) as mock_datetime,
+            patch(
+                "openfold3.core.data.tools.colabfold_msa_server.secrets.token_hex",
+                side_effect=["12345678", "abcdef01"],
+            ),
+        ):
+            mock_datetime.now.return_value = fixed_time
+            settings = MsaComputationSettings(msa_output_directory=output_directory)
+            other_settings = MsaComputationSettings()
+        run_name_prefix = f"msa-{getpass.getuser()}-"
 
-        assert settings.workspace_directory.name == settings.run_directory_name
-        assert settings.saved_output_directory.name == settings.run_directory_name
-        assert (
-            settings.saved_colabfold_output_directory.name
-            == settings.run_directory_name
-        )
-        assert other_settings.run_directory_name != settings.run_directory_name
+        assert settings.saved_output_directory == output_directory
+        assert settings.saved_colabfold_output_directory == output_directory / "raw"
+        assert settings.workspace_directory != output_directory
+        assert other_settings.saved_output_directory is None
+        for run_name in (
+            settings.run_directory_name,
+            other_settings.run_directory_name,
+        ):
+            assert run_name.startswith(run_name_prefix)
+            timestamp, random_suffix = run_name.removeprefix(run_name_prefix).rsplit(
+                "-", 1
+            )
+            datetime.strptime(timestamp, "%Y%m%dT%H%M%S%fZ")
+            assert len(random_suffix) == 8
+            int(random_suffix, 16)
+        assert other_settings.workspace_directory != settings.workspace_directory
 
     @pytest.mark.parametrize("nested", [False, True])
     def test_workspace_cannot_contain_openfold_output(self, nested):

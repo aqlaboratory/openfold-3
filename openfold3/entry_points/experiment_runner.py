@@ -806,9 +806,13 @@ class InferenceExperimentRunner(ExperimentRunner):
     def cleanup_msa_workspace(self):
         """Remove the temporary MSA workspace created by this run."""
         msa_settings = self.experiment_config.msa_computation_settings
-        if msa_settings.cleanup_workspace():
-            logger.info(
-                f"Removed temporary MSA directory: {msa_settings.workspace_directory}"
+        try:
+            msa_settings.cleanup_workspace()
+        except OSError:
+            logger.warning(
+                "Could not remove temporary MSA workspace for run %s",
+                msa_settings.run_directory_name,
+                exc_info=True,
             )
 
     def cleanup(self):

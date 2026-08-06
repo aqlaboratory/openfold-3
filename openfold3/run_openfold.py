@@ -262,7 +262,14 @@ def align_msa_server(
         with open(output_dir / "query_msa.json", "w") as fp:
             fp.write(query_set.model_dump_json(indent=4))
     finally:
-        msa_settings.cleanup_workspace()
+        try:
+            msa_settings.cleanup_workspace()
+        except OSError:
+            logger.warning(
+                "Could not remove temporary MSA workspace for run %s",
+                msa_settings.run_directory_name,
+                exc_info=True,
+            )
 
 
 if __name__ == "__main__":

@@ -12,20 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import getpass
 import json
 import logging
 import os
 import random
+import secrets
 import shutil
 import tarfile
 import time
 import warnings
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import IntEnum
 from pathlib import Path
 from typing import Literal, NamedTuple
-from uuid import uuid4
 
 import numpy as np
 import pandas as pd
@@ -1104,6 +1107,12 @@ def _default_msa_output_root() -> Path:
     return get_of3_tmpdir()
 
 
+def _default_run_directory_name() -> str:
+    """Return a readable, per-run MSA directory name."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    return f"msa-{getpass.getuser()}-{timestamp}-{secrets.token_hex(4)}"
+
+
 def _workspace_contains_output(workspace: Path, output_directory: Path) -> bool:
     """Return whether workspace cleanup would remove the output directory."""
     workspace = workspace.resolve()
@@ -1126,9 +1135,9 @@ class MsaComputationSettings(BaseModel):
     save_openfold_outputs: bool = True
     save_colabfold_outputs: bool = True
     colabfold_output_dir: Path | None = None
-    _workspace_token: str = PrivateAttr(default_factory=lambda: uuid4().hex)
-    _run_directory_name: str = PrivateAttr(default_factory=lambda: f"msa-{uuid4().hex}")
+    _run_directory_name: str = PrivateAttr(default_factory=_default_run_directory_name)
     _saved_output_root: Path | None = PrivateAttr(default=None)
+    _workspace_created: bool = PrivateAttr(default=False)
 
     @property
     def run_directory_name(self) -> str:
@@ -1204,32 +1213,17 @@ class MsaComputationSettings(BaseModel):
             raise
 
     def create_workspace(self) -> None:
-        """Create and mark the temporary workspace owned by this run."""
+        """Create the temporary workspace and record ownership for cleanup."""
         self.workspace_directory.mkdir(parents=True, exist_ok=False)
-        try:
-            (self.workspace_directory / ".openfold3-msa-workspace").write_text(
-                self._workspace_token
-            )
-        except OSError:
-            shutil.rmtree(self.workspace_directory, ignore_errors=True)
-            raise
+        self._workspace_created = True
 
-    def cleanup_workspace(self) -> bool:
-        """Remove this run's temporary workspace and report whether it was removed."""
-        marker = self.workspace_directory / ".openfold3-msa-workspace"
-        try:
-            if marker.read_bytes() == self._workspace_token.encode():
-                shutil.rmtree(self.workspace_directory, ignore_errors=True)
-                removed = not self.workspace_directory.exists()
-                if not removed:
-                    logger.warning(
-                        f"Could not remove temporary MSA directory: "
-                        f"{self.workspace_directory}"
-                    )
-                return removed
-        except OSError:
-            pass
-        return False
+    def cleanup_workspace(self) -> None:
+        """Remove the temporary workspace created by this settings instance."""
+        if not self._workspace_created:
+            return
+        with suppress(FileNotFoundError):
+            shutil.rmtree(self.workspace_directory)
+        self._workspace_created = False
 
     @classmethod
     def from_config_with_cli_override(
