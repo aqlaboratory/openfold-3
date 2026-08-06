@@ -117,7 +117,7 @@ def test_pocket_constraints_ligand_chain_must_reference_ligand():
         Query.model_validate(payload)
 
 def test_create_pocket_sampling_features_uses_defaults():
-    settings = PocketSamplingSettings(num_conformers=0)
+    settings = PocketSamplingSettings(rdkit_num_conformers=0)
 
     features = create_pocket_sampling_features(
         query=_query_with_pocket_constraint(),
@@ -192,7 +192,7 @@ def test_create_pocket_sampling_features_rejects_missing_pocket_residue():
         create_pocket_sampling_features(
             query=Query.model_validate(payload),
             atom_array=_atom_array(),
-            settings=PocketSamplingSettings(num_conformers=0),
+            settings=PocketSamplingSettings(rdkit_num_conformers=0),
         )
 
 
@@ -204,7 +204,7 @@ def test_create_pocket_sampling_features_rejects_empty_ligand_mask():
         create_pocket_sampling_features(
             query=_query_with_pocket_constraint(),
             atom_array=atom_array,
-            settings=PocketSamplingSettings(num_conformers=0),
+            settings=PocketSamplingSettings(rdkit_num_conformers=0),
         )
 
 
@@ -215,7 +215,7 @@ def test_create_pocket_sampling_features_uses_carbon_radius_for_unknown_elements
     features = create_pocket_sampling_features(
         query=_query_with_pocket_constraint(),
         atom_array=atom_array,
-        settings=PocketSamplingSettings(num_conformers=0),
+        settings=PocketSamplingSettings(rdkit_num_conformers=0),
     )
 
     assert features["pocket_sampling_vdw_radii"][0].item() == pytest.approx(
@@ -231,7 +231,7 @@ def test_create_pocket_sampling_features_uses_default_vdw_radius_for_non_string_
     features = create_pocket_sampling_features(
         query=_query_with_pocket_constraint(),
         atom_array=atom_array,
-        settings=PocketSamplingSettings(num_conformers=0),
+        settings=PocketSamplingSettings(rdkit_num_conformers=0),
     )
 
     assert features["pocket_sampling_vdw_radii"][0].item() == pytest.approx(
@@ -316,7 +316,7 @@ def test_create_pocket_sampling_features_skips_conformers_for_bad_atom_names():
         query=query,
         atom_array=atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(num_conformers=1),
+        settings=PocketSamplingSettings(rdkit_num_conformers=1),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
@@ -333,7 +333,7 @@ def test_create_pocket_sampling_features_skips_conformers_for_bad_atom_elements(
         query=query,
         atom_array=atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(num_conformers=1),
+        settings=PocketSamplingSettings(rdkit_num_conformers=1),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
@@ -348,7 +348,7 @@ def test_create_pocket_sampling_features_generates_conformers_from_reference_mol
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(num_conformers=2, conformer_rng=17),
+        settings=PocketSamplingSettings(rdkit_num_conformers=2, rdkit_conformer_rng=17),
     )
 
     rels = features["pocket_sampling_conformer_rels"]
@@ -419,7 +419,7 @@ def test_create_pocket_sampling_features_resolves_ligand_reference_by_query_orde
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(num_conformers=1),
+        settings=PocketSamplingSettings(rdkit_num_conformers=1),
     )
 
     assert features["pocket_sampling_conformer_rels"].shape[1:] == (
@@ -456,7 +456,7 @@ def test_create_pocket_sampling_features_generates_conformers_from_ccd_reference
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(num_conformers=2, conformer_rng=17),
+        settings=PocketSamplingSettings(rdkit_num_conformers=2, rdkit_conformer_rng=17),
     )
 
     rels = features["pocket_sampling_conformer_rels"]
@@ -468,7 +468,7 @@ def test_create_pocket_sampling_features_skips_conformers_without_reference_mole
     features = create_pocket_sampling_features(
         query=_query_with_pocket_constraint(),
         atom_array=_atom_array(),
-        settings=PocketSamplingSettings(num_conformers=2),
+        settings=PocketSamplingSettings(rdkit_num_conformers=2),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
@@ -489,7 +489,7 @@ def test_create_pocket_sampling_features_skips_conformers_when_ligand_ref_is_mis
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(num_conformers=1),
+        settings=PocketSamplingSettings(rdkit_num_conformers=1),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
@@ -512,7 +512,7 @@ def test_create_pocket_sampling_features_skips_conformers_for_hydrogen_atom_orde
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(num_conformers=1),
+        settings=PocketSamplingSettings(rdkit_num_conformers=1),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
@@ -531,7 +531,7 @@ def test_create_pocket_sampling_features_can_use_uff_conformer_optimization(
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(num_conformers=1),
+        settings=PocketSamplingSettings(rdkit_num_conformers=1),
     )
 
     assert features["pocket_sampling_conformer_rels"].shape[0] == 1
@@ -554,7 +554,7 @@ def test_create_pocket_sampling_features_skips_conformers_on_generation_error(
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(num_conformers=1),
+        settings=PocketSamplingSettings(rdkit_num_conformers=1),
     )
 
     assert "pocket_sampling_conformer_rels" not in features
@@ -584,7 +584,7 @@ def test_pocket_sampling_settings_rejects_invalid_enabled_value():
         ("ligand_jitter", -1.0, "greater than or equal to 0"),
         ("center_jitter", float("inf"), "center_jitter must be a finite float"),
         ("surface_jitter", float("inf"), "surface_jitter must be a finite float"),
-        ("conformer_max_iters", 0, "greater than or equal to 1"),
+        ("rdkit_conformer_max_iters", 0, "greater than or equal to 1"),
     ],
 )
 def test_pocket_sampling_settings_validates_numeric_fields(field, value, match):

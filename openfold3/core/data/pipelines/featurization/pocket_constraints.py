@@ -188,11 +188,11 @@ def create_pocket_sampling_features(
         ),
     }
 
-    n_conformers = settings.num_conformers
+    n_conformers = settings.rdkit_num_conformers
     if n_conformers > 0 and processed_reference_molecules is not None:
-        conformer_rng = settings.conformer_rng
-        conformer_prune_rmsd = settings.conformer_prune_rmsd
-        conformer_max_iters = settings.conformer_max_iters
+        conformer_rng = settings.rdkit_conformer_rng
+        conformer_prune_rmsd = settings.rdkit_conformer_prune_rmsd
+        conformer_max_iters = settings.rdkit_conformer_max_iters
         try:
             from rdkit import Chem
             from rdkit.Chem import AllChem

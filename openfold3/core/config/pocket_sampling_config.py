@@ -71,15 +71,15 @@ class PocketSamplingSettings(BaseModel):
         diversity_rmsd (float):
             Minimum heavy-atom RMSD (Angstroms) between selected ligand
             proposals.
-        num_conformers (int):
+        rdkit_num_conformers (int):
             Number of RDKit conformers to generate for the ligand ensemble. Set
             to 0 to disable RDKit conformer generation.
-        conformer_rng (int):
+        rdkit_conformer_rng (int):
             Random seed for deterministic RDKit conformer embedding.
-        conformer_prune_rmsd (float):
+        rdkit_conformer_prune_rmsd (float):
             RDKit embedding RMSD pruning threshold. Disabled (0.0) by default so
             the OF3 proposal ranking, not RDKit, controls diversity.
-        conformer_max_iters (int):
+        rdkit_conformer_max_iters (int):
             Maximum number of force-field optimization iterations per RDKit
             conformer.
     """
@@ -95,10 +95,10 @@ class PocketSamplingSettings(BaseModel):
     surface_jitter: float = Field(default=1.5, ge=0.0)
     vdw_buffer: float = Field(default=0.225, ge=0.0)
     diversity_rmsd: float = Field(default=0.5, ge=0.0)
-    num_conformers: int = Field(default=32, ge=0)
-    conformer_rng: int = 0
-    conformer_prune_rmsd: float = Field(default=0.0, ge=0.0)
-    conformer_max_iters: int = Field(default=200, ge=1)
+    rdkit_num_conformers: int = Field(default=32, ge=0)
+    rdkit_conformer_rng: int = 0
+    rdkit_conformer_prune_rmsd: float = Field(default=0.0, ge=0.0)
+    rdkit_conformer_max_iters: int = Field(default=200, ge=1)
 
     @field_validator(
         "noise_frac",
@@ -107,7 +107,7 @@ class PocketSamplingSettings(BaseModel):
         "surface_jitter",
         "vdw_buffer",
         "diversity_rmsd",
-        "conformer_prune_rmsd",
+        "rdkit_conformer_prune_rmsd",
     )
     @classmethod
     def _validate_finite(cls, value: float, info) -> float:
