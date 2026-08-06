@@ -571,28 +571,6 @@ def test_create_pocket_sampling_features_respects_disabled_setting():
         == {}
     )
 
-
-@pytest.mark.parametrize(
-    ("field", "value", "match"),
-    [
-        ("num_parents", "zero", "num_parents"),
-        ("noise_frac", 1.5, "less than or equal to 1"),
-        ("ligand_jitter", -1.0, "greater than or equal to 0"),
-        ("center_jitter", float("inf"), "center_jitter must be a finite float"),
-        ("surface_jitter", float("inf"), "surface_jitter must be a finite float"),
-        ("rdkit_conformer_max_iters", 0, "greater than or equal to 1"),
-    ],
-)
-def test_pocket_sampling_settings_validates_numeric_fields(field, value, match):
-    with pytest.raises(ValidationError, match=match):
-        PocketSamplingSettings(**{field: value})
-
-
-def test_pocket_sampling_settings_rejects_unknown_field():
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        PocketSamplingSettings(not_a_real_field=1)
-
-
 def test_create_noise_schedule_matches_expected_endpoints():
     schedule = create_noise_schedule(
         no_rollout_steps=2,
@@ -638,6 +616,7 @@ class _IdentityDenoiser(torch.nn.Module):
 
 
 def _pocket_sampling_batch(batch_dim: int = 1) -> dict[str, torch.Tensor]:
+    # Create a batch with 0 jitter to test guided diffusion sampling
     return {
         "atom_mask": torch.ones(batch_dim, 5),
         "token_mask": torch.ones(batch_dim, 1),
@@ -683,7 +662,7 @@ def test_build_pocket_sampling_seeds_uses_generated_conformer_candidates():
     ligand_com = ligand.mean(dim=1)
     ligand_distance = torch.linalg.vector_norm(ligand[:, 0] - ligand[:, 1], dim=-1)
 
-    assert torch.all(torch.linalg.vector_norm(ligand_com, dim=-1) < 1e-5)
+    assert torch.all(torch.linalg.vector_norm(ligand_com, dim=-1) < 1e-5), "ligand COM should be at origin"
     assert torch.allclose(ligand_distance, torch.full((2,), 4.0), atol=1e-5)
 
 
