@@ -698,7 +698,10 @@ def test_build_pocket_sampling_seeds_uses_parent_conformer_and_soft_overlap_scor
         no_rollout_samples=2,
     )
 
-    assert seeds.shape == (1, 2, 5, 3)
+    assert seeds.shape == xl_base.shape, (
+        "seed generation should preserve the parent batch, rollout, atom, "
+        "and coordinate dimensions"
+    )
 
 
 def test_sample_diffusion_runs_second_pass_when_pocket_sampling_enabled():
