@@ -116,6 +116,7 @@ def test_pocket_constraints_ligand_chain_must_reference_ligand():
     with pytest.raises(ValidationError, match="does not match any ligand chain"):
         Query.model_validate(payload)
 
+
 def test_create_pocket_sampling_features_uses_defaults():
     settings = PocketSamplingSettings(rdkit_num_conformers=0)
 
@@ -571,6 +572,7 @@ def test_create_pocket_sampling_features_respects_disabled_setting():
         == {}
     )
 
+
 def test_create_noise_schedule_matches_expected_endpoints():
     schedule = create_noise_schedule(
         no_rollout_steps=2,
@@ -640,9 +642,8 @@ def test_build_pocket_sampling_seeds_uses_generated_conformer_candidates():
     torch.manual_seed(0)
     batch = _pocket_sampling_batch()
     batch["pocket_sampling_candidates"] = torch.tensor([6])
-    batch["pocket_sampling_conformer_rels"] = torch.tensor(
-        [[[[[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]]]]]
-    )
+    input_conformer = torch.tensor([[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
+    batch["pocket_sampling_conformer_rels"] = input_conformer[None, None, None]
 
     xl_base = torch.zeros(1, 2, 5, 3)
     xl_base[:, :, 0] = torch.tensor([0.0, 0.0, 0.0])
@@ -661,9 +662,18 @@ def test_build_pocket_sampling_seeds_uses_generated_conformer_candidates():
     ligand = seeds[0, :, 3:5]
     ligand_com = ligand.mean(dim=1)
     ligand_distance = torch.linalg.vector_norm(ligand[:, 0] - ligand[:, 1], dim=-1)
+    expected_distance = torch.linalg.vector_norm(
+        input_conformer[0] - input_conformer[1]
+    )
 
-    assert torch.all(torch.linalg.vector_norm(ligand_com, dim=-1) < 1e-5), "ligand COM should be at origin"
-    assert torch.allclose(ligand_distance, torch.full((2,), 4.0), atol=1e-5)
+    assert torch.all(torch.linalg.vector_norm(ligand_com, dim=-1) < 1e-5), (
+        "ligand COM should be at origin"
+    )
+    assert torch.allclose(
+        ligand_distance,
+        expected_distance.expand_as(ligand_distance),
+        atol=1e-5,
+    ), "rigid placement should preserve the input conformer's interatomic distance"
 
 
 def test_build_pocket_sampling_seeds_uses_parent_conformer_and_soft_overlap_score():
