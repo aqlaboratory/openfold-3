@@ -211,6 +211,8 @@ def processed_reference_molecule_from_atom_array(
     # Convert to RDKit mol
     mol = to_mol(atom_array, kekulize=True)
     Chem.SanitizeMol(mol)
+    if np.all(atom_array.molecule_type_id == MoleculeType.LIGAND):
+        Chem.AssignStereochemistryFrom3D(mol)
     mol.RemoveConformer(0)
 
     return processed_reference_molecule_from_mol(
@@ -629,6 +631,10 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
             segment_atom_array.set_annotation(
                 "entity_id",
                 np.repeat(entity_to_id[representation], len(segment_atom_array)),
+            )
+            segment_atom_array.set_annotation(
+                "is_cyclic",
+                np.repeat(chain.cyclic, len(segment_atom_array)),
             )
 
             # Append atom array to end

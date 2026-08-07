@@ -329,6 +329,20 @@ run_openfold predict \
 
 ---
 
+#### 🍎 Apple Silicon (MPS) Inference
+
+On Apple Silicon Macs, OpenFold3 automatically detects and uses the MPS backend -- no `runner.yml` changes are required.
+
+Install the `openfold3-base` pixi environment (see [Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md)), then run the same minimal command as any other platform:
+
+```bash
+run_openfold predict --query-json=/path/to/query.json --output-dir=/path/to/output/
+```
+
+MPS inference is currently ~3-5x faster than CPU-only inference for the same query.
+
+---
+
 (inference-cif-direct-templates)=
 #### 🧬 CIF Direct Template Mode
 

@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,6 +24,7 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives.linear import Linear
+from openfold3.core.utils.device_utils import autocast_device_type
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
@@ -62,7 +64,7 @@ class LayerNorm(nn.Module):
         )
 
         if d is torch.bfloat16 and not deepspeed_is_initialized:
-            with torch.amp.autocast("cuda", enabled=False):
+            with torch.amp.autocast(autocast_device_type(x), enabled=False):
                 weight = self.weight.to(dtype=d) if self.weight is not None else None
                 bias = self.bias.to(dtype=d) if self.bias is not None else None
 
