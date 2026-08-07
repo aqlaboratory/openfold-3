@@ -55,7 +55,9 @@ class ExponentialMovingAverage:
         self.params = {}
         model_params = model.state_dict()
         if "version_tensor" in model_params:
-            self.params["version_tensor"] = model_params["version_tensor"].detach().clone()
+            self.params["version_tensor"] = (
+                model_params["version_tensor"].detach().clone()
+            )
         self.decay = decay
         self.submodules_to_update = submodules_to_update
         self.device = next(model.parameters()).device
@@ -63,6 +65,7 @@ class ExponentialMovingAverage:
     def init_params(self, model: torch.nn.Module):
         def clone_param(t):
             return t.detach().clone()
+
         self.params = tensor_tree_map(clone_param, model.state_dict())
         self.device = next(model.parameters()).device
 

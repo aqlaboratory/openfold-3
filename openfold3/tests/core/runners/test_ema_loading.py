@@ -15,6 +15,9 @@ class DummyModel(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.linear = nn.Linear(10, 10)
+        self.register_buffer(
+            "version_tensor", torch.tensor([1, 0, 0], dtype=torch.long)
+        )
 
     def forward(self, batch):
         return {"preds": self.linear(batch["x"])}
@@ -51,12 +54,18 @@ class TestEMALoading:
         """
         Check EMA params remain empty if no training occurs, saving memory
         """
-        assert not runner.ema.params, "EMA params should be empty upon initialization."
+        assert len(runner.ema.params) == 1 and "version_tensor" in runner.ema.params, (
+            "EMA params should only contain 'version_tensor' upon initialization."
+        )
 
         runner.eval_step(dummy_batch, batch_idx=0)
 
-        assert not runner.ema.params, (
-            "EMA params should remain empty during inference to save memory."
+        assert len(runner.ema.params) == 1 and "version_tensor" in runner.ema.params, (
+            "EMA params should still only contain 'version_tensor' during inference to save memory."
+        )
+
+        assert runner.cached_weights is None, (
+            "EMA weights should not be loaded, hence no weights should be cached."
         )
 
         runner.on_validation_epoch_end()
@@ -66,14 +75,17 @@ class TestEMALoading:
         """
         Ensures EMA params are properly cloned when the first training step runs.
         """
-        assert not runner.ema.params, "EMA params should be empty upon initialization."
+        assert len(runner.ema.params) == 1 and "version_tensor" in runner.ema.params, (
+            "EMA params should only contain 'version_tensor' upon initialization."
+        )
 
         runner.training_step(dummy_batch, batch_idx=0)
 
         assert runner.ema.params, "EMA params should be populated after training_step."
-        assert "linear.weight" in runner.ema.params, (
-            "Model parameters were not cloned into EMA."
-        )
+        assert (
+            len(runner.ema.params) == len(runner.model.state_dict())
+            and "linear.weight" in runner.ema.params
+        ), "Model parameters were not cloned into EMA."
 
     def test_ema_weight_swapping_during_validation(self, runner, dummy_batch):
         """
