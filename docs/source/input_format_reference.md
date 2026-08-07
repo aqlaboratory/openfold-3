@@ -251,7 +251,7 @@ residues:
       ],
       "pocket_constraint": {
         "ligand_chain_id": "L",
-        "pocket_residues": [["A", 12], ["A", 15], ["A", 48]],
+        "pocket_residues": [["A", 2], ["A", 5], ["A", 9]],
         "max_distance": 4.0
       }
     }
@@ -357,4 +357,5 @@ Additional example input JSON files can be found here:
 - [Multi-chain protein with different chains (multimer)](../../examples/example_inference_inputs/query_multimer.json): Deoxy human hemoglobin (PDB: 1A3N)
 - [Protein-ligand complex](../../examples/example_inference_inputs/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
 - [Single protein-single ligand complex](../../examples/example_inference_inputs/query_single_protein_single_ligand.json): T4 Lysozyme (L99A mutant) with toluene (PDB: 7L39)
+- [Protein-ligand complex with a pocket constraint](../../examples/example_inference_inputs/query_protein_ligand_pocket_constraint.json): Beta-lactamase with an allosteric inhibitor (PDB: 1PZP)
 - [Multiple Protein-ligand complexes](../../examples/example_inference_inputs/query_protein_ligand_multiple.json): Two queries with Mcl-1 and different small molecule inhibitors (PDB: 5FDR)
