@@ -98,7 +98,7 @@ class ModelRunner(pl.LightningModule):
             )
 
     def training_step(self, batch, batch_idx):
-        if not self.ema.params:
+        if len(self.ema.params) <= 1:
             self.ema.init_params(self.model)
 
         example_feat = next(
@@ -129,7 +129,7 @@ class ModelRunner(pl.LightningModule):
 
     def eval_step(self, batch, batch_idx):
         # At the start of validation, load the EMA weights
-        if self.cached_weights is None:
+        if self.cached_weights is None and len(self.ema.params) > 1:
             # model.state_dict() contains references to model weights rather
             # than copies. Therefore, we need to clone them before calling
             # load_state_dict().
@@ -137,8 +137,7 @@ class ModelRunner(pl.LightningModule):
                 return t.detach().clone()
 
             self.cached_weights = tensor_tree_map(clone_param, self.model.state_dict())
-            if self.ema.params:
-                self.model.load_state_dict(self.ema.state_dict()["params"])
+            self.model.load_state_dict(self.ema.state_dict()["params"])
 
         # Run the model
         outputs = self(batch)
@@ -179,9 +178,10 @@ class ModelRunner(pl.LightningModule):
         self.last_lr_step = lr_step
 
     def on_validation_epoch_end(self):
-        # Restore the model weights to normal
-        self.model.load_state_dict(self.cached_weights)
-        self.cached_weights = None
+        # Restore the model weights to normal if swapped with EMA weights
+        if self.cached_weights is not None:
+            self.model.load_state_dict(self.cached_weights)
+            self.cached_weights = None
 
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False
