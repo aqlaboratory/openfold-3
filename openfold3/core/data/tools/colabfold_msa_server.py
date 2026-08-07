@@ -991,14 +991,6 @@ class ColabFoldQueryRunner:
                         msas_preparsed[k] = v.to_dict()
                     np.savez_compressed(npz_file, **msas_preparsed)
 
-    def cleanup(self):
-        """Remove raw colabfold MSA directory.
-
-        If the same MSA output directory is used, this directory must be removed
-        to avoid using old MSAs for new inputs.
-        """
-        shutil.rmtree(self.output_directory / "raw", ignore_errors=True)
-
 
 def add_msa_paths_to_iqs(
     inference_query_set: InferenceQuerySet,

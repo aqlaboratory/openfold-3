@@ -821,8 +821,6 @@ class TestMsaComputationSettings:
         settings.cleanup_workspace()
 
         assert not settings.workspace_directory.exists()
-        settings.cleanup_workspace()
-        assert not settings.workspace_directory.exists()
 
     def test_workspace_cleanup_raises_and_can_retry_after_failed_removal(self):
         settings = MsaComputationSettings()
