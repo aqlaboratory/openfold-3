@@ -1,8 +1,0 @@
-msa_computation_settings:
-  msa_output_directory: /tmp/of3_colabfold_msas_jnwei/ 
-  cleanup_msa_dir: False  # If False, msa paths will not be deleted between runs 
-  save_mappings: True 
-
-
-template_preprocessor_settings:
-  output_directory: /tmp/of3_template_data_jnwei/
