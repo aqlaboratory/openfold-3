@@ -100,7 +100,7 @@ class ModelRunner(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         if not self.ema.params:
             self.ema.init_params(self.model)
-            
+
         example_feat = next(
             iter(v for v in batch.values() if isinstance(v, torch.Tensor))
         )

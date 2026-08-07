@@ -1,10 +1,12 @@
+from unittest.mock import MagicMock
+
 import pytest
 import torch
 import torch.nn as nn
-from unittest.mock import MagicMock
 from ml_collections import ConfigDict
 
-from openfold3.core.runners.model_runner import ModelRunner 
+from openfold3.core.runners.model_runner import ModelRunner
+
 
 # ==========
 # SETUP
@@ -29,7 +31,9 @@ def get_dummy_config():
 def runner():
     config = get_dummy_config()
     model_runner = ModelRunner(model_class=DummyModel, config=config)
-    model_runner.loss = MagicMock(return_value=(torch.tensor(1.0), {"loss": torch.tensor(1.0)}))
+    model_runner.loss = MagicMock(
+        return_value=(torch.tensor(1.0), {"loss": torch.tensor(1.0)})
+    )
     model_runner._log = MagicMock()
     return model_runner
 
@@ -51,8 +55,10 @@ class TestEMALoading:
 
         runner.eval_step(dummy_batch, batch_idx=0)
 
-        assert not runner.ema.params, "EMA params should remain empty during inference to save memory."
-        
+        assert not runner.ema.params, (
+            "EMA params should remain empty during inference to save memory."
+        )
+
         runner.on_validation_epoch_end()
         assert runner.cached_weights is None, "Cached weights were not cleared."
 
@@ -65,15 +71,17 @@ class TestEMALoading:
         runner.training_step(dummy_batch, batch_idx=0)
 
         assert runner.ema.params, "EMA params should be populated after training_step."
-        assert "linear.weight" in runner.ema.params, "Model parameters were not cloned into EMA."
+        assert "linear.weight" in runner.ema.params, (
+            "Model parameters were not cloned into EMA."
+        )
 
     def test_ema_weight_swapping_during_validation(self, runner, dummy_batch):
         """
-        Ensures the model successfully swaps to EMA weights for validation, 
+        Ensures the model successfully swaps to EMA weights for validation,
         and restores the live weights afterward.
         """
         runner.training_step(dummy_batch, batch_idx=0)
-        
+
         original_weight = runner.model.linear.weight.clone()
 
         # Artificially alter the EMA weights to see if a swap happens
@@ -83,10 +91,14 @@ class TestEMALoading:
 
         runner.eval_step(dummy_batch, batch_idx=0)
 
-        assert torch.allclose(runner.model.linear.weight, altered_ema_weight), "Model failed to load EMA weights during eval_step."
+        assert torch.allclose(runner.model.linear.weight, altered_ema_weight), (
+            "Model failed to load EMA weights during eval_step."
+        )
         assert runner.cached_weights is not None, "Original weights were not cached."
 
         runner.on_validation_epoch_end()
 
-        assert torch.allclose(runner.model.linear.weight, original_weight), "Model failed to restore original weights after validation."
+        assert torch.allclose(runner.model.linear.weight, original_weight), (
+            "Model failed to restore original weights after validation."
+        )
         assert runner.cached_weights is None, "Cached weights were not cleared."

@@ -60,9 +60,10 @@ class ExponentialMovingAverage:
     def init_params(self, model: torch.nn.Module):
         def clone_param(t):
             return t.clone().detach()
+
         self.params = tensor_tree_map(clone_param, model.state_dict())
         self.device = next(model.parameters()).device
-    
+
     def to(self, device):
         self.params = tensor_tree_map(lambda t: t.to(device), self.params)
         self.device = device
