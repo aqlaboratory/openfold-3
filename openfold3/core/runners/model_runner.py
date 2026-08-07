@@ -98,7 +98,7 @@ class ModelRunner(pl.LightningModule):
             )
 
     def training_step(self, batch, batch_idx):
-        if len(self.ema.params) <= 1:
+        if not self.ema.params:
             self.ema.init_params(self.model)
 
         example_feat = next(
@@ -129,7 +129,7 @@ class ModelRunner(pl.LightningModule):
 
     def eval_step(self, batch, batch_idx):
         # At the start of validation, load the EMA weights
-        if self.cached_weights is None and len(self.ema.params) > 1:
+        if self.cached_weights is None:
             # model.state_dict() contains references to model weights rather
             # than copies. Therefore, we need to clone them before calling
             # load_state_dict().
@@ -179,10 +179,9 @@ class ModelRunner(pl.LightningModule):
         self.last_lr_step = lr_step
 
     def on_validation_epoch_end(self):
-        # Restore the model weights to normal if swapped with EMA weights
-        if self.cached_weights is not None:
-            self.model.load_state_dict(self.cached_weights)
-            self.cached_weights = None
+        # Restore the model weights to normal
+        self.model.load_state_dict(self.cached_weights)
+        self.cached_weights = None
 
     def _compute_validation_metrics(
         self, batch, outputs, superimposition_metrics=False
