@@ -62,7 +62,12 @@ class ExponentialMovingAverage:
 
     def init_params(self, model: torch.nn.Module):
         def clone_param(t):
+<<<<<<< Updated upstream
+            return t.clone().detach()
+
+=======
             return t.detach().clone()
+>>>>>>> Stashed changes
         self.params = tensor_tree_map(clone_param, model.state_dict())
         self.device = next(model.parameters()).device
 
