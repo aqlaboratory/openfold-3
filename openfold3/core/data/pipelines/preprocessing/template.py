@@ -2160,25 +2160,6 @@ class TemplatePreprocessor:
                         )
                     continue
 
-                # A2. Deduplicate by ungapped hit sequence, keeping the first
-                # (highest-ranked) occurrence. Without this, multiple hits that cover
-                # the same query region with identical residues (e.g. several crystal
-                # forms of the same complex) each consume a separate template slot.
-                # NOTE: only checked here; `seen_sequences` is populated in step H,
-                # once a template from this sequence is actually accepted. Marking it
-                # seen here (before the availability/release-date/match checks below
-                # run) would permanently block every later same-sequence hit even when
-                # this one is rejected for an unrelated reason -- e.g. a query's own
-                # self-hit ranks first, fails a later check, and would otherwise
-                # blackhole every other real hit sharing that common sequence.
-                if self.deduplicate_sequences and template.seq in seen_sequences:
-                    if self.create_logs:
-                        worker_logger.info(
-                            f"{template.entry_id} {template.chain_id} is a"
-                            " sequence duplicate of an already-accepted template."
-                        )
-                    continue
-
                 # B. Get which files are available
                 template_structure_file = (
                     self.structure_directory
@@ -2372,6 +2353,23 @@ class TemplatePreprocessor:
                             " residue pairs."
                         )
                     continue
+                # Deduplicate by ungapped hit sequence, keeping the first
+                # (highest-ranked) occurrence: several hits covering the same query
+                # region with identical residues (e.g. crystal forms of one complex)
+                # would otherwise each consume a template slot. Checked only now, once
+                # every rejection reason above is ruled out, so a rejected hit never
+                # blocks a later valid hit with the same sequence -- and after step E,
+                # so `seq` is populated even for parsers that leave it unset (.m8).
+                if self.deduplicate_sequences:
+                    if template.seq in seen_sequences:
+                        if self.create_logs:
+                            worker_logger.info(
+                                f"{template.entry_id} {template.chain_id} is a"
+                                " sequence duplicate of an already-accepted template."
+                            )
+                        continue
+                    seen_sequences.add(template.seq)
+
                 # `cif_path` is only set in CIF-direct mode and is dropped by `to_dict`
                 # when absent
                 cache_entry = TemplateCacheEntry(
@@ -2384,8 +2382,6 @@ class TemplatePreprocessor:
                     cache_entry.to_dict()
                 )
                 template_ids.append(f"{template.entry_id}_{chain_id_matched}")
-                if self.deduplicate_sequences:
-                    seen_sequences.add(template.seq)
                 if self.create_logs:
                     worker_logger.info(
                         f"{template.entry_id} {template.chain_id} added to cache."
