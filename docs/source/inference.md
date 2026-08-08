@@ -215,6 +215,12 @@ The model parameters section of the configuration may by passing an update in th
 
 Note that CLI arguments take precedence over configuration file settings.
 
+#### 🏠 Persistent User-Default Configuration
+
+OpenFold3 automatically searches for a base `runner.yml` at `$OPENFOLD_CACHE/runner.yml` (defaults to `~/.openfold3/runner.yml`). If found, it applies these settings globally without requiring the `--runner-yaml` flag.
+
+*Note: The path of the loaded default configuration is tracked in `experiment_config.json` under `"user_default_runner_yaml_path"`.*
+
 Below we'll walk through some of the most common configuration scenarios and how to implement them:
 
 

@@ -20,12 +20,14 @@ Main run script for OpenFold3. Please see the README for usage details.
 # ruff: noqa: F821
 
 import logging
+import os
 from pathlib import Path
 
 import click
 
 from openfold3.core.config import config_utils
 from openfold3.entry_points.import_utils import _torch_gpu_setup
+from openfold3.entry_points.parameters import DEFAULT_CACHE_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -177,11 +179,25 @@ def predict(
     )
 
     logging.basicConfig(level=logging.INFO)
-    runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
+
+    default_yml = (
+        Path(os.environ.get("OPENFOLD_CACHE") or DEFAULT_CACHE_PATH) / "runner.yml"
+    )
+    user_default_runner_path = None
+
+    if default_yml.exists():
+        runner_args = config_utils.load_yaml(default_yml)
+        user_default_runner_path = default_yml.resolve()
+    else:
+        runner_args = dict()
+
+    if runner_yaml:
+        config_utils.deep_update(runner_args, config_utils.load_yaml(runner_yaml))
 
     expt_config = InferenceExperimentConfig(
         inference_ckpt_path=inference_ckpt_path,
         inference_ckpt_name=inference_ckpt_name,
+        user_default_runner_yaml_path=user_default_runner_path,
         **runner_args,
     )
     expt_runner = InferenceExperimentRunner(

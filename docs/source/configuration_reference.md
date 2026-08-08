@@ -9,6 +9,7 @@ The configuration file is organized into several main sections. Each section cor
 ## 2. Important Notes
 
 - **Selective Configuration**: Only specify the settings you want to override in your runner YAML file. All unspecified options will use their default values.
+- **Default Cache Configuration**: Placing a `runner.yml` in `$OPENFOLD_CACHE` (or `~/.openfold3/runner.yml`) automatically sets it as the baseline configuration for all inference runs. This is merged with any explicitly passed `--runner-yaml` file.
 - **Command-line Priority**: Command-line arguments take precedence and will override any values specified in the YAML file.
 - **Reference Implementation**: The full configuration file serves as a reference - create your own simplified runner YAML based on your specific needs. See `examples/example_runner_yamls/` for common usage examples.
 
@@ -107,6 +108,7 @@ model_update:
   - Must be a key in `OPENFOLD_MODEL_CHECKPOINT_REGISTRY`(https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/parameters.py#L29)
 - `cache_path` *(Path | None)*: Directory for storing cached model parameters
   - Default: `$HOME/.openfold3/`
+- `user_default_runner_yaml_path` *(Path | None)*: Path to the automatically loaded user-default `runner.yml`. Recorded in `experiment_config.json` for run traceability.
 
 ---
 
