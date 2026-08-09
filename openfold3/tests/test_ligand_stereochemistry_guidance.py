@@ -203,8 +203,8 @@ def _reference_ligand_stereochemistry_energy(
 ) -> torch.Tensor:
     """Build an independent autograd oracle for the analytical gradient."""
     energies = []
-    if guidance.distance.index.shape[1] > 0:
-        index = guidance.distance.index
+    if guidance.distance.atom_indices.shape[1] > 0:
+        index = guidance.distance.atom_indices
         diff = coords.index_select(-2, index[0]) - coords.index_select(-2, index[1])
         value = torch.linalg.norm(diff, dim=-1).clamp_min(1e-6)
         energies.append(
@@ -221,9 +221,9 @@ def _reference_ligand_stereochemistry_energy(
         (guidance.stereo_dihedral, True),
         (guidance.planar_dihedral, True),
     ):
-        if restraints.index.shape[1] == 0:
+        if restraints.atom_indices.shape[1] == 0:
             continue
-        value = _reference_dihedral(coords, restraints.index)
+        value = _reference_dihedral(coords, restraints.atom_indices)
         if absolute:
             value = value.abs()
         energies.append(
@@ -320,34 +320,46 @@ def test_emitted_stereo_targets_match_processed_reference_molecule(
     guidance = _prepare_guidance(features, num_atoms=len(structure.atom_array))
     restraints = getattr(guidance, restraint_name)
 
-    assert restraints.index.shape[1] > 0
-    dihedrals = _reference_dihedral(coords, restraints.index)
+    assert restraints.atom_indices.shape[1] > 0
+    dihedrals = _reference_dihedral(coords, restraints.atom_indices)
     if absolute:
         dihedrals = dihedrals.abs()
     assert torch.all(dihedrals >= restraints.lower)
     assert torch.all(dihedrals <= restraints.upper)
 
 
-def test_multi_ligand_features_keep_constraints_on_their_source_ligand():
+@pytest.mark.parametrize(
+    "chain_order",
+    [
+        ("protein", "chiral_ligand", "stereo_ligand"),
+        ("chiral_ligand", "protein", "stereo_ligand"),
+        ("stereo_ligand", "chiral_ligand", "protein"),
+    ],
+    ids=("polymer-first", "ligand-first", "multiple-ligands-first"),
+)
+def test_multi_ligand_features_follow_reference_molecules_across_chain_order(
+    chain_order: tuple[str, ...],
+):
+    chain_definitions = {
+        "protein": {
+            "molecule_type": "protein",
+            "chain_ids": ["A"],
+            "sequence": "AG",
+        },
+        "chiral_ligand": {
+            "molecule_type": "ligand",
+            "chain_ids": ["L"],
+            "smiles": "C[C@H](O)C(=O)O",
+        },
+        "stereo_ligand": {
+            "molecule_type": "ligand",
+            "chain_ids": ["M"],
+            "smiles": "F/C(Cl)=C(Br)/I",
+        },
+    }
     query = Query.model_validate(
         {
-            "chains": [
-                {
-                    "molecule_type": "protein",
-                    "chain_ids": ["A"],
-                    "sequence": "AG",
-                },
-                {
-                    "molecule_type": "ligand",
-                    "chain_ids": ["L"],
-                    "smiles": "C[C@H](O)C(=O)O",
-                },
-                {
-                    "molecule_type": "ligand",
-                    "chain_ids": ["M"],
-                    "smiles": "F/C(Cl)=C(Br)/I",
-                },
-            ],
+            "chains": [chain_definitions[name] for name in chain_order],
             "ligand_stereochemistry_guidance": True,
         }
     )

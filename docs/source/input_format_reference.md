@@ -399,3 +399,4 @@ Additional example input JSON files can be found here:
 - [Single protein-single ligand complex](../../examples/example_inference_inputs/query_single_protein_single_ligand.json): T4 Lysozyme (L99A mutant) with toluene (PDB: 7L39)
 - [Protein-ligand complex with a pocket constraint](../../examples/example_inference_inputs/query_protein_ligand_pocket_constraint.json): Beta-lactamase with an allosteric inhibitor (PDB: 1PZP)
 - [Multiple Protein-ligand complexes](../../examples/example_inference_inputs/query_protein_ligand_multiple.json): Two queries with Mcl-1 and different small molecule inhibitors (PDB: 5FDR)
+- [Ligand stereochemistry guidance](../../examples/example_inference_inputs/query_ligand_stereochemistry_guidance.json): Glutamate transporter with D-aspartate (PDB: 6R7R)

@@ -20,7 +20,7 @@ _GEOMETRY_EPSILON = 1e-6
 class _FlatBottomRestraints(NamedTuple):
     """Atom indices and bounds for one analytical restraint family."""
 
-    index: torch.Tensor
+    atom_indices: torch.Tensor
     lower: torch.Tensor
     upper: torch.Tensor
     weight: float
@@ -225,7 +225,7 @@ def _prepare_restraint(
     if not math.isfinite(weight) or weight < 0.0:
         raise ValueError(f"'{prefix}_weight' must be a finite non-negative value.")
 
-    return _FlatBottomRestraints(index=index, weight=weight, **values)
+    return _FlatBottomRestraints(atom_indices=index, weight=weight, **values)
 
 
 def prepare_ligand_stereochemistry_guidance(
@@ -279,7 +279,9 @@ def prepare_ligand_stereochemistry_guidance(
         )
         for name, arity in _RESTRAINT_SPECS.items()
     }
-    if not any(restraint.index.shape[1] > 0 for restraint in restraints.values()):
+    if not any(
+        restraint.atom_indices.shape[1] > 0 for restraint in restraints.values()
+    ):
         return None
 
     return PreparedLigandStereochemistryGuidance(
@@ -473,16 +475,18 @@ def _restraint_gradient(
     if dihedral:
         value, value_gradient = _dihedral_value_and_gradient(
             coords,
-            restraints.index,
+            restraints.atom_indices,
             absolute=absolute,
         )
     else:
-        value, value_gradient = _distance_value_and_gradient(coords, restraints.index)
+        value, value_gradient = _distance_value_and_gradient(
+            coords, restraints.atom_indices
+        )
     derivative = restraints.weight * _flat_bottom_derivative(
         value, restraints.lower, restraints.upper
     )
     return _scatter_variable_gradient(
-        coords, restraints.index, value_gradient, derivative
+        coords, restraints.atom_indices, value_gradient, derivative
     )
 
 
@@ -508,7 +512,7 @@ def ligand_stereochemistry_gradient(
         (guidance.planar_dihedral, True, True),
     )
     for restraints, is_dihedral, absolute in restraint_groups:
-        if restraints.index.shape[1] > 0:
+        if restraints.atom_indices.shape[1] > 0:
             gradient += _restraint_gradient(
                 coords,
                 restraints,
