@@ -333,7 +333,7 @@ template_preprocessor_settings:
 Configures local ligand-geometry guidance for queries with
 `ligand_stereochemistry_guidance: true`.
 
-**Pydantic Model**: `LigandStereochemistryGuidanceSettings`
+**Pydantic Model**: [`LigandStereochemistryGuidanceSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/ligand_stereochemistry.py)
 
 **All Options**:
 - `start_fraction` *(float)*: Reverse-diffusion progress at which guidance begins (default: `0.725`, range: `[0, 1]`)
