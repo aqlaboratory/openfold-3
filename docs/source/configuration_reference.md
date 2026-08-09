@@ -140,7 +140,7 @@ Configures Checkpoint writing settings, which are passed to [pl.ModelCheckpoint 
 ---
 ### 3.7. Dataset Config Kwargs (`dataset_config_kwargs`)
 
-Configures MSA, template, and pocket sampling feature generation.
+Configures MSA, template, pocket sampling, and inference-time ligand guidance.
 
 **Pydantic Model**: [`InferenceDatasetConfigKwargs`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_configs.py#L270)
 
@@ -149,6 +149,7 @@ Configures MSA, template, and pocket sampling feature generation.
 - `msa` *(MSASettings)*: MSA processing settings (see below)
 - `template` *(TemplateSettings)*: Template processing settings (see below)
 - `pocket_sampling` *(PocketSamplingSettings)*: Pocket-guided ligand proposal sampling settings (see below)
+- `ligand_stereochemistry_guidance` *(LigandStereochemistryGuidanceSettings)*: Ligand stereochemistry guidance settings (see below)
 
 #### 3.7.1. MSA Settings (`msa`)
 
@@ -230,6 +231,35 @@ dataset_config_kwargs:
     num_parents: 16
     candidates: 1024
     noise_frac: 0.75
+```
+
+#### 3.7.4. Ligand Stereochemistry Guidance Settings (`ligand_stereochemistry_guidance`)
+
+Configures local ligand-geometry guidance for queries with `ligand_stereochemistry_guidance: true`.
+
+**Pydantic Model**: [`LigandStereochemistryGuidanceSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/ligand_stereochemistry_config.py)
+
+**All Options**:
+- `start_fraction` *(float)*: Reverse-diffusion progress at which guidance begins (default: `0.725`, range: `[0, 1]`)
+- `num_gd_steps` *(int)*: Analytical coordinate updates per guided diffusion step (default: `20`, minimum: `1`)
+- `bond_buffer` *(float)*: Relative flat-bottom buffer for bonded distances (default: `0.125`)
+- `angle_buffer` *(float)*: Relative flat-bottom buffer for 1-3 distances (default: `0.125`)
+- `clash_buffer` *(float)*: Relative buffer for nonbonded lower bounds (default: `0.10`)
+- `chiral_buffer` *(float)*: Tetrahedral improper-dihedral margin in radians (default: `0.52360`)
+- `stereo_bond_buffer` *(float)*: E/Z improper-dihedral margin in radians (default: `0.52360`)
+- `planar_bond_buffer` *(float)*: Planarity improper-dihedral margin in radians (default: `0.26180`)
+- `distance_weight` *(float)*: Distance-restraint update weight (default: `0.01`)
+- `chiral_atom_weight` *(float)*: Tetrahedral-restraint update weight (default: `0.1`)
+- `stereo_bond_weight` *(float)*: E/Z-restraint update weight (default: `0.05`)
+- `planar_bond_weight` *(float)*: Planarity-restraint update weight (default: `0.05`)
+- `vdw_pair_cutoff_offset` *(float)*: Offset added to mean pairwise van der Waals radii in Angstroms (default: `0.35`)
+
+**Example**:
+```yaml
+dataset_config_kwargs:
+  ligand_stereochemistry_guidance:
+    start_fraction: 0.725
+    num_gd_steps: 20
 ```
 
 ---
@@ -324,38 +354,6 @@ template_preprocessor_settings:
   mode: predict
   max_templates: 20
   fetch_missing_structures: true
-```
-
----
-
-### 3.10. Ligand Stereochemistry Guidance Settings (`dataset_config_kwargs.ligand_stereochemistry_guidance`)
-
-Configures local ligand-geometry guidance for queries with
-`ligand_stereochemistry_guidance: true`.
-
-**Pydantic Model**: [`LigandStereochemistryGuidanceSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/ligand_stereochemistry.py)
-
-**All Options**:
-- `start_fraction` *(float)*: Reverse-diffusion progress at which guidance begins (default: `0.725`, range: `[0, 1]`)
-- `num_gd_steps` *(int)*: Analytical coordinate updates per guided diffusion step (default: `20`, minimum: `1`)
-- `bond_buffer` *(float)*: Relative flat-bottom buffer for bonded distances (default: `0.125`)
-- `angle_buffer` *(float)*: Relative flat-bottom buffer for 1-3 distances (default: `0.125`)
-- `clash_buffer` *(float)*: Relative buffer for nonbonded lower bounds (default: `0.10`)
-- `chiral_buffer` *(float)*: Tetrahedral improper-dihedral margin in radians (default: `0.52360`)
-- `stereo_bond_buffer` *(float)*: E/Z improper-dihedral margin in radians (default: `0.52360`)
-- `planar_bond_buffer` *(float)*: Planarity improper-dihedral margin in radians (default: `0.26180`)
-- `distance_weight` *(float)*: Distance-restraint update weight (default: `0.01`)
-- `chiral_atom_weight` *(float)*: Tetrahedral-restraint update weight (default: `0.1`)
-- `stereo_bond_weight` *(float)*: E/Z-restraint update weight (default: `0.05`)
-- `planar_bond_weight` *(float)*: Planarity-restraint update weight (default: `0.05`)
-- `vdw_pair_cutoff_offset` *(float)*: Offset added to mean pairwise van der Waals radii in Angstroms (default: `0.35`)
-
-**Example**:
-```yaml
-dataset_config_kwargs:
-  ligand_stereochemistry_guidance:
-    start_fraction: 0.725
-    num_gd_steps: 20
 ```
 
 ---

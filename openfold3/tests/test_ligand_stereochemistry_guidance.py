@@ -297,29 +297,18 @@ def test_ligand_stereochemistry_features_for_representative_ligands(
 
 
 @pytest.mark.parametrize(
-    ("ligand_definition", "restraint_name", "absolute"),
+    ("smiles", "restraint_name", "absolute"),
     [
-        ({"smiles": "C[C@H](O)C(=O)O"}, "signed_dihedral", False),
-        ({"smiles": "F/C(Cl)=C(Br)/I"}, "stereo_dihedral", True),
+        ("C[C@H](O)C(=O)O", "signed_dihedral", False),
+        ("F/C(Cl)=C(Br)/I", "stereo_dihedral", True),
     ],
 )
 def test_emitted_stereo_targets_match_processed_reference_molecule(
-    ligand_definition: dict,
+    smiles: str,
     restraint_name: str,
     absolute: bool,
 ):
-    query = Query.model_validate(
-        {
-            "chains": [
-                {
-                    "molecule_type": "ligand",
-                    "chain_ids": ["L"],
-                    **ligand_definition,
-                }
-            ],
-            "ligand_stereochemistry_guidance": True,
-        }
-    )
+    query = _ligand_query(smiles)
     structure = structure_with_ref_mols_from_query(query)
     features = featurize_ligand_stereochemistry_guidance(
         query,

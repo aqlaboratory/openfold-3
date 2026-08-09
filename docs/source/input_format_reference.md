@@ -290,8 +290,7 @@ are defined in `openfold3/core/config/pocket_sampling_config.py`, more informati
 (5-ligand-stereochemistry-guidance)=
 ## 5. Ligand Stereochemistry Guidance
 
-Ligand stereochemistry guidance can be enabled for a query containing one or more
-ligand chains:
+Ligand stereochemistry guidance can be enabled for a query containing one or more ligand chains:
 
 ```json
 {
@@ -315,14 +314,9 @@ ligand chains:
 }
 ```
 
-The guidance derives distance-geometry, assigned tetrahedral chirality, assigned E/Z
-alkene stereochemistry, and double-bond planarity constraints from each ligand's OF3
-reference molecule. It preserves stereochemistry specified by a SMILES string or CCD
-reference structure; unspecified stereocenters and stereo bonds are not assigned new
-targets.
+The guidance derives distance-geometry, assigned tetrahedral chirality, assigned E/Z alkene stereochemistry, and double-bond planarity constraints from each ligand's OF3 reference molecule. It preserves stereochemistry specified by a SMILES string or CCD reference structure; unspecified stereocenters and stereo bonds are not assigned new targets.
 
-Guidance settings are configured in the runner YAML and are shared by all enabled
-queries in an inference run:
+Guidance settings are configured in the runner YAML and are shared by all enabled queries in an inference run:
 
 ```yaml
 dataset_config_kwargs:
@@ -331,9 +325,7 @@ dataset_config_kwargs:
     num_gd_steps: 20
 ```
 
-A start fraction of `0` applies guidance throughout reverse diffusion, while `1`
-applies it only to the final denoised estimate. The complete configuration is
-documented in the [OpenFold3 Configuration Reference](configuration_reference.md).
+A start fraction of `0` applies guidance throughout reverse diffusion, while `1` applies it only to the final denoised estimate. The complete configuration is documented in the [OpenFold3 Configuration Reference](configuration_reference.md).
 
 ## 6. Example Input Json for a Single Query Complex
 
