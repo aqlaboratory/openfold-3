@@ -32,3 +32,23 @@ having insufficient `/dev/shm` for the DataLoader's shared-memory IPC. Occurs on
 ColabFold server before running prediction.
 
 ---
+
+## 2026-08-09
+
+**Cause:** External service timeout — ColabFold API (`api.colabfold.com`) connection timed out during the `msa-no_templates-ubiquitin` test. Not an AWS GPU outage; not an OF3 code bug. Two consecutive runs affected.
+
+### Run 1
+- **Run ID:** [31293281898](https://github.com/aqlaboratory/openfold-3/actions/runs/31293281898)
+- **Time:** 2026-08-09T03:50:49Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 93194112488)
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin]`
+- **Error:** `requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.`
+
+### Run 2
+- **Run ID:** [31295107418](https://github.com/aqlaboratory/openfold-3/actions/runs/31295107418)
+- **Time:** 2026-08-09T04:41:42Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 93198826302)
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin]`
+- **Error:** `requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.`
+
+---
