@@ -14,6 +14,7 @@ from openfold3.core.data.primitives.structure.query import (
     structure_with_ref_mols_from_query,
 )
 from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.core.model.structure import diffusion_module
 from openfold3.core.model.structure.diffusion_module import (
     SampleDiffusion,
     _build_pocket_sampling_seeds,
@@ -617,8 +618,9 @@ class _IdentityDenoiser(torch.nn.Module):
         return xl_noisy
 
 
-def _pocket_sampling_batch(batch_dim: int = 1) -> dict[str, torch.Tensor]:
-    # Create a batch with 0 jitter to test guided diffusion sampling
+def _pocket_sampling_batch_without_jitter(
+    batch_dim: int = 1,
+) -> dict[str, torch.Tensor]:
     return {
         "atom_mask": torch.ones(batch_dim, 5),
         "token_mask": torch.ones(batch_dim, 1),
@@ -640,7 +642,7 @@ def _pocket_sampling_batch(batch_dim: int = 1) -> dict[str, torch.Tensor]:
 
 def test_build_pocket_sampling_seeds_uses_generated_conformer_candidates():
     torch.manual_seed(0)
-    batch = _pocket_sampling_batch()
+    batch = _pocket_sampling_batch_without_jitter()
     batch["pocket_sampling_candidates"] = torch.tensor([6])
     input_conformer = torch.tensor([[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]])
     batch["pocket_sampling_conformer_rels"] = input_conformer[None, None, None]
@@ -678,7 +680,7 @@ def test_build_pocket_sampling_seeds_uses_generated_conformer_candidates():
 
 def test_build_pocket_sampling_seeds_uses_parent_conformer_and_soft_overlap_score():
     torch.manual_seed(1)
-    batch = _pocket_sampling_batch()
+    batch = _pocket_sampling_batch_without_jitter()
     batch["pocket_sampling_num_parents"] = torch.tensor([1])
     batch["pocket_sampling_candidates"] = torch.tensor([4])
     batch["pocket_sampling_diversity_rmsd"] = torch.tensor([999.0])
@@ -716,7 +718,7 @@ def test_sample_diffusion_runs_second_pass_when_pocket_sampling_enabled():
 
     with torch.no_grad():
         result = sampler(
-            batch=_pocket_sampling_batch(),
+            batch=_pocket_sampling_batch_without_jitter(),
             si_input=torch.zeros(1, 1, 1),
             si_trunk=torch.zeros(1, 1, 1),
             zij_trunk=torch.zeros(1, 1, 1, 1),
@@ -726,6 +728,66 @@ def test_sample_diffusion_runs_second_pass_when_pocket_sampling_enabled():
 
     assert result.shape == (1, 2, 5, 3)
     assert denoiser.calls == 3
+
+
+def test_sample_diffusion_applies_independent_rigid_ligand_jitter(monkeypatch):
+    batch = _pocket_sampling_batch_without_jitter()
+    jitter_scale = 0.25
+    batch["pocket_sampling_ligand_jitter"] = torch.tensor([jitter_scale])
+    seed = torch.arange(30, dtype=torch.float32).reshape(1, 2, 5, 3)
+    jitter_draw = torch.tensor([[[[1.0, -2.0, 0.5]], [[-0.5, 1.0, 2.0]]]])
+
+    def controlled_randn(shape, *, device=None, dtype=None):
+        if tuple(shape) == tuple(jitter_draw.shape):
+            return jitter_draw.to(device=device, dtype=dtype)
+        return torch.zeros(shape, device=device, dtype=dtype)
+
+    monkeypatch.setattr(diffusion_module.torch, "randn", controlled_randn)
+    monkeypatch.setattr(
+        diffusion_module.torch,
+        "randn_like",
+        lambda value: torch.zeros_like(value),
+    )
+    monkeypatch.setattr(
+        diffusion_module,
+        "centre_random_augmentation",
+        lambda *, xl, atom_mask: xl,
+    )
+    monkeypatch.setattr(
+        diffusion_module,
+        "_build_pocket_sampling_seeds",
+        lambda **_kwargs: seed.clone(),
+    )
+
+    sampler = SampleDiffusion(
+        gamma_0=0.0,
+        gamma_min=0.0,
+        noise_scale=0.0,
+        step_scale=1.0,
+        diffusion_module=_IdentityDenoiser(),
+    )
+    with torch.no_grad():
+        result = sampler(
+            batch=batch,
+            si_input=torch.zeros(1, 1, 1),
+            si_trunk=torch.zeros(1, 1, 1),
+            zij_trunk=torch.zeros(1, 1, 1, 1),
+            noise_schedule=torch.tensor([1.0, 0.5, 0.1]),
+            no_rollout_samples=2,
+        )
+
+    expected_shift = jitter_scale * jitter_draw
+    ligand_shift = result[:, :, 3:] - seed[:, :, 3:]
+    assert torch.allclose(result[:, :, :3], seed[:, :, :3]), (
+        "ligand jitter should not move protein atoms"
+    )
+    assert torch.allclose(ligand_shift, expected_shift.expand_as(ligand_shift)), (
+        "each rollout should apply one independently sampled rigid ligand translation"
+    )
+    assert torch.allclose(
+        torch.linalg.vector_norm(result[:, :, 3] - result[:, :, 4], dim=-1),
+        torch.linalg.vector_norm(seed[:, :, 3] - seed[:, :, 4], dim=-1),
+    ), "rigid ligand jitter should preserve intraligand distances"
 
 
 def test_sample_diffusion_requires_complete_pocket_sampling_features():
@@ -741,7 +803,7 @@ def test_sample_diffusion_requires_complete_pocket_sampling_features():
         step_scale=1.0,
         diffusion_module=_IdentityDenoiser(),
     )
-    batch = _pocket_sampling_batch()
+    batch = _pocket_sampling_batch_without_jitter()
     del batch["pocket_sampling_vdw_buffer"]
 
     with pytest.raises(KeyError, match="pocket_sampling_vdw_buffer"):
@@ -769,7 +831,7 @@ def test_sample_diffusion_rejects_multi_query_pocket_sampling_batch():
 
     with pytest.raises(ValueError, match="one query per model batch"):
         sampler(
-            batch=_pocket_sampling_batch(batch_dim=2),
+            batch=_pocket_sampling_batch_without_jitter(batch_dim=2),
             si_input=torch.zeros(2, 1, 1),
             si_trunk=torch.zeros(2, 1, 1),
             zij_trunk=torch.zeros(2, 1, 1, 1),
