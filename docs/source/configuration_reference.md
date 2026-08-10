@@ -237,9 +237,9 @@ Configures the ColabFold MSA server integration.
 - `save_openfold_outputs` *(bool)*: Save OpenFold-formatted alignments (default: `true`)
 - `save_colabfold_outputs` *(bool)*: Save raw ColabFold server outputs (default: `true`)
 - `colabfold_output_dir` *(Path | None)*: Optional parent directory for raw ColabFold run records (default during inference when `msa_output_directory` is not set: `<output_dir>/msas/raw`)
-- `cleanup_msa_dir` *(bool)*: Delete temporary template preprocessing files after an MSA server run (default: `true`). The temporary MSA workspace is always removed.
+- `cleanup_msa_dir` *(bool)*: Remove the run-created template directory during cleanup (default: `true`). The MSA workspace is always removed, and explicit template output directories are preserved.
 
-When temporary MSA work is needed, each command uses a unique workspace under the OpenFold system temporary directory. This workspace is separate from `msa_output_directory` and is always removed during final cleanup.
+When temporary MSA work is needed, each command uses a unique workspace under its output directory. The workspace is removed after normal completion or a handled error.
 
 **Example**:
 ```yaml
@@ -274,12 +274,12 @@ Configures template structure preprocessing and filtering.
 - `n_processes` *(int)*: Number of preprocessing processes (default: `1`)
 - `chunksize` *(int)*: Tasks per worker in multiprocessing (default: `1`)
 - `preprocess_timeout` *(int)*: Maximum preprocessing time in seconds (default: `60`)
-- `structure_directory` *(Path | None)*: Directory for template structures (default: `null`)
+- `structure_directory` *(Path | None)*: Directory for template structures. During inference, the implicit default is `<output_directory>/template_structures`.
 - `structure_file_format` *(str)*: File format of structures - `cif` or `pdb` (default: `cif`)
-- `output_directory` *(Path | None)*: Output directory for templates (default: `null`)
+- `output_directory` *(Path | None)*: Output directory for templates. During inference, the implicit default is `<output_dir>/openfold3_intermediates/template_data/<run-id>`.
 - `precache_directory` *(Path | None)*: Directory for template precache (default: `null`)
 - `structure_array_directory` *(Path | None)*: Directory for preparsed structures (default: `null`)
-- `cache_directory` *(Path | None)*: Directory for template cache (default: `null`)
+- `cache_directory` *(Path | None)*: Directory for template cache. During inference, the implicit default is `<output_directory>/template_cache`.
 - `log_directory` *(Path | None)*: Directory for logs (default: `null`)
 - `ccd_file_path` *(Path | None)*: Path to Chemical Component Dictionary file (default: `null`)
 
@@ -290,6 +290,8 @@ template_preprocessor_settings:
   max_templates: 20
   fetch_missing_structures: true
 ```
+
+Explicit template paths override these inference defaults.
 
 ---
 

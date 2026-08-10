@@ -413,6 +413,22 @@ OpenFold saves both forms of MSA output by default:
 
 When temporary MSA work is needed, each run uses a unique workspace. OpenFold removes that workspace when the command finishes normally or exits through a handled error. The saved files are a record of that run. OpenFold does not automatically reuse them as a cache.
 
+By default, temporary MSA and template files live beside the prediction output:
+
+```text
+<output_dir>/
+└── openfold3_intermediates/
+    ├── colabfold_msas/
+    │   └── <run-id>/
+    └── template_data/
+        └── <run-id>/
+```
+
+OpenFold creates these directories only when needed. If `cleanup_msa_dir` is
+`true`, it removes the default template directory after normal completion or a
+handled error. Explicit template output directories are never removed. A process
+or node crash may leave intermediate directories under the output directory.
+
 You can turn off either output in `runner.yml`:
 
 ```yaml
@@ -421,7 +437,8 @@ msa_computation_settings:
   save_colabfold_outputs: false
 ```
 
-For multi-node inference that generates MSAs, keep `save_openfold_outputs` enabled and put the output directory on storage that every node can read. Rank zero broadcasts its alignment paths to the other ranks, and the temporary workspace may be local to the node that created it.
+For multi-node inference, the output directory and any explicit intermediate
+paths must be visible to every node.
 
 Set `colabfold_output_dir` when raw records need a different parent directory.
 Each run still receives its own child directory there.
