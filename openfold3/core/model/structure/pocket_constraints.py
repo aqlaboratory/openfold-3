@@ -79,6 +79,13 @@ def _score_ligand_pose(
 
 
 class _PocketSamplingCandidate(NamedTuple):
+    """A ligand pose candidate and its pocket-localization metrics.
+
+    ``lig_atoms_in_pocket`` is the count of ligand atoms within the contact
+    threshold. The ascending sort key negates this value so larger counts rank
+    ahead of smaller counts.
+    """
+
     pocket_com_dist: torch.Tensor
     vdw_overlap: torch.Tensor
     min_protein_dist: torch.Tensor
