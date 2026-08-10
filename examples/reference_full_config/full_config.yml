@@ -125,15 +125,18 @@ output_writer_settings:
   write_latent_outputs: false
   write_full_confidence_scores: true
 
-# MSAComputationSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py#L904
+# MSAComputationSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py
 # Configure MSA server settings for colabfold 
 msa_computation_settings: 
   msa_file_format: npz
   server_user_agent: openfold
   server_url: https://api.colabfold.com/
   save_mappings: true
-  msa_output_directory: <tmp-dir>/of3-of-<user>/colabfold_msas/ 
+  msa_output_directory: null
   cleanup_msa_dir: true
+  save_openfold_outputs: true
+  save_colabfold_outputs: true
+  colabfold_output_dir: null
 
 # TemplatePreprocessorSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py#L1459
 # Configure template processing settings, more information in docs/source/template_how_to.md

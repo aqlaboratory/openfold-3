@@ -197,8 +197,12 @@ def predict(
     query_set = InferenceQuerySet.from_json(query_json)
 
     # Run the forward pass
-    expt_runner.setup()
-    expt_runner.run(query_set)
+    try:
+        expt_runner.setup()
+        expt_runner.run(query_set)
+    except BaseException:
+        expt_runner.cleanup_msa_workspace()
+        raise
     expt_runner.cleanup()
 
 
@@ -230,15 +234,11 @@ def align_msa_server(
     output_dir: Path,
     msa_computation_settings_yaml: Path | None = None,
 ):
-    """Run MSA server alignment only with ColabFold MSA server.
-    
-    Example command:
-    python run_openfold.py align-msa-server \
-        --query_json query_example.json \
-        --output_dir output/msa_server_test \
-    
-    More settings can be specified using the `msa_computation_settings_yaml` flag
-    An example yaml file is provided in `examples/msa_server.yml`
+    """Generate ColabFold alignments without running model inference.
+
+    Submit all queries for the job in one JSON file. The command writes a new
+    ``query_msa.json`` whose alignment paths point to files in ``output_dir``.
+    Server settings can be supplied with ``msa_computation_settings_yaml``.
     """
     _torch_gpu_setup()
     from openfold3.core.data.tools.colabfold_msa_server import (
@@ -249,18 +249,27 @@ def align_msa_server(
         InferenceQuerySet,
     )
 
-    query_set = InferenceQuerySet.from_json(query_json)
-
     msa_settings = MsaComputationSettings.from_config_with_cli_override(
         output_dir, msa_computation_settings_yaml
     )
-    query_set = preprocess_colabfold_msas(
-        inference_query_set=query_set,
-        compute_settings=msa_settings,
-    )
+    try:
+        query_set = InferenceQuerySet.from_json(query_json)
+        query_set = preprocess_colabfold_msas(
+            inference_query_set=query_set,
+            compute_settings=msa_settings,
+        )
 
-    with open(output_dir / "query_msa.json", "w") as fp:
-        fp.write(query_set.model_dump_json(indent=4))
+        with open(output_dir / "query_msa.json", "w") as fp:
+            fp.write(query_set.model_dump_json(indent=4))
+    finally:
+        try:
+            msa_settings.cleanup_workspace()
+        except OSError:
+            logger.warning(
+                "Could not remove temporary MSA workspace for run %s",
+                msa_settings.run_directory_name,
+                exc_info=True,
+            )
 
 
 if __name__ == "__main__":

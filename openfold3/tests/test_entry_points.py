@@ -29,7 +29,7 @@ from click.testing import CliRunner
 from pytorch_lightning.loggers import WandbLogger
 
 import openfold3.core.model.primitives.initialization as initialization
-from openfold3 import setup_openfold
+from openfold3 import run_openfold, setup_openfold
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModuleConfig
 from openfold3.entry_points.experiment_runner import (
@@ -64,6 +64,16 @@ def dummy_ckpt_file(tmp_path: Path) -> Path:
     dummy_ckpt = tmp_path / "dummy.ckpt"
     dummy_ckpt.write_text("dummy content")
     return dummy_ckpt
+
+
+@pytest.fixture
+def minimal_query_json(tmp_path: Path) -> Path:
+    query_json = tmp_path / "query.json"
+    query_json.write_text(
+        '{"queries":{"query":{"chains":[{"molecule_type":"protein",'
+        '"chain_ids":["A"],"sequence":"TEST"}]}}}'
+    )
+    return query_json
 
 
 def _create_fake_file(path: Path) -> None:
@@ -578,6 +588,86 @@ class TestInferenceCommandLineSettings:
         num_seeds = 7
         expt_runner = InferenceExperimentRunner(expt_config, num_model_seeds=num_seeds)
         assert len(expt_runner.seeds) == num_seeds
+        msa_settings = expt_config.msa_computation_settings
+        assert msa_settings.saved_output_directory == (
+            expt_runner.output_dir / "msas" / msa_settings.run_directory_name
+        )
+
+    def test_predict_calls_cleanup_after_failure(
+        self, minimal_query_json, dummy_ckpt_file
+    ):
+        with (
+            patch("openfold3.run_openfold._torch_gpu_setup"),
+            patch(
+                "openfold3.entry_points.experiment_runner.InferenceExperimentRunner"
+            ) as mock_runner_class,
+        ):
+            mock_runner_class.return_value.run.side_effect = RuntimeError("failed")
+            result = CliRunner().invoke(
+                run_openfold.cli,
+                [
+                    "predict",
+                    "--query-json",
+                    str(minimal_query_json),
+                    "--inference-ckpt-path",
+                    str(dummy_ckpt_file),
+                ],
+            )
+
+        assert result.exit_code != 0
+        mock_runner_class.return_value.cleanup_msa_workspace.assert_called_once()
+
+    @pytest.mark.parametrize("fails", [False, True])
+    def test_align_msa_server_always_cleans_its_workspace(
+        self, tmp_path, minimal_query_json, fails
+    ):
+        output_dir = tmp_path / "alignments"
+        settings_yaml = tmp_path / "msa-settings.yml"
+        settings_yaml.write_text(f"msa_output_directory: {output_dir}\n")
+        workspaces = []
+
+        def fake_preprocess(inference_query_set, compute_settings):
+            workspace = compute_settings.workspace_directory
+            workspaces.append(workspace)
+            compute_settings.create_workspace()
+            if fails:
+                raise RuntimeError("failed")
+
+            compute_settings.saved_output_directory.mkdir(parents=True)
+            saved_msa = compute_settings.saved_output_directory / "main/alignment.a3m"
+            saved_msa.parent.mkdir(parents=True)
+            saved_msa.write_text(">query\nTEST")
+            inference_query_set.queries["query"].chains[0].main_msa_file_paths = [
+                saved_msa
+            ]
+            return inference_query_set
+
+        with (
+            patch("openfold3.run_openfold._torch_gpu_setup"),
+            patch(
+                "openfold3.core.data.tools.colabfold_msa_server.preprocess_colabfold_msas",
+                side_effect=fake_preprocess,
+            ),
+        ):
+            result = CliRunner().invoke(
+                run_openfold.cli,
+                [
+                    "align-msa-server",
+                    "--query-json",
+                    str(minimal_query_json),
+                    "--output-dir",
+                    str(output_dir),
+                    "--msa-computation-settings-yaml",
+                    str(settings_yaml),
+                ],
+            )
+
+        assert result.exit_code == (1 if fails else 0)
+        assert workspaces and not workspaces[0].exists()
+        if not fails:
+            saved_query = InferenceQuerySet.from_json(output_dir / "query_msa.json")
+            for chain in saved_query.queries["query"].chains:
+                assert all(path.exists() for path in chain.main_msa_file_paths)
 
     def test_seeding_from_list(self, tmp_path, dummy_ckpt_file):
         test_yaml_str = textwrap.dedent("""\

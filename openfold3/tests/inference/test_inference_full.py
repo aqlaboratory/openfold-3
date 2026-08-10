@@ -563,6 +563,23 @@ def test_inference_writes_outputs(case, mode, tmp_path):
         template_output_dir=tmp_path / "template_data",
     )
     logger.info("Checking output contents at %s", tmp_path)
+
+    msa_output_root = tmp_path / "msas"
+    msa_run_directories = [
+        path for path in msa_output_root.iterdir() if path.name != "raw"
+    ]
+    assert len(msa_run_directories) == 1
+    msa_run_directory = msa_run_directories[0]
+    expected_msa_directories = [
+        msa_run_directory / ("main" if mode.use_msa_server else "dummy")
+    ]
+    if mode.use_msa_server:
+        expected_msa_directories.append(
+            msa_output_root / "raw" / msa_run_directory.name / "main"
+        )
+    for directory in expected_msa_directories:
+        assert directory.is_dir(), f"Expected MSA directory not found: {directory}"
+
     for query_name in query_set.queries:
         seed_dir = prediction_dir(tmp_path, query_name)
         assert (seed_dir / "timing.json").exists(), (

@@ -596,6 +596,8 @@ class InferenceExperimentRunner(ExperimentRunner):
             use_msa_server,
             use_templates,
         )
+        msa_settings = experiment_config.msa_computation_settings
+        msa_settings.set_saved_output_root(self.output_dir / "msas")
 
     def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
         update_dict = {
@@ -801,32 +803,35 @@ class InferenceExperimentRunner(ExperimentRunner):
         if path.exists():
             shutil.rmtree(path)
 
+    def cleanup_msa_workspace(self):
+        """Remove the temporary MSA workspace created by this run."""
+        msa_settings = self.experiment_config.msa_computation_settings
+        try:
+            msa_settings.cleanup_workspace()
+        except OSError:
+            logger.warning(
+                "Could not remove temporary MSA workspace for run %s",
+                msa_settings.run_directory_name,
+                exc_info=True,
+            )
+
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
+        self.cleanup_msa_workspace()
+        msa_settings = self.experiment_config.msa_computation_settings
+
         if self.is_rank_zero and self.log_dir.is_dir() and not os.listdir(self.log_dir):
             print("Removing empty log directory...")
             self.log_dir.rmdir()
 
-        if self.use_msa_server and self.is_rank_zero:
-            print("Cleaning up MSA directories...")
-
-            # Always remove raw directory
-            # TODO: Change to use ColabFoldQueryRunner.cleanup() when
-            # msa processing is performed in `prepare_data` lightning data hook
-            raw_colabfold_msa_path = (
-                self.experiment_config.msa_computation_settings.msa_output_directory
-                / "raw"
-            )
-            self._maybe_remove_dir(raw_colabfold_msa_path)
-            if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
-                msa_output_dir = (
-                    self.experiment_config.msa_computation_settings.msa_output_directory
-                )
-                logger.info(f"Removing MSA output directory: {msa_output_dir}")
-                self._maybe_remove_dir(msa_output_dir)
-                if self.use_templates:
-                    template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
-                    self._maybe_remove_dir(template_dir)
+        if (
+            self.is_rank_zero
+            and self.use_msa_server
+            and msa_settings.cleanup_msa_dir
+            and self.use_templates
+        ):
+            template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
+            self._maybe_remove_dir(template_dir)
 
 
 class WandbHandler:
