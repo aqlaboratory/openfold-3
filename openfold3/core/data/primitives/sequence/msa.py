@@ -632,6 +632,7 @@ def extract_alignments_to_pair(
                 is_first_pairable_source = len(msa_arrays_to_pair_i) == 0
                 if not is_first_pairable_source:
                     m = m.truncate(slice(1, None))
+                    assert m is not None
                 # The first source still includes its query row, so it needs at
                 # least 2 rows to have any real hit; later sources already had
                 # their query row stripped above, so 1 row is enough.
