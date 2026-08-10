@@ -422,12 +422,11 @@ class SampleDiffusion(nn.Module):
         }
 
         pocket_sampling_enabled = _pocket_sampling_enabled(batch)
-        if pocket_sampling_enabled:
-            if batch_dim != 1:
-                raise ValueError(
-                    "Pocket proposal/refinement currently supports one query per "
-                    "model batch"
-                )
+        if pocket_sampling_enabled and batch_dim != 1:
+            raise ValueError(
+                "Pocket proposal/refinement currently supports one query per "
+                "model batch"
+            )
 
         xl = self._sample_rollout(xl=xl, start_step=0, **rollout_kwargs)
 
