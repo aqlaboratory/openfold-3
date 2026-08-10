@@ -48,7 +48,7 @@ def _query_with_pocket_constraint() -> Query:
 
 
 def _atom_array() -> AtomArray:
-    atom_array = AtomArray(7)
+    atom_array: AtomArray = AtomArray(7)
     atom_array.coord = np.zeros((7, 3), dtype=float)
     atom_array.chain_id = np.array(["A", "A", "A", "A", "L", "L", "L"])
     atom_array.res_id = np.array([1, 1, 2, 2, 1, 1, 1])

@@ -312,6 +312,7 @@ openfold3/core/data/pipelines/featurization/conformer.py:0: note: def any(input:
 openfold3/core/data/pipelines/featurization/conformer.py:0: note: def any(input: Tensor, dim: str | EllipsisType | None, keepdim: bool = ..., *, out: Tensor | None = ...) -> Tensor
 openfold3/core/data/pipelines/featurization/msa.py:0: error: Argument 1 to "create_features" of "MsaFeaturizerOF3" has incompatible type "dict[str, Tensor]"; expected "MsaFeaturePrecursorOF3"  [arg-type]
 openfold3/core/data/pipelines/featurization/msa.py:0: error: callable? not callable  [misc]
+openfold3/core/data/pipelines/featurization/pocket_constraints.py:0: error: "AtomArray[Any]" has no attribute "molecule_type_id"  [attr-defined]
 openfold3/core/data/pipelines/featurization/structure.py:0: error: "AtomArray[Any]" has no attribute "is_atomized"  [attr-defined]
 openfold3/core/data/pipelines/featurization/structure.py:0: error: "AtomArray[Any]" has no attribute "mol_entity_id"; maybe "entity_id"?  [attr-defined]
 openfold3/core/data/pipelines/featurization/structure.py:0: error: "AtomArray[Any]" has no attribute "mol_sym_component_id"  [attr-defined]

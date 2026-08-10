@@ -223,7 +223,7 @@ def _build_pocket_sampling_seeds(
             )
 
         candidates.sort(key=_candidate_sort_key)
-        selected = []
+        selected: list[_PocketSamplingCandidate] = []
         for cand in candidates:
             if all(
                 torch.sqrt(
