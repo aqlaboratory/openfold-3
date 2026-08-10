@@ -34,6 +34,9 @@ Each query entry is a dictionary with the following structure:
 ```
 "query_1": {
   "chains": [ { ... }, { ... } ],
+  "use_msas": true,
+  "use_main_msas": true,
+  "use_paired_msas": true,
 }
 ```
 
@@ -41,12 +44,33 @@ In the current inference release, the only required field is:
   - `chains` *(list of dict, required)*
     - A list of chain definitions, where each sub-dictionary specifies one chain in the assembly. See {ref}`Section 3 <3-chains>` for a full breakdown of chain-level fields.
 
+**Optional Fields**
+
+MSA usage is configured per query and applies to all chains within it -- these fields are not configurable at the chain level.
+
+- `use_msas` *(bool, optional, default = true)*
+  - Enables MSA usage. If false, the pipeline automatically falls back to a single-sequence MSA containing only the query. Completely omitting MSA inputs is {ref}`discouraged <323-inference-without-msas>` if the goal is to obtain the highest-accuracy structures.
+
+- `use_main_msas` *(bool, optional, default = true)*
+  - Controls whether to use unpaired MSAs.
+  - For monomers or homomers, disabling this results in using only the single sequence(s) as MSA features.
+  - For heteromers, disabling this results in using only the paired MSAs, including the query sequences, as MSA features.
+
+- `use_paired_msas` *(bool, optional, default = true)*
+  - Controls the use of explicitly paired MSAs.
+  - For homomers, main MSAs are internally concatenated and treated as implicitly paired, so disabling use_paired_msas does not change their MSA features.
+  - For heteromers, paired alignments across chains are used if available and disabling use_paired_msas results in using only main MSAs as MSA features.
+
 (3-chains)=
 ## 3. Chains
 
 Each entry in the ```chains``` list defines one or more instances of a molecular chain in the bioassembly. The required and optional fields vary depending on the type of molecule (```protein```, ```rna```, ```dna```, or ```ligand```).
 
 All chains must define a unique ```chain_ids``` field and appropriate sequence or structure information. Below are the supported molecule types and their associated schema:
+
+```{note}
+MSA usage toggles (`use_msas`, `use_main_msas`, `use_paired_msas`) are set at the query level, not per chain. See {ref}`Section 2 <2-queries>` for details.
+```
 
 (31-protein-chains)=
   ### 3.1. Protein chains
@@ -57,9 +81,6 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     "chain_ids": "A",
     "description": "Optional metadata example",
     "sequence": "PVLSCGEWQCL",
-    "use_msas": true,
-    "use_main_msas": true,
-    "use_paired_msas": true,
     "main_msa_file_paths": "/absolute/path/to/main_msas",
     "paired_msa_file_paths": "/absolute/path/to/paired_msas",
     "template_alignment_file_path": "/absolute/path/to/template_msa",
@@ -85,19 +106,6 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - A dictionary mapping residue indices (1-based) to non-canonical residue names.
     - Note that MSA computation will only refer to the primary `sequence`.
     - Example: `{"1": "MHO", "5": "SEP"}`
-
-  - `use_msas` *(bool, optional, default = true)*
-    - Enables MSA usage. If false, empty MSA features are provided to the model. We suggest running MSA-free inference mode via a dummy MSA with only the query sequence and completely omitting MSA inputs is {ref}`discouraged <323-inference-without-msas>` if the goal is to obtain the highest-accuracy structures.
-
-  - `use_main_msas` *(bool, optional, default = true)*
-    - Controls whether to use unpaired MSAs. 
-    - For monomers or homomers, disabling this results in using only the single sequence(s) as MSA features.
-    - For heteromers, disabling this results in using only the paired MSAs, including the query sequences, as MSA features.
-
-  - `use_paired_msas` *(bool, optional, default = true)*
-    - Controls the use of explicitly paired MSAs.
-    - For homomers, main MSAs are internally concatenated and treated as implicitly paired, so disabling use_paired_msas does not change their MSA features.
-    - For heteromers, paired alignments across chains are used if available and disabling use_paired_msas results in using only main MSAs as MSA features.
 
   - `main_msa_file_paths` *(str | list[str], optional, default = null)*
     - Path or list of paths to the MSA files for this chain.
@@ -141,8 +149,6 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     "molecule_type": "rna",
     "chain_ids": "E",
     "sequence": "AGCU",
-    "use_msas": true,
-    "use_main_msas": true,
     "main_msa_file_paths": "/absolute/path/to/main_msa.sto/a3m",
   }
   ```
@@ -155,12 +161,6 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
 
   - `sequence` *(str, required)*
     - Nucleic acid sequence (1-letter codes).
-
-  - `use_msas` *(bool, optional, default = true)*
-    - Enables MSA usage. If false, empty MSA features are provided to the model. We suggest running MSA-free inference mode via a dummy MSA with only the query sequence and completely omitting MSA inputs is {ref}`discouraged <323-inference-without-msas>` if the goal is to obtain the highest-accuracy structures.
-
-  - `use_main_msas` *(bool, optional, default = true)*
-    - Controls whether to use unpaired MSAs. For monomers or homomers, disabling this results in using only the single sequence.
 
   - `main_msa_file_paths` *(str | list[str], optional, default = null)*
     - Path or list of paths to the MSA files for this chain.
@@ -246,17 +246,11 @@ Below is a complete example of an input JSON file specifying a single bioassembl
                     "molecule_type": "protein",
                     "chain_ids": "A",
                     "sequence": "PVLSCGEWQCL",
-                    "use_msas": true,
-                    "use_main_msas": true,
-                    "use_paired_msas": true,
                 },
                 {
                     "molecule_type": "protein",
                     "chain_ids": "B",
                     "sequence": "RPACQLWWSRGNWERINQLWW",
-                    "use_msas": true,
-                    "use_main_msas": true,
-                    "use_paired_msas": true,
                 },
                 {
                     "molecule_type": "dna",
@@ -267,7 +261,6 @@ Below is a complete example of an input JSON file specifying a single bioassembl
                     "chain_ids": "E",
                     "molecule_type": "rna",
                     "sequence": "AGCU",
-                    "use_msas": true,
                 },
                 {
                     "molecule_type": "ligand",
@@ -280,6 +273,9 @@ Below is a complete example of an input JSON file specifying a single bioassembl
                     "ccd_codes": ["NAG"],
                 }
             ],
+            "use_msas": true,
+            "use_main_msas": true,
+            "use_paired_msas": true,
         }
     },
     "ccd_file_path": "/path/to/CCD/file.cif"
