@@ -166,6 +166,7 @@ model_config = mlc.ConfigDict(
                 "log_grad_norm": False,
                 "log_extra_grad_metrics": False,
                 "profile_grad_logging": False,
+                "log_iteration_time": False,
             },
         },
         "architecture": {
