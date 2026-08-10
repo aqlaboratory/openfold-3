@@ -217,9 +217,8 @@ def run_inference(
     """Run one inference job into ``output_dir`` and return it.
 
     Skips (``pytest.skip``) if no model checkpoint is available (escalated to a hard
-    failure when ``OPENFOLD_SETUP_SCRIPT=1``). ``template_output_dir`` isolates the
-    template cache per run (otherwise it lands in a persistent ``/tmp`` dir shared across
-    runs and same-sequence queries).
+    failure when ``OPENFOLD_SETUP_SCRIPT=1``). ``template_output_dir`` preserves
+    template files for tests that inspect or reuse them.
     """
     runner_yaml = output_dir / "runner_config.yaml"
     yaml_str = inference_test_yaml_str

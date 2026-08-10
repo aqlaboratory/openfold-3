@@ -16,6 +16,8 @@
 import json
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -32,6 +34,7 @@ import openfold3.core.model.primitives.initialization as initialization
 from openfold3 import run_openfold, setup_openfold
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModuleConfig
+from openfold3.core.data.pipelines.preprocessing import template as template_module
 from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
     TrainingExperimentRunner,
@@ -80,6 +83,17 @@ def _create_fake_file(path: Path) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write("dummy content")
+
+
+def _reserve_template_output(expt_config: InferenceExperimentConfig) -> Path:
+    settings = expt_config.template_preprocessor_settings
+    preprocessor = template_module.TemplatePreprocessor(
+        input_set=InferenceQuerySet(queries={}),
+        config=settings,
+    )
+    preprocessor._ensure_output_directories()
+    assert settings.output_directory is not None
+    return settings.output_directory
 
 
 def _fake_download_s3_file(unused_bucket: str, unused_key: str, local_path: Path):
@@ -593,6 +607,65 @@ class TestInferenceCommandLineSettings:
             expt_runner.output_dir / "msas" / msa_settings.run_directory_name
         )
 
+    def test_output_override_controls_default_intermediate_paths(
+        self, tmp_path, dummy_ckpt_file
+    ):
+        original_output = tmp_path / "original"
+        overridden_output = tmp_path / "overridden"
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            experiment_settings={
+                "output_dir": original_output,
+                "use_templates": True,
+            },
+        )
+
+        InferenceExperimentRunner(
+            expt_config,
+            output_dir=overridden_output,
+        )
+
+        msa_settings = expt_config.msa_computation_settings
+        intermediate_root = overridden_output / "openfold3_intermediates"
+        assert expt_config.experiment_settings.output_dir == overridden_output
+        assert msa_settings.workspace_directory.parent == (
+            intermediate_root / "colabfold_msas"
+        )
+        template_settings = expt_config.template_preprocessor_settings
+        assert template_settings.output_directory == (
+            intermediate_root / "template_data" / msa_settings.run_directory_name
+        )
+        assert not intermediate_root.exists()
+
+    def test_runner_preserves_explicit_template_output(self, tmp_path, dummy_ckpt_file):
+        original_output = tmp_path / "original"
+        explicit_template_output = (
+            original_output / "openfold3_intermediates" / "template_data"
+        )
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            experiment_settings={
+                "output_dir": original_output,
+                "use_templates": True,
+            },
+            template_preprocessor_settings={
+                "output_directory": explicit_template_output,
+            },
+        )
+
+        runner = InferenceExperimentRunner(
+            expt_config,
+            output_dir=tmp_path / "overridden",
+        )
+
+        template_settings = expt_config.template_preprocessor_settings
+        assert template_settings.output_directory == explicit_template_output
+
+        sentinel = explicit_template_output / "keep-me"
+        sentinel.write_text("persistent")
+        runner.cleanup_intermediates()
+        assert sentinel.is_file()
+
     def test_predict_calls_cleanup_after_failure(
         self, minimal_query_json, dummy_ckpt_file
     ):
@@ -615,13 +688,89 @@ class TestInferenceCommandLineSettings:
             )
 
         assert result.exit_code != 0
-        mock_runner_class.return_value.cleanup_msa_workspace.assert_called_once()
+        mock_runner_class.return_value.cleanup_intermediates.assert_called_once()
+
+    def test_validator_import_does_not_create_tmp_intermediates(self, tmp_path):
+        isolated_tmp = tmp_path / "tmp"
+        isolated_tmp.mkdir()
+        child_env = os.environ | {
+            "TMPDIR": str(isolated_tmp),
+            "TMP": str(isolated_tmp),
+            "TEMP": str(isolated_tmp),
+        }
+
+        subprocess.run(
+            [sys.executable, "-c", "import openfold3.entry_points.validator"],
+            env=child_env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
+
+        assert list(isolated_tmp.glob("of3-of-*")) == []
+
+    @pytest.mark.parametrize("cleanup_enabled", [False, True])
+    def test_cleanup_respects_template_cleanup_setting(
+        self, tmp_path, dummy_ckpt_file, cleanup_enabled
+    ):
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            experiment_settings={
+                "output_dir": tmp_path / "output",
+                "use_msa_server": False,
+                "use_templates": True,
+            },
+            msa_computation_settings={"cleanup_msa_dir": cleanup_enabled},
+        )
+        runner = InferenceExperimentRunner(expt_config)
+        template_output = _reserve_template_output(expt_config)
+        artifact = template_output / "artifact"
+        artifact.write_text("temporary")
+
+        runner.cleanup_intermediates()
+
+        if cleanup_enabled:
+            assert not template_output.exists()
+        else:
+            assert artifact.is_file()
+
+    def test_template_directory_reservation_rejects_existing_path(
+        self,
+        tmp_path,
+        dummy_ckpt_file,
+    ):
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            experiment_settings={
+                "output_dir": tmp_path / "output",
+                "use_templates": True,
+            },
+        )
+        runner = InferenceExperimentRunner(expt_config)
+        settings = expt_config.template_preprocessor_settings
+        settings.output_directory.mkdir(parents=True)
+        sentinel = settings.output_directory / "foreign-owner"
+        sentinel.write_text("active")
+        preprocessor = template_module.TemplatePreprocessor(
+            input_set=InferenceQuerySet(queries={}),
+            config=settings,
+        )
+
+        with pytest.raises(FileExistsError):
+            preprocessor._ensure_output_directories()
+
+        runner.cleanup_intermediates()
+
+        assert sentinel.read_text() == "active"
 
     @pytest.mark.parametrize("fails", [False, True])
     def test_align_msa_server_always_cleans_its_workspace(
         self, tmp_path, minimal_query_json, fails
     ):
         output_dir = tmp_path / "alignments"
+        system_tmp = tmp_path / "system-tmp"
+        system_tmp.mkdir()
         settings_yaml = tmp_path / "msa-settings.yml"
         settings_yaml.write_text(f"msa_output_directory: {output_dir}\n")
         workspaces = []
@@ -633,7 +782,7 @@ class TestInferenceCommandLineSettings:
             if fails:
                 raise RuntimeError("failed")
 
-            compute_settings.saved_output_directory.mkdir(parents=True)
+            compute_settings.saved_output_directory.mkdir(parents=True, exist_ok=True)
             saved_msa = compute_settings.saved_output_directory / "main/alignment.a3m"
             saved_msa.parent.mkdir(parents=True)
             saved_msa.write_text(">query\nTEST")
@@ -643,6 +792,7 @@ class TestInferenceCommandLineSettings:
             return inference_query_set
 
         with (
+            patch.object(tempfile, "gettempdir", return_value=str(system_tmp)),
             patch("openfold3.run_openfold._torch_gpu_setup"),
             patch(
                 "openfold3.core.data.tools.colabfold_msa_server.preprocess_colabfold_msas",
@@ -664,6 +814,10 @@ class TestInferenceCommandLineSettings:
 
         assert result.exit_code == (1 if fails else 0)
         assert workspaces and not workspaces[0].exists()
+        assert workspaces[0].parent == (
+            output_dir / "openfold3_intermediates" / "colabfold_msas"
+        )
+        assert not list(system_tmp.glob("of3-of-*"))
         if not fails:
             saved_query = InferenceQuerySet.from_json(output_dir / "query_msa.json")
             for chain in saved_query.queries["query"].chains:

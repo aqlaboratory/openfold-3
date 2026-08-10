@@ -387,8 +387,8 @@ class InferenceExperimentConfig(ExperimentConfig):
     msa_computation_settings: MsaComputationSettings = Field(
         default_factory=MsaComputationSettings
     )
-    template_preprocessor_settings: TemplatePreprocessorSettings = (
-        TemplatePreprocessorSettings(mode="predict")
+    template_preprocessor_settings: TemplatePreprocessorSettings = Field(
+        default_factory=lambda: TemplatePreprocessorSettings(mode="predict")
     )
 
     @model_validator(mode="before")

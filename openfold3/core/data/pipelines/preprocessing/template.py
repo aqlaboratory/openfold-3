@@ -37,6 +37,7 @@ from func_timeout.exceptions import FunctionTimedOut
 from pydantic import (
     BaseModel,
     BeforeValidator,
+    PrivateAttr,
     model_validator,
 )
 from pydantic import ConfigDict as PydanticConfigDict
@@ -1695,6 +1696,9 @@ class TemplatePreprocessorSettings(BaseModel):
     log_directory: Path | None = None
 
     ccd_file_path: Path | None = None
+    _implicit_paths: set[str] = PrivateAttr(default_factory=set)
+    _output_directory_is_run_default: bool = PrivateAttr(default=False)
+    _run_owned_output_directory: Path | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def _prepare_output_directories(self) -> "TemplatePreprocessorSettings":
@@ -1708,41 +1712,86 @@ class TemplatePreprocessorSettings(BaseModel):
             )
 
         if self.output_directory is None:
-            from openfold3.core.data.tools.utils import get_of3_tmpdir
+            from openfold3.core.data.tools.utils import _get_of3_tmpdir_path
 
-            self.output_directory = get_of3_tmpdir("template_data")
+            self.output_directory = _get_of3_tmpdir_path("template_data")
+            self._implicit_paths.add("output_directory")
 
+        self._set_derived_output_directories()
+        output_is_implicit = "output_directory" in self._implicit_paths
+        for field_name, directory in (
+            ("output_directory", self.output_directory),
+            ("structure_directory", self.structure_directory),
+            ("cache_directory", self.cache_directory),
+            ("precache_directory", self.precache_directory),
+            ("structure_array_directory", self.structure_array_directory),
+            ("log_directory", self.log_directory),
+        ):
+            if directory is not None and (
+                not output_is_implicit or field_name not in self._implicit_paths
+            ):
+                directory.mkdir(parents=True, exist_ok=True)
+        return self
+
+    def _set_derived_output_directories(self) -> None:
+        """Fill unset template subdirectories from the configured output root."""
         base = self.output_directory
+        if base is None:
+            return
 
-        # only set these if the user did not give them explicitly
-        self.structure_directory = self.structure_directory or (
-            base / "template_structures"
-        )
-        self.cache_directory = self.cache_directory or (base / "template_cache")
+        derived_paths = {
+            "structure_directory": base / "template_structures",
+            "cache_directory": base / "template_cache",
+        }
         if self.create_precache:
-            self.precache_directory = self.precache_directory or (
-                base / "template_precache"
-            )
+            derived_paths["precache_directory"] = base / "template_precache"
         if self.preparse_structures:
-            self.structure_array_directory = self.structure_array_directory or (
+            derived_paths["structure_array_directory"] = (
                 base / "template_structure_arrays"
             )
         if self.create_logs:
-            self.log_directory = self.log_directory or (base / "template_logs")
+            derived_paths["log_directory"] = base / "template_logs"
 
-        for d in (
-            base,
-            self.output_directory,
-            self.structure_directory,
-            self.cache_directory,
-            self.precache_directory,
-            self.structure_array_directory,
-            self.log_directory,
-        ):
-            if d is not None:
-                os.makedirs(d, exist_ok=True)
+        for field_name, path in derived_paths.items():
+            if getattr(self, field_name) is None:
+                setattr(self, field_name, path)
+                self._implicit_paths.add(field_name)
 
-        return self
+    def _set_inference_output_directory(self, output_directory: Path) -> None:
+        """Use the inference output directory in place of the temporary default."""
+        if self._run_owned_output_directory is not None:
+            raise RuntimeError(
+                "Cannot change the template output directory while it is in use"
+            )
+        if "output_directory" not in self._implicit_paths:
+            return
+
+        output_directory = Path(output_directory)
+        self.output_directory = output_directory
+        derived_paths = {
+            "structure_directory": output_directory / "template_structures",
+            "cache_directory": output_directory / "template_cache",
+            "precache_directory": output_directory / "template_precache",
+            "structure_array_directory": output_directory / "template_structure_arrays",
+            "log_directory": output_directory / "template_logs",
+        }
+        for field_name, path in derived_paths.items():
+            if field_name in self._implicit_paths:
+                setattr(self, field_name, path)
+        self._output_directory_is_run_default = True
+
+    def _record_output_directory_created(self) -> None:
+        """Record that this run created the default template directory."""
+        if not self._output_directory_is_run_default:
+            raise RuntimeError(
+                "Cannot record an explicitly configured template directory "
+                "as created by this run"
+            )
+        self._run_owned_output_directory = self.output_directory
+
+    def _record_output_directory_removed(self) -> None:
+        """Clear the record after cleanup."""
+        self._run_owned_output_directory = None
 
 
 class TemplatePreprocessor:
@@ -1780,6 +1829,9 @@ class TemplatePreprocessor:
         self.chunksize = config.chunksize
         self.preprocess_timeout = config.preprocess_timeout
 
+        self.config = config
+        self.output_directory = config.output_directory
+        self.output_directory_is_run_default = config._output_directory_is_run_default
         self.structure_directory = config.structure_directory
         self.structure_file_format = config.structure_file_format
         self.precache_directory = config.precache_directory
@@ -1807,6 +1859,47 @@ class TemplatePreprocessor:
             raise ValueError(
                 "Input set must be either DatasetCache or InferenceQuerySet"
             )
+
+    def _ensure_output_directories(self) -> None:
+        """Create configured output directories immediately before use."""
+        if self.cache_directory is None:
+            raise ValueError(
+                "Template preprocessing requires cache_directory. Configure it "
+                "directly or provide template_preprocessor_settings.output_directory."
+            )
+        if self.create_precache and self.precache_directory is None:
+            raise ValueError(
+                "create_precache=True requires precache_directory. Configure it "
+                "directly or provide template_preprocessor_settings.output_directory."
+            )
+        if self.preparse_structures and self.structure_array_directory is None:
+            raise ValueError(
+                "preparse_structures=True requires structure_array_directory. "
+                "Configure it directly or provide "
+                "template_preprocessor_settings.output_directory."
+            )
+        if self.create_logs and self.log_directory is None:
+            raise ValueError(
+                "create_logs=True requires log_directory. Configure it directly or "
+                "provide template_preprocessor_settings.output_directory."
+            )
+
+        if self.output_directory is not None:
+            self.output_directory.mkdir(
+                parents=True,
+                exist_ok=not self.output_directory_is_run_default,
+            )
+            if self.output_directory_is_run_default:
+                self.config._record_output_directory_created()
+        for directory in (
+            self.structure_directory,
+            self.cache_directory,
+            self.precache_directory,
+            self.structure_array_directory,
+            self.log_directory,
+        ):
+            if directory is not None:
+                directory.mkdir(parents=True, exist_ok=True)
 
     def _parse_dataset_cache(self) -> None:
         raise NotImplementedError
@@ -1893,6 +1986,7 @@ class TemplatePreprocessor:
     def __call__(self) -> None:
         # Preprocess template alignments into template cache entries
         if len(self.inputs) >= 1:
+            self._ensure_output_directories()
             manager = mp.Manager()
             self.processed_cache_keys = manager.dict()
             self.template_ids_by_cache_key = manager.dict()
@@ -2443,6 +2537,11 @@ class TemplatePrecachePreprocessor:
             print("No structure array directory provided. No additional filtering.")
 
     def __call__(self) -> None:
+        if not self.template_entry_ids:
+            return
+        if self.precache_directory is None:
+            raise RuntimeError("Precache output path was not configured")
+        self.precache_directory.mkdir(parents=True, exist_ok=True)
         with mp.Pool(self.n_processes) as pool:
             for _ in tqdm(
                 pool.imap_unordered(
@@ -2622,6 +2721,11 @@ class TemplateStructurePreprocessor:
         print(f"Found {len(self.template_entry_ids)} template structures to process.")
 
     def __call__(self) -> None:
+        if not self.template_entry_ids:
+            return
+        if self.structure_array_directory is None:
+            raise RuntimeError("Structure array output path was not configured")
+        self.structure_array_directory.mkdir(parents=True, exist_ok=True)
         with mp.Pool(self.n_processes) as pool:
             for _ in tqdm(
                 pool.imap_unordered(
