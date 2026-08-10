@@ -37,23 +37,23 @@ cd openfold-3
 
 OpenFold3 includes several pre-configured pixi environments for different systems and hardware configurations.
 
-To set up and run OpenFold3 using the CPU environment, run:
+To set up and run OpenFold3 using the base (non-CUDA/ROCm) environment, run:
 
 ```shell
-pixi run -e openfold3-cpu setup_openfold
-pixi run -e openfold3-cpu run_openfold
+pixi run -e openfold3-base setup_openfold
+pixi run -e openfold3-base run_openfold
 ```
 
 Available pixi environments:
 
 | Environment        | Supported platforms                                | Description                                                          |
 | ------------------ | -------------------------------------------------- | -------------------------------------------------------------------- |
-| `openfold3-cpu`    | `linux-64`, `linux-aarch64`, `osx-64`, `osx-arm64` | CPU-only environment for running OpenFold3 without GPU acceleration. |
+| `openfold3-base`   | `linux-64`, `linux-aarch64`, `osx-64`, `osx-arm64` | Environment without CUDA or ROCm. CPU-only on Linux; on Apple Silicon the same pytorch build also provides MPS acceleration. |
 | `openfold3-cuda12` | `linux-64`, `linux-aarch64`                        | NVIDIA GPU environment using CUDA 12.                                |
 | `openfold3-cuda13` | `linux-64`, `linux-aarch64`                        | NVIDIA GPU environment using CUDA 13.                                |
 | `openfold3-rocm7`  | `linux-64`                                         | AMD GPU environment using ROCm 7.                                    |
 
-Choose the environment that matches your system. For example, use `openfold3-cpu` for CPU-only installations, `openfold3-cuda12` or `openfold3-cuda13` for NVIDIA GPU systems, and `openfold3-rocm7` for AMD ROCm systems.
+Choose the environment that matches your system. For example, use `openfold3-base` for non-CUDA/ROCm installations (including Apple Silicon), `openfold3-cuda12` or `openfold3-cuda13` for NVIDIA GPU systems, and `openfold3-rocm7` for AMD ROCm systems.
 
 For more information, including rationale, tips and tricks, see [Modern Conda Environments with Pixi](./modern-conda-environments-with-pixi.md).
 
