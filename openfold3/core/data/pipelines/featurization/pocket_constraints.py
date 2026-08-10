@@ -136,9 +136,7 @@ def create_pocket_sampling_features(
             )
         pocket_mask |= residue_mask
     if not lig_mask.any() or not pocket_mask.any():
-        raise ValueError(
-            "pocket sampling requested but ligand or pocket mask is empty"
-        )
+        raise ValueError("Pocket sampling requested but ligand or pocket mask is empty")
 
     def _vdw_radius(element: object) -> float:
         if not isinstance(element, str):
