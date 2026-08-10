@@ -49,7 +49,7 @@ In the current inference release, the only required field is:
 MSA usage is configured per query and applies to all chains within it -- these fields are not configurable at the chain level.
 
 - `use_msas` *(bool, optional, default = true)*
-  - Enables MSA usage. If false, empty MSA features are provided to the model. We suggest running MSA-free inference mode via a dummy MSA with only the query sequence and completely omitting MSA inputs is {ref}`discouraged <323-inference-without-msas>` if the goal is to obtain the highest-accuracy structures.
+  - Enables MSA usage. If false, the pipeline automatically falls back to a single-sequence MSA containing only the query. Completely omitting MSA inputs is {ref}`discouraged <323-inference-without-msas>` if the goal is to obtain the highest-accuracy structures.
 
 - `use_main_msas` *(bool, optional, default = true)*
   - Controls whether to use unpaired MSAs.
