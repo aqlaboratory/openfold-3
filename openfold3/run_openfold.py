@@ -30,6 +30,21 @@ from openfold3.entry_points.import_utils import _torch_gpu_setup
 logger = logging.getLogger(__name__)
 
 
+def _destroy_process_group() -> None:
+    """Tear down the distributed process group before the interpreter exits.
+
+    Without this the NCCL process group is only released by
+    ``ProcessGroupNCCL``'s destructor during interpreter finalization, which
+    can block indefinitely: every rank stays alive holding its GPU memory at
+    0% utilisation until the scheduler kills the job.
+    """
+    import torch.distributed as dist
+
+    if dist.is_available() and dist.is_initialized():
+        logger.info("Destroying the distributed process group.")
+        dist.destroy_process_group()
+
+
 @click.group()
 def cli():
     pass
@@ -74,7 +89,10 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
 
     expt_runner = TrainingExperimentRunner(expt_config)
     expt_runner.setup()
-    expt_runner.run()
+    try:
+        expt_runner.run()
+    finally:
+        _destroy_process_group()
 
 
 @cli.command()
@@ -198,8 +216,11 @@ def predict(
 
     # Run the forward pass
     expt_runner.setup()
-    expt_runner.run(query_set)
-    expt_runner.cleanup()
+    try:
+        expt_runner.run(query_set)
+        expt_runner.cleanup()
+    finally:
+        _destroy_process_group()
 
 
 @cli.command()
