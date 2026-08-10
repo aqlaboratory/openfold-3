@@ -85,14 +85,9 @@ LIGAND_CHAIN_ID = "L"
 #: (res 301) is the allosteric copy those residues actually surround (~5.8 A to the
 #: pocket-residue centroid) and is what ``pocket_constraint`` targets. Chain A's sequence
 #: matches the query byte-for-byte, so residue numbering lines up directly with
-#: ``pocket_residues``.
+#: ``pocket_residues``. 
 REF_CIF = MMCIFS_DIR / "1pzp.cif"
 REF_LIGAND_CHAIN_ID = "C"
-
-# PR #324's own best-of-16 numbers for this case (0.63 A / 20.98 A) were measured with
-# 16 diffusion samples, we simplify this test to use 5 diffusion samples but increase
-# expected min COM
-NUM_DIFFUSION_SAMPLES = 5
 
 #: Full search — the realistic case a pocket constraint is meant for, docking a ligand
 #: into a properly folded structure rather than an unconverged single-sequence one.
@@ -109,13 +104,10 @@ POCKET_SAMPLING_OFF_YAML = textwrap.dedent("""\
         enabled: False
     """)
 
-# Measured 2026-08-10 on of3-p2-155k, 5 samples, seed 42,
-# scored against this exact reference/chain pairing:
-#   enabled  COM per-sample 0.34, 2.85, 3.23, 3.59, 3.67 -> best 0.34, mean 2.73
-#   disabled COM per-sample 21.29, 21.30, 22.26, 22.54, 30.05 -> best 21.29, mean 23.48
-# matching the PR's own best-of-16 numbers for this case (0.63 A / 20.98 A) closely
-# enough to confirm the reference and chain mapping above are right.
-# Using 5 samples in this test instead of 16 to reduce compute cost
+# PR #324's own best-of-16 numbers for this case (0.63 A / 20.98 A) were measured with
+# 16 diffusion samples, we simplify this test to use 5 diffusion samples but increase
+# expected min COM from 2 -> 5 
+NUM_DIFFUSION_SAMPLES = 5
 POCKET_SAMPLING_ON_COM_MAX_ANGSTROM = 5.0
 POCKET_SAMPLING_OFF_COM_MIN_ANGSTROM = 10.0
 
