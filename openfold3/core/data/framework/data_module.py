@@ -47,7 +47,7 @@ import platform
 import sys
 import warnings
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytorch_lightning as pl
 import torch
@@ -73,6 +73,11 @@ from openfold3.core.data.tools.colabfold_msa_server import (
     preprocess_colabfold_msas,
 )
 from openfold3.core.utils.tensor_utils import dict_multimap
+
+if TYPE_CHECKING:
+    from openfold3.projects.of3_all_atom.config.dataset_configs import (
+        InferenceJobConfig,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -654,6 +659,8 @@ class DataModule(pl.LightningDataModule):
 class InferenceDataModule(DataModule):
     """LightningDataModule that contains a prepare_data hook for inference."""
 
+    inference_config: "InferenceJobConfig"
+
     def __init__(
         self,
         data_module_config: DataModuleConfig,
@@ -668,7 +675,7 @@ class InferenceDataModule(DataModule):
         self.use_templates = use_templates
         self.msa_computation_settings = msa_computation_settings
         _configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.prediction)
-        self.inference_config = _configs.configs[0]
+        self.inference_config = cast("InferenceJobConfig", _configs.configs[0])
 
     def prepare_data(self) -> None:
         logger.info("=" * 60)
@@ -700,11 +707,11 @@ class InferenceDataModule(DataModule):
             template_preprocessor()
             logger.info("Template preprocessing complete!")
 
-    def setup(self, stage=None):
+    def setup(self, stage: str | None = None) -> None:
         """Broadcast updated query set to all ranks if multiple GPUs are used."""
         if self.world_size and self.world_size > 1:
             if dist.get_rank() == 0:
-                placeholder = [self.inference_config.query_set]
+                placeholder: list[Any] = [self.inference_config.query_set]
             else:
                 placeholder = [None]
             dist.broadcast_object_list(placeholder, src=0)
