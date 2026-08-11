@@ -85,7 +85,7 @@ LIGAND_CHAIN_ID = "L"
 #: (res 301) is the allosteric copy those residues actually surround (~5.8 A to the
 #: pocket-residue centroid) and is what ``pocket_constraint`` targets. Chain A's sequence
 #: matches the query byte-for-byte, so residue numbering lines up directly with
-#: ``pocket_residues``. 
+#: ``pocket_residues``.
 REF_CIF = MMCIFS_DIR / "1pzp.cif"
 REF_LIGAND_CHAIN_ID = "C"
 
@@ -94,29 +94,17 @@ REF_LIGAND_CHAIN_ID = "C"
 USE_MSA_SERVER = True
 USE_TEMPLATES = True
 
-#: Disables pocket-guided proposal sampling without touching the query — the constraint
-#: stays in the (unmodified) query JSON, so this is an ablation of the setting, not of
-#: the input. All other ``PocketSamplingSettings`` fields are left at their pydantic
-#: defaults; only ``enabled`` matters for this comparison.
-POCKET_SAMPLING_OFF_YAML = textwrap.dedent("""\
-    dataset_config_kwargs:
-      pocket_sampling:
-        enabled: False
-    """)
-
 # PR #324's own best-of-16 numbers for this case (0.63 A / 20.98 A) were measured with
 # 16 diffusion samples, we simplify this test to use 5 diffusion samples but increase
-# expected min COM from 2 -> 5 
+# expected min COM from 2 -> 5
 NUM_DIFFUSION_SAMPLES = 5
 POCKET_SAMPLING_ON_COM_MAX_ANGSTROM = 5.0
 POCKET_SAMPLING_OFF_COM_MIN_ANGSTROM = 10.0
 
 
-def _run(*, pocket_sampling_enabled: bool, tmp_path: Path) -> list[Path]:
+def _run(*, extra_yaml: str, out_dir: Path) -> list[Path]:
     """Run one condition and return its predicted sample cifs, in sample order."""
     query_set = InferenceQuerySet.from_json(POCKET_QUERY_JSON)
-    key = f"pocket_sampling_{'on' if pocket_sampling_enabled else 'off'}"
-    out_dir = tmp_path / key
     out_dir.mkdir(parents=True, exist_ok=True)
     run_inference(
         query_set,
@@ -124,8 +112,7 @@ def _run(*, pocket_sampling_enabled: bool, tmp_path: Path) -> list[Path]:
         use_msa_server=USE_MSA_SERVER,
         use_templates=USE_TEMPLATES,
         num_diffusion_samples=NUM_DIFFUSION_SAMPLES,
-        template_output_dir=out_dir / "template_data",
-        extra_yaml="" if pocket_sampling_enabled else POCKET_SAMPLING_OFF_YAML,
+        extra_yaml=extra_yaml,
     )
     return predicted_structure_cifs(out_dir, QUERY_NAME)
 
@@ -158,8 +145,22 @@ def test_pocket_constraint_localizes_ligand(tmp_path):
     """
     ref = Structure.from_cif(REF_CIF)
 
-    on_cifs = _run(pocket_sampling_enabled=True, tmp_path=tmp_path)
-    off_cifs = _run(pocket_sampling_enabled=False, tmp_path=tmp_path)
+    def _make_pocket_sampling_yaml(enabled: bool) -> str:
+        return textwrap.dedent(
+            f"""\
+            dataset_config_kwargs:
+              pocket_sampling:
+                enabled: {enabled}
+            """
+        )
+
+    on_cifs = _run(
+        extra_yaml=_make_pocket_sampling_yaml(enabled=True), out_dir=(tmp_path / "on")
+    )
+    off_cifs = _run(
+        extra_yaml=_make_pocket_sampling_yaml(enabled=False),
+        out_dir=(tmp_path / "off"),
+    )
 
     on_com = _best_of_n_com(on_cifs, ref=ref)
     off_com = _best_of_n_com(off_cifs, ref=ref)
@@ -183,7 +184,3 @@ def test_pocket_constraint_localizes_ligand(tmp_path):
         f"{POCKET_SAMPLING_OFF_COM_MIN_ANGSTROM} Å floor, i.e. pocket guidance may "
         "no longer be doing anything"
     )
-
-
-if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-vv"]))
