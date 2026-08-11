@@ -16,7 +16,10 @@ from openfold3.core.utils.logging_utils import ContextInjectingFilter
     "--cif-dir",
     type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
     required=True,
-    help="Path to directory containing input mmCIF files.",
+    help=(
+        "Path to a directory tree containing input mmCIF files. Files are discovered "
+        "recursively and must have unique filename stems."
+    ),
 )
 @click.option(
     "--ccd-path",
