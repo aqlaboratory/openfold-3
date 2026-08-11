@@ -831,12 +831,11 @@ class TestUserDefaultRunnerYaml:
     def test_no_default_runner_yaml(self, tmp_path, dummy_ckpt_file):
         """Scenario 1: no runner.yml in cache → defaults, path is None."""
         cache = tmp_path / ".openfold3"
-        
+
         cfg = _build_inference_config(dummy_ckpt_file, cache_path=cache)
 
         assert cfg.user_default_runner_yaml_path is None
         assert cfg.output_writer_settings.structure_format == "cif"
-
 
     def test_default_runner_yaml_applied(self, tmp_path, dummy_ckpt_file):
         """Scenario 2: runner.yml in cache → settings applied, path recorded."""
@@ -896,10 +895,10 @@ class TestUserDefaultRunnerYaml:
     def test_corrupted_runner_yaml_raises_error(self, tmp_path, dummy_ckpt_file):
         """Scenario 4: cache runner.yml is corrupted → fails gracefully with yaml error."""
         import yaml
-        
+
         cache = tmp_path / ".openfold3"
         cache.mkdir()
-        
+
         # Write an intentionally malformed YAML (indentation error)
         (cache / "runner.yml").write_text(
             textwrap.dedent("""\
@@ -909,7 +908,7 @@ class TestUserDefaultRunnerYaml:
                 """)
         )
 
-        # Verify that when attempting to build the configuration, 
+        # Verify that when attempting to build the configuration,
         # the system raises a YAML error, preventing silent failures.
         with pytest.raises(yaml.YAMLError):
             _build_inference_config(dummy_ckpt_file, cache_path=cache)
