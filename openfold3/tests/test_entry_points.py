@@ -812,7 +812,7 @@ def _build_inference_config(
         runner_args = config_utils.load_yaml(default_yml)
         user_default_runner_path = default_yml.resolve()
     else:
-        runner_args: dict = {}
+        runner_args = {}
 
     if runner_yaml:
         config_utils.deep_update(runner_args, config_utils.load_yaml(runner_yaml))
