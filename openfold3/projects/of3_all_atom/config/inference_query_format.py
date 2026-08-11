@@ -23,6 +23,7 @@ from pydantic import (
     model_validator,
 )
 
+from openfold3.core.config import pocket_sampling_config as pocket_defaults
 from openfold3.core.config.config_utils import (
     _cast_keys_to_int,
     _convert_molecule_type,
@@ -41,6 +42,31 @@ class Atom(NamedTuple):
 class Bond(NamedTuple):
     atom1: Atom
     atom2: Atom
+
+
+class PocketResidue(NamedTuple):
+    """Residue address used to define a ligand pocket constraint."""
+
+    chain_id: str
+    residue_id: int
+
+
+class PocketConstraint(BaseModel):
+    """User-specified ligand-to-pocket site constraint for inference."""
+
+    model_config = {"extra": "forbid"}
+    ligand_chain_id: str
+    pocket_residues: list[PocketResidue]
+    max_distance: float = pocket_defaults.DEFAULT_POCKET_CONSTRAINT_MAX_DISTANCE
+
+    @model_validator(mode="after")
+    def validate_constraint(self) -> "PocketConstraint":
+        """Validate pocket constraint geometry inputs."""
+        if not self.pocket_residues:
+            raise ValueError("pocket_residues must contain at least one residue")
+        if self.max_distance <= 0:
+            raise ValueError("max_distance must be positive")
+        return self
 
 
 class Chain(BaseModel):
@@ -119,6 +145,27 @@ class Query(BaseModel):
     use_paired_msas: bool = True
     use_main_msas: bool = True
     covalent_bonds: list[Bond] | None = None
+    pocket_constraint: PocketConstraint | None = None
+
+    @model_validator(mode="after")
+    def validate_pocket_constraint(self) -> "Query":
+        """Validate the query-level pocket constraint."""
+        if self.pocket_constraint is None:
+            return self
+
+        ligand_chain_ids = {
+            chain_id
+            for chain in self.chains
+            if chain.molecule_type == MoleculeType.LIGAND
+            for chain_id in chain.chain_ids
+        }
+        ligand_chain_id = self.pocket_constraint.ligand_chain_id
+        if ligand_chain_id not in ligand_chain_ids:
+            raise ValueError(
+                f"pocket constraint ligand_chain_id {ligand_chain_id!r} does not "
+                "match any ligand chain"
+            )
+        return self
 
 
 class InferenceQuerySet(BaseModel):

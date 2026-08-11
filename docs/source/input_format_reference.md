@@ -34,12 +34,18 @@ Each query entry is a dictionary with the following structure:
 ```
 "query_1": {
   "chains": [ { ... }, { ... } ],
+  "pocket_constraint": { ... },
 }
 ```
 
 In the current inference release, the only required field is:
   - `chains` *(list of dict, required)*
     - A list of chain definitions, where each sub-dictionary specifies one chain in the assembly. See {ref}`Section 3 <3-chains>` for a full breakdown of chain-level fields.
+
+Optional query-level fields include:
+  - `pocket_constraint` *(dict, optional, default = null)*
+    - Optional ligand-to-pocket constraint for a small-molecule ligand. See
+      {ref}`Section 4 <4-pocket-constraints>` for schema details and examples.
 
 (3-chains)=
 ## 3. Chains
@@ -221,7 +227,66 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - Support for providing a list of CCD codes (for instance for polymeric ligands) will be supported in a later release of the inference pipeline.
     - Mutually exclusive with `smiles`.
 
-## 4. Example Input Json for a Single Query Complex
+(4-pocket-constraints)=
+## 4. Pocket Constraints
+
+Pocket constraints bias small-molecule ligand placement toward user-specified
+residues:
+
+```json
+{
+  "queries": {
+    "query_1": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": "A",
+          "sequence": "PVLSCGEWQCL"
+        },
+        {
+          "molecule_type": "ligand",
+          "chain_ids": "L",
+          "smiles": "CC(=O)OC1C[NH+]2CCC1CC2"
+        }
+      ],
+      "pocket_constraint": {
+        "ligand_chain_id": "L",
+        "pocket_residues": [["A", 2], ["A", 5], ["A", 9]],
+        "max_distance": 4.0
+      }
+    }
+  }
+}
+```
+
+- `pocket_constraint` *(dict, optional, default = null)*
+  - A ligand-to-pocket constraint. When present, OpenFold3 automatically
+    runs pocket proposal and partial-diffusion refinement for the constrained
+    ligand.
+
+- `ligand_chain_id` *(str, required)*
+  - Chain ID of the ligand to constrain. This must match one of the ligand
+    `chain_ids`.
+
+- `pocket_residues` *(list[[str, int]], required)*
+  - Residues defining the desired pocket, written as `[chain_id, residue_id]`
+    pairs.
+  - At least one residue is required.
+  - `residue_id` uses the residue numbering in the input query structure after
+    OpenFold3 builds the query atom array. For sequence inputs, this is the
+    1-based query sequence position.
+
+- `max_distance` *(float, optional, default = 4.0)*
+  - Distance threshold used when scoring whether ligand atoms contact the
+    specified pocket.
+
+Pocket constraints can be disabled for testing without editing the input
+JSON by setting `OF3_POCKET_SAMPLING=0` in the environment. Additional environment
+variables can override expert sampling defaults, but the default settings are
+intended to run without user-provided environment flags. Expert sampling defaults
+are defined in `openfold3/core/config/pocket_sampling_defaults.py`.
+
+## 5. Example Input Json for a Single Query Complex
 
 Below is a complete example of an input JSON file specifying a single bioassembly, consisting of:
 
@@ -292,4 +357,5 @@ Additional example input JSON files can be found here:
 - [Multi-chain protein with different chains (multimer)](../../examples/example_inference_inputs/query_multimer.json): Deoxy human hemoglobin (PDB: 1A3N)
 - [Protein-ligand complex](../../examples/example_inference_inputs/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
 - [Single protein-single ligand complex](../../examples/example_inference_inputs/query_single_protein_single_ligand.json): T4 Lysozyme (L99A mutant) with toluene (PDB: 7L39)
+- [Protein-ligand complex with a pocket constraint](../../examples/example_inference_inputs/query_protein_ligand_pocket_constraint.json): Beta-lactamase with an allosteric inhibitor (PDB: 1PZP)
 - [Multiple Protein-ligand complexes](../../examples/example_inference_inputs/query_protein_ligand_multiple.json): Two queries with Mcl-1 and different small molecule inhibitors (PDB: 5FDR)

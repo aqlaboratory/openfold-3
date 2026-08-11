@@ -40,6 +40,9 @@ from openfold3.core.data.pipelines.featurization.msa import (
     MsaFeaturizerOF3,
     MsaFeaturizerOF3Config,
 )
+from openfold3.core.data.pipelines.featurization.pocket_constraints import (
+    create_pocket_sampling_features,
+)
 from openfold3.core.data.pipelines.featurization.structure import (
     featurize_structure_of3,
 )
@@ -110,6 +113,9 @@ class InferenceDataset(Dataset):
         )
         if self.template_preprocessor_settings.preparse_structures:
             self.template_preprocessor_settings.structure_file_format = "npz"
+
+        # Pocket sampling
+        self.pocket_sampling_settings = dataset_config.pocket_sampling
 
         # Parse CCD
         if dataset_config.ccd_file_path is not None:
@@ -279,6 +285,20 @@ class InferenceDataset(Dataset):
 
         return template_features
 
+    def _pocket_sampling_features(
+        self,
+        query: Query,
+        atom_array: AtomArray,
+        processed_reference_molecules: list[ProcessedReferenceMolecule],
+    ) -> dict:
+        """Features for in-memory pocket proposal/refinement."""
+        return create_pocket_sampling_features(
+            query=query,
+            atom_array=atom_array,
+            processed_reference_molecules=processed_reference_molecules,
+            settings=self.pocket_sampling_settings,
+        )
+
     def create_all_features(
         self,
         query: Query,
@@ -317,6 +337,14 @@ class InferenceDataset(Dataset):
             query, preprocessed_atom_array, n_tokens
         )
         features.update(template_features)
+
+        features.update(
+            self._pocket_sampling_features(
+                query=query,
+                atom_array=preprocessed_atom_array,
+                processed_reference_molecules=processed_reference_molecules,
+            )
+        )
 
         return features
 

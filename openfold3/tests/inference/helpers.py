@@ -165,6 +165,18 @@ class SampleScores:
         """Sample standard deviation, or 0.0 when there is only one sample."""
         return statistics.stdev(self.values) if len(self.values) > 1 else 0.0
 
+    @property
+    def best(self) -> float:
+        """The lowest value drawn — "best-of-N" for a metric where lower is better.
+
+        Every metric in this module (RMSD, COM/centroid distance) is lower-is-better, so
+        this is a plain ``min``. Exists alongside ``mean`` because some accuracy claims
+        (e.g. "can pocket-guided sampling *find* the site at least once in N draws?")
+        are about the best draw, not the average one — the same reason docking
+        benchmarks report best-of-N pose RMSD.
+        """
+        return min(self.values)
+
     def __str__(self) -> str:
         joined = ", ".join(f"{value:.2f}" for value in self.values)
         return (
@@ -213,13 +225,16 @@ def run_inference(
     use_templates: bool,
     num_diffusion_samples: int = 1,
     template_output_dir: Path | None = None,
+    extra_yaml: str = "",
 ) -> Path:
     """Run one inference job into ``output_dir`` and return it.
 
     Skips (``pytest.skip``) if no model checkpoint is available (escalated to a hard
     failure when ``OPENFOLD_SETUP_SCRIPT=1``). ``template_output_dir`` isolates the
     template cache per run (otherwise it lands in a persistent ``/tmp`` dir shared across
-    runs and same-sequence queries).
+    runs and same-sequence queries). ``extra_yaml`` is appended to the runner config
+    verbatim, for settings with no dedicated parameter here (e.g.
+    ``dataset_config_kwargs.pocket_sampling``) — the caller supplies well-formed YAML.
     """
     runner_yaml = output_dir / "runner_config.yaml"
     yaml_str = inference_test_yaml_str
@@ -228,6 +243,7 @@ def run_inference(
             template_preprocessor_settings:
               output_directory: {template_output_dir}
             """)
+    yaml_str += extra_yaml
     runner_yaml.write_text(yaml_str)
 
     with patch("builtins.input", return_value="no"):

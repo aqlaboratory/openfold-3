@@ -114,6 +114,21 @@ dataset_config_kwargs:
       min_bin: 3.25
       max_bin: 50.75
       n_bins: 39
+  # constraints for pocket diffusion sampling
+  pocket_sampling:
+    enabled: True
+    num_parents: 16
+    candidates: 1024
+    noise_frac: 0.75
+    ligand_jitter: 0.25
+    center_jitter: 4.0
+    surface_jitter: 1.5
+    vdw_buffer: 0.225
+    diversity_rmsd: 0.5
+    rdkit_num_conformers: 32
+    rdkit_conformer_rng: 0
+    rdkit_conformer_prune_rmsd: 0.0
+    rdkit_conformer_max_iters: 200
 
 # OutputWriterSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141
 # Configure the output formats / content
