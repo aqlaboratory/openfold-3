@@ -226,22 +226,27 @@ output_writer_settings:
 
 Configures the ColabFold MSA server integration.
 
-**Pydantic Model**: [`MsaComputationSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py#L904)
+**Pydantic Model**: [`MsaComputationSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py)
 
 **All Options**:
 - `msa_file_format` *(Literal["npz", "a3m"])*: Format for saved MSAs (default: `npz`)
 - `server_user_agent` *(str)*: User agent string (default: `openfold`)
 - `server_url` *(Url)*: ColabFold server URL (default: `https://api.colabfold.com`)
 - `save_mappings` *(bool)*: Save sequence ID mappings (default: `true`)
-- `msa_output_directory` *(Path)*: Directory for MSA outputs (default: `temporary directory/of3-of-<user>/colabfold_msas`)
-- `cleanup_msa_dir` *(bool)*: Delete MSAs after processing (default: `true`)
+- `msa_output_directory` *(Path | None)*: Optional exact destination for OpenFold-formatted alignments (default during inference: `<output_dir>/msas/<run-id>`)
+- `save_openfold_outputs` *(bool)*: Save OpenFold-formatted alignments (default: `true`)
+- `save_colabfold_outputs` *(bool)*: Save raw ColabFold server outputs (default: `true`)
+- `colabfold_output_dir` *(Path | None)*: Optional parent directory for raw ColabFold run records (default during inference when `msa_output_directory` is not set: `<output_dir>/msas/raw`)
+- `cleanup_msa_dir` *(bool)*: Delete temporary template preprocessing files after an MSA server run (default: `true`). The temporary MSA workspace is always removed.
+
+When temporary MSA work is needed, each command uses a unique workspace under the OpenFold system temporary directory. This workspace is separate from `msa_output_directory` and is always removed during final cleanup.
 
 **Example**:
 ```yaml
 msa_computation_settings:
   msa_file_format: npz
-  cleanup_msa_dir: false
-  msa_output_directory: /path/to/msas
+  save_openfold_outputs: true
+  save_colabfold_outputs: false
 ```
 
 ---

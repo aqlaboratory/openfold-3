@@ -12,15 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import getpass
 import json
 import logging
 import os
 import random
+import secrets
 import shutil
 import tarfile
 import time
 import warnings
+from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import IntEnum
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -28,7 +33,7 @@ from typing import Literal, NamedTuple
 import numpy as np
 import pandas as pd
 import requests
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, PrivateAttr
 from pydantic import ConfigDict as PydanticConfigDict
 from pydantic_core import Url
 from tqdm import tqdm
@@ -127,6 +132,7 @@ def query_colabfold_msa_server(
     use_filter: bool = True,
     filter: bool | None = None,
     host_url: str = "https://api.colabfold.com",
+    raw_output_callback: Callable[[Path], None] | None = None,
 ) -> list[str] | tuple[list[str], list[str]]:
     """Submints a single query to the colabfold MSA server.
 
@@ -156,6 +162,8 @@ def query_colabfold_msa_server(
             Legacy option to enable diversity filter. Defaults to None.
         host_url (str, optional):
             host url for MSA server. Defaults to "https://api.colabfold.com".
+        raw_output_callback (Callable[[Path], None] | None, optional):
+            Called with the validated raw output directory before parsing begins.
 
     Returns:
         list[str] | tuple[list[str], list[str]]:
@@ -395,6 +403,8 @@ def query_colabfold_msa_server(
     # Validate the download produced the expected outputs before any downstream
     # code blindly opens them (issue #269).
     _validate_expected_msa_files(a3m_files, tar_gz_file, use_pairing=use_pairing)
+    if raw_output_callback is not None:
+        raw_output_callback(Path(path))
 
     # Process templates
     if use_templates:
@@ -810,6 +820,7 @@ class ColabFoldQueryRunner:
         msa_file_format: str | list[str],
         user_agent: str,
         host_url: Url = "https://api.colabfold.com",
+        colabfold_output_dir: Path | None = None,
     ):
         self.colabfold_mapper = colabfold_mapper
         self.output_directory = output_directory
@@ -817,6 +828,7 @@ class ColabFoldQueryRunner:
             msa_file_format if isinstance(msa_file_format, list) else [msa_file_format]
         )
         self.user_agent = user_agent
+        self.colabfold_output_dir = colabfold_output_dir
         self.output_directory.mkdir(parents=True, exist_ok=True)
         self.host_url = host_url
         for subdir in ["raw", "main", "paired"]:
@@ -826,6 +838,14 @@ class ColabFoldQueryRunner:
                     (self.output_directory / subdir / subsubdir).mkdir(
                         parents=True, exist_ok=True
                     )
+
+    def _save_raw_output(self, source: Path, relative_path: str) -> None:
+        if self.colabfold_output_dir is not None:
+            shutil.copytree(
+                source,
+                self.colabfold_output_dir / relative_path,
+                dirs_exist_ok=True,
+            )
 
     def query_format_main(self):
         """Submits queries and formats the outputs for main MSAs."""
@@ -847,6 +867,7 @@ class ColabFoldQueryRunner:
             use_pairing=False,
             user_agent=self.user_agent,
             host_url=self.host_url,
+            raw_output_callback=lambda path: self._save_raw_output(path, "main"),
         )
 
         main_alignments_path = self.output_directory / "main"
@@ -943,6 +964,9 @@ class ColabFoldQueryRunner:
                 use_pairing=True,
                 user_agent=self.user_agent,
                 host_url=self.host_url,
+                raw_output_callback=lambda path, relative_path=f"paired/{complex_id}": (
+                    self._save_raw_output(path, relative_path)
+                ),
             )
 
             # TODO: process the returned MSAs - save per representative ID
@@ -966,14 +990,6 @@ class ColabFoldQueryRunner:
                     for k, v in msas.items():
                         msas_preparsed[k] = v.to_dict()
                     np.savez_compressed(npz_file, **msas_preparsed)
-
-    def cleanup(self):
-        """Remove raw colabfold MSA directory.
-
-        If the same MSA output directory is used, this directory must be removed
-        to avoid using old MSAs for new inputs.
-        """
-        shutil.rmtree(self.output_directory / "raw", ignore_errors=True)
 
 
 def add_msa_paths_to_iqs(
@@ -1076,6 +1092,26 @@ def add_msa_paths_to_iqs(
     return inference_query_set
 
 
+def _default_msa_output_root() -> Path:
+    """Return the default parent directory for temporary MSA workspaces."""
+    from openfold3.core.data.tools.utils import get_of3_tmpdir
+
+    return get_of3_tmpdir()
+
+
+def _default_run_directory_name() -> str:
+    """Return a readable, per-run MSA directory name."""
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    return f"msa-{getpass.getuser()}-{timestamp}-{secrets.token_hex(4)}"
+
+
+def _workspace_contains_output(workspace: Path, output_directory: Path) -> bool:
+    """Return whether workspace cleanup would remove the output directory."""
+    workspace = workspace.resolve()
+    output_directory = output_directory.resolve()
+    return workspace == output_directory or workspace in output_directory.parents
+
+
 class MsaComputationSettings(BaseModel):
     """Settings to run ColabFold MSA server.
 
@@ -1088,17 +1124,98 @@ class MsaComputationSettings(BaseModel):
     save_mappings: bool = True
     msa_output_directory: Path | None = None
     cleanup_msa_dir: bool = True
+    save_openfold_outputs: bool = True
+    save_colabfold_outputs: bool = True
+    colabfold_output_dir: Path | None = None
+    _run_directory_name: str = PrivateAttr(default_factory=_default_run_directory_name)
+    _saved_output_root: Path | None = PrivateAttr(default=None)
+    _workspace_created: bool = PrivateAttr(default=False)
 
-    @model_validator(mode="after")
-    def create_dir(self) -> "MsaComputationSettings":
-        """Creates the output directory if it does not exist."""
-        if self.msa_output_directory is None:
-            from openfold3.core.data.tools.utils import get_of3_tmpdir
+    @property
+    def run_directory_name(self) -> str:
+        """Return the unique directory name shared by this run's MSA records."""
+        return self._run_directory_name
 
-            self.msa_output_directory = get_of3_tmpdir("colabfold_msas")
-        elif not self.msa_output_directory.exists():
-            self.msa_output_directory.mkdir(parents=True, exist_ok=True)
-        return self
+    @property
+    def workspace_directory(self) -> Path:
+        """Return this run's unique temporary workspace."""
+        return _default_msa_output_root() / self.run_directory_name
+
+    @property
+    def saved_output_directory(self) -> Path | None:
+        """Return this run's persistent MSA record directory, when configured."""
+        if self.msa_output_directory is not None:
+            return self.msa_output_directory
+        if self._saved_output_root is None:
+            return None
+        return self._saved_output_root / self.run_directory_name
+
+    @property
+    def saved_colabfold_output_directory(self) -> Path | None:
+        """Return this run's raw ColabFold record directory, when configured."""
+        if self.colabfold_output_dir is not None:
+            return self.colabfold_output_dir / self.run_directory_name
+        if self.msa_output_directory is not None:
+            return self.msa_output_directory / "raw"
+        if self._saved_output_root is not None:
+            return self._saved_output_root / "raw" / self.run_directory_name
+        return None
+
+    def validate_output_paths(self) -> None:
+        """Ensure final cleanup cannot remove either saved MSA record."""
+        saved_directories = {
+            "OpenFold MSA output directory": (
+                self.saved_output_directory if self.save_openfold_outputs else None
+            ),
+            "ColabFold output directory": (
+                self.saved_colabfold_output_directory
+                if self.save_colabfold_outputs
+                else None
+            ),
+        }
+        for label, output_directory in saved_directories.items():
+            if output_directory is not None and _workspace_contains_output(
+                self.workspace_directory, output_directory
+            ):
+                raise ValueError(
+                    f"{label} '{output_directory}' must not overlap the temporary "
+                    f"MSA workspace '{self.workspace_directory}'."
+                )
+
+        organized = saved_directories["OpenFold MSA output directory"]
+        raw = saved_directories["ColabFold output directory"]
+        if (
+            organized is not None
+            and raw is not None
+            and organized.resolve() == raw.resolve()
+        ):
+            raise ValueError(
+                "The OpenFold and ColabFold output directories must differ when "
+                "both outputs are saved."
+            )
+
+    def set_saved_output_root(self, output_directory: Path) -> None:
+        """Set the parent directory for this run's saved MSA record."""
+        previous_root = self._saved_output_root
+        self._saved_output_root = Path(output_directory)
+        try:
+            self.validate_output_paths()
+        except ValueError:
+            self._saved_output_root = previous_root
+            raise
+
+    def create_workspace(self) -> None:
+        """Create the temporary workspace and record ownership for cleanup."""
+        self.workspace_directory.mkdir(parents=True, exist_ok=False)
+        self._workspace_created = True
+
+    def cleanup_workspace(self) -> None:
+        """Remove the temporary workspace created by this settings instance."""
+        if not self._workspace_created:
+            return
+        with suppress(FileNotFoundError):
+            shutil.rmtree(self.workspace_directory)
+        self._workspace_created = False
 
     @classmethod
     def from_config_with_cli_override(
@@ -1116,25 +1233,21 @@ class MsaComputationSettings(BaseModel):
             ValueError: If config specifies a different output directory than CLI
         """
         config_dict = config_utils.load_yaml(config_yaml) if config_yaml else dict()
-
-        if (
-            "msa_output_directory" in config_dict
-            and Path(config_dict["msa_output_directory"]) != cli_output_dir
-        ):
+        configured_output = config_dict.get("msa_output_directory")
+        if configured_output is not None and Path(configured_output) != cli_output_dir:
             raise ValueError(
                 f"Output directory mismatch: CLI argument '{cli_output_dir}' "
-                f"vs settings file '{config_dict['msa_output_directory']}'. "
-                f"Please ensure they match or omit 'msa_output_directory' "
-                "from your settings file."
+                f"vs settings file '{configured_output}'. Please ensure they match "
+                "or omit 'msa_output_directory' from your settings file."
             )
-
         config_dict = config_dict.copy()
-        config_dict["msa_output_directory"] = str(cli_output_dir)
-
-        # Disable cleanup assuming this mode is used for the run_msa_server option.
-        config_dict["cleanup_msa_dir"] = False
-
-        return cls.model_validate(config_dict)
+        config_dict["msa_output_directory"] = cli_output_dir
+        settings = cls.model_validate(config_dict)
+        # The alignment-only command must save organized files because the query JSON
+        # it writes needs paths that survive temporary-workspace cleanup.
+        settings.save_openfold_outputs = True
+        settings.set_saved_output_root(cli_output_dir)
+        return settings
 
 
 def preprocess_colabfold_msas(
@@ -1195,24 +1308,17 @@ def preprocess_colabfold_msas(
         By default, uses the npz file paths if available, otherwise uses the a3m file
         paths.
     """
+    output_directory = compute_settings.workspace_directory
+    logger.warning(f"Using output directory: {output_directory} for ColabFold MSAs.")
+    compute_settings.validate_output_paths()
+    compute_settings.create_workspace()
+
     # Gather MSA data
     colabfold_mapper = collect_colabfold_msa_data(inference_query_set)
-    output_directory = compute_settings.msa_output_directory
-    logger.warning(f"Using output directory: {output_directory} for ColabFold MSAs.")
 
     # Save mappings to file
     if compute_settings.save_mappings:
         save_colabfold_mappings(colabfold_mapper, output_directory)
-
-    # Abort early if a stale raw directory exists — it contains unvalidated
-    # out.tar.gz files that would be silently reused for the wrong query.
-    raw_dir = output_directory / "raw"
-    if raw_dir.exists():
-        raise FileExistsError(
-            f"ColabFold raw directory already exists: {raw_dir}\n"
-            "This is likely left over from a previous failed run. "
-            "Please remove it before starting a new run."
-        )
 
     # Run batch queries for main and paired MSAs
     colabfold_query_runner = ColabFoldQueryRunner(
@@ -1221,15 +1327,50 @@ def preprocess_colabfold_msas(
         msa_file_format=compute_settings.msa_file_format,
         user_agent=compute_settings.server_user_agent,
         host_url=compute_settings.server_url,
+        colabfold_output_dir=(
+            compute_settings.saved_colabfold_output_directory
+            if compute_settings.save_colabfold_outputs
+            and compute_settings.saved_colabfold_output_directory is not None
+            else None
+        ),
     )
     colabfold_query_runner.query_format_main()
     colabfold_query_runner.query_format_paired()
+
+    # Save OpenFold-formatted outputs after processing is complete.
+    msa_path_directory = output_directory
+    if (
+        compute_settings.save_openfold_outputs
+        and compute_settings.saved_output_directory is not None
+    ):
+        saved_output_directory = compute_settings.saved_output_directory
+        explicit_output_directory = compute_settings.msa_output_directory is not None
+        saved_output_directory.mkdir(parents=True, exist_ok=explicit_output_directory)
+        try:
+            directory_names = ["main", "paired", "template"]
+            if not explicit_output_directory:
+                directory_names.append("mappings")
+            for directory_name in directory_names:
+                source = output_directory / directory_name
+                if source.exists():
+                    shutil.copytree(
+                        source,
+                        saved_output_directory / directory_name,
+                        dirs_exist_ok=explicit_output_directory,
+                    )
+            if explicit_output_directory and compute_settings.save_mappings:
+                save_colabfold_mappings(colabfold_mapper, saved_output_directory)
+        except BaseException:
+            if not explicit_output_directory:
+                shutil.rmtree(saved_output_directory, ignore_errors=True)
+            raise
+        msa_path_directory = saved_output_directory
 
     # Add paths to the IQS
     inference_query_set = add_msa_paths_to_iqs(
         inference_query_set=inference_query_set,
         colabfold_mapper=colabfold_mapper,
-        output_directory=output_directory,
+        output_directory=msa_path_directory,
     )
 
     return inference_query_set
@@ -1239,13 +1380,30 @@ def augment_main_msa_with_query_sequence(
     inference_query_set: InferenceQuerySet,
     compute_settings: MsaComputationSettings,
 ) -> InferenceQuerySet:
-    output_directory = compute_settings.msa_output_directory
+    compute_settings.validate_output_paths()
+    saved_output_directory = compute_settings.saved_output_directory
+    if compute_settings.save_openfold_outputs and saved_output_directory is not None:
+        save_to_output = True
+        output_directory = saved_output_directory
+    else:
+        save_to_output = False
+        output_directory = compute_settings.workspace_directory
+    output_ready = False
     for query_name, query in inference_query_set.queries.items():
         for chain in query.chains:
             if (
                 chain.molecule_type == MoleculeType.PROTEIN
                 or chain.molecule_type == MoleculeType.RNA
             ) and chain.main_msa_file_paths is None:
+                if not output_ready:
+                    if save_to_output:
+                        output_directory.mkdir(
+                            parents=True,
+                            exist_ok=compute_settings.msa_output_directory is not None,
+                        )
+                    else:
+                        compute_settings.create_workspace()
+                    output_ready = True
                 dummy_rep_dir = (
                     output_directory / "dummy" / get_sequence_hash(chain.sequence)
                 )

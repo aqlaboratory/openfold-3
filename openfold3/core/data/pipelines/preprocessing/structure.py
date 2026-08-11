@@ -646,6 +646,35 @@ class _OF3PreprocessingWrapper:
                 return output_dict, empty_conformer_dict
 
 
+def _discover_cif_files(cif_dir: Path) -> list[Path]:
+    """Recursively discover CIF files with unique filename stems.
+
+    Structure metadata and output directories are keyed by the input filename stem.
+    Reject duplicate stems before preprocessing to prevent nested files from silently
+    overwriting each other's outputs.
+    """
+    cif_files = sorted(cif_dir.rglob("*.cif"))
+
+    files_by_stem: dict[str, list[Path]] = {}
+    for cif_file in cif_files:
+        files_by_stem.setdefault(cif_file.stem, []).append(cif_file)
+
+    duplicate_stems = {
+        stem: paths for stem, paths in files_by_stem.items() if len(paths) > 1
+    }
+    if duplicate_stems:
+        duplicate_details = "; ".join(
+            f"{stem}: {', '.join(str(path.relative_to(cif_dir)) for path in paths)}"
+            for stem, paths in duplicate_stems.items()
+        )
+        raise ValueError(
+            "CIF filenames must have unique stems because stems are used as structure "
+            f"IDs and output directory names. Duplicates: {duplicate_details}"
+        )
+
+    return cif_files
+
+
 def preprocess_cif_dir_of3(
     cif_dir: Path,
     ccd_path: Path,
@@ -668,7 +697,7 @@ def preprocess_cif_dir_of3(
 
     Args:
         cif_dir:
-            Path to the directory containing the PDB files to preprocess.
+            Path to the directory tree containing the PDB files to preprocess.
         ccd_path:
             Path to the CCD file.
         biotite_ccd_path:
@@ -701,9 +730,7 @@ def preprocess_cif_dir_of3(
     ccd = CIFFile.read(ccd_path)
 
     logger.debug("Reading CIF files")
-    cif_files = [
-        file for file in tqdm(cif_dir.glob("*.cif"), desc="Scanning CIF files")
-    ]
+    cif_files = _discover_cif_files(cif_dir)
 
     if early_stop is not None:
         cif_files = cif_files[:early_stop]
