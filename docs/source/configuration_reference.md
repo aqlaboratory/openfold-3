@@ -131,14 +131,14 @@ data_module_args:
 ```
 
 ---
-### 3.X Checkpoint Confiugration (`checkpoint_config`)
+### 3.6 Checkpoint Confiugration (`checkpoint_config`)
 
 Configures Checkpoint writing settings, which are passed to [pl.ModelCheckpoint callback](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.ModelCheckpoint.html). 
 
+---
+### 3.7. Dataset Config Kwargs (`dataset_config_kwargs`)
 
-### 3.6. Dataset Config Kwargs (`dataset_config_kwargs`)
-
-Configures MSA and template feature generation.
+Configures MSA, template, and pocket sampling feature generation.
 
 **Pydantic Model**: [`InferenceDatasetConfigKwargs`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_configs.py#L270)
 
@@ -146,8 +146,9 @@ Configures MSA and template feature generation.
 - `ccd_file_path` *(FilePath | None)*: Path to Chemical Component Dictionary file, uses CCD from Biotite if null (default: `null`)
 - `msa` *(MSASettings)*: MSA processing settings (see below)
 - `template` *(TemplateSettings)*: Template processing settings (see below)
+- `pocket_sampling` *(PocketSamplingSettings)*: Pocket-guided ligand proposal sampling settings (see below)
 
-#### 3.6.1. MSA Settings (`msa`)
+#### 3.7.1. MSA Settings (`msa`)
 
 Controls how MSAs are parsed and processed into features.
 
@@ -174,7 +175,7 @@ dataset_config_kwargs:
     moltypes: [0, 1]  # protein and RNA
 ```
 
-#### 3.6.2. Template Settings (`template`)
+#### 3.7.2. Template Settings (`template`)
 
 Controls template structure processing.
 
@@ -197,9 +198,41 @@ dataset_config_kwargs:
     take_top_k: true
 ```
 
+(full-ref-pocket-sampling-settings)=
+#### 3.7.3 Pocket Sampling Settings (`pocket_sampling`)
+
+Controls pocket-guided ligand proposal sampling and refinement. These settings only take effect when a query supplies a `pocket_constraint`; the presence of that constraint enables proposal sampling by default.
+
+**Pydantic Model**: [`PocketSamplingSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/pocket_sampling_config.py#L28)
+
+**All Options**:
+- `enabled` *(bool)*: Whether pocket-guided proposal sampling runs when a query provides a `pocket_constraint`; useful for ablations without changing the input JSON (default: `true`)
+- `num_parents` *(int)*: Number of de-novo rollout parents to seed refinement from, capped by `no_rollout_samples` at runtime (default: `16`, minimum: `1`)
+- `candidates` *(int)*: Number of random rigid ligand proposals to rank before diversity filtering (default: `1024`, minimum: `1`)
+- `noise_frac` *(float)*: Fraction of the diffusion schedule to complete before starting the refinement pass (default: `0.75`, range: `0.0`–`1.0`)
+- `ligand_jitter` *(float)*: Ligand-only coordinate jitter in Angstroms applied before refinement, so repeated samples from the same seed do not follow identical trajectories (default: `0.25`, minimum: `0.0`)
+- `center_jitter` *(float)*: Pocket-center proposal jitter in Angstroms, exploring placements around the residue set centroid (default: `4.0`, minimum: `0.0`)
+- `surface_jitter` *(float)*: Pocket-surface proposal jitter in Angstroms, exploring local contacts around individual pocket atoms (default: `1.5`, minimum: `0.0`)
+- `vdw_buffer` *(float)*: Clash screening uses van der Waals radii multiplied by `(1 - vdw_buffer)`, allowing imperfect poses while rejecting severe overlaps (default: `0.225`, minimum: `0.0`)
+- `diversity_rmsd` *(float)*: Minimum heavy-atom RMSD in Angstroms between selected ligand proposals (default: `0.5`, minimum: `0.0`)
+- `rdkit_num_conformers` *(int)*: Number of RDKit conformers to generate for the ligand ensemble; set to `0` to disable RDKit conformer generation (default: `32`, minimum: `0`)
+- `rdkit_conformer_rng` *(int)*: Random seed for deterministic RDKit conformer embedding (default: `0`)
+- `rdkit_conformer_prune_rmsd` *(float)*: RDKit embedding RMSD pruning threshold; disabled by default so OF3 proposal ranking, not RDKit, controls diversity (default: `0.0`, minimum: `0.0`)
+- `rdkit_conformer_max_iters` *(int)*: Maximum number of force-field optimization iterations per RDKit conformer (default: `200`, minimum: `1`)
+
+**Example**:
+```yaml
+dataset_config_kwargs:
+  pocket_sampling:
+    enabled: true
+    num_parents: 16
+    candidates: 1024
+    noise_frac: 0.75
+```
+
 ---
 
-### 3.7. Output Writer Settings (`output_writer_settings`)
+### 3.8. Output Writer Settings (`output_writer_settings`)
 
 Configures the format of output files.
 
@@ -222,7 +255,7 @@ output_writer_settings:
 
 ---
 
-### 3.8. MSA Computation Settings (`msa_computation_settings`)
+### 3.9. MSA Computation Settings (`msa_computation_settings`)
 
 Configures the ColabFold MSA server integration.
 
@@ -251,7 +284,7 @@ msa_computation_settings:
 
 ---
 
-### 3.9. Template Preprocessor Settings (`template_preprocessor_settings`)
+### 3.10. Template Preprocessor Settings (`template_preprocessor_settings`)
 
 Configures template structure preprocessing and filtering.
 
@@ -300,4 +333,5 @@ For the complete list of default values, see the Pydantic model classes in:
 - [`openfold3/projects/of3_all_atom/config/dataset_config_components.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py) - MSA and template settings
 - [`openfold3/core/data/tools/colabfold_msa_server.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py) - MSA server settings
 - [`openfold3/core/data/pipelines/preprocessing/template.py`](http://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py) - Template preprocessing settings
+- [`openfold3/core/config/pocket_sampling_config.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/pocket_sampling_config.py) - Pocket sampling settings
 

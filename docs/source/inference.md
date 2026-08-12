@@ -460,6 +460,19 @@ msa_computation_settings:
   msa_file_format: a3m     # Options: a3m, npz (default: npz)
 ```
 
+(35-using-pocket-constraints)=
+### 3.5 Using Pocket Constraints
+
+Use Pocket Constraints to guide ligand binding in the pocket during inference time using directed diffusion seeds. See {ref}`Section 4 of the input format reference <4-pocket-constraints>` for more information on how to specify a pocket constraint.
+
+Pocket Constraints can be enabled / disabled using the following runner yaml settings. Other settings such as the amount of jitter and conformer settings may also be tuned, please see the {ref}`Pocket Sampling Settings reference <full-ref-pocket-sampling-settings>`.
+
+```yaml
+datset_config_kwargs:
+  pocket_sampling:
+    enabled: True  # default
+```
+
 ## 4. Model Outputs
 
 The inference pipeline creates a dedicated output directory for each query, named by the corresponding query key (for example, `query_1` or `3hfm` when a PDB ID is provided). Prediction results are stored there. By default, saved MSA records are stored under `<output_dir>/msas`.
