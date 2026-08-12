@@ -281,10 +281,8 @@ residues:
     specified pocket.
 
 Pocket constraints can be disabled for testing without editing the input
-JSON by setting `OF3_POCKET_SAMPLING=0` in the environment. Additional environment
-variables can override expert sampling defaults, but the default settings are
-intended to run without user-provided environment flags. Expert sampling defaults
-are defined in `openfold3/core/config/pocket_sampling_defaults.py`.
+JSON by toggling the pocket sampling option in the runner.yaml, see {ref}`Using Pocket Constraints <35-using-pocket-constraints>` for an example. Expert sampling defaults
+are defined in `openfold3/core/config/pocket_sampling_config.py`, more information can be found in the {ref}`Pocket Sampling Settings reference <full-ref-pocket-sampling-settings>`.
 
 ## 5. Example Input Json for a Single Query Complex
 
