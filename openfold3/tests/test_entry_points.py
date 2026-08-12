@@ -799,40 +799,12 @@ class TestRemoveQuerySetDuplicates:
         assert set(deduplicated_set.queries.keys()) == set(["query_2", "query_3"])
 
 
-def _build_inference_config(
-    ckpt_path: Path,
-    cache_path: Path,
-    runner_yaml: Path | None = None,
-) -> InferenceExperimentConfig:
-    """Mirrors the default-yaml resolution logic in ``run_openfold.predict``."""
-    default_yml = cache_path / "runner.yml"
-    user_default_runner_path = None
-
-    if default_yml.exists():
-        runner_args = config_utils.load_yaml(default_yml)
-        user_default_runner_path = default_yml.resolve()
-    else:
-        runner_args = {}
-
-    if runner_yaml:
-        config_utils.deep_update(runner_args, config_utils.load_yaml(runner_yaml))
-
-    return InferenceExperimentConfig(
-        inference_ckpt_path=ckpt_path,
-        cache_path=cache_path,
-        user_default_runner_yaml_path=user_default_runner_path,
-        **runner_args,
-    )
-
-
 class TestUserDefaultRunnerYaml:
     """Tests for the automatic loading of ``~/.openfold3/runner.yml``."""
 
-    def test_no_default_runner_yaml(self, tmp_path, dummy_ckpt_file):
+    def test_no_default_runner_yaml(self, dummy_ckpt_file):
         """Scenario 1: no runner.yml in cache → defaults, path is None."""
-        cache = tmp_path / ".openfold3"
-
-        cfg = _build_inference_config(dummy_ckpt_file, cache_path=cache)
+        cfg = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
 
         assert cfg.user_default_runner_yaml_path is None
         assert cfg.output_writer_settings.structure_format == "cif"
@@ -841,7 +813,8 @@ class TestUserDefaultRunnerYaml:
         """Scenario 2: runner.yml in cache → settings applied, path recorded."""
         cache = tmp_path / ".openfold3"
         cache.mkdir()
-        (cache / "runner.yml").write_text(
+        runner_yaml = cache / "runner.yml"
+        runner_yaml.write_text(
             textwrap.dedent("""\
                 output_writer_settings:
                     structure_format: pdb
@@ -851,7 +824,11 @@ class TestUserDefaultRunnerYaml:
                     num_workers: 4
                 """)
         )
-        cfg = _build_inference_config(dummy_ckpt_file, cache_path=cache)
+        cfg = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            user_default_runner_yaml_path=runner_yaml.resolve(),
+            **config_utils.load_yaml(runner_yaml)
+        )
 
         assert cfg.user_default_runner_yaml_path == (cache / "runner.yml").resolve()
         assert cfg.output_writer_settings.structure_format == "pdb"
@@ -862,7 +839,8 @@ class TestUserDefaultRunnerYaml:
         """Scenario 3: cache runner.yml + explicit override → merge, CLI wins."""
         cache = tmp_path / ".openfold3"
         cache.mkdir()
-        (cache / "runner.yml").write_text(
+        runner_yaml = cache / "runner.yml"
+        runner_yaml.write_text(
             textwrap.dedent("""\
                 output_writer_settings:
                     structure_format: pdb
@@ -881,8 +859,14 @@ class TestUserDefaultRunnerYaml:
                     num_workers: 8
                 """)
         )
-        cfg = _build_inference_config(
-            dummy_ckpt_file, cache_path=cache, runner_yaml=override
+        
+        runner_args = config_utils.load_yaml(runner_yaml)
+        config_utils.deep_update(runner_args, config_utils.load_yaml(override))
+
+        cfg = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            user_default_runner_yaml_path=runner_yaml.resolve(),
+            **runner_args
         )
 
         assert cfg.user_default_runner_yaml_path == (cache / "runner.yml").resolve()
@@ -899,8 +883,10 @@ class TestUserDefaultRunnerYaml:
         cache = tmp_path / ".openfold3"
         cache.mkdir()
 
+        runner_yaml = cache / "runner.yml"
+
         # Write an intentionally malformed YAML (indentation error)
-        (cache / "runner.yml").write_text(
+        runner_yaml.write_text(
             textwrap.dedent("""\
                 output_writer_settings:
                   structure_format: pdb
@@ -911,7 +897,7 @@ class TestUserDefaultRunnerYaml:
         # Verify that when attempting to build the configuration,
         # the system raises a YAML error, preventing silent failures.
         with pytest.raises(yaml.YAMLError):
-            _build_inference_config(dummy_ckpt_file, cache_path=cache)
+            config_utils.load_yaml(runner_yaml)
 
 
 class TestSetupOpenFold:
