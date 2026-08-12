@@ -827,7 +827,7 @@ class TestUserDefaultRunnerYaml:
         cfg = InferenceExperimentConfig(
             inference_ckpt_path=dummy_ckpt_file,
             user_default_runner_yaml_path=runner_yaml.resolve(),
-            **config_utils.load_yaml(runner_yaml)
+            **config_utils.load_yaml(runner_yaml),
         )
 
         assert cfg.user_default_runner_yaml_path == (cache / "runner.yml").resolve()
@@ -859,14 +859,14 @@ class TestUserDefaultRunnerYaml:
                     num_workers: 8
                 """)
         )
-        
+
         runner_args = config_utils.load_yaml(runner_yaml)
         config_utils.deep_update(runner_args, config_utils.load_yaml(override))
 
         cfg = InferenceExperimentConfig(
             inference_ckpt_path=dummy_ckpt_file,
             user_default_runner_yaml_path=runner_yaml.resolve(),
-            **runner_args
+            **runner_args,
         )
 
         assert cfg.user_default_runner_yaml_path == (cache / "runner.yml").resolve()
