@@ -72,3 +72,23 @@ ColabFold server before running prediction.
 - **Error:** `requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.`
 
 ---
+
+## 2026-08-12
+
+**Cause:** External service timeout — ColabFold API (`api.colabfold.com`) connection timed out during the `msa-no_templates-ubiquitin` test. Not an AWS GPU outage; not an OF3 code bug. Two consecutive scheduled runs affected (same recurring pattern as 2026-08-09 and 2026-08-11).
+
+### Run 1
+- **Run ID:** [31561679174](https://github.com/aqlaboratory/openfold-3/actions/runs/31561679174)
+- **Time:** 2026-08-12T03:57:06Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 94005121395)
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin]`
+- **Error:** `requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.`
+
+### Run 2
+- **Run ID:** [31564740462](https://github.com/aqlaboratory/openfold-3/actions/runs/31564740462)
+- **Time:** 2026-08-12T04:53:46Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 94014160549)
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin]`
+- **Error:** `requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.`
+
+---
