@@ -75,6 +75,7 @@ template_how_to
 
 contribution
 debugging_how_to
+modern-conda-environments-with-pixi
 ```
 
 ```{toctree}
