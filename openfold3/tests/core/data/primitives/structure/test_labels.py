@@ -15,12 +15,15 @@
 import numpy as np
 import pytest
 from biotite.structure import Atom, AtomArray, array
+from biotite.structure.io import pdbx
 
 from openfold3.core.data.primitives.structure.labels import (
     AtomArrayView,
     assign_atom_indices,
+    assign_molecule_type_ids,
     residue_view_iter,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.tests.utils.custom_assert_utils import assert_atomarray_equal
 
 
@@ -142,3 +145,111 @@ class TestResidueViewIter:
         residue_views = list(residue_view_iter(empty_array))
 
         assert len(residue_views) == 0
+
+
+def _make_cif_file(ids, types):
+    cif_file = pdbx.CIFFile()
+    block = pdbx.CIFBlock()
+    block["chem_comp"] = pdbx.CIFCategory(
+        {
+            "id": np.array(ids),
+            "type": np.array(types),
+        }
+    )
+    cif_file["test"] = block
+    return cif_file
+
+
+def _make_atom_array(res_names, chain_ids):
+    atoms = AtomArray(len(res_names))
+    atoms.chain_id = np.array(chain_ids)
+    atoms.res_id = np.arange(1, len(res_names) + 1)
+    atoms.res_name = np.array(res_names)
+    atoms.atom_name = np.array(["CA"] * len(res_names))
+    atoms.element = np.array(["C"] * len(res_names))
+    return atoms
+
+
+class TestAssignMoleculeTypeIds:
+    """Tests for the assign_molecule_type_ids function."""
+
+    def test_valid_types_protein_and_ligand(self):
+        cif_file = _make_cif_file(
+            ["ALA", "GLY", "LIG"],
+            ["L-PEPTIDE LINKING", "L-PEPTIDE LINKING", "NON-POLYMER"],
+        )
+        atom_array = _make_atom_array(
+            ["ALA", "GLY", "LIG"],
+            ["A", "A", "B"],
+        )
+
+        assign_molecule_type_ids(atom_array, cif_file)
+
+        assert atom_array.molecule_type_id[0] == MoleculeType.PROTEIN
+        assert atom_array.molecule_type_id[1] == MoleculeType.PROTEIN
+        assert atom_array.molecule_type_id[2] == MoleculeType.LIGAND
+
+    @pytest.mark.parametrize("chem_comp_type", ["", ".", "?", "BOGUS_TYPE"])
+    def test_unknown_chem_comp_type_raises(self, chem_comp_type):
+        cif_file = _make_cif_file(["BAD"], [chem_comp_type])
+        atom_array = _make_atom_array(["BAD"], ["A"])
+
+        with pytest.raises(ValueError, match="BAD"):
+            assign_molecule_type_ids(atom_array, cif_file)
+
+    def test_missing_chem_comp_entry_raises(self):
+        cif_file = _make_cif_file(
+            ["ALA", "GLY"], ["L-PEPTIDE LINKING", "L-PEPTIDE LINKING"]
+        )
+        atom_array = _make_atom_array(["ALA", "GLY", "XYZ"], ["A", "A", "A"])
+
+        with pytest.raises(ValueError, match="XYZ"):
+            assign_molecule_type_ids(atom_array, cif_file)
+
+    def test_lowercase_valid_type(self):
+        cif_file = _make_cif_file(
+            ["ALA", "GLY"], ["l-peptide linking", "l-peptide linking"]
+        )
+        atom_array = _make_atom_array(["ALA", "GLY"], ["A", "A"])
+
+        assign_molecule_type_ids(atom_array, cif_file)
+        assert atom_array.molecule_type_id[0] == MoleculeType.PROTEIN
+        assert atom_array.molecule_type_id[1] == MoleculeType.PROTEIN
+
+    def test_multiple_invalid_components_reported_together(self):
+        cif_file = _make_cif_file(["BAD1", "BAD2"], ["BOGUS", ""])
+        atom_array = _make_atom_array(["BAD1", "BAD2"], ["A", "A"])
+
+        with pytest.raises(ValueError) as exc_info:
+            assign_molecule_type_ids(atom_array, cif_file)
+
+        message = str(exc_info.value)
+        assert "BAD1" in message
+        assert "BAD2" in message
+
+    def test_valid_OTHER_type(self):
+        cif_file = _make_cif_file(
+            ["OTH1", "OTH2"],
+            ["OTHER", "OTHER"],
+        )
+        atom_array = _make_atom_array(
+            ["OTH1", "OTH2"],
+            ["A", "A"],
+        )
+
+        assign_molecule_type_ids(atom_array, cif_file)
+        assert np.all(atom_array.molecule_type_id == MoleculeType.LIGAND)
+
+    def test_unreferenced_chem_comp_type_is_ignored(self):
+        cif_file = _make_cif_file(
+            ["ALA", "UNUSED"],
+            ["L-PEPTIDE LINKING", "BOGUS_TYPE"],
+        )
+        atom_array = _make_atom_array(
+            ["ALA", "ALA"],
+            ["A", "A"],
+        )
+
+        assign_molecule_type_ids(atom_array, cif_file)
+
+        assert np.all(atom_array.molecule_type_id == MoleculeType.PROTEIN)
