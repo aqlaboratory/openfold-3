@@ -129,7 +129,9 @@ def featurize_reference_conformers_of3(
             ref_space_uid.append(mol_idx)
 
             # Encoding of atom names
-            atom_name_padded = atom.GetProp("annot_atom_name").ljust(4)
+            # AF3's 64-char encoding (ASCII 32-95) excludes lowercase. 
+            # Uppercase for encoding, but preserve original casing for structure matching.
+            atom_name_padded = atom.GetProp("annot_atom_name").upper().ljust(4)
             chars = []
             for char in atom_name_padded:
                 chars.append(ord(char) - 32)
