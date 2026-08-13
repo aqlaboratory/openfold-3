@@ -24,7 +24,6 @@ from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.atomize_utils import max_atom_per_token_masked_select
-from openfold3.core.utils.device_utils import autocast_device_type
 
 
 class PairformerEmbedding(nn.Module):
