@@ -435,7 +435,6 @@ class OpenFold3(nn.Module):
                     inplace_safe=inplace_safe,
                     offload_inference=offload_confidence_heads,
                     _mask_trans=True,
-                    pairformer_dtype=pairformer_dtype,
                 )
             )
 
