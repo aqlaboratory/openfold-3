@@ -297,6 +297,7 @@ class ExperimentConfig(BaseModel):
     experiment_settings: ExperimentSettings
     pl_trainer_args: PlTrainerArgs = PlTrainerArgs()
     model_update: ModelUpdate
+    user_default_runner_yaml_path: Path | None = None
 
 
 class TrainingExperimentConfig(ExperimentConfig):

@@ -889,6 +889,107 @@ class TestRemoveQuerySetDuplicates:
         assert set(deduplicated_set.queries.keys()) == set(["query_2", "query_3"])
 
 
+class TestUserDefaultRunnerYaml:
+    """Tests for the automatic loading of ``~/.openfold3/runner.yml``."""
+
+    def test_no_default_runner_yaml(self, dummy_ckpt_file):
+        """Scenario 1: no runner.yml in cache → defaults, path is None."""
+        cfg = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
+
+        assert cfg.user_default_runner_yaml_path is None
+        assert cfg.output_writer_settings.structure_format == "cif"
+
+    def test_default_runner_yaml_applied(self, tmp_path, dummy_ckpt_file):
+        """Scenario 2: runner.yml in cache → settings applied, path recorded."""
+        cache = tmp_path / ".openfold3"
+        cache.mkdir()
+        runner_yaml = cache / "runner.yml"
+        runner_yaml.write_text(
+            textwrap.dedent("""\
+                output_writer_settings:
+                    structure_format: pdb
+                experiment_settings:
+                    skip_existing: true
+                data_module_args:
+                    num_workers: 4
+                """)
+        )
+        cfg = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            user_default_runner_yaml_path=runner_yaml.resolve(),
+            **config_utils.load_yaml(runner_yaml),
+        )
+
+        assert cfg.user_default_runner_yaml_path == (cache / "runner.yml").resolve()
+        assert cfg.output_writer_settings.structure_format == "pdb"
+        assert cfg.experiment_settings.skip_existing is True
+        assert cfg.data_module_args.num_workers == 4
+
+    def test_explicit_runner_yaml_overrides_cache(self, tmp_path, dummy_ckpt_file):
+        """Scenario 3: cache runner.yml + explicit override → merge, CLI wins."""
+        cache = tmp_path / ".openfold3"
+        cache.mkdir()
+        runner_yaml = cache / "runner.yml"
+        runner_yaml.write_text(
+            textwrap.dedent("""\
+                output_writer_settings:
+                    structure_format: pdb
+                experiment_settings:
+                    skip_existing: true
+                data_module_args:
+                    num_workers: 4
+                """)
+        )
+        override = tmp_path / "override.yml"
+        override.write_text(
+            textwrap.dedent("""\
+                experiment_settings:
+                    skip_existing: false
+                data_module_args:
+                    num_workers: 8
+                """)
+        )
+
+        runner_args = config_utils.load_yaml(runner_yaml)
+        config_utils.deep_update(runner_args, config_utils.load_yaml(override))
+
+        cfg = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            user_default_runner_yaml_path=runner_yaml.resolve(),
+            **runner_args,
+        )
+
+        assert cfg.user_default_runner_yaml_path == (cache / "runner.yml").resolve()
+        # inherited from cache default
+        assert cfg.output_writer_settings.structure_format == "pdb"
+        # overridden by explicit yaml
+        assert cfg.experiment_settings.skip_existing is False
+        assert cfg.data_module_args.num_workers == 8
+
+    def test_corrupted_runner_yaml_raises_error(self, tmp_path, dummy_ckpt_file):
+        """Scenario 4: cache runner.yml is corrupted → fails gracefully with yaml error."""
+        import yaml
+
+        cache = tmp_path / ".openfold3"
+        cache.mkdir()
+
+        runner_yaml = cache / "runner.yml"
+
+        # Write an intentionally malformed YAML (indentation error)
+        runner_yaml.write_text(
+            textwrap.dedent("""\
+                output_writer_settings:
+                  structure_format: pdb
+                 bad_indentation: true
+                """)
+        )
+
+        # Verify that when attempting to build the configuration,
+        # the system raises a YAML error, preventing silent failures.
+        with pytest.raises(yaml.YAMLError):
+            config_utils.load_yaml(runner_yaml)
+
+
 class TestSetupOpenFold:
     def test_non_interactive(self, tmp_path):
         env_patch = patch.dict(os.environ, {"HOME": str(tmp_path)}, clear=False)
