@@ -396,6 +396,10 @@ class OpenFold3AllAtom(ModelRunner):
             )
 
         example_feat = batch["token_mask"]
+
+        if len(self.ema.params) <= 1:
+            self.ema.init_params(self.model)
+
         if self.ema.device != example_feat.device:
             self.ema.to(example_feat.device)
 
@@ -521,6 +525,10 @@ class OpenFold3AllAtom(ModelRunner):
 
     def _training_step(self, batch):
         example_feat = batch["token_mask"]
+
+        if len(self.ema.params) <= 1:
+            self.ema.init_params(self.model)
+
         if self.ema.device != example_feat.device:
             self.ema.to(example_feat.device)
 
@@ -585,18 +593,19 @@ class OpenFold3AllAtom(ModelRunner):
             raise
 
     def on_validation_epoch_start(self):
-        # At the start of validation, load the EMA weights
+        # At the start of validation, load the EMA weights if available
 
         assert self.cached_weights is None
 
-        # model.state_dict() contains references to model weights rather
-        # than copies. Therefore, we need to clone them before calling
-        # load_state_dict().
-        self.cached_weights = tensor_tree_map(
-            lambda t: t.detach().clone(), self.model.state_dict()
-        )
+        if len(self.ema.params) > 1:
+            # model.state_dict() contains references to model weights rather
+            # than copies. Therefore, we need to clone them before calling
+            # load_state_dict().
+            self.cached_weights = tensor_tree_map(
+                lambda t: t.detach().clone(), self.model.state_dict()
+            )
 
-        self.model.load_state_dict(self.ema.state_dict()["params"])
+            self.model.load_state_dict(self.ema.state_dict()["params"])
 
     def on_before_optimizer_step(self, *args, **kwargs):
         """
@@ -829,9 +838,10 @@ class OpenFold3AllAtom(ModelRunner):
         self._log_epoch_metrics(metrics=self.val_losses)
         self._log_epoch_metrics(metrics=self.val_metrics, compute_model_selection=True)
 
-        # Restore the model weights to normal
-        self.model.load_state_dict(self.cached_weights)
-        self.cached_weights = None
+        # Restore the model weights to normal if swapped with EMA weights
+        if self.cached_weights is not None:
+            self.model.load_state_dict(self.cached_weights)
+            self.cached_weights = None
 
         # Temp fix for val dataloader worker seg fault issues
         # TODO: Figure out why this is not being cleaned up properly

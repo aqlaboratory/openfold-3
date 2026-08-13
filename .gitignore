@@ -11,6 +11,10 @@ openfold3/resources/
 tests/test_data/sample_feats.pickle
 cutlass/
 
+# default output of scripts/datasets/generate_subset_cache.py + download_subset.py
+# (and the generate-pdb-subset/download-pdb-subset pixi tasks, which run from here)
+/datasets/
+
 # User-specific claude settings
 .claude/
 
@@ -24,5 +28,5 @@ cutlass/
 # uv environments
 .venv/
 
-# build testing
-test-sdist/
+# mypy cache
+.mypy_cache/

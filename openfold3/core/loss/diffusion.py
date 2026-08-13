@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +24,7 @@ import torch
 from openfold3.core.loss.loss_utils import loss_masked_batch_mean
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.checkpointing import checkpoint_section
+from openfold3.core.utils.device_utils import autocast_device_type
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,7 @@ def weighted_rigid_align(
 
     # SVD (cast to float because doesn't work with bf16/fp16)
     dtype = x.dtype
-    with torch.amp.autocast("cuda", dtype=torch.float32):
+    with torch.amp.autocast(autocast_device_type(H), dtype=torch.float32):
         try:
             U, _, V = torch.linalg.svd(H)
             dets = torch.linalg.det(U @ V)

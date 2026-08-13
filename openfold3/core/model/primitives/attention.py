@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
@@ -33,6 +34,7 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.kernels.cueq_utils import is_cuequivariance_available
 from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.utils.checkpointing import get_checkpoint_fn
+from openfold3.core.utils.device_utils import autocast_device_type
 from openfold3.core.utils.tensor_utils import flatten_final_dims
 
 warnings.filterwarnings("once")
@@ -117,7 +119,7 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
         deepspeed_is_installed and deepspeed.comm.comm.is_initialized()
     )
     if d is torch.bfloat16 and not deepspeed_is_initialized:
-        with torch.amp.autocast("cuda", enabled=False):
+        with torch.amp.autocast(autocast_device_type(t), enabled=False):
             s = torch.nn.functional.softmax(t, dim=dim)
     else:
         s = torch.nn.functional.softmax(t, dim=dim)

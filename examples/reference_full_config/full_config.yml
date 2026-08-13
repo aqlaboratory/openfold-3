@@ -116,6 +116,21 @@ dataset_config_kwargs:
       min_bin: 3.25
       max_bin: 50.75
       n_bins: 39
+  # constraints for pocket diffusion sampling
+  pocket_sampling:
+    enabled: True
+    num_parents: 16
+    candidates: 1024
+    noise_frac: 0.75
+    ligand_jitter: 0.25
+    center_jitter: 4.0
+    surface_jitter: 1.5
+    vdw_buffer: 0.225
+    diversity_rmsd: 0.5
+    rdkit_num_conformers: 32
+    rdkit_conformer_rng: 0
+    rdkit_conformer_prune_rmsd: 0.0
+    rdkit_conformer_max_iters: 200
 
 # OutputWriterSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141
 # Configure the output formats / content
@@ -127,15 +142,18 @@ output_writer_settings:
   write_latent_outputs: false
   write_full_confidence_scores: true
 
-# MSAComputationSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py#L904
+# MSAComputationSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py
 # Configure MSA server settings for colabfold 
 msa_computation_settings: 
   msa_file_format: npz
   server_user_agent: openfold
   server_url: https://api.colabfold.com/
   save_mappings: true
-  msa_output_directory: <tmp-dir>/of3-of-<user>/colabfold_msas/ 
+  msa_output_directory: null
   cleanup_msa_dir: true
+  save_openfold_outputs: true
+  save_colabfold_outputs: true
+  colabfold_output_dir: null
 
 # TemplatePreprocessorSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py#L1459
 # Configure template processing settings, more information in docs/source/template_how_to.md
