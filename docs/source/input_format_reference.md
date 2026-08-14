@@ -344,8 +344,7 @@ Below is a complete example of an input JSON file specifying a single bioassembl
                 }
             ],
         }
-    },
-    "ccd_file_path": "/path/to/CCD/file.cif"
+    }
 }
 ```
 
