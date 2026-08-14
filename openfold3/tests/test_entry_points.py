@@ -596,7 +596,6 @@ class TestInferenceCommandLineSettings:
         self, minimal_query_json, dummy_ckpt_file
     ):
         with (
-            patch("openfold3.run_openfold._torch_gpu_setup"),
             patch(
                 "openfold3.entry_points.experiment_runner.InferenceExperimentRunner"
             ) as mock_runner_class,
@@ -642,7 +641,6 @@ class TestInferenceCommandLineSettings:
             return inference_query_set
 
         with (
-            patch("openfold3.run_openfold._torch_gpu_setup"),
             patch(
                 "openfold3.core.data.tools.colabfold_msa_server.preprocess_colabfold_msas",
                 side_effect=fake_preprocess,
