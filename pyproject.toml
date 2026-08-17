@@ -104,7 +104,7 @@ test = [
 
 
 [tool.setuptools_scm]
-fallback_version = "0.4.4.dev0"
+fallback_version = "0.5.0"
 
 [tool.setuptools]
 include-package-data = true
