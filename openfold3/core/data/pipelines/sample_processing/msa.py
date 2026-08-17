@@ -14,6 +14,7 @@
 
 """This module contains SampleProcessingPipelines for MSA features."""
 
+import warnings
 from collections.abc import Sequence
 from functools import partial
 
@@ -50,6 +51,7 @@ from openfold3.core.data.primitives.sequence.msa import (
     process_msa_pairing_metadata,
     sort_subsample_paired_row_ids,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
 
 
@@ -209,7 +211,7 @@ def create_paired_from_precomputed(
     """
 
     # Process precomputed paired MSAs
-    processed_prepaired_msas = {}
+    processed_prepaired_msas: dict[str, MsaArray] = {}
     for rep_id, paired_msa_dict in msa_array_collection.rep_id_to_paired_msa.items():
         # Flatten
         prepaired_msa = MsaArray.multi_concatenate(
@@ -219,10 +221,58 @@ def create_paired_from_precomputed(
                 if paired_msa_key in paired_msa_dict
             ]
         )
-        # Crop
-        processed_prepaired_msas[rep_id] = prepaired_msa.truncate(max_rows_paired)
+        # Crop (inplace=False, so this always returns an MsaArray, never None)
+        truncated_msa = prepaired_msa.truncate(max_rows_paired)
+        assert truncated_msa is not None
+        processed_prepaired_msas[rep_id] = truncated_msa
+
+    # Precomputed paired MSAs come from a single pairing query per complex, which
+    # row-aligns hits across representatives (padding with gaps where a rep has no
+    # ortholog for a given species), so every cropped block is expected at the same
+    # depth. This must hold because n_rows_paired_subsampled below is a single
+    # global split point shared by every chain.
+    n_rows_per_rep = {
+        rep_id: int(msa.msa.shape[0])
+        for rep_id, msa in processed_prepaired_msas.items()
+    }
+    n_rows_expected = next(iter(n_rows_per_rep.values()))
+    if any(n_rows != n_rows_expected for n_rows in n_rows_per_rep.values()):
+        raise ValueError(
+            "Precomputed paired MSAs have mismatched row counts across "
+            f"representatives after cropping: {n_rows_per_rep}. Paired MSAs must "
+            "be pre-aligned at a uniform depth across all representatives in a "
+            "complex."
+        )
+
+    # Allocate a gap-filled placeholder for representatives without a precomputed
+    # paired MSA, so every chain has a paired block to look up below. This is
+    # expected for e.g. an RNA chain in an otherwise-paired protein complex
+    # (ColabFold never computes paired MSAs for RNA), but unexpected for a
+    # protein rep alongside other paired proteins, so that case gets a warning
+    # since it more likely means paired_msa_file_paths was left unset by mistake.
+    for rep_id, query_seq in msa_array_collection.rep_id_to_query_seq.items():
+        if rep_id not in processed_prepaired_msas:
+            if (
+                msa_array_collection.rep_id_to_mol_type.get(rep_id)
+                == MoleculeType.PROTEIN
+            ):
+                warnings.warn(
+                    f"Representative {rep_id} is a protein chain with no "
+                    "precomputed paired MSA, while other representatives in this "
+                    "complex do have one. Its paired rows will be gap-filled. If "
+                    "this is unexpected, check that paired_msa_file_paths was set "
+                    "for this chain.",
+                    stacklevel=2,
+                )
+            n_cols = int(query_seq.shape[-1])
+            processed_prepaired_msas[rep_id] = MsaArray(
+                msa=np.full((n_rows_expected, n_cols), "-"),
+                deletion_matrix=np.zeros((n_rows_expected, n_cols), dtype=int),
+                metadata=pd.DataFrame(),
+            )
 
     msa_array_collection.rep_id_to_paired_msa = processed_prepaired_msas
+    msa_array_collection.set_row_counts(n_rows_paired_subsampled=n_rows_expected)
 
     # Map to per-chain
     chain_id_to_paired_msa = {
