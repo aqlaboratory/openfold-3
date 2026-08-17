@@ -9,7 +9,7 @@ For alignment-based templates, we assume you already generated all of your templ
 
 If you need further clarifications on how some of the template components of our inference pipeline work, refer to {doc}`this explanatory document <template_explanation>`.
 
-The template pipeline currently supports monomeric templates and has been tested for protein chains only.
+The template pipeline has been thoroughly tested on protein monomer chains only, but it also supports multimeric protein templates during inference via the [unmasking trick](https://www.nature.com/articles/s41467-024-52951-w), enabled by setting the `--unmasked` keyword to `True`.
 
 The main steps detailed in this guide are:
 1. {ref}`Providing files for template featurization <1-template-files>`
