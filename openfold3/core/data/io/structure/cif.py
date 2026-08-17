@@ -20,6 +20,7 @@ import pickle
 from pathlib import Path
 from typing import Literal, NamedTuple
 
+import numpy as np
 from biotite.structure import AtomArray, get_chain_count
 from biotite.structure.io import pdb, pdbx, save_structure
 
@@ -86,6 +87,17 @@ def _load_ciffile(file_path: Path | str) -> pdbx.CIFFile:
     return cif_class.read(file_path)
 
 
+def _normalize_element_symbols(
+    cif_data: pdbx.CIFBlock | pdbx.BinaryCIFBlock,
+) -> None:
+    """Normalize mmCIF element symbols to dictionary-compliant capitalization."""
+    element_symbols = cif_data["atom_site"]["type_symbol"].as_array().astype(str)
+    normalized_symbols = np.char.capitalize(element_symbols)
+
+    if not np.array_equal(element_symbols, normalized_symbols):
+        cif_data["atom_site"]["type_symbol"] = normalized_symbols
+
+
 # TODO: update docstring with new residue ID handling and preset fields
 @log_runtime_memory(runtime_dict_key="runtime-parse-mmcif", multicall=True)
 def parse_mmcif(
@@ -148,6 +160,7 @@ def parse_mmcif(
 
     cif_file = _load_ciffile(file_path)
     cif_data = get_cif_block(cif_file)
+    _normalize_element_symbols(cif_data)
 
     # Try predetermining from the CIF metadata if the structure has too many chains
     if max_polymer_chains is not None:
