@@ -92,3 +92,18 @@ ColabFold server before running prediction.
 - **Error:** `requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.`
 
 ---
+
+## 2026-08-18
+
+**Cause:** Docker image build failure on the AMD GPU runner. Tests never ran. Logs unavailable (HTTP 404). Not an AWS GPU outage (self-hosted AMD runner, not CUDA/EC2). Single scheduled run affected.
+
+- **Run ID:** [32099159272](https://github.com/aqlaboratory/openfold-3/actions/runs/32099159272)
+- **Time:** 2026-08-18T04:26:34Z – 04:36:16Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 95596199605)
+- **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU runner)
+- **Failed Step:** `Build and push test image` (step 5 of 9; all subsequent steps pending/skipped)
+- **Skipped Jobs:** `test-conda`, `test-pixi-cuda` (both skipped — unrelated to this failure)
+- **Error:** Logs unavailable (HTTP 404); exact error message not retrievable
+- **Assessment:** Failure during Docker build phase before any test code executed. Could be a transient AMD runner/GHCR push issue or a Dockerfile/dependency change that broke the build. Warrants manual inspection if it recurs.
+
+---
