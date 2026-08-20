@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -70,7 +71,7 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
 from openfold3.projects.of3_all_atom.model import MODEL_VERSION as OF3_MODEL_VERSION
-from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,34 @@ def rank_zero_only(fn):
         return None
 
     return wrapper
+
+
+def _accelerator_will_use_mps(accelerator: str) -> bool:
+    """Whether `accelerator` resolves to MPS at runtime.
+
+    True for `"mps"`, and also for `"gpu"`/`"auto"` (PyTorch Lightning's
+    defaults) whenever MPS is the available accelerator.
+    """
+    if accelerator not in ("mps", "gpu", "auto"):
+        return False
+    from pytorch_lightning.accelerators import MPSAccelerator
+
+    return MPSAccelerator.is_available()
+
+
+def _model_update_with_mps_preset(model_update: ModelUpdate) -> ModelUpdate:
+    """Add the `mps` preset to `model_update` unless it's already present.
+
+    `model_update.custom` still overrides any value from the preset, since
+    presets are applied before `custom` (see
+    `ProjectEntry.get_model_config_with_update`).
+    """
+    if "mps" in model_update.presets:
+        return model_update
+    return ModelUpdate(
+        presets=[*model_update.presets, "mps"],
+        custom=model_update.custom,
+    )
 
 
 class ExperimentRunner(ABC):
@@ -123,7 +152,10 @@ class ExperimentRunner(ABC):
     @cached_property
     def model_config(self) -> mlc.ConfigDict:
         """Retrieve the model configuration."""
-        return self.project_entry.get_model_config_with_update(self.model_update)
+        model_update = self.model_update
+        if _accelerator_will_use_mps(self.pl_trainer_args.accelerator):
+            model_update = _model_update_with_mps_preset(model_update)
+        return self.project_entry.get_model_config_with_update(model_update)
 
     @cached_property
     def lightning_module(self) -> pl.LightningModule:
@@ -613,6 +645,8 @@ class InferenceExperimentRunner(ExperimentRunner):
             use_msa_server,
             use_templates,
         )
+        msa_settings = experiment_config.msa_computation_settings
+        msa_settings.set_saved_output_root(self.output_dir / "msas")
 
     def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
         update_dict = {
@@ -803,6 +837,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             msa=self.dataset_config_kwargs.msa,
             template=self.dataset_config_kwargs.template,
             template_preprocessor_settings=self.experiment_config.template_preprocessor_settings,
+            pocket_sampling=self.dataset_config_kwargs.pocket_sampling,
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(
@@ -840,32 +875,35 @@ class InferenceExperimentRunner(ExperimentRunner):
         if path.exists():
             shutil.rmtree(path)
 
+    def cleanup_msa_workspace(self):
+        """Remove the temporary MSA workspace created by this run."""
+        msa_settings = self.experiment_config.msa_computation_settings
+        try:
+            msa_settings.cleanup_workspace()
+        except OSError:
+            logger.warning(
+                "Could not remove temporary MSA workspace for run %s",
+                msa_settings.run_directory_name,
+                exc_info=True,
+            )
+
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
+        self.cleanup_msa_workspace()
+        msa_settings = self.experiment_config.msa_computation_settings
+
         if self.is_rank_zero and self.log_dir.is_dir() and not os.listdir(self.log_dir):
             print("Removing empty log directory...")
             self.log_dir.rmdir()
 
-        if self.use_msa_server and self.is_rank_zero:
-            print("Cleaning up MSA directories...")
-
-            # Always remove raw directory
-            # TODO: Change to use ColabFoldQueryRunner.cleanup() when
-            # msa processing is performed in `prepare_data` lightning data hook
-            raw_colabfold_msa_path = (
-                self.experiment_config.msa_computation_settings.msa_output_directory
-                / "raw"
-            )
-            self._maybe_remove_dir(raw_colabfold_msa_path)
-            if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
-                msa_output_dir = (
-                    self.experiment_config.msa_computation_settings.msa_output_directory
-                )
-                logger.info(f"Removing MSA output directory: {msa_output_dir}")
-                self._maybe_remove_dir(msa_output_dir)
-                if self.use_templates:
-                    template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
-                    self._maybe_remove_dir(template_dir)
+        if (
+            self.is_rank_zero
+            and self.use_msa_server
+            and msa_settings.cleanup_msa_dir
+            and self.use_templates
+        ):
+            template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
+            self._maybe_remove_dir(template_dir)
 
 
 class WandbHandler:

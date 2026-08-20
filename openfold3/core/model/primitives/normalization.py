@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,6 +22,7 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives.linear import Linear
+from openfold3.core.utils.device_utils import autocast_device_type
 
 
 class LayerNorm(nn.Module):
@@ -55,7 +57,7 @@ class LayerNorm(nn.Module):
         # LayerNorm should be upcasted to fp32 anyway in torch
         # This enforces it if not running with autocast context
         if d in (torch.bfloat16, torch.float16):
-            with torch.amp.autocast("cuda", enabled=False):
+            with torch.amp.autocast(autocast_device_type(x), enabled=False):
                 weight = self.weight.float() if self.weight is not None else None
                 bias = self.bias.float() if self.bias is not None else None
                 out = nn.functional.layer_norm(

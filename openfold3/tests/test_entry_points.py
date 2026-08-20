@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,13 +29,14 @@ from click.testing import CliRunner
 from pytorch_lightning.loggers import WandbLogger
 
 import openfold3.core.model.primitives.initialization as initialization
-from openfold3 import setup_openfold
+from openfold3 import run_openfold, setup_openfold
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModuleConfig
 from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
     TrainingExperimentRunner,
     WandbHandler,
+    _accelerator_will_use_mps,
     skip_random_init,
 )
 from openfold3.entry_points.parameters import (
@@ -62,6 +64,16 @@ def dummy_ckpt_file(tmp_path: Path) -> Path:
     dummy_ckpt = tmp_path / "dummy.ckpt"
     dummy_ckpt.write_text("dummy content")
     return dummy_ckpt
+
+
+@pytest.fixture
+def minimal_query_json(tmp_path: Path) -> Path:
+    query_json = tmp_path / "query.json"
+    query_json.write_text(
+        '{"queries":{"query":{"chains":[{"molecule_type":"protein",'
+        '"chain_ids":["A"],"sequence":"TEST"}]}}}'
+    )
+    return query_json
 
 
 def _create_fake_file(path: Path) -> None:
@@ -328,6 +340,67 @@ class TestModelUpdate:
         warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
         assert any("model preset is deprecated" in msg for msg in warning_messages)
 
+    def test_mps_preset_applied_for_default_accelerator(self, dummy_ckpt_file):
+        """Default pl_trainer_args.accelerator ("gpu") resolves to MPS
+        whenever MPS is available, so the mps preset must apply even without
+        an explicit accelerator: mps override.
+        """
+        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
+        expt_runner = InferenceExperimentRunner(expt_config)
+
+        with patch(
+            "openfold3.entry_points.experiment_runner._accelerator_will_use_mps",
+            return_value=True,
+        ):
+            model_cfg = expt_runner.model_config
+
+        assert not model_cfg.settings.memory.eval.use_triton_triangle_kernels
+        assert not model_cfg.settings.memory.eval.offload_inference.msa_module
+        assert model_cfg.architecture.msa.msa_module.clear_cache_between_blocks
+        assert model_cfg.architecture.pairformer.clear_cache_between_blocks
+        assert model_cfg.architecture.template.template_pair_stack.clear_cache_between_blocks
+
+    def test_mps_preset_not_applied_when_mps_wont_run(self, dummy_ckpt_file):
+        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
+        expt_runner = InferenceExperimentRunner(expt_config)
+
+        with patch(
+            "openfold3.entry_points.experiment_runner._accelerator_will_use_mps",
+            return_value=False,
+        ):
+            model_cfg = expt_runner.model_config
+
+        assert model_cfg.settings.memory.eval.use_triton_triangle_kernels
+        assert not model_cfg.architecture.msa.msa_module.clear_cache_between_blocks
+        assert not model_cfg.architecture.pairformer.clear_cache_between_blocks
+
+
+class TestAcceleratorWillUseMps:
+    """_accelerator_will_use_mps mirrors PyTorch Lightning's own accelerator
+    resolution, so MPS-specific defaults aren't silently skipped when a user
+    runs with the default ("gpu") or "auto" instead of explicitly typing
+    "mps".
+    """
+
+    @pytest.mark.parametrize("accelerator", ["cpu", "cuda"])
+    def test_explicit_non_mps_accelerator_never_matches(self, accelerator):
+        with patch(
+            "pytorch_lightning.accelerators.MPSAccelerator.is_available",
+            return_value=True,
+        ):
+            assert not _accelerator_will_use_mps(accelerator)
+
+    @pytest.mark.parametrize("mps_available", [True, False])
+    @pytest.mark.parametrize("accelerator", ["mps", "gpu", "auto"])
+    def test_resolving_accelerator_follows_mps_availability(
+        self, accelerator, mps_available
+    ):
+        with patch(
+            "pytorch_lightning.accelerators.MPSAccelerator.is_available",
+            return_value=mps_available,
+        ):
+            assert _accelerator_will_use_mps(accelerator) is mps_available
+
 
 class DummyWandbExperiment:
     def __init__(self, directory):
@@ -514,6 +587,84 @@ class TestInferenceCommandLineSettings:
         num_seeds = 7
         expt_runner = InferenceExperimentRunner(expt_config, num_model_seeds=num_seeds)
         assert len(expt_runner.seeds) == num_seeds
+        msa_settings = expt_config.msa_computation_settings
+        assert msa_settings.saved_output_directory == (
+            expt_runner.output_dir / "msas" / msa_settings.run_directory_name
+        )
+
+    def test_predict_calls_cleanup_after_failure(
+        self, minimal_query_json, dummy_ckpt_file
+    ):
+        with (
+            patch(
+                "openfold3.entry_points.experiment_runner.InferenceExperimentRunner"
+            ) as mock_runner_class,
+        ):
+            mock_runner_class.return_value.run.side_effect = RuntimeError("failed")
+            result = CliRunner().invoke(
+                run_openfold.cli,
+                [
+                    "predict",
+                    "--query-json",
+                    str(minimal_query_json),
+                    "--inference-ckpt-path",
+                    str(dummy_ckpt_file),
+                ],
+            )
+
+        assert result.exit_code != 0
+        mock_runner_class.return_value.cleanup_msa_workspace.assert_called_once()
+
+    @pytest.mark.parametrize("fails", [False, True])
+    def test_align_msa_server_always_cleans_its_workspace(
+        self, tmp_path, minimal_query_json, fails
+    ):
+        output_dir = tmp_path / "alignments"
+        settings_yaml = tmp_path / "msa-settings.yml"
+        settings_yaml.write_text(f"msa_output_directory: {output_dir}\n")
+        workspaces = []
+
+        def fake_preprocess(inference_query_set, compute_settings):
+            workspace = compute_settings.workspace_directory
+            workspaces.append(workspace)
+            compute_settings.create_workspace()
+            if fails:
+                raise RuntimeError("failed")
+
+            compute_settings.saved_output_directory.mkdir(parents=True)
+            saved_msa = compute_settings.saved_output_directory / "main/alignment.a3m"
+            saved_msa.parent.mkdir(parents=True)
+            saved_msa.write_text(">query\nTEST")
+            inference_query_set.queries["query"].chains[0].main_msa_file_paths = [
+                saved_msa
+            ]
+            return inference_query_set
+
+        with (
+            patch(
+                "openfold3.core.data.tools.colabfold_msa_server.preprocess_colabfold_msas",
+                side_effect=fake_preprocess,
+            ),
+        ):
+            result = CliRunner().invoke(
+                run_openfold.cli,
+                [
+                    "align-msa-server",
+                    "--query-json",
+                    str(minimal_query_json),
+                    "--output-dir",
+                    str(output_dir),
+                    "--msa-computation-settings-yaml",
+                    str(settings_yaml),
+                ],
+            )
+
+        assert result.exit_code == (1 if fails else 0)
+        assert workspaces and not workspaces[0].exists()
+        if not fails:
+            saved_query = InferenceQuerySet.from_json(output_dir / "query_msa.json")
+            for chain in saved_query.queries["query"].chains:
+                assert all(path.exists() for path in chain.main_msa_file_paths)
 
     def test_seeding_from_list(self, tmp_path, dummy_ckpt_file):
         test_yaml_str = textwrap.dedent("""\
@@ -740,6 +891,107 @@ class TestRemoveQuerySetDuplicates:
         )
 
         assert set(deduplicated_set.queries.keys()) == set(["query_2", "query_3"])
+
+
+class TestUserDefaultRunnerYaml:
+    """Tests for the automatic loading of ``~/.openfold3/runner.yml``."""
+
+    def test_no_default_runner_yaml(self, dummy_ckpt_file):
+        """Scenario 1: no runner.yml in cache → defaults, path is None."""
+        cfg = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
+
+        assert cfg.user_default_runner_yaml_path is None
+        assert cfg.output_writer_settings.structure_format == "cif"
+
+    def test_default_runner_yaml_applied(self, tmp_path, dummy_ckpt_file):
+        """Scenario 2: runner.yml in cache → settings applied, path recorded."""
+        cache = tmp_path / ".openfold3"
+        cache.mkdir()
+        runner_yaml = cache / "runner.yml"
+        runner_yaml.write_text(
+            textwrap.dedent("""\
+                output_writer_settings:
+                    structure_format: pdb
+                experiment_settings:
+                    skip_existing: true
+                data_module_args:
+                    num_workers: 4
+                """)
+        )
+        cfg = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            user_default_runner_yaml_path=runner_yaml.resolve(),
+            **config_utils.load_yaml(runner_yaml),
+        )
+
+        assert cfg.user_default_runner_yaml_path == (cache / "runner.yml").resolve()
+        assert cfg.output_writer_settings.structure_format == "pdb"
+        assert cfg.experiment_settings.skip_existing is True
+        assert cfg.data_module_args.num_workers == 4
+
+    def test_explicit_runner_yaml_overrides_cache(self, tmp_path, dummy_ckpt_file):
+        """Scenario 3: cache runner.yml + explicit override → merge, CLI wins."""
+        cache = tmp_path / ".openfold3"
+        cache.mkdir()
+        runner_yaml = cache / "runner.yml"
+        runner_yaml.write_text(
+            textwrap.dedent("""\
+                output_writer_settings:
+                    structure_format: pdb
+                experiment_settings:
+                    skip_existing: true
+                data_module_args:
+                    num_workers: 4
+                """)
+        )
+        override = tmp_path / "override.yml"
+        override.write_text(
+            textwrap.dedent("""\
+                experiment_settings:
+                    skip_existing: false
+                data_module_args:
+                    num_workers: 8
+                """)
+        )
+
+        runner_args = config_utils.load_yaml(runner_yaml)
+        config_utils.deep_update(runner_args, config_utils.load_yaml(override))
+
+        cfg = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            user_default_runner_yaml_path=runner_yaml.resolve(),
+            **runner_args,
+        )
+
+        assert cfg.user_default_runner_yaml_path == (cache / "runner.yml").resolve()
+        # inherited from cache default
+        assert cfg.output_writer_settings.structure_format == "pdb"
+        # overridden by explicit yaml
+        assert cfg.experiment_settings.skip_existing is False
+        assert cfg.data_module_args.num_workers == 8
+
+    def test_corrupted_runner_yaml_raises_error(self, tmp_path, dummy_ckpt_file):
+        """Scenario 4: cache runner.yml is corrupted → fails gracefully with yaml error."""
+        import yaml
+
+        cache = tmp_path / ".openfold3"
+        cache.mkdir()
+
+        runner_yaml = cache / "runner.yml"
+
+        # Write an intentionally malformed YAML (indentation error)
+        runner_yaml.write_text(
+            textwrap.dedent("""\
+                output_writer_settings:
+                  structure_format: pdb
+                 bad_indentation: true
+                """)
+        )
+
+        # Verify that when attempting to build the configuration,
+        # the system raises a YAML error, preventing silent failures.
+        with pytest.raises(yaml.YAMLError):
+            config_utils.load_yaml(runner_yaml)
 
 
 class TestSetupOpenFold:

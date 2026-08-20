@@ -25,7 +25,7 @@ from typing import Any, Literal
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.data.pipelines.preprocessing.template import (
@@ -339,6 +339,7 @@ class ExperimentConfig(BaseModel):
     experiment_settings: ExperimentSettings
     pl_trainer_args: PlTrainerArgs = PlTrainerArgs()
     model_update: ModelUpdate
+    user_default_runner_yaml_path: Path | None = None
     memory_snapshot: MemorySnapshotConfig = MemorySnapshotConfig()
     profiler: ProfilerConfig = ProfilerConfig()
 
@@ -428,7 +429,9 @@ class InferenceExperimentConfig(ExperimentConfig):
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
-    msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
+    msa_computation_settings: MsaComputationSettings = Field(
+        default_factory=MsaComputationSettings
+    )
     template_preprocessor_settings: TemplatePreprocessorSettings = (
         TemplatePreprocessorSettings(mode="predict")
     )

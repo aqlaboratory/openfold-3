@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +30,7 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionEncoder,
 )
 from openfold3.core.model.primitives import Linear
+from openfold3.core.utils.device_utils import autocast_device_type
 from openfold3.core.utils.relpos import relpos_complex
 from openfold3.core.utils.tensor_utils import add
 
@@ -124,7 +126,9 @@ class InputEmbedderAllAtom(nn.Module):
             z:
                 [*, N_token, N_token, C_z] Pair representation
         """
-        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+        with torch.amp.autocast(
+            device_type=autocast_device_type(self), dtype=torch.float32
+        ):
             a, _, _, _ = self.atom_attn_enc(
                 batch=batch,
                 use_high_precision_attention=use_high_precision_attention,
