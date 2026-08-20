@@ -1,13 +1,13 @@
 """Smoke tests for preparse_alignments_of3.py script."""
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
-import pytest
-from click.testing import CliRunner
 
-from scripts.data_preprocessing.preparse_alignments_of3 import main
+SCRIPT_PATH = Path(__file__).parent / "preparse_alignments_of3.py"
 
 """
 This test data in alignments/ directory has the following structure:
@@ -30,35 +30,43 @@ The script produces a single .npz file per input directory (chain).
     uniprot_hits.sto
     uniref90_hits.sto
 """
-TEST_DATA_DIR = Path(__file__).parent.parent.parent / "test_data" / "alignments"
+TEST_DATA_DIR = (
+    Path(__file__).parent.parent.parent
+    / "openfold3"
+    / "tests"
+    / "test_data"
+    / "alignments"
+)
 
 
 class TestPreparseAlignmentsOf3:
     """Smoke tests for preparse_alignments_of3.py script."""
 
-    @pytest.fixture
-    def cli_runner(self):
-        return CliRunner()
+    def run_cli(self, *args):
+        return subprocess.run(
+            [sys.executable, str(SCRIPT_PATH), *args],
+            capture_output=True,
+            text=True,
+        )
 
-    def test_preparse_databases(self, cli_runner, tmp_path):
+    def test_preparse_databases(self, tmp_path):
         """Test preparsing alignments with 2 databases (uniref90_hits, uniprot_hits)."""
         max_seq_counts = json.dumps({"uniref90_hits": 100, "uniprot_hits": 50})
 
-        result = cli_runner.invoke(
-            main,
-            [
-                "--alignments_directory",
-                str(TEST_DATA_DIR),
-                "--alignment_array_directory",
-                str(tmp_path),
-                "--max_seq_counts",
-                max_seq_counts,
-                "--num_workers",
-                "1",
-            ],
+        result = self.run_cli(
+            "--alignments_directory",
+            str(TEST_DATA_DIR),
+            "--alignment_array_directory",
+            str(tmp_path),
+            "--max_seq_counts",
+            max_seq_counts,
+            "--num_workers",
+            "1",
         )
 
-        assert result.exit_code == 0, f"CLI failed with: {result.output}"
+        assert result.returncode == 0, (
+            f"CLI failed with: {result.stdout}{result.stderr}"
+        )
 
         # Check that npz files were created for both chains
         npz_files = list(tmp_path.glob("*.npz"))
@@ -72,42 +80,36 @@ class TestPreparseAlignmentsOf3:
         assert "uniref90_hits" in array_names
         assert "uniprot_hits" in array_names
 
-    def test_invalid_max_seq_counts_json(self, cli_runner, tmp_path):
+    def test_invalid_max_seq_counts_json(self, tmp_path):
         """Test that invalid JSON raises an error."""
-        result = cli_runner.invoke(
-            main,
-            [
-                "--alignments_directory",
-                str(TEST_DATA_DIR),
-                "--alignment_array_directory",
-                str(tmp_path),
-                "--max_seq_counts",
-                "not valid json",
-                "--num_workers",
-                "1",
-            ],
+        result = self.run_cli(
+            "--alignments_directory",
+            str(TEST_DATA_DIR),
+            "--alignment_array_directory",
+            str(tmp_path),
+            "--max_seq_counts",
+            "not valid json",
+            "--num_workers",
+            "1",
         )
 
-        assert result.exit_code != 0
-        assert "Invalid max_seq_counts JSON string" in result.output
+        assert result.returncode != 0
+        assert "Invalid max_seq_counts JSON string" in result.stdout + result.stderr
 
-    def test_invalid_field_in_max_seq_counts(self, cli_runner, tmp_path):
+    def test_invalid_field_in_max_seq_counts(self, tmp_path):
         """Test that unknown fields in max_seq_counts raise an error."""
         max_seq_counts = json.dumps({"unknown_database": 100})
 
-        result = cli_runner.invoke(
-            main,
-            [
-                "--alignments_directory",
-                str(TEST_DATA_DIR),
-                "--alignment_array_directory",
-                str(tmp_path),
-                "--max_seq_counts",
-                max_seq_counts,
-                "--num_workers",
-                "1",
-            ],
+        result = self.run_cli(
+            "--alignments_directory",
+            str(TEST_DATA_DIR),
+            "--alignment_array_directory",
+            str(tmp_path),
+            "--max_seq_counts",
+            max_seq_counts,
+            "--num_workers",
+            "1",
         )
 
-        assert result.exit_code != 0
-        assert "Invalid max_seq_counts JSON string" in result.output
+        assert result.returncode != 0
+        assert "Invalid max_seq_counts JSON string" in result.stdout + result.stderr
