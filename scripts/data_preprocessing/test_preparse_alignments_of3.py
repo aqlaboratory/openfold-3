@@ -41,7 +41,7 @@ class TestPreparseAlignmentsOf3:
         return CliRunner()
 
     def test_preparse_databases(self, cli_runner, tmp_path):
-        """Test preparsing alignments with a two databases (uniref90_hits, uniprot_hits)."""
+        """Test preparsing alignments with 2 databases (uniref90_hits, uniprot_hits)."""
         max_seq_counts = json.dumps({"uniref90_hits": 100, "uniprot_hits": 50})
 
         result = cli_runner.invoke(
