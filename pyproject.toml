@@ -111,7 +111,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["openfold3*", "scripts*"]
+include = ["openfold3*"]
 
 [tool.setuptools.package-data]
 openfold3 = [
