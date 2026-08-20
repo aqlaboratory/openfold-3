@@ -111,13 +111,12 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["openfold3*", "scripts*"]
+include = ["openfold3*"]
 
 [tool.setuptools.package-data]
 openfold3 = [
     "projects/*/config/*.yml",
-    "tests/test_data/**/*",
-    "scripts/*.sh"
+    "tests/test_data/**/*"
 ]
 
 # much of the cibuildwheel config taken from benfred/implicit
