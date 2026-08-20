@@ -274,7 +274,11 @@ mypy-baseline = "*"
 typecheck = "mypy | mypy-baseline filter"
 # Rewrite the baseline from the current state of the code. Run this after
 # fixing errors (it drops them) or after a mypy/dependency bump.
-typecheck-sync = "mypy | mypy-baseline sync"
+# --no-incremental: mypy formats overload-candidate notes differently when types
+# are deserialized from a warm .mypy_cache, and CI always runs cold, so a
+# baseline synced from a warm cache fails in CI. Ignoring the cache here (without
+# deleting it) records the cold format while keeping `typecheck` runs fast.
+typecheck-sync = "mypy --no-incremental | mypy-baseline sync"
 
 
 [feature.openfold3-base.target.linux-64.dependencies]

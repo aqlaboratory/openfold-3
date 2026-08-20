@@ -394,6 +394,7 @@ class PairBlock(nn.Module):
                 self.tri_att_end(
                     z,
                     mask=pair_mask.transpose(-1, -2),
+                    transpose_bias=True,
                     chunk_size=_attn_chunk_size,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cueq_triangle_kernels=use_cueq_triangle_kernels,

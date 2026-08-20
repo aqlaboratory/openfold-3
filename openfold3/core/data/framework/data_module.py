@@ -349,7 +349,7 @@ class DataModule(pl.LightningDataModule):
     def run_training_dataset_checks(
         cls,
         train_dataset_config: MultiDatasetConfig,
-    ) -> None:
+    ) -> MultiDatasetConfig:
         """Check that dataset weights and crop weights are normalized"""
         if sum(train_dataset_config.weights) != 1:
             warnings.warn(
@@ -377,6 +377,7 @@ class DataModule(pl.LightningDataModule):
                 print(
                     f"{train_dataset_config.configs[idx].crop.token_crop.crop_weights=}"
                 )
+        return train_dataset_config
 
     @classmethod
     def run_checks(cls, multi_dataset_config: MultiDatasetConfig) -> None:
@@ -395,11 +396,23 @@ class DataModule(pl.LightningDataModule):
         """
 
         # Check if provided weights sum to 1
+        train_mask = [mode == DatasetMode.train for mode in multi_dataset_config.modes]
         train_dataset_config = multi_dataset_config.get_subset(
             [mode == DatasetMode.train for mode in multi_dataset_config.modes]
         )
         if len(train_dataset_config.classes):
             cls.run_training_dataset_checks(train_dataset_config)
+            # Write normalized values back to the original config
+            train_idx = 0
+            for i, is_train in enumerate(train_mask):
+                if is_train:
+                    multi_dataset_config.weights[i] = train_dataset_config.weights[
+                        train_idx
+                    ]
+                    multi_dataset_config.configs[i] = train_dataset_config.configs[
+                        train_idx
+                    ]
+                    train_idx += 1
 
         # Check if provided dataset mode combination is valid
         modes = multi_dataset_config.modes
@@ -505,7 +518,6 @@ class DataModule(pl.LightningDataModule):
 
         persistent_workers = self.persistent_workers and num_workers > 0
         prefetch_factor = prefetch_factor if num_workers > 0 else None
-
         # Set a sensible default for multiprocesssing start method
         # depending on platform and python version.
         multiprocessing_context = DataModuleConfig.safe_multiprocessing_context(
