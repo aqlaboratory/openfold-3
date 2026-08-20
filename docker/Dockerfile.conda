@@ -98,9 +98,6 @@ RUN rm -rf /usr/local/cuda/doc \
 # Copy the entire conda environment
 COPY --from=builder /opt/conda /opt/conda
 
-# Copy CUTLASS
-COPY --from=builder /opt/cutlass /opt/cutlass
-
 # Activate the openfold3 environment by default
 ENV PATH=/opt/conda/envs/openfold3/bin:/opt/conda/bin:$PATH
 ENV CONDA_PREFIX=/opt/conda/envs/openfold3
