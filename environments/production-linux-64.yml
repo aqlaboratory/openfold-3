@@ -10,7 +10,7 @@ dependencies:
   - setuptools
   - pip
   - conda-forge::uv
-  - pytorch-lightning
+  - pytorch-lightning<=2.6.1
   - biopython
   - numpy
   - pandas

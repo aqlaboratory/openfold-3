@@ -214,7 +214,6 @@ class TestTrainingExperiment:
         expt_config = TrainingExperimentSettings.model_validate(
             {"restart_checkpoint_path": pl_checkpoint_option}
         )
-        print(expt_config.restart_checkpoint_path)
         assert expt_config.restart_checkpoint_path == pl_checkpoint_option
 
     def test_pl_checkpoint_load_from_path(self, tmp_path):
@@ -597,7 +596,6 @@ class TestInferenceCommandLineSettings:
         self, minimal_query_json, dummy_ckpt_file
     ):
         with (
-            patch("openfold3.run_openfold._torch_gpu_setup"),
             patch(
                 "openfold3.entry_points.experiment_runner.InferenceExperimentRunner"
             ) as mock_runner_class,
@@ -643,7 +641,6 @@ class TestInferenceCommandLineSettings:
             return inference_query_set
 
         with (
-            patch("openfold3.run_openfold._torch_gpu_setup"),
             patch(
                 "openfold3.core.data.tools.colabfold_msa_server.preprocess_colabfold_msas",
                 side_effect=fake_preprocess,
@@ -721,66 +718,73 @@ class TestInferenceCommandLineSettings:
 
 
 class TestInferenceCheckpointLoading:
-    def test_inference_ckpt_path_user_defined(self, dummy_ckpt_file):
+    def test_inference_ckpt_path_respects_user_defined(self, dummy_ckpt_file):
         expt_config = InferenceExperimentConfig.model_validate(
             {"inference_ckpt_path": dummy_ckpt_file}
         )
         assert expt_config.inference_ckpt_path == dummy_ckpt_file
 
-    def test_inference_ckpt_path_defaults(self, tmp_path):
-        with (
-            patch("builtins.input", return_value="yes"),
-            patch(
-                "openfold3.entry_points.parameters.download_s3_file",
-                side_effect=_fake_download_s3_file,
-            ),
-        ):
-            expt_config = InferenceExperimentConfig.model_validate(
-                {"cache_path": tmp_path}
-            )
+    def test_inference_ckpt_path_finds_default_ckpt_with_cache_name(self, tmp_path):
+        expected_ckpt_path = (
+            tmp_path
+            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[DEFAULT_CHECKPOINT_NAME].file_name
+        )
+        # create a fake file with correct ckpt path using tmp_path as the cache dir
+        _create_fake_file(expected_ckpt_path)
 
+        # Try to find the chekcpoint path
+        expt_config = InferenceExperimentConfig.model_validate({"cache_path": tmp_path})
         expected_ckpt_path = (
             tmp_path
             / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[DEFAULT_CHECKPOINT_NAME].file_name
         )
         assert expt_config.inference_ckpt_name == DEFAULT_CHECKPOINT_NAME
         assert expt_config.inference_ckpt_path == expected_ckpt_path
-        assert expt_config.inference_ckpt_path.exists()
 
-    def test_loads_selected_ckpt_name(self, tmp_path):
+    def test_inference_errors_when_default_not_found(self, tmp_path):
+        # specify tmp_path to ensure clean cache directory
+        # make a file path to old checkpoint to ensure error still raises when
+        # old checkpoints are present
+        legacy_checkpoint_name = "openfold3-p2-155k"
+        legacy_ckpt_path = (
+            tmp_path
+            / OPENFOLD_MODEL_CHECKPOINT_REGISTRY[legacy_checkpoint_name].file_name
+        )
+        _create_fake_file(legacy_ckpt_path)
+
+        with pytest.raises(ValueError, match="Default checkpoint .* not found"):
+            InferenceExperimentConfig.model_validate({"cache_path": tmp_path})
+
+    def test_loads_selected_ckpt_name(self, tmp_path, dummy_ckpt_file):
         # Introduce a dummy checkpoint into the registry to test if it can be selected
-        selected_ckpt_name = "dummy_ckpt"
+        dummy_ckpt_name = "dummy_ckpt"
+
         with (
             patch.dict(
                 "openfold3.entry_points.parameters.OPENFOLD_MODEL_CHECKPOINT_REGISTRY",
                 {
-                    "dummy_ckpt": CheckpointEntry(
-                        file_name="dummy_checkpoint.pt", version_compatibility=">0.3.0"
+                    dummy_ckpt_name: CheckpointEntry(
+                        file_name=dummy_ckpt_file.name, version_compatibility=">0.3.0"
                     )
                 },
             ),
-            patch("builtins.input", return_value="yes"),
-            patch(
-                "openfold3.entry_points.parameters.download_s3_file",
-                side_effect=_fake_download_s3_file,
-            ),
         ):
             expt_config = InferenceExperimentConfig.model_validate(
-                {"cache_path": tmp_path, "inference_ckpt_name": selected_ckpt_name}
+                {"cache_path": tmp_path, "inference_ckpt_name": dummy_ckpt_name}
             )
 
-        expected_ckpt_path = tmp_path / "dummy_checkpoint.pt"
-        assert expt_config.inference_ckpt_name == selected_ckpt_name
+        expected_ckpt_path = dummy_ckpt_file
+        assert expt_config.inference_ckpt_name == dummy_ckpt_name
         assert expt_config.inference_ckpt_path == expected_ckpt_path
-        assert expected_ckpt_path.exists()
 
-    def test_checkpoint_version_compatibility(self):
-        # Check that loading old `openfold3-p1` raises version compatibiility error
+    def test_load_legacy_ckpt_name_fails(self):
+        legacy_ckpt_name = "openfold3-p2-155k"
         with pytest.raises(
-            ValueError, match="Selected checkpoint openfold3-p1 is not compatible"
+            ValueError,
+            match=f"Selected checkpoint {legacy_ckpt_name} is not compatible",
         ):
             InferenceExperimentConfig.model_validate(
-                {"inference_ckpt_name": "openfold3-p1"}
+                {"inference_ckpt_name": legacy_ckpt_name}
             )
 
 

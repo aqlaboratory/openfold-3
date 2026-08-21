@@ -126,7 +126,7 @@ def create_pdb_training_dataset_cache_of3(
     max_resolution: float | None = None,
     max_polymer_chains: int | None = None,
     filter_missing_alignment: bool = True,
-    missing_alignment_log: Path = None,
+    alignment_log_dir: Path | None = None,
 ) -> None:
     """Create a training cache from a metadata cache.
 
@@ -158,10 +158,21 @@ def create_pdb_training_dataset_cache_of3(
             Whether to filter out chains (and their corresponding structures) whose
             sequences do not match to a representative in the
             alignment_representatives_fasta.
-        missing_alignment_log:
-            Path to write a JSON file containing all chains that were filtered out
-            because they do not have a corresponding alignment.
+        alignment_log_dir:
+            If set, write alignment diagnostic logs to this directory:
+            ``missing_alignment_repr.json`` (chains without a representative) and
+            ``fuzzy_alignment_matches.json`` (chains matched via fuzzy matching).
     """
+    # Normalize date parameters to datetime.date
+    if isinstance(max_release_date, str):
+        max_release_date = datetime.datetime.strptime(
+            max_release_date, "%Y-%m-%d"
+        ).date()
+    if isinstance(max_conformer_release_date, str):
+        max_conformer_release_date = datetime.datetime.strptime(
+            max_conformer_release_date, "%Y-%m-%d"
+        ).date()
+
     if max_conformer_release_date is None:
         max_conformer_release_date = max_release_date
 
@@ -197,8 +208,8 @@ def create_pdb_training_dataset_cache_of3(
     # Map each target chain to an alignment representative, then filter all structures
     # without alignment representatives
     if filter_missing_alignment:
-        if missing_alignment_log:
-            structure_data, unmatched_entries = with_log(
+        if alignment_log_dir:
+            structure_data, unmatched_entries, fuzzy_match_info = with_log(
                 add_and_filter_alignment_representatives
             )(
                 structure_cache=dataset_cache.structure_data,
@@ -207,12 +218,22 @@ def create_pdb_training_dataset_cache_of3(
                 return_no_repr=True,
             )
 
-            # Write all chains without alignment representatives to a JSON file. These
-            # are excluded from training.
-            with open(missing_alignment_log, "w") as f:
-                # Convert the internal dataclasses to dict
+            alignment_log_dir.mkdir(parents=True, exist_ok=True)
+
+            # Write all chains without alignment representatives to a JSON file.
+            # These are excluded from training.
+            with open(alignment_log_dir / "missing_alignment_repr.json", "w") as f:
+                # Convert the internal dataclasses to dict, including the
+                # query sequence for debugging mismatches
                 unmatched_entries = {
-                    pdb_id: {chain_id: asdict(chain_data)}
+                    pdb_id: {
+                        chain_id: {
+                            **asdict(chain_data),
+                            "query_sequence": id_to_sequence.get(
+                                f"{pdb_id}_{chain_id}"
+                            ),
+                        }
+                    }
                     for pdb_id, chains_data in unmatched_entries.items()
                     for chain_id, chain_data in chains_data.items()
                 }
@@ -221,8 +242,12 @@ def create_pdb_training_dataset_cache_of3(
                 unmatched_entries = format_nested_dict_for_json(unmatched_entries)
 
                 json.dump(unmatched_entries, f, indent=4)
+
+            # Write all fuzzy-matched RNA chains to a separate JSON file
+            with open(alignment_log_dir / "fuzzy_alignment_matches.json", "w") as f:
+                json.dump(fuzzy_match_info, f, indent=4)
         else:
-            structure_data = with_log(add_and_filter_alignment_representatives)(
+            structure_data, _ = with_log(add_and_filter_alignment_representatives)(
                 structure_cache=dataset_cache.structure_data,
                 query_chain_to_seq=id_to_sequence,
                 alignment_representatives_fasta=alignment_representatives_fasta,
@@ -240,14 +265,9 @@ def create_pdb_training_dataset_cache_of3(
     logger.info("Done clustering.")
 
     # Block usage of reference conformer coordinates from PDB-IDs that are outside the
-    # training split. Needs to be run before the filtering to use the full release date
+    # training split. Needs to run before further filtering to use the full release date
     # information in structure_data.
     if max_conformer_release_date is not None:
-        if isinstance(max_conformer_release_date, str):
-            max_conformer_release_date = datetime.datetime.strptime(
-                max_conformer_release_date, "%Y-%m-%d"
-            ).date()
-
         set_nan_fallback_conformer_flag(
             pdb_id_to_release_date=pdb_id_to_release_date,
             reference_mol_cache=dataset_cache.reference_molecule_data,
