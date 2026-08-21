@@ -1621,6 +1621,12 @@ class TemplatePreprocessorSettings(BaseModel):
             structure it is provided for as a template.
         max_templates (int):
             Maximum number of valid templates to keep per query chain after filtering.
+        deduplicate_sequences (bool):
+            Whether to drop templates whose ungapped hit sequence is identical to an
+            already-accepted template's for the same query chain (e.g. multiple crystal
+            forms of the same complex hitting the same region), keeping the first
+            (highest-ranked) occurrence. Matches AF3 SI Section 2.4's
+            `deduplicate_sequences` behavior.
         min_f_resolved (float):
             Minimum fraction of resolved residues (n resolved / n total) needed for a
             template to be considered valid. NOTE that this is only used if the template
@@ -1674,6 +1680,7 @@ class TemplatePreprocessorSettings(BaseModel):
     max_release_date: datetime | None = None
     min_release_date_diff: int | None = None
     max_templates: int = 20
+    deduplicate_sequences: bool = True
     cif_direct_min_score: float = 0.1
     min_f_resolved: float = 0.1
 
@@ -1769,6 +1776,7 @@ class TemplatePreprocessor:
         self.max_release_date = config.max_release_date
         self.min_release_date_diff = config.min_release_date_diff
         self.max_templates = config.max_templates
+        self.deduplicate_sequences = config.deduplicate_sequences
 
         self.cif_direct_min_score = config.cif_direct_min_score
 
@@ -2139,6 +2147,7 @@ class TemplatePreprocessor:
                 worker_logger.info(f"Parsed {len(templates)} templates...")
             template_cache_entry = {}
             template_ids = []
+            seen_sequences = set()
             for _, template in templates.items():
                 # A. Sequence checks
                 if fails_template_sequence_checks(
@@ -2344,6 +2353,23 @@ class TemplatePreprocessor:
                             " residue pairs."
                         )
                     continue
+                # Deduplicate by ungapped hit sequence, keeping the first
+                # (highest-ranked) occurrence: several hits covering the same query
+                # region with identical residues (e.g. crystal forms of one complex)
+                # would otherwise each consume a template slot. Checked only now, once
+                # every rejection reason above is ruled out, so a rejected hit never
+                # blocks a later valid hit with the same sequence -- and after step E,
+                # so `seq` is populated even for parsers that leave it unset (.m8).
+                if self.deduplicate_sequences:
+                    if template.seq in seen_sequences:
+                        if self.create_logs:
+                            worker_logger.info(
+                                f"{template.entry_id} {template.chain_id} is a"
+                                " sequence duplicate of an already-accepted template."
+                            )
+                        continue
+                    seen_sequences.add(template.seq)
+
                 # `cif_path` is only set in CIF-direct mode and is dropped by `to_dict`
                 # when absent
                 cache_entry = TemplateCacheEntry(

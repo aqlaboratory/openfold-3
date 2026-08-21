@@ -18,12 +18,14 @@ Scope (see plan): the side-effect-free helpers, the pydantic validators, the no-
 instance methods (built via ``object.__new__`` to bypass ``__init__``'s multiprocessing
 and file IO), and the legacy TSV log helpers.
 
-Tier E is the exception: cross-query template source isolation is only observable
-end to end, so those tests run the real ``__call__``. They stay offline by pre-seeding
-the template structure directory and setting ``fetch_missing_structures=False``.
+Tier E is the exception: cross-query template source isolation and sequence
+deduplication are only observable end to end, so those tests run the real ``__call__``.
+They stay offline by pre-seeding the template structure directory and setting
+``fetch_missing_structures=False``.
 """
 
 import shutil
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -541,7 +543,7 @@ def test_parse_inference_query_set_alignment_mode_dedup(tmp_path):
     query = Query(
         chains=[
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["A"],
                 sequence="ACDEF",
                 template_alignment_file_path=aln,
@@ -549,14 +551,14 @@ def test_parse_inference_query_set_alignment_mode_dedup(tmp_path):
             ),
             # Same alignment path -> deduplicated.
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["B"],
                 sequence="ACDEF",
                 template_alignment_file_path=aln,
             ),
             # Non-protein -> skipped before template fields are read.
             Chain(
-                molecule_type="dna",
+                molecule_type=MoleculeType.DNA,
                 chain_ids=["C"],
                 sequence="ACGT",
                 template_alignment_file_path=aln,
@@ -584,7 +586,7 @@ def test_parse_inference_query_set_cif_mode_dedup(tmp_path):
     query = Query(
         chains=[
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["A"],
                 sequence="ACDEF",
                 template_cif_paths=[cif1, cif2],
@@ -592,7 +594,7 @@ def test_parse_inference_query_set_cif_mode_dedup(tmp_path):
             ),
             # Same path set + chain ids -> deduplicated.
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["B"],
                 sequence="ACDEF",
                 template_cif_paths=[cif1, cif2],
@@ -600,7 +602,7 @@ def test_parse_inference_query_set_cif_mode_dedup(tmp_path):
             ),
             # Same paths, different chain ids -> distinct key, kept.
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["D"],
                 sequence="GHIKL",
                 template_cif_paths=[cif1, cif2],
@@ -622,7 +624,9 @@ def test_parse_inference_query_set_no_template_data_skipped(tmp_path):
     """A chain with neither alignment nor CIF produces no input."""
     query = Query(
         chains=[
-            Chain(molecule_type="protein", chain_ids=["A"], sequence="ACDEF"),
+            Chain(
+                molecule_type=MoleculeType.PROTEIN, chain_ids=["A"], sequence="ACDEF"
+            ),
         ]
     )
     iqs = InferenceQuerySet(queries={"q0": query})
@@ -647,13 +651,13 @@ def test_update_inference_query_set(tmp_path):
     query = Query(
         chains=[
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["A"],
                 sequence=seq_present,
                 template_alignment_file_path=aln_present,
             ),
             Chain(
-                molecule_type="protein",
+                molecule_type=MoleculeType.PROTEIN,
                 chain_ids=["B"],
                 sequence=seq_missing,
                 template_alignment_file_path=aln_missing,
@@ -690,7 +694,7 @@ def test_update_inference_query_set_skips_chains_without_template_input(tmp_path
             "with_templates": Query(
                 chains=[
                     Chain(
-                        molecule_type="protein",
+                        molecule_type=MoleculeType.PROTEIN,
                         chain_ids=["A"],
                         sequence=seq,
                         template_cif_paths=[cif_path],
@@ -698,7 +702,13 @@ def test_update_inference_query_set_skips_chains_without_template_input(tmp_path
                 ]
             ),
             "without_templates": Query(
-                chains=[Chain(molecule_type="protein", chain_ids=["A"], sequence=seq)]
+                chains=[
+                    Chain(
+                        molecule_type=MoleculeType.PROTEIN,
+                        chain_ids=["A"],
+                        sequence=seq,
+                    )
+                ]
             ),
         }
     )
@@ -798,7 +808,7 @@ def _two_source_query_set(tmp_path: Path, order: list[str]) -> InferenceQuerySet
             name: Query(
                 chains=[
                     Chain(
-                        molecule_type="protein",
+                        molecule_type=MoleculeType.PROTEIN,
                         chain_ids=["A"],
                         sequence=seq,
                         **sources[name],
@@ -853,3 +863,169 @@ def test_template_sources_do_not_collide_across_queries(tmp_path, order):
     assert (
         custom.template_alignment_file_path != colabfold.template_alignment_file_path
     ), "both queries were pointed at the same template cache entry"
+
+
+# ---------------------------------------------------------------------------
+# Tier E: sequence deduplication (end to end)
+# ---------------------------------------------------------------------------
+
+DEDUP_CIF = "1kd8.cif"
+# 1kd8 is a coiled-coil bundle of two alternating 36-residue chains: A/C/F share one
+# sequence and B/D/E share another. That gives both an identical pair (A, C) and a
+# distinct pair (A, B) as templates for the same query, from a single structure file.
+DEDUP_IDENTICAL_HITS = ["1kd8_A", "1kd8_C"]
+DEDUP_DISTINCT_HITS = ["1kd8_A", "1kd8_B"]
+
+
+def _write_colabfold_m8(
+    tmp_path: Path, query_seq: str, hits: list[str], seqs: dict
+) -> Path:
+    """ColabFold-style .m8, one full-length ungapped hit per entry.
+
+    Parsed by ``M8Parser``, which leaves ``TemplateData.seq`` unset -- the sequence is
+    recovered later from the structure file (step E of the preprocessing loop), so
+    `seqs` is unused here.
+    """
+    del seqs
+    n = len(query_seq)
+    return _write_file(
+        tmp_path / "template.m8",
+        "".join(
+            f"101\t{hit}\t1.000\t{n}\t0\t0\t1\t{n}\t1\t{n}\t1.0E-40\t300\t{n}M\n"
+            for hit in hits
+        ),
+    )
+
+
+def _write_a3m(tmp_path: Path, query_seq: str, hits: list[str], seqs: dict) -> Path:
+    """A3M with the query first and coordinate-bearing headers.
+
+    Parsed by ``A3mParser``, which does populate ``TemplateData.seq``. Contrast with
+    ``_write_colabfold_m8``: same templates, but the hit sequence is known up front.
+    """
+    lines = [f">query_X/1-{len(query_seq)}", query_seq]
+    for hit in hits:
+        hit_seq = str(seqs[hit.split("_")[1]])
+        lines += [f">{hit}/1-{len(hit_seq)}", hit_seq]
+    return _write_file(tmp_path / "template.a3m", "\n".join(lines) + "\n")
+
+
+# Both writers produce an alignment holding `hits`; which one a test uses decides
+# whether the preprocessor sees hit sequences up front (a3m) or must recover them
+# from the structure file (m8).
+_AlignmentWriter = Callable[[Path, str, list[str], dict], Path]
+
+
+def _run_dedup_preprocessor(
+    tmp_path: Path,
+    write_alignment: _AlignmentWriter,
+    hits: list[str],
+    *,
+    deduplicate_sequences: bool,
+) -> InferenceQuerySet:
+    """Preprocess one query whose alignment holds `hits`, return the processed set.
+
+    Extract results with ``_template_ids_by_chain``.
+    """
+    cif_src = MMCIFS_DIR / DEDUP_CIF
+    seqs = get_asym_id_to_canonical_seq_dict(_load_ciffile(cif_src))
+    query_seq = str(seqs["A"])
+
+    aln_path = write_alignment(tmp_path, query_seq, hits, seqs)
+
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir()
+    shutil.copy(cif_src, structure_dir / DEDUP_CIF)
+
+    iqs = InferenceQuerySet(
+        queries={
+            "q": Query(
+                chains=[
+                    Chain(
+                        molecule_type=MoleculeType.PROTEIN,
+                        chain_ids=["A"],
+                        sequence=query_seq,
+                        template_alignment_file_path=aln_path,
+                    )
+                ]
+            )
+        }
+    )
+    settings = TemplatePreprocessorSettings(
+        mode="predict",
+        output_directory=tmp_path / "template_data",
+        # Pre-seeded structures + no fetching keeps this offline.
+        structure_directory=structure_dir,
+        fetch_missing_structures=False,
+        n_processes=1,
+        deduplicate_sequences=deduplicate_sequences,
+    )
+
+    TemplatePreprocessor(input_set=iqs, config=settings)()
+
+    return iqs
+
+
+def _template_ids_by_chain(iqs: InferenceQuerySet) -> dict[tuple[str, int], list[str]]:
+    """Accepted template ids for every chain, keyed by (query name, chain index).
+
+    Covers the whole query set, so asserting against the full dict also proves no
+    other chain picked up templates -- and the shape survives multi-query or
+    multi-chain variants of these tests.
+    """
+    return {
+        (name, idx): chain.template_entry_chain_ids or []
+        for name, query in iqs.queries.items()
+        for idx, chain in enumerate(query.chains)
+    }
+
+
+@pytest.mark.parametrize(
+    "write_alignment", [_write_colabfold_m8, _write_a3m], ids=["m8", "a3m"]
+)
+@pytest.mark.parametrize(
+    "hits, deduplicate_sequences, expected",
+    [
+        pytest.param(
+            DEDUP_DISTINCT_HITS,
+            True,
+            DEDUP_DISTINCT_HITS,
+            id="distinct_seqs_both_kept_dedup_on",
+        ),
+        pytest.param(
+            DEDUP_DISTINCT_HITS,
+            False,
+            DEDUP_DISTINCT_HITS,
+            id="distinct_seqs_both_kept_dedup_off",
+        ),
+        pytest.param(
+            DEDUP_IDENTICAL_HITS,
+            True,
+            ["1kd8_A"],
+            id="identical_seqs_deduplicated_dedup_on",
+        ),
+        pytest.param(
+            DEDUP_IDENTICAL_HITS,
+            False,
+            DEDUP_IDENTICAL_HITS,
+            id="identical_seqs_both_kept_dedup_off",
+        ),
+    ],
+)
+def test_deduplicate_sequences(
+    tmp_path, write_alignment, hits, deduplicate_sequences, expected
+):
+    """Only the first of several same-sequence hits is kept, and only with dedup on.
+
+    Distinct-sequence hits must always all survive (the direction that would silently
+    shrink every template set), and disabling the setting restores the
+    pre-deduplication behaviour of identical hits each taking a template slot.
+
+    The m8 rows guard the check's placement: ``M8Parser`` leaves ``TemplateData.seq``
+    unset, so deduplication only works after step E has recovered the sequence from
+    the structure file.
+    """
+    iqs = _run_dedup_preprocessor(
+        tmp_path, write_alignment, hits, deduplicate_sequences=deduplicate_sequences
+    )
+    assert _template_ids_by_chain(iqs) == {("q", 0): expected}

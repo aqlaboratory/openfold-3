@@ -2032,7 +2032,6 @@ openfold3/projects/of3_all_atom/runner.py:0: note: Use https://github.com/haunts
 openfold3/tests/__init__.py:0: error: Module has no attribute "util"  [attr-defined]
 openfold3/tests/core/data/io/sequence/msa/test_msa_parsers.py:0: error: Argument "deletion_matrix" to "MsaArray" has incompatible type "ndarray[tuple[int, int], dtype[Any]]"; expected "ndarray[int, dtype[Any]]"  [arg-type]
 openfold3/tests/core/data/io/sequence/msa/test_msa_parsers.py:0: error: Argument "msa" to "MsaArray" has incompatible type "ndarray[tuple[Any, ...], dtype[Any]]"; expected "ndarray[str, dtype[Any]]"  [arg-type]
-openfold3/tests/core/data/pipelines/preprocessing/test_template.py:0: error: Argument "molecule_type" to "Chain" has incompatible type "str"; expected "MoleculeType"  [arg-type]
 openfold3/tests/core/data/pipelines/preprocessing/test_template.py:0: error: Argument after ** must be a mapping, not "object"  [arg-type]
 openfold3/tests/core/data/primitives/caches/test_lmdb.py:0: error: Need type annotation for "_dict"  [var-annotated]
 openfold3/tests/core/data/primitives/structure/test_cleanup_bonds.py:0: error: Argument 2 to "BondList" has incompatible type "BondList[Any] | ndarray[tuple[Any, ...], dtype[Any]]"; expected "ndarray[tuple[Never, Never], dtype[integer[Any]]] | None"  [arg-type]
