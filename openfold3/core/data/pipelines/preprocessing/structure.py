@@ -56,6 +56,9 @@ from openfold3.core.data.io.structure.pdb import (
     parse_RNA_monomer_pdb_tmp,
 )
 from openfold3.core.data.io.utils import encode_numpy_types
+from openfold3.core.data.pipelines.preprocessing.reference_molecules import (
+    prepare_reference_molecule,
+)
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
 from openfold3.core.data.primitives.caches.format import (
     DisorderedPreprocessingDataCache,
@@ -88,12 +91,8 @@ from openfold3.core.data.primitives.structure.cleanup import (
 )
 from openfold3.core.data.primitives.structure.component import (
     get_component_info,
-    get_reference_molecule_metadata,
     mol_from_atomarray,
     mol_from_ccd_entry,
-)
-from openfold3.core.data.primitives.structure.conformer import (
-    resolve_and_format_fallback_conformer,
 )
 from openfold3.core.data.primitives.structure.interface import (
     get_interface_chain_id_pairs,
@@ -375,9 +374,9 @@ def extract_component_data_of3(
     # conformer coordinates
     for mol_id, mol in all_component_mols.items():
         residue_count = non_std_ligands_to_rescount.get(mol_id, 1)
-        mol, conformer_strategy = resolve_and_format_fallback_conformer(mol)
-        reference_mol_metadata[mol_id] = get_reference_molecule_metadata(
-            mol, conformer_strategy, residue_count
+        mol, reference_mol_metadata[mol_id] = prepare_reference_molecule(
+            mol,
+            residue_count,
         )
 
         # Write SDF file

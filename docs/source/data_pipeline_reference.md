@@ -141,6 +141,12 @@ The metadata cache generated in PDB preprocessing creates an index of the whole 
 
 Script: [scripts/data_preprocessing/create_pdb-weighted_training_dataset_cache.py](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/create_pdb-weighted_training_dataset_cache.py)
 
+Every standard amino acid requires both an entry in `reference_molecule_data` and a
+matching SDF file during featurization. The cache builder checks all 20 canonical amino
+acids and generates any incomplete entries from `--ccd-path`. By default, generated
+SDFs are written to the `reference_mols` directory next to `--preprocessed-dir`; use
+`--reference-molecule-dir` to select a different location.
+
 Clustering follows AF3 SI §2.5.3:
 
 - **Protein chains**: 40% sequence identity (MMSeqs2)

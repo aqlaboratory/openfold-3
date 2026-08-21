@@ -19,12 +19,18 @@ from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 
+from biotite.structure.io.pdbx import CIFFile
+
 from openfold3.core.data.io.dataset_cache import (
     format_nested_dict_for_json,
     write_datacache_to_json,
 )
 from openfold3.core.data.io.sequence.fasta import (
     consolidate_preprocessed_fastas,
+)
+from openfold3.core.data.io.structure.mol import write_annotated_sdf
+from openfold3.core.data.pipelines.preprocessing.reference_molecules import (
+    prepare_reference_molecule,
 )
 from openfold3.core.data.primitives.caches.clustering import (
     add_cluster_data,
@@ -42,14 +48,20 @@ from openfold3.core.data.primitives.caches.filtering import (
 )
 from openfold3.core.data.primitives.caches.format import (
     PreprocessingDataCache,
+    PreprocessingReferenceMoleculeData,
     PreprocessingStructureDataCache,
 )
+from openfold3.core.data.primitives.structure.component import mol_from_ccd_entry
+from openfold3.core.data.resources.residues import STANDARD_PROTEIN_RESIDUES_3
 
 logger = logging.getLogger(__name__)
 
+CANONICAL_AMINO_ACID_RESIDUES_3 = tuple(
+    residue for residue in STANDARD_PROTEIN_RESIDUES_3 if residue != "UNK"
+)
+
 
 # TODO: reorganize metadata cache creation pipelines into a caches module
-# TODO: Make docstring more complete for new args
 def filter_structure_metadata_of3(
     structure_cache: PreprocessingStructureDataCache,
     max_release_date: datetime.date | str | None = None,
@@ -61,8 +73,6 @@ def filter_structure_metadata_of3(
 ) -> PreprocessingStructureDataCache:
     """Filter the structure metadata cache for training or validation.
 
-    TODO: Update docstring
-
     Applies the following filters from the AF3 SI 2.5.4 that have not yet been applied
     in preprocessing:
     - release date <= max_release_date
@@ -72,6 +82,19 @@ def filter_structure_metadata_of3(
     Args:
         structure_cache:
             Structure metadata cache to filter.
+        max_release_date:
+            Maximum release date for included structures, formatted as 'YYYY-MM-DD'
+        min_release_date:
+            Minimum release date for included structures, formatted as 'YYYY-MM-DD'
+        max_resolution:
+            Maximum resolution for structures in the dataset in Å.
+        ignore_nmr:
+            If True, ignore NMR structures when filtering (which have no resolution),
+            meaning that they will be kept always. Default is True.
+        max_polymer_chains:
+            Filter out entries with more polymer chains than this value.
+        max_tokens:
+            Filter out entries with token count higher than this value.
 
     Returns:
         Filtered structure metadata cache.
@@ -114,7 +137,71 @@ def filter_structure_metadata_of3(
     return filtered_cache
 
 
-# TODO: Add docstring!
+def ensure_standard_amino_acid_reference_molecules(
+    preprocessing_cache: PreprocessingDataCache,
+    reference_molecule_dir: Path,
+    ccd_path: Path | None,
+) -> None:
+    """Ensure cache metadata and SDFs exist for the 20 canonical amino acids.
+    
+    Args:
+        preprocessing_cache:
+            Preprocessing cache to ensure standard amino-acid reference molecules for.
+        reference_molecule_dir:
+            Directory to write reference molecule SDF files to.
+        ccd_path:
+            Path to the base CCD used to generate missing standard amino-acid reference
+            molecule metadata and SDF files.
+    Returns:
+        None
+    
+    """
+    missing_metadata = {
+        residue
+        for residue in CANONICAL_AMINO_ACID_RESIDUES_3
+        if residue not in preprocessing_cache.reference_molecule_data
+    }
+    missing_sdfs = {
+        residue
+        for residue in CANONICAL_AMINO_ACID_RESIDUES_3
+        if not (reference_molecule_dir / f"{residue}.sdf").is_file()
+    }
+    incomplete_residues = [
+        residue
+        for residue in CANONICAL_AMINO_ACID_RESIDUES_3
+        if residue in missing_metadata or residue in missing_sdfs
+    ]
+    if not incomplete_residues:
+        return
+
+    if ccd_path is None:
+        raise ValueError(
+            "Standard amino-acid reference molecules are incomplete. Provide "
+            "`ccd_path` so the missing metadata and SDF files can be generated. "
+            f"Missing or incomplete residues: {incomplete_residues}"
+        )
+
+    reference_molecule_dir.mkdir(parents=True, exist_ok=True)
+    ccd = CIFFile.read(ccd_path)
+
+    for residue in incomplete_residues:
+        mol = mol_from_ccd_entry(residue, ccd)
+        mol, metadata = prepare_reference_molecule(mol)
+
+        if residue in missing_metadata:
+            preprocessing_cache.reference_molecule_data[residue] = (
+                PreprocessingReferenceMoleculeData(**metadata)
+            )
+        if residue in missing_sdfs:
+            write_annotated_sdf(mol, reference_molecule_dir / f"{residue}.sdf")
+
+    logger.info(
+        "Generated standard amino-acid references (metadata=%s, SDFs=%s)",
+        sorted(missing_metadata),
+        sorted(missing_sdfs),
+    )
+
+
 def create_pdb_training_dataset_cache_of3(
     metadata_cache_path: Path,
     preprocessed_dir: Path,
@@ -127,6 +214,8 @@ def create_pdb_training_dataset_cache_of3(
     max_polymer_chains: int | None = None,
     filter_missing_alignment: bool = True,
     missing_alignment_log: Path = None,
+    ccd_path: Path | None = None,
+    reference_molecule_dir: Path | None = None,
 ) -> None:
     """Create a training cache from a metadata cache.
 
@@ -161,11 +250,27 @@ def create_pdb_training_dataset_cache_of3(
         missing_alignment_log:
             Path to write a JSON file containing all chains that were filtered out
             because they do not have a corresponding alignment.
+        ccd_path:
+            Path to the base CCD used to generate missing standard amino-acid reference
+            molecule metadata and SDF files.
+        reference_molecule_dir:
+            Directory containing reference molecule SDF files. Defaults to the
+            `reference_mols` directory next to `preprocessed_dir`.
+    
+    Returns:
+        None
     """
     if max_conformer_release_date is None:
         max_conformer_release_date = max_release_date
 
     metadata_cache = PreprocessingDataCache.from_json(metadata_cache_path)
+    if reference_molecule_dir is None:
+        reference_molecule_dir = preprocessed_dir.parent / "reference_mols"
+    ensure_standard_amino_acid_reference_molecules(
+        preprocessing_cache=metadata_cache,
+        reference_molecule_dir=reference_molecule_dir,
+        ccd_path=ccd_path,
+    )
 
     # Read in FASTAs of all sequences in the training set
     logger.info("Scanning FASTA directories...")

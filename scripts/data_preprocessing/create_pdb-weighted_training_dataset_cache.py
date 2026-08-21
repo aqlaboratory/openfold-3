@@ -25,6 +25,24 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_weighted import (
     help="Path to directory of directories containing preprocessed mmCIF files.",
 )
 @click.option(
+    "--ccd-path",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Path to the base Chemical Component Dictionary. Required when standard "
+        "amino-acid reference molecule metadata or SDF files are missing."
+    ),
+)
+@click.option(
+    "--reference-molecule-dir",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
+    default=None,
+    help=(
+        "Directory containing reference molecule SDF files. Defaults to the "
+        "'reference_mols' directory next to --preprocessed-dir."
+    ),
+)
+@click.option(
     "--alignment-representatives-fasta",
     type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
     required=True,
@@ -114,6 +132,8 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_weighted import (
 def main(
     metadata_cache_path: Path,
     preprocessed_dir: Path,
+    ccd_path: Path | None,
+    reference_molecule_dir: Path | None,
     alignment_representatives_fasta: Path,
     output_path: Path,
     dataset_name: str,
@@ -151,6 +171,9 @@ def main(
                 applies to the very special case where the fallback conformer was
                 derived from CCD model coordinates coming from a PDB-ID that was
                 released outside of the time cutoff (see AF3 SI 2.8)
+
+        Missing standard amino-acid reference molecules are generated from ccd_path and
+        written to reference_molecule_dir.
     """
     if max_release_date is not None:
         parsed_max_release_date = datetime.strptime(max_release_date, "%Y-%m-%d").date()
@@ -188,6 +211,8 @@ def main(
     create_pdb_training_dataset_cache_of3(
         metadata_cache_path=metadata_cache_path,
         preprocessed_dir=preprocessed_dir,
+        ccd_path=ccd_path,
+        reference_molecule_dir=reference_molecule_dir,
         alignment_representatives_fasta=alignment_representatives_fasta,
         output_path=output_path,
         dataset_name=dataset_name,
