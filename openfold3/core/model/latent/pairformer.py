@@ -131,6 +131,7 @@ class PairFormerBlock(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
         _attn_chunk_size: int | None = None,
@@ -150,7 +151,8 @@ class PairFormerBlock(nn.Module):
                 self.tune_chunk_size is True
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma.
+                Mutually exclusive with use_lma and
+                use_megafold_single_attention.
             use_cueq_triangle_kernels:
                 Whether to use cuEquivariance triangle multiplicative
                 update kernel and attention kernel. When both this and
@@ -161,7 +163,12 @@ class PairFormerBlock(nn.Module):
                 Mutually exclusive with use_deepspeed_evo_attention.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_deepspeed_evo_attention.
+                Mutually exclusive with use_deepspeed_evo_attention and
+                use_megafold_single_attention.
+            use_megafold_single_attention:
+                Whether to use MegaFold's EvoFlash-3D single attention
+                pair bias. Mutually exclusive with use_deepspeed_evo_attention
+                and use_lma.
             inplace_safe:
                 Whether inplace operations can be performed
             _mask_trans:
@@ -201,6 +208,7 @@ class PairFormerBlock(nn.Module):
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
+                use_megafold_single_attention=use_megafold_single_attention,
             ),
             inplace=inplace_safe,
         )
@@ -332,6 +340,7 @@ class PairFormerStack(nn.Module):
         use_cueq_triangle_kernels: bool,
         use_triton_triangle_kernels: bool,
         use_lma: bool,
+        use_megafold_single_attention: bool,
         inplace_safe: bool,
         _mask_trans: bool,
     ):
@@ -353,6 +362,7 @@ class PairFormerStack(nn.Module):
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
+                use_megafold_single_attention=use_megafold_single_attention,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
             )
@@ -411,6 +421,7 @@ class PairFormerStack(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -429,13 +440,19 @@ class PairFormerStack(nn.Module):
                 self.tune_chunk_size is True
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma.
+                Mutually exclusive with use_lma and
+                use_megafold_single_attention.
             use_triton_triangle_kernels:
                 Whether to use Triton triangle attention kernel.
                 Mutually exclusive with use_deepspeed_evo_attention.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_deepspeed_evo_attention.
+                Mutually exclusive with use_deepspeed_evo_attention and
+                use_megafold_single_attention.
+            use_megafold_single_attention:
+                Whether to use MegaFold's EvoFlash-3D single attention
+                pair bias. Mutually exclusive with use_deepspeed_evo_attention
+                and use_lma. 
             inplace_safe:
                 Whether inplace operations can be performed
             _mask_trans:
@@ -456,6 +473,7 @@ class PairFormerStack(nn.Module):
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
+            use_megafold_single_attention=use_megafold_single_attention,
             inplace_safe=inplace_safe,
             _mask_trans=_mask_trans,
         )

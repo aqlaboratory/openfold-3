@@ -100,6 +100,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         inplace_safe: bool = False,
         offload_inference: bool = False,
         _mask_trans: bool = True,
@@ -125,7 +126,8 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                 Inference-time subbatch size. Associated with PairFormer embedding.
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma.
+                Mutually exclusive with use_lma and
+                use_megafold_single_attention.
             use_cueq_triangle_kernels:
                 Whether to use cuEq triangle attention kernel.
                 Mutually exclusive with use_lma
@@ -133,7 +135,12 @@ class AuxiliaryHeadsAllAtom(nn.Module):
                 Whether to use Triton triangle attention kernel.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_deepspeed_evo_attention.
+                Mutually exclusive with use_deepspeed_evo_attention
+                and use_megafold_single_attention.
+            use_megafold_single_attention:
+                Whether to use MegaFold's EvoFlash-3D single attention
+                pair bias. Mutually exclusive with use_deepspeed_evo_attention
+                and use_lma. 
             inplace_safe:
                 Whether inplace operations can be performed
             offload_inference:
@@ -209,6 +216,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
+            use_megafold_single_attention=use_megafold_single_attention,
             inplace_safe=inplace_safe,
             offload_inference=offload_inference,
             _mask_trans=_mask_trans,
