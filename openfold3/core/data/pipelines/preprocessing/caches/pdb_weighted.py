@@ -143,7 +143,7 @@ def ensure_standard_amino_acid_reference_molecules(
     ccd_path: Path | None,
 ) -> None:
     """Ensure cache metadata and SDFs exist for the 20 canonical amino acids.
-    
+
     Args:
         preprocessing_cache:
             Preprocessing cache to ensure standard amino-acid reference molecules for.
@@ -154,7 +154,7 @@ def ensure_standard_amino_acid_reference_molecules(
             molecule metadata and SDF files.
     Returns:
         None
-    
+
     """
     missing_metadata = {
         residue
@@ -256,7 +256,7 @@ def create_pdb_training_dataset_cache_of3(
         reference_molecule_dir:
             Directory containing reference molecule SDF files. Defaults to the
             `reference_mols` directory next to `preprocessed_dir`.
-    
+
     Returns:
         None
     """
