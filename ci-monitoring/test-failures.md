@@ -141,3 +141,29 @@ ColabFold server before running prediction.
 - **Error:** `pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceExperimentConfig — Value error, Default checkpoint openbind-2025-06-30-174k not found in /root/.openfold3, cowardly refusing to perform inference. Please run setup_openfold to download the current default parameters or specify a valid checkpoint path with --inference-ckpt-path`
 
 ---
+
+## 2026-08-23
+
+**Cause:** Same missing checkpoint error as 2026-08-22 — `openbind-2025-06-30-174k` not found in `/root/.openfold3` on the AMD/ROCm runner. Third consecutive day with this failure. Two scheduled runs affected.
+
+### Run 1
+- **Run ID:** [32615678684](https://github.com/aqlaboratory/openfold-3/actions/runs/32615678684)
+- **Time:** 2026-08-23T03:34:11Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 97135888268)
+- **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU)
+- **Commit:** `f9649cce7de32382bc1100e8e9e1de2301adf2c2`
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[no_msa-no_templates-protein_only]`
+- **Error:** `pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceExperimentConfig — Value error, Default checkpoint openbind-2025-06-30-174k not found in /root/.openfold3, cowardly refusing to perform inference.`
+- **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
+
+### Run 2
+- **Run ID:** [32617889227](https://github.com/aqlaboratory/openfold-3/actions/runs/32617889227)
+- **Time:** 2026-08-23T04:26:46Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 97141446677)
+- **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU)
+- **Commit:** `f9649cce7de32382bc1100e8e9e1de2301adf2c2`
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[no_msa-no_templates-protein_only]`
+- **Error:** `pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceExperimentConfig — Value error, Default checkpoint openbind-2025-06-30-174k not found in /root/.openfold3, cowardly refusing to perform inference.`
+- **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
+
+---
