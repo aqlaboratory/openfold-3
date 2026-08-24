@@ -167,3 +167,29 @@ ColabFold server before running prediction.
 - **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
 
 ---
+
+## 2026-08-24
+
+**Cause:** Same missing checkpoint error as 2026-08-22 and 2026-08-23 — `openbind-2025-06-30-174k` not found in `/root/.openfold3` on the AMD/ROCm runner. Fourth consecutive day with this identical failure. Two scheduled runs affected. Persistent OF3 CI-infrastructure issue on the AMD runner, not an AWS GPU outage.
+
+### Run 1
+- **Run ID:** [32686976308](https://github.com/aqlaboratory/openfold-3/actions/runs/32686976308)
+- **Time:** 2026-08-24T03:35:26Z (run_attempt 2)
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 97316237360)
+- **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU)
+- **Commit:** `f9649cce7de32382bc1100e8e9e1de2301adf2c2`
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[no_msa-no_templates-protein_only]`
+- **Error:** `pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceExperimentConfig — Value error, Default checkpoint openbind-2025-06-30-174k not found in /root/.openfold3, cowardly refusing to perform inference. Please run setup_openfold to download the current default parameters or specify a valid checkpoint path with --inference-ckpt-path`
+- **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
+
+### Run 2
+- **Run ID:** [32690260716](https://github.com/aqlaboratory/openfold-3/actions/runs/32690260716)
+- **Time:** 2026-08-24T04:30:19Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 97322529883)
+- **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU)
+- **Commit:** `f9649cce7de32382bc1100e8e9e1de2301adf2c2`
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[no_msa-no_templates-protein_only]`
+- **Error:** `pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceExperimentConfig — Value error, Default checkpoint openbind-2025-06-30-174k not found in /root/.openfold3, cowardly refusing to perform inference. Please run setup_openfold to download the current default parameters or specify a valid checkpoint path with --inference-ckpt-path`
+- **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
+
+---
