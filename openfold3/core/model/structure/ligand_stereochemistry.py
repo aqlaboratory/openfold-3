@@ -10,6 +10,7 @@ import torch
 
 _RESTRAINT_SPECS = {
     "distance": 2,
+    "vdw_overlap": 2,
     "signed_dihedral": 4,
     "stereo_dihedral": 4,
     "planar_dihedral": 4,
@@ -31,7 +32,9 @@ class PreparedLigandStereochemistryGuidance(NamedTuple):
 
     start_fraction: float
     num_gd_steps: int
+    vdw_guidance_interval: int
     distance: _FlatBottomRestraints
+    vdw_overlap: _FlatBottomRestraints
     signed_dihedral: _FlatBottomRestraints
     stereo_dihedral: _FlatBottomRestraints
     planar_dihedral: _FlatBottomRestraints
@@ -269,6 +272,13 @@ def prepare_ligand_stereochemistry_guidance(
     )
     if num_gd_steps < 1:
         raise ValueError("'ligand_stereochemistry_num_gd_steps' must be at least 1.")
+    vdw_guidance_interval = _required_batch_scalar(
+        batch, "ligand_stereochemistry_vdw_guidance_interval", int
+    )
+    if vdw_guidance_interval < 1:
+        raise ValueError(
+            "'ligand_stereochemistry_vdw_guidance_interval' must be at least 1."
+        )
     restraints = {
         name: _prepare_restraint(
             batch,
@@ -287,6 +297,7 @@ def prepare_ligand_stereochemistry_guidance(
     return PreparedLigandStereochemistryGuidance(
         start_fraction=start_fraction,
         num_gd_steps=num_gd_steps,
+        vdw_guidance_interval=vdw_guidance_interval,
         **restraints,
     )
 
@@ -493,6 +504,7 @@ def _restraint_gradient(
 def ligand_stereochemistry_gradient(
     coords: torch.Tensor,
     guidance: PreparedLigandStereochemistryGuidance,
+    guidance_step: int = 0,
 ) -> torch.Tensor:
     """Compute the analytical ligand stereochemistry guidance gradient.
 
@@ -501,6 +513,8 @@ def ligand_stereochemistry_gradient(
             Current denoised coordinates.
         guidance:
             Prepared restraint families and guidance settings.
+        guidance_step:
+            Current analytical update iteration, used for the Boltz VDW cadence.
     Returns:
         Coordinate gradient accumulated over all active restraint families.
     """
@@ -519,6 +533,16 @@ def ligand_stereochemistry_gradient(
                 dihedral=is_dihedral,
                 absolute=absolute,
             )
+    if (
+        guidance_step % guidance.vdw_guidance_interval == 0
+        and guidance.vdw_overlap.weight > 0.0
+        and guidance.vdw_overlap.atom_indices.shape[1] > 0
+    ):
+        gradient += _restraint_gradient(
+            coords,
+            guidance.vdw_overlap,
+            dihedral=False,
+        )
     return gradient
 
 
@@ -543,7 +567,11 @@ def apply_ligand_stereochemistry_guidance(
         return xl_denoised
 
     guided = xl_denoised.float()
-    for _ in range(guidance.num_gd_steps):
-        guided = guided - ligand_stereochemistry_gradient(guided, guidance)
+    for guidance_step in range(guidance.num_gd_steps):
+        guided = guided - ligand_stereochemistry_gradient(
+            guided,
+            guidance,
+            guidance_step,
+        )
 
     return guided.to(dtype=xl_denoised.dtype)

@@ -3,6 +3,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 import torch
+from biotite.structure import AtomArray, BondList, BondType
 from rdkit import Chem
 
 from openfold3.core.config.ligand_stereochemistry_config import (
@@ -17,6 +18,7 @@ from openfold3.core.data.pipelines.featurization.ligand_stereochemistry import (
     _compute_geometry_constraints,
     _compute_ligand_constraints,
     _compute_stereo_bond_constraints,
+    _compute_vdw_overlap_constraints,
     _empty_feature_tensors,
     featurize_ligand_stereochemistry_guidance,
 )
@@ -28,6 +30,7 @@ from openfold3.core.data.primitives.structure.tokenization import (
     add_token_positions,
     tokenize_atom_array,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.core.model.structure import diffusion_module as diffusion_module_lib
 from openfold3.core.model.structure.diffusion_module import SampleDiffusion
 from openfold3.core.model.structure.ligand_stereochemistry import (
@@ -122,8 +125,14 @@ def _empty_guidance_batch(
             "ligand_stereochemistry_guidance_enabled": torch.tensor([enabled]),
             "ligand_stereochemistry_start_fraction": torch.tensor([start_fraction]),
             "ligand_stereochemistry_num_gd_steps": torch.tensor([num_gd_steps]),
+            "ligand_stereochemistry_vdw_guidance_interval": torch.tensor(
+                [settings.vdw_guidance_interval]
+            ),
             "ligand_stereochemistry_distance_weight": torch.tensor(
                 [settings.distance_weight]
+            ),
+            "ligand_stereochemistry_vdw_overlap_weight": torch.tensor(
+                [settings.vdw_weight]
             ),
             "ligand_stereochemistry_signed_dihedral_weight": torch.tensor(
                 [settings.chiral_atom_weight]
@@ -216,6 +225,21 @@ def _reference_ligand_stereochemistry_energy(
             ).sum()
         )
 
+    if guidance.vdw_overlap.atom_indices.shape[1] > 0:
+        index = guidance.vdw_overlap.atom_indices
+        diff = coords.index_select(-2, index[0]) - coords.index_select(-2, index[1])
+        value = torch.linalg.norm(diff, dim=-1).clamp_min(1e-6)
+        energies.append(
+            (
+                guidance.vdw_overlap.weight
+                * _reference_flat_bottom(
+                    value,
+                    guidance.vdw_overlap.lower,
+                    guidance.vdw_overlap.upper,
+                )
+            ).sum()
+        )
+
     for restraints, absolute in (
         (guidance.signed_dihedral, False),
         (guidance.stereo_dihedral, True),
@@ -282,6 +306,7 @@ def test_ligand_stereochemistry_features_for_representative_ligands(
     assert features["ligand_stereochemistry_guidance_enabled"].item()
     expected = {
         "distance": (2, min_distances),
+        "vdw_overlap": (2, 0),
         "signed_dihedral": (4, min_signed_dihedrals),
         "stereo_dihedral": (4, min_stereo_dihedrals),
         "planar_dihedral": (4, min_planar_dihedrals),
@@ -326,6 +351,37 @@ def test_emitted_stereo_targets_match_processed_reference_molecule(
         dihedrals = dihedrals.abs()
     assert torch.all(dihedrals >= restraints.lower)
     assert torch.all(dihedrals <= restraints.upper)
+
+
+def test_pseudoasymmetric_centers_match_processed_reference_molecule():
+    smiles = (
+        "CS(=O)(=O)c1c(N[C@H]2CC[C@H](O)CC2)c(F)c(S(N)(=O)=O)c(F)c1"
+        "N[C@H]1CC[C@@H](O)CC1"
+    )
+    query = _ligand_query(smiles)
+    structure = structure_with_ref_mols_from_query(query)
+    reference_mol = structure.processed_reference_mols[0].mol
+    pseudoasymmetric_centers = Chem.FindMolChiralCenters(
+        reference_mol,
+        includeUnassigned=False,
+        useLegacyImplementation=False,
+    )
+    features = featurize_ligand_stereochemistry_guidance(
+        query,
+        structure.atom_array,
+        structure.processed_reference_mols,
+        _DEFAULT_SETTINGS,
+    )
+    coords = _reference_coords_in_atom_array_order(structure, "L")
+    guidance = _prepare_guidance(features, num_atoms=len(structure.atom_array))
+    restraints = guidance.signed_dihedral
+
+    assert len(pseudoasymmetric_centers) == 4
+    assert {orientation for _, orientation in pseudoasymmetric_centers} == {"r", "s"}
+    assert restraints.atom_indices.shape == (4, 4)
+    dihedrals = _reference_dihedral(coords, restraints.atom_indices)
+    expected_positive = torch.isfinite(restraints.lower)
+    assert torch.equal((dihedrals > 0).flatten(), expected_positive)
 
 
 @pytest.mark.parametrize(
@@ -389,6 +445,7 @@ def test_multi_ligand_features_follow_reference_molecules_across_chain_order(
         set(group)
         for group in features["ligand_stereochemistry_planar_dihedral_index"].T.tolist()
     ]
+    vdw_overlap = features["ligand_stereochemistry_vdw_overlap_index"].T.tolist()
 
     assert any(pair <= ligand_l for pair in bounds)
     assert any(pair <= ligand_m for pair in bounds)
@@ -396,6 +453,13 @@ def test_multi_ligand_features_follow_reference_molecules_across_chain_order(
     assert chiral and all(group <= ligand_l for group in chiral)
     assert stereo and all(group <= ligand_m for group in stereo)
     assert planar and all(group <= ligand_m for group in planar)
+    assert vdw_overlap
+    for atom_i, atom_j in vdw_overlap:
+        assert (
+            structure.atom_array.chain_id[atom_i]
+            != structure.atom_array.chain_id[atom_j]
+        )
+        assert atom_i in ligand_l | ligand_m or atom_j in ligand_l | ligand_m
 
 
 def test_ligand_stereochemistry_features_are_empty_when_disabled():
@@ -403,9 +467,41 @@ def test_ligand_stereochemistry_features_are_empty_when_disabled():
 
     assert not features["ligand_stereochemistry_guidance_enabled"].item()
     assert features["ligand_stereochemistry_distance_index"].shape == (2, 0)
+    assert features["ligand_stereochemistry_vdw_overlap_index"].shape == (2, 0)
     assert features["ligand_stereochemistry_signed_dihedral_index"].shape == (4, 0)
     assert features["ligand_stereochemistry_stereo_dihedral_index"].shape == (4, 0)
     assert features["ligand_stereochemistry_planar_dihedral_index"].shape == (4, 0)
+
+
+def test_zero_vdw_weight_skips_interchain_constraints():
+    query = Query.model_validate(
+        {
+            "chains": [
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": ["A"],
+                    "sequence": "AG",
+                },
+                {
+                    "molecule_type": "ligand",
+                    "chain_ids": ["L"],
+                    "smiles": "CCO",
+                },
+            ],
+            "ligand_stereochemistry_guidance": True,
+        }
+    )
+    structure = structure_with_ref_mols_from_query(query)
+    settings = _DEFAULT_SETTINGS.model_copy(update={"vdw_weight": 0.0})
+
+    features = featurize_ligand_stereochemistry_guidance(
+        query,
+        structure.atom_array,
+        structure.processed_reference_mols,
+        settings,
+    )
+
+    assert features["ligand_stereochemistry_vdw_overlap_index"].shape == (2, 0)
 
 
 @pytest.mark.parametrize(
@@ -491,6 +587,30 @@ def test_ligand_stereochemistry_distance_gradient_matches_autograd():
     torch.testing.assert_close(analytic_gradient, autograd_gradient)
 
 
+def test_vdw_overlap_gradient_matches_autograd_and_respects_boltz_interval():
+    coords = torch.tensor([[[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]]])
+    batch = _empty_guidance_batch()
+    batch.update(
+        {
+            "ligand_stereochemistry_vdw_overlap_index": torch.tensor([[0], [1]]),
+            "ligand_stereochemistry_vdw_overlap_lower": torch.tensor([2.0]),
+            "ligand_stereochemistry_vdw_overlap_upper": torch.tensor([float("inf")]),
+        }
+    )
+    guidance = _prepare_guidance(batch, num_atoms=2)
+    coords_with_grad = coords.clone().requires_grad_(True)
+
+    energy = _reference_ligand_stereochemistry_energy(coords_with_grad, guidance)
+    (autograd_gradient,) = torch.autograd.grad(energy, coords_with_grad)
+    active_gradient = ligand_stereochemistry_gradient(coords, guidance, guidance_step=0)
+    inactive_gradient = ligand_stereochemistry_gradient(
+        coords, guidance, guidance_step=1
+    )
+
+    torch.testing.assert_close(active_gradient, autograd_gradient)
+    torch.testing.assert_close(inactive_gradient, torch.zeros_like(coords))
+
+
 def test_ligand_stereochemistry_dihedral_gradient_matches_autograd():
     coords = torch.tensor(
         [
@@ -538,6 +658,11 @@ def test_ligand_stereochemistry_settings_validate_guidance_schedule():
     with pytest.raises(ValueError, match="num_gd_steps"):
         LigandStereochemistryGuidanceSettings.model_validate({"num_gd_steps": 0})
 
+    with pytest.raises(ValueError, match="vdw_guidance_interval"):
+        LigandStereochemistryGuidanceSettings.model_validate(
+            {"vdw_guidance_interval": 0}
+        )
+
     with pytest.raises(ValueError, match="extra_forbidden"):
         LigandStereochemistryGuidanceSettings.model_validate({"unknown": 1})
 
@@ -578,7 +703,9 @@ def test_custom_guidance_settings_are_emitted_and_prepared():
     settings = LigandStereochemistryGuidanceSettings(
         start_fraction=0.6,
         num_gd_steps=4,
+        vdw_guidance_interval=3,
         distance_weight=0.02,
+        vdw_weight=0.08,
         chiral_atom_weight=0.2,
         stereo_bond_weight=0.15,
         planar_bond_weight=0.12,
@@ -588,7 +715,9 @@ def test_custom_guidance_settings_are_emitted_and_prepared():
 
     assert guidance.start_fraction == pytest.approx(settings.start_fraction)
     assert guidance.num_gd_steps == settings.num_gd_steps
+    assert guidance.vdw_guidance_interval == settings.vdw_guidance_interval
     assert guidance.distance.weight == pytest.approx(settings.distance_weight)
+    assert guidance.vdw_overlap.weight == pytest.approx(settings.vdw_weight)
     assert guidance.signed_dihedral.weight == pytest.approx(settings.chiral_atom_weight)
     assert guidance.stereo_dihedral.weight == pytest.approx(settings.stereo_bond_weight)
     assert guidance.planar_dihedral.weight == pytest.approx(settings.planar_bond_weight)
@@ -724,6 +853,91 @@ def test_geometry_constraints_reject_unsupported_atomic_numbers():
         _compute_geometry_constraints(mol, {0: 0, 1: 1}, _DEFAULT_SETTINGS)
 
 
+def test_vdw_overlap_constraints_follow_boltz_chain_pair_rules():
+    atom_array = AtomArray(9)
+    atom_array.chain_id = np.array(["A", "A", "B", "B", "L", "L", "M", "M", "I"])
+    atom_array.element = np.array(["C", "N", "C", "O", "C", "O", "N", "C", "Na"])
+    atom_array.set_annotation(
+        "molecule_type_id",
+        np.array(
+            [
+                int(MoleculeType.PROTEIN),
+                int(MoleculeType.PROTEIN),
+                int(MoleculeType.PROTEIN),
+                int(MoleculeType.PROTEIN),
+                int(MoleculeType.LIGAND),
+                int(MoleculeType.LIGAND),
+                int(MoleculeType.LIGAND),
+                int(MoleculeType.LIGAND),
+                int(MoleculeType.LIGAND),
+            ]
+        ),
+    )
+    atom_array.bonds = BondList(
+        len(atom_array),
+        np.array(
+            [
+                [0, 6, int(BondType.SINGLE)],
+                [2, 4, int(BondType.COORDINATION)],
+            ]
+        ),
+    )
+
+    constraints = _compute_vdw_overlap_constraints(atom_array, _DEFAULT_SETTINGS)
+
+    expected_chain_pairs = (
+        ((0, 1), (4, 5)),
+        ((2, 3), (4, 5)),
+        ((2, 3), (6, 7)),
+        ((4, 5), (6, 7)),
+    )
+    expected_pairs = {
+        (atom_i, atom_j)
+        for chain_i, chain_j in expected_chain_pairs
+        for atom_i in chain_i
+        for atom_j in chain_j
+    }
+    assert set(constraints.vdw_overlap_index) == expected_pairs
+    assert all(8 not in pair for pair in constraints.vdw_overlap_index)
+    for (atom_i, atom_j), lower_bound in zip(
+        constraints.vdw_overlap_index,
+        constraints.vdw_overlap_lower_bounds,
+        strict=True,
+    ):
+        radii = [
+            Chem.GetPeriodicTable().GetRvdw(
+                Chem.GetPeriodicTable().GetAtomicNumber(
+                    str(atom_array.element[atom_index]).capitalize()
+                )
+            )
+            for atom_index in (atom_i, atom_j)
+        ]
+        assert lower_bound == pytest.approx(
+            sum(radii) * (1.0 - _DEFAULT_SETTINGS.vdw_buffer)
+        )
+
+
+def test_vdw_overlap_constraints_reject_unsupported_elements():
+    atom_array = AtomArray(4)
+    atom_array.chain_id = np.array(["A", "A", "L", "L"])
+    atom_array.element = np.array(["C", "N", "C", "*"])
+    atom_array.set_annotation(
+        "molecule_type_id",
+        np.array(
+            [
+                int(MoleculeType.PROTEIN),
+                int(MoleculeType.PROTEIN),
+                int(MoleculeType.LIGAND),
+                int(MoleculeType.LIGAND),
+            ]
+        ),
+    )
+    atom_array.bonds = BondList(len(atom_array))
+
+    with pytest.raises(ValueError, match="supported elements"):
+        _compute_vdw_overlap_constraints(atom_array, _DEFAULT_SETTINGS)
+
+
 def test_constraint_extractors_handle_unassigned_and_uncropped_chemistry():
     mol = Chem.MolFromSmiles("C[C@H](O)C(=O)O")
     for atom in mol.GetAtoms():
@@ -744,14 +958,20 @@ def test_constraint_extractors_handle_unassigned_and_uncropped_chemistry():
 
 
 def test_constraint_extractors_skip_only_constraints_with_cropped_atoms():
-    chiral_mol = Chem.MolFromSmiles("N[C@](F)(Cl)Br")
-    Chem.AssignStereochemistry(chiral_mol, cleanIt=True, force=True)
-    center_idx = Chem.FindMolChiralCenters(chiral_mol, includeUnassigned=False)[0][0]
-    neighbors = sorted(
-        chiral_mol.GetAtomWithIdx(center_idx).GetNeighbors(),
-        key=lambda atom: int(atom.GetProp("_CIPRank")),
-        reverse=True,
+    chiral_structure = structure_with_ref_mols_from_query(
+        _ligand_query("N[C@](F)(Cl)Br")
     )
+    chiral_mol = chiral_structure.processed_reference_mols[0].mol
+    center = next(
+        atom
+        for atom in chiral_mol.GetAtoms()
+        if atom.GetChiralTag()
+        in {
+            Chem.ChiralType.CHI_TETRAHEDRAL_CW,
+            Chem.ChiralType.CHI_TETRAHEDRAL_CCW,
+        }
+    )
+    neighbors = sorted(center.GetNeighbors(), key=lambda atom: atom.GetIdx())
     cropped_chiral_map = {
         atom.GetIdx(): atom.GetIdx()
         for atom in chiral_mol.GetAtoms()
@@ -809,18 +1029,22 @@ def test_constraint_extractors_skip_only_constraints_with_cropped_atoms():
     )
 
 
-def test_chiral_constraint_extractor_skips_non_tetrahedral_centers(monkeypatch):
+def test_chiral_constraint_extractor_skips_non_tetrahedral_centers():
     mol = Chem.MolFromSmiles("C=C")
-    for rank, atom in enumerate(mol.GetAtoms()):
-        atom.SetIntProp("_CIPRank", rank)
-    monkeypatch.setattr(
-        Chem, "FindMolChiralCenters", lambda *_args, **_kwargs: [(0, "R")]
-    )
+    mol.GetAtomWithIdx(0).SetChiralTag(Chem.ChiralType.CHI_TETRAHEDRAL_CW)
 
     assert (
         _compute_chiral_atom_constraints(mol, {0: 0, 1: 1})
         == featurization._LigandGeometryConstraints()
     )
+
+
+def test_chiral_constraint_extractor_requires_reference_conformer():
+    mol = Chem.MolFromSmiles("N[C@](F)(Cl)Br")
+    idx_map = {atom.GetIdx(): atom.GetIdx() for atom in mol.GetAtoms()}
+
+    with pytest.raises(ValueError, match="require an OF3 reference conformer"):
+        _compute_chiral_atom_constraints(mol, idx_map)
 
 
 def test_compute_ligand_constraints_without_reference_conformer():
@@ -934,6 +1158,11 @@ def test_prepare_guidance_rejects_multiple_queries():
         ),
         (
             "ligand_stereochemistry_num_gd_steps",
+            torch.tensor([0]),
+            "at least 1",
+        ),
+        (
+            "ligand_stereochemistry_vdw_guidance_interval",
             torch.tensor([0]),
             "at least 1",
         ),

@@ -7,7 +7,7 @@ from pydantic import ConfigDict as PydanticConfigDict
 
 
 class LigandStereochemistryGuidanceSettings(BaseModel):
-    """Controls local ligand-geometry guidance during reverse diffusion.
+    """Controls ligand chemical-geometry guidance during reverse diffusion.
 
     Attributes:
         start_fraction (float):
@@ -37,6 +37,13 @@ class LigandStereochemistryGuidanceSettings(BaseModel):
             Coordinate-update weight for E/Z restraints.
         planar_bond_weight (float):
             Coordinate-update weight for double-bond planarity restraints.
+        vdw_buffer (float):
+            Relative reduction applied to summed VDW radii for ligand-containing
+            interchain pairs.
+        vdw_weight (float):
+            Coordinate-update weight for interchain VDW overlap restraints.
+        vdw_guidance_interval (int):
+            Number of analytical update iterations between VDW evaluations.
         vdw_pair_cutoff_offset (float):
             Offset in Angstroms added to the mean pairwise van der Waals radius.
     """
@@ -58,4 +65,7 @@ class LigandStereochemistryGuidanceSettings(BaseModel):
     stereo_bond_weight: float = Field(default=0.05, ge=0.0)
     planar_bond_weight: float = Field(default=0.05, ge=0.0)
 
+    vdw_buffer: float = Field(default=0.225, ge=0.0, lt=1.0)
+    vdw_weight: float = Field(default=0.125, ge=0.0)
+    vdw_guidance_interval: int = Field(default=5, ge=1)
     vdw_pair_cutoff_offset: float = Field(default=0.35, ge=0.0)

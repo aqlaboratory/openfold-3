@@ -1,16 +1,18 @@
 """Ligand stereochemistry guidance feature extraction.
 
-The guidance features are derived from the input ligand chemistry and address only
-local ligand geometry: distance-geometry bounds, assigned tetrahedral chirality,
-assigned E/Z alkene stereochemistry, and double-bond planarity.
+The guidance features are derived from the input ligand chemistry and include
+distance-geometry bounds, assigned tetrahedral chirality, assigned E/Z alkene
+stereochemistry, double-bond planarity, and interchain VDW overlap.
 """
 
 from dataclasses import dataclass, field, fields
+from itertools import combinations
 
 import numpy as np
 import torch
-from biotite.structure import AtomArray
+from biotite.structure import AtomArray, BondType
 from rdkit import Chem
+from rdkit.Chem import rdMolTransforms
 from rdkit.Chem.rdchem import BondStereo, HybridizationType, Mol
 from rdkit.Chem.rdDistGeom import GetMoleculeBoundsMatrix
 
@@ -20,7 +22,10 @@ from openfold3.core.config.ligand_stereochemistry_config import (
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
 )
-from openfold3.core.data.primitives.structure.component import PERIODIC_TABLE
+from openfold3.core.data.primitives.structure.component import (
+    PERIODIC_TABLE,
+    find_cross_chain_bonds,
+)
 from openfold3.core.data.primitives.structure.labels import residue_view_iter
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.of3_all_atom.config.inference_query_format import Query
@@ -36,6 +41,8 @@ class _LigandGeometryConstraints:
     bond_mask: list[bool] = field(default_factory=list)
     angle_mask: list[bool] = field(default_factory=list)
     pair_vdw_cutoffs: list[float] = field(default_factory=list)
+    vdw_overlap_index: list[tuple[int, int]] = field(default_factory=list)
+    vdw_overlap_lower_bounds: list[float] = field(default_factory=list)
     chiral_index: list[tuple[int, int, int, int]] = field(default_factory=list)
     chiral_orientations: list[bool] = field(default_factory=list)
     stereo_bond_index: list[tuple[int, int, int, int]] = field(default_factory=list)
@@ -135,6 +142,96 @@ def _compute_geometry_constraints(
     return constraints
 
 
+def _compute_vdw_overlap_constraints(
+    atom_array: AtomArray,
+    settings: LigandStereochemistryGuidanceSettings,
+) -> _LigandGeometryConstraints:
+    """Compute Boltz-style interchain VDW bounds for ligand-containing pairs.
+
+    Args:
+        atom_array:
+            OF3 structure whose atom and chain axes define the model features.
+        settings:
+            Validated settings controlling the VDW overlap buffer.
+
+    Raises:
+        ValueError:
+            If a participating atom has an unsupported element.
+
+    Returns:
+        Pair indices and lower distance bounds for non-covalently-connected chains.
+    """
+    constraints = _LigandGeometryConstraints()
+    chain_ids, atom_chain_indices, chain_sizes = np.unique(
+        atom_array.chain_id,
+        return_inverse=True,
+        return_counts=True,
+    )
+    ligand_atom_mask = atom_array.molecule_type_id == MoleculeType.LIGAND
+    ligand_chain_mask = np.asarray(
+        [
+            np.any(ligand_atom_mask[atom_chain_indices == i])
+            for i in range(len(chain_ids))
+        ]
+    )
+
+    connected_chain_pairs: set[tuple[int, int]] = set()
+    for atom_i, atom_j, bond_type in find_cross_chain_bonds(atom_array):
+        if BondType(int(bond_type)) == BondType.COORDINATION:
+            continue
+        connected_chain_pairs.add(
+            tuple(
+                sorted(
+                    (atom_chain_indices[int(atom_i)], atom_chain_indices[int(atom_j)])
+                )
+            )
+        )
+
+    pair_indices: list[tuple[int, int]] = []
+    for chain_i in range(len(chain_ids)):
+        for chain_j in range(chain_i + 1, len(chain_ids)):
+            if not (ligand_chain_mask[chain_i] or ligand_chain_mask[chain_j]):
+                continue
+            if chain_sizes[chain_i] == 1 or chain_sizes[chain_j] == 1:
+                continue
+            if (chain_i, chain_j) in connected_chain_pairs:
+                continue
+
+            atom_indices_i = np.flatnonzero(atom_chain_indices == chain_i)
+            atom_indices_j = np.flatnonzero(atom_chain_indices == chain_j)
+            pair_indices.extend(
+                zip(
+                    np.repeat(atom_indices_i, len(atom_indices_j)).tolist(),
+                    np.tile(atom_indices_j, len(atom_indices_i)).tolist(),
+                    strict=True,
+                )
+            )
+
+    if not pair_indices:
+        return constraints
+
+    participating_atom_indices = sorted(
+        {index for pair in pair_indices for index in pair}
+    )
+    vdw_radii: dict[int, float] = {}
+    for atom_index in participating_atom_indices:
+        element = str(atom_array.element[atom_index]).capitalize()
+        atomic_number = PERIODIC_TABLE.GetAtomicNumber(element)
+        if atomic_number < 1 or atomic_number > PERIODIC_TABLE.GetMaxAtomicNumber():
+            raise ValueError(
+                "Ligand stereochemistry VDW guidance requires atoms with supported "
+                "elements."
+            )
+        vdw_radii[atom_index] = PERIODIC_TABLE.GetRvdw(atomic_number)
+
+    constraints.vdw_overlap_index.extend(pair_indices)
+    constraints.vdw_overlap_lower_bounds.extend(
+        (vdw_radii[i] + vdw_radii[j]) * (1.0 - settings.vdw_buffer)
+        for i, j in pair_indices
+    )
+    return constraints
+
+
 def _compute_chiral_atom_constraints(
     mol: Mol, idx_map: dict[int, int]
 ) -> _LigandGeometryConstraints:
@@ -142,36 +239,51 @@ def _compute_chiral_atom_constraints(
 
     Args:
         mol:
-            RDKit reference molecule with assigned CIP stereochemistry.
+            RDKit reference molecule with assigned tetrahedral stereochemistry and
+            an OF3 reference conformer.
         idx_map:
             Mapping from reference-molecule atom indices to model atom indices.
+    Raises:
+        ValueError:
+            If an assigned tetrahedral center has no reference conformer.
     Returns:
         Mapped tetrahedral atom indices and their assigned orientations.
     """
     constraints = _LigandGeometryConstraints()
-    if not all(atom.HasProp("_CIPRank") for atom in mol.GetAtoms()):
+    if not idx_map:
         return constraints
+    assigned_tags = {
+        Chem.ChiralType.CHI_TETRAHEDRAL_CW,
+        Chem.ChiralType.CHI_TETRAHEDRAL_CCW,
+    }
+    assigned_centers = [
+        atom
+        for atom in mol.GetAtoms()
+        if atom.GetChiralTag() in assigned_tags
+        and atom.GetHybridization() == HybridizationType.SP3
+        and atom.GetDegree() in {3, 4}
+    ]
+    if not assigned_centers:
+        return constraints
+    if mol.GetNumConformers() == 0:
+        raise ValueError(
+            "Assigned ligand stereocenters require an OF3 reference conformer."
+        )
 
-    for center_idx, orientation in Chem.FindMolChiralCenters(
-        mol, includeUnassigned=False
-    ):
-        center = mol.GetAtomWithIdx(center_idx)
-        ranked_neighbors = [
-            (neighbor.GetIdx(), int(neighbor.GetProp("_CIPRank")))
-            for neighbor in center.GetNeighbors()
-        ]
-        ranked_neighbors.sort(key=lambda neighbor: neighbor[1], reverse=True)
-        neighbor_indices = tuple(neighbor[0] for neighbor in ranked_neighbors)
+    conformer = mol.GetConformer()
+    for center in assigned_centers:
+        center_idx = center.GetIdx()
+        neighbor_indices = tuple(
+            sorted(neighbor.GetIdx() for neighbor in center.GetNeighbors())
+        )
+        for first, second, third in combinations(neighbor_indices, 3):
+            atom_idxs = (first, second, third, center_idx)
+            if not all(atom_idx in idx_map for atom_idx in atom_idxs):
+                continue
 
-        if (
-            len(neighbor_indices) not in {3, 4}
-            or center.GetHybridization() != HybridizationType.SP3
-        ):
-            continue
-
-        first, second, third = neighbor_indices[:3]
-        atom_idxs = (first, second, third, center_idx)
-        if all(i in idx_map for i in atom_idxs):
+            reference_dihedral = rdMolTransforms.GetDihedralRad(
+                conformer, first, second, third, center_idx
+            )
             constraints.chiral_index.append(
                 (
                     idx_map[first],
@@ -180,27 +292,7 @@ def _compute_chiral_atom_constraints(
                     idx_map[center_idx],
                 )
             )
-            constraints.chiral_orientations.append(orientation == "R")
-
-        if len(neighbor_indices) == 4:
-            for skip_idx in range(3):
-                chiral_set = (
-                    neighbor_indices[:skip_idx] + neighbor_indices[skip_idx + 1 :]
-                )
-                if skip_idx % 2 == 0:
-                    chiral_set = chiral_set[::-1]
-                first, second, third = chiral_set
-                atom_idxs = (first, second, third, center_idx)
-                if all(i in idx_map for i in atom_idxs):
-                    constraints.chiral_index.append(
-                        (
-                            idx_map[first],
-                            idx_map[second],
-                            idx_map[third],
-                            idx_map[center_idx],
-                        )
-                    )
-                    constraints.chiral_orientations.append(orientation == "R")
+            constraints.chiral_orientations.append(reference_dihedral > 0.0)
 
     return constraints
 
@@ -357,6 +449,7 @@ def _empty_feature_tensors() -> dict[str, torch.Tensor]:
     features = {}
     for name, arity in (
         ("distance", 2),
+        ("vdw_overlap", 2),
         ("signed_dihedral", 4),
         ("stereo_dihedral", 4),
         ("planar_dihedral", 4),
@@ -434,6 +527,22 @@ def _tensorize_constraints(
         lower[~bond] = torch.maximum(lower[~bond], pair_vdw_cutoff[~bond])
         upper[bond] = torch.minimum(upper[bond], pair_vdw_cutoff[bond])
         features.update(_restraint_features("distance", index, lower, upper))
+
+    vdw_overlap_index = (
+        torch.tensor(constraints.vdw_overlap_index, dtype=torch.long).reshape(-1, 2).T
+    )
+    vdw_overlap_lower = torch.tensor(
+        constraints.vdw_overlap_lower_bounds, dtype=torch.float32
+    )
+    vdw_overlap_upper = torch.full_like(vdw_overlap_lower, float("inf"))
+    features.update(
+        _restraint_features(
+            "vdw_overlap",
+            vdw_overlap_index,
+            vdw_overlap_lower,
+            vdw_overlap_upper,
+        )
+    )
 
     chiral_index = (
         torch.tensor(constraints.chiral_index, dtype=torch.long).reshape(-1, 4).T
@@ -539,8 +648,12 @@ def featurize_ligand_stereochemistry_guidance(
     features["ligand_stereochemistry_num_gd_steps"] = torch.tensor(
         [settings.num_gd_steps], dtype=torch.long
     )
+    features["ligand_stereochemistry_vdw_guidance_interval"] = torch.tensor(
+        [settings.vdw_guidance_interval], dtype=torch.long
+    )
     for name, weight in (
         ("distance", settings.distance_weight),
+        ("vdw_overlap", settings.vdw_weight),
         ("signed_dihedral", settings.chiral_atom_weight),
         ("stereo_dihedral", settings.stereo_bond_weight),
         ("planar_dihedral", settings.planar_bond_weight),
@@ -572,5 +685,7 @@ def featurize_ligand_stereochemistry_guidance(
         constraints = _compute_ligand_constraints(processed_mol.mol, idx_map, settings)
         all_constraints.extend(constraints)
 
+    if settings.vdw_weight > 0.0:
+        all_constraints.extend(_compute_vdw_overlap_constraints(atom_array, settings))
     features.update(_tensorize_constraints(all_constraints, settings))
     return features

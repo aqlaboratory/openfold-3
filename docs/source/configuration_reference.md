@@ -252,6 +252,9 @@ Configures local ligand-geometry guidance for queries with `ligand_stereochemist
 - `chiral_atom_weight` *(float)*: Tetrahedral-restraint update weight (default: `0.1`)
 - `stereo_bond_weight` *(float)*: E/Z-restraint update weight (default: `0.05`)
 - `planar_bond_weight` *(float)*: Planarity-restraint update weight (default: `0.05`)
+- `vdw_buffer` *(float)*: Relative reduction of summed VDW radii for ligand-containing interchain pairs (default: `0.225`)
+- `vdw_weight` *(float)*: Interchain VDW-overlap update weight (default: `0.125`)
+- `vdw_guidance_interval` *(int)*: Number of analytical update iterations between VDW evaluations (default: `5`, minimum: `1`)
 - `vdw_pair_cutoff_offset` *(float)*: Offset added to mean pairwise van der Waals radii in Angstroms (default: `0.35`)
 
 **Example**:

@@ -314,7 +314,7 @@ Ligand stereochemistry guidance can be enabled for a query containing one or mor
 }
 ```
 
-The guidance derives distance-geometry, assigned tetrahedral chirality, assigned E/Z alkene stereochemistry, and double-bond planarity constraints from each ligand's OF3 reference molecule. It preserves stereochemistry specified by a SMILES string or CCD reference structure; unspecified stereocenters and stereo bonds are not assigned new targets.
+The guidance derives distance-geometry, assigned tetrahedral chirality, assigned E/Z alkene stereochemistry, and double-bond planarity constraints from each ligand's OF3 reference molecule. It also applies VDW overlap restraints between ligands and non-covalently-connected chains. It preserves stereochemistry specified by a SMILES string or CCD reference structure; unspecified stereocenters and stereo bonds are not assigned new targets.
 
 Guidance settings are configured in the runner YAML and are shared by all enabled queries in an inference run:
 
