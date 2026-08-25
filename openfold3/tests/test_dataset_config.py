@@ -411,6 +411,8 @@ class TestInferenceConfigConstruction:
             use_templates=False,
             msa_computation_settings=MsaComputationSettings(),
         )
+        assert data_module.prepare_data_per_node is False
+
         data_module.prepare_data()
         data_module.setup()
 

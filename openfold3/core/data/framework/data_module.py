@@ -659,6 +659,10 @@ class InferenceDataModule(DataModule):
         # get information about msas from the experiment runner
         # probably should add to the config
         super().__init__(data_module_config)
+        # Inference preprocessing writes shared MSA/template intermediates. Run it
+        # once on global rank zero, not once per node, and broadcast the resulting
+        # state in setup().
+        self.prepare_data_per_node = False
         self.use_msa_server = use_msa_server
         self.use_templates = use_templates
         self.msa_computation_settings = msa_computation_settings
