@@ -243,7 +243,7 @@ def predict(
         expt_runner.setup()
         expt_runner.run(query_set)
     except BaseException:
-        expt_runner.cleanup_msa_workspace()
+        expt_runner.cleanup_intermediates()
         raise
     expt_runner.cleanup()
 
@@ -292,6 +292,9 @@ def align_msa_server(
 
     msa_settings = MsaComputationSettings.from_config_with_cli_override(
         output_dir, msa_computation_settings_yaml
+    )
+    msa_settings._set_workspace_root(
+        output_dir / "openfold3_intermediates" / "colabfold_msas"
     )
     try:
         query_set = InferenceQuerySet.from_json(query_json)

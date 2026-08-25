@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import textwrap
+from types import SimpleNamespace
+from unittest.mock import PropertyMock, patch
 
 import pytest  # noqa: F401  - used for pytest tmp fixture
 
@@ -409,6 +411,7 @@ class TestInferenceConfigConstruction:
             use_templates=False,
             msa_computation_settings=MsaComputationSettings(),
         )
+        assert data_module.prepare_data_per_node is False
 
         data_module.prepare_data()
         data_module.setup()
@@ -420,3 +423,42 @@ class TestInferenceConfigConstruction:
         assert len(dataloader) == 1
         it = iter(dataloader)
         next(it)  # this is currently causing a segfault in Py3.13
+
+    def test_setup_broadcasts_query_and_template_settings(self):
+        rank_zero_query_set = object()
+        rank_zero_template_settings = object()
+        data_module = object.__new__(InferenceDataModule)
+        data_module.use_templates = True
+        data_module.inference_config = SimpleNamespace(
+            query_set=object(),
+            template_preprocessor_settings=object(),
+        )
+
+        def broadcast_rank_zero_state(state, src):
+            assert src == 0
+            state[:] = [rank_zero_query_set, rank_zero_template_settings]
+
+        with (
+            patch.object(
+                InferenceDataModule,
+                "world_size",
+                new_callable=PropertyMock,
+                return_value=2,
+            ),
+            patch(
+                "openfold3.core.data.framework.data_module.dist.get_rank",
+                return_value=1,
+            ),
+            patch(
+                "openfold3.core.data.framework.data_module.dist.broadcast_object_list",
+                side_effect=broadcast_rank_zero_state,
+            ),
+            patch("openfold3.core.data.framework.data_module.DataModule.setup"),
+        ):
+            data_module.setup()
+
+        assert data_module.inference_config.query_set is rank_zero_query_set
+        assert (
+            data_module.inference_config.template_preprocessor_settings
+            is rank_zero_template_settings
+        )
