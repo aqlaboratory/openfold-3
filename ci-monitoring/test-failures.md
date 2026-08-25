@@ -193,3 +193,18 @@ ColabFold server before running prediction.
 - **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
 
 ---
+
+## 2026-08-25
+
+**Cause:** Same missing checkpoint error as 2026-08-22 through 2026-08-24 — `openbind-2025-06-30-174k` not found in `/root/.openfold3` on the AMD/ROCm runner. Fifth consecutive day with this identical failure. One scheduled run observed (only run today; `test-conda` and `test-pixi-cuda` were skipped). Not an AWS GPU outage.
+
+- **Run ID:** [32809003809](https://github.com/aqlaboratory/openfold-3/actions/runs/32809003809)
+- **Time:** 2026-08-25T04:27:01Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 97684623800)
+- **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU)
+- **Commit:** `f9649cce7de32382bc1100e8e9e1de2301adf2c2`
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[no_msa-no_templates-protein_only]`
+- **Error:** `pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceExperimentConfig — Value error, Default checkpoint openbind-2025-06-30-174k not found in /root/.openfold3, cowardly refusing to perform inference. Please run setup_openfold to download the current default parameters or specify a valid checkpoint path with --inference-ckpt-path`
+- **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
+
+---
