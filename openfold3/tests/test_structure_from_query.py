@@ -15,7 +15,7 @@
 # TODO: Add more tests for general inference inputs
 import numpy as np
 import pytest
-from biotite.structure.io import pdbx
+from biotite.structure.io import pdb, pdbx
 from rdkit import Chem
 
 from openfold3.core.data.io.structure.cif import write_structure
@@ -187,3 +187,130 @@ def test_smiles_ligand_cif_auth_seq_id_is_numeric(tmp_path):
     assert ligand_mask.any()
     assert set(atom_site["label_seq_id"].as_array()[ligand_mask]) == {"."}
     assert set(atom_site["auth_seq_id"].as_array()[ligand_mask]) == {"1"}
+
+
+def _smiles_ligand(chain_id, smiles, residue_name=None, **extra):
+    chain = {
+        "molecule_type": "ligand",
+        "chain_ids": chain_id,
+        "smiles": smiles,
+    }
+    if residue_name is not None:
+        chain["residue_name"] = residue_name
+    return chain | extra
+
+
+def test_smiles_residue_names_override_defaults_and_write_outputs(tmp_path):
+    query = Query.model_validate(
+        {
+            "chains": [
+                _smiles_ligand("X", "CCO", " abc123 "),
+                _smiles_ligand("Y", "CCN"),
+                _smiles_ligand("Z", "CCC"),
+            ]
+        }
+    )
+    atom_array = structure_with_ref_mols_from_query(query).atom_array
+    expected_names = {"X": "ABC123", "Y": "LIG1", "Z": "LIG0"}
+
+    cif_path = tmp_path / "custom_smiles_residue_names.cif"
+    write_structure(atom_array, cif_path)
+    cif_block = get_cif_block(pdbx.CIFFile.read(cif_path))
+    atom_site = cif_block["atom_site"]
+    for chain_id, residue_name in expected_names.items():
+        chain_mask = atom_site["label_asym_id"].as_array() == chain_id
+        assert set(atom_site["label_comp_id"].as_array()[chain_mask]) == {residue_name}
+    assert set(expected_names.values()) <= set(cif_block["chem_comp"]["id"].as_array())
+
+    pdb_path = tmp_path / "custom_smiles_residue_names.pdb"
+    atom_array.b_factor[:] = 0.0
+    write_structure(atom_array, pdb_path)
+    pdb_array = pdb.PDBFile.read(pdb_path).get_structure(model=1)
+    for chain_id, residue_name in {"X": "ABC", "Y": "LIG", "Z": "LIG"}.items():
+        assert set(pdb_array.res_name[pdb_array.chain_id == chain_id]) == {residue_name}
+
+
+@pytest.mark.parametrize(
+    ("overrides", "match"),
+    [
+        pytest.param(
+            {"residue_name": "DR-G"},
+            "ASCII letters and digits",
+            id="invalid-character",
+        ),
+        pytest.param(
+            {"residue_name": "ß"},
+            "ASCII letters and digits",
+            id="unicode-case-expansion",
+        ),
+        pytest.param(
+            {"residue_name": "ALA"},
+            "standard residue name",
+            id="standard-residue",
+        ),
+        pytest.param(
+            {
+                "molecule_type": "protein",
+                "sequence": "A",
+                "residue_name": "DRG",
+            },
+            "only be specified for a ligand",
+            id="polymer",
+        ),
+        pytest.param(
+            {"ccd_codes": "ATP", "residue_name": "DRG"},
+            "only be specified for a ligand",
+            id="smiles-and-ccd",
+        ),
+    ],
+)
+def test_smiles_residue_name_validation(overrides, match):
+    chain = _smiles_ligand("X", "CCO") | overrides
+    with pytest.raises(ValueError, match=match):
+        Query.model_validate({"chains": [chain]})
+
+
+@pytest.mark.parametrize(
+    ("chains", "match"),
+    [
+        pytest.param(
+            [
+                _smiles_ligand("X", "CCO", "DRG"),
+                _smiles_ligand("Y", "CCO", "INH"),
+            ],
+            "same SMILES string",
+            id="same-smiles-different-names",
+        ),
+        pytest.param(
+            [
+                _smiles_ligand("X", "CCO", "LIG0"),
+                _smiles_ligand("Y", "CCN"),
+            ],
+            "Distinct SMILES strings",
+            id="different-smiles-same-name",
+        ),
+        pytest.param(
+            [
+                _smiles_ligand("X", "CCO", "ATP"),
+                _smiles_ligand("Y", "CCN", "MHO"),
+                {
+                    "molecule_type": "ligand",
+                    "chain_ids": "Z",
+                    "ccd_codes": "ATP",
+                },
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": "P",
+                    "sequence": "A",
+                    "non_canonical_residues": {1: "MHO"},
+                },
+            ],
+            r"\['ATP', 'MHO'\]",
+            id="non-smiles-component-names",
+        ),
+    ],
+)
+def test_smiles_residue_name_conflicts(chains, match):
+    query = Query.model_validate({"chains": chains})
+    with pytest.raises(ValueError, match=match):
+        structure_with_ref_mols_from_query(query)

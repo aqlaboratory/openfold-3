@@ -518,6 +518,46 @@ def structure_with_ref_mol_from_smiles(
     )
 
 
+def _build_smiles_comp_id_mapping(query: Query) -> dict[str, str]:
+    """Build the component-ID mapping for SMILES ligands."""
+    all_smiles = sorted(
+        {chain.smiles for chain in query.chains if chain.smiles is not None}
+    )
+    smiles_to_comp_id = {smiles: f"LIG{i}" for i, smiles in enumerate(all_smiles)}
+
+    explicit_names: dict[str, str] = {}
+    for chain in query.chains:
+        if chain.smiles is None or chain.residue_name is None:
+            continue
+
+        previous_name = explicit_names.get(chain.smiles)
+        if previous_name is not None and previous_name != chain.residue_name:
+            raise ValueError("The same SMILES string cannot use multiple residue names")
+        explicit_names[chain.smiles] = chain.residue_name
+
+    reserved_component_ids = {
+        component_id.upper()
+        for chain in query.chains
+        for component_id in [
+            *(chain.ccd_codes or []),
+            *(chain.non_canonical_residues or {}).values(),
+        ]
+    }
+    collisions = set(explicit_names.values()) & reserved_component_ids
+    if collisions:
+        raise ValueError(
+            "Explicit SMILES residue names conflict with CCD or non-canonical "
+            f"residue names: {sorted(collisions)}"
+        )
+
+    smiles_to_comp_id.update(explicit_names)
+    component_ids = list(smiles_to_comp_id.values())
+    if len(component_ids) != len(set(component_ids)):
+        raise ValueError("Distinct SMILES strings must use distinct residue names")
+
+    return smiles_to_comp_id
+
+
 def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMolecules:
     """Builds an AtomArray and processed reference molecules from a Query object.
 
@@ -528,8 +568,9 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
     specifies multiple chain IDs, repeated identical chains with those IDs will be
     constructed and given the same entity ID.
 
-    Residue names will be inferred from the sequence or CCD codes. If a ligand is
-    specified through a SMILES string, it will be named as "LIG".
+    Residue names will be inferred from the sequence or CCD codes. SMILES ligands use
+    an explicit ``residue_name`` when provided and otherwise retain their deterministic
+    ``LIG0``, ``LIG1``, ... defaults.
 
     Args:
         query (Query):
@@ -557,17 +598,7 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
     all_entities = sorted(all_entities)
     entity_to_id = {e: i + 1 for i, e in enumerate(all_entities)}
 
-    # Create smiles->comp ID mapping to allow for distinguishing different ligands
-    # specified by smiles
-    all_smiles = set()
-    for chain in query.chains:
-        if chain.smiles is not None:
-            all_smiles.add(chain.smiles)
-    if len(all_smiles) > 0:
-        all_smiles = sorted(all_smiles)
-        smiles_to_comp_id = {s: f"LIG{i}" for i, s in enumerate(all_smiles)}
-    else:
-        smiles_to_comp_id = {}
+    smiles_to_comp_id = _build_smiles_comp_id_mapping(query)
 
     # Build the structure segment-wise from all chains in the query.
     for chain in query.chains:

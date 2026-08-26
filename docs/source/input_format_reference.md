@@ -199,7 +199,8 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   {
     "molecule_type": "ligand",
     "chain_ids": "Z",
-    "smiles": "CC(=O)OC1C[NH+]2CCC1CC2"
+    "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
+    "residue_name": "DRG"
   }
   ```
 
@@ -221,6 +222,16 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
   - `smiles` *(str, required if ccd_codes not given)*
     - Canonical SMILES string of the ligand.
     - Mutually exclusive with `ccd_codes`.
+
+  - `residue_name` *(str, optional, SMILES ligands only)*
+    - Component identifier to use instead of the default `LIG0`, `LIG1`, ... name.
+    - Whitespace is stripped and letters are uppercased. The value must be ASCII
+      alphanumeric and cannot be a standard polymer residue name or `GAP`.
+    - Repeated instances of one SMILES must resolve to one name, and distinct SMILES
+      must resolve to distinct names. Explicit names cannot match a CCD or
+      non-canonical residue name in the same query.
+    - PDBx/mmCIF preserves the full name. Legacy PDB output uses its first three
+      characters, so choose names with distinct three-character prefixes.
 
   - `ccd_codes` *(str | list[str], required if smiles not given)*
     - Three-letter CCD code for the ligand component. 
