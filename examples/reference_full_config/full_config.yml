@@ -132,9 +132,9 @@ dataset_config_kwargs:
     rdkit_conformer_prune_rmsd: 0.0
     rdkit_conformer_max_iters: 200
 
-  # LigandStereochemistryGuidanceSettings
+  # LigandChemicalSteeringSettings
   # Configure local ligand-geometry guidance for queries that enable it.
-  ligand_stereochemistry_guidance:
+  ligand_chemical_steering:
     start_fraction: 0.725
     num_gd_steps: 20
     bond_buffer: 0.125
@@ -147,6 +147,9 @@ dataset_config_kwargs:
     chiral_atom_weight: 0.1
     stereo_bond_weight: 0.05
     planar_bond_weight: 0.05
+    vdw_buffer: 0.225
+    vdw_weight: 0.125
+    vdw_guidance_interval: 5
     vdw_pair_cutoff_offset: 0.35
 
 # OutputWriterSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141

@@ -140,7 +140,7 @@ Configures Checkpoint writing settings, which are passed to [pl.ModelCheckpoint 
 ---
 ### 3.7. Dataset Config Kwargs (`dataset_config_kwargs`)
 
-Configures MSA, template, pocket sampling, and inference-time ligand guidance.
+Configures MSA, template, pocket sampling, and inference-time ligand chemical steering.
 
 **Pydantic Model**: [`InferenceDatasetConfigKwargs`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_configs.py#L270)
 
@@ -149,7 +149,7 @@ Configures MSA, template, pocket sampling, and inference-time ligand guidance.
 - `msa` *(MSASettings)*: MSA processing settings (see below)
 - `template` *(TemplateSettings)*: Template processing settings (see below)
 - `pocket_sampling` *(PocketSamplingSettings)*: Pocket-guided ligand proposal sampling settings (see below)
-- `ligand_stereochemistry_guidance` *(LigandStereochemistryGuidanceSettings)*: Ligand stereochemistry guidance settings (see below)
+- `ligand_chemical_steering` *(LigandChemicalSteeringSettings)*: Ligand chemical steering settings (see below)
 
 #### 3.7.1. MSA Settings (`msa`)
 
@@ -233,11 +233,11 @@ dataset_config_kwargs:
     noise_frac: 0.75
 ```
 
-#### 3.7.4. Ligand Stereochemistry Guidance Settings (`ligand_stereochemistry_guidance`)
+#### 3.7.4. Ligand Chemical Steering Settings (`ligand_chemical_steering`)
 
-Configures local ligand-geometry guidance for queries with `ligand_stereochemistry_guidance: true`.
+Configures ligand chemical steering for queries with `ligand_chemical_steering: true`.
 
-**Pydantic Model**: [`LigandStereochemistryGuidanceSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/ligand_stereochemistry_config.py)
+**Pydantic Model**: [`LigandChemicalSteeringSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/ligand_chemical_steering_config.py)
 
 **All Options**:
 - `start_fraction` *(float)*: Reverse-diffusion progress at which guidance begins (default: `0.725`, range: `[0, 1]`)
@@ -260,7 +260,7 @@ Configures local ligand-geometry guidance for queries with `ligand_stereochemist
 **Example**:
 ```yaml
 dataset_config_kwargs:
-  ligand_stereochemistry_guidance:
+  ligand_chemical_steering:
     start_fraction: 0.725
     num_gd_steps: 20
 ```
@@ -369,4 +369,4 @@ For the complete list of default values, see the Pydantic model classes in:
 - [`openfold3/core/data/tools/colabfold_msa_server.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py) - MSA server settings
 - [`openfold3/core/data/pipelines/preprocessing/template.py`](http://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py) - Template preprocessing settings
 - [`openfold3/core/config/pocket_sampling_config.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/pocket_sampling_config.py) - Pocket sampling settings
-- `openfold3/core/config/ligand_stereochemistry_config.py` - Ligand stereochemistry guidance settings
+- `openfold3/core/config/ligand_chemical_steering_config.py` - Ligand chemical steering settings

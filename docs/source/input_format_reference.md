@@ -35,7 +35,7 @@ Each query entry is a dictionary with the following structure:
 "query_1": {
   "chains": [ { ... }, { ... } ],
   "pocket_constraint": { ... },
-  "ligand_stereochemistry_guidance": true
+  "ligand_chemical_steering": true
 }
 ```
 
@@ -47,8 +47,8 @@ Optional query-level fields include:
   - `pocket_constraint` *(dict, optional, default = null)*
     - Optional ligand-to-pocket constraint for a small-molecule ligand. See
       {ref}`Section 4 <4-pocket-constraints>` for schema details and examples.
-  - `ligand_stereochemistry_guidance` *(bool, optional, default = false)*
-    - Enables inference-time local geometry guidance for ligand chains. See {ref}`Section 5 <5-ligand-stereochemistry-guidance>`.
+  - `ligand_chemical_steering` *(bool, optional, default = false)*
+    - Enables inference-time chemical steering for ligand chains. See {ref}`Section 5 <5-ligand-chemical-steering>`.
 
 (3-chains)=
 ## 3. Chains
@@ -287,10 +287,10 @@ Pocket constraints can be disabled for testing without editing the input
 JSON by toggling the pocket sampling option in the runner.yaml, see {ref}`Using Pocket Constraints <35-using-pocket-constraints>` for an example. Expert sampling defaults
 are defined in `openfold3/core/config/pocket_sampling_config.py`, more information can be found in the {ref}`Pocket Sampling Settings reference <full-ref-pocket-sampling-settings>`.
 
-(5-ligand-stereochemistry-guidance)=
-## 5. Ligand Stereochemistry Guidance
+(5-ligand-chemical-steering)=
+## 5. Ligand Chemical Steering
 
-Ligand stereochemistry guidance can be enabled for a query containing one or more ligand chains:
+Ligand chemical steering can be enabled for a query containing one or more ligand chains:
 
 ```json
 {
@@ -308,24 +308,24 @@ Ligand stereochemistry guidance can be enabled for a query containing one or mor
           "smiles": "C[C@H](O)C(=O)O"
         }
       ],
-      "ligand_stereochemistry_guidance": true
+      "ligand_chemical_steering": true
     }
   }
 }
 ```
 
-The guidance derives distance-geometry, assigned tetrahedral chirality, assigned E/Z alkene stereochemistry, and double-bond planarity constraints from each ligand's OF3 reference molecule. It also applies VDW overlap restraints between ligands and non-covalently-connected chains. It preserves stereochemistry specified by a SMILES string or CCD reference structure; unspecified stereocenters and stereo bonds are not assigned new targets.
+Steering derives distance-geometry, assigned tetrahedral chirality, assigned E/Z alkene stereochemistry, and double-bond planarity constraints from each ligand's OF3 reference molecule. It also applies VDW overlap restraints between ligands and non-covalently-connected chains. It preserves stereochemistry specified by a SMILES string or CCD reference structure; unspecified stereocenters and stereo bonds are not assigned new targets.
 
-Guidance settings are configured in the runner YAML and are shared by all enabled queries in an inference run:
+Steering settings are configured in the runner YAML and are shared by all enabled queries in an inference run:
 
 ```yaml
 dataset_config_kwargs:
-  ligand_stereochemistry_guidance:
+  ligand_chemical_steering:
     start_fraction: 0.725
     num_gd_steps: 20
 ```
 
-A start fraction of `0` applies guidance throughout reverse diffusion, while `1` applies it only to the final denoised estimate. The complete configuration is documented in the [OpenFold3 Configuration Reference](configuration_reference.md).
+A start fraction of `0` applies steering throughout reverse diffusion, while `1` applies it only to the final denoised estimate. The complete configuration is documented in the [OpenFold3 Configuration Reference](configuration_reference.md).
 
 ## 6. Example Input Json for a Single Query Complex
 
@@ -399,4 +399,4 @@ Additional example input JSON files can be found here:
 - [Single protein-single ligand complex](../../examples/example_inference_inputs/query_single_protein_single_ligand.json): T4 Lysozyme (L99A mutant) with toluene (PDB: 7L39)
 - [Protein-ligand complex with a pocket constraint](../../examples/example_inference_inputs/query_protein_ligand_pocket_constraint.json): Beta-lactamase with an allosteric inhibitor (PDB: 1PZP)
 - [Multiple Protein-ligand complexes](../../examples/example_inference_inputs/query_protein_ligand_multiple.json): Two queries with Mcl-1 and different small molecule inhibitors (PDB: 5FDR)
-- [Ligand stereochemistry guidance](../../examples/example_inference_inputs/query_ligand_stereochemistry_guidance.json): Glutamate transporter with D-aspartate (PDB: 6R7R)
+- [Ligand chemical steering](../../examples/example_inference_inputs/query_ligand_chemical_steering.json): Glutamate transporter with D-aspartate (PDB: 6R7R)

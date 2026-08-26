@@ -1,4 +1,4 @@
-"""Inference-time ligand stereochemistry guidance.
+"""Inference-time ligand chemical steering.
 
 The guidance is applied to the denoised coordinate estimate during reverse diffusion.
 """
@@ -27,7 +27,7 @@ class _FlatBottomRestraints(NamedTuple):
     weight: float
 
 
-class PreparedLigandStereochemistryGuidance(NamedTuple):
+class PreparedLigandChemicalSteering(NamedTuple):
     """Validated, device-local guidance inputs shared across diffusion steps."""
 
     start_fraction: float
@@ -112,9 +112,7 @@ def _required_batch_feature(batch: dict, name: str):
         The requested batch feature.
     """
     if name not in batch:
-        raise ValueError(
-            f"Ligand stereochemistry guidance requires batch feature {name!r}."
-        )
+        raise ValueError(f"Ligand chemical steering requires batch feature {name!r}.")
     return batch[name]
 
 
@@ -146,8 +144,8 @@ def _required_batch_scalar(batch: dict, name: str, dtype: type):
     return dtype(value)
 
 
-def ligand_stereochemistry_guidance_enabled(batch: dict) -> bool:
-    """Return whether a batch requests ligand stereochemistry guidance.
+def ligand_chemical_steering_enabled(batch: dict) -> bool:
+    """Return whether a batch requests ligand chemical steering.
 
     Args:
         batch:
@@ -158,16 +156,14 @@ def ligand_stereochemistry_guidance_enabled(batch: dict) -> bool:
             If the enabled feature is present but is not scalar.
 
     Returns:
-        Whether ligand stereochemistry guidance is enabled for the batch.
+        Whether ligand chemical steering is enabled for the batch.
     """
-    value = batch.get("ligand_stereochemistry_guidance_enabled")
+    value = batch.get("ligand_chemical_steering_enabled")
     if value is None:
         return False
     if torch.is_tensor(value):
         if value.numel() != 1:
-            raise ValueError(
-                "'ligand_stereochemistry_guidance_enabled' must be scalar."
-            )
+            raise ValueError("'ligand_chemical_steering_enabled' must be scalar.")
         value = value.item()
     return bool(value)
 
@@ -201,7 +197,7 @@ def _prepare_restraint(
     Returns:
         Validated device-local atom indices, bounds, and restraint weight.
     """
-    prefix = f"ligand_stereochemistry_{name}"
+    prefix = f"ligand_chemical_steering_{name}"
     index_name = f"{prefix}_index"
     index = _normalize_index_tensor(
         _required_batch_feature(batch, index_name), arity, index_name
@@ -231,10 +227,10 @@ def _prepare_restraint(
     return _FlatBottomRestraints(atom_indices=index, weight=weight, **values)
 
 
-def prepare_ligand_stereochemistry_guidance(
+def prepare_ligand_chemical_steering(
     batch: dict,
     atom_mask: torch.Tensor,
-) -> PreparedLigandStereochemistryGuidance | None:
+) -> PreparedLigandChemicalSteering | None:
     """Validate and prepare invariant guidance inputs before diffusion.
 
     Args:
@@ -252,32 +248,31 @@ def prepare_ligand_stereochemistry_guidance(
         Prepared guidance inputs, or ``None`` when guidance is disabled or no
         usable constraints are present.
     """
-    if not ligand_stereochemistry_guidance_enabled(batch):
+    if not ligand_chemical_steering_enabled(batch):
         return None
     if atom_mask.shape[0] != 1:
         raise ValueError(
-            "Ligand stereochemistry guidance currently supports one query per "
-            "model batch."
+            "Ligand chemical steering currently supports one query per model batch."
         )
 
     start_fraction = _required_batch_scalar(
-        batch, "ligand_stereochemistry_start_fraction", float
+        batch, "ligand_chemical_steering_start_fraction", float
     )
     if not 0.0 <= start_fraction <= 1.0:
         raise ValueError(
-            "'ligand_stereochemistry_start_fraction' must be between 0 and 1."
+            "'ligand_chemical_steering_start_fraction' must be between 0 and 1."
         )
     num_gd_steps = _required_batch_scalar(
-        batch, "ligand_stereochemistry_num_gd_steps", int
+        batch, "ligand_chemical_steering_num_gd_steps", int
     )
     if num_gd_steps < 1:
-        raise ValueError("'ligand_stereochemistry_num_gd_steps' must be at least 1.")
+        raise ValueError("'ligand_chemical_steering_num_gd_steps' must be at least 1.")
     vdw_guidance_interval = _required_batch_scalar(
-        batch, "ligand_stereochemistry_vdw_guidance_interval", int
+        batch, "ligand_chemical_steering_vdw_guidance_interval", int
     )
     if vdw_guidance_interval < 1:
         raise ValueError(
-            "'ligand_stereochemistry_vdw_guidance_interval' must be at least 1."
+            "'ligand_chemical_steering_vdw_guidance_interval' must be at least 1."
         )
     restraints = {
         name: _prepare_restraint(
@@ -294,7 +289,7 @@ def prepare_ligand_stereochemistry_guidance(
     ):
         return None
 
-    return PreparedLigandStereochemistryGuidance(
+    return PreparedLigandChemicalSteering(
         start_fraction=start_fraction,
         num_gd_steps=num_gd_steps,
         vdw_guidance_interval=vdw_guidance_interval,
@@ -501,12 +496,12 @@ def _restraint_gradient(
     )
 
 
-def ligand_stereochemistry_gradient(
+def ligand_chemical_steering_gradient(
     coords: torch.Tensor,
-    guidance: PreparedLigandStereochemistryGuidance,
+    guidance: PreparedLigandChemicalSteering,
     guidance_step: int = 0,
 ) -> torch.Tensor:
-    """Compute the analytical ligand stereochemistry guidance gradient.
+    """Compute the analytical ligand chemical steering gradient.
 
     Args:
         coords:
@@ -546,12 +541,12 @@ def ligand_stereochemistry_gradient(
     return gradient
 
 
-def apply_ligand_stereochemistry_guidance(
+def apply_ligand_chemical_steering(
     xl_denoised: torch.Tensor,
-    guidance: PreparedLigandStereochemistryGuidance | None,
+    guidance: PreparedLigandChemicalSteering | None,
     step_fraction: float,
 ) -> torch.Tensor:
-    """Apply ligand stereochemistry guidance to a denoised estimate.
+    """Apply ligand chemical steering to a denoised estimate.
 
     Args:
         xl_denoised:
@@ -568,7 +563,7 @@ def apply_ligand_stereochemistry_guidance(
 
     guided = xl_denoised.float()
     for guidance_step in range(guidance.num_gd_steps):
-        guided = guided - ligand_stereochemistry_gradient(
+        guided = guided - ligand_chemical_steering_gradient(
             guided,
             guidance,
             guidance_step,

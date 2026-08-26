@@ -47,8 +47,8 @@ from openfold3.core.config.config_utils import (
     FilePathOrNone,
     deep_update,
 )
-from openfold3.core.config.ligand_stereochemistry_config import (
-    LigandStereochemistryGuidanceSettings,
+from openfold3.core.config.ligand_chemical_steering_config import (
+    LigandChemicalSteeringSettings,
 )
 from openfold3.core.config.pocket_sampling_config import PocketSamplingSettings
 from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
@@ -376,8 +376,8 @@ class InferenceDatasetConfigKwargs(BaseModel):
     msa: MSASettings = MSASettings(subsample_main=False)
     template: TemplateSettings = TemplateSettings(take_top_k=True)
     pocket_sampling: PocketSamplingSettings = PocketSamplingSettings()
-    ligand_stereochemistry_guidance: LigandStereochemistryGuidanceSettings = (
-        LigandStereochemistryGuidanceSettings()
+    ligand_chemical_steering: LigandChemicalSteeringSettings = (
+        LigandChemicalSteeringSettings()
     )
 
 
@@ -391,8 +391,8 @@ class InferenceJobConfig(BaseModel):
     template: TemplateSettings = TemplateSettings()
     template_preprocessor_settings: TemplatePreprocessorSettings
     pocket_sampling: PocketSamplingSettings = PocketSamplingSettings()
-    ligand_stereochemistry_guidance: LigandStereochemistryGuidanceSettings = (
-        LigandStereochemistryGuidanceSettings()
+    ligand_chemical_steering: LigandChemicalSteeringSettings = (
+        LigandChemicalSteeringSettings()
     )
 
 

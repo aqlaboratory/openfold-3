@@ -2,12 +2,12 @@
 
 ## Boltz
 
-The ligand stereochemistry constraint extraction, physical guidance, and associated
+The ligand chemical-constraint extraction, analytical steering, and associated
 potential parameters in the following files are adapted from Boltz:
 
-- `openfold3/core/config/ligand_stereochemistry_config.py`
-- `openfold3/core/data/pipelines/featurization/ligand_stereochemistry.py`
-- `openfold3/core/model/structure/ligand_stereochemistry.py`
+- `openfold3/core/config/ligand_chemical_steering_config.py`
+- `openfold3/core/data/pipelines/featurization/ligand_chemical_steering.py`
+- `openfold3/core/model/structure/ligand_chemical_steering.py`
 
 <https://github.com/jwohlwend/boltz>.
 

@@ -1,4 +1,4 @@
-"""Ligand stereochemistry guidance feature extraction.
+"""Ligand chemical steering feature extraction.
 
 The guidance features are derived from the input ligand chemistry and include
 distance-geometry bounds, assigned tetrahedral chirality, assigned E/Z alkene
@@ -16,8 +16,8 @@ from rdkit.Chem import rdMolTransforms
 from rdkit.Chem.rdchem import BondStereo, HybridizationType, Mol
 from rdkit.Chem.rdDistGeom import GetMoleculeBoundsMatrix
 
-from openfold3.core.config.ligand_stereochemistry_config import (
-    LigandStereochemistryGuidanceSettings,
+from openfold3.core.config.ligand_chemical_steering_config import (
+    LigandChemicalSteeringSettings,
 )
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
@@ -67,7 +67,7 @@ class _LigandGeometryConstraints:
 def _compute_geometry_constraints(
     mol: Mol,
     idx_map: dict[int, int],
-    settings: LigandStereochemistryGuidanceSettings,
+    settings: LigandChemicalSteeringSettings,
 ) -> _LigandGeometryConstraints:
     """Compute RDKit distance-geometry bounds in the model atom axis.
 
@@ -98,8 +98,7 @@ def _compute_geometry_constraints(
         for atomic_number in mapped_atomic_numbers.values()
     ):
         raise ValueError(
-            "Ligand stereochemistry guidance requires atoms with supported atomic "
-            "numbers."
+            "Ligand chemical steering requires atoms with supported atomic numbers."
         )
 
     mol.UpdatePropertyCache(strict=False)
@@ -144,7 +143,7 @@ def _compute_geometry_constraints(
 
 def _compute_vdw_overlap_constraints(
     atom_array: AtomArray,
-    settings: LigandStereochemistryGuidanceSettings,
+    settings: LigandChemicalSteeringSettings,
 ) -> _LigandGeometryConstraints:
     """Compute Boltz-style interchain VDW bounds for ligand-containing pairs.
 
@@ -219,8 +218,7 @@ def _compute_vdw_overlap_constraints(
         atomic_number = PERIODIC_TABLE.GetAtomicNumber(element)
         if atomic_number < 1 or atomic_number > PERIODIC_TABLE.GetMaxAtomicNumber():
             raise ValueError(
-                "Ligand stereochemistry VDW guidance requires atoms with supported "
-                "elements."
+                "Ligand chemical steering requires atoms with supported elements."
             )
         vdw_radii[atom_index] = PERIODIC_TABLE.GetRvdw(atomic_number)
 
@@ -413,9 +411,9 @@ def _compute_flatness_constraints(
 def _compute_ligand_constraints(
     mol: Mol,
     idx_map: dict[int, int],
-    settings: LigandStereochemistryGuidanceSettings,
+    settings: LigandChemicalSteeringSettings,
 ) -> _LigandGeometryConstraints:
-    """Build all supported stereochemistry guidance constraints for one ligand.
+    """Build all supported chemical steering constraints for one ligand.
 
     Args:
         mol:
@@ -454,7 +452,7 @@ def _empty_feature_tensors() -> dict[str, torch.Tensor]:
         ("stereo_dihedral", 4),
         ("planar_dihedral", 4),
     ):
-        prefix = f"ligand_stereochemistry_{name}"
+        prefix = f"ligand_chemical_steering_{name}"
         features[f"{prefix}_index"] = torch.empty((arity, 0), dtype=torch.long)
         for suffix in ("lower", "upper"):
             features[f"{prefix}_{suffix}"] = torch.empty((0,), dtype=torch.float32)
@@ -481,7 +479,7 @@ def _restraint_features(
     Returns:
         Index and bound tensors keyed for the inference batch.
     """
-    prefix = f"ligand_stereochemistry_{name}"
+    prefix = f"ligand_chemical_steering_{name}"
     return {
         f"{prefix}_index": index,
         f"{prefix}_lower": lower,
@@ -491,7 +489,7 @@ def _restraint_features(
 
 def _tensorize_constraints(
     constraints: _LigandGeometryConstraints,
-    settings: LigandStereochemistryGuidanceSettings,
+    settings: LigandChemicalSteeringSettings,
 ) -> dict[str, torch.Tensor]:
     """Convert accumulated constraints into flat-bottom restraint tensors.
 
@@ -608,13 +606,13 @@ def _tensorize_constraints(
     return features
 
 
-def featurize_ligand_stereochemistry_guidance(
+def featurize_ligand_chemical_steering(
     query: Query,
     atom_array: AtomArray,
     processed_reference_molecules: list[ProcessedReferenceMolecule],
-    settings: LigandStereochemistryGuidanceSettings,
+    settings: LigandChemicalSteeringSettings,
 ) -> dict[str, torch.Tensor]:
-    """Create inference-time ligand stereochemistry guidance features.
+    """Create inference-time ligand chemical steering features.
 
     The query flag controls whether the sampler uses the emitted constraints. Empty
     tensors are returned when guidance is disabled so the downstream hook remains
@@ -639,16 +637,16 @@ def featurize_ligand_stereochemistry_guidance(
         Shape-stable restraint and sampler-setting tensors for the inference batch.
     """
     features = _empty_feature_tensors()
-    features["ligand_stereochemistry_guidance_enabled"] = torch.tensor(
-        [query.ligand_stereochemistry_guidance], dtype=torch.bool
+    features["ligand_chemical_steering_enabled"] = torch.tensor(
+        [query.ligand_chemical_steering], dtype=torch.bool
     )
-    features["ligand_stereochemistry_start_fraction"] = torch.tensor(
+    features["ligand_chemical_steering_start_fraction"] = torch.tensor(
         [settings.start_fraction], dtype=torch.float32
     )
-    features["ligand_stereochemistry_num_gd_steps"] = torch.tensor(
+    features["ligand_chemical_steering_num_gd_steps"] = torch.tensor(
         [settings.num_gd_steps], dtype=torch.long
     )
-    features["ligand_stereochemistry_vdw_guidance_interval"] = torch.tensor(
+    features["ligand_chemical_steering_vdw_guidance_interval"] = torch.tensor(
         [settings.vdw_guidance_interval], dtype=torch.long
     )
     for name, weight in (
@@ -658,11 +656,11 @@ def featurize_ligand_stereochemistry_guidance(
         ("stereo_dihedral", settings.stereo_bond_weight),
         ("planar_dihedral", settings.planar_bond_weight),
     ):
-        features[f"ligand_stereochemistry_{name}_weight"] = torch.tensor(
+        features[f"ligand_chemical_steering_{name}_weight"] = torch.tensor(
             [weight], dtype=torch.float32
         )
 
-    if not query.ligand_stereochemistry_guidance:
+    if not query.ligand_chemical_steering:
         return features
 
     all_constraints = _LigandGeometryConstraints()

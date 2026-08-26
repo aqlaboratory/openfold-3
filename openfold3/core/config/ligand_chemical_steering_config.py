@@ -1,4 +1,4 @@
-"""Configuration for inference-time ligand stereochemistry guidance."""
+"""Configuration for inference-time ligand chemical steering."""
 
 import math
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from pydantic import ConfigDict as PydanticConfigDict
 
 
-class LigandStereochemistryGuidanceSettings(BaseModel):
+class LigandChemicalSteeringSettings(BaseModel):
     """Controls ligand chemical-geometry guidance during reverse diffusion.
 
     Attributes:

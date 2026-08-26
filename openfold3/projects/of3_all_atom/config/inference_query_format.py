@@ -146,7 +146,7 @@ class Query(BaseModel):
     use_main_msas: bool = True
     covalent_bonds: list[Bond] | None = None
     pocket_constraint: PocketConstraint | None = None
-    ligand_stereochemistry_guidance: bool = False
+    ligand_chemical_steering: bool = False
 
     @model_validator(mode="after")
     def validate_pocket_constraint(self) -> "Query":
@@ -169,13 +169,13 @@ class Query(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def validate_ligand_stereochemistry_guidance(self) -> "Query":
-        """Require ligand chemistry when stereochemistry guidance is enabled."""
-        if self.ligand_stereochemistry_guidance and not any(
+    def validate_ligand_chemical_steering(self) -> "Query":
+        """Require ligand chemistry when chemical steering is enabled."""
+        if self.ligand_chemical_steering and not any(
             chain.molecule_type == MoleculeType.LIGAND for chain in self.chains
         ):
             raise ValueError(
-                "'ligand_stereochemistry_guidance' requires at least one ligand chain."
+                "'ligand_chemical_steering' requires at least one ligand chain."
             )
         return self
 

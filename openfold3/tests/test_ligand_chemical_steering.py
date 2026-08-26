@@ -6,13 +6,13 @@ import torch
 from biotite.structure import AtomArray, BondList, BondType
 from rdkit import Chem
 
-from openfold3.core.config.ligand_stereochemistry_config import (
-    LigandStereochemistryGuidanceSettings,
+from openfold3.core.config.ligand_chemical_steering_config import (
+    LigandChemicalSteeringSettings,
 )
 from openfold3.core.data.pipelines.featurization import (
-    ligand_stereochemistry as featurization,
+    ligand_chemical_steering as featurization,
 )
-from openfold3.core.data.pipelines.featurization.ligand_stereochemistry import (
+from openfold3.core.data.pipelines.featurization.ligand_chemical_steering import (
     _compute_chiral_atom_constraints,
     _compute_flatness_constraints,
     _compute_geometry_constraints,
@@ -20,7 +20,7 @@ from openfold3.core.data.pipelines.featurization.ligand_stereochemistry import (
     _compute_stereo_bond_constraints,
     _compute_vdw_overlap_constraints,
     _empty_feature_tensors,
-    featurize_ligand_stereochemistry_guidance,
+    featurize_ligand_chemical_steering,
 )
 from openfold3.core.data.primitives.structure.labels import residue_view_iter
 from openfold3.core.data.primitives.structure.query import (
@@ -33,14 +33,14 @@ from openfold3.core.data.primitives.structure.tokenization import (
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.core.model.structure import diffusion_module as diffusion_module_lib
 from openfold3.core.model.structure.diffusion_module import SampleDiffusion
-from openfold3.core.model.structure.ligand_stereochemistry import (
+from openfold3.core.model.structure.ligand_chemical_steering import (
     _flat_bottom_derivative,
     _normalize_index_tensor,
     _required_batch_scalar,
-    apply_ligand_stereochemistry_guidance,
-    ligand_stereochemistry_gradient,
-    ligand_stereochemistry_guidance_enabled,
-    prepare_ligand_stereochemistry_guidance,
+    apply_ligand_chemical_steering,
+    ligand_chemical_steering_enabled,
+    ligand_chemical_steering_gradient,
+    prepare_ligand_chemical_steering,
 )
 from openfold3.entry_points.experiment_runner import InferenceExperimentRunner
 from openfold3.entry_points.validator import InferenceExperimentConfig
@@ -49,7 +49,7 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Query,
 )
 
-_DEFAULT_SETTINGS = LigandStereochemistryGuidanceSettings()
+_DEFAULT_SETTINGS = LigandChemicalSteeringSettings()
 
 
 def _ligand_query(smiles: str, guidance: bool = True) -> Query:
@@ -62,7 +62,7 @@ def _ligand_query(smiles: str, guidance: bool = True) -> Query:
                     "smiles": smiles,
                 }
             ],
-            "ligand_stereochemistry_guidance": guidance,
+            "ligand_chemical_steering": guidance,
         }
     )
 
@@ -70,13 +70,13 @@ def _ligand_query(smiles: str, guidance: bool = True) -> Query:
 def _features_for_smiles(
     smiles: str,
     guidance: bool = True,
-    settings: LigandStereochemistryGuidanceSettings = _DEFAULT_SETTINGS,
+    settings: LigandChemicalSteeringSettings = _DEFAULT_SETTINGS,
 ) -> dict[str, torch.Tensor]:
     query = _ligand_query(smiles, guidance=guidance)
     structure = structure_with_ref_mols_from_query(query)
     tokenize_atom_array(structure.atom_array)
     add_token_positions(structure.atom_array)
-    return featurize_ligand_stereochemistry_guidance(
+    return featurize_ligand_chemical_steering(
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
@@ -117,30 +117,30 @@ def _empty_guidance_batch(
     enabled: bool = True,
     start_fraction: float = 0.0,
     num_gd_steps: int = 1,
-    settings: LigandStereochemistryGuidanceSettings = _DEFAULT_SETTINGS,
+    settings: LigandChemicalSteeringSettings = _DEFAULT_SETTINGS,
 ) -> dict[str, torch.Tensor]:
     batch = _empty_feature_tensors()
     batch.update(
         {
-            "ligand_stereochemistry_guidance_enabled": torch.tensor([enabled]),
-            "ligand_stereochemistry_start_fraction": torch.tensor([start_fraction]),
-            "ligand_stereochemistry_num_gd_steps": torch.tensor([num_gd_steps]),
-            "ligand_stereochemistry_vdw_guidance_interval": torch.tensor(
+            "ligand_chemical_steering_enabled": torch.tensor([enabled]),
+            "ligand_chemical_steering_start_fraction": torch.tensor([start_fraction]),
+            "ligand_chemical_steering_num_gd_steps": torch.tensor([num_gd_steps]),
+            "ligand_chemical_steering_vdw_guidance_interval": torch.tensor(
                 [settings.vdw_guidance_interval]
             ),
-            "ligand_stereochemistry_distance_weight": torch.tensor(
+            "ligand_chemical_steering_distance_weight": torch.tensor(
                 [settings.distance_weight]
             ),
-            "ligand_stereochemistry_vdw_overlap_weight": torch.tensor(
+            "ligand_chemical_steering_vdw_overlap_weight": torch.tensor(
                 [settings.vdw_weight]
             ),
-            "ligand_stereochemistry_signed_dihedral_weight": torch.tensor(
+            "ligand_chemical_steering_signed_dihedral_weight": torch.tensor(
                 [settings.chiral_atom_weight]
             ),
-            "ligand_stereochemistry_stereo_dihedral_weight": torch.tensor(
+            "ligand_chemical_steering_stereo_dihedral_weight": torch.tensor(
                 [settings.stereo_bond_weight]
             ),
-            "ligand_stereochemistry_planar_dihedral_weight": torch.tensor(
+            "ligand_chemical_steering_planar_dihedral_weight": torch.tensor(
                 [settings.planar_bond_weight]
             ),
         }
@@ -152,9 +152,9 @@ def _distance_features() -> dict[str, torch.Tensor]:
     features = _empty_feature_tensors()
     features.update(
         {
-            "ligand_stereochemistry_distance_index": torch.tensor([[0], [1]]),
-            "ligand_stereochemistry_distance_lower": torch.tensor([1.0]),
-            "ligand_stereochemistry_distance_upper": torch.tensor([1.0]),
+            "ligand_chemical_steering_distance_index": torch.tensor([[0], [1]]),
+            "ligand_chemical_steering_distance_lower": torch.tensor([1.0]),
+            "ligand_chemical_steering_distance_upper": torch.tensor([1.0]),
         }
     )
     return features
@@ -206,7 +206,7 @@ def _reference_flat_bottom(
     )
 
 
-def _reference_ligand_stereochemistry_energy(
+def _reference_ligand_chemical_steering_energy(
     coords: torch.Tensor,
     guidance,
 ) -> torch.Tensor:
@@ -261,7 +261,7 @@ def _reference_ligand_stereochemistry_energy(
 
 
 def _prepare_guidance(batch: dict[str, torch.Tensor], num_atoms: int):
-    guidance = prepare_ligand_stereochemistry_guidance(batch, torch.ones(1, num_atoms))
+    guidance = prepare_ligand_chemical_steering(batch, torch.ones(1, num_atoms))
     assert guidance is not None
     return guidance
 
@@ -294,7 +294,7 @@ class _IdentityDenoiser(torch.nn.Module):
         ("C1CCCCCCCCCCC1", 1, 0, 0, 0),
     ],
 )
-def test_ligand_stereochemistry_features_for_representative_ligands(
+def test_ligand_chemical_steering_features_for_representative_ligands(
     smiles: str,
     min_distances: int,
     min_signed_dihedrals: int,
@@ -303,7 +303,7 @@ def test_ligand_stereochemistry_features_for_representative_ligands(
 ):
     features = _features_for_smiles(smiles)
 
-    assert features["ligand_stereochemistry_guidance_enabled"].item()
+    assert features["ligand_chemical_steering_enabled"].item()
     expected = {
         "distance": (2, min_distances),
         "vdw_overlap": (2, 0),
@@ -312,7 +312,7 @@ def test_ligand_stereochemistry_features_for_representative_ligands(
         "planar_dihedral": (4, min_planar_dihedrals),
     }
     for name, (arity, minimum) in expected.items():
-        prefix = f"ligand_stereochemistry_{name}"
+        prefix = f"ligand_chemical_steering_{name}"
         assert features[f"{prefix}_index"].shape[0] == arity
         assert features[f"{prefix}_index"].shape[1] >= minimum
         for suffix in ("lower", "upper"):
@@ -335,7 +335,7 @@ def test_emitted_stereo_targets_match_processed_reference_molecule(
 ):
     query = _ligand_query(smiles)
     structure = structure_with_ref_mols_from_query(query)
-    features = featurize_ligand_stereochemistry_guidance(
+    features = featurize_ligand_chemical_steering(
         query,
         structure.atom_array,
         structure.processed_reference_mols,
@@ -366,7 +366,7 @@ def test_pseudoasymmetric_centers_match_processed_reference_molecule():
         includeUnassigned=False,
         useLegacyImplementation=False,
     )
-    features = featurize_ligand_stereochemistry_guidance(
+    features = featurize_ligand_chemical_steering(
         query,
         structure.atom_array,
         structure.processed_reference_mols,
@@ -416,11 +416,11 @@ def test_multi_ligand_features_follow_reference_molecules_across_chain_order(
     query = Query.model_validate(
         {
             "chains": [chain_definitions[name] for name in chain_order],
-            "ligand_stereochemistry_guidance": True,
+            "ligand_chemical_steering": True,
         }
     )
     structure = structure_with_ref_mols_from_query(query)
-    features = featurize_ligand_stereochemistry_guidance(
+    features = featurize_ligand_chemical_steering(
         query,
         structure.atom_array,
         structure.processed_reference_mols,
@@ -431,21 +431,27 @@ def test_multi_ligand_features_follow_reference_molecules_across_chain_order(
 
     bounds = [
         set(pair)
-        for pair in features["ligand_stereochemistry_distance_index"].T.tolist()
+        for pair in features["ligand_chemical_steering_distance_index"].T.tolist()
     ]
     chiral = [
         set(group)
-        for group in features["ligand_stereochemistry_signed_dihedral_index"].T.tolist()
+        for group in features[
+            "ligand_chemical_steering_signed_dihedral_index"
+        ].T.tolist()
     ]
     stereo = [
         set(group)
-        for group in features["ligand_stereochemistry_stereo_dihedral_index"].T.tolist()
+        for group in features[
+            "ligand_chemical_steering_stereo_dihedral_index"
+        ].T.tolist()
     ]
     planar = [
         set(group)
-        for group in features["ligand_stereochemistry_planar_dihedral_index"].T.tolist()
+        for group in features[
+            "ligand_chemical_steering_planar_dihedral_index"
+        ].T.tolist()
     ]
-    vdw_overlap = features["ligand_stereochemistry_vdw_overlap_index"].T.tolist()
+    vdw_overlap = features["ligand_chemical_steering_vdw_overlap_index"].T.tolist()
 
     assert any(pair <= ligand_l for pair in bounds)
     assert any(pair <= ligand_m for pair in bounds)
@@ -462,15 +468,15 @@ def test_multi_ligand_features_follow_reference_molecules_across_chain_order(
         assert atom_i in ligand_l | ligand_m or atom_j in ligand_l | ligand_m
 
 
-def test_ligand_stereochemistry_features_are_empty_when_disabled():
+def test_ligand_chemical_steering_features_are_empty_when_disabled():
     features = _features_for_smiles("C[C@H](O)C(=O)O", guidance=False)
 
-    assert not features["ligand_stereochemistry_guidance_enabled"].item()
-    assert features["ligand_stereochemistry_distance_index"].shape == (2, 0)
-    assert features["ligand_stereochemistry_vdw_overlap_index"].shape == (2, 0)
-    assert features["ligand_stereochemistry_signed_dihedral_index"].shape == (4, 0)
-    assert features["ligand_stereochemistry_stereo_dihedral_index"].shape == (4, 0)
-    assert features["ligand_stereochemistry_planar_dihedral_index"].shape == (4, 0)
+    assert not features["ligand_chemical_steering_enabled"].item()
+    assert features["ligand_chemical_steering_distance_index"].shape == (2, 0)
+    assert features["ligand_chemical_steering_vdw_overlap_index"].shape == (2, 0)
+    assert features["ligand_chemical_steering_signed_dihedral_index"].shape == (4, 0)
+    assert features["ligand_chemical_steering_stereo_dihedral_index"].shape == (4, 0)
+    assert features["ligand_chemical_steering_planar_dihedral_index"].shape == (4, 0)
 
 
 def test_zero_vdw_weight_skips_interchain_constraints():
@@ -488,20 +494,20 @@ def test_zero_vdw_weight_skips_interchain_constraints():
                     "smiles": "CCO",
                 },
             ],
-            "ligand_stereochemistry_guidance": True,
+            "ligand_chemical_steering": True,
         }
     )
     structure = structure_with_ref_mols_from_query(query)
     settings = _DEFAULT_SETTINGS.model_copy(update={"vdw_weight": 0.0})
 
-    features = featurize_ligand_stereochemistry_guidance(
+    features = featurize_ligand_chemical_steering(
         query,
         structure.atom_array,
         structure.processed_reference_mols,
         settings,
     )
 
-    assert features["ligand_stereochemistry_vdw_overlap_index"].shape == (2, 0)
+    assert features["ligand_chemical_steering_vdw_overlap_index"].shape == (2, 0)
 
 
 @pytest.mark.parametrize(
@@ -525,12 +531,12 @@ def test_unspecified_stereochemistry_does_not_create_guidance_targets(
     assert getattr(constraints, constraint_name) == []
 
 
-def test_ligand_stereochemistry_energy_prefers_input_chirality():
+def test_ligand_chemical_steering_energy_prefers_input_chirality():
     query = _ligand_query("C[C@H](O)C(=O)O")
     structure = structure_with_ref_mols_from_query(query)
     tokenize_atom_array(structure.atom_array)
     add_token_positions(structure.atom_array)
-    features = featurize_ligand_stereochemistry_guidance(
+    features = featurize_ligand_chemical_steering(
         query=query,
         atom_array=structure.atom_array,
         processed_reference_molecules=structure.processed_reference_mols,
@@ -547,8 +553,8 @@ def test_ligand_stereochemistry_energy_prefers_input_chirality():
     mirrored_coords[..., 0] *= -1
     guidance = _prepare_guidance(features, num_atoms=coords.shape[-2])
 
-    input_energy = _reference_ligand_stereochemistry_energy(coords, guidance)
-    mirrored_energy = _reference_ligand_stereochemistry_energy(
+    input_energy = _reference_ligand_chemical_steering_energy(coords, guidance)
+    mirrored_energy = _reference_ligand_chemical_steering_energy(
         mirrored_coords, guidance
     )
 
@@ -566,23 +572,23 @@ def test_posebusters_bounds_penalize_out_of_plane_aromatic_geometry():
     distorted = planar.clone()
     distorted[..., 0, 2] = 1.0
 
-    planar_energy = _reference_ligand_stereochemistry_energy(planar, guidance)
-    distorted_energy = _reference_ligand_stereochemistry_energy(distorted, guidance)
+    planar_energy = _reference_ligand_chemical_steering_energy(planar, guidance)
+    distorted_energy = _reference_ligand_chemical_steering_energy(distorted, guidance)
 
     assert planar_energy == 0
     assert distorted_energy > planar_energy
 
 
-def test_ligand_stereochemistry_distance_gradient_matches_autograd():
+def test_ligand_chemical_steering_distance_gradient_matches_autograd():
     coords = torch.tensor([[[[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]]])
     batch = _empty_guidance_batch()
     batch.update(_distance_features())
     guidance = _prepare_guidance(batch, num_atoms=2)
 
     coords_with_grad = coords.clone().requires_grad_(True)
-    energy = _reference_ligand_stereochemistry_energy(coords_with_grad, guidance)
+    energy = _reference_ligand_chemical_steering_energy(coords_with_grad, guidance)
     (autograd_gradient,) = torch.autograd.grad(energy, coords_with_grad)
-    analytic_gradient = ligand_stereochemistry_gradient(coords, guidance)
+    analytic_gradient = ligand_chemical_steering_gradient(coords, guidance)
 
     torch.testing.assert_close(analytic_gradient, autograd_gradient)
 
@@ -592,18 +598,20 @@ def test_vdw_overlap_gradient_matches_autograd_and_respects_boltz_interval():
     batch = _empty_guidance_batch()
     batch.update(
         {
-            "ligand_stereochemistry_vdw_overlap_index": torch.tensor([[0], [1]]),
-            "ligand_stereochemistry_vdw_overlap_lower": torch.tensor([2.0]),
-            "ligand_stereochemistry_vdw_overlap_upper": torch.tensor([float("inf")]),
+            "ligand_chemical_steering_vdw_overlap_index": torch.tensor([[0], [1]]),
+            "ligand_chemical_steering_vdw_overlap_lower": torch.tensor([2.0]),
+            "ligand_chemical_steering_vdw_overlap_upper": torch.tensor([float("inf")]),
         }
     )
     guidance = _prepare_guidance(batch, num_atoms=2)
     coords_with_grad = coords.clone().requires_grad_(True)
 
-    energy = _reference_ligand_stereochemistry_energy(coords_with_grad, guidance)
+    energy = _reference_ligand_chemical_steering_energy(coords_with_grad, guidance)
     (autograd_gradient,) = torch.autograd.grad(energy, coords_with_grad)
-    active_gradient = ligand_stereochemistry_gradient(coords, guidance, guidance_step=0)
-    inactive_gradient = ligand_stereochemistry_gradient(
+    active_gradient = ligand_chemical_steering_gradient(
+        coords, guidance, guidance_step=0
+    )
+    inactive_gradient = ligand_chemical_steering_gradient(
         coords, guidance, guidance_step=1
     )
 
@@ -611,7 +619,7 @@ def test_vdw_overlap_gradient_matches_autograd_and_respects_boltz_interval():
     torch.testing.assert_close(inactive_gradient, torch.zeros_like(coords))
 
 
-def test_ligand_stereochemistry_dihedral_gradient_matches_autograd():
+def test_ligand_chemical_steering_dihedral_gradient_matches_autograd():
     coords = torch.tensor(
         [
             [
@@ -627,13 +635,13 @@ def test_ligand_stereochemistry_dihedral_gradient_matches_autograd():
     batch = _empty_guidance_batch()
     batch.update(
         {
-            "ligand_stereochemistry_signed_dihedral_index": torch.tensor(
+            "ligand_chemical_steering_signed_dihedral_index": torch.tensor(
                 [[0], [1], [2], [3]]
             ),
-            "ligand_stereochemistry_signed_dihedral_lower": torch.tensor(
+            "ligand_chemical_steering_signed_dihedral_lower": torch.tensor(
                 [_DEFAULT_SETTINGS.chiral_buffer]
             ),
-            "ligand_stereochemistry_signed_dihedral_upper": torch.tensor(
+            "ligand_chemical_steering_signed_dihedral_upper": torch.tensor(
                 [float("inf")]
             ),
         }
@@ -641,30 +649,28 @@ def test_ligand_stereochemistry_dihedral_gradient_matches_autograd():
     guidance = _prepare_guidance(batch, num_atoms=4)
 
     coords_with_grad = coords.clone().requires_grad_(True)
-    energy = _reference_ligand_stereochemistry_energy(coords_with_grad, guidance)
+    energy = _reference_ligand_chemical_steering_energy(coords_with_grad, guidance)
     assert energy > 0
     (autograd_gradient,) = torch.autograd.grad(energy, coords_with_grad)
-    analytic_gradient = ligand_stereochemistry_gradient(coords, guidance)
+    analytic_gradient = ligand_chemical_steering_gradient(coords, guidance)
 
     torch.testing.assert_close(
         analytic_gradient, autograd_gradient, atol=1e-5, rtol=1e-5
     )
 
 
-def test_ligand_stereochemistry_settings_validate_guidance_schedule():
+def test_ligand_chemical_steering_settings_validate_guidance_schedule():
     with pytest.raises(ValueError, match="start_fraction"):
-        LigandStereochemistryGuidanceSettings.model_validate({"start_fraction": 1.5})
+        LigandChemicalSteeringSettings.model_validate({"start_fraction": 1.5})
 
     with pytest.raises(ValueError, match="num_gd_steps"):
-        LigandStereochemistryGuidanceSettings.model_validate({"num_gd_steps": 0})
+        LigandChemicalSteeringSettings.model_validate({"num_gd_steps": 0})
 
     with pytest.raises(ValueError, match="vdw_guidance_interval"):
-        LigandStereochemistryGuidanceSettings.model_validate(
-            {"vdw_guidance_interval": 0}
-        )
+        LigandChemicalSteeringSettings.model_validate({"vdw_guidance_interval": 0})
 
     with pytest.raises(ValueError, match="extra_forbidden"):
-        LigandStereochemistryGuidanceSettings.model_validate({"unknown": 1})
+        LigandChemicalSteeringSettings.model_validate({"unknown": 1})
 
 
 def test_inference_experiment_records_and_routes_guidance_settings(tmp_path):
@@ -674,7 +680,7 @@ def test_inference_experiment_records_and_routes_guidance_settings(tmp_path):
         inference_ckpt_path=checkpoint,
         cache_path=tmp_path,
         dataset_config_kwargs={
-            "ligand_stereochemistry_guidance": {
+            "ligand_chemical_steering": {
                 "start_fraction": 0.8,
                 "num_gd_steps": 7,
                 "chiral_atom_weight": 0.2,
@@ -683,8 +689,8 @@ def test_inference_experiment_records_and_routes_guidance_settings(tmp_path):
     )
     serialized = experiment.model_dump()
 
-    assert serialized["dataset_config_kwargs"]["ligand_stereochemistry_guidance"] == (
-        experiment.dataset_config_kwargs.ligand_stereochemistry_guidance.model_dump()
+    assert serialized["dataset_config_kwargs"]["ligand_chemical_steering"] == (
+        experiment.dataset_config_kwargs.ligand_chemical_steering.model_dump()
     )
 
     runner = InferenceExperimentRunner(experiment)
@@ -694,13 +700,13 @@ def test_inference_experiment_records_and_routes_guidance_settings(tmp_path):
     inference_job = runner.data_module_config.datasets[0].config
 
     assert (
-        inference_job.ligand_stereochemistry_guidance
-        == experiment.dataset_config_kwargs.ligand_stereochemistry_guidance
+        inference_job.ligand_chemical_steering
+        == experiment.dataset_config_kwargs.ligand_chemical_steering
     )
 
 
 def test_custom_guidance_settings_are_emitted_and_prepared():
-    settings = LigandStereochemistryGuidanceSettings(
+    settings = LigandChemicalSteeringSettings(
         start_fraction=0.6,
         num_gd_steps=4,
         vdw_guidance_interval=3,
@@ -723,68 +729,68 @@ def test_custom_guidance_settings_are_emitted_and_prepared():
     assert guidance.planar_dihedral.weight == pytest.approx(settings.planar_bond_weight)
 
 
-def test_ligand_stereochemistry_guidance_is_noop_when_disabled():
+def test_ligand_chemical_steering_is_noop_when_disabled():
     coords = torch.tensor([[[[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]]])
     batch = _empty_guidance_batch(enabled=False)
     batch.update(_distance_features())
-    guidance = prepare_ligand_stereochemistry_guidance(batch, torch.ones(1, 2))
+    guidance = prepare_ligand_chemical_steering(batch, torch.ones(1, 2))
 
-    guided = apply_ligand_stereochemistry_guidance(coords, guidance, step_fraction=1.0)
+    guided = apply_ligand_chemical_steering(coords, guidance, step_fraction=1.0)
 
     torch.testing.assert_close(guided, coords)
 
 
-def test_ligand_stereochemistry_guidance_respects_start_fraction():
+def test_ligand_chemical_steering_respects_start_fraction():
     coords = torch.tensor([[[[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]]])
     batch = _empty_guidance_batch(start_fraction=0.9)
     batch.update(_distance_features())
     guidance = _prepare_guidance(batch, num_atoms=2)
 
-    guided = apply_ligand_stereochemistry_guidance(coords, guidance, step_fraction=0.5)
+    guided = apply_ligand_chemical_steering(coords, guidance, step_fraction=0.5)
 
     torch.testing.assert_close(guided, coords)
 
 
-def test_ligand_stereochemistry_guidance_reduces_bond_violation():
+def test_ligand_chemical_steering_reduces_bond_violation():
     coords = torch.tensor([[[[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]]])
     batch = _empty_guidance_batch(num_gd_steps=5)
     batch.update(_distance_features())
     guidance = _prepare_guidance(batch, num_atoms=2)
 
-    guided = apply_ligand_stereochemistry_guidance(coords, guidance, step_fraction=0.5)
+    guided = apply_ligand_chemical_steering(coords, guidance, step_fraction=0.5)
 
     initial_distance = torch.linalg.norm(coords[..., 0, :] - coords[..., 1, :])
     guided_distance = torch.linalg.norm(guided[..., 0, :] - guided[..., 1, :])
     assert guided_distance < initial_distance
 
 
-def test_ligand_stereochemistry_guidance_accepts_collated_restraints():
+def test_ligand_chemical_steering_accepts_collated_restraints():
     coords = torch.tensor(
         [[[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]]]
     )
     batch = _empty_guidance_batch()
     batch.update(
         {
-            "ligand_stereochemistry_signed_dihedral_index": torch.tensor(
+            "ligand_chemical_steering_signed_dihedral_index": torch.tensor(
                 [[0, 1, 2, 3]]
             ),
-            "ligand_stereochemistry_signed_dihedral_lower": torch.tensor(
+            "ligand_chemical_steering_signed_dihedral_lower": torch.tensor(
                 [_DEFAULT_SETTINGS.chiral_buffer]
             ),
-            "ligand_stereochemistry_signed_dihedral_upper": torch.tensor(
+            "ligand_chemical_steering_signed_dihedral_upper": torch.tensor(
                 [float("inf")]
             ),
         }
     )
     guidance = _prepare_guidance(batch, num_atoms=4)
 
-    guided = apply_ligand_stereochemistry_guidance(coords, guidance, step_fraction=1.0)
+    guided = apply_ligand_chemical_steering(coords, guidance, step_fraction=1.0)
 
     assert guided.shape == coords.shape
     assert torch.isfinite(guided).all()
 
 
-def test_ligand_stereochemistry_guidance_runs_inside_inference_mode():
+def test_ligand_chemical_steering_runs_inside_inference_mode():
     coords = torch.tensor([[[[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]]])
     batch = _empty_guidance_batch()
     batch.update(_distance_features())
@@ -796,23 +802,21 @@ def test_ligand_stereochemistry_guidance_runs_inside_inference_mode():
             for key, value in batch.items()
         }
         guidance = _prepare_guidance(batch, num_atoms=2)
-        guided = apply_ligand_stereochemistry_guidance(
-            coords, guidance, step_fraction=1.0
-        )
+        guided = apply_ligand_chemical_steering(coords, guidance, step_fraction=1.0)
 
     assert guided.requires_grad is False
     assert not torch.equal(guided, coords)
 
 
-def test_ligand_stereochemistry_query_only_controls_enablement():
+def test_ligand_chemical_steering_query_only_controls_enablement():
     query = _ligand_query("CC", guidance=False)
 
-    assert not query.ligand_stereochemistry_guidance
-    assert "ligand_stereochemistry_start_fraction" not in Query.model_fields
-    assert "ligand_stereochemistry_num_gd_steps" not in Query.model_fields
+    assert not query.ligand_chemical_steering
+    assert "ligand_chemical_steering_start_fraction" not in Query.model_fields
+    assert "ligand_chemical_steering_num_gd_steps" not in Query.model_fields
 
 
-def test_ligand_stereochemistry_query_requires_a_ligand_when_enabled():
+def test_ligand_chemical_steering_query_requires_a_ligand_when_enabled():
     with pytest.raises(ValueError, match="requires at least one ligand"):
         Query.model_validate(
             {
@@ -823,7 +827,7 @@ def test_ligand_stereochemistry_query_requires_a_ligand_when_enabled():
                         "sequence": "AG",
                     }
                 ],
-                "ligand_stereochemistry_guidance": True,
+                "ligand_chemical_steering": True,
             }
         )
 
@@ -1068,7 +1072,7 @@ def test_featurization_rejects_misaligned_reference_atoms():
     )
 
     with pytest.raises(ValueError, match="must match the OF3 residue"):
-        featurize_ligand_stereochemistry_guidance(
+        featurize_ligand_chemical_steering(
             query, structure.atom_array, [malformed], _DEFAULT_SETTINGS
         )
 
@@ -1078,7 +1082,7 @@ def test_featurization_rejects_missing_reference_molecule():
     structure = structure_with_ref_mols_from_query(query)
 
     with pytest.raises(ValueError, match=r"zip\(\) argument"):
-        featurize_ligand_stereochemistry_guidance(
+        featurize_ligand_chemical_steering(
             query, structure.atom_array, [], _DEFAULT_SETTINGS
         )
 
@@ -1118,56 +1122,52 @@ def test_required_batch_scalar_accepts_python_values_and_rejects_vectors():
 
 
 def test_guidance_enabled_handles_absent_python_and_invalid_tensor_values():
-    assert not ligand_stereochemistry_guidance_enabled({})
-    assert ligand_stereochemistry_guidance_enabled(
-        {"ligand_stereochemistry_guidance_enabled": True}
-    )
+    assert not ligand_chemical_steering_enabled({})
+    assert ligand_chemical_steering_enabled({"ligand_chemical_steering_enabled": True})
 
     with pytest.raises(ValueError, match="must be scalar"):
-        ligand_stereochemistry_guidance_enabled(
-            {"ligand_stereochemistry_guidance_enabled": torch.tensor([True, False])}
+        ligand_chemical_steering_enabled(
+            {"ligand_chemical_steering_enabled": torch.tensor([True, False])}
         )
 
 
 def test_prepare_guidance_accepts_complete_features_and_disabled_batches():
-    assert prepare_ligand_stereochemistry_guidance({}, torch.ones(1, 2)) is None
+    assert prepare_ligand_chemical_steering({}, torch.ones(1, 2)) is None
     batch = _empty_guidance_batch()
     batch.update(_distance_features())
-    assert prepare_ligand_stereochemistry_guidance(batch, torch.ones(1, 2)) is not None
+    assert prepare_ligand_chemical_steering(batch, torch.ones(1, 2)) is not None
 
 
 def test_prepare_guidance_rejects_multiple_queries():
     with pytest.raises(ValueError, match="one query per model batch"):
-        prepare_ligand_stereochemistry_guidance(
-            _empty_guidance_batch(), torch.ones(2, 2)
-        )
+        prepare_ligand_chemical_steering(_empty_guidance_batch(), torch.ones(2, 2))
 
 
 @pytest.mark.parametrize(
     ("feature_name", "value", "match"),
     [
         (
-            "ligand_stereochemistry_start_fraction",
+            "ligand_chemical_steering_start_fraction",
             torch.tensor([-0.1]),
             "between 0 and 1",
         ),
         (
-            "ligand_stereochemistry_start_fraction",
+            "ligand_chemical_steering_start_fraction",
             torch.tensor([1.1]),
             "between 0 and 1",
         ),
         (
-            "ligand_stereochemistry_num_gd_steps",
+            "ligand_chemical_steering_num_gd_steps",
             torch.tensor([0]),
             "at least 1",
         ),
         (
-            "ligand_stereochemistry_vdw_guidance_interval",
+            "ligand_chemical_steering_vdw_guidance_interval",
             torch.tensor([0]),
             "at least 1",
         ),
         (
-            "ligand_stereochemistry_distance_weight",
+            "ligand_chemical_steering_distance_weight",
             torch.tensor([-0.1]),
             "finite non-negative",
         ),
@@ -1178,48 +1178,48 @@ def test_prepare_guidance_rejects_invalid_settings(feature_name, value, match):
     batch[feature_name] = value
 
     with pytest.raises(ValueError, match=match):
-        prepare_ligand_stereochemistry_guidance(batch, torch.ones(1, 2))
+        prepare_ligand_chemical_steering(batch, torch.ones(1, 2))
 
 
 def test_prepare_guidance_requires_every_emitted_feature():
     batch = _empty_guidance_batch()
-    del batch["ligand_stereochemistry_distance_upper"]
+    del batch["ligand_chemical_steering_distance_upper"]
 
-    with pytest.raises(ValueError, match="ligand_stereochemistry_distance_upper"):
-        prepare_ligand_stereochemistry_guidance(batch, torch.ones(1, 2))
+    with pytest.raises(ValueError, match="ligand_chemical_steering_distance_upper"):
+        prepare_ligand_chemical_steering(batch, torch.ones(1, 2))
 
 
 def test_prepare_guidance_rejects_non_vector_constraints():
     batch = _empty_guidance_batch()
-    batch["ligand_stereochemistry_distance_lower"] = torch.empty((2, 0))
+    batch["ligand_chemical_steering_distance_lower"] = torch.empty((2, 0))
 
     with pytest.raises(ValueError, match="1D constraint tensor"):
-        prepare_ligand_stereochemistry_guidance(batch, torch.ones(1, 2))
+        prepare_ligand_chemical_steering(batch, torch.ones(1, 2))
 
 
 @pytest.mark.parametrize("bad_index", [-1, 2])
 def test_prepare_guidance_rejects_out_of_range_indices(bad_index):
     batch = _empty_guidance_batch()
-    batch["ligand_stereochemistry_distance_index"] = torch.tensor([[0], [bad_index]])
+    batch["ligand_chemical_steering_distance_index"] = torch.tensor([[0], [bad_index]])
     for feature_name in (
-        "ligand_stereochemistry_distance_lower",
-        "ligand_stereochemistry_distance_upper",
+        "ligand_chemical_steering_distance_lower",
+        "ligand_chemical_steering_distance_upper",
     ):
         batch[feature_name] = torch.tensor([0])
 
     with pytest.raises(ValueError, match="out-of-range atom index"):
-        prepare_ligand_stereochemistry_guidance(batch, torch.ones(1, 2))
+        prepare_ligand_chemical_steering(batch, torch.ones(1, 2))
 
 
 def test_prepare_guidance_rejects_constraint_vector_length_mismatch():
     batch = _empty_guidance_batch()
     batch.update(_distance_features())
-    batch["ligand_stereochemistry_distance_upper"] = torch.tensor([1.0, 2.0])
+    batch["ligand_chemical_steering_distance_upper"] = torch.tensor([1.0, 2.0])
 
     with pytest.raises(
-        ValueError, match="one value per ligand_stereochemistry_distance_index"
+        ValueError, match="one value per ligand_chemical_steering_distance_index"
     ):
-        prepare_ligand_stereochemistry_guidance(batch, torch.ones(1, 2))
+        prepare_ligand_chemical_steering(batch, torch.ones(1, 2))
 
 
 def test_tensorized_distance_bounds_match_pair_cutoff_rules():
@@ -1235,15 +1235,15 @@ def test_tensorized_distance_bounds_match_pair_cutoff_rules():
     features = featurization._tensorize_constraints(constraints, _DEFAULT_SETTINGS)
 
     torch.testing.assert_close(
-        features["ligand_stereochemistry_distance_index"],
+        features["ligand_chemical_steering_distance_index"],
         torch.tensor([[0, 0, 0, 0], [1, 2, 3, 4]]),
     )
     torch.testing.assert_close(
-        features["ligand_stereochemistry_distance_lower"],
+        features["ligand_chemical_steering_distance_lower"],
         torch.tensor([0.875, 2.0, 0.875, 2.0]),
     )
     torch.testing.assert_close(
-        features["ligand_stereochemistry_distance_upper"],
+        features["ligand_chemical_steering_distance_upper"],
         torch.tensor([2.0, 4.5, 2.0, float("inf")]),
     )
 
@@ -1264,17 +1264,17 @@ def test_stereo_bond_gradient_matches_autograd(is_e):
     batch = _empty_guidance_batch()
     batch.update(
         {
-            "ligand_stereochemistry_stereo_dihedral_index": torch.tensor(
+            "ligand_chemical_steering_stereo_dihedral_index": torch.tensor(
                 [[0], [1], [2], [3]]
             ),
-            "ligand_stereochemistry_stereo_dihedral_lower": torch.tensor(
+            "ligand_chemical_steering_stereo_dihedral_lower": torch.tensor(
                 [
                     torch.pi - _DEFAULT_SETTINGS.stereo_bond_buffer
                     if is_e
                     else float("-inf")
                 ]
             ),
-            "ligand_stereochemistry_stereo_dihedral_upper": torch.tensor(
+            "ligand_chemical_steering_stereo_dihedral_upper": torch.tensor(
                 [float("inf") if is_e else _DEFAULT_SETTINGS.stereo_bond_buffer]
             ),
         }
@@ -1282,10 +1282,10 @@ def test_stereo_bond_gradient_matches_autograd(is_e):
     guidance = _prepare_guidance(batch, num_atoms=4)
     coords_with_grad = coords.clone().requires_grad_(True)
 
-    energy = _reference_ligand_stereochemistry_energy(coords_with_grad, guidance)
+    energy = _reference_ligand_chemical_steering_energy(coords_with_grad, guidance)
     assert energy > 0
     (autograd_gradient,) = torch.autograd.grad(energy, coords_with_grad)
-    analytic_gradient = ligand_stereochemistry_gradient(coords, guidance)
+    analytic_gradient = ligand_chemical_steering_gradient(coords, guidance)
 
     torch.testing.assert_close(
         analytic_gradient, autograd_gradient, atol=1e-6, rtol=1e-6
@@ -1313,13 +1313,13 @@ def test_planar_bond_gradient_matches_autograd():
     batch = _empty_guidance_batch()
     batch.update(
         {
-            "ligand_stereochemistry_planar_dihedral_index": torch.tensor(
+            "ligand_chemical_steering_planar_dihedral_index": torch.tensor(
                 [[1, 4], [2, 5], [3, 0], [0, 3]]
             ),
-            "ligand_stereochemistry_planar_dihedral_lower": torch.full(
+            "ligand_chemical_steering_planar_dihedral_lower": torch.full(
                 (2,), float("-inf")
             ),
-            "ligand_stereochemistry_planar_dihedral_upper": torch.full(
+            "ligand_chemical_steering_planar_dihedral_upper": torch.full(
                 (2,), _DEFAULT_SETTINGS.planar_bond_buffer
             ),
         }
@@ -1327,10 +1327,10 @@ def test_planar_bond_gradient_matches_autograd():
     guidance = _prepare_guidance(batch, num_atoms=6)
     coords_with_grad = coords.clone().requires_grad_(True)
 
-    energy = _reference_ligand_stereochemistry_energy(coords_with_grad, guidance)
+    energy = _reference_ligand_chemical_steering_energy(coords_with_grad, guidance)
     assert energy > 0
     (autograd_gradient,) = torch.autograd.grad(energy, coords_with_grad)
-    analytic_gradient = ligand_stereochemistry_gradient(coords, guidance)
+    analytic_gradient = ligand_chemical_steering_gradient(coords, guidance)
 
     torch.testing.assert_close(
         analytic_gradient, autograd_gradient, atol=1e-6, rtol=1e-6
@@ -1339,11 +1339,11 @@ def test_planar_bond_gradient_matches_autograd():
 
 def test_apply_guidance_with_no_usable_constraints_is_a_noop():
     coords = torch.randn(1, 1, 2, 3, dtype=torch.float16)
-    guidance = prepare_ligand_stereochemistry_guidance(
+    guidance = prepare_ligand_chemical_steering(
         _empty_guidance_batch(), torch.ones(1, 2)
     )
 
-    guided = apply_ligand_stereochemistry_guidance(coords, guidance, step_fraction=1.0)
+    guided = apply_ligand_chemical_steering(coords, guidance, step_fraction=1.0)
 
     assert guidance is None
     torch.testing.assert_close(guided, coords)
@@ -1360,7 +1360,7 @@ def test_sample_diffusion_reports_the_final_step_as_fraction_one(monkeypatch):
 
     monkeypatch.setattr(
         diffusion_module_lib,
-        "apply_ligand_stereochemistry_guidance",
+        "apply_ligand_chemical_steering",
         record_fraction,
     )
     denoiser = _IdentityDenoiser()
@@ -1440,7 +1440,7 @@ def test_sample_diffusion_validates_guidance_before_denoising():
             "token_mask": torch.ones(1, 1),
         }
     )
-    del batch["ligand_stereochemistry_signed_dihedral_index"]
+    del batch["ligand_chemical_steering_signed_dihedral_index"]
 
     with pytest.raises(ValueError, match="signed_dihedral_index"):
         sampler(

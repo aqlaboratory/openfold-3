@@ -36,8 +36,8 @@ from openfold3.core.data.framework.single_datasets.dataset_utils import (
 from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_reference_conformers_of3,
 )
-from openfold3.core.data.pipelines.featurization.ligand_stereochemistry import (
-    featurize_ligand_stereochemistry_guidance,
+from openfold3.core.data.pipelines.featurization.ligand_chemical_steering import (
+    featurize_ligand_chemical_steering,
 )
 from openfold3.core.data.pipelines.featurization.msa import (
     MsaFeaturizerOF3,
@@ -114,9 +114,7 @@ class InferenceDataset(Dataset):
         self.template_preprocessor_settings = (
             dataset_config.template_preprocessor_settings
         )
-        self.ligand_stereochemistry_guidance_settings = (
-            dataset_config.ligand_stereochemistry_guidance
-        )
+        self.ligand_chemical_steering_settings = dataset_config.ligand_chemical_steering
         if self.template_preprocessor_settings.preparse_structures:
             self.template_preprocessor_settings.structure_file_format = "npz"
 
@@ -332,13 +330,13 @@ class InferenceDataset(Dataset):
         )
         features.update(structure_features)
 
-        stereochemistry_features = featurize_ligand_stereochemistry_guidance(
+        chemical_steering_features = featurize_ligand_chemical_steering(
             query=query,
             atom_array=preprocessed_atom_array,
             processed_reference_molecules=processed_reference_molecules,
-            settings=self.ligand_stereochemistry_guidance_settings,
+            settings=self.ligand_chemical_steering_settings,
         )
-        features.update(stereochemistry_features)
+        features.update(chemical_steering_features)
 
         # MSA features
         msa_features = self.create_msa_features(

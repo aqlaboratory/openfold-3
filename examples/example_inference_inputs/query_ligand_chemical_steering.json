@@ -13,7 +13,7 @@
           "ccd_codes": ["DAS"]
         }
       ],
-      "ligand_stereochemistry_guidance": true
+      "ligand_chemical_steering": true
     }
   }
 }
