@@ -208,3 +208,29 @@ ColabFold server before running prediction.
 - **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
 
 ---
+
+## 2026-08-26
+
+**Cause:** Same missing checkpoint error as 2026-08-22 through 2026-08-25 — `openbind-2025-06-30-174k` not found in `/root/.openfold3` on the AMD/ROCm runner. Sixth consecutive day with this identical failure. Two scheduled runs affected. Not an AWS GPU outage.
+
+### Run 1
+- **Run ID:** [32927057774](https://github.com/aqlaboratory/openfold-3/actions/runs/32927057774)
+- **Time:** 2026-08-26T03:36:05Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 98051979359)
+- **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU)
+- **Commit:** `f9649cce7de32382bc1100e8e9e1de2301adf2c2`
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[no_msa-no_templates-protein_only]`
+- **Error:** `pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceExperimentConfig — Value error, Default checkpoint openbind-2025-06-30-174k not found in /root/.openfold3, cowardly refusing to perform inference. Please run setup_openfold to download the current default parameters or specify a valid checkpoint path with --inference-ckpt-path`
+- **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
+
+### Run 2
+- **Run ID:** [32930290344](https://github.com/aqlaboratory/openfold-3/actions/runs/32930290344)
+- **Time:** 2026-08-26T04:27:26Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 98061091635)
+- **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU)
+- **Commit:** `f9649cce7de32382bc1100e8e9e1de2301adf2c2`
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[no_msa-no_templates-protein_only]`
+- **Error:** `pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceExperimentConfig — Value error, Default checkpoint openbind-2025-06-30-174k not found in /root/.openfold3, cowardly refusing to perform inference. Please run setup_openfold to download the current default parameters or specify a valid checkpoint path with --inference-ckpt-path`
+- **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
+
+---
