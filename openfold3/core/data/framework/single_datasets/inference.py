@@ -19,6 +19,7 @@ Inference class template for first inference pipeline prototype.
 import itertools
 import logging
 import traceback
+from typing import Any
 
 import pandas as pd
 import torch
@@ -309,7 +310,7 @@ class InferenceDataset(Dataset):
     ) -> dict:
         """Creates all features for a single datapoint."""
 
-        features = {}
+        features: dict[str, Any] = {}
 
         # Create initial AtomArray and ReferenceMolecules from query entry
         structure_objs = self.get_structure_with_ref_mols(

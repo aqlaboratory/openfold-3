@@ -166,7 +166,9 @@ def _compute_vdw_overlap_constraints(
         return_inverse=True,
         return_counts=True,
     )
-    ligand_atom_mask = atom_array.molecule_type_id == MoleculeType.LIGAND
+    ligand_atom_mask = (
+        atom_array.get_annotation("molecule_type_id") == MoleculeType.LIGAND
+    )
     ligand_chain_mask = np.asarray(
         [
             np.any(ligand_atom_mask[atom_chain_indices == i])
