@@ -58,6 +58,7 @@ from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
     ExperimentConfig,
+    InferenceExperimentConfig,
     TrainingExperimentConfig,
     generate_seeds,
 )
@@ -619,9 +620,11 @@ def skip_random_init():
 class InferenceExperimentRunner(ExperimentRunner):
     """Inference experiment builder."""
 
+    experiment_config: InferenceExperimentConfig
+
     def __init__(
         self,
-        experiment_config,
+        experiment_config: InferenceExperimentConfig,
         num_diffusion_samples: int | None = None,
         num_model_seeds: int | None = None,
         use_msa_server: bool | None = None,
