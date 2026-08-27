@@ -234,3 +234,20 @@ ColabFold server before running prediction.
 - **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
 
 ---
+
+## 2026-08-27
+
+**Cause:** `curl` parameter download failure on the AMD runner — the output destination `/home/jan/.openfold3/` is a directory rather than a file. Tests never ran. Not an AWS GPU outage. The error indicates a CI runner state issue (the path exists as a directory, blocking the download). This is a new failure mode compared to the preceding checkpoint-not-found errors (Aug 22–26).
+
+- **Run ID:** [33045827431](https://github.com/aqlaboratory/openfold-3/actions/runs/33045827431)
+- **Run #:** 220
+- **Time:** 2026-08-27T06:25:49Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 98429469520)
+- **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU)
+- **Commit:** `042c74f340c18cff6d35ff9dc00c444a335aa5be`
+- **Failed Step:** `Download OpenFold parameters` (step 8)
+- **Error:** `Warning: Failed to open the file /home/jan/.openfold3/: Is a directory` / `curl: (23) Failure writing output to destination`
+- **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
+- **Assessment:** The curl output target path already exists as a directory on the AMD self-hosted runner. This prevents parameter download and causes the integration test step to be skipped entirely. Likely requires manual cleanup of `/home/jan/.openfold3/` on the `omsf-amd-aupcloud` runner.
+
+---
