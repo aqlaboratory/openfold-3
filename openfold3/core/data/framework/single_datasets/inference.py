@@ -171,7 +171,7 @@ class InferenceDataset(Dataset):
         given in the Query object. If a chain specifies multiple chain IDs, repeated
         identical chains with those IDs will be constructed and given the same entity
         ID. Residue names will be inferred from the sequence or CCD codes. SMILES
-        ligands use an explicit ``residue_name`` when provided and otherwise retain
+        ligands use an explicit ``ligand_name`` when provided and otherwise retain
         their deterministic ``LIG0``, ``LIG1``, ... defaults.
 
         Additionally, this method adds tokenization information (token IDs) and token

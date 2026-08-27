@@ -189,18 +189,18 @@ def test_smiles_ligand_cif_auth_seq_id_is_numeric(tmp_path):
     assert set(atom_site["auth_seq_id"].as_array()[ligand_mask]) == {"1"}
 
 
-def _smiles_ligand(chain_id, smiles, residue_name=None, **extra):
+def _smiles_ligand(chain_id, smiles, ligand_name=None, **extra):
     chain = {
         "molecule_type": "ligand",
         "chain_ids": chain_id,
         "smiles": smiles,
     }
-    if residue_name is not None:
-        chain["residue_name"] = residue_name
+    if ligand_name is not None:
+        chain["ligand_name"] = ligand_name
     return chain | extra
 
 
-def test_smiles_residue_names_override_defaults_and_write_outputs(tmp_path):
+def test_smiles_ligand_names_override_defaults_and_write_outputs(tmp_path):
     query = Query.model_validate(
         {
             "chains": [
@@ -234,17 +234,17 @@ def test_smiles_residue_names_override_defaults_and_write_outputs(tmp_path):
     ("overrides", "match"),
     [
         pytest.param(
-            {"residue_name": "DR-G"},
+            {"ligand_name": "DR-G"},
             "ASCII letters and digits",
             id="invalid-character",
         ),
         pytest.param(
-            {"residue_name": "ß"},
+            {"ligand_name": "ß"},
             "ASCII letters and digits",
             id="unicode-case-expansion",
         ),
         pytest.param(
-            {"residue_name": "ALA"},
+            {"ligand_name": "ALA"},
             "standard residue name",
             id="standard-residue",
         ),
@@ -252,19 +252,19 @@ def test_smiles_residue_names_override_defaults_and_write_outputs(tmp_path):
             {
                 "molecule_type": "protein",
                 "sequence": "A",
-                "residue_name": "DRG",
+                "ligand_name": "DRG",
             },
             "only be specified for a ligand",
             id="polymer",
         ),
         pytest.param(
-            {"ccd_codes": "ATP", "residue_name": "DRG"},
+            {"ccd_codes": "ATP", "ligand_name": "DRG"},
             "only be specified for a ligand",
             id="smiles-and-ccd",
         ),
     ],
 )
-def test_smiles_residue_name_validation(overrides, match):
+def test_smiles_ligand_name_validation(overrides, match):
     chain = _smiles_ligand("X", "CCO") | overrides
     with pytest.raises(ValueError, match=match):
         Query.model_validate({"chains": [chain]})
@@ -310,7 +310,7 @@ def test_smiles_residue_name_validation(overrides, match):
         ),
     ],
 )
-def test_smiles_residue_name_conflicts(chains, match):
+def test_smiles_ligand_name_conflicts(chains, match):
     query = Query.model_validate({"chains": chains})
     with pytest.raises(ValueError, match=match):
         structure_with_ref_mols_from_query(query)

@@ -86,7 +86,7 @@ class Chain(BaseModel):
         Annotated[dict[int, str], BeforeValidator(_cast_keys_to_int)] | None
     ) = None
     smiles: str | None = None
-    residue_name: str | None = None
+    ligand_name: str | None = None
     ccd_codes: Annotated[list[str], BeforeValidator(_ensure_list)] | None = None
     paired_msa_file_paths: (
         Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)] | None
@@ -111,37 +111,35 @@ class Chain(BaseModel):
     def serialize_enum_name(self, v: MoleculeType, _info):
         return v.name
 
-    @field_validator("residue_name")
+    @field_validator("ligand_name")
     @classmethod
-    def normalize_residue_name(cls, value: str | None) -> str | None:
-        """Normalize and validate a SMILES ligand residue name."""
+    def normalize_ligand_name(cls, value: str | None) -> str | None:
+        """Normalize and validate a SMILES ligand name."""
         if value is None:
             return None
 
         value = value.strip()
         if not value.isascii() or not value.isalnum():
-            raise ValueError(
-                "'residue_name' must contain only ASCII letters and digits"
-            )
+            raise ValueError("'ligand_name' must contain only ASCII letters and digits")
 
         value = value.upper()
         if value in STANDARD_RESIDUES_WITH_GAP_3:
             raise ValueError(
-                f"'residue_name' cannot use the standard residue name {value!r}"
+                f"'ligand_name' cannot use the standard residue name {value!r}"
             )
 
         return value
 
     @model_validator(mode="after")
-    def validate_residue_name_input(self) -> "Chain":
-        """Restrict residue names to SMILES-only ligand chains."""
-        if self.residue_name is not None and not (
+    def validate_ligand_name_input(self) -> "Chain":
+        """Restrict ligand names to SMILES-only ligand chains."""
+        if self.ligand_name is not None and not (
             self.molecule_type == MoleculeType.LIGAND
             and self.smiles is not None
             and self.ccd_codes is None
         ):
             raise ValueError(
-                "'residue_name' can only be specified for a ligand using 'smiles' "
+                "'ligand_name' can only be specified for a ligand using 'smiles' "
                 "without 'ccd_codes'"
             )
 

@@ -200,7 +200,7 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     "molecule_type": "ligand",
     "chain_ids": "Z",
     "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
-    "residue_name": "DRG"
+    "ligand_name": "DRG"
   }
   ```
 
@@ -223,7 +223,7 @@ All chains must define a unique ```chain_ids``` field and appropriate sequence o
     - Canonical SMILES string of the ligand.
     - Mutually exclusive with `ccd_codes`.
 
-  - `residue_name` *(str, optional, SMILES ligands only)*
+  - `ligand_name` *(str, optional, SMILES ligands only)*
     - Component identifier to use instead of the default `LIG0`, `LIG1`, ... name.
     - Whitespace is stripped and letters are uppercased. The value must be ASCII
       alphanumeric and cannot be a standard polymer residue name or `GAP`.

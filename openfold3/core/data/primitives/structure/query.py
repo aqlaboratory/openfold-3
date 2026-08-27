@@ -527,13 +527,13 @@ def _build_smiles_comp_id_mapping(query: Query) -> dict[str, str]:
 
     explicit_names: dict[str, str] = {}
     for chain in query.chains:
-        if chain.smiles is None or chain.residue_name is None:
+        if chain.smiles is None or chain.ligand_name is None:
             continue
 
         previous_name = explicit_names.get(chain.smiles)
-        if previous_name is not None and previous_name != chain.residue_name:
-            raise ValueError("The same SMILES string cannot use multiple residue names")
-        explicit_names[chain.smiles] = chain.residue_name
+        if previous_name is not None and previous_name != chain.ligand_name:
+            raise ValueError("The same SMILES string cannot use multiple ligand names")
+        explicit_names[chain.smiles] = chain.ligand_name
 
     reserved_component_ids = {
         component_id.upper()
@@ -546,14 +546,14 @@ def _build_smiles_comp_id_mapping(query: Query) -> dict[str, str]:
     collisions = set(explicit_names.values()) & reserved_component_ids
     if collisions:
         raise ValueError(
-            "Explicit SMILES residue names conflict with CCD or non-canonical "
+            "Explicit SMILES ligand names conflict with CCD or non-canonical "
             f"residue names: {sorted(collisions)}"
         )
 
     smiles_to_comp_id.update(explicit_names)
     component_ids = list(smiles_to_comp_id.values())
     if len(component_ids) != len(set(component_ids)):
-        raise ValueError("Distinct SMILES strings must use distinct residue names")
+        raise ValueError("Distinct SMILES strings must use distinct ligand names")
 
     return smiles_to_comp_id
 
@@ -569,7 +569,7 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
     constructed and given the same entity ID.
 
     Residue names will be inferred from the sequence or CCD codes. SMILES ligands use
-    an explicit ``residue_name`` when provided and otherwise retain their deterministic
+    an explicit ``ligand_name`` when provided and otherwise retain their deterministic
     ``LIG0``, ``LIG1``, ... defaults.
 
     Args:
