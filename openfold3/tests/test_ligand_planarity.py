@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 
 from openfold3.core.data.framework.single_datasets.inference import (
     InferenceDataset,
@@ -7,6 +8,8 @@ from openfold3.core.data.primitives.structure.query import (
     structure_with_ref_mols_from_query,
 )
 from openfold3.core.data.primitives.structure.tokenization import get_token_count
+from openfold3.core.model.structure import diffusion_module
+from openfold3.core.model.structure.diffusion_module import SampleDiffusion
 from openfold3.core.model.structure.ligand_planarity import (
     _absolute_dihedrals_and_gradients,
     _planarity_violations,
@@ -81,3 +84,65 @@ def test_issue_136_implicit_hydrogen_alkene_is_fully_restrained():
     assert before > 0
     assert after < 1e-6
     assert torch.equal(guided[0, 0, :ligand_start], coords[:ligand_start])
+
+
+class _IdentityDiffusion(nn.Module):
+    def forward(self, *, xl_noisy: torch.Tensor, **_) -> torch.Tensor:
+        return xl_noisy
+
+
+def test_sampler_applies_planarity_only_late_and_absent_is_noop(monkeypatch):
+    sampler = SampleDiffusion(
+        gamma_0=0.0,
+        gamma_min=0.0,
+        noise_scale=0.0,
+        step_scale=1.5,
+        diffusion_module=_IdentityDiffusion(),
+    )
+    calls = []
+
+    def record_call(xl_denoised, restraints):
+        calls.append(restraints)
+        return apply_ligand_planarity_restraints(xl_denoised, restraints)
+
+    monkeypatch.setattr(
+        diffusion_module, "apply_ligand_planarity_restraints", record_call
+    )
+    batch = {
+        "token_mask": torch.ones((1, 1)),
+        "atom_mask": torch.ones((1, 4)),
+    }
+    sample_args = {
+        "si_input": torch.empty(0),
+        "si_trunk": torch.empty(0),
+        "zij_trunk": torch.empty(0),
+        "noise_schedule": torch.tensor([2.0, 1.0, 0.0]),
+        "no_rollout_samples": 1,
+        "use_conditioning": True,
+    }
+    torch.manual_seed(7)
+    absent = sampler(
+        batch={
+            **batch,
+            "ligand_planarity_index": torch.empty((1, 4, 0), dtype=torch.long),
+            "ligand_planarity_trans": torch.empty((1, 0), dtype=torch.bool),
+        },
+        **sample_args,
+    )
+    assert calls == []
+
+    torch.manual_seed(7)
+    present = sampler(
+        batch={
+            **batch,
+            "ligand_planarity_index": torch.tensor([[[0], [1], [2], [3]]]),
+            "ligand_planarity_trans": torch.tensor([[True]]),
+        },
+        **sample_args,
+    )
+
+    assert len(calls) == 2
+    assert calls[0].atom_indices.tolist() == [[0, 1, 2, 3]]
+    assert calls[0].trans_orientations.tolist() == [True]
+    assert _restraint_loss(absent, calls[0]) > 0
+    assert _restraint_loss(present, calls[0]) < 1e-6
