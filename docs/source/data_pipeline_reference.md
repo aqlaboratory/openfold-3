@@ -36,6 +36,27 @@ gunzip components.cif.gz
 python scripts/data_preprocessing/preprocess_ccd_biotite.py components.cif components.bcif
 ```
 
+For small custom datasets, parsing and converting the complete wwPDB CCD can dominate
+preprocessing time and memory. The same script can stream only the standard protein,
+RNA, and DNA residues plus explicitly requested custom components into a minimal CIF,
+then build the matching BinaryCIF from that reduced file:
+
+```bash
+python scripts/data_preprocessing/preprocess_ccd_biotite.py \
+    augmented_components.cif minimal_components.bcif \
+    --minimal-cif-output minimal_components.cif \
+    --component-id LIG \
+    --component-id ABC
+```
+
+Additional component IDs can be supplied with `--component-ids-file` using one ID per
+line. Blank lines are ignored and comments are not supported. Pass
+`minimal_components.cif` to `preprocess_pdb_of3.py` as `--ccd-path` and
+`minimal_components.bcif` as `--biotite-ccd-path`. The source CCD is scanned line by
+line, so it is not loaded into memory before the requested blocks are extracted. The
+command fails without replacing an existing output if any requested component is
+missing.
+
 ### 1.3 Structure Preprocessing
 The core structure preprocessing converts raw PDB mmCIF files into an efficient `.npz` format storing Biotite `AtomArray`s, as well as a JSON index of all PDB contents. It performs the following steps:
 
