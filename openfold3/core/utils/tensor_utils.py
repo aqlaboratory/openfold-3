@@ -78,17 +78,33 @@ def binned_one_hot(x, v_bins):
     return nn.functional.one_hot(am, num_classes=len(v_bins)).float()
 
 
-def batched_gather(data, inds, dim=0, no_batch_dims=0):
-    ranges = []
-    for i, s in enumerate(data.shape[:no_batch_dims]):
-        r = torch.arange(s)
-        r = r.view(*(*((1,) * i), -1, *((1,) * (len(inds.shape) - i - 1))))
-        ranges.append(r)
+def batched_gather(
+    data: torch.Tensor, inds: torch.Tensor
+) -> torch.Tensor:
+    """Gather data according to indices specified by inds along the dim = len(inds.shape) - 1
 
-    remaining_dims = [slice(None) for _ in range(len(data.shape) - no_batch_dims)]
-    remaining_dims[dim - no_batch_dims if dim >= 0 else dim] = inds
-    ranges.extend(remaining_dims)
-    return data[ranges]
+    Args:
+        data (torch.Tensor): the input data
+            [..., K, ...]
+        inds (torch.Tensor): the indices for gathering data
+            [..., N]
+
+    Returns:
+        torch.Tensor: gathered data, have the same number of dimensions as data,
+            only the size of dimension len(inds.shape) - 1 is changed to N
+            [..., N, ...]
+    """
+    assert len(inds.shape) <= len(data.shape), "inds must have less or equal dimensions than data"
+    assert inds.shape[:len(inds.shape)-1] == data.shape[:len(inds.shape)-1], "Batch dimensions must match between data and inds"
+   
+    if len(inds.shape) == len(data.shape):
+        return torch.gather(data, dim=-1, index=inds)
+
+    append_shape = (1,) * (len(data.shape) - len(inds.shape))
+    append_shape_broadcasted = data.shape[len(inds.shape) - len(data.shape):]
+    inds_broadcasted = inds.reshape(inds.shape + append_shape)
+    inds_broadcasted = inds_broadcasted.expand(inds.shape + append_shape_broadcasted)
+    return torch.gather(data, dim=len(inds.shape) - 1, index=inds_broadcasted)
 
 
 # With tree_map, a poor man's JAX tree_map
