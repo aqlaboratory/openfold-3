@@ -231,10 +231,10 @@ def drmsd(
 
     # Apply mask and exclude diagonal
     mask = all_atom_mask[..., None] * all_atom_mask[..., None, :]
-    mask = mask * (1.0 - torch.eye(mask.shape[-1], device=all_atom_mask.device))
+    mask.diagonal(dim1=-2, dim2=-1).zero_()
 
     # Create intra and inter chain masks
-    intra_mask = torch.where(asym_id[..., None] == asym_id[..., None, :], 1, 0).bool()
+    intra_mask = asym_id[..., None] == asym_id[..., None, :]
     inter_mask = ~intra_mask
 
     intra_drmsd = None
@@ -308,15 +308,14 @@ def lddt(
         pair within cutoff)
     """
     # create a mask
-    n_atom = pair_dist_gt_pos.shape[-2]
     dists_to_score = (pair_dist_gt_pos < cutoff) * (
         all_atom_mask[..., None]
         * all_atom_mask[..., None, :]
-        * (1.0 - torch.eye(n_atom, device=all_atom_mask.device))
     )  # [*, n_atom, n_atom]
+    dists_to_score.diagonal(dim1=-2, dim2=-1).zero_()
 
     # distinguish intra- and inter- pair indices based on asym_id
-    intra_mask = torch.where(asym_id[..., None] == asym_id[..., None, :], 1, 0).bool()
+    intra_mask = asym_id[..., None] == asym_id[..., None, :]
     inter_mask = ~intra_mask  # [*, n_atom, n_atom]
 
     # update masks with filters
@@ -1561,11 +1560,11 @@ def steric_clash(
     """
     # Create mask
     n_atom = pred_pair.shape[-2]
-    mask = (1 - torch.eye(n_atom).to(all_atom_mask.device)) * (
+    mask = (1 - torch.eye(n_atom, device=all_atom_mask.device)) * (
         all_atom_mask.unsqueeze(-1) * all_atom_mask.unsqueeze(-2)
     )
 
-    intra = torch.where(asym_id[..., None] == asym_id[..., None, :], 1, 0).bool()
+    intra = asym_id[..., None] == asym_id[..., None, :]
     inter = ~intra
 
     # Compute the clash
