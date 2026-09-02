@@ -47,6 +47,9 @@ from openfold3.core.config.config_utils import (
     FilePathOrNone,
     deep_update,
 )
+from openfold3.core.config.ligand_chemical_steering_config import (
+    LigandChemicalSteeringSettings,
+)
 from openfold3.core.config.pocket_sampling_config import PocketSamplingSettings
 from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
 from openfold3.core.data.pipelines.preprocessing.template import (
@@ -367,12 +370,15 @@ class TrainingDatasetSpec(DatasetSpec):
 
 
 class InferenceDatasetConfigKwargs(BaseModel):
-    """Class to hold msa, template, and pocket sampling kwargs for inference pipeline"""
+    """Class to hold inference dataset configuration."""
 
     ccd_file_path: FilePathOrNone = None
     msa: MSASettings = MSASettings(subsample_main=False)
     template: TemplateSettings = TemplateSettings(take_top_k=True)
     pocket_sampling: PocketSamplingSettings = PocketSamplingSettings()
+    ligand_chemical_steering: LigandChemicalSteeringSettings = (
+        LigandChemicalSteeringSettings()
+    )
 
 
 class InferenceJobConfig(BaseModel):
@@ -385,6 +391,9 @@ class InferenceJobConfig(BaseModel):
     template: TemplateSettings = TemplateSettings()
     template_preprocessor_settings: TemplatePreprocessorSettings
     pocket_sampling: PocketSamplingSettings = PocketSamplingSettings()
+    ligand_chemical_steering: LigandChemicalSteeringSettings = (
+        LigandChemicalSteeringSettings()
+    )
 
 
 class InferenceDatasetSpec(DatasetSpec):
