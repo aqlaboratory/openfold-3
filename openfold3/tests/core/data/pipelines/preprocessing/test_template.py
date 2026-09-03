@@ -170,7 +170,7 @@ _T_2021 = datetime(2021, 1, 1)
             _T_2020, None, _T_2021, None, False, id="template_before_max_passes"
         ),
         pytest.param(
-            _T_2020, None, _T_2020, None, False, id="template_equals_max_passes"
+            _T_2020, None, _T_2020, None, True, id="template_equals_max_fails"
         ),
         pytest.param(
             _T_2020,

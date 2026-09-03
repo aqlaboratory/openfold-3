@@ -170,10 +170,9 @@ class InferenceDataset(Dataset):
         molecule components in the query. The returned AtomArray follows the chain IDs
         given in the Query object. If a chain specifies multiple chain IDs, repeated
         identical chains with those IDs will be constructed and given the same entity
-        ID. Residue names will be inferred from the sequence or CCD codes. If a ligand
-        is specified through a SMILES string, it will be named as "LIG-X", where X
-        starts at 1 and is incremented for each unnamed ligand entity found in the
-        Query.
+        ID. Residue names will be inferred from the sequence or CCD codes. SMILES
+        ligands use an explicit ``ligand_name`` when provided and otherwise retain
+        their deterministic ``LIG0``, ``LIG1``, ... defaults.
 
         Additionally, this method adds tokenization information (token IDs) and token
         positions to the AtomArray, which are required by other functions in the

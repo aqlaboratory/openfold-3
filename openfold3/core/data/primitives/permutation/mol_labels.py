@@ -22,9 +22,10 @@ from typing import NamedTuple
 
 import networkx as nx
 import numpy as np
-from biotite.structure import AtomArray, BondList, chain_iter, get_chain_starts
+from biotite.structure import AtomArray, chain_iter, get_chain_starts
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import connected_components
 
-import openfold3.core.data.resources.patches as patch
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
 )
@@ -169,6 +170,55 @@ class PrecursorMolGroupID(NamedTuple):
     mol_len: int
 
 
+def connected_components_from_edges(
+    n_nodes: int, edges: np.ndarray
+) -> list[np.ndarray]:
+    """Compute connected components from an (E, 2) edge array.
+
+    Builds a sparse adjacency matrix and runs scipy's `connected_components`
+    with directed=False, which treats edges as undirected (no need to
+    pre-symmetrize). Singletons are handled natively since the matrix shape
+    is fixed at `n_nodes`.
+
+    Args:
+        n_nodes (int):
+            Total number of nodes in the graph. Any node index in `[0, n_nodes)`
+            that does not appear in `edges` is returned as its own singleton
+            component.
+        edges (np.ndarray):
+            Integer array of shape `(E, 2)` listing undirected edges as
+            `(node_a, node_b)` pairs. May be empty.
+
+    Returns:
+        list[np.ndarray]:
+            One 1-D int array per connected component. Indices within each
+            component are ascending; components are ordered by their first
+            node index.
+    """
+    if edges.size == 0:
+        return [np.array([i]) for i in range(n_nodes)]
+
+    data = np.ones(edges.shape[0], dtype=np.int8)
+    adj = csr_matrix((data, (edges[:, 0], edges[:, 1])), shape=(n_nodes, n_nodes))
+
+    _, labels = connected_components(adj, directed=False)
+
+    # Group node indices by their component label, then order components by
+    # their first node:
+    #   1. argsort(labels) groups nodes that share a label into contiguous runs.
+    #      `kind="stable"` preserves original ascending node order within each run.
+    #   2. diff(labels[order]) is non-zero exactly at the boundary between two
+    #      different labels, so flatnonzero(...) + 1 gives the split offsets.
+    #   3. np.split slices `order` at those boundaries into one array per
+    #      component, each already in ascending node-index order.
+    #   4. Final sort by first node index orders the components themselves.
+    order = np.argsort(labels, kind="stable")
+    split_points = np.flatnonzero(np.diff(labels[order])) + 1
+    components = np.split(order, split_points)
+    components.sort(key=lambda x: x[0])
+    return components
+
+
 def chain_connected_molecule_iter(
     atom_array: AtomArray,
 ) -> Generator[AtomArray, None, None]:
@@ -182,34 +232,25 @@ def chain_connected_molecule_iter(
         AtomArray:
             AtomArray slice corresponding to a unique molecule.
     """
-    # This creates a subarray that only copies the BondList but keeps pointers to the
-    # other annotations for efficiency
-    atom_array_pseudo_copy = atom_array[:]
     n_atoms = len(atom_array)
 
-    # For every chain, connect an artificial root atom to every other atom in the chain
+    # Real bonds as (E, 2) int array
+    if atom_array.bonds is not None:
+        real_edges = atom_array.bonds.as_array()[:, :2].astype(np.int64, copy=False)
+    else:
+        real_edges = np.empty((0, 2), dtype=np.int64)
+
+    # Chain-star "virtual" edges: connect each atom to its chain's first atom.
+    # This is transitively equivalent to "every chain is a single component" and
+    # avoids building/merging a biotite BondList from n_atoms fake bonds, which
+    # is the dominant cost of the previous implementation.
     chain_starts = get_chain_starts(atom_array, add_exclusive_stop=True)
-    root_atoms = chain_starts[:-1]
-    root_atom_repeated = np.repeat(root_atoms, np.diff(chain_starts))
+    chain_root_per_atom = np.repeat(chain_starts[:-1], np.diff(chain_starts))
+    chain_edges = np.column_stack((chain_root_per_atom, np.arange(n_atoms)))
 
-    # Creates root atom bond list [(0, 1), (0, 2), (1, 2), ..., (N, N+1), ...]
-    # Exclude self-bonds (i, i) that occur at each chain's first atom
-    all_indices = np.arange(n_atoms)
-    non_self = root_atom_repeated != all_indices
-    root_atom_bond_pairs = np.column_stack(
-        (root_atom_repeated[non_self], all_indices[non_self])
-    )
+    edges = np.concatenate((real_edges, chain_edges))
 
-    # Add the artificial bonds to the pseudo-copy, which will keep the original bond
-    # list unaffected
-    chain_connected_bond_list = BondList(n_atoms, bonds=root_atom_bond_pairs)
-    atom_array_pseudo_copy.bonds = atom_array_pseudo_copy.bonds.merge(
-        chain_connected_bond_list
-    )
-
-    # Yield molecule slices from the original AtomArray which won't have the
-    # pseudo-bonds added
-    for molecule_indices in patch.get_molecule_indices(atom_array_pseudo_copy):
+    for molecule_indices in connected_components_from_edges(n_atoms, edges):
         yield atom_array[molecule_indices]
 
 

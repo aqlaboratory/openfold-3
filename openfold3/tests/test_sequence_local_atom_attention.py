@@ -234,7 +234,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
-            use_ada_layer_norm=True,
             inf=inf,
         )
 
@@ -289,7 +288,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
-            use_ada_layer_norm=True,
             inf=inf,
         )
 
@@ -349,7 +347,6 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
-            use_ada_layer_norm=True,
             inf=inf,
         )
 
@@ -397,7 +394,6 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
-            use_ada_layer_norm=True,
             inf=inf,
         )
 
