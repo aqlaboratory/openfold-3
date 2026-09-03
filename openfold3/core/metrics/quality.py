@@ -309,8 +309,7 @@ def lddt(
     """
     # create a mask
     dists_to_score = (pair_dist_gt_pos < cutoff) * (
-        all_atom_mask[..., None]
-        * all_atom_mask[..., None, :]
+        all_atom_mask[..., None] * all_atom_mask[..., None, :]
     )  # [*, n_atom, n_atom]
     dists_to_score.diagonal(dim1=-2, dim2=-1).zero_()
 
