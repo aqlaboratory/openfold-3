@@ -251,3 +251,35 @@ ColabFold server before running prediction.
 - **Assessment:** The curl output target path already exists as a directory on the AMD self-hosted runner. This prevents parameter download and causes the integration test step to be skipped entirely. Likely requires manual cleanup of `/home/jan/.openfold3/` on the `omsf-amd-aupcloud` runner.
 
 ---
+
+## 2026-09-03
+
+**Cause:** Same checkpoint validation error (`openbind-2025-06-30-174k` not found in `/root/.openfold3`) — now appearing on CUDA runners as well as AMD. Failure on PR branch `claude/pr-393-test-import-error-zac4a1` (PR #394, workflow_dispatch). The scheduled main branch run #236 (2026-09-03T05:22:45Z) **passed**. The AMD job passed in this PR run; three CUDA test jobs failed at the "Run integration test" step. AWS instance provisioning succeeded for all jobs (not an AWS capacity issue).
+
+- **Run ID:** [33714692716](https://github.com/aqlaboratory/openfold-3/actions/runs/33714692716)
+- **Run #:** 234
+- **Branch:** `claude/pr-393-test-import-error-zac4a1` (PR #394)
+- **Event:** workflow_dispatch
+- **Time:** 2026-09-03T04:20:40Z – 04:59:25Z
+- **Commit:** `8cba31c782c9e5a07271184bc2618f4e8883c825` (Source deepspeed from conda-forge and regenerate the production lock)
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[no_msa-no_templates-protein_only]`
+- **Error:** `pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceExperimentConfig — Value error, Default checkpoint openbind-2025-06-30-174k not found in /root/.openfold3, cowardly refusing to perform inference. Please run setup_openfold to download the current default parameters or specify a valid checkpoint path with --inference-ckpt-path`
+
+### Failed Jobs
+
+| Job | Job ID | Runner |
+|-----|--------|--------|
+| `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` | 100521573034 | AWS EC2 (runner-63hpalu7) |
+| `test-conda (12.1.1-cudnn8-devel-ubuntu22.04, yaml) / test-openfold-docker` | 100521607984 | AWS EC2 (runner-xxjq2fkq) |
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | 100521682476 | AWS EC2 (runner-jmj2u817) |
+
+### Passing Jobs
+
+- `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` — **passed** on `omsf-amd-aupcloud`
+- All `start-aws-runner` and `stop-aws-runner` jobs — **passed**
+
+### Assessment
+
+Not an AWS GPU outage. The parameter cache was restored (step 7 succeeded) but did not contain the `openbind-2025-06-30-174k` checkpoint name required by the PR's code. This PR changes the conda environment (deepspeed from PyPI to conda-forge, pytorch 2.5.1→2.10.0), which may have caused a cache miss or served a stale cache lacking the new checkpoint. The same checkpoint name mismatch drove the AMD runner failures from 2026-08-22 through 2026-08-27. The scheduled main run passed on the same day, suggesting the issue is specific to this PR's cache state or environment.
+
+---
