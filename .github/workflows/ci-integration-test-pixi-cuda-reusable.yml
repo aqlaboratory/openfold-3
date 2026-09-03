@@ -13,6 +13,28 @@ on:
         required: false
         type: string
         default: 'ubuntu:22.04'
+      coverage:
+        description: >-
+          Measure coverage on this run: the *whole* suite rather than `-m slow`,
+          and without `-x`.
+
+          Both matter. Coverage from `-m slow` alone would miss everything the
+          unit tests reach, and the fast CI tier cannot supply the remainder --
+          it runs on a CPU-only box with no weights, so every accelerator-gated
+          test self-skips there. Running the lot on one GPU runner is what lets a
+          single data file cover the CPU *and* GPU paths, with no cross-workflow
+          `coverage combine` and no risk of line numbers from a different commit
+          being attributed to this one.
+
+          `-x` has to go because a fail-fast run measures only the code up to the
+          first failure, which reports as a collapsed coverage number rather than
+          as an error.
+
+          Note this makes the job stop being a fast red signal: it runs longer and
+          reports every failure instead of the first.
+        required: false
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -119,11 +141,81 @@ jobs:
 
       - name: Run integration test
         run: |
-          docker run --gpus all\
+          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }}"
+          run_pytest() {
+            docker run --gpus all \
+              -v ${{ github.workspace }}:/opt/openfold3 \
+              -v ~/.openfold3:/root/.openfold3 \
+              "$image" pytest "$@"
+          }
+
+          if [ "${{ inputs.coverage }}" != "true" ]; then
+            run_pytest -x openfold3/tests/ -m slow -vvv
+            exit
+          fi
+
+          # One invocation over the whole suite, so one .coverage file with no
+          # `coverage combine` and no --cov-append bookkeeping.
+          #
+          # `--dist loadgroup` is what makes that affordable. The conftest puts
+          # every `slow` test in one xdist group, and loadgroup runs a group on a
+          # single worker -- so the slow tests serialise against each other (each
+          # loads the model onto the one A10G) while the CPU-bound rest of the
+          # suite still fans out. Without it this would have to run serially and
+          # cost roughly half an hour more of GPU instance time.
+          #
+          # No -x: fail-fast would measure only the code up to the first failure
+          # and report it as a collapsed coverage number.
+          run_pytest openfold3/tests/ -vvv -n auto --dist loadgroup \
+            --cov=openfold3 --cov-report=xml --cov-report=term
+
+      - name: Reclaim workspace ownership
+        # The container runs as root, so coverage.xml and .coverage land in the
+        # bind-mounted workspace owned by root and the runner user cannot read
+        # them to upload. Runs on failure too, since a coverage run has no -x and
+        # a partial result is still worth collecting.
+        if: ${{ always() && inputs.coverage }}
+        run: |
+          docker run --rm \
             -v ${{ github.workspace }}:/opt/openfold3 \
-            -v ~/.openfold3:/root/.openfold3 \
+            --entrypoint chown \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
-            pytest -x openfold3/tests/ -m slow -vvv
+            -R "$(id -u):$(id -g)" /opt/openfold3
+
+      - name: Upload coverage report
+        if: ${{ always() && inputs.coverage }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report-integration-${{ inputs.pixi_env }}
+          path: |
+            coverage.xml
+            .coverage
+          include-hidden-files: true
+          retention-days: 30
+
+      - name: Publish coverage summary
+        # Puts the number on the job summary page so reading it does not mean
+        # downloading an artifact.
+        if: ${{ always() && inputs.coverage }}
+        run: |
+          if [ ! -f coverage.xml ]; then
+            echo "No coverage.xml produced -- the test run likely died early." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("coverage.xml").getroot()
+          covered = int(root.get("lines-covered"))
+          valid = int(root.get("lines-valid"))
+          print("## Coverage — full suite on GPU")
+          print()
+          print(f"**{float(root.get('line-rate')) * 100:.1f}%** ({covered:,} / {valid:,} lines)")
+          print()
+          print("Whole suite in one pass on a GPU runner, so this covers the")
+          print("accelerator paths the CPU-only PR tier has to skip.")
+          PY
 
   stop-aws-runner:
     runs-on: ubuntu-latest
