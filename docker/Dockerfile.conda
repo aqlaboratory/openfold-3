@@ -37,7 +37,12 @@ COPY environments/production-linux-64.yml /opt/openfold3/production-linux-64.yml
 # Install environment based on BUILD_MODE
 # - lock: uses conda-lock for exact reproducible builds (training/production)
 # - yaml: uses mamba env create for flexible version resolution (development/testing)
-RUN mamba install -n base -c conda-forge conda-lock --yes \
+# CONDA_OVERRIDE_CUDA bypasses GPU detection while solving: conda-forge's CUDA
+# builds of pytorch are gated on the `__cuda` virtual package, which is absent on a
+# GPU-less build machine. Advertise a CUDA 12 driver so the CUDA build is selectable
+# (same trick as docker/Dockerfile.pixi); it changes nothing at runtime.
+RUN export CONDA_OVERRIDE_CUDA=12.0 \
+    && mamba install -n base -c conda-forge conda-lock --yes \
     && if [ "$BUILD_MODE" = "lock" ]; then \
          conda-lock install --name openfold3 /opt/openfold3/production-linux-64.lock; \
        elif [ "$BUILD_MODE" = "yaml" ]; then \
