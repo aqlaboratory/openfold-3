@@ -1339,6 +1339,7 @@ openfold3/core/data/primitives/structure/query.py:0: error: Item "None" of "Bina
 openfold3/core/data/primitives/structure/query.py:0: error: Item "None" of "BinaryCIFColumn | None" has no attribute "as_array"  [union-attr]
 openfold3/core/data/primitives/structure/query.py:0: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
 openfold3/core/data/primitives/structure/query.py:0: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+openfold3/core/data/primitives/structure/query_extraction.py:0: error: "AtomArray[Any]" has no attribute "label_asym_id"  [attr-defined]
 openfold3/core/data/primitives/structure/template.py:0: error: "AtomArray[Any]" has no attribute "label_asym_id"  [attr-defined]
 openfold3/core/data/primitives/structure/template.py:0: error: "AtomArray[Any]" has no attribute "molecule_type_id"  [attr-defined]
 openfold3/core/data/primitives/structure/template.py:0: error: "AtomArray[int]" has no attribute "token_position"  [attr-defined]
