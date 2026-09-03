@@ -32,15 +32,16 @@ dependencies:
   # `pytorch-gpu` selects the CUDA build, mirroring feature.pytorch-conda-cuda in pixi.toml.
   - conda-forge::pytorch-gpu
   - conda-forge::cuda-version>=12,<13
+  # deepspeed from conda-forge rather than PyPI, as feature.deepspeed does in pixi.toml:
+  # those builds carry real pytorch run constraints, so an incompatible pair is rejected
+  # by the solver instead of blowing up at import time. The upper bound keeps a new
+  # minor release from changing the required torch under us.
+  - conda-forge::deepspeed>=0.19,<0.20
   - memory_profiler
   - func_timeout
   - boto3
   - conda-forge::python-lmdb=1.6
   - conda-forge::ijson
   - pip:
-      # Upper bound is deliberate: deepspeed has no upper bound on torch and ships
-      # breaking requirements in patch releases (0.19.6 needs torch>=2.7). Bump it
-      # only together with a CI run that rebuilds the environment from scratch.
-      - deepspeed>=0.19.2,<0.20
       - pdbeccdutils
       - kalign-python
