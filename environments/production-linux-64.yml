@@ -2,8 +2,6 @@ name: openfold3-env
 channels:
   - conda-forge
   - bioconda
-  - pytorch
-  - nvidia
 dependencies:
   - python
   - awscli
@@ -29,14 +27,20 @@ dependencies:
   - bioconda::hmmer
   - bioconda::hhsuite
   - bioconda::snakemake
-  - pytorch::pytorch
-  - pytorch::pytorch-cuda
+  # PyTorch comes from conda-forge: the `pytorch` channel stopped publishing after
+  # 2.5.1, which pins us to a torch too old for current deepspeed releases.
+  # `pytorch-gpu` selects the CUDA build, mirroring feature.pytorch-conda-cuda in pixi.toml.
+  - conda-forge::pytorch-gpu
+  - conda-forge::cuda-version>=12,<13
   - memory_profiler
   - func_timeout
   - boto3
   - conda-forge::python-lmdb=1.6
   - conda-forge::ijson
   - pip:
-      - deepspeed
+      # Upper bound is deliberate: deepspeed has no upper bound on torch and ships
+      # breaking requirements in patch releases (0.19.6 needs torch>=2.7). Bump it
+      # only together with a CI run that rebuilds the environment from scratch.
+      - deepspeed>=0.19.2,<0.20
       - pdbeccdutils
       - kalign-python

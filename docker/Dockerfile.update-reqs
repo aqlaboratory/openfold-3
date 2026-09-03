@@ -19,8 +19,13 @@ COPY --chown=$MAMBA_USER:$MAMBA_USER environments/production-linux-64.yml /tmp/p
 
 # Generate explicit lock file for linux-64
 # The explicit format is directly consumable by mamba/conda
+# --with-cuda is required for conda-forge's CUDA builds of pytorch: conda-lock never
+# looks at the host's GPU, it solves against its bundled default virtual packages,
+# which declare `__cuda: 11.4` -- too low for the CUDA 12 stack (`__cuda >=12`).
+# It does not honour CONDA_OVERRIDE_CUDA, so this has to be the flag.
 RUN micromamba run -n base conda-lock lock \
     --mamba \
+    --with-cuda 12.0 \
     --platform linux-64 \
     --file /tmp/production-linux-64.yml \
     --kind explicit \
