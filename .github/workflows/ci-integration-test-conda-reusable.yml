@@ -110,11 +110,24 @@ jobs:
           restore-keys: |
             shared-params_of3
     
-      - name: Install AWS CLI and Download OpenFold parameters
-        if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
+      - name: Download OpenFold parameters
+        # openfold3 owns the download: `setup_openfold` resolves the checkpoint file
+        # name from OPENFOLD_MODEL_CHECKPOINT_REGISTRY, writes `ckpt_root`, sets up the
+        # Biotite CCD, and skips any transfer that is already on disk
+        # (force_download=False), so this is a no-op on a good cache restore. It runs
+        # inside the image, so the host needs neither the AWS CLI nor credentials --
+        # the bucket is public and boto3 comes with the environment.
+        #
+        # Deliberately NOT gated on `cache-hit`: a restored archive is only useful if it
+        # lands in the directory that gets mounted, and checking for the file is the
+        # honest test of that. `--non-interactive` takes the OpenFoldSetupConfig
+        # defaults, which fetch only the default checkpoint and leave
+        # run_integration_tests False -- the tests are the next step's job.
         run: |
-          echo "Cache miss: Downloading OpenFold parameters..."
-          aws s3 cp s3://openfold3-data/openfold3-parameters/of3-ob-2025-06-30-174k.pt ~/.openfold3/ --no-sign-request
+          docker run --rm \
+            -v ~/.openfold3:/root/.openfold3 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-${{ inputs.cuda_base_image_tag }}-${{ github.sha }} \
+            setup_openfold --non-interactive
       
       - name: Run integration test
         run: |
