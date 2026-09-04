@@ -131,6 +131,17 @@ dataset_config_kwargs:
     rdkit_conformer_rng: 0
     rdkit_conformer_prune_rmsd: 0.0
     rdkit_conformer_max_iters: 200
+  # SteeringSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/steering/config.py
+  # Chemical steering of ligand geometry during diffusion. Off by default;
+  # applies to every query in the run when enabled.
+  steering:
+    enabled: False
+    num_gd_steps: 20
+    terms:
+      distance_bounds_potential:
+        enabled: True
+        weight: 0.01
+        interval: 1
 
 # OutputWriterSettings: https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L141
 # Configure the output formats / content

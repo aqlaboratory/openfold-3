@@ -1,0 +1,29 @@
+# Chemical steering of ligand geometry during diffusion.
+#
+# At each denoising step the predicted clean coordinates are nudged down the
+# gradient of a flat-bottom restraint energy built from RDKit's
+# distance-geometry bounds for the ligand. Distances already inside their
+# permitted window contribute nothing, so guidance is inert on ligands the
+# model already got right.
+#
+# Steering is a run-level setting: enabling it steers every ligand in the
+# run, and queries without a ligand are unaffected. A steered/unsteered
+# comparison is therefore this file with `enabled` flipped, with the query
+# JSONs left untouched.
+#
+# SteeringSettings: openfold3/steering/config.py
+dataset_config_kwargs:
+  steering:
+    enabled: True
+    # Gradient-descent steps per denoising step. The per-step correction is
+    # bounded by num_gd_steps * weight Angstrom.
+    num_gd_steps: 20
+    terms:
+      # Flat-bottom restraints on interatomic distances, with bounds from the
+      # RDKit distance-geometry bounds matrix.
+      distance_bounds_potential:
+        enabled: True
+        # The flat-bottom subgradient is exactly +-1, so the weight is
+        # literally the step size in Angstrom per gradient-descent step.
+        weight: 0.01
+        interval: 1

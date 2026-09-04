@@ -64,6 +64,7 @@ from openfold3.projects.of3_all_atom.config.dataset_config_components import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
+from openfold3.steering.config import SteeringSettings
 
 
 class TrainingDatasetPaths(BaseModel):
@@ -367,12 +368,14 @@ class TrainingDatasetSpec(DatasetSpec):
 
 
 class InferenceDatasetConfigKwargs(BaseModel):
-    """Class to hold msa, template, and pocket sampling kwargs for inference pipeline"""
+    """Class to hold msa, template, pocket sampling, and steering kwargs for
+    inference pipeline"""
 
     ccd_file_path: FilePathOrNone = None
     msa: MSASettings = MSASettings(subsample_main=False)
     template: TemplateSettings = TemplateSettings(take_top_k=True)
     pocket_sampling: PocketSamplingSettings = PocketSamplingSettings()
+    steering: SteeringSettings = SteeringSettings()
 
 
 class InferenceJobConfig(BaseModel):
@@ -385,6 +388,7 @@ class InferenceJobConfig(BaseModel):
     template: TemplateSettings = TemplateSettings()
     template_preprocessor_settings: TemplatePreprocessorSettings
     pocket_sampling: PocketSamplingSettings = PocketSamplingSettings()
+    steering: SteeringSettings = SteeringSettings()
 
 
 class InferenceDatasetSpec(DatasetSpec):

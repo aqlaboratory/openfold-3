@@ -841,6 +841,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             template=self.dataset_config_kwargs.template,
             template_preprocessor_settings=self.experiment_config.template_preprocessor_settings,
             pocket_sampling=self.dataset_config_kwargs.pocket_sampling,
+            steering=self.dataset_config_kwargs.steering,
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(
