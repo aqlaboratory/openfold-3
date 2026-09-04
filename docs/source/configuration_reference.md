@@ -140,7 +140,7 @@ Configures Checkpoint writing settings, which are passed to [pl.ModelCheckpoint 
 ---
 ### 3.7. Dataset Config Kwargs (`dataset_config_kwargs`)
 
-Configures MSA, template, and pocket sampling feature generation.
+Configures MSA, template, pocket sampling, and chemical steering feature generation.
 
 **Pydantic Model**: [`InferenceDatasetConfigKwargs`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_configs.py#L270)
 
@@ -149,6 +149,7 @@ Configures MSA, template, and pocket sampling feature generation.
 - `msa` *(MSASettings)*: MSA processing settings (see below)
 - `template` *(TemplateSettings)*: Template processing settings (see below)
 - `pocket_sampling` *(PocketSamplingSettings)*: Pocket-guided ligand proposal sampling settings (see below)
+- `steering` *(SteeringSettings)*: Chemical steering of ligand geometry during diffusion (see below)
 
 #### 3.7.1. MSA Settings (`msa`)
 
@@ -230,6 +231,44 @@ dataset_config_kwargs:
     num_parents: 16
     candidates: 1024
     noise_frac: 0.75
+```
+
+(full-ref-steering-settings)=
+#### 3.7.4 Chemical Steering Settings (`steering`)
+
+Guides the diffusion sampler toward chemically valid ligand geometry. At each
+denoising step, the predicted clean coordinates are nudged down the gradient
+of a flat-bottom restraint energy built from RDKit's distance-geometry bounds
+for the ligand: distances inside their permitted window contribute nothing, so
+guidance is inert on ligands the model already got right.
+
+Steering is off by default, and is a property of the run rather than of an
+individual query — enabling it steers every ligand in the run. That makes a
+steered/unsteered comparison a change to this block alone, with the query
+JSONs untouched. Queries with no ligand are unaffected.
+
+Only the primary rollout is steered; the pocket-sampling refinement pass is
+deliberately left unsteered.
+
+**Pydantic Model**: [`SteeringSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/steering/config.py)
+
+**All Options**:
+- `enabled` *(bool)*: Whether chemical steering runs (default: `false`)
+- `num_gd_steps` *(int)*: Gradient-descent steps applied to the denoised coordinates at each denoising step. With the default weight this bounds the per-step correction to `num_gd_steps * weight` Angstrom (default: `20`, minimum: `1`)
+- `terms` *(dict)*: Per-restraint-family settings, keyed by the potential's snake_case registry name. Unknown names are rejected. Currently available: `distance_bounds_potential`
+  - `enabled` *(bool)*: Whether this term contributes to the guidance gradient (default: `true`)
+  - `weight` *(float)*: Coordinate-update weight. Because the flat-bottom subgradient is exactly ±1, this is literally the step size: a violating atom moves `weight` Angstrom per gradient-descent step (default: `0.01`, minimum: `0.0`)
+  - `interval` *(int)*: Apply this term every Nth gradient-descent step, for terms too expensive to evaluate every step (default: `1`, minimum: `1`)
+
+**Example**:
+```yaml
+dataset_config_kwargs:
+  steering:
+    enabled: true
+    num_gd_steps: 20
+    terms:
+      distance_bounds_potential:
+        weight: 0.01
 ```
 
 ---
@@ -336,4 +375,5 @@ For the complete list of default values, see the Pydantic model classes in:
 - [`openfold3/core/data/tools/colabfold_msa_server.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py) - MSA server settings
 - [`openfold3/core/data/pipelines/preprocessing/template.py`](http://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py) - Template preprocessing settings
 - [`openfold3/core/config/pocket_sampling_config.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/pocket_sampling_config.py) - Pocket sampling settings
+- [`openfold3/steering/config.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/steering/config.py) - Chemical steering settings
 
