@@ -364,34 +364,36 @@ def create_pdb_val_dataset_cache_of3(
         dataset_name: 
             Name of the dataset, e.g. "Validation"
         min_release_date:
-            Maximum release date for included structures, formatted as 'YYYY-MM-DD' or a datetime object
+            Minimum release date for included structures, formatted as 'YYYY-MM-DD' or a
+            datetime object
         max_release_date:
-            Maximum release date for included structures, formatted as 'YYYY-MM-DD' or a datetime object
+            Maximum release date for included structures, formatted as 'YYYY-MM-DD' or a
+            datetime object
         max_resolution: 
-            Maximum resolution for structures in the dataset in Å.
+            Maximum resolution for structures in the dataset in Å
         max_polymer_chains: 
-            Maximum number of polymer chains for included structures.
+            Maximum number of polymer chains for included structures
         filter_missing_alignment:
             Whether to filter out chains (and their corresponding structures) whose
             sequences do not match to a representative in the
             alignment_representatives_fasta.
         missing_alignment_log: 
             Path to write a JSON file containing all chains that were filtered out
-            because they do not have a corresponding alignment.
+            because they do not have a corresponding alignment
         max_tokens_initial:
-            Filter out entries with token count higher than this value before clustering.
+            Filter out entries with token count higher than this value before clustering
         max_tokens_final: 
-            Filter out entries with token count higher than this value post clustering.
+            Filter out entries with token count higher than this value post clustering
         ranking_fit_threshold: 
-            The minimum ranking model fit for ligands to be included. Default is 0.5.
+            The minimum ranking model fit for ligands to be included. Default is 0.5
         seq_identity_threshold:
             Sequence identity threshold. Chains with sequence identity strictly greater
-            than this value are considered homologous.
+            than this value are considered homologous
         tanimoto_threshold:
             Tanimoto similarity threshold. Ligands with Tanimoto similarity strictly
-            greater than this value are considered homologous.
+            greater than this value are considered homologous
         random_seed:
-            Random seed for reproducibility.
+            Random seed for reproducibility
     Returns:
         None
     """
