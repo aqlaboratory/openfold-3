@@ -64,7 +64,19 @@ def _get_interface_type(
     interface_id: str,
     structure_data,
 ) -> str | None:
-    """Get the interface type string from an interface ID and structure data."""
+    """Get the interface type string from an interface ID and structure data.
+    
+    Args:
+        interface_id:
+            Labels of the two interface chains separated by a '_'. E.g. "A_B"
+        structure_data:
+            Single structure containing a chains dictionary
+            that maps chain IDs to their corresponding metadata
+
+
+    Returns:
+        String with the type of interface, e.g. if its two proteins: "protein-protein"
+    """
     chain_1, chain_2 = interface_id.split("_")
     molecule_types = [
         structure_data.chains[chain_1].molecule_type,
@@ -317,7 +329,6 @@ def select_monomer_cache(
 
 
 # TODO: Could expose more arguments?
-# TODO: Add docstring!
 def create_pdb_val_dataset_cache_of3(
     metadata_cache_path: Path,
     preprocessed_dir: Path,
@@ -338,6 +349,52 @@ def create_pdb_val_dataset_cache_of3(
     tanimoto_threshold: float = 0.85,
     random_seed: int = 12345,
 ) -> None:
+    """Generates the validation set for the model.
+
+    Args:
+        metadata_cache_path:
+            Path to the preprocessed metadata cache
+        preprocessed_dir:
+            Preprocessing output directory with preprocessed structure and fasta files.
+        train_cache_path: 
+            Path to the preprocessed training cache data
+        alignment_representatives_fasta: 
+        output_path: 
+            Path to where validation set is generatted
+        dataset_name: 
+            Name of the dataset, e.g. "Validation"
+        min_release_date:
+            Maximum release date for included structures, formatted as 'YYYY-MM-DD' or a datetime object
+        max_release_date:
+            Maximum release date for included structures, formatted as 'YYYY-MM-DD' or a datetime object
+        max_resolution: 
+            Maximum resolution for structures in the dataset in Å.
+        max_polymer_chains: 
+            Maximum number of polymer chains for included structures.
+        filter_missing_alignment:
+            Whether to filter out chains (and their corresponding structures) whose
+            sequences do not match to a representative in the
+            alignment_representatives_fasta.
+        missing_alignment_log: 
+            Path to write a JSON file containing all chains that were filtered out
+            because they do not have a corresponding alignment.
+        max_tokens_initial:
+            Filter out entries with token count higher than this value before clustering.
+        max_tokens_final: 
+            Filter out entries with token count higher than this value post clustering.
+        ranking_fit_threshold: 
+            The minimum ranking model fit for ligands to be included. Default is 0.5.
+        seq_identity_threshold:
+            Sequence identity threshold. Chains with sequence identity strictly greater
+            than this value are considered homologous.
+        tanimoto_threshold:
+            Tanimoto similarity threshold. Ligands with Tanimoto similarity strictly
+            greater than this value are considered homologous.
+        random_seed:
+            Random seed for reproducibility.
+    Returns:
+        None
+    """
     metadata_cache = PreprocessingDataCache.from_json(metadata_cache_path)
 
     # TODO: Following code has quite a bit of redundancy with training code, consider
