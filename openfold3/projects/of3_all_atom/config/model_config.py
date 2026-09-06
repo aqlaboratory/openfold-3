@@ -499,6 +499,8 @@ model_config = mlc.ConfigDict(
                     "eps": eps,
                     "chunk_size": None,
                     "use_sparse_loss": False,
+                    "smooth_lddt_backend": "ball_query",
+                    "smooth_lddt_top_k": 512,
                 },
                 "distogram": {
                     "no_bins": 64,
