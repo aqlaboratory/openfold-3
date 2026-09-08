@@ -710,7 +710,8 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
             else:
                 atom_array += segment_atom_array
 
-    add_query_covalent_bonds(atom_array, query)
+    if atom_array is not None:
+        add_query_covalent_bonds(atom_array, query)
 
     # Force coordinates to 0 for consistency
     atom_array.coord[:] = 0.0
