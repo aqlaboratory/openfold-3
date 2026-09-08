@@ -20,9 +20,11 @@ import pickle
 from pathlib import Path
 from typing import Literal, NamedTuple
 
+import numpy as np
 from biotite.structure import AtomArray, get_chain_count
 from biotite.structure.io import pdb, pdbx, save_structure
 
+from openfold3.core.data.io.s3 import open_local_or_s3
 from openfold3.core.data.io.structure.atom_array import (
     read_atomarray_from_npz,
     write_atomarray_to_npz,
@@ -33,6 +35,8 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 from openfold3.core.data.primitives.structure.cleanup import (
     convert_intra_residue_dative_to_single,
     get_polymer_mask,
+    remove_hydrogens,
+    remove_std_residue_terminal_atoms,
 )
 from openfold3.core.data.primitives.structure.labels import (
     assign_entity_ids,
@@ -49,6 +53,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     writer_add_struct_asym,
     writer_update_atom_site,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +190,7 @@ def parse_mmcif(
     }
 
     # Check if the CIF file contains bioassembly information
-    if expand_bioassembly & ("pdbx_struct_assembly_gen" not in cif_data):
+    if expand_bioassembly and ("pdbx_struct_assembly_gen" not in cif_data):
         logger.warning(
             "No bioassembly information found in the CIF file, "
             "falling back to parsing the asymmetric unit."
@@ -250,6 +255,67 @@ def parse_mmcif(
 
         if n_polymers > max_polymer_chains:
             return SkippedStructure(cif_file, f"Too many polymer chains: {n_polymers}")
+
+    return ParsedStructure(cif_file, atom_array)
+
+
+# TODO: refactor with PDB reader below as it currently only supports monomers
+def parse_RNA_monomer_cif_tmp(
+    file_path: Path | str,
+    include_bonds: bool = True,
+    extra_fields: list | None = None,
+    s3_profile: str | None = None,
+):
+    """Temporary function to parse a RNA monomer from a cif file.
+
+    Args:
+        file_path (Path | str): _description_
+        include_bonds (bool, optional): _description_. Defaults to True.
+        extra_fields (list | None, optional): _description_. Defaults to None.
+
+    Returns:
+        ParsedStructure : _description_
+    """
+
+    ## no label fields in cif files
+    with open_local_or_s3(file_path, profile=s3_profile) as f:
+        cif_file = pdbx.CIFFile.read(f)
+
+    extra_fields_preset = [
+        "occupancy",
+        "charge",
+    ]
+
+    if extra_fields:
+        extra_fields = extra_fields_preset + extra_fields
+    else:
+        extra_fields = extra_fields_preset
+
+    parser_args = {
+        "pdbx_file": cif_file,
+        "model": 1,
+        "altloc": "first",
+        "include_bonds": include_bonds,
+        "extra_fields": extra_fields,
+    }
+    atom_array = pdbx.get_structure(
+        **parser_args,
+    )
+
+    ## manually assign th entity and molecule type ids;
+    ## monomers are all "single chain", so should have the same entity id,
+    ## everything is a single asym, and sym id should be 1(identity)
+    chain_ids = np.array([1] * len(atom_array), dtype=int)
+    molecule_type_ids = np.array([MoleculeType.RNA] * len(atom_array), dtype=int)
+    entity_ids = np.array([1] * len(atom_array), dtype=int)
+
+    atom_array.set_annotation("chain_id", chain_ids)
+    atom_array.set_annotation("molecule_type_id", molecule_type_ids)
+    atom_array.set_annotation("entity_id", entity_ids)
+
+    # Clean up structure
+    atom_array = remove_hydrogens(atom_array)
+    atom_array = remove_std_residue_terminal_atoms(atom_array)
 
     return ParsedStructure(cif_file, atom_array)
 
@@ -371,7 +437,8 @@ def write_structure(
 
         case _:
             raise NotImplementedError(
-                "Only .cif, .bcif, and .pkl formats are supported"
+                "Only .npz, .pkl, .cif, .bcif, and .pdb formats are currently "
+                "supported."
             )
 
 

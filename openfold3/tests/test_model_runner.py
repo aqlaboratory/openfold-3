@@ -129,5 +129,5 @@ def test_version_registration():
     model_runner = OpenFold3AllAtom(model_config=config)
 
     # Check that the version property returns the expected version string
-    expected_version = "1.0.0"
+    expected_version = "2.0.0"
     assert model_runner.version == expected_version

@@ -32,3 +32,28 @@ low_mem:
           msa_module: true
           confidence_heads: true
           token_cutoff: 0
+
+# Apple Silicon (MPS) defaults. Auto-applied when accelerator resolves to
+# mps -- see ExperimentRunner.model_config in entry_points/experiment_runner.py.
+# offload_inference targets discrete-GPU VRAM pressure, which doesn't exist
+# on unified memory, so it's disabled here. MPS's caching allocator holds
+# freed memory as wired (non-pageable), so blocks need the periodic cache
+# release that CUDA doesn't require as strictly.
+mps:
+  settings:
+    memory:
+      eval:
+        # No Triton on macOS/Apple Silicon so the base `True` default
+        # (model_config.py) always fails.
+        use_triton_triangle_kernels: false
+        offload_inference:
+          msa_module: false
+  architecture:
+    msa:
+      msa_module:
+        clear_cache_between_blocks: true
+    pairformer:
+      clear_cache_between_blocks: true
+    template:
+      template_pair_stack:
+        clear_cache_between_blocks: true

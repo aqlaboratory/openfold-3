@@ -14,11 +14,13 @@
 
 """Tests for the ColabFold MSA server module."""
 
+import getpass
 import io
 import json
 import shutil
 import tarfile
 import textwrap
+from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 from unittest.mock import patch
@@ -28,6 +30,7 @@ import pytest
 from pydantic_core import Url
 
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
+from openfold3.core.data.io.sequence.msa import parse_a3m as parse_msa_a3m
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
 )
@@ -246,6 +249,17 @@ class TestColabFoldQueryRunner:
         return result
 
     @staticmethod
+    def _construct_dummy_a3m_with_raw_output(seqs, prefix, **unused_kwargs):
+        prefix.mkdir(parents=True, exist_ok=True)
+        (prefix / "server-output.a3m").write_text("raw output")
+        if prefix.name == "main":
+            (prefix / "pdb70.m8").touch()
+        raw_output_callback = unused_kwargs.get("raw_output_callback")
+        if raw_output_callback is not None:
+            raw_output_callback(prefix)
+        return TestColabFoldQueryRunner._construct_dummy_a3m(seqs)
+
+    @staticmethod
     def _make_dummy_template_file(path: Path):
         raw_main_dir = path / "raw" / "main"
         raw_main_dir.mkdir(parents=True, exist_ok=True)
@@ -321,6 +335,107 @@ class TestColabFoldQueryRunner:
             assert (expected_unpaired_dir / f).exists()
             assert (expected_paired_dir / f).exists()
 
+    @patch(_MOCK_QUERY_TARGET)
+    def test_raw_output_is_saved_before_formatting(
+        self, mock_query, tmp_path, multimer_query_set
+    ):
+        mock_query.side_effect = self._construct_dummy_a3m_with_raw_output
+        settings = MsaComputationSettings(
+            msa_file_format="npz",
+            colabfold_output_dir=tmp_path / "raw-records",
+        )
+        settings.set_saved_output_root(tmp_path / "saved")
+        mapper = collect_colabfold_msa_data(multimer_query_set)
+        paired_id = next(iter(mapper.complex_id_to_complex_group))
+        saved_output = settings.saved_output_directory
+        saved_raw = settings.saved_colabfold_output_directory
+        saved_paired_raw = saved_raw / f"paired/{paired_id}/server-output.a3m"
+
+        def fail_during_paired_formatting(alignment):
+            if saved_paired_raw.exists():
+                raise RuntimeError("formatting failed")
+            return parse_msa_a3m(alignment)
+
+        with (
+            patch(
+                "openfold3.core.data.tools.colabfold_msa_server.parse_a3m",
+                side_effect=fail_during_paired_formatting,
+            ),
+            pytest.raises(RuntimeError, match="formatting failed"),
+        ):
+            preprocess_colabfold_msas(multimer_query_set, settings)
+
+        assert (saved_raw / "main/server-output.a3m").exists()
+        assert saved_paired_raw.exists()
+        assert not saved_output.exists()
+        settings.cleanup_workspace()
+
+    @patch(_MOCK_QUERY_TARGET)
+    @pytest.mark.parametrize(
+        "save_openfold,save_colabfold",
+        [(True, True), (True, False), (False, True), (False, False)],
+    )
+    def test_saved_output_options_are_independent(
+        self, mock_query, tmp_path, save_openfold, save_colabfold
+    ):
+        mock_query.side_effect = self._construct_dummy_a3m_with_raw_output
+        saved_output_root = tmp_path / "saved"
+        settings = MsaComputationSettings(
+            msa_file_format="a3m",
+            save_openfold_outputs=save_openfold,
+            save_colabfold_outputs=save_colabfold,
+        )
+        settings.set_saved_output_root(saved_output_root)
+        workspace = settings.workspace_directory
+        saved_output = settings.saved_output_directory
+
+        query = self._construct_monomer_query("TEST")
+        processed = preprocess_colabfold_msas(query, settings)
+        saved_main = (
+            saved_output / "main" / get_sequence_hash("TEST") / "colabfold_main.a3m"
+        )
+        saved_raw = settings.saved_colabfold_output_directory / "main/server-output.a3m"
+
+        settings.cleanup_workspace()
+
+        assert saved_main.exists() is save_openfold
+        assert saved_raw.exists() is save_colabfold
+        assert (saved_output / "mappings/seq_to_rep_id.json").exists() is save_openfold
+        expected_root = saved_output if save_openfold else workspace
+        assert (
+            processed.queries["query1"]
+            .chains[0]
+            .main_msa_file_paths[0]
+            .is_relative_to(expected_root)
+        )
+
+    @patch(_MOCK_QUERY_TARGET)
+    def test_explicit_output_directory_survives_workspace_cleanup(
+        self, mock_query, tmp_path
+    ):
+        mock_query.side_effect = self._construct_dummy_a3m_with_raw_output
+        output_directory = tmp_path / "colabfold_msas"
+        output_directory.mkdir()
+        sentinel = output_directory / "existing.txt"
+        sentinel.write_text("keep")
+        settings = MsaComputationSettings(
+            msa_file_format="a3m",
+            msa_output_directory=output_directory,
+            cleanup_msa_dir=False,
+        )
+
+        query = self._construct_monomer_query("TEST")
+        processed = preprocess_colabfold_msas(query, settings)
+        settings.cleanup_workspace()
+
+        saved_msa = (
+            output_directory / "main" / get_sequence_hash("TEST") / "colabfold_main.a3m"
+        )
+        assert sentinel.read_text() == "keep"
+        assert saved_msa.exists()
+        assert (output_directory / "raw/main/server-output.a3m").exists()
+        assert processed.queries["query1"].chains[0].main_msa_file_paths == [saved_msa]
+
     @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
     @patch(_MOCK_QUERY_TARGET, side_effect=_construct_dummy_a3m)
     @pytest.mark.parametrize(
@@ -378,9 +493,8 @@ class TestColabFoldQueryRunner:
             server_user_agent="test-agent",
             server_url="https://dummy.url",
             save_mappings=True,
-            msa_output_directory=tmp_path,
-            cleanup_msa_dir=False,
         )
+        msa_compute_settings.set_saved_output_root(tmp_path / "saved-openfold")
 
         query = self._construct_monomer_query(sequence)
         augmented = augment_main_msa_with_query_sequence(query, msa_compute_settings)
@@ -390,7 +504,7 @@ class TestColabFoldQueryRunner:
             case "npz":
                 f = f"{get_sequence_hash(sequence)}.npz"
 
-        expected_file = tmp_path / "dummy" / f
+        expected_file = msa_compute_settings.saved_output_directory / "dummy" / f
         assert expected_file.exists(), f"Expected file {f} not found in main directory"
 
         paths_in_augmented = augmented.queries["query1"].chains[0].main_msa_file_paths
@@ -398,9 +512,11 @@ class TestColabFoldQueryRunner:
         assert expected_file == paths_in_augmented[0], (
             f"Unexpected MSA path in augmented query set: {paths_in_augmented[0]}"
         )
+        msa_compute_settings.cleanup_workspace()
+        assert expected_file.exists()
 
     @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
-    @patch(_MOCK_QUERY_TARGET, side_effect=_construct_dummy_a3m)
+    @patch(_MOCK_QUERY_TARGET)
     @pytest.mark.parametrize(
         "msa_file_format", ["a3m", "npz"], ids=lambda fmt: f"{fmt}"
     )
@@ -412,6 +528,7 @@ class TestColabFoldQueryRunner:
         msa_file_format,
     ):
         """Integration test for making predictions with fake MSA data."""
+        mock_query.side_effect = self._construct_dummy_a3m_with_raw_output
         test_sequences = ["TEST", "LONGERTEST"]
 
         for sequence in test_sequences:
@@ -456,16 +573,11 @@ class TestColabFoldQueryRunner:
                 assert t == t_expected, f"Target length mismatch: {t} != {t_expected}"
                 assert e == e_expected, f"Feature size mismatch: {e} != {e_expected}"
 
-            # Clean up raw directory after running test
-            # This is normally performed in InferenceRunner.cleanup_msa_dir
-            # but that isn't called in this test.
-            shutil.rmtree(tmp_path / "raw", ignore_errors=True)
+            msa_compute_settings.cleanup_workspace()
 
-        # Test contents of mapping file after all runs
         with open(tmp_path / "mappings/seq_to_rep_id.json") as f:
-            assert set(json.load(f).keys()) == set(test_sequences), (
-                "Expected all test sequences to be present in the mapping file"
-            )
+            assert set(json.load(f)) == set(test_sequences)
+        assert (tmp_path / "raw/main").is_dir()
 
     @patch(_MOCK_QUERY_TARGET, side_effect=_construct_dummy_a3m)
     def test_empty_m8_file_handling(
@@ -532,28 +644,29 @@ class TestColabFoldQueryRunner:
                     f"is empty, but got {chain.template_entry_chain_ids}"
                 )
 
-    def test_preprocess_raises_if_raw_dir_exists(self, tmp_path):
-        """preprocess_colabfold_msas should raise FileExistsError if raw/ exists.
-
-        A leftover raw/ directory from a prior crashed run contains stale
-        out.tar.gz files that would be silently reused for the wrong query.
-        """
+    @patch(_MOCK_QUERY_TARGET)
+    def test_preprocess_rejects_an_existing_workspace(self, mock_query, tmp_path):
         query = self._construct_monomer_query("TESTSEQUENCE")
         msa_compute_settings = MsaComputationSettings(
             msa_file_format="npz",
             server_user_agent="test-agent",
             server_url="https://dummy.url",
-            msa_output_directory=tmp_path,
-            cleanup_msa_dir=False,
         )
+        workspace = msa_compute_settings.workspace_directory
+        workspace.mkdir(parents=True)
+        sentinel = workspace / "keep.txt"
+        sentinel.write_text("keep")
 
-        stale_raw_dir = tmp_path / "raw"
-        stale_raw_dir.mkdir(parents=True)
-
-        with pytest.raises(FileExistsError, match="raw"):
+        with pytest.raises(FileExistsError):
             preprocess_colabfold_msas(
                 inference_query_set=query, compute_settings=msa_compute_settings
             )
+
+        mock_query.assert_not_called()
+        assert not (workspace / "mappings").exists()
+        msa_compute_settings.cleanup_workspace()
+        assert sentinel.exists()
+        shutil.rmtree(workspace)
 
 
 class _ValidationCase(NamedTuple):
@@ -626,6 +739,7 @@ class TestQueryColabFoldServerValidation:
         submit/download (no network) and go straight to extraction + validation.
         """
         self._write_tarball(tmp_path / "out.tar.gz", case.members)
+        callback_paths: list[Path] = []
 
         with pytest.raises(ColabFoldServerResultError, match=case.match):
             query_colabfold_msa_server(
@@ -633,7 +747,10 @@ class TestQueryColabFoldServerValidation:
                 prefix=tmp_path,
                 user_agent="test-agent",
                 use_pairing=case.use_pairing,
+                raw_output_callback=callback_paths.append,
             )
+
+        assert callback_paths == []
 
     def test_valid_paired_download_passes(self, tmp_path: Path) -> None:
         """A paired download containing a valid pair.a3m returns the alignments."""
@@ -641,15 +758,18 @@ class TestQueryColabFoldServerValidation:
             tmp_path / "out.tar.gz",
             {"pair.a3m": b">101\nAAAA\n\x00>102\nCCCC\n", "pair.sh": b"#\n"},
         )
+        callback_paths: list[Path] = []
 
         result = query_colabfold_msa_server(
             ["AAAA", "CCCC"],
             prefix=tmp_path,
             user_agent="test-agent",
             use_pairing=True,
+            raw_output_callback=callback_paths.append,
         )
 
         assert len(result) == 2
+        assert callback_paths == [tmp_path]
 
 
 class TestRemapObsoletePdb:
@@ -693,12 +813,35 @@ class TestRemapObsoletePdb:
 
 
 class TestMsaComputationSettings:
-    def test_cli_output_dir_overrides_config(self, tmp_path):
-        """Test that CLI output directory overrides config file setting."""
+    @pytest.mark.parametrize("cleanup_msa_dir", [False, True])
+    def test_workspace_cleanup_is_unconditional(self, cleanup_msa_dir):
+        settings = MsaComputationSettings(cleanup_msa_dir=cleanup_msa_dir)
+        settings.create_workspace()
+
+        settings.cleanup_workspace()
+
+        assert not settings.workspace_directory.exists()
+
+    def test_workspace_cleanup_raises_and_can_retry_after_failed_removal(self):
+        settings = MsaComputationSettings()
+        settings.create_workspace()
+
+        with (
+            patch("shutil.rmtree", side_effect=OSError("failed")),
+            pytest.raises(OSError, match="failed"),
+        ):
+            settings.cleanup_workspace()
+
+        assert settings.workspace_directory.exists()
+        settings.cleanup_workspace()
+        assert not settings.workspace_directory.exists()
+
+    def test_cli_output_dir_is_persistent(self, tmp_path):
         test_yaml_str = textwrap.dedent("""\
             msa_file_format: a3m
             server_user_agent: test-agent
             server_url: https://dummy.url
+            save_openfold_outputs: false
         """)
         cli_output_dir = tmp_path / "cli_dir"
         test_yaml_file = tmp_path / "runner.yml"
@@ -707,27 +850,83 @@ class TestMsaComputationSettings:
         msa_settings = MsaComputationSettings.from_config_with_cli_override(
             cli_output_dir, test_yaml_file
         )
+        assert msa_settings.save_openfold_outputs
+        assert msa_settings.save_colabfold_outputs
+        assert msa_settings.saved_output_directory == cli_output_dir
+        assert msa_settings.saved_colabfold_output_directory == cli_output_dir / "raw"
+        assert msa_settings.workspace_directory != cli_output_dir
 
-        assert Path(msa_settings.msa_output_directory) == cli_output_dir, (
-            "Expected CLI output directory to override default settings"
+    def test_cli_rejects_a_different_configured_output_directory(self, tmp_path):
+        config_file = tmp_path / "runner.yml"
+        config_file.write_text(
+            f"msa_output_directory: {tmp_path / 'configured-output'}\n"
         )
 
-    def test_cli_output_dir_conflict_raises(self, tmp_path):
-        """Test that conflict between CLI and config output dirs raises ValueError."""
-        test_yaml_str = textwrap.dedent(f"""\
-            msa_file_format: a3m
-            msa_output_directory: {tmp_path / "other_dir"}
-        """)
-        test_yaml_file = tmp_path / "runner.yml"
-        test_yaml_file.write_text(test_yaml_str)
-
-        cli_output_dir = tmp_path / "cli_dir"
-
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValueError, match="Output directory mismatch"):
             MsaComputationSettings.from_config_with_cli_override(
-                cli_output_dir, test_yaml_file
+                tmp_path / "cli-output", config_file
             )
 
-        assert "Output directory mismatch" in str(exc_info.value), (
-            "Expected ValueError on output directory conflict"
+    def test_msa_settings_keep_output_state_separate_with_readable_run_names(
+        self, tmp_path
+    ):
+        output_directory = tmp_path / "saved"
+        fixed_time = datetime.fromisoformat("2026-08-06T12:00:00+00:00")
+        with (
+            patch(
+                "openfold3.core.data.tools.colabfold_msa_server.datetime"
+            ) as mock_datetime,
+            patch(
+                "openfold3.core.data.tools.colabfold_msa_server.secrets.token_hex",
+                side_effect=["12345678", "abcdef01"],
+            ),
+        ):
+            mock_datetime.now.return_value = fixed_time
+            settings = MsaComputationSettings(msa_output_directory=output_directory)
+            other_settings = MsaComputationSettings()
+        run_name_prefix = f"msa-{getpass.getuser()}-"
+
+        assert settings.saved_output_directory == output_directory
+        assert settings.saved_colabfold_output_directory == output_directory / "raw"
+        assert settings.workspace_directory != output_directory
+        assert other_settings.saved_output_directory is None
+        for run_name in (
+            settings.run_directory_name,
+            other_settings.run_directory_name,
+        ):
+            assert run_name.startswith(run_name_prefix)
+            timestamp, random_suffix = run_name.removeprefix(run_name_prefix).rsplit(
+                "-", 1
+            )
+            datetime.strptime(timestamp, "%Y%m%dT%H%M%S%fZ")
+            assert len(random_suffix) == 8
+            int(random_suffix, 16)
+        assert other_settings.workspace_directory != settings.workspace_directory
+
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_workspace_cannot_contain_openfold_output(self, nested):
+        settings = MsaComputationSettings(save_colabfold_outputs=False)
+        settings.msa_output_directory = (
+            settings.workspace_directory / "saved"
+            if nested
+            else settings.workspace_directory
         )
+
+        with pytest.raises(ValueError, match="must not overlap"):
+            settings.validate_output_paths()
+
+        assert not settings.workspace_directory.exists()
+
+    @pytest.mark.parametrize("nested", [False, True])
+    def test_workspace_cannot_contain_colabfold_output(self, nested):
+        settings = MsaComputationSettings(save_openfold_outputs=False)
+        settings.colabfold_output_dir = (
+            settings.workspace_directory
+            if nested
+            else settings.workspace_directory.parent
+        )
+
+        with pytest.raises(ValueError, match="must not overlap"):
+            settings.validate_output_paths()
+
+        assert not settings.workspace_directory.exists()

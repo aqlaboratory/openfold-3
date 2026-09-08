@@ -21,7 +21,7 @@ from openfold3.core.data.primitives.structure.labels import (
     assign_atom_indices,
     residue_view_iter,
 )
-from openfold3.tests.custom_assert_utils import assert_atomarray_equal
+from openfold3.tests.utils.custom_assert_utils import assert_atomarray_equal
 
 
 @pytest.fixture

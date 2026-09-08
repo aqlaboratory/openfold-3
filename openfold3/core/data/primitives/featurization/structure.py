@@ -71,6 +71,31 @@ def create_sym_id(
     return sym_id_per_atom[token_starts]
 
 
+def maybe_create_cyclic_mask(
+    atom_array: AtomArray, token_starts: np.ndarray
+) -> torch.Tensor:
+    """Creates the per-token cyclic mask used by the relative position encoding.
+
+    Only queries built from the inference JSON carry an ``is_cyclic`` annotation;
+    structures parsed from mmCIF do not. The latter are treated as fully linear, so
+    that the feature is always present for downstream consumers.
+
+    Args:
+        atom_array (AtomArray):
+            AtomArray of the target structure.
+        token_starts (np.ndarray):
+            Indices of the first atom of each token.
+
+    Returns:
+        torch.Tensor:
+            [N_token] Boolean mask, True for tokens on a cyclic chain.
+    """
+    if "is_cyclic" not in atom_array.get_annotation_categories():
+        return torch.zeros(len(token_starts), dtype=torch.bool)
+
+    return torch.tensor(atom_array.is_cyclic[token_starts], dtype=torch.bool)
+
+
 def extract_starts_entities(atom_array: AtomArray) -> tuple[np.ndarray, np.ndarray]:
     """Extracts the residue starts and entity ids from an AtomArray.
 

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from contextlib import contextmanager
 from typing import Any
 
 import torch
@@ -19,6 +20,21 @@ from lightning_fabric.plugins.precision.deepspeed import _PRECISION_INPUT
 from lightning_fabric.plugins.precision.utils import _convert_fp_tensor
 from lightning_utilities import apply_to_collection
 from pytorch_lightning.plugins.precision.deepspeed import DeepSpeedPrecision
+
+
+@contextmanager
+def matmul_precision(level="high"):
+    """
+    Context manager to temporarily set PyTorch float32 matmul precision.
+    Valid levels: 'highest' (fp32), 'high' (tf32), 'medium' (bf16).
+    Defaults to 'high' (tf32).
+    """
+    old_precision = torch.get_float32_matmul_precision()
+    torch.set_float32_matmul_precision(level)
+    try:
+        yield
+    finally:
+        torch.set_float32_matmul_precision(old_precision)
 
 
 class OF3DeepSpeedPrecision(DeepSpeedPrecision):

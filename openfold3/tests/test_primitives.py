@@ -17,11 +17,11 @@ import unittest
 import pytest
 import torch
 
-import openfold3.tests.compare_utils as compare_utils
+import openfold3.tests.utils.compare_utils as compare_utils
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
 from openfold3.tests.config import consts
-from openfold3.tests.data_utils import random_attention_inputs
+from openfold3.tests.utils.data_utils import random_attention_inputs
 
 
 class TestLMA(unittest.TestCase):

@@ -26,7 +26,7 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.tests.config import consts
-from openfold3.tests.data_utils import random_of3_features
+from openfold3.tests.utils.data_utils import random_of3_features
 
 C_ATOM_REF = mlc.ConfigDict(
     {
@@ -234,7 +234,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
-            use_ada_layer_norm=True,
             inf=inf,
         )
 
@@ -289,7 +288,6 @@ class TestAtomAttentionEncoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
-            use_ada_layer_norm=True,
             inf=inf,
         )
 
@@ -349,7 +347,6 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
-            use_ada_layer_norm=True,
             inf=inf,
         )
 
@@ -397,7 +394,6 @@ class TestAtomAttentionDecoder(unittest.TestCase):
             n_transition=n_transition,
             n_query=n_query,
             n_key=n_key,
-            use_ada_layer_norm=True,
             inf=inf,
         )
 

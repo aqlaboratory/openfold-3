@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,6 +24,7 @@ import torch
 from openfold3.core.loss.loss_utils import loss_masked_batch_mean
 from openfold3.core.utils.atomize_utils import broadcast_token_feat_to_atoms
 from openfold3.core.utils.checkpointing import checkpoint_section
+from openfold3.core.utils.device_utils import autocast_device_type
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,7 @@ def weighted_rigid_align(
 
     # SVD (cast to float because doesn't work with bf16/fp16)
     dtype = x.dtype
-    with torch.amp.autocast("cuda", dtype=torch.float32):
+    with torch.amp.autocast(autocast_device_type(H), dtype=torch.float32):
         try:
             U, _, V = torch.linalg.svd(H)
             dets = torch.linalg.det(U @ V)
@@ -203,7 +205,6 @@ def bond_loss(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     )
 
     # Construct polymer-ligand per-token bond mask
-    # TODO: double check this
     # [*, N_token, N_token]
     is_polymer = batch["is_protein"] + batch["is_dna"] + batch["is_rna"]
     bond_mask = batch["token_bonds"] * (
@@ -258,27 +259,41 @@ def bond_loss_sparse(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
         return tensor.reshape(-1, *tensor.shape[len(batch_dims) :])
 
     def expand_sample_dim(t: torch.tensor) -> torch.tensor:
+        """Expand a tensor's singleton sample dim to match batch_dims.
+        All batch tensors already have a singleton sample dim at position 1.
+
+        Args:
+            t: Tensor of shape [bs, 1, *feat]
+
+        Returns:
+            Tensor of shape [bs, N_sample, *feat]
+        """
         feat_dims = t.shape[2:]
         t = t.expand(*batch_dims, *((-1,) * len(feat_dims)))
         return t
 
-    # Flatten all tensors to have a single batch dimension
+    # Flatten all tensors to have a single batch dimension.
+    # expand_sample_dim tiles the singleton to N_sample, then flatten collapses.
+    # x: [bs, N_sample, N_atom, 3] -> [bs*N_sample, N_atom, 3]
     x = flatten_batch_dims(x)
+    # x_gt: [bs, 1, N_atom, 3] -> [bs, N_sample, N_atom, 3] -> [bs*N_sample, N_atom, 3]
     x_gt = flatten_batch_dims(
         expand_sample_dim(batch["ground_truth"]["atom_positions"])
     )
+    # atom_mask_gt: [bs, 1, N_atom] -> [bs, N_sample, N_atom] -> [bs*N_sample, N_atom]
     atom_mask_gt = flatten_batch_dims(
         expand_sample_dim(batch["ground_truth"]["atom_resolved_mask"])
     )
 
     # Construct polymer-ligand per-token bond mask
-    # [*, N_token, N_token]
+    # [bs, 1, N_token, N_token]
     is_polymer = batch["is_protein"] + batch["is_dna"] + batch["is_rna"]
     token_bond_mask = batch["token_bonds"] * (
         is_polymer[..., None, :] * batch["is_ligand"][..., None]
     )
 
-    # [*, N_atom, N_atom]
+    # Broadcast token-level bond mask to atom-level
+    # [bs, 1, N_atom, N_atom]
     atom_bond_mask = broadcast_token_feat_to_atoms(
         token_mask=batch["token_mask"],
         num_atoms_per_token=batch["num_atoms_per_token"],
@@ -293,10 +308,18 @@ def bond_loss_sparse(x: torch.Tensor, batch: dict, eps: float) -> torch.Tensor:
     )
     atom_bond_mask = atom_bond_mask.transpose(-1, -2)
 
+    # atom_bond_mask: [bs, 1, N_atom, N_atom] -> [bs, N_sample, N_atom, N_atom]
+    #                 -> [bs*N_sample, N_atom, N_atom]
+    atom_bond_mask = flatten_batch_dims(expand_sample_dim(atom_bond_mask))
+
+    # Combine bond mask with atom resolved mask
+    # atom_bond_mask:            [bs*N_sample, N_atom, N_atom]
+    # atom_mask_gt[..., None]:   [bs*N_sample, N_atom, 1]
+    # atom_mask_gt[..., None,:]: [bs*N_sample, 1, N_atom]
+    # -> mask:                   [bs*N_sample, N_atom, N_atom]
     mask = (
         atom_bond_mask * (atom_mask_gt[..., None] * atom_mask_gt[..., None, :])
     ).bool()
-    mask = flatten_batch_dims(mask)
 
     # Find the indices of the valid bonds
     # bond_indices will be a tensor of shape [num_bonds, 3]

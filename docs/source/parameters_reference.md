@@ -2,23 +2,44 @@
 
 The list of parameters available with OpenFold3 are as follows
 
+```{figure} ../imgs/openfold3_parameter_table.png
+:alt: OpenFold3 parameter sets and the OpenFold3 versions they are compatible with
+:width: 100%
+
+Parameter sets available for OpenFold3, showing each set's PDB training cutoff and the
+range of OpenFold3 versions it is compatible with.
+```
+
 ```{list-table}
 :header-rows: 1
-:widths: 30 30 20 20
+:widths: 40 30 30
 
 * - Checkpoint Name
   - File Name
-  - Version compatibility
   - Number of training steps
-* - **openfold3-p2-155k (default)**
-  - **`of3-p2-155k.pt`**
-  - **`>=0.4.0`**
-  - **155,000**
+* - **openbind-2025-06-30-174k (default)**
+  - **`of3-ob-2025-06-30-174k.pt`**
+  - **174,000**
+* - openfold3-p2-155k _(deprecated)_
+  - `of3-p2-155k.pt`
+  - 155,000
 * - openfold3-p1 _(deprecated)_
   - `of3_ft3_v1.pt`
-  - `<0.4.0`
   - 78,000
 ```
+
+## How do I use an older set of parameters?
+
+To use a deprecated set of parameters, install an older version of OpenFold3.
+
+For example, to use OpenFold3p2 weights, you can use pypi to install a compatible version
+
+```
+pip install openfold3<0.5
+```
+
+Rerun `setup_openfold` after changing versions to ensure that the package has access to compatbile weights.
+
 
 ## Which parameters is OpenFold3 using?
 

@@ -27,6 +27,7 @@ from openfold3.core.data.primitives.featurization.structure import (
     create_token_bonds,
     encode_one_hot,
     extract_starts_entities,
+    maybe_create_cyclic_mask,
 )
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
@@ -190,6 +191,8 @@ def featurize_structure_of3(
             token_mask=features["token_mask"],
             num_atoms_per_token=features["num_atoms_per_token"],
         )
+
+        features["cyclic_mask"] = maybe_create_cyclic_mask(atom_array, token_starts)
 
     # Ground-truth-specific features
     # TODO reorganize GT feature logic

@@ -16,7 +16,9 @@
 # ------------------------------
 # We support linux-64, linux-aarch64, osx-64 and osx-arm64 platforms and provide the following environments:
 #   - default: an environment to maintain the rest of environments
-#   - openfold3-cpu: base environment without CUDA, to enable developing without GPU
+#   - openfold3-base: base environment without CUDA or ROCm, to enable developing without GPU.
+#                     On Apple Silicon the same conda-forge pytorch always ships Metal (MPS)
+#                     support, so this environment is not CPU-only there.
 #   - openfold3-cuda12 and openfold-cuda13: environments with cuda, deepspeed and cuequivariance
 #   - openfold3-cuda12-pypi and openfold-cuda13-pypi: environments with python and cuda from conda,
 #                                                     everything else from pypi
@@ -72,32 +74,51 @@
 
 [workspace]
 name = "openfold3"
+version = "0.4.2"
 authors = ["OpenFold Team <support@openfold.io>"]
 channels = ["conda-forge", "bioconda"]
-platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
-version = "0.4.0"
-
+platforms = [
+    "linux-64",
+    "linux-aarch64",
+    { name = "linux-64-cuda12", platform = "linux-64", cuda = "12.0" },
+    { name = "linux-aarch64-cuda12", platform = "linux-aarch64", cuda = "12.0" },
+    { name = "linux-64-cuda13", platform = "linux-64", cuda = "13.0" },
+    { name = "linux-aarch64-cuda13", platform = "linux-aarch64", cuda = "13.0" },
+    "osx-64",
+    "osx-arm64"
+]
+# Minimum pixi version required to run this workspace
 # - as we use task.default-environment
 #   hoping for environment markers to also come to conda dependencies,
 #   as it would help simplifying this toml
 #   https://github.com/prefix-dev/pixi/blob/main/CHANGELOG.md#-highlights-1
 # - as our lockfiles are now v7
-requires-pixi = ">=0.68"
+# - as we will use cuda support in build
+# - 0.73.0:
+#   * as we now use rich platform support
+#     arguably definition got more complex with this
+#     maybe we should lobby for system-requiremets to be an alternative
+#     and not deprecated
+#   * as we now use wildcard platform target selectors (this helped)
+requires-pixi = ">=0.73.0"
 
 # --- Environments
 
 [environments]
 default = { features = [ "python", "pixi-to-conda-lock" ] }
-openfold3-cpu = { no-default-feature = true, features = [
+# The non-CUDA/non-ROCm environment. Deliberately not called "cpu": on Apple
+# Silicon the same conda-forge pytorch dependency always ships Metal (MPS)
+# support, unlike on Linux where it is truly CPU-only.
+openfold3-base = { no-default-feature = true, features = [
     "python",
-    "openfold3-cpu",
+    "openfold3-base",
     "pytorch-conda",
     "openfold3-editable",
     "tests"
 ] }
 openfold3-cuda12 = { no-default-feature = true, features = [
     "python",
-    "openfold3-cpu",
+    "openfold3-base",
     "cuda12",
     "pytorch-conda-cuda",
     "deepspeed",
@@ -108,7 +129,7 @@ openfold3-cuda12 = { no-default-feature = true, features = [
 ] }
 openfold3-cuda13 = { no-default-feature = true, features = [
     "python",
-    "openfold3-cpu",
+    "openfold3-base",
     "cuda13",
     "pytorch-conda-cuda",
     "deepspeed",
@@ -139,11 +160,11 @@ openfold3-cuda13-pypi = { no-default-feature = true, features = [
 ] }
 openfold3-rocm7 = { no-default-feature = true, features = [
     "python",
-    "openfold3-cpu",
+    "openfold3-base",
     "pytorch-pypi-rocm7",
     "not-in-pypi",
     "openfold3-editable",
-    "tests", 
+    "tests",
 ] }
 openfold3-msa = { no-default-feature = true, features = [
     "openfold3-msa",
@@ -152,7 +173,7 @@ openfold3-msa = { no-default-feature = true, features = [
 # Maybe we should have solve-groups, but how to conciliate between e.g. cu12 and cu13?
 # N.B. at the moment all these are editable installs
 
-# --- CPU dependencies (excluding torch-related)
+# --- Base dependencies (excluding torch-related)
 
 # --- OpenFold3 in editable mode
 # The goal here would be to avoid getting anything installed from pypi in this step.
@@ -182,7 +203,7 @@ python = "*"
 pip = "*"
 
 
-[feature.openfold3-cpu.dependencies]
+[feature.openfold3-base.dependencies]
 
 # Explicit basics that could get anyway installed
 numpy = "*"
@@ -225,17 +246,42 @@ pytest-xdist = "*"
 pytest-cov = "*"
 pytest-benchmark = "*"
 pytest-regressions = "*"
+pytest-vcr = "*"
 
 # --- Dev and documentation optionals
 # We do not put on a feature to avoid combinatorial explosion.
 ruff = "*"
+mypy = "*"
 sphinx = "*"
 myst-parser = "*"
 furo = "*"
 pre-commit = "*"
 
 
-[feature.openfold3-cpu.target.linux-64.dependencies]
+# mypy-baseline is not packaged in conda-forge, so it comes from pypi.
+# It lets us record the current type errors in a baseline file and only fail
+# on newly introduced ones.
+[feature.openfold3-base.pypi-dependencies]
+mypy-baseline = "*"
+
+# mypy configuration lives in pyproject.toml ([tool.mypy] / [tool.mypy-baseline]),
+# the baseline itself in mypy-baseline.txt.
+# As with the test task, these are attached to a feature so they are runnable
+# from the environments that include it, e.g.
+#   pixi run -e openfold3-base typecheck
+[feature.openfold3-base.tasks]
+# Report only the type errors that are not already in the baseline.
+typecheck = "mypy | mypy-baseline filter"
+# Rewrite the baseline from the current state of the code. Run this after
+# fixing errors (it drops them) or after a mypy/dependency bump.
+# --no-incremental: mypy formats overload-candidate notes differently when types
+# are deserialized from a warm .mypy_cache, and CI always runs cold, so a
+# baseline synced from a warm cache fails in CI. Ignoring the cache here (without
+# deleting it) records the cold format while keeping `typecheck` runs fast.
+typecheck-sync = "mypy --no-incremental | mypy-baseline sync"
+
+
+[feature.openfold3-base.target.linux-64.dependencies]
 mkl = "*"
 
 
@@ -259,11 +305,18 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
 [feature.pytorch-pypi-rocm7]
 
+  # TODO: we should ask for a ROCM and METAL virtual packages in the conda world, to mirror the CUDA one
   platforms = ["linux-64"]
 
   [feature.pytorch-pypi-rocm7.dependencies]
   # torch 2.11.0+rocm7.2 requires setuptools<82
   setuptools = "<82"
+  # Triton JIT-compiles the launcher stub with a host C compiler at runtime.
+  # Unlike the CUDA envs (which get gcc/gxx transitively via deepspeed-build ->
+  # cuda-minimal-build/cutlass), the ROCm env pulls in no compiler otherwise, so
+  # Triton kernels fail with "Failed to find C compiler". Keep it in the env.
+  c-compiler = "*"
+  cxx-compiler = "*"
 
   [feature.pytorch-pypi-rocm7.pypi-dependencies]
   torch = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
@@ -271,10 +324,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
 [feature.cuda12]
 
-  platforms = ["linux-64", "linux-aarch64"]
-
-  [feature.cuda12.system-requirements]
-  cuda = "12.0"
+  platforms = ["linux-64-cuda12", "linux-aarch64-cuda12",]
 
   [feature.cuda12.dependencies]
   cuda-version = ">=12,<13"
@@ -285,10 +335,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
 [feature.cuda13]
 
-  platforms = ["linux-64", "linux-aarch64"]
-
-  [feature.cuda13.system-requirements]
-  cuda = "13.0"
+  platforms = ["linux-64-cuda13", "linux-aarch64-cuda13"]
 
   [feature.cuda13.dependencies]
   cuda-version = ">=13,<14"
@@ -303,7 +350,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 [feature.deepspeed]
 
   # N.B. aarch64 is not officially supported (yet), but seems to be working (for OF3-used primitives at least)
-  platforms = ["linux-64", "linux-aarch64"]
+  platforms = ["linux-64-cuda12", "linux-aarch64-cuda12", "linux-64-cuda13", "linux-aarch64-cuda13"]
 
   # aarch64 is not built in CF, so at the moment installing from sdist and crossing fingers
   [feature.deepspeed.target.linux-64.dependencies]
@@ -336,6 +383,13 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   # Change torch extensions cache, used by deepspeed, to be isolated
   env.TORCH_EXTENSIONS_DIR = "$CONDA_PREFIX/caches/torch_extensions"
 
+  # Silence: "nvcc warning : incompatible redefinition for option 'compiler-bindir'".
+  # The conda cuda-nvcc activation prepends `-ccbin=$CXX` (…-c++) via NVCC_PREPEND_FLAGS,
+  # while torch's cpp_extension appends `-ccbin $CC` (…-cc) on the command line; torch's
+  # dedup guard can't see the prepended value, so nvcc gets two conflicting -ccbin. Align
+  # the prepend to $CC so both agree (no behaviour change: nvcc already used $CC last).
+  env.NVCC_PREPEND_FLAGS = "-ccbin=$CC"
+
 
 # --- CuEquivariance
 # https://developer.nvidia.com/cuequivariance#section-get-started
@@ -355,22 +409,12 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 #   See also: https://github.com/NVIDIA/cuEquivariance/issues/218
 #
 
-[feature.cuequivariance-cuda12.target.linux-64.pypi-dependencies]
+[feature.cuequivariance-cuda12.target."*-cuda12".pypi-dependencies]
 cuequivariance = ">=0.8"
 cuequivariance-torch = ">=0.8"
 cuequivariance-ops-torch-cu12 = ">=0.8"
 
-[feature.cuequivariance-cuda12.target.linux-aarch64.pypi-dependencies]
-cuequivariance = ">=0.8"
-cuequivariance-torch = ">=0.8"
-cuequivariance-ops-torch-cu12 = ">=0.8"
-
-[feature.cuequivariance-cuda13.target.linux-64.pypi-dependencies]
-cuequivariance = ">=0.8"
-cuequivariance-torch = ">=0.8"
-cuequivariance-ops-torch-cu13 = ">=0.8"
-
-[feature.cuequivariance-cuda13.target.linux-aarch64.pypi-dependencies]
+[feature.cuequivariance-cuda13.target."*-cuda13".pypi-dependencies]
 cuequivariance = ">=0.8"
 cuequivariance-torch = ">=0.8"
 cuequivariance-ops-torch-cu13 = ">=0.8"
@@ -405,7 +449,7 @@ pixi-to-conda-lock = ">=0.4.3"
 [tasks]
 
 export-conda.args = [
-    { "arg" = "environment", "default" = "openfold3-cpu" },
+    { "arg" = "environment", "default" = "openfold3-base" },
     { "arg" = "platform", "default" = "linux-64" },
 ]
 export-conda.cmd = [
@@ -425,10 +469,10 @@ export-conda.cmd = [
 ]
 
 export-conda-all.depends-on = [
-    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "linux-64" } ]},
-    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "linux-aarch64" } ]},
-    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "osx-64" } ]},
-    { task = "export-conda", args = [ { environment = "openfold3-cpu" }, { platform = "osx-arm64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-base" }, { platform = "linux-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-base" }, { platform = "linux-aarch64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-base" }, { platform = "osx-64" } ]},
+    { task = "export-conda", args = [ { environment = "openfold3-base" }, { platform = "osx-arm64" } ]},
     { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "linux-64" } ]},
     { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "linux-aarch64" } ]},
     { task = "export-conda", args = [ { environment = "openfold3-cuda12" }, { platform = "osx-64" } ]},
@@ -448,7 +492,7 @@ export-conda-all.depends-on = [
 ]
 
 export-conda-lock.args = [
-    { "arg" = "environment", "default" = "openfold3-cpu" },
+    { "arg" = "environment", "default" = "openfold3-base" },
 ]
 export-conda-lock.cmd = [
     "pixi-to-conda-lock",
@@ -462,7 +506,7 @@ export-conda-lock.cmd = [
 ]
 
 export-conda-lock-all.depends-on = [
-    { task = "export-conda-lock", args = [ { environment = "openfold3-cpu" } ]},
+    { task = "export-conda-lock", args = [ { environment = "openfold3-base" } ]},
     { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12" } ]},
     { task = "export-conda-lock", args = [ { environment = "openfold3-cuda12-pypi" } ]},
     { task = "export-conda-lock", args = [ { environment = "openfold3-cuda13" } ]},
@@ -500,3 +544,16 @@ tasks.safe-but-slow-update.cmd = [
     "--concurrent-solves",
     "4"
 ]
+
+# Sample + download a small PDB training subset (see scripts/datasets/README.md).
+# Both default to writing/reading ./datasets relative to $PIXI_PROJECT_ROOT, since
+# pixi tasks run with cwd = the project root. Extra CLI args pass through, e.g.
+# `pixi run -e openfold3-base generate-pdb-subset -- --train-size 32 --val-size 16`.
+# `-u`: unbuffered stdout -- these scripts' progress prints (sampling/download
+# status over several minutes) would otherwise sit fully buffered and invisible
+# until the buffer fills or the process exits whenever stdout isn't a tty, e.g.
+# piped through `docker run` in CI, which is exactly how the caching workflow
+# invokes them.
+tasks.generate-pdb-subset.cmd = ["python", "-u", "scripts/datasets/generate_subset_cache.py"]
+tasks.download-pdb-subset.cmd = ["python", "-u", "scripts/datasets/download_subset.py"]
+tasks.setup-pdb-subset.depends-on = ["generate-pdb-subset", "download-pdb-subset"]

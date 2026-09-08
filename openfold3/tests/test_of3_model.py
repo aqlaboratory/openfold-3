@@ -20,9 +20,9 @@ from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
-from openfold3.tests import compare_utils
 from openfold3.tests.config import consts
-from openfold3.tests.data_utils import random_of3_features
+from openfold3.tests.utils import compare_utils
+from openfold3.tests.utils.data_utils import random_of3_features
 
 
 class TestOF3Model:
@@ -180,6 +180,7 @@ class TestOF3Model:
 
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_evo_attn_available()
     @pytest.mark.parametrize(
         "dtype", [torch.float32, torch.bfloat16], ids=lambda d: f"dtype={d}"
     )
@@ -209,6 +210,7 @@ class TestOF3Model:
     @pytest.mark.slow
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_evo_attn_available()
     @pytest.mark.parametrize(
         "dtype", [torch.float32, torch.bfloat16], ids=lambda d: f"dtype={d}"
     )
@@ -233,6 +235,7 @@ class TestOF3Model:
 
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_evo_attn_available()
     def test_shape_large_bf16_train(self):
         batch_size = 1
         n_token = 384

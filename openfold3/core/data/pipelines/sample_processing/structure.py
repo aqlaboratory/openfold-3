@@ -110,7 +110,7 @@ def process_target_structure_of3(
     if "sym_id" in atom_array.get_annotation_categories() and np.any(
         atom_array.sym_id == -1
     ):
-        logger.warning(
+        logger.info(
             f"Dummy sym_id=-1 found in {pdb_id}, applying legacy patch "
             f"(removing sym_id annotation to prevent residue splitting)."
         )

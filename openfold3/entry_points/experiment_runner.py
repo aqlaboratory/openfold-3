@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +16,6 @@
 import contextlib
 import json
 import logging
-import operator
 import os
 import shutil
 import sys
@@ -34,6 +34,7 @@ from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
+from pytorch_lightning.profilers import PyTorchProfiler
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
 from openfold3.core.data.framework.data_module import (
@@ -44,8 +45,10 @@ from openfold3.core.data.framework.data_module import (
 from openfold3.core.runners.writer import OF3OutputWriter
 from openfold3.core.utils.callbacks import (
     LogInferenceQuerySet,
+    MemorySnapshot,
     PredictTimer,
     RankSpecificSeedCallback,
+    SecondsPerIterationProgressBar,
 )
 from openfold3.core.utils.checkpoint_loading_utils import (
     get_state_dict_from_checkpoint,
@@ -55,9 +58,11 @@ from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
     ExperimentConfig,
+    InferenceExperimentConfig,
     TrainingExperimentConfig,
     generate_seeds,
 )
+from openfold3.projects.of3_all_atom import safe_globals  # noqa: F401
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
     InferenceJobConfig,
@@ -66,24 +71,10 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
-from openfold3.projects.of3_all_atom.model import OpenFold3
-from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.projects.of3_all_atom.model import MODEL_VERSION as OF3_MODEL_VERSION
+from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3ProjectEntry
 
 logger = logging.getLogger(__name__)
-
-# # Add OpenFold3 model to safe models to load
-torch.serialization.add_safe_globals(
-    [
-        OpenFold3,
-        mlc.ConfigDict,
-        mlc.FieldReference,
-        int,
-        bool,
-        float,
-        operator.add,
-        mlc.config_dict._Op,
-    ]
-)
 
 
 def rank_zero_only(fn):
@@ -98,6 +89,34 @@ def rank_zero_only(fn):
     return wrapper
 
 
+def _accelerator_will_use_mps(accelerator: str) -> bool:
+    """Whether `accelerator` resolves to MPS at runtime.
+
+    True for `"mps"`, and also for `"gpu"`/`"auto"` (PyTorch Lightning's
+    defaults) whenever MPS is the available accelerator.
+    """
+    if accelerator not in ("mps", "gpu", "auto"):
+        return False
+    from pytorch_lightning.accelerators import MPSAccelerator
+
+    return MPSAccelerator.is_available()
+
+
+def _model_update_with_mps_preset(model_update: ModelUpdate) -> ModelUpdate:
+    """Add the `mps` preset to `model_update` unless it's already present.
+
+    `model_update.custom` still overrides any value from the preset, since
+    presets are applied before `custom` (see
+    `ProjectEntry.get_model_config_with_update`).
+    """
+    if "mps" in model_update.presets:
+        return model_update
+    return ModelUpdate(
+        presets=[*model_update.presets, "mps"],
+        custom=model_update.custom,
+    )
+
+
 class ExperimentRunner(ABC):
     """Abstract class for experiments"""
 
@@ -110,6 +129,8 @@ class ExperimentRunner(ABC):
 
         # typical model update config
         self.model_update = experiment_config.model_update
+        self.memory_snapshot = experiment_config.memory_snapshot
+        self.profiler_config = experiment_config.profiler
 
     def setup(self) -> None:
         """Set up the experiment environment.
@@ -132,7 +153,10 @@ class ExperimentRunner(ABC):
     @cached_property
     def model_config(self) -> mlc.ConfigDict:
         """Retrieve the model configuration."""
-        return self.project_entry.get_model_config_with_update(self.model_update)
+        model_update = self.model_update
+        if _accelerator_will_use_mps(self.pl_trainer_args.accelerator):
+            model_update = _model_update_with_mps_preset(model_update)
+        return self.project_entry.get_model_config_with_update(model_update)
 
     @cached_property
     def lightning_module(self) -> pl.LightningModule:
@@ -244,8 +268,19 @@ class ExperimentRunner(ABC):
 
     @cached_property
     def callbacks(self):
-        """Set up and return the list of training callbacks."""
-        _callbacks = []
+        """Set up and return the list of callbacks."""
+        _callbacks = [SecondsPerIterationProgressBar()]
+
+        if self.memory_snapshot.enabled:
+            _callbacks.append(
+                MemorySnapshot(
+                    output_path=self.memory_snapshot.output_path,
+                    start_step=self.memory_snapshot.start_step,
+                    dump_on_oom=self.memory_snapshot.dump_on_oom,
+                    stacks=self.memory_snapshot.stacks,
+                )
+            )
+
         return _callbacks
 
     @cached_property
@@ -257,6 +292,29 @@ class ExperimentRunner(ABC):
     ###############
     # pl.Trainer class and run command
     ###############
+
+    def _build_profiler(self) -> PyTorchProfiler:
+        """Build a PyTorch profiler from the profiler config."""
+        cfg = self.profiler_config
+        return PyTorchProfiler(
+            dirpath=cfg.dirpath,
+            filename=cfg.filename,
+            schedule=torch.profiler.schedule(
+                skip_first=cfg.skip_first,
+                wait=cfg.wait,
+                warmup=cfg.warmup,
+                active=cfg.active,
+                repeat=cfg.repeat,
+            ),
+            activities=[
+                torch.profiler.ProfilerActivity.CPU,
+                torch.profiler.ProfilerActivity.CUDA,
+            ],
+            record_shapes=cfg.record_shapes,
+            profile_memory=cfg.profile_memory,
+            with_stack=cfg.with_stack,
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(cfg.dirpath),
+        )
 
     @cached_property
     def trainer(self) -> pl.Trainer:
@@ -272,6 +330,9 @@ class ExperimentRunner(ABC):
                 "logger": self.loggers,
             }
         )
+
+        if self.profiler_config.enabled:
+            trainer_args["profiler"] = self._build_profiler()
 
         return pl.Trainer(**trainer_args)
 
@@ -523,11 +584,16 @@ class TrainingExperimentRunner(ExperimentRunner):
     @cached_property
     def callbacks(self):
         """Set up and return the list of training callbacks."""
-        _callbacks = [RankSpecificSeedCallback(base_seed=self.seed)]
+        _callbacks = list(super().callbacks)
+
+        _callbacks.append(RankSpecificSeedCallback(base_seed=self.seed))
 
         _checkpoint = self.checkpoint_config
         if _checkpoint is not None:
             _callbacks.append(ModelCheckpoint(**_checkpoint.model_dump()))
+
+        if self.model_config.settings.debug.log_iteration_time:
+            _callbacks.append(PredictTimer(output_dir=None))
 
         _log_lr = self.logging_config.log_lr
         if _log_lr and self.use_wandb:
@@ -554,9 +620,11 @@ def skip_random_init():
 class InferenceExperimentRunner(ExperimentRunner):
     """Inference experiment builder."""
 
+    experiment_config: InferenceExperimentConfig
+
     def __init__(
         self,
-        experiment_config,
+        experiment_config: InferenceExperimentConfig,
         num_diffusion_samples: int | None = None,
         num_model_seeds: int | None = None,
         use_msa_server: bool | None = None,
@@ -580,6 +648,8 @@ class InferenceExperimentRunner(ExperimentRunner):
             use_msa_server,
             use_templates,
         )
+        msa_settings = experiment_config.msa_computation_settings
+        msa_settings.set_saved_output_root(self.output_dir / "msas")
 
     def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
         update_dict = {
@@ -680,22 +750,41 @@ class InferenceExperimentRunner(ExperimentRunner):
 
         return deduplicated_inference_set
 
-    def _warn_on_missing_version_tensor_in_load_statedict(
-        self, state_dict: dict
-    ) -> None:
-        """Load state dict, warning if only version_tensor is missing."""
-        try:
-            self.lightning_module.load_state_dict(state_dict, strict=True)
-        except RuntimeError as e:
-            if 'Missing key(s) in state_dict: "model.version_tensor".' in str(e):
-                logger.warning(
-                    "No version_tensor is found for this checkpoint."
-                    "Assuming the user knows checkpoints are parameters are compatible,"
-                    " continuing..."
-                )
-                self.lightning_module.load_state_dict(state_dict, strict=False)
-            else:
-                raise
+    def _load_state_dict_with_version_validation(self, state_dict: dict) -> None:
+        """Validate checkpoint keys, warning if only version_tensor is missing."""
+        # perform the key check manually.
+        model_keys = set(self.lightning_module.state_dict().keys())
+        ckpt_keys = set(state_dict.keys())
+        missing = model_keys - ckpt_keys
+        unexpected = ckpt_keys - model_keys
+
+        # warns on missing version tensor
+        if missing == {"model.version_tensor"} and not unexpected:
+            logger.warning(
+                "No version_tensor found for this checkpoint. "
+                "Assuming the user knows the given checkpoint parameters are compatible"
+                " with the model, continuing..."
+            )
+            self.lightning_module.load_state_dict(state_dict, strict=False)
+            return
+
+        elif missing or unexpected:
+            raise ValueError(
+                f"Checkpoint state_dict keys do not match model state_dict keys. "
+                f"Missing keys: {missing}, Unexpected keys: {unexpected}"
+            )
+
+        # raise error if version tensor is present but does not match
+        loaded_model_version = state_dict.get("model.version_tensor")
+        current_model_verison = OF3_MODEL_VERSION
+        if not torch.equal(loaded_model_version, current_model_verison):
+            raise ValueError(
+                f"Loaded checkpoint model version ({loaded_model_version}) does not"
+                f" match current model version ({current_model_verison})."
+                f" Please verify your checkpoint selection."
+            )
+        self.lightning_module.load_state_dict(state_dict, strict=True)
+        return
 
     def setup(self) -> None:
         """Set up environment and load checkpoints."""
@@ -705,7 +794,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         logger.info(f"Loading weights from {self.ckpt_path}")
         ckpt = load_checkpoint(self.ckpt_path)
         state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
-        self._warn_on_missing_version_tensor_in_load_statedict(state_dict)
+        self._load_state_dict_with_version_validation(state_dict)
 
     def run(self, inference_query_set) -> None:
         """Set up the experiment environment."""
@@ -729,14 +818,17 @@ class InferenceExperimentRunner(ExperimentRunner):
     @cached_property
     def callbacks(self):
         """Set up prediction writer callback."""
-        _callbacks = [
-            OF3OutputWriter(
-                output_dir=self.output_dir,
-                **self.output_writer_settings.model_dump(),
-            ),
-            PredictTimer(self.output_dir),
-            LogInferenceQuerySet(self.output_dir),
-        ]
+        _callbacks = list(super().callbacks)
+        _callbacks.extend(
+            [
+                OF3OutputWriter(
+                    output_dir=self.output_dir,
+                    **self.output_writer_settings.model_dump(),
+                ),
+                PredictTimer(self.output_dir),
+                LogInferenceQuerySet(self.output_dir),
+            ]
+        )
         return _callbacks
 
     @cached_property
@@ -748,6 +840,7 @@ class InferenceExperimentRunner(ExperimentRunner):
             msa=self.dataset_config_kwargs.msa,
             template=self.dataset_config_kwargs.template,
             template_preprocessor_settings=self.experiment_config.template_preprocessor_settings,
+            pocket_sampling=self.dataset_config_kwargs.pocket_sampling,
         )
         inference_spec = InferenceDatasetSpec(config=inference_config)
         return DataModuleConfig(
@@ -785,32 +878,35 @@ class InferenceExperimentRunner(ExperimentRunner):
         if path.exists():
             shutil.rmtree(path)
 
+    def cleanup_msa_workspace(self):
+        """Remove the temporary MSA workspace created by this run."""
+        msa_settings = self.experiment_config.msa_computation_settings
+        try:
+            msa_settings.cleanup_workspace()
+        except OSError:
+            logger.warning(
+                "Could not remove temporary MSA workspace for run %s",
+                msa_settings.run_directory_name,
+                exc_info=True,
+            )
+
     def cleanup(self):
         """Cleanup directories from colabfold MSA"""
+        self.cleanup_msa_workspace()
+        msa_settings = self.experiment_config.msa_computation_settings
+
         if self.is_rank_zero and self.log_dir.is_dir() and not os.listdir(self.log_dir):
             print("Removing empty log directory...")
             self.log_dir.rmdir()
 
-        if self.use_msa_server and self.is_rank_zero:
-            print("Cleaning up MSA directories...")
-
-            # Always remove raw directory
-            # TODO: Change to use ColabFoldQueryRunner.cleanup() when
-            # msa processing is performed in `prepare_data` lightning data hook
-            raw_colabfold_msa_path = (
-                self.experiment_config.msa_computation_settings.msa_output_directory
-                / "raw"
-            )
-            self._maybe_remove_dir(raw_colabfold_msa_path)
-            if self.experiment_config.msa_computation_settings.cleanup_msa_dir:
-                msa_output_dir = (
-                    self.experiment_config.msa_computation_settings.msa_output_directory
-                )
-                logger.info(f"Removing MSA output directory: {msa_output_dir}")
-                self._maybe_remove_dir(msa_output_dir)
-                if self.use_templates:
-                    template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
-                    self._maybe_remove_dir(template_dir)
+        if (
+            self.is_rank_zero
+            and self.use_msa_server
+            and msa_settings.cleanup_msa_dir
+            and self.use_templates
+        ):
+            template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
+            self._maybe_remove_dir(template_dir)
 
 
 class WandbHandler:

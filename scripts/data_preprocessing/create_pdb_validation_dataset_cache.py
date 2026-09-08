@@ -55,7 +55,7 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     "--max-release-date",
     type=str,
     required=True,
-    default="2023-01-13",
+    default="2023-01-12",
     help="Maximum release date for included structures, formatted as 'YYYY-MM-DD'.",
 )
 @click.option(
@@ -64,6 +64,17 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     required=True,
     default="2021-10-01",
     help="Minimum release date for included structures, formatted as 'YYYY-MM-DD'.",
+)
+@click.option(
+    "--max-conformer-release-date",
+    type=str,
+    default=None,
+    help=(
+        "Maximum release date for the model PDB-ID associated with a conformer, in the "
+        "rare case that conformer coordinates have to be inferred from the CCD model "
+        "coordinates. Formatted as 'YYYY-MM-DD'. If not provided, defaults to "
+        "min_release_date - 1 day (i.e. the last day of the training window)."
+    ),
 )
 @click.option(
     "--max-resolution",
@@ -93,12 +104,13 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_val import (
     ),
 )
 @click.option(
-    "--missing-alignment-log",
-    type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
+    "--alignment-log-dir",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
     default=None,
     help=(
-        "If this is specified, writes all entries without an alignment representative "
-        "to the specified log file."
+        "If specified, write alignment diagnostic logs to this directory: "
+        "missing_alignment_repr.json (unmatched chains) and "
+        "fuzzy_alignment_matches.json (chains matched via fuzzy RNA matching)."
     ),
 )
 @click.option(
@@ -158,12 +170,13 @@ def main(
     alignment_representatives_fasta: Path,
     output_path: Path,
     dataset_name: str,
-    max_release_date: str = "2023-01-13",
+    max_release_date: str = "2023-01-12",
     min_release_date: str = "2021-10-01",
+    max_conformer_release_date: str | None = None,
     max_resolution: float = 4.5,
     max_polymer_chains: int = 1000,
     allow_missing_alignment: bool = False,
-    missing_alignment_log: Path | None = None,
+    alignment_log_dir: Path | None = None,
     max_tokens_initial: int = 2560,
     max_tokens_final: int = 2048,
     ranking_fit_threshold: float = 0.5,
@@ -207,9 +220,9 @@ def main(
             If True, allow entries where not every RNA and protein sequence matches to
             an alignment representative in the alignment_representatives_fasta.
             Otherwise skip these entries.
-        missing_alignment_log (Path | None):
-            If not None, write all entries with missing alignment representatives to an
-            additional log file.
+        alignment_log_dir (Path | None):
+            If not None, write alignment diagnostic logs (missing representatives
+            and fuzzy matches) to this directory.
         log_level (Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL]):
             Set the logging level.
         log_file (Path | None):
@@ -237,10 +250,11 @@ def main(
         dataset_name=dataset_name,
         max_release_date=max_release_date,
         min_release_date=min_release_date,
+        max_conformer_release_date=max_conformer_release_date,
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
         filter_missing_alignment=not allow_missing_alignment,
-        missing_alignment_log=missing_alignment_log,
+        alignment_log_dir=alignment_log_dir,
         max_tokens_initial=max_tokens_initial,
         max_tokens_final=max_tokens_final,
         ranking_fit_threshold=ranking_fit_threshold,

@@ -40,6 +40,9 @@ from openfold3.core.data.pipelines.featurization.msa import (
     MsaFeaturizerOF3,
     MsaFeaturizerOF3Config,
 )
+from openfold3.core.data.pipelines.featurization.pocket_constraints import (
+    create_pocket_sampling_features,
+)
 from openfold3.core.data.pipelines.featurization.structure import (
     featurize_structure_of3,
 )
@@ -111,6 +114,9 @@ class InferenceDataset(Dataset):
         if self.template_preprocessor_settings.preparse_structures:
             self.template_preprocessor_settings.structure_file_format = "npz"
 
+        # Pocket sampling
+        self.pocket_sampling_settings = dataset_config.pocket_sampling
+
         # Parse CCD
         if dataset_config.ccd_file_path is not None:
             logger.debug("Parsing CCD file.")
@@ -164,10 +170,9 @@ class InferenceDataset(Dataset):
         molecule components in the query. The returned AtomArray follows the chain IDs
         given in the Query object. If a chain specifies multiple chain IDs, repeated
         identical chains with those IDs will be constructed and given the same entity
-        ID. Residue names will be inferred from the sequence or CCD codes. If a ligand
-        is specified through a SMILES string, it will be named as "LIG-X", where X
-        starts at 1 and is incremented for each unnamed ligand entity found in the
-        Query.
+        ID. Residue names will be inferred from the sequence or CCD codes. SMILES
+        ligands use an explicit ``ligand_name`` when provided and otherwise retain
+        their deterministic ``LIG0``, ``LIG1``, ... defaults.
 
         Additionally, this method adds tokenization information (token IDs) and token
         positions to the AtomArray, which are required by other functions in the
@@ -258,7 +263,7 @@ class InferenceDataset(Dataset):
             n_templates=self.template_settings.n_templates,
             take_top_k=self.template_settings.take_top_k,
             min_n_tokens_per_chain=self.template_settings.min_n_tokens_per_chain,
-            template_cache_directory=None,
+            template_cache_directory=self.template_preprocessor_settings.cache_directory,
             assembly_data=assembly_data,
             template_structures_directory=self.template_preprocessor_settings.structure_directory,
             template_structure_array_directory=self.template_preprocessor_settings.structure_array_directory,
@@ -278,6 +283,20 @@ class InferenceDataset(Dataset):
         )
 
         return template_features
+
+    def _pocket_sampling_features(
+        self,
+        query: Query,
+        atom_array: AtomArray,
+        processed_reference_molecules: list[ProcessedReferenceMolecule],
+    ) -> dict:
+        """Features for in-memory pocket proposal/refinement."""
+        return create_pocket_sampling_features(
+            query=query,
+            atom_array=atom_array,
+            processed_reference_molecules=processed_reference_molecules,
+            settings=self.pocket_sampling_settings,
+        )
 
     def create_all_features(
         self,
@@ -317,6 +336,14 @@ class InferenceDataset(Dataset):
             query, preprocessed_atom_array, n_tokens
         )
         features.update(template_features)
+
+        features.update(
+            self._pocket_sampling_features(
+                query=query,
+                atom_array=preprocessed_atom_array,
+                processed_reference_molecules=processed_reference_molecules,
+            )
+        )
 
         return features
 

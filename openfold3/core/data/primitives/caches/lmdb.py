@@ -92,7 +92,10 @@ def convert_datacache_to_lmdb(
     )
 
     if mode == "single-read":
-        dataset_cache = read_datacache(dataset_cache_file_or_obj)
+        if isinstance(dataset_cache_file_or_obj, Path):
+            dataset_cache = read_datacache(dataset_cache_file_or_obj)
+        else:
+            dataset_cache = dataset_cache_file_or_obj
 
         with (
             lmdb.open(str(lmdb_directory), map_size=map_size, subdir=True) as lmdb_env,

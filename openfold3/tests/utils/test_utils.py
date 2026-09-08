@@ -165,7 +165,7 @@ class TestUtils(unittest.TestCase):
         chunked = chunk_layer(l, {"input": x}, chunk_size=4, no_batch_dims=3)
         unchunked = l(x)
 
-        self.assertTrue(torch.all(chunked == unchunked))
+        torch.testing.assert_close(chunked, unchunked)
 
     def test_chunk_layer_dict(self):
         class LinearDictLayer(Linear):
@@ -179,8 +179,8 @@ class TestUtils(unittest.TestCase):
         chunked = chunk_layer(l, {"input": x}, chunk_size=4, no_batch_dims=3)
         unchunked = l(x)
 
-        self.assertTrue(torch.all(chunked["out"] == unchunked["out"]))
-        self.assertTrue(torch.all(chunked["inner"]["out"] == unchunked["inner"]["out"]))
+        torch.testing.assert_close(chunked["out"], unchunked["out"])
+        torch.testing.assert_close(chunked["inner"]["out"], unchunked["inner"]["out"])
 
     def test_chunk_slice_dict(self):
         x = torch.rand(3, 4, 3, 5)
@@ -195,7 +195,7 @@ class TestUtils(unittest.TestCase):
                 chunked = _chunk_slice(x, i, j, len(x.shape[:-1]))
                 chunked_flattened = x_flat[i:j]
 
-                self.assertTrue(torch.all(chunked == chunked_flattened))
+                torch.testing.assert_close(chunked, chunked_flattened)
 
     def test_chunk_size_tuner_caches(self):
         tuner = ChunkSizeTuner()

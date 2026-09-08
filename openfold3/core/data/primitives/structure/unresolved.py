@@ -295,10 +295,11 @@ def build_unresolved_polymer_segment(
 
         atom_names = atom_names[atom_mask]
         atom_elements = atom_elements[atom_mask]
+        atom_charges = atom_charges[atom_mask]
 
         # Add atoms for all unresolved residues
         for atom, element, charge in zip(
-            atom_names, atom_elements, atom_charges, strict=False
+            atom_names, atom_elements, atom_charges, strict=True
         ):
             atom_annotations = default_annotations.copy()
             atom_annotations["atom_name"] = atom
@@ -696,8 +697,12 @@ def add_unresolved_atoms_within_residue(
         for residue_view in residue_view_iter(chain):
             res_name = residue_view.res_name[0]
 
-            # For easier identification in logging
-            res_tuple = (residue_view.chain_id[0], residue_view.res_id[0], res_name)
+            # For easier identification in logging (use .item() to get native types)
+            res_tuple = (
+                residue_view.chain_id[0].item(),
+                residue_view.res_id[0].item(),
+                residue_view.res_name[0].item(),
+            )
 
             # Atoms in the structure
             resolved_atom_set = set(residue_view.atom_name.tolist())

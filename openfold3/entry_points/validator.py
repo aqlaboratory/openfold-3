@@ -14,6 +14,7 @@
 
 import logging
 import os
+import platform
 import random
 import warnings
 from datetime import timedelta
@@ -24,7 +25,7 @@ from typing import Any, Literal
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.data.pipelines.preprocessing.template import (
@@ -35,7 +36,6 @@ from openfold3.entry_points.parameters import (
     DEFAULT_CACHE_PATH,
     DEFAULT_CHECKPOINT_NAME,
     OPENFOLD_MODEL_CHECKPOINT_REGISTRY,
-    download_model_parameters,
     get_default_checkpoint_dir,
 )
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
@@ -196,6 +196,48 @@ class CheckpointLoadingSettings(BaseModel):
     strict_loading: bool = True
 
 
+class ProfilerConfig(BaseModel):
+    """
+    Configuration for PyTorch profiler with Chrome trace output.
+    When enabled, wraps training with torch.profiler and writes Chrome trace
+    files that can be viewed in chrome://tracing or Perfetto.
+    """
+
+    enabled: bool = False
+    dirpath: str = "logs/profiler_traces"
+    filename: str = "profile_trace"
+    skip_first: int = 0
+    wait: int = 1
+    warmup: int = 1
+    active: int = 3
+    repeat: int = 0
+    record_shapes: bool = True
+    profile_memory: bool = False
+    with_stack: bool = True
+
+
+class MemorySnapshotConfig(BaseModel):
+    """
+    Configuration for memory snapshot profiling.
+    When enabled, records GPU memory allocation history and dumps a pickle
+    file that can be visualized at https://pytorch.org/memory_viz
+    """
+
+    enabled: bool = False
+    output_path: str = "memory_snapshot.pickle"
+    # Step to record a snapshot. Set to null to disable step-based snapshotting.
+    start_step: int | None = 0
+    dump_on_oom: bool = False
+    stacks: str | None = None
+
+    @model_validator(mode="after")
+    def default_stacks_for_platform(self):
+        if self.stacks is None:
+            # "all" (C++ + Python) requires libunwind which is x86_64 only
+            self.stacks = "all" if platform.machine() == "x86_64" else "python"
+        return self
+
+
 class TrainingExperimentSettings(ExperimentSettings):
     """General settings specific for training experiments"""
 
@@ -297,6 +339,9 @@ class ExperimentConfig(BaseModel):
     experiment_settings: ExperimentSettings
     pl_trainer_args: PlTrainerArgs = PlTrainerArgs()
     model_update: ModelUpdate
+    user_default_runner_yaml_path: Path | None = None
+    memory_snapshot: MemorySnapshotConfig = MemorySnapshotConfig()
+    profiler: ProfilerConfig = ProfilerConfig()
 
 
 class TrainingExperimentConfig(ExperimentConfig):
@@ -384,7 +429,9 @@ class InferenceExperimentConfig(ExperimentConfig):
     data_module_args: DataModuleArgs = DataModuleArgs()
     dataset_config_kwargs: InferenceDatasetConfigKwargs = InferenceDatasetConfigKwargs()
     output_writer_settings: OutputWritingSettings = OutputWritingSettings()
-    msa_computation_settings: MsaComputationSettings = MsaComputationSettings()
+    msa_computation_settings: MsaComputationSettings = Field(
+        default_factory=MsaComputationSettings
+    )
     template_preprocessor_settings: TemplatePreprocessorSettings = (
         TemplatePreprocessorSettings(mode="predict")
     )
@@ -452,8 +499,7 @@ class InferenceExperimentConfig(ExperimentConfig):
         This function will:
         1) Attempt to find the checkpoints in the path specified by
            `cache_path` / `CHECKPOINT_ROOT_FILENAME`,
-        2) If not found, attempt to download the specified checkpoint name
-        (self.inference_ckpt_name to `cache_path` and write the checkpoint root file.
+        2) If not found, raises an error
         3) Set the inference_ckpt_path to the found or downloaded checkpoint path.
         """
         # Skip ckpt selection if ckpt is previously specified
@@ -467,7 +513,12 @@ class InferenceExperimentConfig(ExperimentConfig):
         )
 
         if not path_to_ckpt.exists():
-            download_model_parameters(param_dir, self.inference_ckpt_name)
+            raise ValueError(
+                f"Default checkpoint {self.inference_ckpt_name} not found"
+                f" in {param_dir}, cowardly refusing to perform inference."
+                "Please run `setup_openfold` to download the current default parameters"
+                " or specify a valid checkpoint path with `--inference-ckpt-path`"
+            )
 
         self.inference_ckpt_path = path_to_ckpt
 

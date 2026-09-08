@@ -282,7 +282,6 @@ class AtomAttentionEncoder(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        use_ada_layer_norm: bool,
         c_s: int | None = None,
         c_z: int | None = None,
         blocks_per_ckpt: int | None = None,
@@ -315,8 +314,6 @@ class AtomAttentionEncoder(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
-            use_ada_layer_norm:
-                Whether to apply AdaLN-Zero conditioning
             c_s:
                 Single representation channel dimension (optional)
             c_z:
@@ -382,7 +379,6 @@ class AtomAttentionEncoder(nn.Module):
             no_heads=no_heads,
             no_blocks=no_blocks,
             n_transition=n_transition,
-            use_ada_layer_norm=use_ada_layer_norm,
             n_query=self.n_query,
             n_key=self.n_key,
             blocks_per_ckpt=blocks_per_ckpt,
@@ -576,7 +572,6 @@ class AtomAttentionDecoder(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        use_ada_layer_norm: bool,
         blocks_per_ckpt: int | None = None,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_dec_init,
@@ -602,8 +597,6 @@ class AtomAttentionDecoder(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
-            use_ada_layer_norm:
-                Whether to apply AdaLN-Zero conditioning
             blocks_per_ckpt:
                 Number of blocks per checkpoint. If set, checkpointing will
                 be used to save memory.
@@ -630,7 +623,6 @@ class AtomAttentionDecoder(nn.Module):
             no_heads=no_heads,
             no_blocks=no_blocks,
             n_transition=n_transition,
-            use_ada_layer_norm=use_ada_layer_norm,
             n_query=n_query,
             n_key=n_key,
             blocks_per_ckpt=blocks_per_ckpt,

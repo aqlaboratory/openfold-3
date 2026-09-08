@@ -24,7 +24,7 @@ from openfold3.core.data.primitives.structure.tokenization import (
 from openfold3.core.data.primitives.structure.unresolved import (
     add_unresolved_atoms_within_residue,
 )
-from openfold3.tests.custom_assert_utils import assert_atomarray_equal
+from openfold3.tests.utils.custom_assert_utils import assert_atomarray_equal
 
 TEST_DIR = Path(__file__).parent / "test_data" / "tokenization"
 

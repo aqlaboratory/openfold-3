@@ -17,7 +17,7 @@ import platform
 import resource
 
 logging.basicConfig()
-logger = logging.getLogger(__file__)
+logger = logging.getLogger(__name__)
 
 
 def set_ulimits():
