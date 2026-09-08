@@ -23,6 +23,7 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.utils.tensor_utils import add
 
 
 class TemplatePairEmbedderAllAtom(nn.Module):
@@ -67,7 +68,7 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         self.layer_norm_z = LayerNorm(c_in)
         self.linear_z = Linear(c_in, c_out, **linear_init_params.linear_z)
 
-    def _embed_feats(self, batch: dict):
+    def _embed_feats(self, batch: dict, inplace_safe: bool = False):
         dtype = batch["template_unit_vector"].dtype
 
         # [*, N_token, N_token]
@@ -103,17 +104,29 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         )
 
         a = self.dgram_linear(template_distogram)
-        a = a + self.pseudo_beta_mask_linear(pseudo_beta_pair_mask)
-        a = a + self.aatype_linear_1(template_restype_ti.to(dtype=dtype))
-        a = a + self.aatype_linear_2(template_restype_tj.to(dtype=dtype))
-        a = a + self.x_linear(x[..., None])
-        a = a + self.y_linear(y[..., None])
-        a = a + self.z_linear(z[..., None])
-        a = a + self.backbone_mask_linear(backbone_frame_pair_mask)
+        a = add(
+            a, self.pseudo_beta_mask_linear(pseudo_beta_pair_mask), inplace=inplace_safe
+        )
+        a = add(
+            a,
+            self.aatype_linear_1(template_restype_ti.to(dtype=dtype)),
+            inplace=inplace_safe,
+        )
+        a = add(
+            a,
+            self.aatype_linear_2(template_restype_tj.to(dtype=dtype)),
+            inplace=inplace_safe,
+        )
+        a = add(a, self.x_linear(x[..., None]), inplace=inplace_safe)
+        a = add(a, self.y_linear(y[..., None]), inplace=inplace_safe)
+        a = add(a, self.z_linear(z[..., None]), inplace=inplace_safe)
+        a = add(
+            a, self.backbone_mask_linear(backbone_frame_pair_mask), inplace=inplace_safe
+        )
 
         return a
 
-    def forward(self, batch, z):
+    def forward(self, batch, z, inplace_safe: bool = False):
         """
         Args:
             batch:
@@ -123,7 +136,7 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         Returns:
             # [*, N_templ, N_token, N_token, C_out] Template pair feature embedding
         """
-        a = self._embed_feats(batch=batch)
+        a = self._embed_feats(batch=batch, inplace_safe=inplace_safe)
 
         # [*, N_templ, N_token, N_token, C_out]
         z = self.linear_z(self.layer_norm_z(z))

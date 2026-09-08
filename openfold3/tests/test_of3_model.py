@@ -233,6 +233,7 @@ class TestOF3Model:
             use_triton_triangle_kernels=is_rocm,
         )
 
+    @pytest.mark.slow
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
     @compare_utils.skip_unless_evo_attn_available()
