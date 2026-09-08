@@ -68,6 +68,7 @@ optional-dependencies.dev = [
     # used for documentation
     "sphinx",
     "myst-parser",
+    "sphinxcontrib-mermaid",
     "furo"
 ]
 optional-dependencies.cuequivariance = [
