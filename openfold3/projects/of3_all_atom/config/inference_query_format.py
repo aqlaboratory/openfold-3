@@ -37,7 +37,6 @@ from openfold3.core.data.resources.residues import (
 )
 
 
-# Definition for Bonds
 class Atom(NamedTuple):
     """Named atom in a query chain; residue IDs are one-based."""
 
@@ -47,6 +46,8 @@ class Atom(NamedTuple):
 
 
 class Bond(NamedTuple):
+    """Covalent connection between two named atoms in a query."""
+
     atom1: Atom
     atom2: Atom
 

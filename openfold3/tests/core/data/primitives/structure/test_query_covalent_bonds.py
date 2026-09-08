@@ -1,3 +1,5 @@
+"""Check named query bonds through structure assembly and token featurization."""
+
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +25,7 @@ EXAMPLES_DIR = Path(__file__).resolve().parents[6] / "examples/example_inference
 
 
 def make_query(endpoint=None, ligand=None):
+    """Build a cysteine bond query with an optional ligand endpoint."""
     chains = [{"molecule_type": "protein", "chain_ids": ["A", "B"], "sequence": "GCG"}]
     if ligand is not None:
         chains.append({"molecule_type": "ligand", "chain_ids": "X", **ligand})
@@ -127,14 +130,19 @@ def test_example_builds():
     ],
 )
 def test_asn_linked_two_sugar_glycan(chain_order, glycan_ref_index):
+    """Preserve the Asn attachment and glycosidic bonds through collation.
+
+    Reference molecules follow builder residue order, so the glycan is first
+    or follows the three protein residues depending on query chain order.
+    Its bridging oxygen is identified from the processed reference graph.
+    The collated token adjacency matrix has a leading sample axis.
+    """
     query = InferenceQuerySet.from_json(
         EXAMPLES_DIR / "query_asn_two_sugar_glycan.json"
     ).queries["asn_two_sugar_glycan"]
     query.chains = [query.chains[i] for i in chain_order]
     structure = structure_with_ref_mols_from_query(query)
     atoms = structure.atom_array
-    # Reference molecules follow builder residue order, including the three
-    # protein residues; select the glycan independently of query chain order.
     glycan_ref = structure.processed_reference_mols[glycan_ref_index]
     mol = glycan_ref.mol
     rings = mol.GetRingInfo().AtomRings()
@@ -154,8 +162,6 @@ def test_asn_linked_two_sugar_glycan(chain_order, glycan_ref_index):
     nd2 = atom_index("A", "ND2")
     attachment = atom_index("G", "C1")
     ring_atoms = set(rings[0]) | set(rings[1])
-    # Audit the internal glycosidic oxygen from the processed reference graph,
-    # rather than relying on SMILES atom order or an assumed oxygen name.
     bridges = [
         atom
         for atom in mol.GetAtoms()
@@ -183,7 +189,6 @@ def test_asn_linked_two_sugar_glycan(chain_order, glycan_ref_index):
         atoms, len(tokens), is_gt=False, add_perm_features=False
     )
     batch = openfold_batch_collator([features])
-    # Collation adds the leading sample axis to the token adjacency matrix.
     assert batch["token_bonds"].shape == (1, len(tokens), len(tokens))
     bonds = batch["token_bonds"][0]
     for first, second in pairs:

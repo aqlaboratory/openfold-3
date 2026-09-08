@@ -559,7 +559,16 @@ def _build_smiles_comp_id_mapping(query: Query) -> dict[str, str]:
 
 
 def add_query_covalent_bonds(atom_array: AtomArray, query: Query) -> None:
-    """Add named query bonds to the assembled structure in place."""
+    """Add named query bonds to the assembled structure in place.
+
+    Resolve each endpoint by chain ID, one-based residue ID, and atom name.
+    All endpoints are validated before changing the bond list; missing or
+    ambiguous atoms and bonds from an atom to itself raise ValueError.
+
+    New pairs are added as single bonds. Existing pairs retain their bond types,
+    and duplicate or reversed query bonds are ignored. An absent or empty
+    covalent_bonds list leaves the structure unchanged.
+    """
     if not query.covalent_bonds:
         return
 
