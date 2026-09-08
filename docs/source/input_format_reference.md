@@ -390,6 +390,12 @@ are single bonds and enter OF3's existing tokenization and `token_bonds`
 features. This supplies model conditioning, not a guaranteed output distance.
 No atoms are removed and reference-molecule chemistry is not modified: inputs
 must already contain the intended atoms, without unwanted leaving groups.
-The previous unused numeric `atom_id` selector is replaced by `atom_name`.
 
-See `examples/example_inference_inputs/covalent_bonds.json` for a complete input.
+Complete inputs:
+- [Disulfide bond](https://github.com/aqlaboratory/openfold-3/blob/main/examples/example_inference_inputs/covalent_bonds.json).
+- [Asn-linked two-sugar glycan](https://github.com/aqlaboratory/openfold-3/blob/main/examples/example_inference_inputs/query_asn_two_sugar_glycan.json).
+
+The glycan example uses one SMILES ligand containing two linked sugar rings.
+Its attachment carbon `C1` is hydrogen-capped in the reference molecule, with
+no hydroxyl leaving group. The query connects it to Asn `ND2`; it does not
+specify attachment stereochemistry or alter the reference molecule's hydrogens.

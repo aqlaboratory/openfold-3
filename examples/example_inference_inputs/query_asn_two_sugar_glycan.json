@@ -1,0 +1,35 @@
+{
+  "seeds": [
+    42
+  ],
+  "queries": {
+    "asn_two_sugar_glycan": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": "A",
+          "sequence": "NVT"
+        },
+        {
+          "molecule_type": "ligand",
+          "chain_ids": "G",
+          "smiles": "C1[C@@H](NC(=O)C)[C@@H](O)[C@H](O[C@H]2[C@H](NC(=O)C)[C@@H](O)[C@H](O)[C@H](O2)CO)[C@H](O1)CO"
+        }
+      ],
+      "covalent_bonds": [
+        {
+          "atom1": [
+            "A",
+            1,
+            "ND2"
+          ],
+          "atom2": [
+            "G",
+            1,
+            "C1"
+          ]
+        }
+      ]
+    }
+  }
+}

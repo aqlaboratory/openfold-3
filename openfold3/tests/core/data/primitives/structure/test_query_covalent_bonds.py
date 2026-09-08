@@ -4,6 +4,10 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
+from openfold3.core.data.framework.data_module import openfold_batch_collator
+from openfold3.core.data.pipelines.featurization.structure import (
+    featurize_structure_of3,
+)
 from openfold3.core.data.primitives.featurization.structure import create_token_bonds
 from openfold3.core.data.primitives.structure.query import (
     add_query_covalent_bonds,
@@ -15,13 +19,13 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Query,
 )
 
+EXAMPLES_DIR = Path(__file__).resolve().parents[6] / "examples/example_inference_inputs"
 
-def make_query(endpoint=None, reverse=False, ligand=None):
+
+def make_query(endpoint=None, ligand=None):
     chains = [{"molecule_type": "protein", "chain_ids": ["A", "B"], "sequence": "GCG"}]
     if ligand is not None:
         chains.append({"molecule_type": "ligand", "chain_ids": "X", **ligand})
-    if reverse:
-        chains.reverse()
     return Query.model_validate(
         {
             "chains": chains,
@@ -32,7 +36,9 @@ def make_query(endpoint=None, reverse=False, ligand=None):
     )
 
 
-@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize(
+    "chain_order", [(0, 1), (1, 0)], ids=["protein-first", "ligand-first"]
+)
 @pytest.mark.parametrize(
     "ligand, endpoint",
     [
@@ -41,8 +47,9 @@ def make_query(endpoint=None, reverse=False, ligand=None):
         ({"smiles": "CCO"}, ["X", 1, "C1"]),
     ],
 )
-def test_named_bonds_reach_token_features(reverse, ligand, endpoint):
-    query = make_query(endpoint, reverse, ligand)
+def test_named_bonds_reach_token_features(chain_order, ligand, endpoint):
+    query = make_query(endpoint, ligand)
+    query.chains = [query.chains[i] for i in chain_order if i < len(query.chains)]
     atoms = structure_with_ref_mols_from_query(query).atom_array
     indices = [
         int(
@@ -108,8 +115,78 @@ def test_invalid_selector_schema(endpoint):
 
 
 def test_example_builds():
-    root = Path(__file__).resolve().parents[6]
-    queries = InferenceQuerySet.from_json(
-        root / "examples/example_inference_inputs/covalent_bonds.json"
-    )
+    queries = InferenceQuerySet.from_json(EXAMPLES_DIR / "covalent_bonds.json")
     structure_with_ref_mols_from_query(queries.queries["disulfide"])
+
+
+@pytest.mark.parametrize(
+    "chain_order, glycan_ref_index",
+    [
+        pytest.param((0, 1), -1, id="protein-first"),
+        pytest.param((1, 0), 0, id="glycan-first"),
+    ],
+)
+def test_asn_linked_two_sugar_glycan(chain_order, glycan_ref_index):
+    query = InferenceQuerySet.from_json(
+        EXAMPLES_DIR / "query_asn_two_sugar_glycan.json"
+    ).queries["asn_two_sugar_glycan"]
+    query.chains = [query.chains[i] for i in chain_order]
+    structure = structure_with_ref_mols_from_query(query)
+    atoms = structure.atom_array
+    # Reference molecules follow builder residue order, including the three
+    # protein residues; select the glycan independently of query chain order.
+    glycan_ref = structure.processed_reference_mols[glycan_ref_index]
+    mol = glycan_ref.mol
+    rings = mol.GetRingInfo().AtomRings()
+    assert len(rings) == 2
+    assert all(len(ring) == 6 for ring in rings)
+    names = [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
+    assert set(atoms.atom_name[atoms.chain_id == "G"]) == set(names)
+    assert glycan_ref.in_crop_mask.all()
+
+    def atom_index(chain, name):
+        indices = np.flatnonzero(
+            (atoms.chain_id == chain) & (atoms.res_id == 1) & (atoms.atom_name == name)
+        )
+        assert len(indices) == 1
+        return int(indices[0])
+
+    nd2 = atom_index("A", "ND2")
+    attachment = atom_index("G", "C1")
+    ring_atoms = set(rings[0]) | set(rings[1])
+    # Audit the internal glycosidic oxygen from the processed reference graph,
+    # rather than relying on SMILES atom order or an assumed oxygen name.
+    bridges = [
+        atom
+        for atom in mol.GetAtoms()
+        if atom.GetSymbol() == "O"
+        and atom.GetIdx() not in ring_atoms
+        and len(atom.GetNeighbors()) == 2
+        and any(n.GetIdx() in rings[0] for n in atom.GetNeighbors())
+        and any(n.GetIdx() in rings[1] for n in atom.GetNeighbors())
+    ]
+    assert len(bridges) == 1
+    bridge = bridges[0]
+    pairs = [(nd2, attachment)] + [
+        (atom_index("G", names[bridge.GetIdx()]), atom_index("G", names[n.GetIdx()]))
+        for n in bridge.GetNeighbors()
+    ]
+    structure_pairs = {tuple(sorted(pair)) for pair in atoms.bonds.as_array()[:, :2]}
+    assert all(tuple(sorted(pair)) in structure_pairs for pair in pairs)
+
+    tokenize_atom_array(atoms)
+    assert atoms.is_atomized[(atoms.chain_id == "A") & (atoms.res_id == 1)].all()
+    assert atoms.is_atomized[atoms.chain_id == "G"].all()
+    tokens = np.unique(atoms.token_id)
+    token_positions = {int(token): i for i, token in enumerate(tokens)}
+    features = featurize_structure_of3(
+        atoms, len(tokens), is_gt=False, add_perm_features=False
+    )
+    batch = openfold_batch_collator([features])
+    # Collation adds the leading sample axis to the token adjacency matrix.
+    assert batch["token_bonds"].shape == (1, len(tokens), len(tokens))
+    bonds = batch["token_bonds"][0]
+    for first, second in pairs:
+        i = token_positions[int(atoms.token_id[first])]
+        j = token_positions[int(atoms.token_id[second])]
+        assert bonds[i, j] == bonds[j, i] == 1
