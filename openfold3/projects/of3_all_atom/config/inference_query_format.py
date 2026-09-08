@@ -18,6 +18,7 @@ from pydantic import (
     BaseModel,
     BeforeValidator,
     DirectoryPath,
+    Field,
     FilePath,
     field_serializer,
     field_validator,
@@ -38,9 +39,11 @@ from openfold3.core.data.resources.residues import (
 
 # Definition for Bonds
 class Atom(NamedTuple):
-    chain_id: str
-    residue_id: int
-    atom_id: int
+    """Named atom in a query chain; residue IDs are one-based."""
+
+    chain_id: Annotated[str, Field(min_length=1)]
+    residue_id: Annotated[int, Field(ge=1)]
+    atom_name: Annotated[str, Field(min_length=1)]
 
 
 class Bond(NamedTuple):

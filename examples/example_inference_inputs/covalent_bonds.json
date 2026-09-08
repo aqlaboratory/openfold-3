@@ -1,0 +1,9 @@
+{
+  "seeds": [42],
+  "queries": {
+    "disulfide": {
+      "chains": [{"molecule_type": "protein", "chain_ids": ["A", "B"], "sequence": "GCG"}],
+      "covalent_bonds": [{"atom1": ["A", 2, "SG"], "atom2": ["B", 2, "SG"]}]
+    }
+  }
+}

@@ -25,7 +25,7 @@ from typing import NamedTuple
 import biotite.structure as struc
 import numpy as np
 from biotite.interface.rdkit import from_mol, to_mol
-from biotite.structure import AtomArray
+from biotite.structure import AtomArray, BondList, BondType
 from rdkit import Chem
 
 from openfold3.core.data.pipelines.sample_processing.conformer import (
@@ -558,6 +558,42 @@ def _build_smiles_comp_id_mapping(query: Query) -> dict[str, str]:
     return smiles_to_comp_id
 
 
+def add_query_covalent_bonds(atom_array: AtomArray, query: Query) -> None:
+    """Add named query bonds to the assembled structure in place."""
+    if not query.covalent_bonds:
+        return
+
+    pairs = []
+    for bond in query.covalent_bonds:
+        endpoints = []
+        for atom in bond:
+            indices = np.flatnonzero(
+                (atom_array.chain_id == atom.chain_id)
+                & (atom_array.res_id == atom.residue_id)
+                & (atom_array.atom_name == atom.atom_name)
+            )
+            if len(indices) != 1:
+                raise ValueError(
+                    f"Covalent bond endpoint {atom}: expected one atom, "
+                    f"found {len(indices)}."
+                )
+            endpoints.append(int(indices[0]))
+        if endpoints[0] == endpoints[1]:
+            raise ValueError("A covalent bond cannot connect an atom to itself.")
+        pairs.append(endpoints)
+
+    if atom_array.bonds is None:
+        atom_array.bonds = BondList(len(atom_array))
+    existing_pairs = {
+        tuple(sorted(pair)) for pair in atom_array.bonds.as_array()[:, :2]
+    }
+    for atom1, atom2 in pairs:
+        pair = tuple(sorted((atom1, atom2)))
+        if pair not in existing_pairs:
+            atom_array.bonds.add_bond(atom1, atom2, BondType.SINGLE)
+            existing_pairs.add(pair)
+
+
 def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMolecules:
     """Builds an AtomArray and processed reference molecules from a Query object.
 
@@ -673,6 +709,8 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                 atom_array = segment_atom_array
             else:
                 atom_array += segment_atom_array
+
+    add_query_covalent_bonds(atom_array, query)
 
     # Force coordinates to 0 for consistency
     atom_array.coord[:] = 0.0
