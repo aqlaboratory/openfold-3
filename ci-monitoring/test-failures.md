@@ -283,3 +283,31 @@ ColabFold server before running prediction.
 Not an AWS GPU outage. The parameter cache was restored (step 7 succeeded) but did not contain the `openbind-2025-06-30-174k` checkpoint name required by the PR's code. This PR changes the conda environment (deepspeed from PyPI to conda-forge, pytorch 2.5.1→2.10.0), which may have caused a cache miss or served a stale cache lacking the new checkpoint. The same checkpoint name mismatch drove the AMD runner failures from 2026-08-22 through 2026-08-27. The scheduled main run passed on the same day, suggesting the issue is specific to this PR's cache state or environment.
 
 ---
+
+## 2026-09-08
+
+**Cause:** External service timeout — ColabFold API (`api.colabfold.com`) connection timed out during the `msa-no_templates-ubiquitin` test. Recurring pattern previously seen on 2026-08-09, 2026-08-11, and 2026-08-12. Not an AWS GPU outage; not an OF3 code bug. Two consecutive scheduled runs affected.
+
+### Run 1
+- **Run ID:** [34183685544](https://github.com/aqlaboratory/openfold-3/actions/runs/34183685544)
+- **Run #:** 248
+- **Time:** 2026-09-08T03:29:28Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 101927687126)
+- **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU)
+- **Commit:** `e47adbf95448956574603c9e8eb703cbb0c3bb0b`
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin]`
+- **Error:** `requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.`
+- **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
+
+### Run 2
+- **Run ID:** [34187127942](https://github.com/aqlaboratory/openfold-3/actions/runs/34187127942)
+- **Run #:** 249
+- **Time:** 2026-09-08T04:28:47Z
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 101937614761)
+- **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU)
+- **Commit:** `e47adbf95448956574603c9e8eb703cbb0c3bb0b`
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin]`
+- **Error:** `requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.`
+- **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
+
+---
