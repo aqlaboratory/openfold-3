@@ -27,15 +27,9 @@ dependencies:
   - bioconda::hmmer
   - bioconda::hhsuite
   - bioconda::snakemake
-  # PyTorch comes from conda-forge: the `pytorch` channel stopped publishing after
-  # 2.5.1, which pins us to a torch too old for current deepspeed releases.
-  # `pytorch-gpu` selects the CUDA build, mirroring feature.pytorch-conda-cuda in pixi.toml.
   - conda-forge::pytorch-gpu
   - conda-forge::cuda-version>=12,<13
-  # deepspeed from conda-forge rather than PyPI, as feature.deepspeed does in pixi.toml:
-  # those builds carry real pytorch run constraints, so an incompatible pair is rejected
-  # by the solver instead of blowing up at import time. The upper bound keeps a new
-  # minor release from changing the required torch under us.
+  - conda-forge::cuda-cudart-dev
   - conda-forge::deepspeed>=0.19,<0.20
   - memory_profiler
   - func_timeout
