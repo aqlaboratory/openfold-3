@@ -65,6 +65,7 @@ jobs:
 
   test-openfold-docker:
     runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
+    timeout-minutes: 120
     needs:
       - start-aws-runner
     permissions:
