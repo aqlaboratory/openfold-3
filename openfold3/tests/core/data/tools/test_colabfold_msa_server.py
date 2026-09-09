@@ -17,6 +17,7 @@
 import getpass
 import io
 import json
+import logging
 import shutil
 import tarfile
 import textwrap
@@ -1011,3 +1012,37 @@ class TestServerUnresponsive:
             query_colabfold_msa_server(
                 ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
             )
+
+    # A budget of 0 would raise on the first check, before any notice; give the
+    # loop room for a few polls, with no real sleep between them.
+    @patch(f"{_MODULE}.MSA_SERVER_POLL_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_PROGRESS_LOG_S", 0.05)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0.2)
+    @patch(f"{_MODULE}.requests.get")
+    @patch(f"{_MODULE}.requests.post")
+    def test_waiting_is_reported_at_warning_level(
+        self, mock_post, mock_get, tmp_path, caplog
+    ):
+        """The per-poll messages are INFO, which a WARNING-level log config hides,
+        so a stalled job looked like total silence. A periodic notice must reach
+        WARNING and name the status, or the next stall is again only diagnosable
+        from host CPU metrics.
+        """
+        mock_post.return_value.json.return_value = {"status": "PENDING", "id": "job-1"}
+        mock_get.return_value.json.return_value = {"status": "PENDING"}
+
+        with (
+            caplog.at_level(logging.WARNING, logger="openfold3"),
+            pytest.raises(TimeoutError),
+        ):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
+
+        waiting = [
+            r for r in caplog.records if "Still waiting on the MSA server" in r.message
+        ]
+        assert waiting, "no still-waiting notice was emitted at WARNING level"
+        assert "PENDING" in waiting[0].message
+        # Never advertise a negative remaining time; past the deadline we raise.
+        assert "giving up in -" not in waiting[0].message

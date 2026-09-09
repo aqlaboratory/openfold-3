@@ -81,9 +81,49 @@ class MsaServerPairingStrategy(IntEnum):
 # non-terminal state.
 MSA_SERVER_MAX_WAIT_S = 45 * 60
 
+# How often to surface a still-waiting notice while polling the server. The
+# per-poll messages are INFO, which pytest's WARNING-level live log hides, so a
+# stalled job otherwise looks like total silence in CI.
+MSA_SERVER_PROGRESS_LOG_S = 120
+
+# Base interval between status polls; the same again is added as jitter.
+MSA_SERVER_POLL_SLEEP_S = 5
+
 # Attempts allowed per request before giving up, and the pause between them.
 MSA_SERVER_MAX_ERRORS = 5
 MSA_SERVER_RETRY_SLEEP_S = 5
+
+
+def _log_wait_progress(
+    what: str, state: str, now: float, started: float, deadline: float, due: float
+) -> float:
+    """Emit a still-waiting notice, at most once per MSA_SERVER_PROGRESS_LOG_S.
+
+    The per-poll messages are INFO and are hidden by a WARNING-level log config
+    (as pytest uses), so without this a stalled server is indistinguishable from a
+    hung process. Reporting both elapsed and remaining time also distinguishes a
+    slow-but-progressing job from one that will time out.
+
+    Args:
+        what: Which wait this is, for the message (e.g. ``"submitting"``).
+        state: The status last reported by the server (e.g. ``"PENDING"``).
+        now: Current ``time.monotonic()`` reading.
+        started: ``time.monotonic()`` reading when this wait began.
+        deadline: ``time.monotonic()`` reading at which the wait gives up.
+        due: ``time.monotonic()`` reading at which the next notice is due.
+
+    Returns:
+        float:
+            When the next notice becomes due: unchanged if nothing was logged,
+            otherwise ``MSA_SERVER_PROGRESS_LOG_S`` from now.
+    """
+    if now < due:
+        return due
+    logger.warning(
+        f"Still waiting on the MSA server ({what}): status {state}, "
+        f"{int(now - started)}s elapsed, giving up in {int(deadline - now)}s."
+    )
+    return now + MSA_SERVER_PROGRESS_LOG_S
 
 
 def _validate_expected_msa_files(
@@ -334,16 +374,24 @@ def query_colabfold_msa_server(
                 pbar.set_description("SUBMIT")
 
                 # Resubmit job until it goes through
-                deadline = time.monotonic() + MSA_SERVER_MAX_WAIT_S
+                started = time.monotonic()
+                deadline = started + MSA_SERVER_MAX_WAIT_S
+                due = started + MSA_SERVER_PROGRESS_LOG_S
                 out = submit(seqs_unique, mode, N)
                 while out["status"] in ["UNKNOWN", "RATELIMIT"]:
-                    if time.monotonic() > deadline:
+                    now = time.monotonic()
+                    if now > deadline:
                         raise TimeoutError(
                             "MSA server did not accept the job within "
                             f"{MSA_SERVER_MAX_WAIT_S}s "
                             f"(last status: {out['status']})."
                         )
-                    sleep_time = 5 + random.randint(0, 5)
+                    due = _log_wait_progress(
+                        "submitting", out["status"], now, started, deadline, due
+                    )
+                    sleep_time = MSA_SERVER_POLL_SLEEP_S + random.randint(
+                        0, MSA_SERVER_POLL_SLEEP_S
+                    )
                     logger.info(f"Sleeping for {sleep_time}s. Reason: {out['status']}")
                     time.sleep(sleep_time)
                     out = submit(seqs_unique, mode, N)
@@ -364,15 +412,23 @@ def query_colabfold_msa_server(
                 # Wait for job to finish
                 ID, TIME = out["id"], 0
                 pbar.set_description(out["status"])
-                deadline = time.monotonic() + MSA_SERVER_MAX_WAIT_S
+                started = time.monotonic()
+                deadline = started + MSA_SERVER_MAX_WAIT_S
+                due = started + MSA_SERVER_PROGRESS_LOG_S
                 while out["status"] in ["UNKNOWN", "RUNNING", "PENDING"]:
-                    if time.monotonic() > deadline:
+                    now = time.monotonic()
+                    if now > deadline:
                         raise TimeoutError(
                             f"MSA server job {ID} did not finish within "
                             f"{MSA_SERVER_MAX_WAIT_S}s "
                             f"(last status: {out['status']})."
                         )
-                    t = 5 + random.randint(0, 5)
+                    due = _log_wait_progress(
+                        f"job {ID}", out["status"], now, started, deadline, due
+                    )
+                    t = MSA_SERVER_POLL_SLEEP_S + random.randint(
+                        0, MSA_SERVER_POLL_SLEEP_S
+                    )
                     logger.info(f"Sleeping for {t}s. Reason: {out['status']}")
                     time.sleep(t)
                     out = status(ID)
