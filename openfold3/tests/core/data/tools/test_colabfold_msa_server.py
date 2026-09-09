@@ -949,7 +949,7 @@ class TestServerUnresponsive:
     """
 
     @patch(f"{_MODULE}.MSA_SERVER_RETRY_SLEEP_S", 0)
-    @patch(f"{_MODULE}.MSA_SERVER_MAX_ERRORS", 2)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_ERROR_WAIT_S", 0.2)
     @patch(f"{_MODULE}.requests.post")
     def test_persistent_timeout_gives_up(self, mock_post, tmp_path):
         """Regression: `except requests.exceptions.Timeout` used to `continue`
@@ -964,12 +964,12 @@ class TestServerUnresponsive:
                 ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
             )
 
-        # The counter is incremented before the cap is checked, so the attempt
-        # after the budget is the one that raises.
-        assert mock_post.call_count == 3
+        # Bounded by wall clock, so the exact attempt count is timing-dependent;
+        # what matters is that it retried and then stopped.
+        assert mock_post.call_count > 1
 
     @patch(f"{_MODULE}.MSA_SERVER_RETRY_SLEEP_S", 0)
-    @patch(f"{_MODULE}.MSA_SERVER_MAX_ERRORS", 2)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_ERROR_WAIT_S", 0.2)
     @patch(f"{_MODULE}.requests.post")
     def test_persistent_connection_error_gives_up(self, mock_post, tmp_path):
         """The counted path must stay bounded too. A ConnectionError already
@@ -983,9 +983,10 @@ class TestServerUnresponsive:
                 ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
             )
 
-        assert mock_post.call_count == 3
+        assert mock_post.call_count > 1
 
-    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_POLL_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0.3)
     @patch(f"{_MODULE}.requests.get")
     @patch(f"{_MODULE}.requests.post")
     def test_job_stuck_pending_hits_deadline(self, mock_post, mock_get, tmp_path):
@@ -1000,7 +1001,8 @@ class TestServerUnresponsive:
                 ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
             )
 
-    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_POLL_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0.3)
     @patch(f"{_MODULE}.requests.post")
     def test_submit_stuck_ratelimited_hits_deadline(self, mock_post, tmp_path):
         """RATELIMIT is likewise not an error, so the resubmit loop needs its own
@@ -1013,11 +1015,12 @@ class TestServerUnresponsive:
                 ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
             )
 
-    # A budget of 0 would raise on the first check, before any notice; give the
-    # loop room for a few polls, with no real sleep between them.
+    # Margins are wide enough that ordinary scheduling jitter under a full test
+    # run cannot trip the deadline before the first notice is due; a tighter
+    # budget made this flaky in the suite while passing in isolation.
     @patch(f"{_MODULE}.MSA_SERVER_POLL_SLEEP_S", 0)
-    @patch(f"{_MODULE}.MSA_SERVER_PROGRESS_LOG_S", 0.05)
-    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0.2)
+    @patch(f"{_MODULE}.MSA_SERVER_PROGRESS_LOG_S", 0.2)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 1.0)
     @patch(f"{_MODULE}.requests.get")
     @patch(f"{_MODULE}.requests.post")
     def test_waiting_is_reported_at_warning_level(
@@ -1046,3 +1049,43 @@ class TestServerUnresponsive:
         assert "PENDING" in waiting[0].message
         # Never advertise a negative remaining time; past the deadline we raise.
         assert "giving up in -" not in waiting[0].message
+
+    @patch(f"{_MODULE}.MSA_SERVER_POLL_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0.5)
+    @patch(f"{_MODULE}.requests.post")
+    def test_unrecognised_status_fails_without_resubmitting(self, mock_post, tmp_path):
+        """A status that is neither COMPLETE nor ERROR used to leave REDO set and
+        resubmit immediately. Nothing on that path sleeps, so it became a hot loop
+        against the server -- ~22k requests/second in testing -- until the query
+        deadline. Fail on the first one instead.
+        """
+        mock_post.return_value.json.return_value = {
+            "status": "SOMETHING_UNEXPECTED",
+            "id": "job-1",
+        }
+
+        with pytest.raises(ColabFoldServerResultError, match="unrecognised status"):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
+
+        assert mock_post.call_count == 1
+
+    @patch(f"{_MODULE}.MSA_SERVER_POLL_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0.3)
+    @patch(f"{_MODULE}.requests.get")
+    @patch(f"{_MODULE}.requests.post")
+    def test_query_deadline_is_not_reset_by_resubmission(
+        self, mock_post, mock_get, tmp_path
+    ):
+        """The deadline used to be set inside the REDO loop, so every resubmission
+        restarted the budget and the bound never applied to the query as a whole.
+        RATELIMIT drives the resubmit loop, which must still hit the deadline.
+        """
+        mock_post.return_value.json.return_value = {"status": "RATELIMIT"}
+        mock_get.return_value.json.return_value = {"status": "RATELIMIT"}
+
+        with pytest.raises(TimeoutError):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
