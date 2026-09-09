@@ -22,7 +22,9 @@ from openfold3.core.data.primitives.featurization.structure import (
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
+    aggregate_atom_feat_to_tokens_segmented,
     broadcast_token_feat_to_atoms,
+    broadcast_token_feat_to_atoms_by_index,
     get_token_atom_index_offset,
     get_token_center_atoms,
     get_token_frame_atoms,
@@ -317,6 +319,21 @@ class TestBroadcastTokenFeatToAtoms(unittest.TestCase):
 
         self.assertTrue((atom_mask == gt_atom_mask).all())
 
+    def test_by_index_matches_repeat_interleave(self):
+        lengths = torch.tensor([[[2, 1, 3]]])
+        token_mask = torch.ones(1, 1, 3)
+        atom_mask = torch.ones(1, 1, 6)
+        atom_mask[..., 1] = 0
+        atom_index = create_atom_to_token_index(token_mask, lengths)
+        token_feat = torch.randn(1, 4, 3, 5)
+        expected = broadcast_token_feat_to_atoms(
+            token_mask, lengths, token_feat, -2
+        ) * atom_mask.unsqueeze(-1)
+        actual = broadcast_token_feat_to_atoms_by_index(
+            token_mask, atom_index, atom_mask, token_feat
+        )
+        torch.testing.assert_close(actual, expected)
+
 
 class TestAggregateAtomFeatToTokens(unittest.TestCase):
     def test_with_one_batch_dim(self):
@@ -426,6 +443,38 @@ class TestAggregateAtomFeatToTokens(unittest.TestCase):
         )
 
         self.assertTrue((torch.abs(token_feat - gt_token_feat) < 1e-5).all())
+
+
+class TestSegmentedAggregateAtomFeatToTokens(unittest.TestCase):
+    def test_matches_scatter_and_is_cuda_repeatable(self):
+        lengths = torch.tensor([[[3, 2, 1]]])
+        token_mask = torch.ones(1, 1, 3)
+        atom_index = torch.tensor([[[0, 0, 0, 1, 1, 2, 0]]])
+        atom_mask = torch.tensor([[[1, 1, 0, 1, 1, 1, 0]]], dtype=torch.float32)
+        atom_feat = torch.randn(1, 4, 7, 5)
+        expected = aggregate_atom_feat_to_tokens(
+            token_mask, atom_index, atom_mask, atom_feat, atom_dim=-2
+        )
+        actual = aggregate_atom_feat_to_tokens_segmented(lengths, atom_mask, atom_feat)
+        torch.testing.assert_close(actual, expected)
+
+        if not torch.cuda.is_available():
+            return
+        lengths, atom_mask, atom_feat = (
+            t.cuda() for t in (lengths, atom_mask, atom_feat)
+        )
+        reference = aggregate_atom_feat_to_tokens_segmented(
+            lengths, atom_mask, atom_feat
+        )
+        for _ in range(16):
+            self.assertTrue(
+                torch.equal(
+                    aggregate_atom_feat_to_tokens_segmented(
+                        lengths, atom_mask, atom_feat
+                    ),
+                    reference,
+                )
+            )
 
 
 class TestGetTokenAtomIndex(unittest.TestCase):

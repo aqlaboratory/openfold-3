@@ -347,8 +347,9 @@ def chunk_layer(
 
 class ChunkSizeTuner:
     def __init__(self):
-        self.cached_chunk_size = None
-        self.cached_arg_data = None
+        # (arg_data, max_chunk_size, chunk_size) entries so alternating shapes
+        # and distinct max caps can reuse prior tunings.
+        self.cached_chunk_sizes: list[tuple[Any, int, int]] = []
 
     @staticmethod
     def _determine_favorable_chunk_size(fn, args, max_chunk_size):
@@ -410,19 +411,16 @@ class ChunkSizeTuner:
             return (a.shape, a.dtype.itemsize) if type(a) is torch.Tensor else a
 
         arg_data = tree_map(remove_tensors, args, object)
-        if self.cached_arg_data is not None:
-            # If args have changed shape/value, we need to re-tune
-            consistent = self._compare_arg_caches(self.cached_arg_data, arg_data)
-        else:
-            # Otherwise, we can reuse the precomputed value
-            consistent = False
+        for cached_arg_data, cached_max, cached_size in self.cached_chunk_sizes:
+            if cached_max == max_chunk_size and self._compare_arg_caches(
+                cached_arg_data, arg_data
+            ):
+                return cached_size
 
-        if not consistent:
-            self.cached_chunk_size = self._determine_favorable_chunk_size(
-                fn=representative_fn,
-                args=args,
-                max_chunk_size=max_chunk_size,
-            )
-            self.cached_arg_data = arg_data
-
-        return self.cached_chunk_size
+        chunk_size = self._determine_favorable_chunk_size(
+            fn=representative_fn,
+            args=args,
+            max_chunk_size=max_chunk_size,
+        )
+        self.cached_chunk_sizes.append((arg_data, max_chunk_size, chunk_size))
+        return chunk_size
