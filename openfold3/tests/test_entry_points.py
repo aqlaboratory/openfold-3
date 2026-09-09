@@ -995,6 +995,22 @@ class TestUserDefaultRunnerYaml:
 
 
 class TestSetupOpenFold:
+    @pytest.fixture(autouse=True)
+    def _isolate_environment(self):
+        """Restore os.environ after each test in this class.
+
+        ``setup_openfold.main`` sets ``OPENFOLD_CACHE`` on the process so the rest
+        of the run resolves parameters from the chosen cache. That is fine for a
+        CLI, but in a test session it outlives the test: later tests then resolve
+        ``get_default_checkpoint_dir()`` to this test's tmp_path, find the dummy
+        checkpoint seeded there, and fail in ``torch.load`` with
+        "pickle data was truncated" rather than skipping. Under ``pytest -n auto``
+        only the worker that happened to run this class is affected, which made it
+        look intermittent and environment-specific.
+        """
+        with patch.dict(os.environ, {}, clear=False):
+            yield
+
     def test_non_interactive(self, tmp_path):
         env_patch = patch.dict(os.environ, {"HOME": str(tmp_path)}, clear=False)
         s3_patch = patch(
