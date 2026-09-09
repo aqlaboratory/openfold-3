@@ -123,7 +123,7 @@ jobs:
             -v ${{ github.workspace }}:/opt/openfold3 \
             -v ~/.openfold3:/root/.openfold3 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
-            pytest -x openfold3/tests/ -m slow -vvv
+            pytest -x openfold3/tests/ openfold3/steering/tests/ -m slow -vvv
 
   stop-aws-runner:
     runs-on: ubuntu-latest
