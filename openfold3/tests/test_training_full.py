@@ -37,11 +37,15 @@ Run with:
     pytest openfold3/tests/test_training_full.py -k smoke  # fast case only
 """
 
+import contextlib
 import logging
 import os
 import shutil
+import signal
 import subprocess
+import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -67,6 +71,9 @@ RUNNER_YAML = DATASETS_DIR / "train_pdb_subset.yaml"
 PDB_TRAINING_SET_DIR = DATASETS_DIR / "pdb_training_set"
 
 RUN_OPENFOLD = shutil.which("run_openfold")
+
+# Grace period for the output reader to drain the pipe once the run is over.
+DRAIN_GRACE_S = 10.0
 
 
 @dataclass(frozen=True)
@@ -123,6 +130,17 @@ def _require_local_subset() -> None:
         )
 
 
+def _kill_process_group(proc: subprocess.Popen) -> None:
+    """SIGKILL every process in `proc`'s group (it leads its own group).
+
+    Reaps whatever the run left behind -- the multiprocessing helpers that
+    inherited its stdout, and any dataloader workers still alive when a run is
+    killed mid-training -- instead of letting them linger as orphans.
+    """
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(proc.pid, signal.SIGKILL)
+
+
 def _run_streaming(cmd: list[str], timeout_s: int, capsys) -> tuple[int, str]:
     """Run `cmd`, printing its combined stdout/stderr live as it arrives.
 
@@ -130,9 +148,18 @@ def _run_streaming(cmd: list[str], timeout_s: int, capsys) -> tuple[int, str]:
     visibility (e.g. Lightning's per-step progress bar) instead of a silent
     block until the process exits. `capsys.disabled()` forces the output to
     the real terminal regardless of pytest's capture mode, so it's visible
-    without needing to remember `-s`. A watchdog timer kills the process after
-    `timeout_s` even if it produces no output at all (a true hang), which
-    `for line in proc.stdout` alone wouldn't catch.
+    without needing to remember `-s`.
+
+    The run is over when the process exits, *not* when its output pipe hits
+    EOF: `run_openfold` spawns multiprocessing helpers (forkserver, resource
+    tracker) that inherit its stdout and can outlive it, so draining the pipe
+    to EOF on the main thread would block indefinitely after a perfectly
+    successful run. Draining therefore happens on a side thread while the main
+    thread waits on the process, and anything still holding the pipe afterwards
+    is killed off with the rest of the process group (`start_new_session=True`
+    gives the child a group of its own). Waiting with `timeout_s` also catches
+    a true hang -- a run that produces no output at all -- and kills the whole
+    group rather than just the process at the top of it.
 
     Returns (returncode, combined_output).
     """
@@ -142,33 +169,81 @@ def _run_streaming(cmd: list[str], timeout_s: int, capsys) -> tuple[int, str]:
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        start_new_session=True,
     )
-    timed_out = threading.Event()
-
-    def _kill_on_timeout():
-        timed_out.set()
-        proc.kill()
-
-    timer = threading.Timer(timeout_s, _kill_on_timeout)
-    timer.start()
+    stdout = proc.stdout
+    assert stdout is not None  # stdout=PIPE, above
 
     lines = []
-    try:
-        with capsys.disabled():
-            for line in proc.stdout:
+
+    def _drain():
+        try:
+            for line in stdout:
                 print(line, end="", flush=True)
                 lines.append(line)
-    finally:
-        timer.cancel()
-        proc.wait()
+        except (OSError, ValueError):  # pipe went away underneath us
+            pass
+
+    reader = threading.Thread(target=_drain, daemon=True)
+    timed_out = False
+
+    with capsys.disabled():
+        reader.start()
+        try:
+            proc.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_process_group(proc)
+            proc.wait()
+
+        # Usually the pipe closes with the process and this returns immediately;
+        # if it doesn't, a leftover helper process is holding the write end.
+        reader.join(timeout=DRAIN_GRACE_S)
+        if reader.is_alive():
+            _kill_process_group(proc)
+            reader.join(timeout=DRAIN_GRACE_S)
+        if not reader.is_alive():
+            stdout.close()
 
     output = "".join(lines)
-    if timed_out.is_set():
+    if timed_out:
+        # Reaching here means the process itself was still running -- the run is
+        # genuinely stuck (or just too slow for `timeout_s`), as opposed to
+        # finished with something else holding its output pipe open.
         pytest.fail(
-            f"`{' '.join(cmd)}` timed out after {timeout_s}s and was killed.\n"
+            f"`{' '.join(cmd)}` was still running after {timeout_s}s; "
+            "killed its process group.\n"
             f"--- output (last 4000 chars) ---\n{output[-4000:]}"
         )
     return proc.returncode, output
+
+
+def test_run_streaming_survives_leftover_child_holding_stdout(capsys):
+    """A process that outlives the run must not stall `_run_streaming`.
+
+    `run_openfold` leaves multiprocessing helpers (forkserver, resource
+    tracker) behind that inherited its stdout, so the output pipe can stay open
+    after training has finished successfully -- reading it to EOF is not a
+    reliable "the run is done" signal. Stand-in here: a grandchild that holds
+    the pipe far longer than the timeout allows.
+    """
+    script = (
+        "import subprocess, sys; "
+        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)']); "
+        "print('training done', flush=True)"
+    )
+    timeout_s = 120
+
+    start = time.monotonic()
+    returncode, output = _run_streaming(
+        [sys.executable, "-c", script], timeout_s, capsys
+    )
+    elapsed = time.monotonic() - start
+
+    # A timed-out run would have failed the test inside `_run_streaming`.
+    assert returncode == 0
+    assert "training done" in output
+    assert elapsed < timeout_s, f"blocked on the pipe for {elapsed:.0f}s"
 
 
 @skip_unless_cuda_available()

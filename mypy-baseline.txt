@@ -2046,7 +2046,6 @@ openfold3/tests/core/data/primitives/structure/test_cleanup_bonds.py:0: error: A
 openfold3/tests/test_data/tokenization/construct_tokenization_examples.py:0: error: Argument 3 to "add_unresolved_atoms" has incompatible type "BiotiteCCDWrapper"; expected "CIFFile"  [arg-type]
 openfold3/tests/test_structure_from_query.py:0: error: Incompatible types in assignment (expression has type "ndarray[bool, dtype[Any]]", target has type "ndarray[tuple[Any, ...], dtype[Any]]")  [assignment]
 openfold3/tests/test_structure_from_query.py:0: error: Incompatible types in assignment (expression has type "ndarray[int, dtype[Any]]", target has type "ndarray[tuple[Any, ...], dtype[Any]]")  [assignment]
-openfold3/tests/test_training_full.py:0: error: Item "None" of "IO[Any] | None" has no attribute "__iter__" (not iterable)  [union-attr]
 openfold3/tests/test_validation_metrics.py:0: error: torch.tensor? has no attribute "expand"  [attr-defined]
 openfold3/tests/test_validation_metrics.py:0: error: torch.tensor? has no attribute "shape"  [attr-defined]
 openfold3/tests/utils/custom_assert_utils.py:0: error: Item "None" of "BondList[Any] | None" has no attribute "as_array"  [union-attr]
