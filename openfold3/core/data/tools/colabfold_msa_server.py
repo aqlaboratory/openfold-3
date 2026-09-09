@@ -77,6 +77,11 @@ class MsaServerPairingStrategy(IntEnum):
         return self.name.lower()
 
 
+# Upper bound on how long we will wait for one MMseqs2 job to leave a
+# non-terminal state.
+MSA_SERVER_MAX_WAIT_S = 45 * 60
+
+
 def _validate_expected_msa_files(
     a3m_files: list[str], tar_gz_file: str, *, use_pairing: bool
 ) -> None:
@@ -208,9 +213,6 @@ def query_colabfold_msa_server(
                     timeout=6.02,
                     headers=headers,
                 )
-            except requests.exceptions.Timeout:
-                logger.warning("Timeout while submitting to MSA server. Retrying...")
-                continue
             except Exception as e:
                 error_count += 1
                 logger.warning(
@@ -238,11 +240,6 @@ def query_colabfold_msa_server(
                 res = requests.get(
                     f"{host_url}/ticket/{ID}", timeout=6.02, headers=headers
                 )
-            except requests.exceptions.Timeout:
-                logger.warning(
-                    "Timeout while fetching status from MSA server. Retrying..."
-                )
-                continue
             except Exception as e:
                 error_count += 1
                 logger.warning(
@@ -269,11 +266,6 @@ def query_colabfold_msa_server(
                 res = requests.get(
                     f"{host_url}/result/download/{ID}", timeout=6.02, headers=headers
                 )
-            except requests.exceptions.Timeout:
-                logger.warning(
-                    "Timeout while fetching result from MSA server. Retrying..."
-                )
-                continue
             except Exception as e:
                 error_count += 1
                 logger.warning(
@@ -338,8 +330,15 @@ def query_colabfold_msa_server(
                 pbar.set_description("SUBMIT")
 
                 # Resubmit job until it goes through
+                deadline = time.monotonic() + MSA_SERVER_MAX_WAIT_S
                 out = submit(seqs_unique, mode, N)
                 while out["status"] in ["UNKNOWN", "RATELIMIT"]:
+                    if time.monotonic() > deadline:
+                        raise TimeoutError(
+                            "MSA server did not accept the job within "
+                            f"{MSA_SERVER_MAX_WAIT_S}s "
+                            f"(last status: {out['status']})."
+                        )
                     sleep_time = 5 + random.randint(0, 5)
                     logger.info(f"Sleeping for {sleep_time}s. Reason: {out['status']}")
                     time.sleep(sleep_time)
@@ -361,7 +360,14 @@ def query_colabfold_msa_server(
                 # Wait for job to finish
                 ID, TIME = out["id"], 0
                 pbar.set_description(out["status"])
+                deadline = time.monotonic() + MSA_SERVER_MAX_WAIT_S
                 while out["status"] in ["UNKNOWN", "RUNNING", "PENDING"]:
+                    if time.monotonic() > deadline:
+                        raise TimeoutError(
+                            f"MSA server job {ID} did not finish within "
+                            f"{MSA_SERVER_MAX_WAIT_S}s "
+                            f"(last status: {out['status']})."
+                        )
                     t = 5 + random.randint(0, 5)
                     logger.info(f"Sleeping for {t}s. Reason: {out['status']}")
                     time.sleep(t)
@@ -425,8 +431,8 @@ def query_colabfold_msa_server(
                 os.mkdir(TMPL_PATH)
                 TMPL_LINE = ",".join(TMPL[:20])
                 response = None
+                error_count = 0
                 while True:
-                    error_count = 0
                     try:
                         # "good practice to set connect timeouts to slightly
                         # larger than a multiple of 3"
@@ -436,11 +442,6 @@ def query_colabfold_msa_server(
                             timeout=6.02,
                             headers=headers,
                         )
-                    except requests.exceptions.Timeout:
-                        logger.warning(
-                            "Timeout while submitting to template server. Retrying..."
-                        )
-                        continue
                     except Exception as e:
                         error_count += 1
                         logger.warning(
