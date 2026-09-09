@@ -81,6 +81,10 @@ class MsaServerPairingStrategy(IntEnum):
 # non-terminal state.
 MSA_SERVER_MAX_WAIT_S = 45 * 60
 
+# Attempts allowed per request before giving up, and the pause between them.
+MSA_SERVER_MAX_ERRORS = 5
+MSA_SERVER_RETRY_SLEEP_S = 5
+
 
 def _validate_expected_msa_files(
     a3m_files: list[str], tar_gz_file: str, *, use_pairing: bool
@@ -217,11 +221,11 @@ def query_colabfold_msa_server(
                 error_count += 1
                 logger.warning(
                     f"Error while fetching result from MSA server."
-                    f"Retrying... ({error_count}/5)"
+                    f"Retrying... ({error_count}/{MSA_SERVER_MAX_ERRORS})"
                 )
                 logger.warning(f"Error: {e}")
-                time.sleep(5)
-                if error_count > 5:
+                time.sleep(MSA_SERVER_RETRY_SLEEP_S)
+                if error_count > MSA_SERVER_MAX_ERRORS:
                     raise
                 continue
             break
@@ -244,11 +248,11 @@ def query_colabfold_msa_server(
                 error_count += 1
                 logger.warning(
                     f"Error while fetching result from MSA server."
-                    f"Retrying... ({error_count}/5)"
+                    f"Retrying... ({error_count}/{MSA_SERVER_MAX_ERRORS})"
                 )
                 logger.warning(f"Error: {e}")
-                time.sleep(5)
-                if error_count > 5:
+                time.sleep(MSA_SERVER_RETRY_SLEEP_S)
+                if error_count > MSA_SERVER_MAX_ERRORS:
                     raise
                 continue
             break
@@ -270,11 +274,11 @@ def query_colabfold_msa_server(
                 error_count += 1
                 logger.warning(
                     f"Error while fetching result from MSA server."
-                    f"Retrying... ({error_count}/5)"
+                    f"Retrying... ({error_count}/{MSA_SERVER_MAX_ERRORS})"
                 )
                 logger.warning(f"Error: {e}")
-                time.sleep(5)
-                if error_count > 5:
+                time.sleep(MSA_SERVER_RETRY_SLEEP_S)
+                if error_count > MSA_SERVER_MAX_ERRORS:
                     raise
                 continue
             break
@@ -446,11 +450,11 @@ def query_colabfold_msa_server(
                         error_count += 1
                         logger.warning(
                             f"Error while fetching result from template server."
-                            f"Retrying... ({error_count}/5)"
+                            f"Retrying... ({error_count}/{MSA_SERVER_MAX_ERRORS})"
                         )
                         logger.warning(f"Error: {e}")
-                        time.sleep(5)
-                        if error_count > 5:
+                        time.sleep(MSA_SERVER_RETRY_SLEEP_S)
+                        if error_count > MSA_SERVER_MAX_ERRORS:
                             raise
                         continue
                     break

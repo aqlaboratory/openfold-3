@@ -27,6 +27,7 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+import requests
 from pydantic_core import Url
 
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
@@ -930,3 +931,83 @@ class TestMsaComputationSettings:
             settings.validate_output_paths()
 
         assert not settings.workspace_directory.exists()
+
+
+_MODULE = "openfold3.core.data.tools.colabfold_msa_server"
+
+
+class TestServerUnresponsive:
+    """The client must fail rather than retry forever when the MSA server stops
+    responding.
+
+    Two independent hang modes. Errors are bounded by an attempt budget; a job
+    parked in a non-terminal server status raises no error at all and is bounded
+    only by the wall-clock deadline. Only the server calls are mocked -- the
+    retry budget, backoff and deadline are turned down to test-sized values so
+    the real loops run.
+    """
+
+    @patch(f"{_MODULE}.MSA_SERVER_RETRY_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_ERRORS", 2)
+    @patch(f"{_MODULE}.requests.post")
+    def test_persistent_timeout_gives_up(self, mock_post, tmp_path):
+        """Regression: `except requests.exceptions.Timeout` used to `continue`
+        without incrementing the attempt counter, so a server timing out on every
+        request span forever. Whether a flaky server failed fast or hung depended
+        only on which exception `requests` happened to raise.
+        """
+        mock_post.side_effect = requests.exceptions.Timeout("read timed out")
+
+        with pytest.raises(requests.exceptions.Timeout):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
+
+        # The counter is incremented before the cap is checked, so the attempt
+        # after the budget is the one that raises.
+        assert mock_post.call_count == 3
+
+    @patch(f"{_MODULE}.MSA_SERVER_RETRY_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_ERRORS", 2)
+    @patch(f"{_MODULE}.requests.post")
+    def test_persistent_connection_error_gives_up(self, mock_post, tmp_path):
+        """The counted path must stay bounded too. A ConnectionError already
+        terminated before the fix, so this guards against the two branches
+        diverging again.
+        """
+        mock_post.side_effect = requests.exceptions.ConnectionError("connection reset")
+
+        with pytest.raises(requests.exceptions.ConnectionError):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
+
+        assert mock_post.call_count == 3
+
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0)
+    @patch(f"{_MODULE}.requests.get")
+    @patch(f"{_MODULE}.requests.post")
+    def test_job_stuck_pending_hits_deadline(self, mock_post, mock_get, tmp_path):
+        """A job the server accepts but never advances past PENDING raises no
+        error, so the attempt budget never trips. Only the deadline ends it.
+        """
+        mock_post.return_value.json.return_value = {"status": "PENDING", "id": "job-1"}
+        mock_get.return_value.json.return_value = {"status": "PENDING"}
+
+        with pytest.raises(TimeoutError, match="job-1.*PENDING"):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
+
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0)
+    @patch(f"{_MODULE}.requests.post")
+    def test_submit_stuck_ratelimited_hits_deadline(self, mock_post, tmp_path):
+        """RATELIMIT is likewise not an error, so the resubmit loop needs its own
+        deadline.
+        """
+        mock_post.return_value.json.return_value = {"status": "RATELIMIT"}
+
+        with pytest.raises(TimeoutError, match="RATELIMIT"):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
