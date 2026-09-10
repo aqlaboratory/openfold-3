@@ -1,9 +1,8 @@
 # Docker builds
 
-OpenFold-3 provides two Dockerfile variants:
+OpenFold-3 builds its image with pixi:
 
-- **`Dockerfile.pixi`** (recommended) — uses [pixi](https://pixi.sh) to manage all dependencies including CUDA toolkit, cuDNN, CUTLASS, and build tools from conda-forge. No `nvidia/cuda` base image needed.
-- **`Dockerfile.conda`** (legacy) — uses conda/mamba with an `nvidia/cuda` base image. Will be deprecated in Q3 2026.
+- **`Dockerfile.pixi`** — uses [pixi](https://pixi.sh) to manage all dependencies including CUDA toolkit, cuDNN, CUTLASS, and build tools from conda-forge. No `nvidia/cuda` base image needed.
 
 ## Pixi-based builds
 
@@ -65,126 +64,29 @@ docker run \
 
 ### cuEquivariance
 
-The `openfold3-cuda12` and `openfold3-cuda13` pixi environments include cuEquivariance by default. No additional build argument is needed (unlike the conda path which requires `INSTALL_CUEQ=true`). See the [cuEquivariance.yml example](../examples/example_runner_yamls/cuequivariance.yml) and the [kernels documentation](https://openfold-3.readthedocs.io/en/latest/kernels.html) for usage details.
+The `openfold3-cuda12` and `openfold3-cuda13` pixi environments include cuEquivariance by default. No additional build argument is needed. See the [cuEquivariance.yml example](../examples/example_runner_yamls/cuequivariance.yml) and the [kernels documentation](https://openfold-3.readthedocs.io/en/latest/kernels.html) for usage details.
 
-### Differences from conda-based builds
+### Notes
 
-- Uses `ubuntu:22.04` base instead of `nvidia/cuda` (CUDA comes from conda-forge)
-- No need for `install_third_party_dependencies.sh` (CUTLASS comes from conda-forge)
-- Lock file is `pixi.lock` (not `environments/production-linux-64.lock`)
+- Uses `ubuntu:22.04` as the base image; CUDA comes from conda-forge rather than an `nvidia/cuda` base
+- `pixi.lock` is the lock file
 - Environment variables are set automatically via `pixi shell-hook` from `pixi.toml` activation sections
 
----
+### Exporting conda-compatible environments
 
-## Conda-based builds (legacy, deprecated Q2/2026)
-
-### Generating and updating production.lock file
-
-While a conda env can be created from `environments/production-linux-64.yml`, this causes the environment to be resolved from scratch everytime. 
-For reproducible builds, one needs to generate a .lock file that exactly re-creates the environment.
-
-When you modify `environments/production-linux-64.yml`, you need to regenerate the lock file to pin exact versions. This ensures reproducible builds, prevents conda from resolving the environment again. `environment/production.lock` is then used for 'stable' builds.
+`pixi.lock` is the source of truth, but conda-consumable files can be exported
+from it for anyone not using pixi:
 
 ```bash
-# Build the lock file generator image
-docker build -f docker/Dockerfile.update-reqs -t openfold3-update-reqs .
+# conda environment YAML, per environment and platform
+pixi run export-conda openfold3-cuda12 linux-64
+pixi run export-conda-all
 
-# Generate the lock file (linux-64 only for now)
-docker run --rm -v $(pwd)/environments:/output openfold3-update-reqs 
-
-# Commit the updated lock file
-git add environments/production-linux-64.lock
-git commit -m "Update production-linux-64.lock"
+# conda-lock file, per environment
+pixi run export-conda-lock openfold3-cuda12
 ```
 
-### Development images
-
-These images are the biggest but come with all the build tooling, needed to compile things at runtime (Deepspeed)
-
-```bash
-docker build \
-    -f docker/Dockerfile.conda \
-    --target devel \
-    -t openfold-docker:devel-yaml .
-```
-
-Or more explicitly
-
-```bash
-docker build \
-    -f docker/Dockerfile.conda \
-    --build-arg BUILD_MODE=yaml \
-    --build-arg CUDA_BASE_IMAGE_TAG=12.1.1-cudnn8-devel-ubuntu22.04 \
-    --target devel \
-    -t openfold-docker:devel-yaml .
-```
-
-### Test images
-
-Build the test image, with additional test-only dependencies
-
-```bash
-docker build \
-    -f docker/Dockerfile.conda \
-    --target test \
-    -t openfold-docker:test .
-```
-
-Run the unit tests
-
-```bash
-docker run \
-    --rm \
-    -v $(pwd -P):/opt/openfold3 \
-    -t openfold-docker:test \
-    pytest openfold3/tests -vvv
-```
-
-### Affinity images
-
-docker build \
-    -f docker/Dockerfile.conda \
-    --secret id=hf_token,src=$HOME/.cache/huggingface/token \
-    --target affinity \
-    -t openfold-docker:affinity .
-
-### Production images
-
-Build a 'stable' image with all the dependancies exactly pinned (production.lock)
-
-```bash
-docker build \
-    -f docker/Dockerfile.conda \
-    --build-arg BUILD_MODE=lock \
-    --build-arg CUDA_BASE_IMAGE_TAG=12.1.1-cudnn8-devel-ubuntu22.04 \
-    --target devel \
-    -t openfold-docker:devel-locked .
-```
-
-### cuEquivariance Support
-
-[cuEquivariance](https://docs.nvidia.com/cuda/cuequivariance) provides accelerated kernels for `triangle_multiplicative_update` and `triangle_attention` operations that can speed up inference and training.
-
-#### Requirements
-
-- **CUDA**: >= 12.6.1-cudnn-devel-ubuntu22.04 (CUDA 12.1.1 is not compatible)
-- **PyTorch**: >= 2.7
-- **cuequivariance**: >= 0.6.1
-
-#### Building with cuEquivariance
-
-To build a Docker image with cuEquivariance support, use the `INSTALL_CUEQ=true` build argument along with a compatible CUDA base image. The example below uses `BUILD_MODE=yaml` to avoid needing the lock file (see above for regenerating the lock file):
-
-```bash
-docker build \
-    -f docker/Dockerfile.conda \
-    --build-arg INSTALL_CUEQ=true \
-    --build-arg CUDA_BASE_IMAGE_TAG=12.6.1-cudnn-devel-ubuntu22.04 \
-    --build-arg BUILD_MODE=yaml \
-    --target devel \
-    -t openfold-docker:devel-cueq .
-```
-
-#### Usage
-
-After building the image, enable cuEquivariance kernels via the runner.yaml configuration. See the [cuequivariance.yml example](../examples/example_runner_yamls/cuequivariance.yml) and the [kernels documentation](https://openfold-3.readthedocs.io/en/latest/kernels.html) for details.
+These write into `environments/`. Note that `export-conda-lock` emits
+placeholder platform names (`p1`, `p2`, ...) for pixi's custom CUDA platforms
+such as `linux-64-cuda12`, since they are not conda platform names; standard
+platforms (`linux-64`, `osx-arm64`, ...) come through unchanged.
