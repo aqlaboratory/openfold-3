@@ -474,7 +474,7 @@ Use Pocket Constraints to guide ligand binding in the pocket during inference ti
 Pocket Constraints can be enabled / disabled using the following runner yaml settings. Other settings such as the amount of jitter and conformer settings may also be tuned, please see the {ref}`Pocket Sampling Settings reference <full-ref-pocket-sampling-settings>`.
 
 ```yaml
-datset_config_kwargs:
+dataset_config_kwargs:
   pocket_sampling:
     enabled: True  # default
 ```
