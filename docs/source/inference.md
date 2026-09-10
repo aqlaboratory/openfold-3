@@ -9,7 +9,10 @@ This guide covers how to use OpenFold3 to make structure predictions.
 
 OpenFold3 replicates the full set of input features described in the *AlphaFold3* publication. All features of AlphaFold3 are **fully implemented and supported in training**. We are actively working on integrating the same functionalities into the inference pipeline. 
 
-Below is the current status of inference feature support by molecule type:
+Below is the current status of inference feature support by molecule type.
+Explicit named-atom connectivity can be supplied using {ref}`using-covalent-bonds`;
+the covalent prediction capabilities listed as coming soon below are separate
+from this input-pipeline support:
 
 
 ### 1.1 Protein
@@ -478,6 +481,24 @@ dataset_config_kwargs:
   pocket_sampling:
     enabled: True  # default
 ```
+
+(using-covalent-bonds)=
+### 3.6 Specifying Covalent Bonds
+
+Add `covalent_bonds` to a query to connect named atoms through OF3's existing
+structure and token-bond features. No runner setting is required. See
+{ref}`query-covalent-bonds` for endpoint numbering, input chemistry requirements,
+and complete disulfide and two-sugar glycan examples.
+
+```json
+"covalent_bonds": [
+  {"atom1": ["A", 1, "ND2"], "atom2": ["G", 1, "C1"]}
+]
+```
+
+This feature supplies connectivity to inference; it does not enforce an output
+bond distance. A connected glycan can be supplied as one SMILES ligand; lists
+of CCD codes for polymeric ligands remain unsupported.
 
 ## 4. Model Outputs
 
