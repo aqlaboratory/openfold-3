@@ -995,6 +995,45 @@ class TestUserDefaultRunnerYaml:
 
 
 class TestSetupOpenFold:
+    @pytest.fixture(autouse=True)
+    def _isolate_environment(self):
+        """Restore os.environ after each test in this class.
+
+        ``setup_openfold.main`` sets ``OPENFOLD_CACHE`` on the process so the rest
+        of the run resolves parameters from the chosen cache. That is fine for a
+        CLI, but in a test session it outlives the test: later tests then resolve
+        ``get_default_checkpoint_dir()`` to this test's tmp_path, find the dummy
+        checkpoint seeded there, and fail in ``torch.load`` with
+        "pickle data was truncated" rather than skipping. Under ``pytest -n auto``
+        only the worker that happened to run this class is affected, which made it
+        look intermittent and environment-specific.
+        """
+        with patch.dict(os.environ, {}, clear=False):
+            yield
+
+    @pytest.fixture(autouse=True)
+    def _stub_ccd_freshness_check(self):
+        """Keep these tests off the network and away from the installed CCD.
+
+        ``setup_openfold.main`` calls ``setup_biotite_ccd`` with
+        ``biotite.setup_ccd.OUTPUT_CCD``, resolved at import time -- so it is the
+        real ~63 MB file in the environment, not anything under tmp_path, whatever
+        HOME is patched to. Its staleness check does an unmocked ``head_object``
+        against s3://openfold3-data, which makes these tests depend on that bucket
+        being reachable and slow on a poor connection.
+
+        Worse, ``download_s3_file`` is mocked here with a stub that only touches
+        the path: were the check ever to report the CCD stale, the "download"
+        would truncate the installed file to zero bytes and break every later test
+        that needs it.
+
+        Reporting the CCD as current skips the download entirely. No test in this
+        class asserts on CCD behaviour; ``test_setup_openfold.py`` covers it
+        directly against a tmp_path copy.
+        """
+        with patch("openfold3.setup_openfold.s3_file_matches_local", return_value=True):
+            yield
+
     def test_non_interactive(self, tmp_path):
         env_patch = patch.dict(os.environ, {"HOME": str(tmp_path)}, clear=False)
         s3_patch = patch(

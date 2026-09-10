@@ -14,28 +14,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-conda:
-    if: |
-      github.event_name != 'schedule' ||
-      (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)
-    permissions:
-      id-token: write
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        include:
-          - cuda_base_image_tag: "12.1.1-cudnn8-devel-ubuntu22.04"
-            build_mode: "yaml"
-    concurrency:
-      group: ${{ github.workflow }}-conda-${{ github.head_ref || github.ref }}-${{ matrix.cuda_base_image_tag }}
-      cancel-in-progress: true
-    uses: ./.github/workflows/ci-integration-test-conda-reusable.yml
-    with:
-      cuda_base_image_tag: ${{ matrix.cuda_base_image_tag }}
-      build_mode: ${{ matrix.build_mode }}
-    secrets: inherit
-
   test-pixi-cuda:
     if: |
       github.event_name != 'schedule' ||
