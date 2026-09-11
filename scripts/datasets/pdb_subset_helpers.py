@@ -296,15 +296,20 @@ def extract_ids_from_cache(cache_path: Path) -> dict:
 
     pdb_ids = set()
     alignment_rep_ids = set()
+    template_rep_ids = set()
     template_ids = set()
     reference_mol_ids = set()
 
     for pdb_id, entry in cache["structure_data"].items():
         pdb_ids.add(pdb_id)
         for chain_data in entry["chains"].values():
-            if rep_id := chain_data.get("alignment_representative_id"):
+            rep_id = chain_data.get("alignment_representative_id")
+            if rep_id:
                 alignment_rep_ids.add(rep_id)
-            for tmpl_id in chain_data.get("template_ids") or []:
+            chain_template_ids = chain_data.get("template_ids") or []
+            if rep_id and chain_template_ids:
+                template_rep_ids.add(rep_id)
+            for tmpl_id in chain_template_ids:
                 template_ids.add(tmpl_id)
             if ref_mol := chain_data.get("reference_mol_id"):
                 reference_mol_ids.add(ref_mol)
@@ -312,6 +317,7 @@ def extract_ids_from_cache(cache_path: Path) -> dict:
     return {
         "pdb_ids": pdb_ids,
         "alignment_rep_ids": alignment_rep_ids,
+        "template_rep_ids": template_rep_ids,
         "template_ids": template_ids,
         "reference_mol_ids": reference_mol_ids,
     }
@@ -357,7 +363,7 @@ def build_structure_manifest(
         manifest.append((s3_key, local))
 
     # Template cache: {rep_id}.npz
-    for rep_id in ids["alignment_rep_ids"]:
+    for rep_id in ids.get("template_rep_ids", ids["alignment_rep_ids"]):
         s3_key = f"{S3_PREFIX}/templates/{template_cache_subdir}/{rep_id}.npz"
         local = local_root / "templates" / template_cache_subdir / f"{rep_id}.npz"
         manifest.append((s3_key, local))

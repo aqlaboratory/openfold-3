@@ -1,0 +1,8 @@
+model_update:
+  custom:
+    architecture:
+      loss_module:
+        diffusion:
+          chunk_size: null
+          smooth_lddt_backend: ball_query
+          smooth_lddt_top_k: 512
