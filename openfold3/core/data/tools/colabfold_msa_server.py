@@ -77,6 +77,57 @@ class MsaServerPairingStrategy(IntEnum):
         return self.name.lower()
 
 
+# Upper bound on how long we will wait for one MMseqs2 job to leave a
+# non-terminal state.
+MSA_SERVER_MAX_WAIT_S = 45 * 60
+
+# How often to surface a still-waiting notice while polling the server. The
+# per-poll messages are INFO, which pytest's WARNING-level live log hides, so a
+# stalled job otherwise looks like total silence in CI.
+MSA_SERVER_PROGRESS_LOG_S = 120
+
+# Base interval between status polls; the same again is added as jitter.
+MSA_SERVER_POLL_SLEEP_S = 5
+
+# How long to keep retrying a single failing request, and the pause between
+# attempts. Wall-clock rather than a fixed count, so a server that is slow or
+# flaky for a few minutes is tolerated without the retries becoming unbounded.
+MSA_SERVER_MAX_ERROR_WAIT_S = 5 * 60
+MSA_SERVER_RETRY_SLEEP_S = 60
+
+
+def _log_wait_progress(
+    what: str, state: str, now: float, started: float, deadline: float, due: float
+) -> float:
+    """Emit a still-waiting notice, at most once per MSA_SERVER_PROGRESS_LOG_S.
+
+    The per-poll messages are INFO and are hidden by a WARNING-level log config
+    (as pytest uses), so without this a stalled server is indistinguishable from a
+    hung process. Reporting both elapsed and remaining time also distinguishes a
+    slow-but-progressing job from one that will time out.
+
+    Args:
+        what: Which wait this is, for the message (e.g. ``"submitting"``).
+        state: The status last reported by the server (e.g. ``"PENDING"``).
+        now: Current ``time.monotonic()`` reading.
+        started: ``time.monotonic()`` reading when this wait began.
+        deadline: ``time.monotonic()`` reading at which the wait gives up.
+        due: ``time.monotonic()`` reading at which the next notice is due.
+
+    Returns:
+        float:
+            When the next notice becomes due: unchanged if nothing was logged,
+            otherwise ``MSA_SERVER_PROGRESS_LOG_S`` from now.
+    """
+    if now < due:
+        return due
+    logger.warning(
+        f"Still waiting on the MSA server ({what}): status {state}, "
+        f"{int(now - started)}s elapsed, giving up in {int(deadline - now)}s."
+    )
+    return now + MSA_SERVER_PROGRESS_LOG_S
+
+
 def _validate_expected_msa_files(
     a3m_files: list[str], tar_gz_file: str, *, use_pairing: bool
 ) -> None:
@@ -196,7 +247,7 @@ def query_colabfold_msa_server(
             query += f">{n}\n{seq}\n"
             n += 1
 
-        error_count = 0
+        error_deadline = time.monotonic() + MSA_SERVER_MAX_ERROR_WAIT_S
         while True:
             try:
                 # https://requests.readthedocs.io/en/latest/user/advanced/#advanced
@@ -208,19 +259,15 @@ def query_colabfold_msa_server(
                     timeout=6.02,
                     headers=headers,
                 )
-            except requests.exceptions.Timeout:
-                logger.warning("Timeout while submitting to MSA server. Retrying...")
-                continue
             except Exception as e:
-                error_count += 1
-                logger.warning(
-                    f"Error while fetching result from MSA server."
-                    f"Retrying... ({error_count}/5)"
-                )
-                logger.warning(f"Error: {e}")
-                time.sleep(5)
-                if error_count > 5:
+                remaining = error_deadline - time.monotonic()
+                if remaining <= 0:
                     raise
+                logger.warning(
+                    f"Error contacting the MSA server, retrying "
+                    f"(giving up in {int(remaining)}s): {e}"
+                )
+                time.sleep(MSA_SERVER_RETRY_SLEEP_S)
                 continue
             break
 
@@ -232,27 +279,21 @@ def query_colabfold_msa_server(
         return out
 
     def status(ID):
-        error_count = 0
+        error_deadline = time.monotonic() + MSA_SERVER_MAX_ERROR_WAIT_S
         while True:
             try:
                 res = requests.get(
                     f"{host_url}/ticket/{ID}", timeout=6.02, headers=headers
                 )
-            except requests.exceptions.Timeout:
-                logger.warning(
-                    "Timeout while fetching status from MSA server. Retrying..."
-                )
-                continue
             except Exception as e:
-                error_count += 1
-                logger.warning(
-                    f"Error while fetching result from MSA server."
-                    f"Retrying... ({error_count}/5)"
-                )
-                logger.warning(f"Error: {e}")
-                time.sleep(5)
-                if error_count > 5:
+                remaining = error_deadline - time.monotonic()
+                if remaining <= 0:
                     raise
+                logger.warning(
+                    f"Error contacting the MSA server, retrying "
+                    f"(giving up in {int(remaining)}s): {e}"
+                )
+                time.sleep(MSA_SERVER_RETRY_SLEEP_S)
                 continue
             break
         try:
@@ -263,27 +304,21 @@ def query_colabfold_msa_server(
         return out
 
     def download(ID, path):
-        error_count = 0
+        error_deadline = time.monotonic() + MSA_SERVER_MAX_ERROR_WAIT_S
         while True:
             try:
                 res = requests.get(
                     f"{host_url}/result/download/{ID}", timeout=6.02, headers=headers
                 )
-            except requests.exceptions.Timeout:
-                logger.warning(
-                    "Timeout while fetching result from MSA server. Retrying..."
-                )
-                continue
             except Exception as e:
-                error_count += 1
-                logger.warning(
-                    f"Error while fetching result from MSA server."
-                    f"Retrying... ({error_count}/5)"
-                )
-                logger.warning(f"Error: {e}")
-                time.sleep(5)
-                if error_count > 5:
+                remaining = error_deadline - time.monotonic()
+                if remaining <= 0:
                     raise
+                logger.warning(
+                    f"Error contacting the MSA server, retrying "
+                    f"(giving up in {int(remaining)}s): {e}"
+                )
+                time.sleep(MSA_SERVER_RETRY_SLEEP_S)
                 continue
             break
         with open(path, "wb") as out:
@@ -334,13 +369,36 @@ def query_colabfold_msa_server(
     if not os.path.isfile(tar_gz_file):
         TIME_ESTIMATE = 150 * len(seqs_unique)
         with tqdm(total=TIME_ESTIMATE, bar_format=TQDM_BAR_FORMAT) as pbar:
+            # One budget for the entire query, not per attempt: the REDO loop
+            # below re-submits on any status that is neither COMPLETE nor ERROR,
+            # so a per-attempt deadline would restart forever.
+            started = time.monotonic()
+            deadline = started + MSA_SERVER_MAX_WAIT_S
+            due = started + MSA_SERVER_PROGRESS_LOG_S
             while REDO:
+                if time.monotonic() > deadline:
+                    raise TimeoutError(
+                        f"MSA server query did not complete within "
+                        f"{MSA_SERVER_MAX_WAIT_S}s."
+                    )
                 pbar.set_description("SUBMIT")
 
                 # Resubmit job until it goes through
                 out = submit(seqs_unique, mode, N)
                 while out["status"] in ["UNKNOWN", "RATELIMIT"]:
-                    sleep_time = 5 + random.randint(0, 5)
+                    now = time.monotonic()
+                    if now > deadline:
+                        raise TimeoutError(
+                            "MSA server did not accept the job within "
+                            f"{MSA_SERVER_MAX_WAIT_S}s "
+                            f"(last status: {out['status']})."
+                        )
+                    due = _log_wait_progress(
+                        "submitting", out["status"], now, started, deadline, due
+                    )
+                    sleep_time = MSA_SERVER_POLL_SLEEP_S + random.randint(
+                        0, MSA_SERVER_POLL_SLEEP_S
+                    )
                     logger.info(f"Sleeping for {sleep_time}s. Reason: {out['status']}")
                     time.sleep(sleep_time)
                     out = submit(seqs_unique, mode, N)
@@ -362,7 +420,19 @@ def query_colabfold_msa_server(
                 ID, TIME = out["id"], 0
                 pbar.set_description(out["status"])
                 while out["status"] in ["UNKNOWN", "RUNNING", "PENDING"]:
-                    t = 5 + random.randint(0, 5)
+                    now = time.monotonic()
+                    if now > deadline:
+                        raise TimeoutError(
+                            f"MSA server job {ID} did not finish within "
+                            f"{MSA_SERVER_MAX_WAIT_S}s "
+                            f"(last status: {out['status']})."
+                        )
+                    due = _log_wait_progress(
+                        f"job {ID}", out["status"], now, started, deadline, due
+                    )
+                    t = MSA_SERVER_POLL_SLEEP_S + random.randint(
+                        0, MSA_SERVER_POLL_SLEEP_S
+                    )
                     logger.info(f"Sleeping for {t}s. Reason: {out['status']}")
                     time.sleep(t)
                     out = status(ID)
@@ -382,6 +452,16 @@ def query_colabfold_msa_server(
                         "MMseqs2 API is giving errors."
                         "Please confirm your input is a valid protein sequence."
                         "If error persists, please try again an hour later."
+                    )
+
+                # Any other status is unrecognised. Falling through would leave
+                # REDO set and resubmit immediately -- nothing in this loop
+                # sleeps on that path, so it becomes a hot loop against the
+                # server until the deadline. Fail instead of hammering it.
+                if REDO:
+                    raise ColabFoldServerResultError(
+                        f"MSA server returned an unrecognised status "
+                        f"{out['status']!r}; expected COMPLETE or ERROR."
                     )
 
             # Download results
@@ -425,8 +505,8 @@ def query_colabfold_msa_server(
                 os.mkdir(TMPL_PATH)
                 TMPL_LINE = ",".join(TMPL[:20])
                 response = None
+                error_deadline = time.monotonic() + MSA_SERVER_MAX_ERROR_WAIT_S
                 while True:
-                    error_count = 0
                     try:
                         # "good practice to set connect timeouts to slightly
                         # larger than a multiple of 3"
@@ -436,21 +516,15 @@ def query_colabfold_msa_server(
                             timeout=6.02,
                             headers=headers,
                         )
-                    except requests.exceptions.Timeout:
-                        logger.warning(
-                            "Timeout while submitting to template server. Retrying..."
-                        )
-                        continue
                     except Exception as e:
-                        error_count += 1
-                        logger.warning(
-                            f"Error while fetching result from template server."
-                            f"Retrying... ({error_count}/5)"
-                        )
-                        logger.warning(f"Error: {e}")
-                        time.sleep(5)
-                        if error_count > 5:
+                        remaining = error_deadline - time.monotonic()
+                        if remaining <= 0:
                             raise
+                        logger.warning(
+                            f"Error contacting the template server, retrying "
+                            f"(giving up in {int(remaining)}s): {e}"
+                        )
+                        time.sleep(MSA_SERVER_RETRY_SLEEP_S)
                         continue
                     break
                 with tarfile.open(fileobj=response.raw, mode="r|gz") as tar:

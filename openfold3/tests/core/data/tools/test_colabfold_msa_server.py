@@ -17,6 +17,7 @@
 import getpass
 import io
 import json
+import logging
 import shutil
 import tarfile
 import textwrap
@@ -27,6 +28,7 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+import requests
 from pydantic_core import Url
 
 from openfold3.core.data.framework.data_module import DataModule, DataModuleConfig
@@ -939,3 +941,160 @@ class TestMsaComputationSettings:
             settings.validate_output_paths()
 
         assert not settings.workspace_directory.exists()
+
+
+_MODULE = "openfold3.core.data.tools.colabfold_msa_server"
+
+
+class TestServerUnresponsive:
+    """The client must fail rather than retry forever when the MSA server stops
+    responding.
+
+    Two independent hang modes. Errors are bounded by an attempt budget; a job
+    parked in a non-terminal server status raises no error at all and is bounded
+    only by the wall-clock deadline. Only the server calls are mocked -- the
+    retry budget, backoff and deadline are turned down to test-sized values so
+    the real loops run.
+    """
+
+    @patch(f"{_MODULE}.MSA_SERVER_RETRY_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_ERROR_WAIT_S", 0.2)
+    @patch(f"{_MODULE}.requests.post")
+    def test_persistent_timeout_gives_up(self, mock_post, tmp_path):
+        """Regression: `except requests.exceptions.Timeout` used to `continue`
+        without incrementing the attempt counter, so a server timing out on every
+        request span forever. Whether a flaky server failed fast or hung depended
+        only on which exception `requests` happened to raise.
+        """
+        mock_post.side_effect = requests.exceptions.Timeout("read timed out")
+
+        with pytest.raises(requests.exceptions.Timeout):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
+
+        # Bounded by wall clock, so the exact attempt count is timing-dependent;
+        # what matters is that it retried and then stopped.
+        assert mock_post.call_count > 1
+
+    @patch(f"{_MODULE}.MSA_SERVER_RETRY_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_ERROR_WAIT_S", 0.2)
+    @patch(f"{_MODULE}.requests.post")
+    def test_persistent_connection_error_gives_up(self, mock_post, tmp_path):
+        """The counted path must stay bounded too. A ConnectionError already
+        terminated before the fix, so this guards against the two branches
+        diverging again.
+        """
+        mock_post.side_effect = requests.exceptions.ConnectionError("connection reset")
+
+        with pytest.raises(requests.exceptions.ConnectionError):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
+
+        assert mock_post.call_count > 1
+
+    @patch(f"{_MODULE}.MSA_SERVER_POLL_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0.3)
+    @patch(f"{_MODULE}.requests.get")
+    @patch(f"{_MODULE}.requests.post")
+    def test_job_stuck_pending_hits_deadline(self, mock_post, mock_get, tmp_path):
+        """A job the server accepts but never advances past PENDING raises no
+        error, so the attempt budget never trips. Only the deadline ends it.
+        """
+        mock_post.return_value.json.return_value = {"status": "PENDING", "id": "job-1"}
+        mock_get.return_value.json.return_value = {"status": "PENDING"}
+
+        with pytest.raises(TimeoutError, match="job-1.*PENDING"):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
+
+    @patch(f"{_MODULE}.MSA_SERVER_POLL_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0.3)
+    @patch(f"{_MODULE}.requests.post")
+    def test_submit_stuck_ratelimited_hits_deadline(self, mock_post, tmp_path):
+        """RATELIMIT is likewise not an error, so the resubmit loop needs its own
+        deadline.
+        """
+        mock_post.return_value.json.return_value = {"status": "RATELIMIT"}
+
+        with pytest.raises(TimeoutError, match="RATELIMIT"):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
+
+    # Margins are wide enough that ordinary scheduling jitter under a full test
+    # run cannot trip the deadline before the first notice is due; a tighter
+    # budget made this flaky in the suite while passing in isolation.
+    @patch(f"{_MODULE}.MSA_SERVER_POLL_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_PROGRESS_LOG_S", 0.2)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 1.0)
+    @patch(f"{_MODULE}.requests.get")
+    @patch(f"{_MODULE}.requests.post")
+    def test_waiting_is_reported_at_warning_level(
+        self, mock_post, mock_get, tmp_path, caplog
+    ):
+        """The per-poll messages are INFO, which a WARNING-level log config hides,
+        so a stalled job looked like total silence. A periodic notice must reach
+        WARNING and name the status, or the next stall is again only diagnosable
+        from host CPU metrics.
+        """
+        mock_post.return_value.json.return_value = {"status": "PENDING", "id": "job-1"}
+        mock_get.return_value.json.return_value = {"status": "PENDING"}
+
+        with (
+            caplog.at_level(logging.WARNING, logger="openfold3"),
+            pytest.raises(TimeoutError),
+        ):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
+
+        waiting = [
+            r for r in caplog.records if "Still waiting on the MSA server" in r.message
+        ]
+        assert waiting, "no still-waiting notice was emitted at WARNING level"
+        assert "PENDING" in waiting[0].message
+        # Never advertise a negative remaining time; past the deadline we raise.
+        assert "giving up in -" not in waiting[0].message
+
+    @patch(f"{_MODULE}.MSA_SERVER_POLL_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0.5)
+    @patch(f"{_MODULE}.requests.post")
+    def test_unrecognised_status_fails_without_resubmitting(self, mock_post, tmp_path):
+        """A status that is neither COMPLETE nor ERROR used to leave REDO set and
+        resubmit immediately. Nothing on that path sleeps, so it became a hot loop
+        against the server -- ~22k requests/second in testing -- until the query
+        deadline. Fail on the first one instead.
+        """
+        mock_post.return_value.json.return_value = {
+            "status": "SOMETHING_UNEXPECTED",
+            "id": "job-1",
+        }
+
+        with pytest.raises(ColabFoldServerResultError, match="unrecognised status"):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )
+
+        assert mock_post.call_count == 1
+
+    @patch(f"{_MODULE}.MSA_SERVER_POLL_SLEEP_S", 0)
+    @patch(f"{_MODULE}.MSA_SERVER_MAX_WAIT_S", 0.3)
+    @patch(f"{_MODULE}.requests.get")
+    @patch(f"{_MODULE}.requests.post")
+    def test_query_deadline_is_not_reset_by_resubmission(
+        self, mock_post, mock_get, tmp_path
+    ):
+        """The deadline used to be set inside the REDO loop, so every resubmission
+        restarted the budget and the bound never applied to the query as a whole.
+        RATELIMIT drives the resubmit loop, which must still hit the deadline.
+        """
+        mock_post.return_value.json.return_value = {"status": "RATELIMIT"}
+        mock_get.return_value.json.return_value = {"status": "RATELIMIT"}
+
+        with pytest.raises(TimeoutError):
+            query_colabfold_msa_server(
+                ["TESTSEQ"], prefix=tmp_path / "raw", user_agent="test-agent"
+            )

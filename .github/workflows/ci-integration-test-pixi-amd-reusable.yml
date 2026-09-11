@@ -27,6 +27,7 @@ env:
 jobs:
   test-openfold-docker-pixi-amd:
     runs-on: [self-hosted, amd-gpu]
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write
