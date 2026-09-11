@@ -35,3 +35,36 @@ model_update:
 ```
 
 This runner.yml is specifically for inference, but similar settings can be used for training. 
+
+# fast_trimul (optional, third-party)
+
+OF3 can optionally route the triangle multiplicative update through
+[`fast_trimul`](https://github.com/tiagomonteiro0715/fast_trimul), a fused fp16
+[CuTe DSL](https://github.com/NVIDIA/cutlass) kernel. It is **inference only** (its
+backward is a correct but slow torch recompute), and it holds an fp16 copy of the
+layer weights, so it is opt-in and off by default.
+
+Install the optional dependency:
+
+```bash
+pip install openfold3[fast_trimul]
+```
+
+Enable it per `TriangleMultiplicativeUpdate` module by setting the `use_fast_trimul`
+attribute on the built model (before inference, after loading weights):
+
+```python
+from openfold3.core.model.layers.triangular_multiplicative_update import (
+    TriangleMultiplicativeUpdate,
+)
+
+model.eval()
+for m in model.modules():
+    if isinstance(m, TriangleMultiplicativeUpdate):
+        m.use_fast_trimul = True
+```
+
+The fast path targets NVIDIA Ampere (sm80) with `N` divisible by 8; other
+hardware/shapes/dtypes use fast_trimul's built-in pure-torch fallback. If the
+package is not installed, or during training, the flag is ignored and the normal
+OF3 path runs.
