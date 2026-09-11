@@ -38,6 +38,11 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.structure.augmentation import (  # noqa: F401
     centre_random_augmentation,
 )
+from openfold3.core.model.structure.ligand_chemical_steering import (
+    PreparedLigandChemicalSteering,
+    apply_ligand_chemical_steering,
+    prepare_ligand_chemical_steering,
+)
 from openfold3.core.model.structure.pocket_constraints import (
     _batch_scalar,
     _build_pocket_sampling_seeds,
@@ -296,6 +301,7 @@ class SampleDiffusion(nn.Module):
         zij_trunk: torch.Tensor,
         noise_schedule: torch.Tensor,
         start_step: int,
+        chemical_steering: PreparedLigandChemicalSteering | None,
         use_conditioning: bool,
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
@@ -306,6 +312,7 @@ class SampleDiffusion(nn.Module):
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """Run the standard OF3 denoising loop from a chosen schedule index."""
+        num_denoising_steps = len(noise_schedule) - 1
         for tau, c_tau in enumerate(noise_schedule[1:]):
             if tau < start_step:
                 continue
@@ -337,6 +344,11 @@ class SampleDiffusion(nn.Module):
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
+            )
+            xl_denoised = apply_ligand_chemical_steering(
+                xl_denoised=xl_denoised,
+                guidance=chemical_steering,
+                step_fraction=(tau + 1) / max(num_denoising_steps, 1),
             )
 
             delta = (xl_noisy - xl_denoised) / t
@@ -395,6 +407,7 @@ class SampleDiffusion(nn.Module):
         """
         atom_mask = batch["atom_mask"]
         batch_dim, num_atoms = atom_mask.shape[0], atom_mask.shape[-1]
+        chemical_steering = prepare_ligand_chemical_steering(batch, atom_mask)
 
         total_steps = len(noise_schedule) - 1
 
@@ -411,6 +424,7 @@ class SampleDiffusion(nn.Module):
             "si_trunk": si_trunk,
             "zij_trunk": zij_trunk,
             "noise_schedule": noise_schedule,
+            "chemical_steering": chemical_steering,
             "use_conditioning": use_conditioning,
             "chunk_size": chunk_size,
             "use_deepspeed_evo_attention": use_deepspeed_evo_attention,
