@@ -1331,7 +1331,6 @@ openfold3/core/data/primitives/structure/query.py:0: error: Incompatible default
 openfold3/core/data/primitives/structure/query.py:0: error: Incompatible types in assignment (expression has type "list[str]", variable has type "ndarray[tuple[Any, ...], dtype[Any]]")  [assignment]
 openfold3/core/data/primitives/structure/query.py:0: error: Incompatible types in assignment (expression has type "list[str]", variable has type "ndarray[tuple[Any, ...], dtype[Any]]")  [assignment]
 openfold3/core/data/primitives/structure/query.py:0: error: Incompatible types in assignment (expression has type "list[str]", variable has type "set[str]")  [assignment]
-openfold3/core/data/primitives/structure/query.py:0: error: Incompatible types in assignment (expression has type "list[str]", variable has type "set[str]")  [assignment]
 openfold3/core/data/primitives/structure/query.py:0: error: Invalid index type "str | None" for "dict[str, int]"; expected type "str"  [index]
 openfold3/core/data/primitives/structure/query.py:0: error: Item "None" of "AtomArray[Any] | None" has no attribute "coord"  [union-attr]
 openfold3/core/data/primitives/structure/query.py:0: error: Item "None" of "AtomArray[int] | None" has no attribute "bonds"  [union-attr]
