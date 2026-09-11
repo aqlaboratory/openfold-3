@@ -76,6 +76,10 @@ from openfold3.projects.of3_all_atom.project_entry import ModelUpdate, OF3Projec
 
 logger = logging.getLogger(__name__)
 
+INFERENCE_INTERMEDIATES_DIRNAME = "openfold3_intermediates"
+MSA_INTERMEDIATE_DIRNAME = "colabfold_msas"
+TEMPLATE_INTERMEDIATE_DIRNAME = "template_data"
+
 
 def rank_zero_only(fn):
     """Decorator to ensure a function is only executed on rank zero."""
@@ -649,7 +653,15 @@ class InferenceExperimentRunner(ExperimentRunner):
             use_templates,
         )
         msa_settings = experiment_config.msa_computation_settings
+        intermediate_root = self.output_dir / INFERENCE_INTERMEDIATES_DIRNAME
+        msa_settings._set_workspace_root(intermediate_root / MSA_INTERMEDIATE_DIRNAME)
         msa_settings.set_saved_output_root(self.output_dir / "msas")
+        template_settings = experiment_config.template_preprocessor_settings
+        template_settings._set_inference_output_directory(
+            intermediate_root
+            / TEMPLATE_INTERMEDIATE_DIRNAME
+            / msa_settings.run_directory_name
+        )
 
     def set_num_diffusion_samples(self, num_diffusion_samples: int) -> None:
         update_dict = {
@@ -874,9 +886,15 @@ class InferenceExperimentRunner(ExperimentRunner):
         with open(log_path, "w") as fp:
             fp.write(self.model_config.to_json_best_effort(indent=4))
 
-    def _maybe_remove_dir(self, path):
-        if path.exists():
+    def _cleanup_template_intermediates(self) -> None:
+        """Remove the template directory created by this run."""
+        template_settings = self.experiment_config.template_preprocessor_settings
+        path = template_settings._run_owned_output_directory
+        if path is None:
+            return
+        with contextlib.suppress(FileNotFoundError):
             shutil.rmtree(path)
+        template_settings._record_output_directory_removed()
 
     def cleanup_msa_workspace(self):
         """Remove the temporary MSA workspace created by this run."""
@@ -890,23 +908,27 @@ class InferenceExperimentRunner(ExperimentRunner):
                 exc_info=True,
             )
 
-    def cleanup(self):
-        """Cleanup directories from colabfold MSA"""
+    def cleanup_intermediates(self) -> None:
+        """Remove the temporary directories created by this inference run."""
         self.cleanup_msa_workspace()
         msa_settings = self.experiment_config.msa_computation_settings
+        if self.use_templates and msa_settings.cleanup_msa_dir:
+            try:
+                self._cleanup_template_intermediates()
+            except OSError:
+                logger.warning(
+                    "Could not remove template intermediates for run %s",
+                    msa_settings.run_directory_name,
+                    exc_info=True,
+                )
+
+    def cleanup(self):
+        """Remove temporary inference files and the empty log directory."""
+        self.cleanup_intermediates()
 
         if self.is_rank_zero and self.log_dir.is_dir() and not os.listdir(self.log_dir):
             print("Removing empty log directory...")
             self.log_dir.rmdir()
-
-        if (
-            self.is_rank_zero
-            and self.use_msa_server
-            and msa_settings.cleanup_msa_dir
-            and self.use_templates
-        ):
-            template_dir = self.experiment_config.template_preprocessor_settings.structure_directory.parent  # noqa: E501
-            self._maybe_remove_dir(template_dir)
 
 
 class WandbHandler:

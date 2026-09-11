@@ -17,6 +17,9 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/openfold3-docker
+  # Keep in step with DEFAULT_CHECKPOINT_NAME in openfold3/entry_points/parameters.py
+  # and with the same variable in ci-integration-test-pixi-cuda-reusable.yml.
+  OPENFOLD_DEFAULT_CKPT: of3-ob-2025-06-30-174k.pt
 
 # Unlike the NVIDIA path, the AMD GPU runner is a persistent self-hosted box
 # (label: amd-gpu), so there is no AWS start/stop lifecycle — the job targets the
@@ -59,24 +62,25 @@ jobs:
       - name: Create parameter cache directory
         run: mkdir -p ~/.openfold3
 
-      - name: Cache download of parameters
-        id: cache-openfold_parameters
-        uses: actions/cache@v6
-        with:
-          path: ~/.openfold3/
-          key: shared-params_of3
-          restore-keys: |
-            shared-params_of3
-
-      - name: Download OpenFold parameters
-        if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
+      # No actions/cache here, deliberately as this runner is persistent
+      # The checkpoint is verified by size against S3 and fetched if missing or
+      # short. Downloading to a temp name and renaming means an interrupted
+      # transfer never leaves a truncated file at the real path on this
+      # persistent disk.
+      - name: Ensure OpenFold parameters
         run: |
-          echo "Cache miss: Downloading OpenFold parameters..."
-          # Public bucket — fetch over HTTPS so the self-hosted runner doesn't
-          # need the AWS CLI installed (equivalent to `aws s3 cp --no-sign-request`).
-          curl -fSL \
-            https://openfold3-data.s3.amazonaws.com/openfold3-parameters/of3-ob-2025-06-30-174k.pt \
-            -o ~/.openfold3/of3-ob-2025-06-30-174k.pt
+          set -euo pipefail
+          f=~/.openfold3/$OPENFOLD_DEFAULT_CKPT
+          url=https://openfold3-data.s3.amazonaws.com/openfold3-parameters/$OPENFOLD_DEFAULT_CKPT
+          expected=$(curl -fsSI "$url" | awk 'tolower($1)=="content-length:"{print $2}' | tr -d '\r')
+          actual=$( [ -f "$f" ] && wc -c < "$f" | tr -d " " || echo 0)
+          if [ -n "$expected" ] && [ "$actual" = "$expected" ]; then
+            echo "parameters present and complete: $f ($actual bytes)"
+          else
+            echo "parameters missing or incomplete (have $actual, want ${expected:-?} bytes); downloading"
+            # Public bucket: plain HTTPS, so this runner needs no AWS CLI.
+            curl -fSL "$url" -o "$f.part" && mv "$f.part" "$f"
+          fi
 
       - name: Run integration test
         run: |

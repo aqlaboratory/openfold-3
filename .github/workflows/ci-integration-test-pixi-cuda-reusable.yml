@@ -17,6 +17,9 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/openfold3-docker
+  # The default checkpoint. Keep in step with DEFAULT_CHECKPOINT_NAME in
+  # openfold3/entry_points/parameters.py.
+  OPENFOLD_DEFAULT_CKPT: of3-ob-2025-06-30-174k.pt
 
 jobs:
   start-aws-runner:
@@ -302,15 +305,24 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.openfold3/
-          key: shared-params_of3
-          restore-keys: |
-            shared-params_of3
+          key: params-cuda-${{ env.OPENFOLD_DEFAULT_CKPT }}
 
-      - name: Install AWS CLI and Download OpenFold parameters
-        if: steps.cache-openfold_parameters.outputs.cache-hit != 'true'
+      # checkpoint is verified by size against the object in S3 and fetched if it
+      # is missing or short, so a relocated or truncated cache entry self-heals
+      # instead of skipping straight to a failing test.
+      - name: Ensure OpenFold parameters
         run: |
-          echo "Cache miss: Downloading OpenFold parameters..."
-          aws s3 cp s3://openfold3-data/openfold3-parameters/of3-ob-2025-06-30-174k.pt ~/.openfold3/ --no-sign-request
+          set -euo pipefail
+          f=~/.openfold3/$OPENFOLD_DEFAULT_CKPT
+          url=https://openfold3-data.s3.amazonaws.com/openfold3-parameters/$OPENFOLD_DEFAULT_CKPT
+          expected=$(curl -fsSI "$url" | awk 'tolower($1)=="content-length:"{print $2}' | tr -d '\r')
+          actual=$( [ -f "$f" ] && wc -c < "$f" | tr -d " " || echo 0)
+          if [ -n "$expected" ] && [ "$actual" = "$expected" ]; then
+            echo "parameters present and complete: $f ($actual bytes)"
+          else
+            echo "parameters missing or incomplete (have $actual, want ${expected:-?} bytes); downloading"
+            aws s3 cp "s3://openfold3-data/openfold3-parameters/$OPENFOLD_DEFAULT_CKPT" "$f" --no-sign-request
+          fi
 
       - name: Run integration test
         run: |
