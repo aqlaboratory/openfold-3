@@ -813,6 +813,15 @@ class TestRemapObsoletePdb:
 
 
 class TestMsaComputationSettings:
+    def test_setting_workspace_parent_does_not_create_it(self, tmp_path):
+        settings = MsaComputationSettings()
+        workspace_root = tmp_path / "intermediates" / "colabfold_msas"
+
+        settings._set_workspace_root(workspace_root)
+
+        assert settings.workspace_directory.parent == workspace_root
+        assert not workspace_root.exists()
+
     @pytest.mark.parametrize("cleanup_msa_dir", [False, True])
     def test_workspace_cleanup_is_unconditional(self, cleanup_msa_dir):
         settings = MsaComputationSettings(cleanup_msa_dir=cleanup_msa_dir)

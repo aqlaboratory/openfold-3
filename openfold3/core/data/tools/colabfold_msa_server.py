@@ -1093,10 +1093,10 @@ def add_msa_paths_to_iqs(
 
 
 def _default_msa_output_root() -> Path:
-    """Return the default parent directory for temporary MSA workspaces."""
-    from openfold3.core.data.tools.utils import get_of3_tmpdir
+    """Return the default MSA workspace parent without creating it."""
+    from openfold3.core.data.tools.utils import _get_of3_tmpdir_path
 
-    return get_of3_tmpdir()
+    return _get_of3_tmpdir_path()
 
 
 def _default_run_directory_name() -> str:
@@ -1129,6 +1129,7 @@ class MsaComputationSettings(BaseModel):
     colabfold_output_dir: Path | None = None
     _run_directory_name: str = PrivateAttr(default_factory=_default_run_directory_name)
     _saved_output_root: Path | None = PrivateAttr(default=None)
+    _workspace_root: Path | None = PrivateAttr(default=None)
     _workspace_created: bool = PrivateAttr(default=False)
 
     @property
@@ -1139,7 +1140,8 @@ class MsaComputationSettings(BaseModel):
     @property
     def workspace_directory(self) -> Path:
         """Return this run's unique temporary workspace."""
-        return _default_msa_output_root() / self.run_directory_name
+        root = self._workspace_root or _default_msa_output_root()
+        return root / self.run_directory_name
 
     @property
     def saved_output_directory(self) -> Path | None:
@@ -1202,6 +1204,18 @@ class MsaComputationSettings(BaseModel):
             self.validate_output_paths()
         except ValueError:
             self._saved_output_root = previous_root
+            raise
+
+    def _set_workspace_root(self, workspace_root: Path) -> None:
+        """Set the workspace parent before the workspace is created."""
+        if self._workspace_created:
+            raise RuntimeError("Cannot change an MSA workspace after it is created")
+        previous_root = self._workspace_root
+        self._workspace_root = Path(workspace_root)
+        try:
+            self.validate_output_paths()
+        except ValueError:
+            self._workspace_root = previous_root
             raise
 
     def create_workspace(self) -> None:
