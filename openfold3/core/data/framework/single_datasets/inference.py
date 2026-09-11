@@ -71,6 +71,7 @@ from openfold3.core.data.primitives.structure.tokenization import (
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Query,
 )
+from openfold3.steering.featurization import maybe_create_steering_features
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,9 @@ class InferenceDataset(Dataset):
 
         # Pocket sampling
         self.pocket_sampling_settings = dataset_config.pocket_sampling
+
+        # Chemical steering
+        self.steering_settings = dataset_config.steering
 
         # Parse CCD
         if dataset_config.ccd_file_path is not None:
@@ -304,7 +308,9 @@ class InferenceDataset(Dataset):
     ) -> dict:
         """Creates all features for a single datapoint."""
 
-        features = {}
+        # Annotated because the first assignment below is the AtomArray
+        # pseudo-feature, which would otherwise fix the value type to it.
+        features: dict = {}
 
         # Create initial AtomArray and ReferenceMolecules from query entry
         structure_objs = self.get_structure_with_ref_mols(
@@ -342,6 +348,14 @@ class InferenceDataset(Dataset):
                 query=query,
                 atom_array=preprocessed_atom_array,
                 processed_reference_molecules=processed_reference_molecules,
+            )
+        )
+
+        features.update(
+            maybe_create_steering_features(
+                atom_array=preprocessed_atom_array,
+                processed_reference_molecules=processed_reference_molecules,
+                settings=self.steering_settings,
             )
         )
 

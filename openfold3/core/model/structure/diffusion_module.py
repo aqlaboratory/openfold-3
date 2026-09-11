@@ -44,6 +44,8 @@ from openfold3.core.model.structure.pocket_constraints import (
     _feature_mask,
     _pocket_sampling_enabled,
 )
+from openfold3.steering import PreparedSteering, prepare_steering
+from openfold3.steering.types import StepState
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +300,8 @@ class SampleDiffusion(nn.Module):
         start_step: int,
         use_conditioning: bool,
         chunk_size: int | None = None,
+        use_steering: bool = False,
+        steering: PreparedSteering | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
@@ -306,6 +310,13 @@ class SampleDiffusion(nn.Module):
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """Run the standard OF3 denoising loop from a chosen schedule index."""
+        if use_steering and steering is None:
+            raise ValueError(
+                "use_steering=True requires a prepared steering object; "
+                "SampleDiffusion.forward builds one with prepare_steering"
+            )
+
+        num_denoising_steps = len(noise_schedule) - 1
         for tau, c_tau in enumerate(noise_schedule[1:]):
             if tau < start_step:
                 continue
@@ -338,6 +349,35 @@ class SampleDiffusion(nn.Module):
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
             )
+
+            # The `is not None` is for the type checker only: a True flag
+            # with nothing prepared already raised at the top of this method.
+            if use_steering and steering is not None:
+                # Guidance corrects the denoised estimate, not the noisy state,
+                # so it flows through the Euler step below rather than fighting
+                # it. Dtype handling lives here so the steering engine never
+                # deals with it. pass_name is "primary" because only the
+                # primary rollout sets use_steering -- the pocket-refinement
+                # call below passes False.
+                update = steering.engine.on_denoised(
+                    xl_denoised.float(),
+                    StepState(
+                        xl_noisy=xl_noisy,
+                        noise=noise,
+                        t=t,
+                        c_tau=c_tau,
+                        step_index=tau,
+                        num_steps=num_denoising_steps,
+                        start_step=start_step,
+                        pass_name="primary",
+                        atom_mask=atom_mask,
+                        ctx=steering.ctx,
+                    ),
+                )
+                if update is not None:
+                    xl_denoised = (xl_denoised.float() + update.delta).to(
+                        xl_denoised.dtype
+                    )
 
             delta = (xl_noisy - xl_denoised) / t
             dt = c_tau - t
@@ -398,6 +438,11 @@ class SampleDiffusion(nn.Module):
 
         total_steps = len(noise_schedule) - 1
 
+        # Called before any allocation or denoiser call, so a malformed
+        # steering batch raises before compute is spent.
+        steering = prepare_steering(batch, atom_mask)
+        use_steering = steering is not None
+
         xl = noise_schedule[0] * torch.randn(
             (batch_dim, no_rollout_samples, num_atoms, 3),
             device=atom_mask.device,
@@ -421,14 +466,23 @@ class SampleDiffusion(nn.Module):
             "_mask_trans": _mask_trans,
         }
 
+        # Steering is passed per-call rather than through rollout_kwargs: only
+        # the primary rollout is steered, so guidance effects stay
+        # attributable rather than entangled with pocket refinement below.
+        xl = self._sample_rollout(
+            xl=xl,
+            start_step=0,
+            use_steering=use_steering,
+            steering=steering,
+            **rollout_kwargs,
+        )
+
         pocket_sampling_enabled = _pocket_sampling_enabled(batch)
         if pocket_sampling_enabled and batch_dim != 1:
             raise ValueError(
                 "Pocket proposal/refinement currently supports one query per "
                 "model batch"
             )
-
-        xl = self._sample_rollout(xl=xl, start_step=0, **rollout_kwargs)
 
         if pocket_sampling_enabled:
             seed = _build_pocket_sampling_seeds(
@@ -473,9 +527,14 @@ class SampleDiffusion(nn.Module):
                 pocket_sampling_jitter,
                 seed.shape[1],
             )
+            # Pocket refinement is deliberately unsteered for now, so that a
+            # benchmark can attribute a change to guidance rather than to
+            # guidance interacting with the second pass.
             xl = self._sample_rollout(
                 xl=xl,
                 start_step=pocket_sampling_start_step,
+                use_steering=False,
+                steering=None,
                 **rollout_kwargs,
             )
 
