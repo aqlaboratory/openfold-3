@@ -229,7 +229,7 @@ ColabFold server before running prediction.
 - **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 98061091635)
 - **Runner:** `omsf-amd-aupcloud` (self-hosted AMD GPU)
 - **Commit:** `f9649cce7de32382bc1100e8e9e1de2301adf2c2`
-- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[no_msa-no_templates-protein_only]`
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin]`
 - **Error:** `pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceExperimentConfig — Value error, Default checkpoint openbind-2025-06-30-174k not found in /root/.openfold3, cowardly refusing to perform inference. Please run setup_openfold to download the current default parameters or specify a valid checkpoint path with --inference-ckpt-path`
 - **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
 
@@ -309,5 +309,37 @@ Not an AWS GPU outage. The parameter cache was restored (step 7 succeeded) but d
 - **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin]`
 - **Error:** `requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.`
 - **Skipped Jobs:** `test-conda`, `test-pixi-cuda`
+
+---
+
+## 2026-09-11
+
+**Cause:** Default checkpoint `openbind-2025-06-30-174k` not found in `/root/.openfold3` on the CUDA EC2 runners. The `actions/cache` restore succeeded (step 7: "Cache download of parameters" — hit) but delivered files to the wrong path. The AMD cache entry was stored with `HOME=/home/jan` (the AMD runner's persistent user); EC2 runners have `HOME=/home/ubuntu`. Because `actions/cache` stores absolute paths (tar -P), the restore unpacked files to `/home/jan/.openfold3` on the EC2 runner — a path not mounted into Docker — while the cache-hit gate skipped the S3 download, leaving `/root/.openfold3` empty. Fixed in PR #404 (`feature/split-parameter-cache-by-runner`); subsequent run #255 passed.
+
+- **Run ID:** [34558633289](https://github.com/aqlaboratory/openfold-3/actions/runs/34558633289)
+- **Run #:** 254
+- **Branch:** main @ `346c0efe3b4d4f08c3f8c8ad481fe3dc999287cf`
+- **Time:** 2026-09-11T03:29:31Z – 04:19:54Z
+
+### Failed / Cancelled Jobs
+
+| Job | Status | Job ID | Runner |
+|-----|--------|--------|--------|
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | **failure** | 103136993054 | ip-172-31-5-56 (runner-03f3rsj7) |
+| `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` | cancelled | 103136966042 | ip-172-31-1-25 (runner-xjaxxdi2) |
+
+### Passing Jobs
+
+- `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` — **passed** (AMD runner uses local disk, not `actions/cache`)
+
+### Failed Test
+
+```
+FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[no_msa-no_templates-protein_only]
+pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceExperimentConfig
+  Value error, Default checkpoint openbind-2025-06-30-174k not found in /root/.openfold3,
+  cowardly refusing to perform inference. Please run `setup_openfold` to download the current
+  default parameters or specify a valid checkpoint path with `--inference-ckpt-path`
+```
 
 ---
