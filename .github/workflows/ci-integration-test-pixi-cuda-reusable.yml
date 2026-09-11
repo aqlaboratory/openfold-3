@@ -25,44 +25,238 @@ jobs:
       id-token: write
       contents: read
     outputs:
-      mapping: ${{ steps.aws-start.outputs.mapping }}
-      instances: ${{ steps.aws-start.outputs.instances }}
+      # Whichever attempt launched wins; the rest are empty strings, which are
+      # falsy in Actions expressions.
+      mapping: >-
+        ${{ steps.try1.outputs.mapping || steps.try2.outputs.mapping || steps.try3.outputs.mapping || steps.try4.outputs.mapping || steps.try5.outputs.mapping || steps.try6.outputs.mapping }}
+      instances: >-
+        ${{ steps.try1.outputs.instances || steps.try2.outputs.instances || steps.try3.outputs.instances || steps.try4.outputs.instances || steps.try5.outputs.instances || steps.try6.outputs.instances }}
+      # stop-aws-runner must terminate in whichever region actually won, or the
+      # instance leaks.
+      region: >-
+        ${{ steps.winner.outputs.region }}
+    env:
+      AWS_INSTANCE_TYPE: "g5.4xlarge" # A10G 64 GB
+      AWS_TAGS: >-
+        [
+          {"Key":"Name","Value":"of-gha-runner"},
+          {"Key":"Repository","Value":"${{ github.repository }}"},
+          {"Key":"Workflow","Value":"${{ github.workflow }}"},
+          {"Key":"RunId","Value":"${{ github.run_id }}"},
+          {"Key":"RunNumber","Value":"${{ github.run_number }}"},
+          {"Key":"RunAttempt","Value":"${{ github.run_attempt }}"},
+          {"Key":"Actor","Value":"${{ github.actor }}"},
+          {"Key":"EventName","Value":"${{ github.event_name }}"},
+          {"Key":"Ref","Value":"${{ github.ref_name }}"},
+          {"Key":"Sha","Value":"${{ github.sha }}"}
+        ]
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
           aws-region: us-east-2
-      - name: Resolve GPU DLAMI from SSM
-        id: resolve-ami
+
+      # EC2 capacity is per (region, availability zone): a g5.4xlarge shortage in
+      # one zone says nothing about the others, and RunInstances without a subnet
+      # picks a single default subnet without shopping around. On 2026-09-09 all
+      # three us-east-2 zones were empty at once while us-west-2 had room, so the
+      # fallback spans regions as well as zones. The AMI is resolved per region
+      # because AMI ids are region-scoped.
+      - name: Resolve capacity pools across regions
+        id: pools
         run: |
-          ami_id=$(aws ssm get-parameter \
-            --name /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id \
-            --query 'Parameter.Value' --output text)
-          echo "ami_id=$ami_id" >> "$GITHUB_OUTPUT"
-      - name: Create cloud runner
-        id: aws-start
+          set -euo pipefail
+          i=1
+          for region in us-east-2 us-west-2; do
+            ami=$(aws ssm get-parameter --region "$region" \
+              --name /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id \
+              --query 'Parameter.Value' --output text)
+            azs=$(aws ec2 describe-instance-type-offerings --region "$region" \
+              --location-type availability-zone \
+              --filters Name=instance-type,Values="$AWS_INSTANCE_TYPE" \
+              --query 'InstanceTypeOfferings[].Location' --output text \
+              | tr '\t' '\n' | sort | paste -sd, -)
+            if [ -z "$azs" ]; then
+              echo "$AWS_INSTANCE_TYPE not offered in $region, skipping"
+              continue
+            fi
+            # Sorting by AZ keeps the order stable; the API returns it arbitrarily.
+            subnets=$(aws ec2 describe-subnets --region "$region" \
+              --filters Name=default-for-az,Values=true \
+                        "Name=availability-zone,Values=$azs" \
+              --query 'Subnets[].[AvailabilityZone,SubnetId]' --output text \
+              | sort | awk '{print $2}')
+            for subnet in $subnets; do
+              echo "pool_${i}_region=$region" >> "$GITHUB_OUTPUT"
+              echo "pool_${i}_subnet=$subnet" >> "$GITHUB_OUTPUT"
+              echo "pool_${i}_ami=$ami" >> "$GITHUB_OUTPUT"
+              echo "pool $i: $region $subnet"
+              i=$((i + 1))
+            done
+          done
+          if [ "$i" -eq 1 ]; then
+            echo "::error::No default subnets found offering $AWS_INSTANCE_TYPE"
+            exit 1
+          fi
+          echo "resolved $((i - 1)) capacity pools"
+
+      - name: Create cloud runner (pool 1)
+        id: try1
+        if: >-
+          steps.pools.outputs.pool_1_subnet != ''
+        continue-on-error: true
         uses: omsf/start-aws-gha-runner@v1.3.0
         with:
-          aws_image_id: ${{ steps.resolve-ami.outputs.ami_id }}  # Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04), resolved from SSM at runtime
-          aws_instance_type: "g5.4xlarge" # A10G 64 GB
+          aws_image_id: ${{ steps.pools.outputs.pool_1_ami }}
+          aws_instance_type: ${{ env.AWS_INSTANCE_TYPE }}
+          aws_region_name: ${{ steps.pools.outputs.pool_1_region }}
+          aws_subnet_id: ${{ steps.pools.outputs.pool_1_subnet }}
           aws_home_dir: /home/ubuntu
           aws_root_device_size: 200
-          aws_tags: >-
-            [
-              {"Key":"Name","Value":"of-gha-runner"},
-              {"Key":"Repository","Value":"${{ github.repository }}"},
-              {"Key":"Workflow","Value":"${{ github.workflow }}"},
-              {"Key":"RunId","Value":"${{ github.run_id }}"},
-              {"Key":"RunNumber","Value":"${{ github.run_number }}"},
-              {"Key":"RunAttempt","Value":"${{ github.run_attempt }}"},
-              {"Key":"Actor","Value":"${{ github.actor }}"},
-              {"Key":"EventName","Value":"${{ github.event_name }}"},
-              {"Key":"Ref","Value":"${{ github.ref_name }}"},
-              {"Key":"Sha","Value":"${{ github.sha }}"}
-            ]          
+          aws_tags: ${{ env.AWS_TAGS }}
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
+
+      - name: Create cloud runner (pool 2)
+        id: try2
+        if: >-
+          !steps.try1.outputs.instances
+          && steps.pools.outputs.pool_2_subnet != ''
+        continue-on-error: true
+        uses: omsf/start-aws-gha-runner@v1.3.0
+        with:
+          aws_image_id: ${{ steps.pools.outputs.pool_2_ami }}
+          aws_instance_type: ${{ env.AWS_INSTANCE_TYPE }}
+          aws_region_name: ${{ steps.pools.outputs.pool_2_region }}
+          aws_subnet_id: ${{ steps.pools.outputs.pool_2_subnet }}
+          aws_home_dir: /home/ubuntu
+          aws_root_device_size: 200
+          aws_tags: ${{ env.AWS_TAGS }}
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+      - name: Create cloud runner (pool 3)
+        id: try3
+        if: >-
+          !steps.try1.outputs.instances
+          && !steps.try2.outputs.instances
+          && steps.pools.outputs.pool_3_subnet != ''
+        continue-on-error: true
+        uses: omsf/start-aws-gha-runner@v1.3.0
+        with:
+          aws_image_id: ${{ steps.pools.outputs.pool_3_ami }}
+          aws_instance_type: ${{ env.AWS_INSTANCE_TYPE }}
+          aws_region_name: ${{ steps.pools.outputs.pool_3_region }}
+          aws_subnet_id: ${{ steps.pools.outputs.pool_3_subnet }}
+          aws_home_dir: /home/ubuntu
+          aws_root_device_size: 200
+          aws_tags: ${{ env.AWS_TAGS }}
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+      - name: Create cloud runner (pool 4)
+        id: try4
+        if: >-
+          !steps.try1.outputs.instances
+          && !steps.try2.outputs.instances
+          && !steps.try3.outputs.instances
+          && steps.pools.outputs.pool_4_subnet != ''
+        continue-on-error: true
+        uses: omsf/start-aws-gha-runner@v1.3.0
+        with:
+          aws_image_id: ${{ steps.pools.outputs.pool_4_ami }}
+          aws_instance_type: ${{ env.AWS_INSTANCE_TYPE }}
+          aws_region_name: ${{ steps.pools.outputs.pool_4_region }}
+          aws_subnet_id: ${{ steps.pools.outputs.pool_4_subnet }}
+          aws_home_dir: /home/ubuntu
+          aws_root_device_size: 200
+          aws_tags: ${{ env.AWS_TAGS }}
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+      - name: Create cloud runner (pool 5)
+        id: try5
+        if: >-
+          !steps.try1.outputs.instances
+          && !steps.try2.outputs.instances
+          && !steps.try3.outputs.instances
+          && !steps.try4.outputs.instances
+          && steps.pools.outputs.pool_5_subnet != ''
+        continue-on-error: true
+        uses: omsf/start-aws-gha-runner@v1.3.0
+        with:
+          aws_image_id: ${{ steps.pools.outputs.pool_5_ami }}
+          aws_instance_type: ${{ env.AWS_INSTANCE_TYPE }}
+          aws_region_name: ${{ steps.pools.outputs.pool_5_region }}
+          aws_subnet_id: ${{ steps.pools.outputs.pool_5_subnet }}
+          aws_home_dir: /home/ubuntu
+          aws_root_device_size: 200
+          aws_tags: ${{ env.AWS_TAGS }}
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+      - name: Create cloud runner (pool 6)
+        id: try6
+        if: >-
+          !steps.try1.outputs.instances
+          && !steps.try2.outputs.instances
+          && !steps.try3.outputs.instances
+          && !steps.try4.outputs.instances
+          && !steps.try5.outputs.instances
+          && steps.pools.outputs.pool_6_subnet != ''
+        continue-on-error: true
+        uses: omsf/start-aws-gha-runner@v1.3.0
+        with:
+          aws_image_id: ${{ steps.pools.outputs.pool_6_ami }}
+          aws_instance_type: ${{ env.AWS_INSTANCE_TYPE }}
+          aws_region_name: ${{ steps.pools.outputs.pool_6_region }}
+          aws_subnet_id: ${{ steps.pools.outputs.pool_6_subnet }}
+          aws_home_dir: /home/ubuntu
+          aws_root_device_size: 200
+          aws_tags: ${{ env.AWS_TAGS }}
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+      # continue-on-error means a failed launch does not fail the job, so without
+      # this the job would go green with empty outputs and the downstream
+      # runs-on would break confusingly.
+      - name: Report launch outcome
+        id: winner
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5 6; do
+            # Indirect expansion, not eval: the instances value is JSON like
+            # ["runner-abc"] and eval would mangle its quotes and brackets.
+            iv="INSTANCES_$i"; rv="REGION_$i"; sv="SUBNET_$i"
+            instances="${!iv:-}"; region="${!rv:-}"; subnet="${!sv:-}"
+            if [ -n "$instances" ]; then
+              echo "Launched in $region / $subnet (pool $i)"
+              echo "region=$region" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "::error::No capacity for $AWS_INSTANCE_TYPE in any zone of us-east-2 or us-west-2"
+          exit 1
+        env:
+          INSTANCES_1: ${{ steps.try1.outputs.instances }}
+          REGION_1: ${{ steps.pools.outputs.pool_1_region }}
+          SUBNET_1: ${{ steps.pools.outputs.pool_1_subnet }}
+          INSTANCES_2: ${{ steps.try2.outputs.instances }}
+          REGION_2: ${{ steps.pools.outputs.pool_2_region }}
+          SUBNET_2: ${{ steps.pools.outputs.pool_2_subnet }}
+          INSTANCES_3: ${{ steps.try3.outputs.instances }}
+          REGION_3: ${{ steps.pools.outputs.pool_3_region }}
+          SUBNET_3: ${{ steps.pools.outputs.pool_3_subnet }}
+          INSTANCES_4: ${{ steps.try4.outputs.instances }}
+          REGION_4: ${{ steps.pools.outputs.pool_4_region }}
+          SUBNET_4: ${{ steps.pools.outputs.pool_4_subnet }}
+          INSTANCES_5: ${{ steps.try5.outputs.instances }}
+          REGION_5: ${{ steps.pools.outputs.pool_5_region }}
+          SUBNET_5: ${{ steps.pools.outputs.pool_5_subnet }}
+          INSTANCES_6: ${{ steps.try6.outputs.instances }}
+          REGION_6: ${{ steps.pools.outputs.pool_6_region }}
+          SUBNET_6: ${{ steps.pools.outputs.pool_6_subnet }}
 
   test-openfold-docker-pixi:
     runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
@@ -140,7 +334,9 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::203627415330:role/of-gha-runner
-          aws-region: us-east-2
+          # The runner may have launched in the fallback region; terminating in
+          # the wrong one silently leaves the instance running.
+          aws-region: ${{ needs.start-aws-runner.outputs.region || 'us-east-2' }}
       - name: Stop instances
         uses: omsf/stop-aws-gha-runner@v1.0.0
         with:
