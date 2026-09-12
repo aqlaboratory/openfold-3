@@ -40,5 +40,7 @@ def empty_device_cache(device: torch.device) -> None:
     """
     if device.type == "cuda":
         torch.cuda.empty_cache()
+    elif device.type == "xpu":
+        torch.xpu.empty_cache()
     elif device.type == "mps":
         torch.mps.empty_cache()
