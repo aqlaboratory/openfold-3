@@ -37,7 +37,10 @@ def _build_module(c_in: int, c_hidden: int, no_heads: int, starting: bool):
     from openfold3.core.model.layers.triangular_attention import TriangleAttention
 
     module = TriangleAttention(
-        c_in=c_in, c_hidden=c_hidden, no_heads=no_heads, starting=starting,
+        c_in=c_in,
+        c_hidden=c_hidden,
+        no_heads=no_heads,
+        starting=starting,
     )
     with torch.no_grad():
         torch.manual_seed(1234 + int(starting))

@@ -13,6 +13,7 @@ This tells us:
 - Whether the first step has higher transient than later steps
   (often does because cuBLAS/cuEq autotune fires there).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -38,11 +39,15 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def build(query_json: Path, samples: int):
-    runner_args = config_utils.load_yaml(REPO / "examples/example_runner_yamls/cuequivariance.yml")
+    runner_args = config_utils.load_yaml(
+        REPO / "examples/example_runner_yamls/cuequivariance.yml"
+    )
     runner_args.setdefault("data_module_args", {})
     runner_args["data_module_args"]["num_workers"] = 0
     expt = InferenceExperimentConfig(**runner_args)
-    runner = InferenceExperimentRunner(expt, num_diffusion_samples=samples, use_msa_server=False)
+    runner = InferenceExperimentRunner(
+        expt, num_diffusion_samples=samples, use_msa_server=False
+    )
     cfg = runner.model_config
     cfg.settings.memory.eval.offload_inference.token_cutoff = 10_000_000
     cfg.settings.memory.eval.use_cueq_triangle_kernels = True
@@ -73,7 +78,7 @@ def main():
     n_tok = int(batch["token_mask"].shape[-1])
     c_z = int(model.config.architecture.shared.c_z)
     u_bytes = n_tok * n_tok * c_z * 4
-    print(f"n_tok={n_tok} samples={args.samples} 1U={u_bytes/1024**2:.1f} MiB")
+    print(f"n_tok={n_tok} samples={args.samples} 1U={u_bytes / 1024**2:.1f} MiB")
 
     # Warm-up.
     print("\nWarm-up...")
@@ -83,7 +88,6 @@ def main():
     torch.cuda.empty_cache()
 
     # Hook each phase of sample_diffusion.
-    sd = model.sample_diffusion
     dm_mod = model.sample_diffusion.diffusion_module
     orig_prep_cond = dm_mod.prepare_diffusion_conditioning_cache
     orig_prep_atom = dm_mod.prepare_atom_rep_cache
@@ -102,16 +106,18 @@ def main():
         after = torch.cuda.memory_allocated()
         transient = peak - before
         resident = after - before
-        measurements.append({
-            "name": name,
-            "before_mib": before / 1024**2,
-            "after_mib": after / 1024**2,
-            "peak_mib": peak / 1024**2,
-            "transient_mib": transient / 1024**2,
-            "resident_added_mib": resident / 1024**2,
-            "transient_U": transient / u_bytes,
-            "resident_added_U": resident / u_bytes,
-        })
+        measurements.append(
+            {
+                "name": name,
+                "before_mib": before / 1024**2,
+                "after_mib": after / 1024**2,
+                "peak_mib": peak / 1024**2,
+                "transient_mib": transient / 1024**2,
+                "resident_added_mib": resident / 1024**2,
+                "transient_U": transient / u_bytes,
+                "resident_added_U": resident / u_bytes,
+            }
+        )
         return out
 
     def hooked_prep_cond(*a, **kw):
@@ -124,7 +130,9 @@ def main():
         call_count["diff"] += 1
         n = call_count["diff"]
         if n in (1, 2, 5, 100):
-            return measure(f"diffusion_module.forward (step #{n})", orig_diff_fwd, *a, **kw)
+            return measure(
+                f"diffusion_module.forward (step #{n})", orig_diff_fwd, *a, **kw
+            )
         return orig_diff_fwd(*a, **kw)
 
     dm_mod.prepare_diffusion_conditioning_cache = hooked_prep_cond
@@ -141,16 +149,21 @@ def main():
             lm(batch)
         torch.cuda.synchronize()
         overall_peak = torch.cuda.max_memory_allocated()
-        print(f"\nOverall peak: {overall_peak/1024**2:.1f} MiB "
-              f"= {(overall_peak - before_sd)/u_bytes:.2f}U above pre-DIFFUSION baseline")
+        print(
+            f"\nOverall peak: {overall_peak / 1024**2:.1f} MiB "
+            f"= {(overall_peak - before_sd) / u_bytes:.2f}U "
+            "above pre-DIFFUSION baseline"
+        )
     finally:
         dm_mod.prepare_diffusion_conditioning_cache = orig_prep_cond
         dm_mod.prepare_atom_rep_cache = orig_prep_atom
         dm_mod.forward = orig_diff_fwd
 
     print()
-    print(f"{'phase':<50}{'before':>9}{'peak':>9}{'after':>9}"
-          f"{'transient_MiB':>15}{'trans_U':>9}{'resident_add_U':>16}")
+    print(
+        f"{'phase':<50}{'before':>9}{'peak':>9}{'after':>9}"
+        f"{'transient_MiB':>15}{'trans_U':>9}{'resident_add_U':>16}"
+    )
     print("-" * 117)
     for m in measurements:
         print(

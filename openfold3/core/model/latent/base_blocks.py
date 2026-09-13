@@ -453,9 +453,7 @@ class PairBlock(nn.Module):
         # the residual add on the returned tensor internally — same math as
         # the classic ``z = add(z, tri_att(z), inplace=True)`` line.
         use_residual = (
-            inplace_safe
-            and not self.training
-            and not torch.is_grad_enabled()
+            inplace_safe and not self.training and not torch.is_grad_enabled()
         )
 
         if use_residual:

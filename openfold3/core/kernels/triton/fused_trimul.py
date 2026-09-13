@@ -88,27 +88,56 @@ class FusedTrimulTensorParams:
 
 
 if _TRITON_AVAILABLE:
-
     # Static configs keep one JIT compile per dimension across all lengths.
     # Two pipeline stages help full/chunk-sized rows; c_z=128 in-place writes
     # use K16 while c_z=64 retains K32 for template-path numerical stability.
     _DUAL_GEMM_CFG = dict(
-        TILE_M=64, TILE_N=128, TILE_K=16, GROUP_M=8, num_warps=4, num_stages=2,
+        TILE_M=64,
+        TILE_N=128,
+        TILE_K=16,
+        GROUP_M=8,
+        num_warps=4,
+        num_stages=2,
     )
     _DUAL_GEMM_CFG_N64 = dict(
-        TILE_M=64, TILE_N=64, TILE_K=16, GROUP_M=8, num_warps=4, num_stages=2,
+        TILE_M=64,
+        TILE_N=64,
+        TILE_K=16,
+        GROUP_M=8,
+        num_warps=4,
+        num_stages=2,
     )
     _OUT_GEMM_CFG = dict(
-        TILE_M=64, TILE_N=128, TILE_K=16, GROUP_M=8, num_warps=4, num_stages=2,
+        TILE_M=64,
+        TILE_N=128,
+        TILE_K=16,
+        GROUP_M=8,
+        num_warps=4,
+        num_stages=2,
     )
     _OUT_GEMM_INPLACE_CFG = dict(
-        TILE_M=64, TILE_N=128, TILE_K=32, GROUP_M=8, num_warps=4, num_stages=2,
+        TILE_M=64,
+        TILE_N=128,
+        TILE_K=32,
+        GROUP_M=8,
+        num_warps=4,
+        num_stages=2,
     )
     _OUT_GEMM_INPLACE_CFG_C128 = dict(
-        TILE_M=64, TILE_N=128, TILE_K=16, GROUP_M=8, num_warps=4, num_stages=2,
+        TILE_M=64,
+        TILE_N=128,
+        TILE_K=16,
+        GROUP_M=8,
+        num_warps=4,
+        num_stages=2,
     )
     _OUT_DM_CFG = dict(
-        TILE_M=64, TILE_N=128, TILE_K=16, GROUP_M=8, num_warps=4, num_stages=2,
+        TILE_M=64,
+        TILE_N=128,
+        TILE_K=16,
+        GROUP_M=8,
+        num_warps=4,
+        num_stages=2,
     )
     _LN_STATS_TILE_M = 64
 
@@ -178,14 +207,18 @@ if _TRITON_AVAILABLE:
                     tl.float32
                 )
                 rstd = tl.load(
-                    ln_stats_ptr + M + offs_m, mask=mask_m, other=0.0,
+                    ln_stats_ptr + M + offs_m,
+                    mask=mask_m,
+                    other=0.0,
                 ).to(tl.float32)
             else:
                 offs_cz = tl.arange(0, BLOCK_CZ).to(tl.int64)
                 cz_mask = offs_cz < K
                 z_ptrs = x_ptr + (offs_m[:, None] * K + offs_cz[None, :])
                 z_raw = tl.load(
-                    z_ptrs, mask=mask_m[:, None] & cz_mask[None, :], other=0.0,
+                    z_ptrs,
+                    mask=mask_m[:, None] & cz_mask[None, :],
+                    other=0.0,
                 ).to(tl.float32)
                 z_sum = tl.sum(z_raw, axis=1)
                 mean = z_sum / K
@@ -207,15 +240,21 @@ if _TRITON_AVAILABLE:
                 ).to(tl.float32)
                 z_k_centered = z_k - mean[:, None]
                 gamma_k = tl.load(
-                    gamma_ptr + k_range, mask=k_mask, other=0.0,
+                    gamma_ptr + k_range,
+                    mask=k_mask,
+                    other=0.0,
                 ).to(tl.float32)
                 x_tile = z_k_centered * rstd[:, None] * gamma_k[None, :]
                 if HAS_LN_BIAS:
                     beta_k = tl.load(
-                        beta_ptr + k_range, mask=k_mask, other=0.0,
+                        beta_ptr + k_range,
+                        mask=k_mask,
+                        other=0.0,
                     ).to(tl.float32)
                     x_tile = x_tile + tl.where(
-                        k_mask[None, :], beta_k[None, :], 0.0,
+                        k_mask[None, :],
+                        beta_k[None, :],
+                        0.0,
                     )
                 wp = tl.load(wp_ptr + (offs_n[None, :] * K + k_range[:, None]))
                 wg = tl.load(wg_ptr + (offs_n[None, :] * K + k_range[:, None]))
@@ -334,10 +373,14 @@ if _TRITON_AVAILABLE:
         full_m = N64 * N64
 
         mean = tl.load(
-            ln_stats_ptr + src_m, mask=mask_q, other=0.0,
+            ln_stats_ptr + src_m,
+            mask=mask_q,
+            other=0.0,
         ).to(tl.float32)
         rstd = tl.load(
-            ln_stats_ptr + full_m + src_m, mask=mask_q, other=0.0,
+            ln_stats_ptr + full_m + src_m,
+            mask=mask_q,
+            other=0.0,
         ).to(tl.float32)
 
         gate_acc = tl.zeros((TILE_M, TILE_N), dtype=tl.float32)
@@ -351,12 +394,16 @@ if _TRITON_AVAILABLE:
                 other=0.0,
             ).to(tl.float32)
             gamma_k = tl.load(
-                gamma_ptr + k_range, mask=k_mask, other=0.0,
+                gamma_ptr + k_range,
+                mask=k_mask,
+                other=0.0,
             ).to(tl.float32)
             x_tile = (z_k - mean[:, None]) * rstd[:, None] * gamma_k[None, :]
             if HAS_LN_BIAS:
                 beta_k = tl.load(
-                    beta_ptr + k_range, mask=k_mask, other=0.0,
+                    beta_ptr + k_range,
+                    mask=k_mask,
+                    other=0.0,
                 ).to(tl.float32)
                 x_tile += tl.where(k_mask[None, :], beta_k[None, :], 0.0)
             wp = tl.load(
@@ -478,14 +525,18 @@ if _TRITON_AVAILABLE:
                     tl.float32
                 )
                 rstd = tl.load(
-                    ln_stats_ptr + M + offs_m, mask=mask_m, other=0.0,
+                    ln_stats_ptr + M + offs_m,
+                    mask=mask_m,
+                    other=0.0,
                 ).to(tl.float32)
             else:
                 offs_cz = tl.arange(0, BLOCK_CZ).to(tl.int64)
                 cz_mask = offs_cz < CZ
                 z_ptrs = x_in_ptr + (offs_m[:, None] * CZ + offs_cz[None, :])
                 z_raw = tl.load(
-                    z_ptrs, mask=mask_m[:, None] & cz_mask[None, :], other=0.0,
+                    z_ptrs,
+                    mask=mask_m[:, None] & cz_mask[None, :],
+                    other=0.0,
                 ).to(tl.float32)
                 z_sum = tl.sum(z_raw, axis=1)
                 mean = z_sum / CZ
@@ -505,12 +556,16 @@ if _TRITON_AVAILABLE:
                 ).to(tl.float32)
                 z_k_centered = z_k - mean[:, None]
                 gamma_k = tl.load(
-                    gamma_ptr + k_range, mask=k_mask, other=0.0,
+                    gamma_ptr + k_range,
+                    mask=k_mask,
+                    other=0.0,
                 ).to(tl.float32)
                 xi = z_k_centered * rstd[:, None] * gamma_k[None, :]
                 if HAS_LN_BIAS:
                     beta_k = tl.load(
-                        beta_ptr + k_range, mask=k_mask, other=0.0,
+                        beta_ptr + k_range,
+                        mask=k_mask,
+                        other=0.0,
                     ).to(tl.float32)
                     xi = xi + tl.where(k_mask[None, :], beta_k[None, :], 0.0)
                 wg = tl.load(
@@ -647,18 +702,14 @@ if _TRITON_AVAILABLE:
                 mask=mask_m[:, None] & k_mask[None, :],
                 other=0.0,
             ).to(tl.float32)
-            gamma_out = tl.load(
-                gamma_out_ptr + k_range, mask=k_mask, other=0.0
-            ).to(tl.float32)
-            x_value = (
-                (x_k - out_mean[:, None])
-                * out_rstd[:, None]
-                * gamma_out[None, :]
+            gamma_out = tl.load(gamma_out_ptr + k_range, mask=k_mask, other=0.0).to(
+                tl.float32
             )
+            x_value = (x_k - out_mean[:, None]) * out_rstd[:, None] * gamma_out[None, :]
             if HAS_LN_OUT_BIAS:
-                beta_out = tl.load(
-                    beta_out_ptr + k_range, mask=k_mask, other=0.0
-                ).to(tl.float32)
+                beta_out = tl.load(beta_out_ptr + k_range, mask=k_mask, other=0.0).to(
+                    tl.float32
+                )
                 x_value += tl.where(k_mask[None, :], beta_out[None, :], 0.0)
             wp = tl.load(
                 wp_ptr + offs_n[None, :] * CH64 + k_range[:, None],
@@ -672,12 +723,10 @@ if _TRITON_AVAILABLE:
             else:
                 val_acc = tl.dot(x_value.to(wp.dtype), wp, val_acc)
 
-        in_mean = tl.load(
-            ln_stats_ptr + offs_m, mask=mask_m, other=0.0
-        ).to(tl.float32)
-        in_rstd = tl.load(
-            ln_stats_ptr + M64 + offs_m, mask=mask_m, other=0.0
-        ).to(tl.float32)
+        in_mean = tl.load(ln_stats_ptr + offs_m, mask=mask_m, other=0.0).to(tl.float32)
+        in_rstd = tl.load(ln_stats_ptr + M64 + offs_m, mask=mask_m, other=0.0).to(
+            tl.float32
+        )
         gate_acc = tl.zeros((TILE_M, TILE_N), dtype=tl.float32)
         for k_off in range(0, CZ, TILE_K):
             k_range = k_off + offs_k
@@ -687,18 +736,14 @@ if _TRITON_AVAILABLE:
                 mask=mask_m[:, None] & k_mask[None, :],
                 other=0.0,
             ).to(tl.float32)
-            gamma_in = tl.load(
-                gamma_in_ptr + k_range, mask=k_mask, other=0.0
-            ).to(tl.float32)
-            x_gate = (
-                (z_k - in_mean[:, None])
-                * in_rstd[:, None]
-                * gamma_in[None, :]
+            gamma_in = tl.load(gamma_in_ptr + k_range, mask=k_mask, other=0.0).to(
+                tl.float32
             )
+            x_gate = (z_k - in_mean[:, None]) * in_rstd[:, None] * gamma_in[None, :]
             if HAS_LN_IN_BIAS:
-                beta_in = tl.load(
-                    beta_in_ptr + k_range, mask=k_mask, other=0.0
-                ).to(tl.float32)
+                beta_in = tl.load(beta_in_ptr + k_range, mask=k_mask, other=0.0).to(
+                    tl.float32
+                )
                 x_gate += tl.where(k_mask[None, :], beta_in[None, :], 0.0)
             wg = tl.load(
                 wg_ptr + offs_n[None, :] * CZ64 + k_range[:, None],
@@ -771,10 +816,10 @@ if _TRITON_AVAILABLE:
         do_not_specialize_on_alignment=["x_ptr", "w_ptr", "b_ptr", "out_ptr"],
     )
     def _ln_transpose_kernel(
-        x_ptr,      # (D, M) D-major: x[d, m] at x_ptr + d * M + m
-        w_ptr,      # (D,) — LN scale
-        b_ptr,      # (D,) — LN bias (only if HAS_BIAS)
-        out_ptr,    # (M, D) M-major: out[m, d] at out_ptr + m * D + d
+        x_ptr,  # (D, M) D-major: x[d, m] at x_ptr + d * M + m
+        w_ptr,  # (D,) — LN scale
+        b_ptr,  # (D,) — LN bias (only if HAS_BIAS)
+        out_ptr,  # (M, D) M-major: out[m, d] at out_ptr + m * D + d
         M,
         D: tl.constexpr,
         EPS: tl.constexpr,
@@ -1072,9 +1117,7 @@ def gated_out_from_dm_residual_fp32(
     if x_m != M:
         raise ValueError(f"x_dm has M={x_m}, expected {M}")
     if CH < 128:
-        x_out = ln_transpose_fp32(
-            x_dm, ln_out_weight, ln_out_bias, eps=ln_out_eps
-        )
+        x_out = ln_transpose_fp32(x_dm, ln_out_weight, ln_out_bias, eps=ln_out_eps)
         return gated_out_gemm_residual_fp32(
             x_in,
             x_out,
@@ -1097,9 +1140,7 @@ def gated_out_from_dm_residual_fp32(
     wp = wp.contiguous()
     stats = ln_stats.contiguous()
     gamma_in = ln_in_weight.contiguous()
-    beta_in = (
-        ln_in_bias.contiguous() if ln_in_bias is not None else x_in.new_zeros(1)
-    )
+    beta_in = ln_in_bias.contiguous() if ln_in_bias is not None else x_in.new_zeros(1)
     gamma_out = ln_out_weight.contiguous()
     beta_out = (
         ln_out_bias.contiguous() if ln_out_bias is not None else x_in.new_zeros(1)
@@ -1286,9 +1327,7 @@ def _trimul_chunked_incoming_grouped_tensor(
     m = n * n
     group_size = min(64, c_hidden)
     grouped_k_cap = min(n, chunk_cap * c_hidden // group_size)
-    x_accum = torch.empty(
-        (c_hidden, n, n), device=z_2d.device, dtype=z_2d.dtype
-    )
+    x_accum = torch.empty((c_hidden, n, n), device=z_2d.device, dtype=z_2d.dtype)
 
     for c_start in range(0, c_hidden, group_size):
         c_end = min(c_hidden, c_start + group_size)
@@ -1351,11 +1390,7 @@ def _trimul_chunked_incoming_grouped_tensor(
         i_end = min(n, i_start + chunk_cap)
         rows = i_end - i_start
         m0, m1 = i_start * n, i_end * n
-        x_dm = (
-            x_accum[:, i_start:i_end, :]
-            .reshape(c_hidden, rows * n)
-            .contiguous()
-        )
+        x_dm = x_accum[:, i_start:i_end, :].reshape(c_hidden, rows * n).contiguous()
         z_c = z_2d[m0:m1]
         stats_c = ln_stats[:, m0:m1].contiguous()
         gated_out_from_dm_residual_fp32(
@@ -1467,12 +1502,8 @@ def _trimul_whole_tensor(
     batch, n, _, c_z = z.shape
     c_hidden = params.linear_a_p_weight.shape[0]
     z_2d = z.reshape(-1, c_z)
-    wp_ab = torch.cat(
-        [params.linear_a_p_weight, params.linear_b_p_weight], dim=0
-    )
-    wg_ab = torch.cat(
-        [params.linear_a_g_weight, params.linear_b_g_weight], dim=0
-    )
+    wp_ab = torch.cat([params.linear_a_p_weight, params.linear_b_p_weight], dim=0)
+    wg_ab = torch.cat([params.linear_a_g_weight, params.linear_b_g_weight], dim=0)
     ab = gated_dual_gemm_fp32(
         z_2d,
         wp_ab,

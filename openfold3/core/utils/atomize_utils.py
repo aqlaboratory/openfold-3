@@ -142,16 +142,16 @@ def broadcast_token_feat_to_atoms_by_index(
     """
     n_token = token_mask.shape[-1]
     token_dim = atom_to_token_index.dim() - 1  # token feat: [..., N_token, *feat]
-    feat_dims = token_feat.shape[token_dim + 1:]  # trailing feature dims
+    feat_dims = token_feat.shape[token_dim + 1 :]  # trailing feature dims
     n_feat = len(feat_dims)
 
     masked_tf = token_feat * token_mask.reshape(*token_mask.shape, *((1,) * n_feat))
     idx = atom_to_token_index.clamp(0, n_token - 1).long()
     idx = idx.reshape(*idx.shape, *((1,) * n_feat)).expand(*idx.shape, *feat_dims)
     atom_feat = torch.gather(masked_tf, dim=token_dim, index=idx)
-    atom_feat = atom_feat * atom_mask.reshape(
-        *atom_mask.shape, *((1,) * n_feat)
-    ).to(atom_feat.dtype)
+    atom_feat = atom_feat * atom_mask.reshape(*atom_mask.shape, *((1,) * n_feat)).to(
+        atom_feat.dtype
+    )
     return atom_feat
 
 
@@ -320,9 +320,7 @@ def aggregate_atom_feat_to_tokens_segmented(
             axis=-1,
         )[..., :n_token]
         token_feat = token_feat / (
-            token_num_atoms.reshape(
-                *feat_batch_dims, n_token, *((1,) * len(feat_dims))
-            )
+            token_num_atoms.reshape(*feat_batch_dims, n_token, *((1,) * len(feat_dims)))
             + eps
         )
 

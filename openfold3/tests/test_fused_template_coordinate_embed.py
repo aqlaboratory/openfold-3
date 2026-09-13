@@ -178,6 +178,63 @@ def test_coordinate_triton_matches_chunked_reference(n_token: int):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_coordinate_triton_int64_pair_offsets_beyond_int32():
+    """N=5888: (N-1)*N*64 exceeds signed int32. Kernel must not IMA.
+
+    Full-tensor reference at this N is expensive; match the last 8 rows
+    (the indices that wrap in int32) against the chunked eager path.
+    """
+    from openfold3.core.kernels.triton.fused_template_coordinate import (
+        template_coordinate_projection_add_,
+    )
+
+    n_token = 5888
+    assert (n_token - 1) * n_token * 64 > 2**31 - 1
+
+    batch = _coordinate_batch(n_token, device="cuda")
+    pseudo_beta = batch["template_pseudo_beta_coords"][:, 0].contiguous()
+    frame = batch["template_frame_atom_coords"][:, 0].contiguous()
+    pb_mask = batch["template_pseudo_beta_mask"][:, 0].contiguous()
+    bb_mask = batch["template_backbone_frame_mask"][:, 0].contiguous()
+    asym = batch["asym_id"].contiguous()
+    torch.manual_seed(12)
+    dgram_weight = torch.randn(64, 39, device="cuda")
+    scalar_weight = torch.randn(64, 5, device="cuda")
+    expected = torch.zeros(1, n_token, n_token, 64, device="cuda")
+    actual = expected.clone()
+
+    template_coordinate_projection_add_(
+        actual,
+        pseudo_beta,
+        frame,
+        pb_mask,
+        bb_mask,
+        asym,
+        dgram_weight,
+        scalar_weight,
+    )
+    torch.cuda.synchronize()
+    assert torch.isfinite(actual).all()
+    assert actual[0, -1].abs().sum() > 0
+
+    # Last rows are the int32-wrapping indices. Match eager to the same
+    # ~1e-3 fused/reference gap this GPU already shows at N=8 on HEAD.
+    template_coordinate_projection_add_reference_(
+        expected,
+        pseudo_beta,
+        frame,
+        pb_mask,
+        bb_mask,
+        asym,
+        dgram_weight,
+        scalar_weight,
+        chunk_rows=8,
+    )
+    max_abs = (actual[:, -8:] - expected[:, -8:]).abs().max().item()
+    assert max_abs < 2e-3, max_abs
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 def test_coordinate_kernel_preserves_open_bin_boundaries():
     from openfold3.core.kernels.triton.fused_template_coordinate import (
         template_coordinate_projection_add_,

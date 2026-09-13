@@ -111,20 +111,42 @@ if _TRITON_AVAILABLE:
         ],
     )
     def _flash_diffusion_attn_kernel(
-        Q_ptr,          # [B, S, H, N, C]
-        K_ptr,          # [B, S, H, N, C]
-        V_ptr,          # [B, S, H, N, C]
+        Q_ptr,  # [B, S, H, N, C]
+        K_ptr,  # [B, S, H, N, C]
+        V_ptr,  # [B, S, H, N, C]
         PAIR_BIAS_ptr,  # [B, S|1, H, N, N]
         MASK_BIAS_ptr,  # [B, S|1, 1, 1, N] squeezed logically to [B, S|1, N]
-        OUT_ptr,        # [B, S, H, N, C]
+        OUT_ptr,  # [B, S, H, N, C]
         N_CTX,
         S_dim,
-        stride_q_b, stride_q_s, stride_q_h, stride_q_n, stride_q_c,
-        stride_k_b, stride_k_s, stride_k_h, stride_k_n, stride_k_c,
-        stride_v_b, stride_v_s, stride_v_h, stride_v_n, stride_v_c,
-        stride_pb_b, stride_pb_s, stride_pb_h, stride_pb_q, stride_pb_k,
-        stride_mb_b, stride_mb_s, stride_mb_n,
-        stride_o_b, stride_o_s, stride_o_h, stride_o_n, stride_o_c,
+        stride_q_b,
+        stride_q_s,
+        stride_q_h,
+        stride_q_n,
+        stride_q_c,
+        stride_k_b,
+        stride_k_s,
+        stride_k_h,
+        stride_k_n,
+        stride_k_c,
+        stride_v_b,
+        stride_v_s,
+        stride_v_h,
+        stride_v_n,
+        stride_v_c,
+        stride_pb_b,
+        stride_pb_s,
+        stride_pb_h,
+        stride_pb_q,
+        stride_pb_k,
+        stride_mb_b,
+        stride_mb_s,
+        stride_mb_n,
+        stride_o_b,
+        stride_o_s,
+        stride_o_h,
+        stride_o_n,
+        stride_o_c,
         softmax_scale,
         H: tl.constexpr,
         BLOCK_C: tl.constexpr,
@@ -164,10 +186,7 @@ if _TRITON_AVAILABLE:
         k_base = b * stride_k_b + s * stride_k_s + h * stride_k_h
         v_base = b * stride_v_b + s * stride_v_s + h * stride_v_h
         pb_row_base = (
-            b * stride_pb_b
-            + s * stride_pb_s
-            + h * stride_pb_h
-            + offs_m * stride_pb_q
+            b * stride_pb_b + s * stride_pb_s + h * stride_pb_h + offs_m * stride_pb_q
         )
         mb_base = b * stride_mb_b + s * stride_mb_s
 
@@ -191,9 +210,7 @@ if _TRITON_AVAILABLE:
             qk = qk * softmax_scale
 
             pair_bias = tl.load(
-                PAIR_BIAS_ptr
-                + pb_row_base[:, None]
-                + offs_n[None, :] * stride_pb_k,
+                PAIR_BIAS_ptr + pb_row_base[:, None] + offs_n[None, :] * stride_pb_k,
                 mask=mask_m[:, None] & mask_n[None, :],
                 other=0.0,
             ).to(tl.float32)
@@ -307,8 +324,18 @@ def flash_diffusion_attn(
         raise ValueError(f"head dim {CH} is unsupported")
 
     return _flash_diffusion_attn_launch(
-        q, k, v, mask_bias, pair_bias, out, softmax_scale,
-        B=B, S=S, H=H, N=N, CH=CH,
+        q,
+        k,
+        v,
+        mask_bias,
+        pair_bias,
+        out,
+        softmax_scale,
+        B=B,
+        S=S,
+        H=H,
+        N=N,
+        CH=CH,
         block_c=block_c,
     )
 
@@ -333,19 +360,48 @@ def _flash_diffusion_attn_launch(
     pair_s_stride = pair_bias.stride(1) if pair_bias.shape[1] == S else 0
     mask_s_stride = mask_bias.stride(1) if mask_bias.shape[1] == S else 0
 
-    grid = lambda meta: (triton.cdiv(N, meta["BLOCK_M"]), B * S * H)
+    def grid(meta):
+        return (triton.cdiv(N, meta["BLOCK_M"]), B * S * H)
+
     allow_tf32 = bool(torch.backends.cuda.matmul.allow_tf32)
 
     _flash_diffusion_attn_kernel[grid](
-        q, k, v, pair_bias, mask_bias, out,
-        N, S,
-        q.stride(0), q.stride(1), q.stride(2), q.stride(3), q.stride(4),
-        k.stride(0), k.stride(1), k.stride(2), k.stride(3), k.stride(4),
-        v.stride(0), v.stride(1), v.stride(2), v.stride(3), v.stride(4),
-        pair_bias.stride(0), pair_s_stride, pair_bias.stride(2),
-        pair_bias.stride(3), pair_bias.stride(4),
-        mask_bias.stride(0), mask_s_stride, mask_bias.stride(-1),
-        out.stride(0), out.stride(1), out.stride(2), out.stride(3), out.stride(4),
+        q,
+        k,
+        v,
+        pair_bias,
+        mask_bias,
+        out,
+        N,
+        S,
+        q.stride(0),
+        q.stride(1),
+        q.stride(2),
+        q.stride(3),
+        q.stride(4),
+        k.stride(0),
+        k.stride(1),
+        k.stride(2),
+        k.stride(3),
+        k.stride(4),
+        v.stride(0),
+        v.stride(1),
+        v.stride(2),
+        v.stride(3),
+        v.stride(4),
+        pair_bias.stride(0),
+        pair_s_stride,
+        pair_bias.stride(2),
+        pair_bias.stride(3),
+        pair_bias.stride(4),
+        mask_bias.stride(0),
+        mask_s_stride,
+        mask_bias.stride(-1),
+        out.stride(0),
+        out.stride(1),
+        out.stride(2),
+        out.stride(3),
+        out.stride(4),
         float(softmax_scale),
         H=H,
         BLOCK_C=block_c,

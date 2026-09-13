@@ -122,9 +122,8 @@ class FastStageProfiler:
 
 
 def _pair_transition_hook_attr(pair_block) -> str:
-    if (
-        is_fused_swiglu_transition_enabled()
-        and hasattr(pair_block.pair_transition, "_transition_inplace")
+    if is_fused_swiglu_transition_enabled() and hasattr(
+        pair_block.pair_transition, "_transition_inplace"
     ):
         return "_transition_inplace"
     return "forward"
@@ -207,9 +206,7 @@ def install_fast_hooks(
             if block.msa_att_row is not None:
                 prof.wrap(block.msa_att_row, "forward", f"{prefix}.msa_att_row")
             if block.msa_transition is not None:
-                prof.wrap(
-                    block.msa_transition, "forward", f"{prefix}.msa_transition"
-                )
+                prof.wrap(block.msa_transition, "forward", f"{prefix}.msa_transition")
             prof.wrap(block.pair_stack, "forward", f"{prefix}.pair_stack")
             _wrap_tri_pair_block(prof, block.pair_stack, prefix)
 
@@ -226,9 +223,7 @@ def install_fast_hooks(
     prof.wrap(diffusion_module, "forward", "diff.per_step")
     if fine:
         prof.wrap(diffusion_module.atom_attn_enc, "forward", "diff.atom_enc")
-        prof.wrap(
-            diffusion_module.diffusion_transformer, "forward", "diff.transformer"
-        )
+        prof.wrap(diffusion_module.diffusion_transformer, "forward", "diff.transformer")
         prof.wrap(diffusion_module.atom_attn_dec, "forward", "diff.atom_dec")
         if (
             hasattr(diffusion_module.diffusion_transformer, "blocks")
@@ -419,9 +414,7 @@ def profile(args) -> dict:
             "OPENFOLD3_FUSED_TRI_ATTN_V1": os.environ.get(
                 "OPENFOLD3_FUSED_TRI_ATTN_V1", "0"
             ),
-            "OPENFOLD3_FUSED_TRIMUL": os.environ.get(
-                "OPENFOLD3_FUSED_TRIMUL", "0"
-            ),
+            "OPENFOLD3_FUSED_TRIMUL": os.environ.get("OPENFOLD3_FUSED_TRIMUL", "0"),
             "OPENFOLD3_FUSED_SWIGLU_TRANSITION": os.environ.get(
                 "OPENFOLD3_FUSED_SWIGLU_TRANSITION", "0"
             ),
@@ -441,9 +434,7 @@ def profile(args) -> dict:
             "OPENFOLD3_TRI_ATTN_CHUNK_CAP": os.environ.get(
                 "OPENFOLD3_TRI_ATTN_CHUNK_CAP"
             ),
-            "OPENFOLD3_TRIMUL_CHUNK_CAP": os.environ.get(
-                "OPENFOLD3_TRIMUL_CHUNK_CAP"
-            ),
+            "OPENFOLD3_TRIMUL_CHUNK_CAP": os.environ.get("OPENFOLD3_TRIMUL_CHUNK_CAP"),
             "offload_token_cutoff": args.offload_token_cutoff,
         },
         "stages": profiler.stats,
@@ -465,8 +456,7 @@ def print_report(result: dict) -> None:
         f"samples={result['n_diffusion_samples']} 1U={_mib(u_bytes):.1f} MiB"
     )
     print(
-        f"resident_baseline={_gib(resident_baseline):.2f} GiB "
-        f"peak={_gib(peak):.2f} GiB"
+        f"resident_baseline={_gib(resident_baseline):.2f} GiB peak={_gib(peak):.2f} GiB"
     )
     print(f"activation={_gib(act_peak):.2f} GiB = {act_peak / u_bytes:.2f}U")
     print(

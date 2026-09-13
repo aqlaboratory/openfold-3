@@ -132,12 +132,16 @@ class TestMSAPairWeightedAveraging(unittest.TestCase):
     )
     def test_fused_ln_linear_pair_bias_matches_eager(self):
         torch.manual_seed(17)
-        module = MSAPairWeightedAveraging(
-            c_in=64,
-            c_hidden=8,
-            c_z=128,
-            no_heads=4,
-        ).cuda().eval()
+        module = (
+            MSAPairWeightedAveraging(
+                c_in=64,
+                c_hidden=8,
+                c_z=128,
+                no_heads=4,
+            )
+            .cuda()
+            .eval()
+        )
         m = torch.randn(1, 64, 64, 64, device="cuda")
         z = torch.randn(1, 64, 64, 128, device="cuda")
         mask = torch.ones(1, 64, 64, device="cuda")

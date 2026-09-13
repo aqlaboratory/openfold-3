@@ -93,8 +93,10 @@ class OpenFold3(nn.Module):
         self._use_fused_ln_linear = is_fused_ln_linear_enabled()
         if self._use_fused_ln_linear:
             self.fused_ln_linear_z = FusedLNLinear(
-                self.shared.c_z, self.shared.c_z,
-                linear_bias=False, linear_init="final",
+                self.shared.c_z,
+                self.shared.c_z,
+                linear_bias=False,
+                linear_init="final",
             )
         else:
             self.layer_norm_z = LayerNorm(self.shared.c_z)
@@ -113,8 +115,10 @@ class OpenFold3(nn.Module):
 
         if self._use_fused_ln_linear:
             self.fused_ln_linear_s = FusedLNLinear(
-                self.shared.c_s, self.shared.c_s,
-                linear_bias=False, linear_init="final",
+                self.shared.c_s,
+                self.shared.c_s,
+                linear_bias=False,
+                linear_init="final",
             )
         else:
             self.layer_norm_s = LayerNorm(self.shared.c_s)

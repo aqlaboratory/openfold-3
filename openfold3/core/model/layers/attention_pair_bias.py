@@ -174,9 +174,7 @@ class AttentionPairBias(nn.Module):
         if n_extra > 0:
             head_pos = pair_bias.dim() - 3
             pair_bias = pair_bias.view(
-                pair_bias.shape[:head_pos]
-                + (1,) * n_extra
-                + pair_bias.shape[head_pos:]
+                pair_bias.shape[:head_pos] + (1,) * n_extra + pair_bias.shape[head_pos:]
             )
         biases.append(pair_bias)
 
@@ -244,7 +242,10 @@ class AttentionPairBias(nn.Module):
         a = self.layer_norm_a(a, s) if self.use_ada_layer_norm else self.layer_norm_a(a)
 
         biases = self._prep_bias(
-            a=a, z=z, mask=mask, cached_pair_bias_h=cached_pair_bias_h,
+            a=a,
+            z=z,
+            mask=mask,
+            cached_pair_bias_h=cached_pair_bias_h,
         )
 
         # TODO: Make this less awkward, DS kernel has strict shape asserts

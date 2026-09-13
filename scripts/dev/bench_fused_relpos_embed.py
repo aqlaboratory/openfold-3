@@ -51,7 +51,9 @@ def bench_one(N: int) -> dict:
         eager_relpos_add_(z_ref, w, idx1, idx2, idx3, same_entity)
 
         z_test = z.clone()
-        fused_relpos_embed_add_(z_test, w, idx1, idx2, idx3, same_entity, SAME_ENTITY_OFFSET)
+        fused_relpos_embed_add_(
+            z_test, w, idx1, idx2, idx3, same_entity, SAME_ENTITY_OFFSET
+        )
         torch.cuda.synchronize()
         max_err = (z_test - z_ref).abs().max().item()
         del z_ref, z_test
@@ -102,12 +104,16 @@ def bench_one(N: int) -> dict:
     # Speed: fused
     for _ in range(WARMUP):
         z_tmp = z.clone()
-        fused_relpos_embed_add_(z_tmp, w, idx1, idx2, idx3, same_entity, SAME_ENTITY_OFFSET)
+        fused_relpos_embed_add_(
+            z_tmp, w, idx1, idx2, idx3, same_entity, SAME_ENTITY_OFFSET
+        )
     torch.cuda.synchronize()
     t0 = time.perf_counter()
     for _ in range(REPS):
         z_tmp = z.clone()
-        fused_relpos_embed_add_(z_tmp, w, idx1, idx2, idx3, same_entity, SAME_ENTITY_OFFSET)
+        fused_relpos_embed_add_(
+            z_tmp, w, idx1, idx2, idx3, same_entity, SAME_ENTITY_OFFSET
+        )
     torch.cuda.synchronize()
     fused_ms = (time.perf_counter() - t0) / REPS * 1000
 
@@ -126,16 +132,27 @@ def bench_one(N: int) -> dict:
 
 def main():
     lengths = [256, 512, 1264, 2000, 3000, 3950]
-    print(f"{'N':>5} | {'err':>9} | {'eager_peak':>11} | {'fused_peak':>11} | {'eager_ms':>9} | {'fused_ms':>9} | {'speedup':>7}")
+    print(
+        f"{'N':>5} | {'err':>9} | {'eager_peak':>11} | {'fused_peak':>11} | "
+        f"{'eager_ms':>9} | {'fused_ms':>9} | {'speedup':>7}"
+    )
     print("-" * 80)
     for N in lengths:
         r = bench_one(N)
         err_str = f"{r['max_err']:.2e}" if r["max_err"] is not None else "skip"
-        eager_peak_str = f"{r['eager_peak_U']:.2f}U" if r["eager_peak_U"] is not None else "OOM"
+        eager_peak_str = (
+            f"{r['eager_peak_U']:.2f}U" if r["eager_peak_U"] is not None else "OOM"
+        )
         eager_ms_str = f"{r['eager_ms']:.1f}ms" if r["eager_ms"] is not None else "OOM"
-        speedup_str = f"{r['eager_ms'] / r['fused_ms']:.2f}x" if r["eager_ms"] is not None else "N/A"
+        speedup_str = (
+            f"{r['eager_ms'] / r['fused_ms']:.2f}x"
+            if r["eager_ms"] is not None
+            else "N/A"
+        )
         print(
-            f"{r['N']:>5} | {err_str:>9} | {eager_peak_str:>11} | {r['fused_peak_U']:.2f}U{'':>5} | {eager_ms_str:>9} | {r['fused_ms']:.1f}ms{'':>4} | {speedup_str:>7}"
+            f"{r['N']:>5} | {err_str:>9} | {eager_peak_str:>11} | "
+            f"{r['fused_peak_U']:.2f}U{'':>5} | {eager_ms_str:>9} | "
+            f"{r['fused_ms']:.1f}ms{'':>4} | {speedup_str:>7}"
         )
 
 

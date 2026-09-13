@@ -99,7 +99,12 @@ def _run_one(
     _set_flags(fused=fused)
 
     module = _build_module(
-        c_a=c_a, c_s=c_s, c_z=c_z, c_hidden=c_hidden, no_heads=no_heads, dtype=dtype,
+        c_a=c_a,
+        c_s=c_s,
+        c_z=c_z,
+        c_hidden=c_hidden,
+        no_heads=no_heads,
+        dtype=dtype,
     )
 
     torch.manual_seed(101 + N + 7 * S)
@@ -137,7 +142,9 @@ def _run_one(
         result.update({"status": "oom", "error": str(e)[:200]})
     except Exception as e:
         # triton.runtime.errors.OutOfResources subclasses Exception, not torch.OOM.
-        result.update({"status": "error", "error": f"{type(e).__name__}: {str(e)[:200]}"})
+        result.update(
+            {"status": "error", "error": f"{type(e).__name__}: {str(e)[:200]}"}
+        )
 
     del module, a, s, z, mask
     gc.collect()

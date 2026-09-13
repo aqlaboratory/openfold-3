@@ -127,8 +127,7 @@ def main() -> None:
 
     results = []
     header = (
-        f"{'variant':<16}{'N':>7}{'ms':>10}{'peak U':>10}"
-        f"{'peak MiB':>12}{'tf32':>7}"
+        f"{'variant':<16}{'N':>7}{'ms':>10}{'peak U':>10}{'peak MiB':>12}{'tf32':>7}"
     )
     print(header)
     print("-" * len(header))

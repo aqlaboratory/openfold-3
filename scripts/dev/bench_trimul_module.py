@@ -256,10 +256,12 @@ def _subop_split(
     ln_in = module.layer_norm_in
     ln_out = module.layer_norm_out
     wp_ab = torch.cat(
-        [module.linear_a_p.weight, module.linear_b_p.weight], dim=0,
+        [module.linear_a_p.weight, module.linear_b_p.weight],
+        dim=0,
     )
     wg_ab = torch.cat(
-        [module.linear_a_g.weight, module.linear_b_g.weight], dim=0,
+        [module.linear_a_g.weight, module.linear_b_g.weight],
+        dim=0,
     )
     rows = []
     seen_m = set()
@@ -275,10 +277,16 @@ def _subop_split(
         with torch.inference_mode():
             stats = ln_stats_fp32(z_c, ln_in.eps)
             x_dm = torch.randn(
-                c_hidden, M, device=z.device, dtype=z.dtype,
+                c_hidden,
+                M,
+                device=z.device,
+                dtype=z.dtype,
             )
             x_out = ln_transpose_fp32(
-                x_dm, ln_out.weight, ln_out.bias, ln_out.eps,
+                x_dm,
+                ln_out.weight,
+                ln_out.bias,
+                ln_out.eps,
             )
             out_buf = torch.empty_like(z_c)
 
@@ -320,7 +328,10 @@ def _subop_split(
             )
 
         def out_preallocated(
-            z_c=z_c, x_out=x_out, stats=stats, out_buf=out_buf,
+            z_c=z_c,
+            x_out=x_out,
+            stats=stats,
+            out_buf=out_buf,
         ):
             return gated_out_gemm_residual_fp32(
                 z_c,
@@ -358,7 +369,10 @@ def _subop_split(
             (
                 "ln_transpose",
                 lambda x_dm=x_dm: ln_transpose_fp32(
-                    x_dm, ln_out.weight, ln_out.bias, ln_out.eps,
+                    x_dm,
+                    ln_out.weight,
+                    ln_out.bias,
+                    ln_out.eps,
                 ),
             ),
             ("out_alloc", out_alloc),
@@ -552,13 +566,9 @@ def main() -> None:
         for cap in args.chunk_cap:
             variants.append((f"fused_chunk{cap}", "fused", cap))
             if args.include_fused_inplace:
-                variants.append(
-                    (f"fused_inplace_chunk{cap}", "fused_inplace", cap)
-                )
+                variants.append((f"fused_inplace_chunk{cap}", "fused_inplace", cap))
             if args.include_legacy_triton:
-                variants.append(
-                    (f"legacy_triton_chunk{cap}", "legacy_triton", cap)
-                )
+                variants.append((f"legacy_triton_chunk{cap}", "legacy_triton", cap))
 
     results = []
     header = (

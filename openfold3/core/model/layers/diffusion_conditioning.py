@@ -98,7 +98,8 @@ class DiffusionConditioning(nn.Module):
         self._use_fused_ln_linear = is_fused_ln_linear_enabled()
         if self._use_fused_ln_linear:
             self.fused_ln_linear_z = FusedLNLinear(
-                num_relpos_dims + self.c_z, self.c_z,
+                num_relpos_dims + self.c_z,
+                self.c_z,
                 ln_create_offset=False,
                 linear_bias=linear_init_params.linear_z.get("bias", True),
                 linear_init=linear_init_params.linear_z.get("init", "default"),
@@ -124,7 +125,8 @@ class DiffusionConditioning(nn.Module):
 
         if self._use_fused_ln_linear:
             self.fused_ln_linear_s = FusedLNLinear(
-                self.c_s + self.c_s_input, self.c_s,
+                self.c_s + self.c_s_input,
+                self.c_s,
                 ln_create_offset=False,
                 linear_bias=linear_init_params.linear_z.get("bias", True),
                 linear_init=linear_init_params.linear_z.get("init", "default"),
@@ -140,7 +142,8 @@ class DiffusionConditioning(nn.Module):
         self.fourier_emb = FourierEmbedding(c=c_fourier_emb, seed=seed_fourier_emb)
         if self._use_fused_ln_linear:
             self.fused_ln_linear_n = FusedLNLinear(
-                self.c_fourier_emb, self.c_s,
+                self.c_fourier_emb,
+                self.c_s,
                 ln_create_offset=False,
                 linear_bias=linear_init_params.linear_n.get("bias", True),
                 linear_init=linear_init_params.linear_n.get("init", "default"),
@@ -216,8 +219,10 @@ class DiffusionConditioning(nn.Module):
         N = zij_trunk.shape[-3]
         chunk = self._EMBED_ZIJ_CHUNK_ROWS
         out = torch.empty(
-            *zij_trunk.shape[:-1], self.c_z,
-            dtype=zij_trunk.dtype, device=zij_trunk.device,
+            *zij_trunk.shape[:-1],
+            self.c_z,
+            dtype=zij_trunk.dtype,
+            device=zij_trunk.device,
         )
         for i in range(0, N, chunk):
             row_slice = slice(i, min(i + chunk, N))
@@ -234,9 +239,7 @@ class DiffusionConditioning(nn.Module):
             if self._use_fused_ln_linear:
                 out[..., row_slice, :, :] = self.fused_ln_linear_z(cat_chunk)
             else:
-                out[..., row_slice, :, :] = self.linear_z(
-                    self.layer_norm_z(cat_chunk)
-                )
+                out[..., row_slice, :, :] = self.linear_z(self.layer_norm_z(cat_chunk))
             del cat_chunk
         return out
 

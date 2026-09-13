@@ -255,6 +255,7 @@ class InputEmbedderAllAtom(nn.Module):
             z.add_(w[rel_chain_idx + rel_chain_offset])
             z.add_(same_entity[..., None].to(dtype=z.dtype) * w[same_entity_offset])
 
+
 class MSAModuleEmbedder(nn.Module):
     """Sample MSA features and embed them. Implements AF3 Algorithm 8 lines 1-4.
     This section of the MSAModule is separated from the main stack to allow for

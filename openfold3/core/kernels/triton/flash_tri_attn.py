@@ -41,7 +41,6 @@ def is_triton_available() -> bool:
     return _TRITON_AVAILABLE
 
 
-
 if _TRITON_AVAILABLE:
 
     @triton.autotune(
@@ -107,24 +106,49 @@ if _TRITON_AVAILABLE:
         ],
     )
     def _flash_tri_attn_kernel(
-        Q_ptr,         # [B, I, H, J, CH]   query, scaled outside
-        K_ptr,         # [B, I, H, J, CH]   key
-        V_ptr,         # [B, I, H, J, CH]   value
-        G_ptr,         # [B, I, J, H, CH]   sigmoid-gate (optional)
+        Q_ptr,  # [B, I, H, J, CH]   query, scaled outside
+        K_ptr,  # [B, I, H, J, CH]   key
+        V_ptr,  # [B, I, H, J, CH]   value
+        G_ptr,  # [B, I, J, H, CH]   sigmoid-gate (optional)
         TRI_BIAS_ptr,  # [B, H, I, J]       triangle bias (after squeeze)
-        MASK_BIAS_ptr, # [B, I, J]          mask bias (after squeeze)
-        OUT_ptr,       # [B, I, J, H, CH]   gated attn output, layout (B,I,J,H,CH)
+        MASK_BIAS_ptr,  # [B, I, J]          mask bias (after squeeze)
+        OUT_ptr,  # [B, I, J, H, CH]   gated attn output, layout (B,I,J,H,CH)
         I_dim,
         J_dim,
         # strides
-        stride_q_b, stride_q_i, stride_q_h, stride_q_j, stride_q_c,
-        stride_k_b, stride_k_i, stride_k_h, stride_k_j, stride_k_c,
-        stride_v_b, stride_v_i, stride_v_h, stride_v_j, stride_v_c,
-        stride_g_b, stride_g_i, stride_g_j, stride_g_h, stride_g_c,
-        stride_tb_b, stride_tb_h, stride_tb_i, stride_tb_j,
-        stride_mb_b, stride_mb_i, stride_mb_j,
+        stride_q_b,
+        stride_q_i,
+        stride_q_h,
+        stride_q_j,
+        stride_q_c,
+        stride_k_b,
+        stride_k_i,
+        stride_k_h,
+        stride_k_j,
+        stride_k_c,
+        stride_v_b,
+        stride_v_i,
+        stride_v_h,
+        stride_v_j,
+        stride_v_c,
+        stride_g_b,
+        stride_g_i,
+        stride_g_j,
+        stride_g_h,
+        stride_g_c,
+        stride_tb_b,
+        stride_tb_h,
+        stride_tb_i,
+        stride_tb_j,
+        stride_mb_b,
+        stride_mb_i,
+        stride_mb_j,
         mask_i_offset,
-        stride_o_b, stride_o_i, stride_o_j, stride_o_h, stride_o_c,
+        stride_o_b,
+        stride_o_i,
+        stride_o_j,
+        stride_o_h,
+        stride_o_c,
         softmax_scale,
         mask_inf,
         H: tl.constexpr,
@@ -156,16 +180,14 @@ if _TRITON_AVAILABLE:
         mask_m = offs_m < J_dim
 
         # ── Load Q tile ────────────────────────────────────────────────
-        q_base = (
-            b * stride_q_b + i * stride_q_i + h * stride_q_h
-        )
+        q_base = b * stride_q_b + i * stride_q_i + h * stride_q_h
         q_ptrs = (
-            Q_ptr + q_base
-            + offs_m[:, None] * stride_q_j
-            + offs_c[None, :] * stride_q_c
+            Q_ptr + q_base + offs_m[:, None] * stride_q_j + offs_c[None, :] * stride_q_c
         )
         q = tl.load(
-            q_ptrs, mask=mask_m[:, None], other=0.0,
+            q_ptrs,
+            mask=mask_m[:, None],
+            other=0.0,
         )
 
         # ── Flash-attn online-softmax state ───────────────────────────
@@ -180,7 +202,8 @@ if _TRITON_AVAILABLE:
         # We load a [BLOCK_M, BLOCK_N] tile per program; precompute the
         # per-row base for the m-tile here.
         tb_row_base = (
-            b * stride_tb_b + h * stride_tb_h
+            b * stride_tb_b
+            + h * stride_tb_h
             + offs_m * stride_tb_i  # [BLOCK_M] row offsets
         )
         mb_base = b * stride_mb_b + (i + mask_i_offset) * stride_mb_i
@@ -192,10 +215,12 @@ if _TRITON_AVAILABLE:
 
             # Load K tile  [BLOCK_N, CH]
             k = tl.load(
-                K_ptr + k_base
+                K_ptr
+                + k_base
                 + offs_n[:, None] * stride_k_j
                 + offs_c[None, :] * stride_k_c,
-                mask=mask_n[:, None], other=0.0,
+                mask=mask_n[:, None],
+                other=0.0,
             )
 
             # qk: [BLOCK_M, BLOCK_N]
@@ -208,9 +233,7 @@ if _TRITON_AVAILABLE:
 
             # Triangle bias [BLOCK_M, BLOCK_N] — bias[b, h, q_row, k_col]
             tb = tl.load(
-                TRI_BIAS_ptr
-                + tb_row_base[:, None]
-                + offs_n[None, :] * stride_tb_j,
+                TRI_BIAS_ptr + tb_row_base[:, None] + offs_n[None, :] * stride_tb_j,
                 mask=mask_m[:, None] & mask_n[None, :],
                 other=0.0,
             ).to(tl.float32)
@@ -219,7 +242,8 @@ if _TRITON_AVAILABLE:
             if HAS_MASK:
                 mb = tl.load(
                     MASK_BIAS_ptr + mb_base + offs_n * stride_mb_j,
-                    mask=mask_n, other=0.0,
+                    mask=mask_n,
+                    other=0.0,
                 ).to(tl.float32)
                 if MASK_IS_RAW:
                     mb = mask_inf * (mb - 1.0)
@@ -238,16 +262,16 @@ if _TRITON_AVAILABLE:
 
             # Load V tile [BLOCK_N, CH]
             v = tl.load(
-                V_ptr + v_base
+                V_ptr
+                + v_base
                 + offs_n[:, None] * stride_v_j
                 + offs_c[None, :] * stride_v_c,
-                mask=mask_n[:, None], other=0.0,
+                mask=mask_n[:, None],
+                other=0.0,
             )
 
             if ALLOW_TF32:
-                o_acc = tl.dot(
-                    p.to(V_ptr.dtype.element_ty), v, o_acc, allow_tf32=True
-                )
+                o_acc = tl.dot(p.to(V_ptr.dtype.element_ty), v, o_acc, allow_tf32=True)
             else:
                 o_acc = tl.dot(
                     p.to(V_ptr.dtype.element_ty), v, o_acc, input_precision="ieee"
@@ -258,25 +282,25 @@ if _TRITON_AVAILABLE:
 
         # ── Apply gate (loaded per-tile, applied in registers) ─────────
         if HAS_GATE:
-            g_base = (
-                b * stride_g_b + i * stride_g_i + h * stride_g_h
-            )
+            g_base = b * stride_g_b + i * stride_g_i + h * stride_g_h
             g_ptrs = (
-                G_ptr + g_base
+                G_ptr
+                + g_base
                 + offs_m[:, None] * stride_g_j
                 + offs_c[None, :] * stride_g_c
             )
             g = tl.load(
-                g_ptrs, mask=mask_m[:, None], other=0.0,
+                g_ptrs,
+                mask=mask_m[:, None],
+                other=0.0,
             ).to(tl.float32)
             o_acc = o_acc * tl.sigmoid(g)
 
         # ── Store output ──────────────────────────────────────────────
-        out_base = (
-            b * stride_o_b + i * stride_o_i + h * stride_o_h
-        )
+        out_base = b * stride_o_b + i * stride_o_i + h * stride_o_h
         out_ptrs = (
-            OUT_ptr + out_base
+            OUT_ptr
+            + out_base
             + offs_m[:, None] * stride_o_j
             + offs_c[None, :] * stride_o_c
         )
@@ -285,8 +309,6 @@ if _TRITON_AVAILABLE:
             o_acc.to(OUT_ptr.dtype.element_ty),
             mask=mask_m[:, None],
         )
-
-
 
     @triton.autotune(
         configs=[
@@ -310,13 +332,13 @@ if _TRITON_AVAILABLE:
         ],
     )
     def _flash_tri_attn_v1_group_i2_kernel(
-        Q_ptr,         # [1, rows, J, H, CH], packed-QKVG view
-        K_ptr,         # [1, rows, J, H, CH], packed-QKVG view
-        V_ptr,         # [1, rows, J, H, CH], packed-QKVG view
-        G_ptr,         # [1, rows, J, H, CH], packed-QKVG view
+        Q_ptr,  # [1, rows, J, H, CH], packed-QKVG view
+        K_ptr,  # [1, rows, J, H, CH], packed-QKVG view
+        V_ptr,  # [1, rows, J, H, CH], packed-QKVG view
+        G_ptr,  # [1, rows, J, H, CH], packed-QKVG view
         TRI_BIAS_ptr,  # [1, H, J, J], contiguous
-        MASK_BIAS_ptr, # [1, J, J], contiguous raw mask
-        OUT_ptr,       # [1, rows, J, H, CH], aliases Q
+        MASK_BIAS_ptr,  # [1, J, J], contiguous raw mask
+        OUT_ptr,  # [1, rows, J, H, CH], aliases Q
         I_dim,
         J_dim,
         mask_i_offset,
@@ -345,18 +367,12 @@ if _TRITON_AVAILABLE:
         q0_base = i0 * J_dim * QKVG_ROW_STRIDE + h * CH
         q1_base = i1 * J_dim * QKVG_ROW_STRIDE + h * CH
         q0 = tl.load(
-            Q_ptr
-            + q0_base
-            + offs_m[:, None] * QKVG_ROW_STRIDE
-            + offs_c[None, :],
+            Q_ptr + q0_base + offs_m[:, None] * QKVG_ROW_STRIDE + offs_c[None, :],
             mask=mask_m[:, None],
             other=0.0,
         )
         q1 = tl.load(
-            Q_ptr
-            + q1_base
-            + offs_m[:, None] * QKVG_ROW_STRIDE
-            + offs_c[None, :],
+            Q_ptr + q1_base + offs_m[:, None] * QKVG_ROW_STRIDE + offs_c[None, :],
             mask=mask_m[:, None] & has_i1,
             other=0.0,
         )
@@ -387,10 +403,7 @@ if _TRITON_AVAILABLE:
             tb = tb * rcp_ln2
 
             k0 = tl.load(
-                K_ptr
-                + k0_base
-                + offs_n[:, None] * QKVG_ROW_STRIDE
-                + offs_c[None, :],
+                K_ptr + k0_base + offs_n[:, None] * QKVG_ROW_STRIDE + offs_c[None, :],
                 mask=mask_n[:, None],
                 other=0.0,
             )
@@ -417,10 +430,7 @@ if _TRITON_AVAILABLE:
             o0 = o0 * a0[:, None]
             m0 = m0_new
             v0 = tl.load(
-                V_ptr
-                + v0_base
-                + offs_n[:, None] * QKVG_ROW_STRIDE
-                + offs_c[None, :],
+                V_ptr + v0_base + offs_n[:, None] * QKVG_ROW_STRIDE + offs_c[None, :],
                 mask=mask_n[:, None],
                 other=0.0,
             )
@@ -481,20 +491,14 @@ if _TRITON_AVAILABLE:
 
         g0_base = i0 * J_dim * QKVG_ROW_STRIDE + h * CH
         g0 = tl.load(
-            G_ptr
-            + g0_base
-            + offs_m[:, None] * QKVG_ROW_STRIDE
-            + offs_c[None, :],
+            G_ptr + g0_base + offs_m[:, None] * QKVG_ROW_STRIDE + offs_c[None, :],
             mask=mask_m[:, None],
             other=0.0,
         ).to(tl.float32)
         out0 = (o0 / l0[:, None]) * tl.sigmoid(g0)
         o0_base = i0 * J_dim * QKVG_ROW_STRIDE + h * CH
         tl.store(
-            OUT_ptr
-            + o0_base
-            + offs_m[:, None] * QKVG_ROW_STRIDE
-            + offs_c[None, :],
+            OUT_ptr + o0_base + offs_m[:, None] * QKVG_ROW_STRIDE + offs_c[None, :],
             out0.to(OUT_ptr.dtype.element_ty),
             mask=mask_m[:, None],
         )
@@ -502,20 +506,14 @@ if _TRITON_AVAILABLE:
         if has_i1:
             g1_base = i1 * J_dim * QKVG_ROW_STRIDE + h * CH
             g1 = tl.load(
-                G_ptr
-                + g1_base
-                + offs_m[:, None] * QKVG_ROW_STRIDE
-                + offs_c[None, :],
+                G_ptr + g1_base + offs_m[:, None] * QKVG_ROW_STRIDE + offs_c[None, :],
                 mask=mask_m[:, None],
                 other=0.0,
             ).to(tl.float32)
             out1 = (o1 / l1[:, None]) * tl.sigmoid(g1)
             o1_base = i1 * J_dim * QKVG_ROW_STRIDE + h * CH
             tl.store(
-                OUT_ptr
-                + o1_base
-                + offs_m[:, None] * QKVG_ROW_STRIDE
-                + offs_c[None, :],
+                OUT_ptr + o1_base + offs_m[:, None] * QKVG_ROW_STRIDE + offs_c[None, :],
                 out1.to(OUT_ptr.dtype.element_ty),
                 mask=mask_m[:, None],
             )
@@ -578,8 +576,7 @@ def flash_tri_attn_v1_block(
     allow_tf32 = bool(torch.backends.cuda.matmul.allow_tf32)
     if (
         allow_tf32
-        and
-        q.stride() == packed_stride
+        and q.stride() == packed_stride
         and k.stride() == packed_stride
         and v.stride() == packed_stride
         and gate.stride() == packed_stride
@@ -589,10 +586,13 @@ def flash_tri_attn_v1_block(
         and gate.data_ptr() - q.data_ptr() == 3 * H * CH * elem_size
         and out.data_ptr() == q.data_ptr()
     ):
-        grid = lambda meta: (
-            triton.cdiv(J_dim, meta["BLOCK_M"]),
-            triton.cdiv(rows, 2) * H,
-        )
+
+        def grid(meta):
+            return (
+                triton.cdiv(J_dim, meta["BLOCK_M"]),
+                triton.cdiv(rows, 2) * H,
+            )
+
         _flash_tri_attn_v1_group_i2_kernel[grid](
             q,
             k,
@@ -613,10 +613,11 @@ def flash_tri_attn_v1_block(
         )
         return out
 
-    grid = lambda meta: (
-        triton.cdiv(J_dim, meta["BLOCK_M"]),
-        B * rows * H,
-    )
+    def grid(meta):
+        return (
+            triton.cdiv(J_dim, meta["BLOCK_M"]),
+            B * rows * H,
+        )
 
     s_q_b, s_q_i, s_q_j, s_q_h, s_q_c = q.stride()
     s_k_b, s_k_i, s_k_j, s_k_h, s_k_c = k.stride()

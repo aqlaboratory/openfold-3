@@ -51,9 +51,7 @@ class TestConfidenceMetrics(unittest.TestCase):
         expected = probs_to_expected_error(
             torch.softmax(logits, dim=-1), bin_min=0.0, bin_max=1.0, no_bins=7
         )
-        actual = logits_to_expected_error(
-            logits, bin_min=0.0, bin_max=1.0, no_bins=7
-        )
+        actual = logits_to_expected_error(logits, bin_min=0.0, bin_max=1.0, no_bins=7)
         self.assertTrue(torch.allclose(actual, expected))
 
     def test_logits_to_expected_error_can_return_probs(self):

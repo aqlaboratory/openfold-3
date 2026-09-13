@@ -272,7 +272,8 @@ if _TRITON_AVAILABLE:
         # reaches ~1 A RMSD). bf16 inputs are upcast to fp32 in-kernel, so
         # this flag only bites the fp32 path, exactly as for cuBLAS.
         # BLOCK_M / BLOCK_H / warps / stages come from @triton.autotune.
-        grid = lambda meta: (triton.cdiv(M, meta["BLOCK_M"]),)
+        def grid(meta):
+            return (triton.cdiv(M, meta["BLOCK_M"]),)
 
         beta_ptr = beta if beta is not None else x_2d.new_zeros(1)
         mask_ptr = mask_1d if mask_1d is not None else x_2d.new_zeros(1)

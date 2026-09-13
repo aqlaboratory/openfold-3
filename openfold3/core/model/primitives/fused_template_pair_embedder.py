@@ -170,9 +170,7 @@ def _chunked_ln_linear_z(
     for start in range(0, N, chunk_rows):
         end = min(N, start + chunk_rows)
         z_chunk = z[:, start:end].contiguous()
-        z_norm = F.layer_norm(
-            z_chunk, (c_z,), ln_w, ln_b, module.layer_norm_z.eps
-        )
+        z_norm = F.layer_norm(z_chunk, (c_z,), ln_w, ln_b, module.layer_norm_z.eps)
         # Write straight into the output slice — no persistent linear buffer.
         out[:, start:end] = F.linear(z_norm, lin_w, lin_b)
         del z_chunk, z_norm

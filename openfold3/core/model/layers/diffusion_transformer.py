@@ -277,9 +277,7 @@ class DiffusionTransformer(nn.Module):
             ]
         )
 
-    def prepare_pair_bias_cache(
-        self, z: torch.Tensor
-    ) -> list[torch.Tensor] | None:
+    def prepare_pair_bias_cache(self, z: torch.Tensor) -> list[torch.Tensor] | None:
         """Precompute one ``pair_bias_h = LN_z(z) @ Wz`` tensor per block.
 
         Used by the diffusion rollout when ``z`` is invariant across steps
@@ -293,8 +291,7 @@ class DiffusionTransformer(nn.Module):
         if self.use_cross_attention:
             return None
         return [
-            block.attention_pair_bias.prep_static_pair_bias(z)
-            for block in self.blocks
+            block.attention_pair_bias.prep_static_pair_bias(z) for block in self.blocks
         ]
 
     def forward(

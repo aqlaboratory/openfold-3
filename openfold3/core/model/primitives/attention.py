@@ -66,6 +66,7 @@ except ImportError:
     def diffusion_attn_triton_available():
         return False
 
+
 TRITON_AVAILABLE = TritonEvoformer is not None
 DIFFUSION_ATTN_TRITON_AVAILABLE = (
     flash_diffusion_attn is not None and diffusion_attn_triton_available()
@@ -119,6 +120,7 @@ def _can_use_fused_diffusion_attention(
         and pair_bias.shape[1] in (1, samples)
         and pair_bias.shape[-3:] == (no_heads, n_token, n_token)
     )
+
 
 cueq_is_installed = is_cuequivariance_available()
 if cueq_is_installed:

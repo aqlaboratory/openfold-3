@@ -18,7 +18,9 @@ non_canonical_peptide_query = Query(
 
 out = structure_with_ref_mols_from_query(non_canonical_peptide_query)
 
-Path("test_data/structure_from_query/structure-w-ref-mols_non-std-peptide.pkl").write_bytes(pickle.dumps(out))
+Path(
+    "test_data/structure_from_query/structure-w-ref-mols_non-std-peptide.pkl"
+).write_bytes(pickle.dumps(out))
 
 # ---
 standard_peptide_query = Query(
@@ -33,5 +35,7 @@ standard_peptide_query = Query(
 
 out = structure_with_ref_mols_from_query(standard_peptide_query)
 
-Path("test_data/structure_from_query/structure-w-ref-mols_std-peptide.pkl").write_bytes(pickle.dumps(out))
+Path("test_data/structure_from_query/structure-w-ref-mols_std-peptide.pkl").write_bytes(
+    pickle.dumps(out)
+)
 ```

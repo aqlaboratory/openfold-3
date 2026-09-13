@@ -197,7 +197,9 @@ class PairformerEmbedding(nn.Module):
     ):
         embed_inplace = inplace_safe and x_pred.shape[:-2] == zij.shape[:-3]
         zij = self.embed_zij(
-            si_input=si_input, zij=zij, x_pred=x_pred,
+            si_input=si_input,
+            zij=zij,
+            x_pred=x_pred,
             inplace=embed_inplace,
         )
 

@@ -45,7 +45,6 @@ def is_triton_available() -> bool:
 
 
 if _TRITON_AVAILABLE:
-
     # Large tiles win on high-SMEM GPUs; (16, 32) / (16, 16) keep the
     # ieee / large-c_in specializations under T4's 64 KiB opt-in limit.
     # num_stages stays 1: the LN reduction is one-pass in registers, so
@@ -360,10 +359,11 @@ if _TRITON_AVAILABLE:
         BLOCK_K_DOT = max(BLOCK_K, 16)
         allow_tf32 = bool(torch.backends.cuda.matmul.allow_tf32)
 
-        grid = lambda meta: (
-            triton.cdiv(M, meta["BLOCK_M"]),
-            triton.cdiv(N, meta["BLOCK_N"]),
-        )
+        def grid(meta):
+            return (
+                triton.cdiv(M, meta["BLOCK_M"]),
+                triton.cdiv(N, meta["BLOCK_N"]),
+            )
 
         # Bias / beta nullity: pass dummy 1-elem tensors when absent so
         # the kernel can take a stable signature; HAS_* compile-time
@@ -614,15 +614,11 @@ def pair_ln_linear_inference(
     N = weight.shape[0]
     gamma_d = gamma.to(dtype=x.dtype) if gamma.dtype != x.dtype else gamma
     beta_d = (
-        beta.to(dtype=x.dtype)
-        if (beta is not None and beta.dtype != x.dtype)
-        else beta
+        beta.to(dtype=x.dtype) if (beta is not None and beta.dtype != x.dtype) else beta
     )
     weight_d = weight.to(dtype=x.dtype) if weight.dtype != x.dtype else weight
     bias_d = (
-        bias.to(dtype=x.dtype)
-        if (bias is not None and bias.dtype != x.dtype)
-        else bias
+        bias.to(dtype=x.dtype) if (bias is not None and bias.dtype != x.dtype) else bias
     )
     y = torch.empty((I_dim * J_dim, N), dtype=x.dtype, device=x.device)
 
@@ -632,11 +628,14 @@ def pair_ln_linear_inference(
 
     beta_ptr = beta_d if beta_d is not None else x.new_zeros(1)
     bias_ptr = bias_d if bias_d is not None else x.new_zeros(1)
+
     # BLOCK_M / BLOCK_N / warps come from @triton.autotune.
-    grid = lambda meta: (
-        triton.cdiv(I_dim * J_dim, meta["BLOCK_M"]),
-        triton.cdiv(N, meta["BLOCK_N"]),
-    )
+    def grid(meta):
+        return (
+            triton.cdiv(I_dim * J_dim, meta["BLOCK_M"]),
+            triton.cdiv(N, meta["BLOCK_N"]),
+        )
+
     _pair_ln_linear_fwd_kernel[grid](
         x,
         weight_d,

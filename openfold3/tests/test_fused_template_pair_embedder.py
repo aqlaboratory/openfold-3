@@ -30,8 +30,6 @@ Design constraints exercised here:
 
 from __future__ import annotations
 
-import os
-
 import pytest
 import torch
 
@@ -57,9 +55,13 @@ def eager_module_factory():
 
     def _build(c_z=128, c_dgram=39, c_aatype=32, c_out=64, seed=0):
         torch.manual_seed(seed)
-        m = TemplatePairEmbedderAllAtom(
-            c_in=c_z, c_dgram=c_dgram, c_aatype=c_aatype, c_out=c_out
-        ).cuda().eval()
+        m = (
+            TemplatePairEmbedderAllAtom(
+                c_in=c_z, c_dgram=c_dgram, c_aatype=c_aatype, c_out=c_out
+            )
+            .cuda()
+            .eval()
+        )
         return m
 
     return _build
@@ -184,17 +186,29 @@ def test_fused_correct_template_slice(eager_module_factory, template_index: int)
 
         # Build a single-template mini-batch by slicing manually.
         mini_batch = {
-            "template_distogram": batch["template_distogram"][:, template_index:template_index+1],
-            "template_restype": batch["template_restype"][:, template_index:template_index+1],
-            "template_pseudo_beta_mask": batch["template_pseudo_beta_mask"][:, template_index:template_index+1],
-            "template_backbone_frame_mask": batch["template_backbone_frame_mask"][:, template_index:template_index+1],
-            "template_unit_vector": batch["template_unit_vector"][:, template_index:template_index+1],
+            "template_distogram": batch["template_distogram"][
+                :, template_index : template_index + 1
+            ],
+            "template_restype": batch["template_restype"][
+                :, template_index : template_index + 1
+            ],
+            "template_pseudo_beta_mask": batch["template_pseudo_beta_mask"][
+                :, template_index : template_index + 1
+            ],
+            "template_backbone_frame_mask": batch["template_backbone_frame_mask"][
+                :, template_index : template_index + 1
+            ],
+            "template_unit_vector": batch["template_unit_vector"][
+                :, template_index : template_index + 1
+            ],
             "asym_id": batch["asym_id"],
         }
         with torch.inference_mode():
             eager = module(mini_batch, z.clone())
             fused = fused_template_pair_embedder_inference(
-                module=module, batch=batch, z=z.clone(),
+                module=module,
+                batch=batch,
+                z=z.clone(),
                 template_index=template_index,
             )
         torch.testing.assert_close(fused, eager, rtol=5e-5, atol=1e-5)
@@ -269,15 +283,18 @@ def test_fused_peak_transient_below_output(eager_module_factory):
 
         _, transient = _peak_call(
             fused_template_pair_embedder_inference,
-            module=module, batch=batch, z=z.clone(), template_index=0,
+            module=module,
+            batch=batch,
+            z=z.clone(),
+            template_index=0,
         )
     print(
-        f"\nN={N}, 1U={U/1024**2:.2f}MiB, output={output_bytes/1024**2:.2f}MiB,"
-        f" transient={transient/1024**2:.2f}MiB, ceiling={ceiling_bytes/1024**2:.2f}MiB"
+        f"\nN={N}, 1U={U / 1024**2:.2f}MiB, output={output_bytes / 1024**2:.2f}MiB,"
+        f" transient={transient / 1024**2:.2f}MiB, ceiling={ceiling_bytes / 1024**2:.2f}MiB"
     )
     assert transient < ceiling_bytes, (
-        f"Fused transient {transient/1024**2:.2f}MiB exceeds 0.75U "
-        f"({ceiling_bytes/1024**2:.2f}MiB) at N={N}"
+        f"Fused transient {transient / 1024**2:.2f}MiB exceeds 0.75U "
+        f"({ceiling_bytes / 1024**2:.2f}MiB) at N={N}"
     )
 
 
@@ -314,19 +331,24 @@ def test_fused_residual_no_dgram_after_return(eager_module_factory):
 
         baseline = torch.cuda.memory_allocated()
         out = fused_template_pair_embedder_inference(
-            module=module, batch=batch, z=z.clone(), template_index=0,
+            module=module,
+            batch=batch,
+            z=z.clone(),
+            template_index=0,
         )
         torch.cuda.synchronize()
-        residual = torch.cuda.memory_allocated() - baseline - out.numel() * out.element_size()
+        residual = (
+            torch.cuda.memory_allocated() - baseline - out.numel() * out.element_size()
+        )
 
     print(
-        f"\nN={N}, 1U={U/1024**2:.2f}MiB, output={output_bytes/1024**2:.2f}MiB,"
-        f" residual_above_output={residual/1024**2:.2f}MiB,"
-        f" ceiling={residual_ceiling/1024**2:.2f}MiB"
+        f"\nN={N}, 1U={U / 1024**2:.2f}MiB, output={output_bytes / 1024**2:.2f}MiB,"
+        f" residual_above_output={residual / 1024**2:.2f}MiB,"
+        f" ceiling={residual_ceiling / 1024**2:.2f}MiB"
     )
     assert residual < residual_ceiling, (
-        f"Post-return residual {residual/1024**2:.2f}MiB above output at "
-        f"N={N} exceeds 0.10U ({residual_ceiling/1024**2:.2f}MiB) — dgram or "
+        f"Post-return residual {residual / 1024**2:.2f}MiB above output at "
+        f"N={N} exceeds 0.10U ({residual_ceiling / 1024**2:.2f}MiB) — dgram or "
         f"another N²-scaled tensor is leaking past the return."
     )
 
@@ -363,12 +385,15 @@ def test_fused_saves_memory_vs_eager(eager_module_factory, monkeypatch):
         monkeypatch.setenv("OPENFOLD3_FUSED_TEMPLATE_EMBED", "1")
         _, fused_transient = _peak_call(
             fused_template_pair_embedder_inference,
-            module=module, batch=batch, z=z.clone(), template_index=0,
+            module=module,
+            batch=batch,
+            z=z.clone(),
+            template_index=0,
         )
     print(
-        f"\nN={N}: eager transient={eager_transient/1024**2:.2f}MiB, "
-        f"fused transient={fused_transient/1024**2:.2f}MiB, "
-        f"savings={(eager_transient - fused_transient)/1024**2:.2f}MiB"
+        f"\nN={N}: eager transient={eager_transient / 1024**2:.2f}MiB, "
+        f"fused transient={fused_transient / 1024**2:.2f}MiB, "
+        f"savings={(eager_transient - fused_transient) / 1024**2:.2f}MiB"
     )
     assert fused_transient < eager_transient, (
         f"Fused ({fused_transient}) not smaller than eager ({eager_transient})"
@@ -460,12 +485,15 @@ def test_module_forward_multi_template_uses_eager(eager_module_factory, monkeypa
         monkeypatch.setenv("OPENFOLD3_FUSED_TEMPLATE_EMBED", "1")
         _, fused_transient = _peak_call(
             fused_template_pair_embedder_inference,
-            module=module, batch=batch, z=z.clone(), template_index=0,
+            module=module,
+            batch=batch,
+            z=z.clone(),
+            template_index=0,
         )
     print(
-        f"\nN={N}: eager transient={eager_transient/1024**2:.2f}MiB, "
-        f"fused transient={fused_transient/1024**2:.2f}MiB, "
-        f"savings={(eager_transient - fused_transient)/1024**2:.2f}MiB"
+        f"\nN={N}: eager transient={eager_transient / 1024**2:.2f}MiB, "
+        f"fused transient={fused_transient / 1024**2:.2f}MiB, "
+        f"savings={(eager_transient - fused_transient) / 1024**2:.2f}MiB"
     )
     assert fused_transient < eager_transient, (
         f"Fused ({fused_transient}) not smaller than eager ({eager_transient})"

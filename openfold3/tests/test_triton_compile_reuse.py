@@ -25,9 +25,7 @@ from pathlib import Path
 import pytest
 import torch
 
-pytestmark = pytest.mark.skipif(
-    not torch.cuda.is_available(), reason="CUDA required"
-)
+pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 
 
 def test_fused_kernels_reuse_compile_across_lengths(tmp_path):
@@ -197,6 +195,7 @@ assert counts["_fused_swiglu_transition_fwd_kernel"] >= 1, counts
     assert proc.returncode == 0, proc.stdout + proc.stderr
     payload = json.loads(proc.stdout.strip().splitlines()[-1])
     assert all("opm" not in name for name in payload["counts"])
+
 
 def test_fused_trimul_reuses_compiles_across_lengths_and_chunks(tmp_path):
     """Trimul signatures are stable across N for both directions and dimensions."""

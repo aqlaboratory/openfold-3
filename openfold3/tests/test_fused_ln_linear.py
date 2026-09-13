@@ -73,8 +73,12 @@ class TestFusedLNLinearCheckpointCompatibility(unittest.TestCase):
         }
         parent.load_state_dict(legacy_state)
 
-        torch.testing.assert_close(parent.fused.ln_weight, legacy_state["layer_norm.weight"])
-        torch.testing.assert_close(parent.fused.ln_bias, legacy_state["layer_norm.bias"])
+        torch.testing.assert_close(
+            parent.fused.ln_weight, legacy_state["layer_norm.weight"]
+        )
+        torch.testing.assert_close(
+            parent.fused.ln_bias, legacy_state["layer_norm.bias"]
+        )
         torch.testing.assert_close(parent.fused.weight, legacy_state["linear.weight"])
         torch.testing.assert_close(parent.fused.bias, legacy_state["linear.bias"])
 
@@ -84,19 +88,31 @@ class TestFusedLNLinearForward(unittest.TestCase):
     """Forward correctness across c_in / c_out / dtype / sample-count."""
 
     def _check(
-        self, c_in, c_out, ln_offset, lin_bias, M, dtype, atol, rtol=0.0,
+        self,
+        c_in,
+        c_out,
+        ln_offset,
+        lin_bias,
+        M,
+        dtype,
+        atol,
+        rtol=0.0,
         allow_tf32=None,
     ):
         torch.manual_seed(0)
         device = "cuda"
         x = torch.randn(M, c_in, dtype=dtype, device=device)
-        m = FusedLNLinear(
-            c_in,
-            c_out,
-            ln_create_offset=ln_offset,
-            linear_bias=lin_bias,
-            linear_init="default",
-        ).to(device).to(dtype)
+        m = (
+            FusedLNLinear(
+                c_in,
+                c_out,
+                ln_create_offset=ln_offset,
+                linear_bias=lin_bias,
+                linear_init="default",
+            )
+            .to(device)
+            .to(dtype)
+        )
         # 'final' init zeros the weight; randomize for a non-trivial test.
         with torch.no_grad():
             m.weight.normal_(0, 0.5)
@@ -129,8 +145,14 @@ class TestFusedLNLinearForward(unittest.TestCase):
                     # for tensor-core throughput. Relative drift ~1e-3
                     # is the matched-input bound.
                     self._check(
-                        c_in, c_out, ln_off, lin_b, M, torch.float32,
-                        atol=5e-3, rtol=2e-3,
+                        c_in,
+                        c_out,
+                        ln_off,
+                        lin_b,
+                        M,
+                        torch.float32,
+                        atol=5e-3,
+                        rtol=2e-3,
                         allow_tf32=True,
                     )
 
@@ -141,8 +163,14 @@ class TestFusedLNLinearForward(unittest.TestCase):
                     c_in=c_in, c_out=c_out, ln_offset=ln_off, lin_bias=lin_b, M=M
                 ):
                     self._check(
-                        c_in, c_out, ln_off, lin_b, M, torch.float32,
-                        atol=1e-4, rtol=1e-5,
+                        c_in,
+                        c_out,
+                        ln_off,
+                        lin_b,
+                        M,
+                        torch.float32,
+                        atol=1e-4,
+                        rtol=1e-5,
                         allow_tf32=False,
                     )
 
@@ -157,8 +185,14 @@ class TestFusedLNLinearForward(unittest.TestCase):
                     # bound is relative — ~3% of the output scale covers
                     # both the rounding and the order-of-summation drift.
                     self._check(
-                        c_in, c_out, ln_off, lin_b, M, torch.bfloat16,
-                        atol=1e-2, rtol=3e-2,
+                        c_in,
+                        c_out,
+                        ln_off,
+                        lin_b,
+                        M,
+                        torch.bfloat16,
+                        atol=1e-2,
+                        rtol=3e-2,
                     )
 
     def test_higher_rank_input(self):
@@ -182,7 +216,9 @@ class TestFusedLNLinearForward(unittest.TestCase):
         device = "cuda"
         c_in = 833
         x = torch.randn(64, c_in, dtype=torch.float32, device=device)
-        m = FusedLNLinear(c_in, 384, ln_create_offset=False, linear_bias=False).to(device)
+        m = FusedLNLinear(c_in, 384, ln_create_offset=False, linear_bias=False).to(
+            device
+        )
         with torch.no_grad():
             m.weight.normal_(0, 0.5)
         # Forward must succeed and match the reference exactly (since both go
@@ -238,7 +274,9 @@ class TestFusedLNLinearBackward(unittest.TestCase):
         with torch.no_grad():
             m.weight.normal_(0, 0.5)
 
-        x_a = torch.randn(64, c_in, dtype=torch.float32, device=device, requires_grad=True)
+        x_a = torch.randn(
+            64, c_in, dtype=torch.float32, device=device, requires_grad=True
+        )
         x_b = x_a.detach().clone().requires_grad_()
         # Upstream gradient — same for both paths.
         gy = torch.randn(64, c_out, dtype=torch.float32, device=device)

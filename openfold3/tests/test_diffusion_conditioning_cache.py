@@ -198,9 +198,7 @@ class TestDiffusionConditioningCache(unittest.TestCase):
                 use_conditioning=False,
                 token_mask=token_mask,
             )
-            si_cached, zij_cached = dc.apply_t(
-                cache=cache, t=t, token_mask=token_mask
-            )
+            si_cached, zij_cached = dc.apply_t(cache=cache, t=t, token_mask=token_mask)
             torch.testing.assert_close(si_cached, si_ref, rtol=0.0, atol=0.0)
             torch.testing.assert_close(zij_cached, zij_ref, rtol=0.0, atol=0.0)
 
@@ -365,13 +363,18 @@ class TestNoisyPositionEmbedderSplit(unittest.TestCase):
         n_key = 128
 
         embedder = NoisyPositionEmbedder(
-            c_s=c_s, c_z=c_z, c_atom=c_atom, c_atom_pair=c_atom_pair,
+            c_s=c_s,
+            c_z=c_z,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
         )
         embedder.eval()
 
         batch = random_of3_features(
-            batch_size=batch_size, n_token=n_token,
-            n_msa=consts.n_seq, n_templ=consts.n_templ,
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
         )
         n_atom = batch["ref_pos"].shape[-2]
         num_blocks = -(-n_atom // n_query)
@@ -384,14 +387,23 @@ class TestNoisyPositionEmbedderSplit(unittest.TestCase):
 
         with torch.no_grad():
             cl_ref, plm_ref, ql_ref = embedder(
-                batch=batch, cl=cl, plm=plm,
-                si_trunk=si_trunk, zij_trunk=zij_trunk, rl=rl,
-                n_query=n_query, n_key=n_key,
+                batch=batch,
+                cl=cl,
+                plm=plm,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                rl=rl,
+                n_query=n_query,
+                n_key=n_key,
             )
             cl_split, plm_split = embedder.embed_trunk(
-                batch=batch, cl=cl, plm=plm,
-                si_trunk=si_trunk, zij_trunk=zij_trunk,
-                n_query=n_query, n_key=n_key,
+                batch=batch,
+                cl=cl,
+                plm=plm,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                n_query=n_query,
+                n_key=n_key,
             )
             ql_split = embedder.embed_rl(cl=cl_split, rl=rl)
 
@@ -423,17 +435,28 @@ class TestAtomAttentionEncoderCache(unittest.TestCase):
         from openfold3.tests.test_sequence_local_atom_attention import C_ATOM_REF
 
         atom_attn_enc = AtomAttentionEncoder(
-            c_s=c_s, c_z=c_z, c_atom_ref=C_ATOM_REF, c_atom=c_atom,
-            c_atom_pair=c_atom_pair, c_token=c_token, c_hidden=c_hidden,
-            add_noisy_pos=True, no_heads=no_heads, no_blocks=no_blocks,
-            n_transition=n_transition, n_query=n_query, n_key=n_key,
+            c_s=c_s,
+            c_z=c_z,
+            c_atom_ref=C_ATOM_REF,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+            c_token=c_token,
+            c_hidden=c_hidden,
+            add_noisy_pos=True,
+            no_heads=no_heads,
+            no_blocks=no_blocks,
+            n_transition=n_transition,
+            n_query=n_query,
+            n_key=n_key,
             use_ada_layer_norm=True,
         )
         atom_attn_enc.eval()
 
         batch = random_of3_features(
-            batch_size=batch_size, n_token=n_token,
-            n_msa=consts.n_seq, n_templ=consts.n_templ,
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
         )
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
         n_atom = batch["ref_pos"].shape[-2]
@@ -443,15 +466,23 @@ class TestAtomAttentionEncoderCache(unittest.TestCase):
 
         with torch.no_grad():
             cache = atom_attn_enc.prepare_atom_rep_cache(
-                batch=batch, si_trunk=si_trunk, zij_trunk=zij_trunk,
+                batch=batch,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
             )
             for _ in range(3):
                 rl = torch.randn((batch_size, n_sample, n_atom, 3))
                 ai_ref, ql_ref, cl_ref, plm_ref = atom_attn_enc(
-                    batch=batch, rl=rl, si_trunk=si_trunk, zij_trunk=zij_trunk,
+                    batch=batch,
+                    rl=rl,
+                    si_trunk=si_trunk,
+                    zij_trunk=zij_trunk,
                 )
                 ai_c, ql_c, cl_c, plm_c = atom_attn_enc(
-                    batch=batch, rl=rl, si_trunk=si_trunk, zij_trunk=zij_trunk,
+                    batch=batch,
+                    rl=rl,
+                    si_trunk=si_trunk,
+                    zij_trunk=zij_trunk,
                     atom_rep_cache=cache,
                 )
                 torch.testing.assert_close(ai_c, ai_ref, rtol=0.0, atol=0.0)
@@ -478,8 +509,10 @@ class TestDiffusionModuleAtomRepCache(unittest.TestCase):
         dm.eval()
 
         batch = random_of3_features(
-            batch_size=batch_size, n_token=n_token,
-            n_msa=consts.n_seq, n_templ=consts.n_templ,
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
         )
         batch = tensor_tree_map(lambda x: x.unsqueeze(1), batch)
         n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
@@ -494,24 +527,40 @@ class TestDiffusionModuleAtomRepCache(unittest.TestCase):
 
         with torch.no_grad():
             conditioning_cache = dm.prepare_diffusion_conditioning_cache(
-                batch=batch, si_input=si_input, si_trunk=si_trunk,
-                zij_trunk=zij_trunk, use_conditioning=True,
+                batch=batch,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                use_conditioning=True,
             )
             atom_rep_cache = dm.prepare_atom_rep_cache(
-                batch=batch, si_trunk=si_trunk,
+                batch=batch,
+                si_trunk=si_trunk,
                 zij_conditioned=conditioning_cache["zij_conditioned"],
             )
 
             xl_uncached = dm(
-                batch=batch, xl_noisy=xl_noisy, token_mask=token_mask,
-                atom_mask=atom_mask, t=t, si_input=si_input, si_trunk=si_trunk,
-                zij_trunk=zij_trunk, use_conditioning=True,
+                batch=batch,
+                xl_noisy=xl_noisy,
+                token_mask=token_mask,
+                atom_mask=atom_mask,
+                t=t,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                use_conditioning=True,
                 conditioning_cache=conditioning_cache,
             )
             xl_cached = dm(
-                batch=batch, xl_noisy=xl_noisy, token_mask=token_mask,
-                atom_mask=atom_mask, t=t, si_input=si_input, si_trunk=si_trunk,
-                zij_trunk=zij_trunk, use_conditioning=True,
+                batch=batch,
+                xl_noisy=xl_noisy,
+                token_mask=token_mask,
+                atom_mask=atom_mask,
+                t=t,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                use_conditioning=True,
                 conditioning_cache=conditioning_cache,
                 atom_rep_cache=atom_rep_cache,
             )

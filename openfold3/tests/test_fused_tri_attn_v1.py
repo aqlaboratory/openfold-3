@@ -266,9 +266,7 @@ class TestFusedTriAttnV1(unittest.TestCase):
             for starting in (True, False):
                 torch.manual_seed(206 + int(starting))
                 module = _build_module(starting=starting)
-                x = torch.randn(
-                    1, 160, 160, 128, device="cuda", dtype=torch.float32
-                )
+                x = torch.randn(1, 160, 160, 128, device="cuda", dtype=torch.float32)
                 mask = torch.ones(1, 160, 160, device="cuda", dtype=torch.float32)
                 mask[:, :, -13:] = 0
                 mask[:, -7:, :] = 0

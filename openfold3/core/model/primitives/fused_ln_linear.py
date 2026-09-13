@@ -90,12 +90,8 @@ class FusedLNLinear(nn.Module):
         # LN parameters — reuse openfold3 LayerNorm naming & defaults.
         # Wrapping in a tiny submodule so state-dict keys match
         # `<prefix>.layer_norm.weight` for any future migration.
-        self.ln_weight = (
-            nn.Parameter(torch.ones(c_in)) if ln_create_scale else None
-        )
-        self.ln_bias = (
-            nn.Parameter(torch.zeros(c_in)) if ln_create_offset else None
-        )
+        self.ln_weight = nn.Parameter(torch.ones(c_in)) if ln_create_scale else None
+        self.ln_bias = nn.Parameter(torch.zeros(c_in)) if ln_create_offset else None
 
         # Linear parameters — match openfold3 Linear conventions.
         self.weight = nn.Parameter(torch.empty(c_out, c_in))

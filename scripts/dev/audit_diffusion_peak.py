@@ -27,12 +27,12 @@ Run:
         --query multimer --samples 5 \
         --output-md data/inference_outputs/kernel_dev/diff_peak_audit_multimer_s5.md
 """
+
 from __future__ import annotations
 
 import argparse
 import collections
 import json
-import os
 from pathlib import Path
 
 from openfold3.entry_points.import_utils import _torch_gpu_setup
@@ -155,7 +155,7 @@ def _frame_signature(stack):
             continue
         # Strip repo prefix for compactness.
         if "/openfold3/" in fn:
-            fn_short = fn[fn.find("/openfold3/") + 1:]
+            fn_short = fn[fn.find("/openfold3/") + 1 :]
         else:
             fn_short = fn
         return (fn_short, lineno, cat)
@@ -166,7 +166,7 @@ def _frame_signature(stack):
     else:
         fn, lineno = getattr(frame, "filename", "?"), getattr(frame, "line", 0)
     if "/openfold3/" in fn:
-        fn = fn[fn.find("/openfold3/") + 1:]
+        fn = fn[fn.find("/openfold3/") + 1 :]
     return (fn, lineno, _classify_frame(fn))
 
 
@@ -183,7 +183,9 @@ def audit_one(args) -> dict:
     c_z = int(model.config.architecture.shared.c_z)
     u_bytes = n_tok * n_tok * c_z * 4
 
-    print(f"  n_tokens={n_tok}, samples={args.samples}, 1U_trunk={_mib(u_bytes):.1f} MiB")
+    print(
+        f"  n_tokens={n_tok}, samples={args.samples}, 1U_trunk={_mib(u_bytes):.1f} MiB"
+    )
 
     # Warm-up forward (don't include in trace).
     print("  Warm-up forward...")
@@ -203,7 +205,9 @@ def audit_one(args) -> dict:
         torch.cuda.reset_peak_memory_stats()
         capture["before_bytes"] = torch.cuda.memory_allocated()
         torch.cuda.memory._record_memory_history(
-            enabled="all", context="all", stacks="python",
+            enabled="all",
+            context="all",
+            stacks="python",
             max_entries=200_000,
         )
         try:
@@ -285,6 +289,9 @@ def audit_one(args) -> dict:
 def render_md(audit: dict) -> str:
     n_tok = audit["n_tokens"]
     u_mib = audit["U_bytes"] / 1024**2
+    diff_peak_mib = (
+        audit["diffusion_peak_bytes"] - audit["diffusion_before_bytes"]
+    ) / 1024**2
     lines = [
         f"# DIFFUSION peak audit — {audit['query']} (samples={audit['samples']})",
         "",
@@ -292,18 +299,20 @@ def render_md(audit: dict) -> str:
         f"- 1 U_trunk = N²·c_z·4 = **{u_mib:.1f} MiB**",
         (
             f"- DIFFUSION peak above pre-stage baseline: "
-            f"**{(audit['diffusion_peak_bytes'] - audit['diffusion_before_bytes'])/1024**2:.1f} MiB "
-            f"= {audit['diffusion_peak_activation_U']:.2f} U_trunk**"
+            f"**{diff_peak_mib:.1f} MiB = "
+            f"{audit['diffusion_peak_activation_U']:.2f} U_trunk**"
         ),
         (
             f"- Total live at end-of-stage snapshot: "
-            f"**{audit['total_live_at_snapshot_bytes']/1024**2:.1f} MiB**"
+            f"**{audit['total_live_at_snapshot_bytes'] / 1024**2:.1f} MiB**"
         ),
         "",
-        ("> Note: This snapshot is taken after the diffusion stage completes."
-         " Allocations that were transient inside the stage and freed before"
-         " the snapshot do not appear here, but `diffusion_peak_bytes` (from"
-         " `max_memory_allocated`) accounts for the true peak."),
+        (
+            "> Note: This snapshot is taken after the diffusion stage completes."
+            " Allocations that were transient inside the stage and freed before"
+            " the snapshot do not appear here, but `diffusion_peak_bytes` (from"
+            " `max_memory_allocated`) accounts for the true peak."
+        ),
         "",
         "## Live allocations by source",
         "",
@@ -313,13 +322,13 @@ def render_md(audit: dict) -> str:
     for i, b in enumerate(audit["buckets"][:30], 1):
         lines.append(
             f"| {i} | `{b['file']}:{b['line']}` | {b['category']} | "
-            f"{b['bytes']:,} | {b['bytes']/1024**2:.1f} | {b['U_trunk']:.3f} |"
+            f"{b['bytes']:,} | {b['bytes'] / 1024**2:.1f} | {b['U_trunk']:.3f} |"
         )
     if len(audit["buckets"]) > 30:
         rest = sum(b["bytes"] for b in audit["buckets"][30:])
         lines.append(
             f"| ... | (other {len(audit['buckets']) - 30} sites) | — | "
-            f"{rest:,} | {rest/1024**2:.1f} | {rest/audit['U_bytes']:.3f} |"
+            f"{rest:,} | {rest / 1024**2:.1f} | {rest / audit['U_bytes']:.3f} |"
         )
     lines += [
         "",
@@ -351,18 +360,20 @@ def main() -> None:
     print("=" * 116)
     print(
         f"query={audit['query']} n_tok={n_tok} samples={audit['samples']} "
-        f"1U={audit['U_bytes']/1024**2:.1f} MiB"
+        f"1U={audit['U_bytes'] / 1024**2:.1f} MiB"
     )
+    diff_peak_mib = (
+        audit["diffusion_peak_bytes"] - audit["diffusion_before_bytes"]
+    ) / 1024**2
     print(
-        f"DIFFUSION peak activation = "
-        f"{(audit['diffusion_peak_bytes'] - audit['diffusion_before_bytes'])/1024**2:.1f} MiB "
+        f"DIFFUSION peak activation = {diff_peak_mib:.1f} MiB "
         f"({audit['diffusion_peak_activation_U']:.2f} U_trunk)"
     )
     print("=" * 116)
     print(f"{'rank':>4} {'MiB':>8} {'U':>7}  category               file:line")
     for i, b in enumerate(audit["buckets"][:15], 1):
         print(
-            f"{i:>4} {b['bytes']/1024**2:>8.1f} {b['U_trunk']:>7.3f}  "
+            f"{i:>4} {b['bytes'] / 1024**2:>8.1f} {b['U_trunk']:>7.3f}  "
             f"{b['category']:<22} {b['file']}:{b['line']}"
         )
 

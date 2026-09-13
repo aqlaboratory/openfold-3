@@ -323,9 +323,7 @@ def _child_main(args: argparse.Namespace) -> None:
             "OPENFOLD3_TRI_ATTN_CHUNK_CAP": os.environ.get(
                 "OPENFOLD3_TRI_ATTN_CHUNK_CAP"
             ),
-            "OPENFOLD3_TRIMUL_CHUNK_CAP": os.environ.get(
-                "OPENFOLD3_TRIMUL_CHUNK_CAP"
-            ),
+            "OPENFOLD3_TRIMUL_CHUNK_CAP": os.environ.get("OPENFOLD3_TRIMUL_CHUNK_CAP"),
         },
     }
     print("OF3_COLD_BENCH_RESULT=" + json.dumps(result, sort_keys=True))
@@ -415,15 +413,14 @@ def _run_cell(
     total_wall_s = time.perf_counter() - t0
     if proc.returncode != 0:
         raise RuntimeError(
-            f"Benchmark failed for {query}/{config} repeat {repeat_idx}\n"
-            f"{proc.stdout}"
+            f"Benchmark failed for {query}/{config} repeat {repeat_idx}\n{proc.stdout}"
         )
 
     marker = "OF3_COLD_BENCH_RESULT="
     payload = None
     for line in proc.stdout.splitlines():
         if line.startswith(marker):
-            payload = json.loads(line[len(marker):])
+            payload = json.loads(line[len(marker) :])
     if payload is None:
         raise RuntimeError(
             f"Missing benchmark result for {query}/{config} repeat {repeat_idx}\n"

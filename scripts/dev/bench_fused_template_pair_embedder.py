@@ -9,7 +9,8 @@ sequence lengths ``N``.
 Usage:
     python scripts/dev/bench_fused_template_pair_embedder.py \
         --n 384 590 1264 --reps 20 --dtype fp32 \
-        --output-json data/inference_outputs/profiling/bench_fused_template_pair_embedder.json
+        --output-json \
+        data/inference_outputs/profiling/bench_fused_template_pair_embedder.json
 """
 
 from __future__ import annotations
@@ -42,10 +43,13 @@ def _make_module(dtype: torch.dtype):
     from openfold3.core.model.feature_embedders.template_embedders import (
         TemplatePairEmbedderAllAtom,
     )
+
     torch.manual_seed(0)
-    m = TemplatePairEmbedderAllAtom(
-        c_in=128, c_dgram=39, c_aatype=32, c_out=64
-    ).cuda().eval()
+    m = (
+        TemplatePairEmbedderAllAtom(c_in=128, c_dgram=39, c_aatype=32, c_out=64)
+        .cuda()
+        .eval()
+    )
     if dtype != torch.float32:
         m = m.to(dtype)
     return m
@@ -54,12 +58,13 @@ def _make_module(dtype: torch.dtype):
 def _make_batch(N: int, dtype: torch.dtype, seed: int = 0) -> dict:
     g = torch.Generator(device="cuda").manual_seed(seed)
     B = 1
+    kw = {"generator": g, "device": "cuda", "dtype": dtype}
     batch = {
-        "template_distogram": torch.randn(B, 1, N, N, 39, generator=g, device="cuda", dtype=dtype),
-        "template_restype": torch.randn(B, 1, N, 32, generator=g, device="cuda", dtype=dtype),
-        "template_pseudo_beta_mask": torch.rand(B, 1, N, generator=g, device="cuda", dtype=dtype),
-        "template_backbone_frame_mask": torch.rand(B, 1, N, generator=g, device="cuda", dtype=dtype),
-        "template_unit_vector": torch.randn(B, 1, N, N, 3, generator=g, device="cuda", dtype=dtype),
+        "template_distogram": torch.randn(B, 1, N, N, 39, **kw),
+        "template_restype": torch.randn(B, 1, N, 32, **kw),
+        "template_pseudo_beta_mask": torch.rand(B, 1, N, **kw),
+        "template_backbone_frame_mask": torch.rand(B, 1, N, **kw),
+        "template_unit_vector": torch.randn(B, 1, N, N, 3, **kw),
         "asym_id": torch.zeros(B, N, device="cuda", dtype=torch.long),
     }
     return batch
@@ -101,6 +106,7 @@ def bench_N(N: int, dtype: torch.dtype, reps: int) -> dict:
     from openfold3.core.model.primitives.fused_template_pair_embedder import (
         fused_template_pair_embedder_inference,
     )
+
     torch.cuda.empty_cache()
     torch.cuda.synchronize()
 
@@ -112,14 +118,16 @@ def bench_N(N: int, dtype: torch.dtype, reps: int) -> dict:
         # Force eager path in module.forward for the baseline (otherwise the
         # module dispatches internally to the fused wrapper).
         os.environ["OPENFOLD3_FUSED_TEMPLATE_EMBED"] = "0"
-        eager_ms, eager_bytes = _bench_once(
-            module, batch, z, warm=3, reps=reps
-        )
+        eager_ms, eager_bytes = _bench_once(module, batch, z, warm=3, reps=reps)
         os.environ["OPENFOLD3_FUSED_TEMPLATE_EMBED"] = "1"
         fused_ms, fused_bytes = _bench_once(
             fused_template_pair_embedder_inference,
-            warm=3, reps=reps,
-            module=module, batch=batch, z=z, template_index=0,
+            warm=3,
+            reps=reps,
+            module=module,
+            batch=batch,
+            z=z,
+            template_index=0,
         )
 
     U = _u_bytes(N, c_z=128, dtype=dtype)
@@ -152,8 +160,10 @@ def main():
 
     dtype = DTYPE_MAP[args.dtype]
 
-    print(f"{'N':>6s} {'eager ms':>10s} {'fused ms':>10s} {'speedup':>8s} "
-          f"{'eager U':>8s} {'fused U':>8s} {'saved U':>8s} {'saved MiB':>10s}")
+    print(
+        f"{'N':>6s} {'eager ms':>10s} {'fused ms':>10s} {'speedup':>8s} "
+        f"{'eager U':>8s} {'fused U':>8s} {'saved U':>8s} {'saved MiB':>10s}"
+    )
     print("-" * 82)
     rows = []
     for N in args.n:

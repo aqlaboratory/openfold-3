@@ -98,12 +98,16 @@ if _TRITON_AVAILABLE:
         BLOCK_PAIRS: tl.constexpr,
         BLOCK_CHANNELS: tl.constexpr,
     ):
-        pair = tl.program_id(0) * BLOCK_PAIRS + tl.arange(0, BLOCK_PAIRS)
+        # Pair linearization and out[i,j,c] strides are int64: (N-1)*N*64
+        # exceeds signed int32 at N>=5794 (CUDA IMA, often reported late).
+        pid = tl.program_id(0).to(tl.int64)
+        N64 = N.to(tl.int64)
+        pair = pid * BLOCK_PAIRS + tl.arange(0, BLOCK_PAIRS).to(tl.int64)
         channel = tl.arange(0, BLOCK_CHANNELS)
-        pair_mask = pair < N * N
+        pair_mask = pair < N64 * N64
 
-        i = pair // N
-        j = pair - i * N
+        i = pair // N64
+        j = pair - i * N64
 
         pb_ix = tl.load(
             pb_coords_ptr + i * stride_pb_i,
@@ -265,9 +269,9 @@ if _TRITON_AVAILABLE:
         local_z *= inv_delta_norm
 
         out_offsets = (
-            i[:, None] * stride_out_i
-            + j[:, None] * stride_out_j
-            + channel[None, :] * stride_out_c
+            i[:, None] * stride_out_i.to(tl.int64)
+            + j[:, None] * stride_out_j.to(tl.int64)
+            + channel[None, :].to(tl.int64) * stride_out_c.to(tl.int64)
         )
         out = tl.load(out_ptr + out_offsets, mask=pair_mask[:, None]).to(tl.float32)
 

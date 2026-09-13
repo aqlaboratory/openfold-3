@@ -66,16 +66,16 @@ class TestFusedTrimul(unittest.TestCase):
         old_tf32 = torch.backends.cuda.matmul.allow_tf32
         torch.backends.cuda.matmul.allow_tf32 = False
         cls = (
-            TriangleMultiplicationOutgoing if outgoing else TriangleMultiplicationIncoming
+            TriangleMultiplicationOutgoing
+            if outgoing
+            else TriangleMultiplicationIncoming
         )
         try:
             torch.manual_seed(0)
             m = cls(128, 128).to(device=device, dtype=dtype).eval()
             _randomize_observable_output(m)
             z = torch.randn(1, N, N, 128, device=device, dtype=dtype) * 0.5
-            mask = (
-                torch.ones(1, N, N, device=device, dtype=dtype) if use_mask else None
-            )
+            mask = torch.ones(1, N, N, device=device, dtype=dtype) if use_mask else None
             with torch.inference_mode():
                 ref = m.forward(z.clone(), mask=mask, inplace_safe=False)
                 fused = fused_trimul_update(m, z.clone(), mask, with_add=False)
@@ -198,10 +198,7 @@ class TestFusedTrimul(unittest.TestCase):
                 self.assertIsNotNone(fused)
                 abs_diff = (fused - ref).abs().max().item()
                 rel_diff = ((fused - ref).abs() / (ref.abs() + 1e-8)).max().item()
-                print(
-                    f"  trimul {label} N={N}: "
-                    f"abs={abs_diff:.2e} rel={rel_diff:.2e}"
-                )
+                print(f"  trimul {label} N={N}: abs={abs_diff:.2e} rel={rel_diff:.2e}")
                 self.assertLess(abs_diff, 8e-4, f"{label} N={N}")
 
     def test_timing(self):
@@ -218,9 +215,7 @@ class TestFusedTrimul(unittest.TestCase):
             _ = m.forward(z.clone(), mask=mask, inplace_safe=False)
             _ = fused_trimul_update(m, z.clone(), mask, with_add=False)
 
-        eager_ms = _time_fn(
-            lambda: m.forward(z.clone(), mask=mask, inplace_safe=False)
-        )
+        eager_ms = _time_fn(lambda: m.forward(z.clone(), mask=mask, inplace_safe=False))
         fused_ms = _time_fn(
             lambda: fused_trimul_update(m, z.clone(), mask, with_add=False)
         )
@@ -268,7 +263,9 @@ class TestFusedTrimulChunked(unittest.TestCase):
         old_tf32 = torch.backends.cuda.matmul.allow_tf32
         torch.backends.cuda.matmul.allow_tf32 = False
         cls = (
-            TriangleMultiplicationOutgoing if outgoing else TriangleMultiplicationIncoming
+            TriangleMultiplicationOutgoing
+            if outgoing
+            else TriangleMultiplicationIncoming
         )
         try:
             torch.manual_seed(0)
@@ -286,18 +283,26 @@ class TestFusedTrimulChunked(unittest.TestCase):
                     ref = fused_trimul_update(m, z_ref, mask, with_add=True, out=z_ref)
                 else:
                     ref = fused_trimul_update(
-                        m, z.clone(), mask, with_add=with_add,
+                        m,
+                        z.clone(),
+                        mask,
+                        with_add=with_add,
                     )
 
                 # Chunked
                 os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = str(chunk_cap)
                 if inplace:
                     z_inp = z.clone()
-                    fused = fused_trimul_update(m, z_inp, mask, with_add=True, out=z_inp)
+                    fused = fused_trimul_update(
+                        m, z_inp, mask, with_add=True, out=z_inp
+                    )
                     self.assertEqual(fused.data_ptr(), z_inp.data_ptr())
                 else:
                     fused = fused_trimul_update(
-                        m, z.clone(), mask, with_add=with_add,
+                        m,
+                        z.clone(),
+                        mask,
+                        with_add=with_add,
                     )
 
                 # Restore
@@ -311,7 +316,8 @@ class TestFusedTrimulChunked(unittest.TestCase):
             diff = (fused - ref).abs().max().item()
             label = "outgoing" if outgoing else "incoming"
             self.assertLess(
-                diff, 1e-5,
+                diff,
+                1e-5,
                 f"{label} N={N} cap={chunk_cap} with_add={with_add} "
                 f"inplace={inplace}: max diff {diff:.2e}",
             )
@@ -391,9 +397,7 @@ class TestFusedTrimulChunked(unittest.TestCase):
             mask = (torch.rand(1, n, n, device="cuda") > 0.15).float()
             os.environ.pop("OPENFOLD3_TRIMUL_CHUNK_CAP", None)
             with torch.inference_mode():
-                reference = fused_trimul_update(
-                    module, z.clone(), mask, with_add=False
-                )
+                reference = fused_trimul_update(module, z.clone(), mask, with_add=False)
             os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = str(cap)
             with torch.inference_mode():
                 actual = fused_trimul_update(module, z.clone(), mask, with_add=False)
@@ -428,7 +432,11 @@ class TestFusedTrimulChunked(unittest.TestCase):
         os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = "64"
         try:
             torch.manual_seed(0)
-            m = TriangleMultiplicationOutgoing(c_z, c_z).to(device, torch.float32).eval()
+            m = (
+                TriangleMultiplicationOutgoing(c_z, c_z)
+                .to(device, torch.float32)
+                .eval()
+            )
             _randomize_observable_output(m)
             z = torch.randn(1, N, N, c_z, device=device)
             mask = torch.ones(1, N, N, device=device)
@@ -463,7 +471,11 @@ class TestFusedTrimulChunked(unittest.TestCase):
         os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = "64"
         try:
             torch.manual_seed(0)
-            m = TriangleMultiplicationIncoming(c_z, c_z).to(device, torch.float32).eval()
+            m = (
+                TriangleMultiplicationIncoming(c_z, c_z)
+                .to(device, torch.float32)
+                .eval()
+            )
             _randomize_observable_output(m)
             z = torch.randn(1, N, N, c_z, device=device)
             mask = torch.ones(1, N, N, device=device)

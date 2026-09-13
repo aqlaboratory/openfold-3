@@ -105,11 +105,7 @@ def fused_tri_attn_v1_forward(
     """
     del inplace_safe, use_cueq_triangle_kernels
 
-    if (
-        chunk_size is None
-        or not _eligible(z)
-        or torch.is_grad_enabled()
-    ):
+    if chunk_size is None or not _eligible(z) or torch.is_grad_enabled():
         return None
 
     mha = module.mha
@@ -258,12 +254,18 @@ def fused_tri_attn_v1_forward(
         # contig block ``F.layer_norm`` can consume in one shot.
         z_block = z[:, start:end, :, :].contiguous()
         z_norm_block = torch.nn.functional.layer_norm(
-            z_block, (c_z,), ln.weight, ln.bias, ln.eps,
+            z_block,
+            (c_z,),
+            ln.weight,
+            ln.bias,
+            ln.eps,
         )
         del z_block
 
         qkvg_2d = torch.nn.functional.linear(
-            z_norm_block.reshape(-1, c_z), W_qkvg, None,
+            z_norm_block.reshape(-1, c_z),
+            W_qkvg,
+            None,
         )
         del z_norm_block
 
@@ -273,9 +275,14 @@ def fused_tri_attn_v1_forward(
         v = v_2d.view(B, rows, J_dim, no_heads, c_hidden)
         gate = g_2d.view(B, rows, J_dim, no_heads, c_hidden)
         attn = flash_tri_attn_v1_block(
-            q, k, v, gate,
+            q,
+            k,
+            v,
+            gate,
             triangle_bias_full,
-            mask, start, scale,
+            mask,
+            start,
+            scale,
             out=q,
             mask_inf=module.inf,
         )

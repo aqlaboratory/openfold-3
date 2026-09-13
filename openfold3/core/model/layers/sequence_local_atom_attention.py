@@ -200,13 +200,15 @@ class NoisyPositionEmbedder(nn.Module):
         self._use_fused_ln_linear = is_fused_ln_linear_enabled()
         if self._use_fused_ln_linear:
             self.fused_ln_linear_s = FusedLNLinear(
-                c_s, c_atom,
+                c_s,
+                c_atom,
                 ln_create_offset=False,
                 linear_bias=linear_init_params.linear_s.get("bias", True),
                 linear_init=linear_init_params.linear_s.get("init", "default"),
             )
             self.fused_ln_linear_z = FusedLNLinear(
-                c_z, c_atom_pair,
+                c_z,
+                c_atom_pair,
                 ln_create_offset=False,
                 linear_bias=linear_init_params.linear_z.get("bias", True),
                 linear_init=linear_init_params.linear_z.get("init", "default"),
@@ -313,8 +315,13 @@ class NoisyPositionEmbedder(nn.Module):
                     projection
         """
         cl, plm = self.embed_trunk(
-            batch=batch, cl=cl, plm=plm, si_trunk=si_trunk, zij_trunk=zij_trunk,
-            n_query=n_query, n_key=n_key,
+            batch=batch,
+            cl=cl,
+            plm=plm,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            n_query=n_query,
+            n_key=n_key,
         )
         ql = self.embed_rl(cl=cl, rl=rl)
         return cl, plm, ql
