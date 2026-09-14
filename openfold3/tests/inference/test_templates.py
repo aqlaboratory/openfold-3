@@ -158,10 +158,21 @@ CASES = [
         with_template_rmsd_max_angstrom=16.0,
         rmsd_separation_min_angstrom=6.0,
     ),
-    # The target from issue #406, kept because the reporter's own measurements are the
-    # reference point for the CIF-direct provenance tests below. A self-template like
-    # 1a8q, so the same near-native fit is expected.
-    # PLACEHOLDER THRESHOLDS - calibrate before committing.
+    # The target from issue #406, where CIF-direct templates were reported to be ignored
+    # entirely. Kept as a case because the reporter's own measurements are the reference
+    # point for the provenance tests below, and because it is a self-template like 1a8q:
+    # the near-native fit makes "was this template used?" unambiguous.
+    #
+    # One run on of3-p2-155k, 8 samples, CUDA (GB10):
+    #     off 22.08 +- 1.74  (per-sample 18.95-23.95)
+    #     on   0.47 +- 0.02  (per-sample  0.44-0.52)
+    #     off - on 21.61
+    # The reporter measured the same shape on an A10G via the pip package -- off
+    # 20.07 +- 1.08, on 0.14 +- 0.01 -- so the effect reproduces across two backends and
+    # two builds even though the absolute numbers differ. Unlike 1y57 above, this has
+    # been measured on one backend only, so the bounds are set generously rather than
+    # tuned: the off floor sits well under the lowest sample drawn (18.95), the on
+    # ceiling is ~4x the measured mean, and the separation ~2.7x the measured gap.
     TemplateRmsdCase(
         pdb_id="6tel",
         chain="A",
@@ -173,9 +184,9 @@ CASES = [
             "AFGPEVDHQLKERFANMKEGGRIVSSKPFAPLNFRINSRNLSDIGTIMRVVELSPLKGSVS"
             "WTGKPVSYYLHTIDRTILENYFSSLKNPG"
         ),
-        no_template_rmsd_min_angstrom=8.0,
+        no_template_rmsd_min_angstrom=10.0,
         with_template_rmsd_max_angstrom=2.0,
-        rmsd_separation_min_angstrom=5.0,
+        rmsd_separation_min_angstrom=8.0,
     ),
 ]
 
@@ -387,12 +398,15 @@ def test_template_filename_does_not_change_the_prediction(case, tmp_path):
     containing "_" once crashed the run outright. Ordinary names for a user-supplied
     template -- `model_1_rank_2`, `6TEL_relaxed` -- all hit that.
 
-    Observed on of3-p2-155k, 8 samples, CUDA (GB10): both conditions gave mean 0.16 A
-    with per-sample values agreeing exactly, [0.21, 0.15, 0.14, 0.21, 0.15, 0.13, 0.14,
-    0.18]. The bound asserted below is the case's own with-template ceiling rather than
-    that equality: identical draws are what a correct pipeline *should* produce from
+    Observed on of3-p2-155k, 8 samples, CUDA (GB10), as (pdb-name, custom-name) means:
+        1a8q   0.16 / 0.16     per-sample values identical
+        1y57  12.05 / 12.04    per-sample agreeing to <=0.02 A
+        6tel   0.47 / 0.47     per-sample values identical
+    The bound asserted below is the case's own with-template ceiling rather than that
+    agreement: matching draws are what a correct pipeline *should* produce from
     identical inputs and a fixed seed, but tying a regression test to sample-for-sample
-    reproducibility would make it a determinism test for whatever backend it runs on.
+    reproducibility would make it a determinism test for whatever backend it runs on --
+    note 1y57 already drifts in the third digit here.
 
     Regression test for https://github.com/aqlaboratory/openfold-3/issues/406
     """
@@ -444,12 +458,21 @@ def test_template_coordinates_come_from_the_provided_file(case, tmp_path):
     nothing — the deposited entry was loaded by filename and the edit never reached the
     model, so a 10 A scrambled template scored the same as a pristine one.
 
-    Observed on of3-p2-155k, 8 samples, CUDA (GB10): 1a8q clean 0.16 +- 0.03, scrambled
-    16.19 +- 2.16, a gap of 16.03 A against the 5.0 A this case requires. The scrambled
-    figure lands on that case's *no-template* value (~16.4 A, recorded above), which is
-    the expected ceiling: a template whose internal geometry is noise carries no more
-    information than no template at all, so this cannot degrade further and the margin
-    will not shrink with a different draw.
+    Observed on of3-p2-155k, 8 samples, CUDA (GB10), as clean -> scrambled means:
+        1a8q   0.16 -> 16.19    gap 16.03 against 5.0 required
+        1y57  12.05 -> 22.44    gap 10.39 against 6.0 required  (tightest, 1.7x)
+        6tel   0.47 -> 21.55    gap 21.08 against 8.0 required
+    In each the scrambled figure lands on that case's own *no-template* value (~16.4,
+    ~23.7 and 22.08, recorded above). That is the expected ceiling rather than a lucky
+    draw: a
+    template whose internal geometry is noise carries no more information than no
+    template at all, so the prediction cannot degrade past the no-template baseline and
+    the margin will not shrink for reasons to do with what is being tested.
+
+    6tel is the issue's own target, so this pair is the direct analogue of the table in
+    the report: there `template_nonpdbname` collapsed onto no-template (20.14 vs 20.07)
+    and `template_pdbname_perturbed` was indistinguishable from a pristine template
+    (0.15 vs 0.14). Both relations are now inverted.
 
     Regression test for https://github.com/aqlaboratory/openfold-3/issues/406
     """
