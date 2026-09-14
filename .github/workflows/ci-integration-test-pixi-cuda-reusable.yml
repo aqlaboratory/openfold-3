@@ -265,7 +265,7 @@ jobs:
     runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
     needs:
       - start-aws-runner
-    timeout-minutes: 120
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
