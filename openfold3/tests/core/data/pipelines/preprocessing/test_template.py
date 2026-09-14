@@ -945,7 +945,7 @@ def _cif_direct_query_set(cif_path: Path, chain_id: str = "B") -> InferenceQuery
             "q_custom": Query(
                 chains=[
                     Chain(
-                        molecule_type="protein",
+                        molecule_type=MoleculeType.PROTEIN,
                         chain_ids=["A"],
                         sequence=seq,
                         template_cif_paths=[cif_path],

@@ -92,6 +92,22 @@ class TemplateCacheEntry:
             data["cif_path"] = str(self.cif_path)
         return data
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TemplateCacheEntry":
+        """Rebuilds an entry from the plain dict stored in the cache npz.
+
+        The inverse of `to_dict`. `cif_path` is absent for alignment-derived entries
+        and must survive the round trip for CIF-direct ones, since it is the only
+        record of where those coordinates came from.
+        """
+        cif_path = data.get("cif_path")
+        return cls(
+            index=data["index"],
+            release_date=data["release_date"],
+            idx_map=data["idx_map"],
+            cif_path=Path(cif_path) if cif_path is not None else None,
+        )
+
 
 @dataclasses.dataclass(frozen=False)
 class TemplateSlice:
@@ -266,12 +282,7 @@ def sample_templates(
 
         # Wrap each subdict in a TemplateCacheEntry
         return {
-            template_id: TemplateCacheEntry(
-                index=template_cache_entry[template_id]["index"],
-                release_date=template_cache_entry[template_id]["release_date"],
-                idx_map=template_cache_entry[template_id]["idx_map"],
-                # TODO: this will never read cif_path from the cache
-            )
+            template_id: TemplateCacheEntry.from_dict(template_cache_entry[template_id])
             for template_id in sampled_template_ids
         }
 
@@ -363,8 +374,28 @@ def parse_template_structure(
     if cif_assembly_cache is None:
         cif_assembly_cache = {}
 
+    # CIF-direct mode: use the provided CIF path directly. This is checked first
+    # because it names one specific file the query pinned, whereas the directories
+    # below are looked up by PDB ID and would silently substitute the deposited entry.
+    if cif_path is not None:
+        cache_key = str(cif_path)
+        if cache_key in cif_assembly_cache:
+            cif_file, atom_array_template_assembly = cif_assembly_cache[cache_key]
+            logger.info(f"[CACHE HIT] Using cached CIF-direct assembly for {cif_path}")
+        else:
+            result = parse_mmcif(cif_path)
+            if isinstance(result, SkippedStructure):
+                return None
+            cif_file, atom_array_template_assembly = result
+            cif_assembly_cache[cache_key] = (cif_file, atom_array_template_assembly)
+            logger.info(f"[CIF-DIRECT] Parsed {cif_path}")
+
+        atom_array_template_chain = clean_template_atom_array(
+            atom_array_template_assembly, cif_file, chain_id, ccd
+        )
+
     # Parse the pre-parsed template structure array
-    if template_structure_array_directory is not None:
+    elif template_structure_array_directory is not None:
         template_structure_array_file = (
             template_structure_array_directory
             / f"{pdb_id}/{pdb_id}_{chain_id}.{template_file_format}"
@@ -382,24 +413,6 @@ def parse_template_structure(
                 f"Invalid template structure array format: {template_file_format}. "
                 "Only pickle or npz formats are supported."
             )
-
-    # CIF-direct mode: use the provided CIF path directly
-    elif cif_path is not None:
-        cache_key = str(cif_path)
-        if cache_key in cif_assembly_cache:
-            cif_file, atom_array_template_assembly = cif_assembly_cache[cache_key]
-            logger.info(f"[CACHE HIT] Using cached CIF-direct assembly for {cif_path}")
-        else:
-            result = parse_mmcif(cif_path)
-            if isinstance(result, SkippedStructure):
-                return None
-            cif_file, atom_array_template_assembly = result
-            cif_assembly_cache[cache_key] = (cif_file, atom_array_template_assembly)
-            logger.info(f"[CIF-DIRECT] Parsed {cif_path}")
-
-        atom_array_template_chain = clean_template_atom_array(
-            atom_array_template_assembly, cif_file, chain_id, ccd
-        )
 
     # Parse and clean the raw template structure file from directory
     elif template_structures_directory is not None:
