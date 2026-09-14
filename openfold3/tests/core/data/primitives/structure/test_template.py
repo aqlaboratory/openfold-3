@@ -109,3 +109,39 @@ def test_sample_templates_cache_directory_gate(
         {k: dataclasses.asdict(v) for k, v in actual.items()},
         {k: dataclasses.asdict(v) for k, v in expected.items()},
     )
+
+
+def test_sample_templates_preserves_cif_path(tmp_path):
+    """A CIF-direct cache entry must keep its coordinate source on read-back.
+
+    In CIF-direct mode (a query chain pins `template_cif_paths`) preprocessing records
+    the provided CIF in the cache entry, and `get_template_slices` forwards it to
+    `parse_template_structure`, which has a dedicated CIF-direct branch. Dropping it
+    here makes that branch unreachable: the template silently falls back to
+    `<structure_directory>/<stem>.cif`, i.e. the PDB-deposited entry, so user-supplied
+    or non-deposited coordinates are never the ones the model sees.
+
+    Regression test for https://github.com/aqlaboratory/openfold-3/issues/406
+    """
+    cif_path = tmp_path / "6TEL_notpdb.cif"
+    cif_path.write_text("data_dummy\n")
+    entry = make_cache_entry([[1, 1], [2, 2]], cif_path=cif_path)
+    cache_npz = write_cache_npz(tmp_path / "chainA.npz", {TEMPLATE_ID: entry})
+
+    # The cache npz itself carries the path...
+    assert np.load(cache_npz, allow_pickle=True)[TEMPLATE_ID].item()["cif_path"] == str(
+        cif_path
+    )
+
+    sampled = sample_templates(
+        assembly_data=_assembly_data(cache_npz),
+        template_cache_directory=tmp_path,
+        n_templates=4,
+        take_top_k=True,
+        chain_id="A",
+        template_structure_array_directory=None,
+        template_file_format="npz",
+    )
+
+    # ...so the entry handed to parse_template_structure must carry it too.
+    assert sampled[TEMPLATE_ID].cif_path == cif_path
