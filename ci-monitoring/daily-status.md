@@ -96,3 +96,29 @@ Expected skip on its own (secondary schedule), but combined with run #257 above,
 Expected skip on its own (secondary schedule), but combined with run #259 above, CUDA was not tested at all tonight — 0/2 CUDA matrix jobs ran across both nightly triggers for the second night running.
 
 ---
+
+## 2026-09-14
+
+### Run #261 — primary nightly (schedule `17 3 * * *`, main @ `d102d5c` (unchanged since 09-12), [34802985987](https://github.com/aqlaboratory/openfold-3/actions/runs/34802985987))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 29 min | |
+| test-pixi-cuda (openfold3-cuda12) | **SKIPPED** | — | `if:` guard evaluated false on this slot (`17 3 * * *`) — third consecutive night; see note below |
+| test-pixi-cuda (openfold3-cuda13) | **SKIPPED** | — | same |
+
+**2026-09-14: 1/3 passed · 2 skipped · 0 queued · 0 need attention**
+
+**Anomaly persists — third consecutive night CUDA skipped on the primary schedule.** Same commit (`d102d5c`) and same cron slot as run #257 (2026-09-12) and run #259 (2026-09-13); no workflow file changes in between (`.github/workflows/integration-test.yml` still reads `if: github.event_name != 'schedule' || (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` for `test-pixi-cuda` only — `test-pixi-amd` carries no such guard). Still cannot read the actual variable values: `GET /repos/aqlaboratory/openfold-3/actions/variables` returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this execution environment, and no available GitHub MCP tool exposes repository Actions variables either. **Flagging again for a human to check Settings → Actions → Variables (`RUN_NIGHTLY`, `NIGHTLY_CRON`).** Practical impact: PR #404's parameter-cache fix (merged 2026-09-11) has now gone **three full nights** without CUDA coverage on the primary schedule — still unverified by nightly CI.
+
+### Run #262 — secondary nightly (schedule `17 4 * * *`, main @ `d102d5c`, [34806397472](https://github.com/aqlaboratory/openfold-3/actions/runs/34806397472))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 31 min | runs again on the secondary slot (no per-repo `if:` guard on `test-pixi-amd`) |
+| test-pixi-cuda (openfold3-cuda12) | **SKIPPED** | — | `17 4 * * *` is not `vars.NIGHTLY_CRON` — CUDA is not intended to run on this slot (expected) |
+| test-pixi-cuda (openfold3-cuda13) | **SKIPPED** | — | same |
+
+Expected skip on its own (secondary schedule), but combined with run #261 above, CUDA was not tested at all tonight — 0/2 CUDA matrix jobs ran across both nightly triggers for the third night running.
+
+---
