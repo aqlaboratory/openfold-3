@@ -367,8 +367,10 @@ def parse_template_structure(
         AtomArray:
             The cleaned up template atom array for the given chain.
     """
-    # Parse template IDs
-    pdb_id, chain_id = template_pdb_chain_id.split("_")
+    # Parse template IDs. Split from the right: preprocessing builds these as
+    # f"{entry_id}_{chain_id}", and in CIF-direct mode the entry ID is a filename stem,
+    # which may itself contain underscores.
+    pdb_id, chain_id = template_pdb_chain_id.rsplit("_", 1)
 
     # Initialize cache if not provided
     if cif_assembly_cache is None:

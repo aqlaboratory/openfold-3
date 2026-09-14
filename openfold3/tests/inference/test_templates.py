@@ -158,6 +158,25 @@ CASES = [
         with_template_rmsd_max_angstrom=16.0,
         rmsd_separation_min_angstrom=6.0,
     ),
+    # The target from issue #406, kept because the reporter's own measurements are the
+    # reference point for the CIF-direct provenance tests below. A self-template like
+    # 1a8q, so the same near-native fit is expected.
+    # PLACEHOLDER THRESHOLDS - calibrate before committing.
+    TemplateRmsdCase(
+        pdb_id="6tel",
+        chain="A",
+        sequence=(
+            "GPGEKLELRLKSPVGAEPAVYPWPLPVYDKHHDAAHEIIETIRWVCEEIPDLKLAMENYVL"
+            "IDYDTKSFESMQRLCDKYNRAIDSIHQLWKGTTQPMKLNTRPSTGLLRHILQQVYNHSVTD"
+            "PEKLNNYEPFSPEVYGETSFDLVAQMIDEIKMTDDDLFVDLGSGVGQVVLQVAAATNCKHH"
+            "YGVEKADIPAKYAETMDREFRKWMKWYGKKHAEYTLERGDFLSEEWRERIANTSVIFVNNF"
+            "AFGPEVDHQLKERFANMKEGGRIVSSKPFAPLNFRINSRNLSDIGTIMRVVELSPLKGSVS"
+            "WTGKPVSYYLHTIDRTILENYFSSLKNPG"
+        ),
+        no_template_rmsd_min_angstrom=8.0,
+        with_template_rmsd_max_angstrom=2.0,
+        rmsd_separation_min_angstrom=5.0,
+    ),
 ]
 
 
@@ -363,6 +382,18 @@ def test_template_filename_does_not_change_the_prediction(case, tmp_path):
     Before the fix the non-PDB-ID copy resolved to nothing, was dropped without an
     error, and the query fell back to the single-sequence (no-template) prediction.
 
+    The chosen name also carries underscores, which is not incidental: template IDs are
+    `f"{entry_id}_{chain_id}"` and the entry ID here is the filename stem, so a stem
+    containing "_" once crashed the run outright. Ordinary names for a user-supplied
+    template -- `model_1_rank_2`, `6TEL_relaxed` -- all hit that.
+
+    Observed on of3-p2-155k, 8 samples, CUDA (GB10): both conditions gave mean 0.16 A
+    with per-sample values agreeing exactly, [0.21, 0.15, 0.14, 0.21, 0.15, 0.13, 0.14,
+    0.18]. The bound asserted below is the case's own with-template ceiling rather than
+    that equality: identical draws are what a correct pipeline *should* produce from
+    identical inputs and a fixed seed, but tying a regression test to sample-for-sample
+    reproducibility would make it a determinism test for whatever backend it runs on.
+
     Regression test for https://github.com/aqlaboratory/openfold-3/issues/406
     """
     deposited_name = _pinned_template_cif(
@@ -412,6 +443,13 @@ def test_template_coordinates_come_from_the_provided_file(case, tmp_path):
     being featurized, destroying them has to cost accuracy. Before the fix it cost
     nothing — the deposited entry was loaded by filename and the edit never reached the
     model, so a 10 A scrambled template scored the same as a pristine one.
+
+    Observed on of3-p2-155k, 8 samples, CUDA (GB10): 1a8q clean 0.16 +- 0.03, scrambled
+    16.19 +- 2.16, a gap of 16.03 A against the 5.0 A this case requires. The scrambled
+    figure lands on that case's *no-template* value (~16.4 A, recorded above), which is
+    the expected ceiling: a template whose internal geometry is noise carries no more
+    information than no template at all, so this cannot degrade further and the margin
+    will not shrink with a different draw.
 
     Regression test for https://github.com/aqlaboratory/openfold-3/issues/406
     """

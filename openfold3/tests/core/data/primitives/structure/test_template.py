@@ -214,3 +214,29 @@ def test_cif_direct_coordinates_reach_the_model(tmp_path):
     assert decoy.array_length() != expected.array_length()
     assert actual.array_length() == expected.array_length()
     np.testing.assert_array_equal(actual.coord, expected.coord)
+
+
+def test_cif_direct_template_id_with_underscores_is_parsed(tmp_path):
+    """A pinned filename containing underscores must still resolve to a chain.
+
+    Template IDs are `f"{entry_id}_{chain_id}"`, and in CIF-direct mode the entry ID is
+    the pinned file's stem -- which users routinely give names like `6TEL_relaxed` or
+    `model_1_rank_2`. Splitting on every underscore rather than the last one makes the
+    whole query die with "too many values to unpack", after preprocessing has already
+    accepted the template.
+
+    Regression test for https://github.com/aqlaboratory/openfold-3/issues/406
+    """
+    pinned = MMCIFS_DIR / "1ubq.cif"
+    template_id = "1ubq_not_a_pdb_id_A"
+
+    parsed = parse_template_structure(
+        template_structures_directory=None,
+        template_structure_array_directory=None,
+        template_pdb_chain_id=template_id,
+        template_file_format="cif",
+        ccd=BiotiteCCDWrapper(),
+        cif_path=pinned,
+    )
+
+    assert parsed is not None and parsed.array_length() > 0
