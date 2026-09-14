@@ -265,6 +265,7 @@ jobs:
     runs-on: ${{ fromJSON(needs.start-aws-runner.outputs.instances) }}
     needs:
       - start-aws-runner
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write
@@ -320,16 +321,18 @@ jobs:
             echo "parameters present and complete: $f ($actual bytes)"
           else
             echo "parameters missing or incomplete (have $actual, want ${expected:-?} bytes); downloading"
-            aws s3 cp "s3://openfold3-data/openfold3-parameters/$OPENFOLD_DEFAULT_CKPT" "$f" --no-sign-request
+            curl -fSL "$url" -o "$f.part" && mv "$f.part" "$f"
           fi
 
       - name: Run integration test
         run: |
-          docker run --gpus all\
+          docker run --rm --gpus all \
+            --shm-size=8g \
             -v ${{ github.workspace }}:/opt/openfold3 \
             -v ~/.openfold3:/root/.openfold3 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
-            pytest -x openfold3/tests/ -m slow -vvv
+            pytest -x openfold3/tests/ -m slow -vvv -s \
+              -o faulthandler_timeout=900
 
   stop-aws-runner:
     runs-on: ubuntu-latest

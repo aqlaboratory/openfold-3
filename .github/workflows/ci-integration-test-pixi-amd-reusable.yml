@@ -27,6 +27,7 @@ env:
 jobs:
   test-openfold-docker-pixi-amd:
     runs-on: [self-hosted, amd-gpu]
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write
@@ -99,12 +100,13 @@ jobs:
             --device=/dev/kfd \
             --device=/dev/dri \
             "${rocm_group_args[@]}" \
-            --ipc=host \
+            --shm-size=8g \
             --security-opt seccomp=unconfined \
             -v ${{ github.workspace }}:/opt/openfold3 \
             -v ~/.openfold3:/root/.openfold3 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
-            pytest -x openfold3/tests/ -m slow -vvv
+            pytest -x openfold3/tests/ -m slow -vvv -s \
+              -o faulthandler_timeout=900
 
       - name: Reclaim workspace ownership
         # The container runs as root and writes .pytest_cache / __pycache__ into the
