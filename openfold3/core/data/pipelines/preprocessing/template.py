@@ -2249,12 +2249,22 @@ class TemplatePreprocessor:
                     continue
 
                 # B. Get which files are available
-                template_structure_file = (
-                    self.structure_directory
-                    / f"{template.entry_id}.{self.structure_file_format}"
-                )
+                # In CIF-direct mode the query pinned its own coordinate file, so that
+                # file *is* the template structure. The shared precache and structure
+                # arrays are keyed by entry ID, which here is only the pinned file's
+                # stem: they may describe an unrelated deposited entry that happens to
+                # share the name, so neither is read nor written for these templates.
+                pinned_cif = template.cif_path
+                cif_direct = pinned_cif is not None
+                if pinned_cif is not None:
+                    template_structure_file = pinned_cif
+                else:
+                    template_structure_file = (
+                        self.structure_directory
+                        / f"{template.entry_id}.{self.structure_file_format}"
+                    )
                 structure_available = template_structure_file.exists()
-                if self.precache_directory is not None:
+                if self.precache_directory is not None and not cif_direct:
                     precache_entry_file = (
                         self.precache_directory / f"{template.entry_id}.npz"
                     )
@@ -2262,7 +2272,7 @@ class TemplatePreprocessor:
                 else:
                     precache_entry_file = None
                     precache_entry_available = False
-                if self.structure_array_directory is not None:
+                if self.structure_array_directory is not None and not cif_direct:
                     template_structure_array_subdirectory = (
                         self.structure_array_directory / template.entry_id
                     )
@@ -2290,6 +2300,15 @@ class TemplatePreprocessor:
                 # - either the raw template structure
                 # - or the precache entry and the structure arrays both
                 if (not structure_available) & (not precache_entry_available):
+                    if cif_direct:
+                        # The pinned file is the only coordinate source; its stem is a
+                        # filename, not a PDB ID, so there is nothing to fetch.
+                        if self.create_logs:
+                            worker_logger.info(
+                                f"Pinned template CIF {pinned_cif} is not "
+                                "readable. Skipping this template."
+                            )
+                        continue
                     if not self.fetch_missing_structures:
                         if self.create_logs:
                             worker_logger.info(
@@ -2338,8 +2357,15 @@ class TemplatePreprocessor:
 
                 # ii. from raw structure if not precached
                 else:
-                    # Preprocess into per-chain arrays if prompted
-                    if self.preparse_structures & (not structure_arrays_available):
+                    # Preprocess into per-chain arrays if prompted. Skipped in
+                    # CIF-direct mode: the array directory is keyed by entry ID, so
+                    # writing a pinned file's chains there would shadow the deposited
+                    # entry of the same name for every other query.
+                    if (
+                        self.preparse_structures
+                        and not structure_arrays_available
+                        and not cif_direct
+                    ):
                         if self.create_logs:
                             worker_logger.info(
                                 f"Loading structure {template_structure_file} and"
@@ -2363,7 +2389,9 @@ class TemplatePreprocessor:
                         "%Y-%m-%d"
                     )
 
-                    if self.create_precache:
+                    # Likewise the precache is entry-ID keyed, so a pinned file's
+                    # sequences and release date must not be published into it.
+                    if self.create_precache and not cif_direct:
                         if self.create_logs:
                             worker_logger.info(
                                 f"Saving new precache entry {precache_entry_file}."
