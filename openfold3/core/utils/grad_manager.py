@@ -269,6 +269,8 @@ class PerSampleGradManager:
         # Manually accumulate clipped grads and track param participation
         for name, param in self._params_to_update.items():
             if name in disabled_params:
+                if not self.do_grad_accum and param.grad is not None:
+                    param.grad.zero_()
                 continue
 
             if param.grad is not None:
