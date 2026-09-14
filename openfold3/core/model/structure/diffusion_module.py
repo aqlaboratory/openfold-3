@@ -284,7 +284,9 @@ class SampleDiffusion(nn.Module):
         self.gamma_min = gamma_min
         self.noise_scale = noise_scale
         self.step_scale = step_scale
-        self.diffusion_module = diffusion_module
+        # NOTE: avoids registration as a sub-module since diffusion module is already a module
+        # elsewhere - this avoids it being in the state dict 2x
+        object.__setattr__(self, "diffusion_module", diffusion_module)
 
     def _sample_rollout(
         self,
