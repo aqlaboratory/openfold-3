@@ -1,5 +1,28 @@
 # OpenFold3 Input Format
 
+(check-query)=
+## Check a query without running inference
+
+To check a query JSON before running inference, run:
+
+```bash
+run_openfold check-query --query-json /path/to/query.json
+```
+
+This command uses the same input schema as `run_openfold predict`, but does not
+initialize a GPU or load the model. It checks the JSON format, field types,
+molecule types, unknown fields, template settings, and whether supplied file paths
+exist. It also prints a summary of the queries, chains, residues, MSAs, templates,
+ligands, and covalent bonds.
+
+Use `--format json` to print the summary as JSON. The command exits with status 0
+for a valid query and a nonzero status if validation fails. `--query_json` is also
+accepted as an alias for `--query-json`.
+
+`check-query` only checks the information in the query JSON. It does not parse MSA
+or template files, resolve CCD components, generate ligand conformers, featurize the
+query, or guarantee that inference will succeed.
+
 ## 1. High-level Structure
 The OpenFold3 inference pipeline takes a single JSON file as input, specifying the data and options required for structure prediction. This file can define multiple prediction targets (`queries`), which can be proteins, including individual protein chains and complexes, nucleic acids, and ligands. Multiple queries can be combined as follows: 
 

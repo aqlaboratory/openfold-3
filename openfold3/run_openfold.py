@@ -19,6 +19,7 @@ Main run script for OpenFold3. Please see the README for usage details.
 """
 # ruff: noqa: F821
 
+import json
 import logging
 from pathlib import Path
 
@@ -33,6 +34,127 @@ logger = logging.getLogger(__name__)
 @click.group()
 def cli():
     pass
+
+
+def _summarize_query_set(query_set) -> dict:
+    """Return a summary of an inference query set."""
+    molecule_type_counts = {}
+    ligand_representation_counts = {}
+    chain_declaration_count = 0
+    chain_instance_count = 0
+    polymer_residue_count = 0
+    ligand_chain_instance_count = 0
+    main_msa_chain_count = 0
+    paired_msa_chain_count = 0
+    template_alignment_chain_count = 0
+    direct_cif_template_chain_count = 0
+    covalent_bond_count = 0
+
+    for query in query_set.queries.values():
+        covalent_bond_count += len(query.covalent_bonds or [])
+        for chain in query.chains:
+            chain_declaration_count += 1
+            instance_count = len(chain.chain_ids)
+            chain_instance_count += instance_count
+            molecule_type = chain.molecule_type.name.lower()
+            molecule_type_counts[molecule_type] = (
+                molecule_type_counts.get(molecule_type, 0) + instance_count
+            )
+
+            if molecule_type == "ligand":
+                ligand_chain_instance_count += instance_count
+                if chain.smiles is not None:
+                    representation = "smiles"
+                elif chain.ccd_codes is not None:
+                    representation = "ccd_codes"
+                elif chain.sdf_file_path is not None:
+                    representation = "sdf"
+                else:
+                    representation = "unspecified"
+                ligand_representation_counts[representation] = (
+                    ligand_representation_counts.get(representation, 0) + instance_count
+                )
+            elif chain.sequence is not None:
+                polymer_residue_count += len(chain.sequence) * instance_count
+
+            main_msa_chain_count += chain.main_msa_file_paths is not None
+            paired_msa_chain_count += chain.paired_msa_file_paths is not None
+            template_alignment_chain_count += (
+                chain.template_alignment_file_path is not None
+            )
+            direct_cif_template_chain_count += chain.template_cif_paths is not None
+
+    return {
+        "query_count": len(query_set.queries),
+        "chain_declaration_count": chain_declaration_count,
+        "chain_instance_count": chain_instance_count,
+        "molecule_type_counts": dict(sorted(molecule_type_counts.items())),
+        "polymer_residue_count": polymer_residue_count,
+        "ligand_chain_instance_count": ligand_chain_instance_count,
+        "ligand_representation_counts": dict(
+            sorted(ligand_representation_counts.items())
+        ),
+        "main_msa_chain_count": main_msa_chain_count,
+        "paired_msa_chain_count": paired_msa_chain_count,
+        "template_alignment_chain_count": template_alignment_chain_count,
+        "direct_cif_template_chain_count": direct_cif_template_chain_count,
+        "covalent_bond_count": covalent_bond_count,
+    }
+
+
+@cli.command("check-query")
+@click.option(
+    "--query-json",
+    "--query_json",
+    type=click.Path(exists=True, file_okay=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="JSON file containing queries to check.",
+)
+@click.option(
+    "output_format",
+    "--format",
+    type=click.Choice(["text", "json"], case_sensitive=False),
+    default="text",
+    show_default=True,
+    help="Output format for the query summary.",
+)
+def check_query(query_json: Path, output_format: str):
+    """Validate and summarize a query JSON without running inference."""
+    from pydantic import ValidationError
+
+    from openfold3.projects.of3_all_atom.config.inference_query_format import (
+        InferenceQuerySet,
+    )
+
+    try:
+        query_set = InferenceQuerySet.from_json(query_json)
+    except (OSError, UnicodeError, ValidationError) as exc:
+        raise click.ClickException(f"Query validation failed:\n{exc}") from exc
+
+    summary = _summarize_query_set(query_set)
+    if output_format.lower() == "json":
+        click.echo(json.dumps({"valid": True, "summary": summary}, indent=2))
+        return
+
+    click.echo("Query file is valid.")
+    click.echo(f"Queries: {summary['query_count']}")
+    click.echo(f"Chain declarations: {summary['chain_declaration_count']}")
+    click.echo(f"Chain instances: {summary['chain_instance_count']}")
+    click.echo(f"Molecule types: {summary['molecule_type_counts']}")
+    click.echo(f"Polymer residues: {summary['polymer_residue_count']}")
+    click.echo(f"Ligand chain instances: {summary['ligand_chain_instance_count']}")
+    click.echo(f"Ligand representations: {summary['ligand_representation_counts']}")
+    click.echo(f"Chains with main MSA paths: {summary['main_msa_chain_count']}")
+    click.echo(f"Chains with paired MSA paths: {summary['paired_msa_chain_count']}")
+    click.echo(
+        "Chains with template alignment paths: "
+        f"{summary['template_alignment_chain_count']}"
+    )
+    click.echo(
+        "Chains with direct-CIF templates: "
+        f"{summary['direct_cif_template_chain_count']}"
+    )
+    click.echo(f"Covalent bonds: {summary['covalent_bond_count']}")
 
 
 @cli.command()
