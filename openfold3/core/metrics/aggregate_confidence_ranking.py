@@ -31,6 +31,15 @@ from openfold3.core.utils.tensor_utils import dict_multimap, tensor_tree_map
 
 
 def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> dict:
+    # Under inference offload, aux_heads returns pde_logits, pae_logits, and
+    # distogram_logits on CPU. Move each one onto the compute device only while
+    # it's being consumed and drop the local reference afterwards (or just use a
+    # temporary in the first place), so that PDE and PAE are never both
+    # device-resident at the same time. Use atom_positions_predicted as the device
+    # anchor: it's always produced on the compute device by the diffusion
+    # sampler.
+    compute_device = outputs["atom_positions_predicted"].device
+
     confidence_scores = {}
     confidence_scores["plddt"] = (
         probs_to_expected_error(
@@ -39,7 +48,7 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
         * 100.0
     )
 
-    pde_probs = torch.softmax(outputs["pde_logits"], dim=-1)
+    pde_probs = torch.softmax(outputs["pde_logits"].to(device=compute_device), dim=-1)
     confidence_scores["pde"] = probs_to_expected_error(
         pde_probs, **config.confidence.pde
     )
@@ -50,7 +59,7 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
 
     confidence_scores["gpde"], contact_probs = compute_global_predicted_distance_error(
         pde=confidence_scores["pde"],
-        logits=outputs["distogram_logits"],
+        logits=outputs["distogram_logits"].to(device=compute_device),
         **config.confidence.distogram,
     )
     if config.confidence.distogram.return_contact_probs:
@@ -59,7 +68,8 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
         del contact_probs
 
     if config.architecture.heads.pae.enabled:
-        pae_probs = torch.softmax(outputs["pae_logits"], dim=-1)
+        pae_logits_on_device = outputs["pae_logits"].to(device=compute_device)
+        pae_probs = torch.softmax(pae_logits_on_device, dim=-1)
         confidence_scores["pae"] = probs_to_expected_error(
             pae_probs, **config.confidence.pae
         )
@@ -76,10 +86,16 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
 
         valid_frame_mask = valid_frame_mask.bool()
 
+        # Patch outputs locally so downstream sample-ranking sees the
+        # device-resident pae_logits without us having to thread it through
+        # every callee signature.
+        outputs_for_ranking = dict(outputs)
+        outputs_for_ranking["pae_logits"] = pae_logits_on_device
+
         confidence_scores.update(
             full_complex_sample_ranking_metric(
                 batch=batch,
-                output=outputs,
+                output=outputs_for_ranking,
                 has_frame=valid_frame_mask,
                 **config.confidence.sample_ranking.full_complex,
                 **config.confidence.ptm,
@@ -90,7 +106,7 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
             confidence_scores.update(
                 compute_chain_pair_iptm(
                     batch=batch,
-                    logits=outputs["pae_logits"],
+                    logits=pae_logits_on_device,
                     has_frame=valid_frame_mask,
                     **config.confidence.ptm,
                 )
@@ -100,11 +116,14 @@ def _get_confidence_scores(batch: dict, outputs: dict, config: ConfigDict) -> di
             confidence_scores.update(
                 compute_chain_ptm(
                     batch=batch,
-                    outputs=outputs,
+                    outputs=outputs_for_ranking,
                     has_frame=valid_frame_mask,
                     **config.confidence.ptm,
                 )
             )
+
+        del outputs_for_ranking
+        del pae_logits_on_device
 
     return confidence_scores
 
