@@ -51,7 +51,7 @@ import yaml
 import openfold3
 from openfold3.core.config import config_utils
 from openfold3.entry_points.validator import TrainingExperimentConfig
-from openfold3.tests.utils.compare_utils import skip_unless_cuda_available
+from openfold3.tests.utils.compare_utils import skip_unless_accelerator_available
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -171,7 +171,7 @@ def _run_streaming(cmd: list[str], timeout_s: int, capsys) -> tuple[int, str]:
     return proc.returncode, output
 
 
-@skip_unless_cuda_available()
+@skip_unless_accelerator_available("cuda", "rocm", "xpu")
 @pytest.mark.training_verification
 @pytest.mark.parametrize("case", CASES)
 def test_train(case: TrainCase, tmp_path, capsys):
