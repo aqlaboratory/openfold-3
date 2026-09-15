@@ -1953,6 +1953,54 @@ def get_validation_lddt_metrics(
     return metrics
 
 
+def process_batch_metrics(
+    metrics_fn, batch, outputs, **kwargs
+) -> dict[str, torch.Tensor]:
+    """
+    Compute metrics one batch element at a time and concatenate the results.
+
+    Args:
+        metrics_fn: get_metrics() or get_metrics_chunked()
+        batch: ground truth and permutation applied features
+        outputs: model outputs
+        kwargs: forwarded to metrics_fn
+    Returns:
+        metrics: dict of [batch_size, n_sample] metrics
+    """
+    batch_size = outputs["atom_positions_predicted"].shape[0]
+
+    def get_batch_item(tree: dict, idx: int) -> dict:
+        tree = tensor_tree_map(
+            lambda t: t[idx : idx + 1] if t.shape[0] == batch_size else t,
+            tree,
+            strict_type=False,
+        )
+        # openfold_batch_collator() collates non-tensor features (the atom_array and
+        # pdb_id read by RASA) into one list entry per element, which
+        # tensor_tree_map() recurses into rather than slicing
+        return {
+            name: feat[idx : idx + 1]
+            if isinstance(feat, list) and len(feat) == batch_size
+            else feat
+            for name, feat in tree.items()
+        }
+
+    per_element = [
+        metrics_fn(get_batch_item(batch, idx), get_batch_item(outputs, idx), **kwargs)
+        for idx in range(batch_size)
+    ]
+
+    metrics = {}
+    for name in set().union(*(m.keys() for m in per_element)):
+        reference = next(m[name] for m in per_element if name in m)
+        metrics[name] = torch.cat(
+            [m.get(name, torch.full_like(reference, torch.nan)) for m in per_element],
+            dim=0,
+        )
+
+    return metrics
+
+
 def get_metrics(
     batch,
     outputs,
@@ -2032,6 +2080,15 @@ def get_metrics(
     Note:
         if no appropriate substrates, no corresponding metrics will be included
     """
+    if outputs["atom_positions_predicted"].shape[0] > 1:
+        return process_batch_metrics(
+            get_metrics,
+            batch,
+            outputs,
+            compute_lig_diffusion_metrics=compute_lig_diffusion_metrics,
+            compute_extra_val_metrics=compute_extra_val_metrics,
+        )
+
     metrics = {}
 
     gt_coords = batch["ground_truth"]["atom_positions"]
@@ -2039,6 +2096,7 @@ def get_metrics(
 
     token_mask = batch["token_mask"]
     atom_padding_mask = batch["atom_mask"]
+    n_atom_padded = atom_padding_mask.shape[-1]
     num_atoms_per_token = batch["num_atoms_per_token"]
     no_samples = pred_coords.shape[1]
     # getting rid of modified residues
@@ -2068,6 +2126,7 @@ def get_metrics(
             token_mask=token_mask,
             num_atoms_per_token=num_atoms_per_token,
             token_feat=is_protein,
+            max_num_atoms=n_atom_padded,
         )
     ).bool()
 
@@ -2076,6 +2135,7 @@ def get_metrics(
             token_mask=token_mask,
             num_atoms_per_token=num_atoms_per_token,
             token_feat=batch["is_ligand"],
+            max_num_atoms=n_atom_padded,
         )
     ).bool()
 
@@ -2084,6 +2144,7 @@ def get_metrics(
             token_mask=token_mask,
             num_atoms_per_token=num_atoms_per_token,
             token_feat=is_rna,
+            max_num_atoms=n_atom_padded,
         )
     ).bool()
 
@@ -2092,6 +2153,7 @@ def get_metrics(
             token_mask=token_mask,
             num_atoms_per_token=num_atoms_per_token,
             token_feat=is_dna,
+            max_num_atoms=n_atom_padded,
         )
     ).bool()
 
@@ -2102,6 +2164,7 @@ def get_metrics(
             token_mask=token_mask,
             num_atoms_per_token=num_atoms_per_token,
             token_feat=is_modified_residue,
+            max_num_atoms=n_atom_padded,
         )
     ).bool()
 
@@ -2110,6 +2173,7 @@ def get_metrics(
             token_mask=token_mask,
             num_atoms_per_token=num_atoms_per_token,
             token_feat=batch["asym_id"],
+            max_num_atoms=n_atom_padded,
         )
     )
 
@@ -2297,6 +2361,7 @@ def get_metrics(
                     token_mask=token_mask,
                     num_atoms_per_token=num_atoms_per_token,
                     token_feat=batch["residue_index"],
+                    max_num_atoms=n_atom_padded,
                 )
             )
             ref_atom_name_chars_atomized = expand_sample_dim(
@@ -2349,6 +2414,14 @@ def get_metrics_chunked(
     atom_positions_predicted = outputs["atom_positions_predicted"]
     batch_dims = atom_positions_predicted.shape[:-2]
     num_samples = batch_dims[-1]
+
+    if batch_dims[0] > 1:
+        return process_batch_metrics(
+            get_metrics_chunked,
+            batch,
+            outputs,
+            compute_extra_val_metrics=compute_extra_val_metrics,
+        )
 
     metrics_per_sample_list = []
     for idx in range(num_samples):

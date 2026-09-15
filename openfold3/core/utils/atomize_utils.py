@@ -31,6 +31,7 @@ def broadcast_token_feat_to_atoms(
     num_atoms_per_token: torch.Tensor,
     token_feat: torch.Tensor,
     token_dim: int | None = -1,
+    max_num_atoms: int | None = None,
     max_num_atoms_per_token: int | None = None,
 ):
     """
@@ -45,6 +46,8 @@ def broadcast_token_feat_to_atoms(
             [*, N_token] Token-level feature
         token_dim:
             Token dimension
+        max_num_atoms:
+            Size of the atom dimension to produce.
         max_num_atoms_per_token:
             Maximum number of atoms per token
     Returns:
@@ -74,7 +77,8 @@ def broadcast_token_feat_to_atoms(
 
     # Pad token features
     # Flatten batch and token dimensions
-    max_num_atoms = torch.max(torch.sum(num_atoms_per_token, dim=-1)).int()
+    if max_num_atoms is None:
+        max_num_atoms = torch.max(torch.sum(num_atoms_per_token, dim=-1)).int()
     padded_token_feat = torch.concat(
         [
             token_feat,
