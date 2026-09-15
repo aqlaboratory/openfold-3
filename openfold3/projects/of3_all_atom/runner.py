@@ -290,7 +290,14 @@ class OpenFold3AllAtom(ModelRunner):
                 if plddt is not None and lddt is not None:
                     plddt = plddt.reshape((-1, 1))
                     lddt = lddt.reshape((-1, 1))
-                    metrics[metric_name] = (lddt, plddt)
+                    # NaN where a batch element lacks the molecule type, and
+                    # PearsonCorrCoef has no nan_strategy to drop them
+                    is_valid = ~(torch.isnan(lddt) | torch.isnan(plddt))
+                    if is_valid.any():
+                        metrics[metric_name] = (
+                            lddt[is_valid].reshape((-1, 1)),
+                            plddt[is_valid].reshape((-1, 1)),
+                        )
 
             return metrics
 
@@ -341,7 +348,7 @@ class OpenFold3AllAtom(ModelRunner):
             if train and log_train_step_metrics:
                 self.log(
                     f"{metric_log_name}_step",
-                    metric_value,
+                    metric_value.mean(),
                     on_step=True,
                     on_epoch=False,
                     logger=True,
@@ -371,7 +378,7 @@ class OpenFold3AllAtom(ModelRunner):
         )
 
         total_conf_weight = sum(
-            loss_weights[name].item() for name in confidence_loss_name
+            loss_weights[name].mean().item() for name in confidence_loss_name
         )
 
         is_valid_confidence_sample = total_conf_weight > 0
@@ -386,10 +393,6 @@ class OpenFold3AllAtom(ModelRunner):
         return None
 
     def _training_step_manual_clip(self, batch, batch_idx):
-        assert len(batch["pdb_id"]) == 1, (
-            "Currently only local batch size of 1 per GPU is supported."
-        )
-
         if self.trainer.world_size > 1:
             assert isinstance(self.trainer.strategy, DDPStrategy), (
                 "Per-sample gradient clipping is only supported with DDPStrategy."

@@ -159,6 +159,7 @@ class MultiDatasetConfig:
 class DataModuleConfig(BaseModel):
     datasets: list[SerializeAsAny[BaseModel]]
     batch_size: int = 1
+    batch_size_val: int = 1
     num_workers: int = 0
     prefetch_factor: int | None = None
     num_workers_validation: int = 0
@@ -249,6 +250,7 @@ class DataModule(pl.LightningDataModule):
 
         # Possibly initialize directly from DataModuleConfig
         self.batch_size = data_module_config.batch_size
+        self.batch_size_val = data_module_config.batch_size_val
 
         self.num_workers = data_module_config.num_workers
         self.prefetch_factor = data_module_config.prefetch_factor
@@ -517,9 +519,11 @@ class DataModule(pl.LightningDataModule):
         ):
             num_workers = self.num_workers_validation
             prefetch_factor = self.prefetch_factor_validation
+            batch_size = self.batch_size_val
         else:
             num_workers = self.num_workers
             prefetch_factor = self.prefetch_factor
+            batch_size = self.batch_size
 
         persistent_workers = self.persistent_workers and num_workers > 0
         prefetch_factor = prefetch_factor if num_workers > 0 else None
@@ -551,7 +555,7 @@ class DataModule(pl.LightningDataModule):
         )
         return DataLoader(
             dataset=self.datasets_by_mode[mode],
-            batch_size=self.batch_size,
+            batch_size=batch_size,
             sampler=sampler,
             num_workers=num_workers,
             collate_fn=openfold_batch_collator,
