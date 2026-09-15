@@ -121,4 +121,42 @@ Expected skip on its own (secondary schedule), but combined with run #259 above,
 
 Expected skip on its own (secondary schedule), but combined with run #261 above, CUDA was not tested at all tonight — 0/2 CUDA matrix jobs ran across both nightly triggers for the third night running.
 
+### Run #263 — workflow_dispatch (`jandom/2026-09/ci/fix-broken-integration-tests`, [34843543097](https://github.com/aqlaboratory/openfold-3/actions/runs/34843543097))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 28 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 31 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 33 min | |
+
+Validation run for PR #405 (adds the `test-pixi-cuda` `if:` guard to `test-pixi-amd` as well), triggered manually ~15h before the fix merged to main. Not a scheduled nightly; excluded from any day's coverage line.
+
+---
+
+## 2026-09-15
+
+### Run #264 — primary nightly (schedule `17 3 * * *`, main @ `6569fcc` (post-PR #405 CI fix), [34925272269](https://github.com/aqlaboratory/openfold-3/actions/runs/34925272269))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 31 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 42 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 38 min | |
+
+**2026-09-15: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+First full 3/3 night in this log. PR #405 (`jandom/2026-09/ci/fix-broken-integration-tests`, validated by run #263, merged to main between run #262 and this run) adds the same `if:` guard already used by `test-pixi-cuda` to `test-pixi-amd`:
+`github.event_name != 'schedule' || (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)`
+This resolves the anomaly flagged on 2026-09-12 through 2026-09-14 (guard evaluating false for `test-pixi-cuda` on the primary schedule slot for three consecutive nights — see those entries). PR #404's parameter-cache fix (merged 2026-09-11) is also confirmed working here: `Cache download of parameters` hit and both CUDA legs completed with no checkpoint error, ending a run of nights where that fix went unverified by nightly CI.
+
+### Run #265 — secondary nightly (schedule `17 4 * * *`, main @ `6569fcc`, [34929043712](https://github.com/aqlaboratory/openfold-3/actions/runs/34929043712))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-amd`, no `(openfold3-rocm7)` matrix suffix, confirming it never expanded) |
+| test-pixi-cuda (openfold3-cuda12) | **SKIPPED** | — | same |
+| test-pixi-cuda (openfold3-cuda13) | **SKIPPED** | — | same |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`). Unlike runs #255/#258/#260/#262, `test-pixi-amd` is now guarded identically to `test-pixi-cuda` (post-PR #405) and correctly skips here too — previously it had no per-repo guard and ran unconditionally on both nightly slots every night. Does not affect the day's coverage line above (based on the primary slot, run #264, per this log's established convention).
+
 ---
