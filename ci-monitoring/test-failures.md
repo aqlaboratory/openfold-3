@@ -343,3 +343,25 @@ pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceEx
 ```
 
 ---
+
+## 2026-09-16
+
+**Cause:** External service timeout — RCSB PDB GraphQL API (`data.rcsb.org`) read-timed-out (30s) while `fetch_label_to_author_chain_ids` (`openfold3/core/data/tools/rscb.py`) was remapping ColabFold template chain IDs for 218 PDB entries. A new external-dependency timeout signature for this log — distinct from the recurring `api.colabfold.com` MSA-submission timeouts seen on 2026-08-09, 2026-08-11, 2026-08-12, and 2026-09-08 (this run's log also shows an unrelated, non-fatal `api.colabfold.com` retry warning earlier in the same job, which the code recovered from). Classifies as `code` per this log's rules (pytest FAILED line + exception from library code), same as the ColabFold timeouts, even though the underlying trigger is an external-service flake, not an OF3 logic bug. Not an AWS GPU outage — AWS instance provisioning succeeded for both CUDA legs. Same commit (`6569fcc7edd4afd5f887bf924ae0d2f613977763`) passed 3/3 the previous night (run #264), confirming this is not a regression from a code or workflow change.
+
+- **Run ID:** [35052050368](https://github.com/aqlaboratory/openfold-3/actions/runs/35052050368)
+- **Run #:** 266
+- **Branch:** main @ `6569fcc7edd4afd5f887bf924ae0d2f613977763`
+- **Time:** 2026-09-16T03:30:22Z – 04:03:47Z
+- **Failed Job:** `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` (job ID: 104654864474)
+- **Failed Test:** `openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin]`
+- **Error:** `RuntimeError: Failed to fetch chain ID mappings from RCSB for 218 entries. Cannot proceed without chain ID re-mapping.` — chained from `requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='data.rcsb.org', port=443): Read timed out. (read timeout=30)` (`openfold3/core/data/tools/rscb.py:70`, request originates at `rscb.py:60`)
+
+### Cascading cancellation
+
+- `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` (job ID: 104654836117) — **cancelled** (`##[error]The operation was canceled.`) at 2026-09-16T03:50:58Z, ~5 minutes after the cuda12 sibling failed. `test-pixi-cuda`'s `strategy:` block does not set `fail-fast: false`, so GitHub's default matrix fail-fast cancelled this leg mid-test (submitting `test_pocket_constraint_localizes_ligand` to the ColabFold MSA server) once cuda12 failed — not a timeout-minutes cap, not superseded by a newer run, not manual. Same fail-fast mechanism as run #254 (2026-09-11), with the failing/cancelled legs reversed.
+
+### Passing Jobs
+
+- `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` — **passed** (33 min)
+
+---
