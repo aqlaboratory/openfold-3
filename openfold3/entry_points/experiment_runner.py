@@ -113,7 +113,7 @@ def _accelerator_will_use_mps(accelerator: str) -> bool:
 
 def _accelerator_will_use_xpu(accelerator: str) -> bool:
     """Whether `accelerator` resolves to XPU (Intel GPU) at runtime.
-
+    Similar to _accelerator_will_use_mps()
     True for `"xpu"` (explicit request), and also for `"gpu"`/`"auto"` whenever
     an Intel GPU is visible and no CUDA/ROCm device is (matching the priority a
     plain CUDA build would have on a machine with both, and avoiding a behavior
@@ -341,6 +341,14 @@ class ExperimentRunner(ABC):
     def _build_profiler(self) -> PyTorchProfiler:
         """Build a PyTorch profiler from the profiler config."""
         cfg = self.profiler_config
+        activities = [
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ]
+        # Older torch builds (pre-XPU support) don't have this member.
+        if hasattr(torch.profiler.ProfilerActivity, "XPU"):
+            activities.append(torch.profiler.ProfilerActivity.XPU)
+
         return PyTorchProfiler(
             dirpath=cfg.dirpath,
             filename=cfg.filename,
@@ -351,16 +359,7 @@ class ExperimentRunner(ABC):
                 active=cfg.active,
                 repeat=cfg.repeat,
             ),
-            activities=[
-                a
-                for a in (
-                    torch.profiler.ProfilerActivity.CPU,
-                    torch.profiler.ProfilerActivity.CUDA,
-                    # Older torch builds (pre-XPU support) don't have this member.
-                    getattr(torch.profiler.ProfilerActivity, "XPU", None),
-                )
-                if a is not None
-            ],
+            activities=activities,
             record_shapes=cfg.record_shapes,
             profile_memory=cfg.profile_memory,
             with_stack=cfg.with_stack,
@@ -382,8 +381,9 @@ class ExperimentRunner(ABC):
             }
         )
 
-        if isinstance(self.strategy, (SingleDeviceStrategy, DDPStrategy)) and getattr(
-            self.strategy, "_accelerator", None
+        if (
+            isinstance(self.strategy, (SingleDeviceStrategy, DDPStrategy))
+            and self.strategy.accelerator
         ):
             # Lightning raises if `accelerator` and a strategy carrying its own
             # accelerator instance are both set, unless the flag is "auto" — the

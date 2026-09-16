@@ -1,6 +1,6 @@
 # Copyright 2026 AlQuraishi Laboratory
 # Copyright 2026 Intel Corporation
-#
+
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -16,16 +16,14 @@
 """PyTorch Lightning accelerator plugin for Intel GPUs (``torch.device("xpu")``).
 
 PyTorch Lightning ships built-in `Accelerator` implementations for CUDA, MPS, and
-TPU, but not XPU (its own docs use a "hypothetical XPU" as the worked example for
-writing a custom accelerator plugin). This module supplies that missing piece so
+TPU, but not for Intel GPUs (XPU). This module supplies that missing piece so
 `pl.Trainer(accelerator="xpu")` (and `"auto"`/`"gpu"` when an Intel GPU is the only
 accelerator present) resolves correctly.
 
-Modeled on the XPU accelerator plugin in
+This XPUAccelerator class is based on a similar implementation from the Anomalib Project 
 https://github.com/open-edge-platform/anomalib (`engine/accelerator/xpu.py`).
 
-Importing this module registers `XPUAccelerator` into Lightning's
-`AcceleratorRegistry` as a side effect.
+Importing this module registers `XPUAccelerator` into Lightning's `AcceleratorRegistry` 
 """
 
 from typing import Any
