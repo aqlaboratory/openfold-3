@@ -113,7 +113,7 @@ def _accelerator_will_use_mps(accelerator: str) -> bool:
 
 def _accelerator_will_use_xpu(accelerator: str) -> bool:
     """Whether `accelerator` resolves to XPU (Intel GPU) at runtime.
-    Similar to _accelerator_will_use_mps()
+
     True for `"xpu"` (explicit request), and also for `"gpu"`/`"auto"` whenever
     an Intel GPU is visible and no CUDA/ROCm device is (matching the priority a
     plain CUDA build would have on a machine with both, and avoiding a behavior

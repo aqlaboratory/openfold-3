@@ -287,7 +287,7 @@ def set_seed_for_rank(seed: int, rank: int) -> None:
     # Set seed for PyTorch on CPU and any accelerator
     torch.manual_seed(rank_specific_seed)
     torch.cuda.manual_seed_all(rank_specific_seed)  # Seeds all GPUs
-    
+
     if hasattr(torch, "xpu") and torch.xpu.is_available():
         torch.xpu.manual_seed_all(rank_specific_seed)  # Seeds all Intel GPUs
 

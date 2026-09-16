@@ -1,6 +1,6 @@
 # Copyright 2026 AlQuraishi Laboratory
 # Copyright 2026 Intel Corporation
-
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -20,10 +20,10 @@ TPU, but not for Intel GPUs (XPU). This module supplies that missing piece so
 `pl.Trainer(accelerator="xpu")` (and `"auto"`/`"gpu"` when an Intel GPU is the only
 accelerator present) resolves correctly.
 
-This XPUAccelerator class is based on a similar implementation from the Anomalib Project 
-https://github.com/open-edge-platform/anomalib (`engine/accelerator/xpu.py`).
+This XPUAccelerator class is based on a similar implementation from the Anomalib
+Project: https://github.com/open-edge-platform/anomalib (`engine/accelerator/xpu.py`).
 
-Importing this module registers `XPUAccelerator` into Lightning's `AcceleratorRegistry` 
+Importing this module registers `XPUAccelerator` into Lightning's `AcceleratorRegistry`.
 """
 
 from typing import Any
