@@ -338,7 +338,7 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
 
 [feature.pytorch-pypi-xpu]
 
-  # TODO: similar to RCOM, ask for an XPU virtual package in the conda world, to mirror the CUDA one
+  # TODO: similar to ROCm, ask for an XPU virtual package in the conda world, to mirror the CUDA one
   platforms = ["linux-64"]
 
   [feature.pytorch-pypi-xpu.dependencies]
