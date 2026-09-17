@@ -186,3 +186,29 @@ Same commit (`6569fcc`) that passed 3/3 last night (run #264). Not a regression 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as run #265 (2026-09-15). Does not affect the day's coverage line above (based on the primary slot, run #266, per this log's established convention).
 
 ---
+
+## 2026-09-17
+
+### Run #268 — primary nightly (schedule `17 3 * * *`, main @ `6569fcc` (unchanged since 09-15), [35178424759](https://github.com/aqlaboratory/openfold-3/actions/runs/35178424759))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | 7 min | code — `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - RuntimeError: Failed to fetch chain ID mappings from RCSB for 218 entries. Cannot proceed without chain ID re-mapping.` |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 9 min | code — same signature: `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - RuntimeError: Failed to fetch chain ID mappings from RCSB for 218 entries. Cannot proceed without chain ID re-mapping.` |
+| test-pixi-cuda (openfold3-cuda12) | **CANCELLED** | 15 min | matrix fail-fast — sibling (cuda13) failed at 03:42:48Z; this leg was cancelled mid-test (`##[error]The operation was canceled.`) at 03:48:10Z while submitting `test_pocket_constraint_localizes_ligand` to the ColabFold MSA server — same fail-fast mechanism as runs #254 (2026-09-11) and #266 (2026-09-16) |
+
+**2026-09-17: 0/3 passed · 0 skipped · 0 queued · 3 need attention**
+
+Same commit (`6569fcc7edd4afd5f887bf924ae0d2f613977763`) as the previous three nights (09-14 through 09-16). The RCSB `data.rcsb.org` chain-ID-mapping timeout first seen on one leg on 2026-09-16 (run #266, `test-pixi-cuda (openfold3-cuda12)` only) has now hit **both** directly-run legs tonight (`test-pixi-amd` and `test-pixi-cuda (openfold3-cuda13)`), with the third leg (`test-pixi-cuda (openfold3-cuda12)`) taken out by matrix fail-fast once its cuda13 sibling failed — the first night in this log where all three tracked jobs are simultaneously non-passing. Per this log's classification rules this still bins as `code` (pytest FAILED line + exception raised from library code, `openfold3/core/data/tools/rscb.py`), even though the trigger is the same external RCSB API dependency flagged on 09-16. See `test-failures.md` for full detail.
+
+### Run #269 — secondary nightly (schedule `17 4 * * *`, main @ `6569fcc`, [35182141166](https://github.com/aqlaboratory/openfold-3/actions/runs/35182141166))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda (openfold3-cuda12) | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-cuda (openfold3-cuda13) | **SKIPPED** | — | same |
+| test-pixi-amd (openfold3-rocm7) | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as runs #265 and #267. Does not affect the day's coverage line above (based on the primary slot, run #268, per this log's established convention).
+
+---

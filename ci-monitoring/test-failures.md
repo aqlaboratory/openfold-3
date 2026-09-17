@@ -365,3 +365,38 @@ pydantic_core._pydantic_core.ValidationError: 1 validation error for InferenceEx
 - `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` — **passed** (33 min)
 
 ---
+
+## 2026-09-17
+
+**Cause:** Same RCSB PDB GraphQL API (`data.rcsb.org`) chain-ID-mapping failure first seen on 2026-09-16 (`fetch_label_to_author_chain_ids` in `openfold3/core/data/tools/rscb.py`), same commit (`6569fcc7edd4afd5f887bf924ae0d2f613977763`), but tonight it hit two of the three tracked jobs directly and took out the third via matrix fail-fast — the first night in this log where all three tracked jobs are simultaneously non-passing. Classifies as `code` per this log's rules (pytest FAILED line + exception from library code), same as 09-16, even though the underlying trigger is an external-service dependency.
+
+- **Run ID:** [35178424759](https://github.com/aqlaboratory/openfold-3/actions/runs/35178424759)
+- **Run #:** 268
+- **Branch:** main @ `6569fcc7edd4afd5f887bf924ae0d2f613977763`
+- **Time:** 2026-09-17T03:30:29Z – 03:53:05Z
+
+### Failed Jobs
+
+| Job | Status | Job ID | Runner |
+|-----|--------|--------|--------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | **failure** | 105065157600 | omsf-amd-aupcloud |
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | **failure** | 105065627596 | ip-172-31-4-68 (runner-cuy5rzak) |
+
+### Failed Test (both jobs, identical signature)
+
+```
+FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin]
+RuntimeError: Failed to fetch chain ID mappings from RCSB for 218 entries. Cannot proceed without chain ID re-mapping.
+```
+
+(`openfold3/core/data/tools/rscb.py`, same code path as the 09-16 failure.)
+
+### Cascading cancellation
+
+- `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` (job ID: 105065614045) — **cancelled** (`##[error]The operation was canceled.`) at 2026-09-17T03:48:10Z, ~5 minutes after the cuda13 sibling failed at 03:42:48Z. `test-pixi-cuda`'s `strategy:` block does not set `fail-fast: false`, so GitHub's default matrix fail-fast cancelled this leg mid-test (submitting `test_pocket_constraint_localizes_ligand` to the ColabFold MSA server, which had just completed) once cuda13 failed — not a timeout-minutes cap, not superseded by a newer run, not manual. Same fail-fast mechanism as runs #254 (2026-09-11) and #266 (2026-09-16).
+
+### Passing Jobs
+
+None. First night in this log where all three tracked jobs (`test-pixi-amd`, `test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`) are simultaneously non-passing.
+
+---
