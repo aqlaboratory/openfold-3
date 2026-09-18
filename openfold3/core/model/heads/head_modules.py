@@ -140,7 +140,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_megafold_single_attention:
                 Whether to use MegaFold's EvoFlash-3D single attention
                 pair bias. Mutually exclusive with use_deepspeed_evo_attention
-                and use_lma. 
+                and use_lma.
             inplace_safe:
                 Whether inplace operations can be performed
             offload_inference:

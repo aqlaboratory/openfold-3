@@ -932,7 +932,7 @@ def _megafold_single_attn(
         pair_bias = pair_bias.bfloat16()
 
     o = TritonEvoformer(q, k, v, mask, pair_bias)
-    
+
     # Restore original data type
     o = o.to(dtype=orig_dtype)
 
