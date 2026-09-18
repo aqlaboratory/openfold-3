@@ -25,6 +25,7 @@
 #                                                     keeping the environments as sane and consistent as possible
 #                                                     (useful if requiring deps not yet in conda-forge)
 #   - openfold3-rocm7: environment for AMD GPU support with ROCm 7.x (linux-64 only at the moment)
+#   - openfold3-xpu: environment for Intel GPU support (linux-64 only at the moment)
 #   - openfold3-msa: environment for OpenFold3 style MSA generation (with snakemake, hmmer, and hhsuite)
 #
 # The current environments pass all inference tests available in each platform.
@@ -46,6 +47,11 @@
 # +---------------+------------+------------+------------+------------+
 #    * works = "works for me"
 #    * to test = "have not tried yet, but environment resolves"
+#
+# XPU relies on Triton triangle-attention/multiplication kernels instead of the
+# CUDA-only DeepSpeed EvoAttention / cuEquivariance kernels; training uses stock
+# attention there. Intel Arc Pro B70: works for me (inference), full test suite
+# passes including Triton golden-snapshot parity checks.
 #
 # Using the environments
 # ----------------------
@@ -162,6 +168,14 @@ openfold3-rocm7 = { no-default-feature = true, features = [
     "python",
     "openfold3-base",
     "pytorch-pypi-rocm7",
+    "not-in-pypi",
+    "openfold3-editable",
+    "tests",
+] }
+openfold3-xpu = { no-default-feature = true, features = [
+    "python",
+    "openfold3-base",
+    "pytorch-pypi-xpu",
     "not-in-pypi",
     "openfold3-editable",
     "tests",
@@ -321,6 +335,22 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   [feature.pytorch-pypi-rocm7.pypi-dependencies]
   torch = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
   triton-rocm = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
+
+[feature.pytorch-pypi-xpu]
+
+  # TODO: similar to ROCm, ask for an XPU virtual package in the conda world, to mirror the CUDA one
+  platforms = ["linux-64"]
+
+  [feature.pytorch-pypi-xpu.dependencies]
+  # PyPI XPU wheels for torch>=2.9 don't resolve for cp314 yet (triton-xpu/
+  # setuptools pin conflicts), so cap Python for this environment.
+  python = "<3.14"
+
+  [feature.pytorch-pypi-xpu.pypi-dependencies]
+  # pytorch-triton-xpu is only published on the XPU index (not plain PyPI), so
+  # it must be pinned to it explicitly, like triton-rocm above.
+  torch = { version = "*", index = "https://download.pytorch.org/whl/xpu" }
+  pytorch-triton-xpu = { version = "*", index = "https://download.pytorch.org/whl/xpu" }
 
 [feature.cuda12]
 
