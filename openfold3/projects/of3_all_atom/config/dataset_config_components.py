@@ -91,6 +91,7 @@ class MSASettings(BaseModel):
         "mmseqs_colabfold": 16384,
         "colabfold_main": 16384,
         "colabfold_paired": 8192,
+        "riboseek_main": 16384,
     }
     msas_to_pair: list[str] = ["uniprot_hits", "uniprot"]
     aln_order: list = [
@@ -105,6 +106,7 @@ class MSASettings(BaseModel):
         "concat_cfdb_uniref100_filtered",
         "mmseqs_colabfold",
         "colabfold_main",
+        "riboseek_main",
         "dummy",  # aln containing only query; used for MSA-free inference
     ]
     subsample_main: bool = True

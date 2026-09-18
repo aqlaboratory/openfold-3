@@ -51,6 +51,9 @@ logger = logging.getLogger(__name__)
 TQDM_BAR_FORMAT = (
     "{l_bar}{bar}| {n_fmt}/{total_fmt} [elapsed: {elapsed} remaining: {remaining}]"
 )
+RIBOSEEK_REQUEST_TIMEOUT = 6.02
+RIBOSEEK_MAX_RETRIES = 5
+RIBOSEEK_DEFAULT_JOB_TIMEOUT_SECONDS = 600.0
 
 
 class MsaServerPairingStrategy(IntEnum):
@@ -423,6 +426,215 @@ def query_colabfold_msa_server(
     return (a3m_lines, template_paths) if use_templates else a3m_lines
 
 
+def _msa_server_headers(user_agent: str) -> dict[str, str]:
+    headers = {}
+    if user_agent != "":
+        headers["User-Agent"] = user_agent
+    else:
+        logger.warning(
+            "No user agent specified. Please set a user agent"
+            "(e.g., 'toolname/version contact@email') to help"
+            "us debug in case of problems. This warning will become an error"
+            "in the future."
+        )
+    return headers
+
+
+def _fetch_riboseek_json(
+    url: str, headers: dict[str, str], deadline: float | None = None
+) -> dict:
+    last_error = None
+    for attempt in range(RIBOSEEK_MAX_RETRIES + 1):
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if remaining is not None and remaining <= 0:
+            raise TimeoutError("Riboseek job timed out while waiting for a response")
+        request_timeout = (
+            RIBOSEEK_REQUEST_TIMEOUT
+            if remaining is None
+            else min(RIBOSEEK_REQUEST_TIMEOUT, remaining)
+        )
+        try:
+            res = requests.get(url, timeout=request_timeout, headers=headers)
+            res.raise_for_status()
+            return res.json()
+        except requests.exceptions.Timeout as e:
+            last_error = e
+            logger.warning("Timeout while fetching Riboseek result. Retrying...")
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                "Error while fetching Riboseek result. "
+                f"Retrying... ({attempt + 1}/{RIBOSEEK_MAX_RETRIES + 1})"
+            )
+            logger.warning(f"Error: {e}")
+        if attempt == RIBOSEEK_MAX_RETRIES:
+            raise RuntimeError(
+                "Riboseek request failed after the retry limit"
+            ) from last_error
+        retry_delay = 5.0
+        if deadline is not None:
+            retry_delay = min(retry_delay, max(0.0, deadline - time.monotonic()))
+        time.sleep(retry_delay)
+
+
+def _iter_riboseek_alignments(result: dict):
+    for db_result in result.get("results", []):
+        alignments = db_result.get("alignments") or []
+        if isinstance(alignments, dict):
+            alignments = alignments.values()
+        for alignment in alignments:
+            if isinstance(alignment, list):
+                yield from alignment
+            else:
+                yield alignment
+
+
+def _riboseek_alignment_to_query_row(
+    query_sequence: str, alignment: dict
+) -> tuple[str, str] | None:
+    q_aln = alignment.get("qAln")
+    db_aln = alignment.get("dbAln")
+    if not q_aln or not db_aln:
+        return None
+
+    start = min(
+        int(alignment.get("qStartPos", 1)),
+        int(alignment.get("qEndPos", alignment.get("qStartPos", 1))),
+    )
+    query_pos = max(0, start - 1)
+    row = ["-"] * len(query_sequence)
+    for q_res, db_res in zip(q_aln, db_aln, strict=False):
+        if q_res == "-":
+            # Drop target insertions relative to the query; query-centered A3M rows
+            # must have the same non-insert column count as the query.
+            continue
+        if query_pos >= len(row):
+            break
+        row[query_pos] = "-" if db_res == "-" else db_res.upper()
+        query_pos += 1
+
+    target = str(alignment.get("target", "riboseek_hit")).split()[0]
+    if all(res == "-" for res in row):
+        return None
+    return target, "".join(row)
+
+
+def _riboseek_result_to_a3m(query_sequence: str, result: dict) -> str:
+    """Convert a Riboseek pairwise-search result into a query-centered A3M."""
+    query_sequence = query_sequence.upper().replace("T", "U")
+    rows = [("query", query_sequence)]
+    seen = {query_sequence}
+    for alignment in _iter_riboseek_alignments(result):
+        if not isinstance(alignment, dict):
+            continue
+        converted = _riboseek_alignment_to_query_row(query_sequence, alignment)
+        if converted is None:
+            continue
+        name, sequence = converted
+        if sequence in seen:
+            continue
+        rows.append((name, sequence))
+        seen.add(sequence)
+
+    return "".join(f">{name}\n{sequence}\n" for name, sequence in rows)
+
+
+def query_riboseek_msa_server(
+    x: list[str],
+    user_agent: str,
+    host_url: str = "https://search.foldseek.com",
+    database: str = "rnadb",
+    job_timeout_seconds: float = RIBOSEEK_DEFAULT_JOB_TIMEOUT_SECONDS,
+) -> list[str]:
+    """Submit RNA sequences to Riboseek and return query-centered A3M strings."""
+    if job_timeout_seconds <= 0:
+        raise ValueError("job_timeout_seconds must be positive")
+
+    host_url = str(host_url).rstrip("/")
+    headers = _msa_server_headers(user_agent)
+    seqs = [x] if isinstance(x, str) else x
+    seqs = [seq.upper().replace("T", "U") for seq in seqs]
+    if len(seqs) == 0:
+        return []
+
+    query = "".join(f">{i}\n{seq}\n" for i, seq in enumerate(seqs))
+    for attempt in range(RIBOSEEK_MAX_RETRIES + 1):
+        try:
+            res = requests.post(
+                f"{host_url}/api/ticket/riboseek",
+                data=[("q", query), ("database[]", database)],
+                timeout=RIBOSEEK_REQUEST_TIMEOUT,
+                headers=headers,
+            )
+            res.raise_for_status()
+            out = res.json()
+            break
+        except requests.exceptions.Timeout as e:
+            logger.warning("Timeout while submitting to Riboseek. Retrying...")
+            last_error = e
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                "Error while submitting to Riboseek. "
+                f"Retrying... ({attempt + 1}/{RIBOSEEK_MAX_RETRIES + 1})"
+            )
+            logger.warning(f"Error: {e}")
+        if attempt == RIBOSEEK_MAX_RETRIES:
+            raise RuntimeError(
+                "Riboseek submission failed after the retry limit"
+            ) from last_error
+        time.sleep(5)
+
+    deadline = time.monotonic() + job_timeout_seconds
+
+    while out.get("status") in ["UNKNOWN", "RATELIMIT"]:
+        sleep_time = 5 + random.randint(0, 5)
+        sleep_time = min(sleep_time, max(0.0, deadline - time.monotonic()))
+        if sleep_time <= 0:
+            raise TimeoutError("Riboseek job timed out before it started")
+        logger.info(f"Sleeping for {sleep_time}s. Reason: {out['status']}")
+        time.sleep(sleep_time)
+        out = _fetch_riboseek_json(
+            f"{host_url}/api/ticket/{out['id']}", headers, deadline
+        )
+
+    if out["status"] == "ERROR":
+        raise RuntimeError(
+            "Riboseek API is giving errors. Please confirm your input is a valid "
+            "RNA sequence. If error persists, please try again later."
+        )
+    if out["status"] == "MAINTENANCE":
+        raise RuntimeError(
+            "Riboseek API is undergoing maintenance. Please try again later."
+        )
+
+    ID = out["id"]
+    while out.get("status") in ["UNKNOWN", "RUNNING", "PENDING"]:
+        sleep_time = 5 + random.randint(0, 5)
+        sleep_time = min(sleep_time, max(0.0, deadline - time.monotonic()))
+        if sleep_time <= 0:
+            raise TimeoutError(
+                f"Riboseek job {ID} did not complete within "
+                f"{job_timeout_seconds:g} seconds"
+            )
+        logger.info(f"Sleeping for {sleep_time}s. Reason: {out['status']}")
+        time.sleep(sleep_time)
+        out = _fetch_riboseek_json(
+            f"{host_url}/api/ticket/{ID}", headers, deadline
+        )
+
+    if out.get("status") != "COMPLETE":
+        raise RuntimeError(f"Unexpected Riboseek status: {out.get('status')}")
+
+    a3m_lines = []
+    for i, seq in enumerate(seqs):
+        result = _fetch_riboseek_json(
+            f"{host_url}/api/result/{ID}/{i}", headers, deadline
+        )
+        a3m_lines.append(_riboseek_result_to_a3m(seq, result))
+    return a3m_lines
+
+
 class ChainInput(NamedTuple):
     """A query name and chain ID tuple.
 
@@ -582,6 +794,51 @@ def collect_colabfold_msa_data(
             colabfold_mapper.query_name_to_complex_id[query_name] = complex_id
 
     return colabfold_mapper
+
+
+def collect_riboseek_msa_data(
+    inference_query_set: InferenceQuerySet,
+) -> ColabFoldMapper:
+    """Parses RNA sequences from the query cache and creates MSA mappings."""
+    riboseek_mapper = ColabFoldMapper()
+    m_i = 101
+    for query_name, query in inference_query_set.queries.items():
+        chain_inputs_seen = set()
+
+        for chain in query.chains:
+            if chain.molecule_type != MoleculeType.RNA:
+                continue
+
+            seq = chain.sequence.upper().replace("T", "U")
+            chain_inputs = [
+                ChainInput(query_name, str(c_id), seq) for c_id in chain.chain_ids
+            ]
+
+            if len(set(chain_inputs) & chain_inputs_seen) > 0:
+                raise RuntimeError(
+                    f"Duplicate chain IDs found in query {query_name}: "
+                    f"{chain.chain_ids}"
+                )
+
+            chain_inputs_seen.update(chain_inputs)
+
+            if seq not in riboseek_mapper.seq_to_rep_id:
+                rep_id = chain_inputs[0].rep_id
+                riboseek_mapper.seq_to_rep_id[seq] = rep_id
+                riboseek_mapper.rep_id_to_seq[rep_id] = seq
+                riboseek_mapper.rep_id_to_m[rep_id] = m_i
+                m_i += 1
+                for chain_input in chain_inputs:
+                    riboseek_mapper.chain_id_to_rep_id[chain_input.name] = rep_id
+                riboseek_mapper.seqs.append(seq)
+                riboseek_mapper.rep_ids.append(rep_id)
+            else:
+                for chain_input in chain_inputs:
+                    riboseek_mapper.chain_id_to_rep_id[chain_input.name] = (
+                        riboseek_mapper.seq_to_rep_id[seq]
+                    )
+
+    return riboseek_mapper
 
 
 def _save_mapping(mapping, save_filepath, append=False):
@@ -919,6 +1176,115 @@ class ColabFoldQueryRunner:
         shutil.rmtree(self.output_directory / "raw", ignore_errors=True)
 
 
+class RiboseekQueryRunner:
+    """Class to run RNA queries on the Riboseek server."""
+
+    def __init__(
+        self,
+        riboseek_mapper: ColabFoldMapper,
+        output_directory: Path,
+        msa_file_format: str | list[str],
+        user_agent: str,
+        host_url: Url = Url("https://search.foldseek.com"),
+        database: str = "rnadb",
+        job_timeout_seconds: float = RIBOSEEK_DEFAULT_JOB_TIMEOUT_SECONDS,
+        fallback_to_query_only_on_timeout: bool = True,
+    ):
+        self.riboseek_mapper = riboseek_mapper
+        self.output_directory = output_directory
+        self.msa_file_format = (
+            msa_file_format if isinstance(msa_file_format, list) else [msa_file_format]
+        )
+        self.user_agent = user_agent
+        self.host_url = host_url
+        self.database = database
+        self.job_timeout_seconds = job_timeout_seconds
+        self.fallback_to_query_only_on_timeout = fallback_to_query_only_on_timeout
+        self.output_directory.mkdir(parents=True, exist_ok=True)
+        (self.output_directory / "main").mkdir(parents=True, exist_ok=True)
+
+    def query_format_main(self):
+        """Submits RNA queries and formats the outputs for main MSAs."""
+        if len(self.riboseek_mapper.seqs) == 0:
+            print("No RNA sequences found for Riboseek MSA generation. Skipping...")
+            return
+        print(
+            f"Submitting {len(self.riboseek_mapper.seqs)} RNA sequences to the"
+            " Riboseek server for main MSAs..."
+        )
+
+        try:
+            a3m_lines_main = query_riboseek_msa_server(
+                self.riboseek_mapper.seqs,
+                user_agent=self.user_agent,
+                host_url=self.host_url,
+                database=self.database,
+                job_timeout_seconds=self.job_timeout_seconds,
+            )
+        except TimeoutError:
+            if not self.fallback_to_query_only_on_timeout:
+                raise
+            warnings.warn(
+                "Riboseek RNA MSA server timed out. Falling back to query-only "
+                "RNA MSAs.",
+                stacklevel=2,
+            )
+            a3m_lines_main = [
+                _riboseek_result_to_a3m(seq, {"results": []})
+                for seq in self.riboseek_mapper.seqs
+            ]
+
+        main_alignments_path = self.output_directory / "main"
+        for rep_id, aln in zip(
+            self.riboseek_mapper.rep_ids, a3m_lines_main, strict=True
+        ):
+            rep_dir = main_alignments_path / str(rep_id)
+
+            if "a3m" in self.msa_file_format:
+                rep_dir.mkdir(parents=True, exist_ok=True)
+                a3m_file = rep_dir / "riboseek_main.a3m"
+                with open(a3m_file, "w") as f:
+                    f.write(aln)
+
+            if "npz" in self.msa_file_format:
+                npz_file = Path(f"{rep_dir}.npz")
+                msas = {"riboseek_main": parse_a3m(aln)}
+                msas_preparsed = {k: v.to_dict() for k, v in msas.items()}
+                np.savez_compressed(npz_file, **msas_preparsed)
+
+
+def add_riboseek_msa_paths_to_iqs(
+    inference_query_set: InferenceQuerySet,
+    riboseek_mapper: ColabFoldMapper,
+    output_directory: Path,
+) -> InferenceQuerySet:
+    """Adds Riboseek main MSA paths to RNA chains in the inference query set."""
+    for query_name, query in inference_query_set.queries.items():
+        for chain in query.chains:
+            if chain.molecule_type != MoleculeType.RNA:
+                continue
+
+            rep_id = riboseek_mapper.seq_to_rep_id[
+                chain.sequence.upper().replace("T", "U")
+            ]
+            main_msa_file_path = output_directory / "main" / f"{str(rep_id)}.npz"
+            if not main_msa_file_path.exists():
+                main_msa_file_path = (
+                    output_directory / "main" / str(rep_id) / "riboseek_main.a3m"
+                )
+
+            if chain.main_msa_file_paths is not None:
+                warnings.warn(
+                    f"Query {query_name} chain {chain.chain_ids} already has "
+                    "main_msa_file_paths set. These are now overwritten "
+                    "with path(s) to the Riboseek MSAs.",
+                    stacklevel=2,
+                )
+            chain.main_msa_file_paths = [main_msa_file_path]
+
+    return inference_query_set
+
+
 def add_msa_paths_to_iqs(
     inference_query_set: InferenceQuerySet,
     colabfold_mapper: ColabFoldMapper,
@@ -1028,6 +1394,10 @@ class MsaComputationSettings(BaseModel):
     msa_file_format: Literal["npz", "a3m"] = "npz"
     server_user_agent: str = "openfold"
     server_url: Url = Url("https://api.colabfold.com")
+    riboseek_server_url: Url = Url("https://search.foldseek.com")
+    riboseek_database: str = "rnadb"
+    riboseek_job_timeout_seconds: float = RIBOSEEK_DEFAULT_JOB_TIMEOUT_SECONDS
+    riboseek_fallback_to_query_only_on_timeout: bool = True
     save_mappings: bool = True
     msa_output_directory: Path | None = None
     cleanup_msa_dir: bool = True
@@ -1140,8 +1510,9 @@ def preprocess_colabfold_msas(
     """
     # Gather MSA data
     colabfold_mapper = collect_colabfold_msa_data(inference_query_set)
+    riboseek_mapper = collect_riboseek_msa_data(inference_query_set)
     output_directory = compute_settings.msa_output_directory
-    logger.warning(f"Using output directory: {output_directory} for ColabFold MSAs.")
+    logger.warning(f"Using output directory: {output_directory} for MSA server MSAs.")
 
     # Save mappings to file
     if compute_settings.save_mappings:
@@ -1168,10 +1539,29 @@ def preprocess_colabfold_msas(
     colabfold_query_runner.query_format_main()
     colabfold_query_runner.query_format_paired()
 
+    riboseek_query_runner = RiboseekQueryRunner(
+        riboseek_mapper=riboseek_mapper,
+        output_directory=output_directory,
+        msa_file_format=compute_settings.msa_file_format,
+        user_agent=compute_settings.server_user_agent,
+        host_url=compute_settings.riboseek_server_url,
+        database=compute_settings.riboseek_database,
+        job_timeout_seconds=compute_settings.riboseek_job_timeout_seconds,
+        fallback_to_query_only_on_timeout=(
+            compute_settings.riboseek_fallback_to_query_only_on_timeout
+        ),
+    )
+    riboseek_query_runner.query_format_main()
+
     # Add paths to the IQS
     inference_query_set = add_msa_paths_to_iqs(
         inference_query_set=inference_query_set,
         colabfold_mapper=colabfold_mapper,
+        output_directory=output_directory,
+    )
+    inference_query_set = add_riboseek_msa_paths_to_iqs(
+        inference_query_set=inference_query_set,
+        riboseek_mapper=riboseek_mapper,
         output_directory=output_directory,
     )
 

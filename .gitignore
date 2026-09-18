@@ -30,9 +30,10 @@ scripts/setup_minimal_training_data.py
 examples/training_yamls/minimal_smoke_training.yml
 examples/example_runner_yamls/smoke_inference.yml
 local_paths.env
+examples/OpenFold3_inference.ipynb
 
 # Local data (model cache, training subset, run outputs) — see AGENTS.md
-data/
+/data/
 
 # Vendored reference-only third-party (do not commit) — see CLAUDE.md
 vendor/apex/
