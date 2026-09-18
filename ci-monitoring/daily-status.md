@@ -212,3 +212,38 @@ Same commit (`6569fcc7edd4afd5f887bf924ae0d2f613977763`) as the previous three n
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as runs #265 and #267. Does not affect the day's coverage line above (based on the primary slot, run #268, per this log's established convention).
 
 ---
+
+## 2026-09-18
+
+### Run #270 — primary nightly (schedule `17 3 * * *`, main @ `6569fcc` (unchanged since 09-15), [35303406395](https://github.com/aqlaboratory/openfold-3/actions/runs/35303406395))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 28 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 34 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 31 min | |
+
+**2026-09-18: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Same commit (`6569fcc7edd4afd5f887bf924ae0d2f613977763`) that failed all three tracked jobs on 09-17 (run #268) with the RCSB `data.rcsb.org` chain-ID-mapping timeout — tonight it passed clean with no code or workflow change in between, confirming that failure was an external-service flake rather than a regression, consistent with the `code` classification note on 09-16/09-17. Separately, run #272 below shows a `workflow_dispatch` validation of an actual fix for that RCSB call in flight on `feature/rcsb-template-call-fix`.
+
+### Run #271 — secondary nightly (schedule `17 4 * * *`, main @ `6569fcc`, [35307132379](https://github.com/aqlaboratory/openfold-3/actions/runs/35307132379))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as runs #265, #267, and #269. Does not affect the day's coverage line above (based on the primary slot, run #270, per this log's established convention).
+
+### Run #272 — workflow_dispatch (`feature/rcsb-template-call-fix` @ `3de86cb`, [35307541953](https://github.com/aqlaboratory/openfold-3/actions/runs/35307541953))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 36 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 40 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 38 min | |
+
+Not a scheduled nightly; excluded from the day's coverage line per this log's established convention (same treatment as run #263 on 09-14). Validation run for a branch that changes the RCSB template chain-ID-mapping call implicated in the 09-16/09-17 failures — all three legs passed here too, but this run alone doesn't confirm the fix since tonight's own unmodified-`main` run (#270) also passed clean, i.e. the RCSB timeout wasn't reproduced on either branch tonight.
+
+---
