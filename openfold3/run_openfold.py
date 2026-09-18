@@ -25,6 +25,8 @@ from pathlib import Path
 
 import click
 
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 from openfold3.core.config import config_utils
 from openfold3.entry_points.import_utils import (
     _configure_torch_backend,
