@@ -384,6 +384,7 @@ class PairFormerStack(nn.Module):
                 use_cueq_triangle_kernels
                 or use_triton_triangle_kernels
                 or use_deepspeed_evo_attention
+                or use_megafold_single_attention
             )
             tuned_chunk_size = self.chunk_size_tuner.tune_chunk_size(
                 representative_fn=blocks[0],

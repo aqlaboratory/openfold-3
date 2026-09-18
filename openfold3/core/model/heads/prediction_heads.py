@@ -220,6 +220,7 @@ class PairformerEmbedding(nn.Module):
             use_deepspeed_evo_attention
             or use_cueq_triangle_kernels
             or use_triton_triangle_kernels
+            or use_megafold_single_attention
         )
         if use_kernels and si.shape[0] > 1:
             chunk_size = None
