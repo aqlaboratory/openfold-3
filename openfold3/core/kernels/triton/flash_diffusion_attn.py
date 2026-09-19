@@ -65,7 +65,8 @@ if _TRITON_AVAILABLE:
             triton.Config({"BLOCK_M": 32, "BLOCK_N": 32}, num_warps=4, num_stages=1),
         ],
         key=[],
-        restore_value=["OUT_ptr"],
+        # No restore_value: OUT is a fresh write-only ``torch.empty_like(q)``,
+        # so the autotune pre-hook clone would be pure scratch.
     )
     @triton.jit(
         do_not_specialize=[

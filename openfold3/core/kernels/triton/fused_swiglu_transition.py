@@ -70,7 +70,10 @@ if _TRITON_AVAILABLE:
             triton.Config({"BLOCK_M": 32, "BLOCK_H": 64}, num_warps=4, num_stages=1),
         ],
         key=[],
-        restore_value=["X_ptr", "Res_ptr", "Y_ptr"],
+        # Restore X only: in the in-place case X/Res/Y are one storage, so
+        # naming all three just cloned the same buffer three times per rep.
+        # X is still needed -- the kernel reads it and stores Y over it.
+        restore_value=["X_ptr"],
     )
     @triton.jit(
         do_not_specialize=[

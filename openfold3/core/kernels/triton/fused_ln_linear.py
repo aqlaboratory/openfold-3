@@ -63,7 +63,10 @@ if _TRITON_AVAILABLE:
         # Retune per (c_out, c_in, tf32): ieee / large-K specializations
         # prune big tiles via OutOfResources; tf32 keeps larger winners.
         key=["N", "K", "ALLOW_TF32"],
-        restore_value=["Y_ptr", "Mean_ptr", "Rstd_ptr"],
+        # No restore_value: Y/Mean/Rstd are fresh write-only outputs, and
+        # autotune clones every named buffer once per benchmark rep -- at
+        # N=4096 restoring Y alone cloned 8 GiB per rep. Cache hits never
+        # consult restore_value, so real calls are unaffected.
     )
     @triton.jit(
         do_not_specialize=[
@@ -200,7 +203,7 @@ if _TRITON_AVAILABLE:
     @triton.autotune(
         configs=_LN_LINEAR_AUTOTUNE_CONFIGS,
         key=["N", "K", "ALLOW_TF32"],
-        restore_value=["Y_ptr"],
+        # No restore_value: Y is a fresh write-only output; see the row kernel.
     )
     @triton.jit(
         do_not_specialize=[

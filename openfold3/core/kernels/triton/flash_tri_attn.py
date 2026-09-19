@@ -53,6 +53,8 @@ if _TRITON_AVAILABLE:
             triton.Config({"BLOCK_M": 32, "BLOCK_N": 16}, num_warps=4, num_stages=1),
         ],
         key=[],
+        # Keep: OUT may alias Q here, and this kernel stores over the Q it
+        # reads, so the benchmark needs the per-rep restore.
         restore_value=["OUT_ptr"],
     )
     @triton.jit(
@@ -320,7 +322,9 @@ if _TRITON_AVAILABLE:
             triton.Config({"BLOCK_M": 32, "BLOCK_N": 16}, num_warps=4, num_stages=1),
         ],
         key=[],
-        restore_value=["Q_ptr", "OUT_ptr"],
+        # Restore Q only: this path is reached via the ``out is q`` guard, so
+        # Q and OUT share one storage and one clone covers both.
+        restore_value=["Q_ptr"],
     )
     @triton.jit(
         do_not_specialize=[
