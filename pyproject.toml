@@ -50,7 +50,7 @@ dependencies = [
     "func_timeout",
     "tqdm",
     "typing-extensions",
-    "lmdb", # == 1.6  # This verison might be required to avoid Error during training
+    "lmdb",
 ]
 
 optional-dependencies.dev = [
@@ -68,6 +68,7 @@ optional-dependencies.dev = [
     # used for documentation
     "sphinx",
     "myst-parser",
+    "sphinxcontrib-mermaid",
     "furo"
 ]
 optional-dependencies.cuequivariance = [
@@ -104,20 +105,19 @@ test = [
 
 
 [tool.setuptools_scm]
-fallback_version = "0.4.2"
+fallback_version = "0.5.0"
 
 [tool.setuptools]
 include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["openfold3*", "scripts*", "megafold*"]
+include = ["openfold3*, "megafold*"]
 
 [tool.setuptools.package-data]
 openfold3 = [
     "projects/*/config/*.yml",
-    "tests/test_data/**/*",
-    "scripts/*.sh"
+    "tests/test_data/**/*"
 ]
 
 # much of the cibuildwheel config taken from benfred/implicit
@@ -141,6 +141,7 @@ CUDACXX = "/usr/local/cuda/bin/nvcc"
 
 [tool.ruff]
 line-length = 88
+extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = [
@@ -171,6 +172,9 @@ ban-relative-imports = "all"
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["E501"]
+# Colab notebooks keep `# @param` / `# @markdown` form directives on a single
+# physical line (the value cannot be wrapped without breaking Colab's form UI).
+"examples/notebooks/**/*.ipynb" = ["E501"]
 
 [tool.mypy]
 # So that a bare `mypy` (as used by the typecheck tasks) checks the whole project.

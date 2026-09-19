@@ -1,0 +1,21 @@
+profiler:
+  enabled: true
+  # Default values:
+  dirpath: logs/profiler_traces
+  filename: profile_trace
+  skip_first: 0
+  wait: 1
+  warmup: 1
+  active: 3
+  repeat: 0
+  record_shapes: true
+  profile_memory: false
+  with_stack: true
+
+memory_snapshot:
+  enabled: true
+  # Default values:
+  output_path: memory_snapshot.pickle
+  start_step: 0
+  dump_on_oom: false
+  stacks: null  # Defaults to 'all' for x86_64, 'python' for ARM

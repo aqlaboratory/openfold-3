@@ -1,0 +1,4 @@
+cuequivariance==0.8.0
+cuequivariance-ops-torch-cu12==0.8.0
+cuequivariance-torch==0.8.0
+torch==2.9.1

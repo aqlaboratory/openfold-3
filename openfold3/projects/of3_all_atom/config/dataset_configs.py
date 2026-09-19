@@ -47,6 +47,7 @@ from openfold3.core.config.config_utils import (
     FilePathOrNone,
     deep_update,
 )
+from openfold3.core.config.pocket_sampling_config import PocketSamplingSettings
 from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
@@ -366,11 +367,12 @@ class TrainingDatasetSpec(DatasetSpec):
 
 
 class InferenceDatasetConfigKwargs(BaseModel):
-    """Class to hold msa and template kwargs for inference pipeline"""
+    """Class to hold msa, template, and pocket sampling kwargs for inference pipeline"""
 
     ccd_file_path: FilePathOrNone = None
     msa: MSASettings = MSASettings(subsample_main=False)
     template: TemplateSettings = TemplateSettings(take_top_k=True)
+    pocket_sampling: PocketSamplingSettings = PocketSamplingSettings()
 
 
 class InferenceJobConfig(BaseModel):
@@ -382,6 +384,7 @@ class InferenceJobConfig(BaseModel):
     msa: MSASettings = MSASettings()
     template: TemplateSettings = TemplateSettings()
     template_preprocessor_settings: TemplatePreprocessorSettings
+    pocket_sampling: PocketSamplingSettings = PocketSamplingSettings()
 
 
 class InferenceDatasetSpec(DatasetSpec):

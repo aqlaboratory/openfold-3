@@ -644,7 +644,6 @@ class TestKernels:
                 no_heads=no_heads,
                 no_blocks=no_blocks,
                 n_transition=n_transition,
-                use_ada_layer_norm=True,
                 n_query=None,
                 n_key=None,
                 inf=inf,

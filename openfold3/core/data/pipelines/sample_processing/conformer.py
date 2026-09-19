@@ -167,7 +167,7 @@ def get_processed_reference_conformer(
 
     # Ensure that the cropped pernutation indices are within the bounds of the
     # ground-truth
-    assert cropped_permutations.max() <= len(gt_atom_names)
+    assert cropped_permutations.max() <= len(gt_atom_names) - 1
 
     # If we can't use the fallback conformer (e.g. if it was derived from a PDB ID in
     # the test set), we set it to NaN
@@ -191,9 +191,9 @@ def get_processed_reference_conformer(
                 remove_hs=True,
                 start_from=preferred_confgen_strategy,
                 timeouts={
-                    "default": 30.0,
-                    "small_ring_torsions": 30.0,
-                    "random_init": 30.0,
+                    "default": 10.0,
+                    "small_ring_torsions": 10.0,
+                    "random_init": 10.0,
                 },
             )
             mol = set_single_conformer(
