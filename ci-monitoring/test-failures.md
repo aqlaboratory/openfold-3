@@ -400,3 +400,38 @@ RuntimeError: Failed to fetch chain ID mappings from RCSB for 218 entries. Canno
 None. First night in this log where all three tracked jobs (`test-pixi-amd`, `test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`) are simultaneously non-passing.
 
 ---
+
+## 2026-09-19
+
+**Cause:** `api.colabfold.com` MSA-submission read-timeout — the same external-service signature first seen on 2026-09-08, now recurring after a six-night gap (09-09 through 09-18 all showed a different or no failure signature). First nightly run on `7de748b7bc93adb5af0a4032d5e9f208b6e1325f` (PR #417 `feature/rcsb-template-call-fix`, merged 2026-09-18T08:09:10Z — validated clean via `workflow_dispatch` run #272 the night before). The RCSB template-fetch code path touched by PR #417 was not implicated in tonight's failure; the exception originates from ColabFold MSA submission (`openfold3/core/data/tools/colabfold_msa_server.py`), an unrelated code path. Classifies as `code` per this log's rules (pytest FAILED line + exception from library code), even though the underlying trigger is an external ColabFold API outage/flake, not an OF3 regression.
+
+- **Run ID:** [35418661454](https://github.com/aqlaboratory/openfold-3/actions/runs/35418661454)
+- **Run #:** 273
+- **Branch:** main @ `7de748b7bc93adb5af0a4032d5e9f208b6e1325f`
+- **Time:** 2026-09-19T03:29:00Z – 03:55:44Z
+
+### Failed Jobs
+
+| Job | Status | Job ID | Runner |
+|-----|--------|--------|--------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | **failure** | 105832086384 | omsf-amd-aupcloud |
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | **failure** | 105832419584 | ip-172-31 (AWS) |
+
+### Failed Test (both jobs, identical signature)
+
+```
+FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin]
+requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.
+```
+
+Both jobs show 6 retries against the ColabFold server, each read-timing-out, before pytest recorded the failure (`openfold3/core/data/tools/colabfold_msa_server.py:279`/`283`, raised from `download()` at `colabfold_msa_server.py:269`).
+
+### Cascading cancellation
+
+- `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` (job ID: 105832422791) — **cancelled** (`##[error]The operation was canceled.`) at 2026-09-19T03:50:34Z, ~5 minutes after the cuda13 sibling failed at 03:45:13Z, and only 19 of the 60 allotted `timeout-minutes` elapsed. `test-pixi-cuda`'s `strategy:` block does not set `fail-fast: false`, so GitHub's default matrix fail-fast cancelled this leg mid-test (submitting `test_inference_writes_outputs[msa-templates-ubiquitin]` to the ColabFold MSA server) once cuda13 failed — not a timeout-minutes cap, not superseded by a newer run (no other run in this concurrency group tonight), not manual. Same fail-fast mechanism as runs #254 (09-11), #266 (09-16), and #268 (09-17).
+
+### Passing Jobs
+
+None. Second night in this log (after 09-17) where all three tracked jobs are simultaneously non-passing.
+
+---

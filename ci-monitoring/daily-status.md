@@ -247,3 +247,28 @@ Expected skip on the secondary slot (intended for other repos, not `aqlaboratory
 Not a scheduled nightly; excluded from the day's coverage line per this log's established convention (same treatment as run #263 on 09-14). Validation run for a branch that changes the RCSB template chain-ID-mapping call implicated in the 09-16/09-17 failures — all three legs passed here too, but this run alone doesn't confirm the fix since tonight's own unmodified-`main` run (#270) also passed clean, i.e. the RCSB timeout wasn't reproduced on either branch tonight.
 
 ---
+
+## 2026-09-19
+
+### Run #273 — primary nightly (schedule `17 3 * * *`, main @ `7de748b` — first nightly run on this commit, merging PR #417 `feature/rcsb-template-call-fix` (merged 2026-09-18T08:09:10Z, after last night's run #270), [35418661454](https://github.com/aqlaboratory/openfold-3/actions/runs/35418661454))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | 10 min | code — `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` (6 retries exhausted) |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 14 min | code — same signature: `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` |
+| test-pixi-cuda (openfold3-cuda12) | **CANCELLED** | 19 min | matrix fail-fast, tied to `code` — sibling (cuda13) failed at 03:45:13Z; this leg was cancelled mid-test (`##[error]The operation was canceled.`) at 03:50:34Z while submitting `test_inference_writes_outputs[msa-templates-ubiquitin]` to the ColabFold MSA server, ~5 min after the sibling failure and only 19 of the 60 allotted minutes elapsed — not a timeout-minutes cap, not superseded by a newer run (no other run in this concurrency group tonight), not manual. Same fail-fast mechanism as runs #254 (09-11), #266 (09-16), and #268 (09-17) |
+
+**2026-09-19: 0/3 passed · 0 skipped · 0 queued · 3 need attention**
+
+First nightly run on `7de748b7bc93adb5af0a4032d5e9f208b6e1325f` (PR #417, the RCSB template-fetch fix validated via `workflow_dispatch` run #272 last night). The RCSB fix itself wasn't implicated tonight — instead, the recurring `api.colabfold.com` MSA-submission read-timeout (same external-service signature as 09-08, last seen six nights ago) hit both directly-run legs (`test-pixi-amd`, `test-pixi-cuda (openfold3-cuda13)`), with the third leg (`test-pixi-cuda (openfold3-cuda12)`) taken out by matrix fail-fast once its cuda13 sibling failed — the same all-three-non-passing pattern as 09-17. Classifies as `code` per this log's rules (pytest FAILED line + exception from library code), even though the trigger is an external ColabFold API outage/flake, not a regression from the PR #417 merge. See `test-failures.md` for full detail.
+
+### Run #274 — secondary nightly (schedule `17 4 * * *`, main @ `7de748b`, [35421349254](https://github.com/aqlaboratory/openfold-3/actions/runs/35421349254))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as runs #265, #267, #269, and #271. Does not affect the day's coverage line above (based on the primary slot, run #273, per this log's established convention).
+
+---
