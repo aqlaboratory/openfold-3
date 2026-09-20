@@ -272,3 +272,28 @@ First nightly run on `7de748b7bc93adb5af0a4032d5e9f208b6e1325f` (PR #417, the RC
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as runs #265, #267, #269, and #271. Does not affect the day's coverage line above (based on the primary slot, run #273, per this log's established convention).
 
 ---
+
+## 2026-09-20
+
+### Run #275 — primary nightly (schedule `17 3 * * *`, main @ `7de748b` (unchanged since 09-19), [35486753962](https://github.com/aqlaboratory/openfold-3/actions/runs/35486753962))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 29 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 35 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 32 min | |
+
+**2026-09-20: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Same commit (`7de748b7bc93adb5af0a4032d5e9f208b6e1325f`) as last night (run #273, 09-19). Tonight all three tracked jobs passed clean with no code or workflow change in between, confirming last night's `api.colabfold.com` MSA-submission read-timeout (see `test-failures.md`, 2026-09-19) was an external-service flake rather than a regression from PR #417.
+
+### Run #276 — secondary nightly (schedule `17 4 * * *`, main @ `7de748b`, [35489235292](https://github.com/aqlaboratory/openfold-3/actions/runs/35489235292))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as runs #265, #267, #269, #271, and #274. Does not affect the day's coverage line above (based on the primary slot, run #275, per this log's established convention).
+
+---
