@@ -930,3 +930,57 @@ def test_template_sources_do_not_collide_across_queries(tmp_path, order):
     assert (
         custom.template_alignment_file_path != colabfold.template_alignment_file_path
     ), "both queries were pointed at the same template cache entry"
+
+
+def test_requeued_query_set_keeps_cached_templates(tmp_path):
+    """A reused query set keeps its cached template entry (issue #420).
+
+    Run 1 preprocesses a ColabFold alignment and writes the cache entry path and
+    template ids into the chain. The reused batch mixes that chain, reloaded from
+    the run's serialized query set, with a raw CIF source that run 1 never
+    processed, so the write-back still runs while the cached entry is bypassed.
+    """
+    run_1 = _two_source_query_set(tmp_path, ["q_colabfold"])
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir()
+    shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, structure_dir / TEMPLATE_CIF)
+    settings = TemplatePreprocessorSettings(
+        mode="predict",
+        output_directory=tmp_path / "template_data",
+        # Pre-seeded structures + no fetching keeps this offline.
+        structure_directory=structure_dir,
+        fetch_missing_structures=False,
+        n_processes=1,
+    )
+
+    TemplatePreprocessor(input_set=run_1, config=settings)()
+
+    cached_chain = run_1.queries["q_colabfold"].chains[0]
+    cached_path = cached_chain.template_alignment_file_path
+    assert cached_path is not None
+    assert cached_chain.template_entry_chain_ids == ["2q2k_C"]
+
+    requeue_path = _write_file(
+        tmp_path / "inference_query_set.json", run_1.model_dump_json()
+    )
+    requeued = InferenceQuerySet.from_json(requeue_path)
+    fresh = _two_source_query_set(tmp_path, ["q_custom"])
+    requeued.queries["q_custom"] = fresh.queries["q_custom"]
+
+    preprocessor = TemplatePreprocessor(input_set=requeued, config=settings)
+    preprocessor()
+
+    requeued_cached = requeued.queries["q_colabfold"].chains[0]
+    assert requeued_cached.template_alignment_file_path == cached_path, (
+        "the cached template entry was dropped when the query set was reused"
+    )
+    assert requeued_cached.template_entry_chain_ids == ["2q2k_C"], (
+        "the template ids were dropped when the query set was reused"
+    )
+    requeued_raw = requeued.queries["q_custom"].chains[0]
+    assert requeued_raw.template_entry_chain_ids == ["2q2k_B"], (
+        "the raw source in the reused batch was not processed"
+    )
+    # Only the raw source needs preprocessing; the cached entry must not be
+    # re-parsed as an alignment.
+    assert len(preprocessor.inputs) == 1
