@@ -1,5 +1,52 @@
 # Weekly CI Summary
 
+## Week of 2026-09-15 – 2026-09-21
+
+**Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip post-PR #405) across 7 nights, against the three tracked jobs: `test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`. One `workflow_dispatch` validation run (run #272, 09-18, `feature/rcsb-template-call-fix`) excluded from coverage stats per this log's established convention.
+
+### Days with coverage < 3/3
+
+3 of 7 days — 09-16, 09-17, and 09-19.
+
+| Date | Primary (03:17 UTC cron) | Secondary (04:17 UTC cron) |
+|---|---|---|
+| 2026-09-15 | 3/3 | SKIP (expected, post-PR #405 guard) |
+| 2026-09-16 | 1/3 | SKIP (expected) |
+| 2026-09-17 | 0/3 | SKIP (expected) |
+| 2026-09-18 | 3/3 | SKIP (expected) |
+| 2026-09-19 | 0/3 | SKIP (expected) |
+| 2026-09-20 | 3/3 | SKIP (expected) |
+| 2026-09-21 | 3/3 | SKIP (expected) |
+
+### Count per failure/non-pass class
+
+| Class | Count | Where |
+|---|---|---|
+| `code` | 8 | 09-16 primary: cuda12 FAILED (`RuntimeError: Failed to fetch chain ID mappings from RCSB for 218 entries` — `data.rcsb.org` read-timeout) + cuda13 fail-fast CANCELLED, run #266 ([35052050368](https://github.com/aqlaboratory/openfold-3/actions/runs/35052050368)); 09-17 primary: amd FAILED + cuda13 FAILED (same RCSB chain-ID-mapping timeout signature) + cuda12 fail-fast CANCELLED, run #268 ([35178424759](https://github.com/aqlaboratory/openfold-3/actions/runs/35178424759)); 09-19 primary: amd FAILED + cuda13 FAILED (`requests.exceptions.ConnectionError` — `api.colabfold.com` read-timeout) + cuda12 fail-fast CANCELLED, run #273 ([35418661454](https://github.com/aqlaboratory/openfold-3/actions/runs/35418661454)) |
+
+No `aws-capacity`, `gpu-unavailable`, `runner-offline`, `msa-hang`, `parameter-cache`, `build-push`, or `unclassified` non-passes this week — every non-pass job this week traces to a pytest FAILED line with an exception from test/library code (an external RCSB or ColabFold API read-timeout surfaced through `openfold3/core/data/tools/rscb.py` or `colabfold_msa_server.py`), or a matrix `fail-fast` CANCELLED cascade attributed to that same failing sibling.
+
+**Most frequent class: `code` (8 occurrences) — the only class observed this week.**
+
+SKIPPED results from the secondary-slot `if:` guard (every night this week, expected and by design since PR #405) are tracked in the coverage table above and are not counted in this class table, per the monitor's classification rules (SKIPPED is explained via the `if:` guard, not a log signature).
+
+### Consecutive non-pass streak per job (as of 2026-09-21)
+
+| Job | Current streak | Detail |
+|---|---|---|
+| `test-pixi-amd (openfold3-rocm7)` | **0 — currently passing** | Last non-pass: FAILED/`code` (ColabFold `api.colabfold.com` timeout), 2026-09-19 (run #273). 2 consecutive PASSED since (09-20, 09-21). Also non-pass 09-17 (RCSB timeout) with a clean 09-18 in between. |
+| `test-pixi-cuda (openfold3-cuda12)` | **0 — currently passing** | Last non-pass: fail-fast CANCELLED (tied to `code`), 2026-09-19. 2 consecutive PASSED since (09-20, 09-21). |
+| `test-pixi-cuda (openfold3-cuda13)` | **0 — currently passing** | Last non-pass: FAILED/`code`, 2026-09-19. 2 consecutive PASSED since (09-20, 09-21). |
+
+All three tracked jobs are currently on a green streak, with tonight (09-21) the second consecutive 3/3 night. No job has an active non-pass streak entering the next week.
+
+### Data-source notes
+
+- Built directly from `daily-status.md` entries for 2026-09-15 through 2026-09-21 (runs #264–#278); no independent API re-fetch was needed since the coverage table and per-job notes for this window were already recorded contemporaneously by this monitor.
+- `GET /repos/aqlaboratory/openfold-3/actions/variables` and `/repos/aqlaboratory/openfold-3/actions/runners` remain blocked in this execution environment (`403 Access to this GitHub Actions path is not permitted through this proxy`), so the live `RUN_NIGHTLY`/`NIGHTLY_CRON` variable values still could not be confirmed directly this week either — not required this week since no anomalous skip occurred on the primary slot.
+
+---
+
 ## Week of 2026-09-08 – 2026-09-14
 
 **Scope:** 13 scheduled nightly runs (primary `17 3 * * *` + secondary `17 4 * * *`, across 7 nights; one `workflow_dispatch` validation run on 2026-09-11 excluded from coverage stats) against the three tracked jobs: `test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`.
