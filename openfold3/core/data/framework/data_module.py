@@ -671,6 +671,10 @@ class InferenceDataModule(DataModule):
         # get information about msas from the experiment runner
         # probably should add to the config
         super().__init__(data_module_config)
+        # Inference preprocessing writes shared MSA/template intermediates. Run it
+        # once on global rank zero, not once per node, and broadcast the resulting
+        # state in setup().
+        self.prepare_data_per_node = False
         self.use_msa_server = use_msa_server
         self.use_templates = use_templates
         self.msa_computation_settings = msa_computation_settings
@@ -691,6 +695,7 @@ class InferenceDataModule(DataModule):
             self.inference_config.query_set = preprocess_colabfold_msas(
                 inference_query_set=self.inference_config.query_set,
                 compute_settings=self.msa_computation_settings,
+                use_templates=self.use_templates,
             )
         else:
             self.inference_config.query_set = augment_main_msa_with_query_sequence(
@@ -708,14 +713,25 @@ class InferenceDataModule(DataModule):
             logger.info("Template preprocessing complete!")
 
     def setup(self, stage: str | None = None) -> None:
-        """Broadcast updated query set to all ranks if multiple GPUs are used."""
+        """Broadcast updated query and template settings to all ranks."""
         if self.world_size and self.world_size > 1:
+            preprocessing_state: list[Any]
             if dist.get_rank() == 0:
-                placeholder: list[Any] = [self.inference_config.query_set]
+                preprocessing_state = [self.inference_config.query_set]
+                if self.use_templates:
+                    preprocessing_state.append(
+                        self.inference_config.template_preprocessor_settings
+                    )
             else:
-                placeholder = [None]
-            dist.broadcast_object_list(placeholder, src=0)
-            self.inference_config.query_set = placeholder[0]
+                preprocessing_state = [None]
+                if self.use_templates:
+                    preprocessing_state.append(None)
+            dist.broadcast_object_list(preprocessing_state, src=0)
+            self.inference_config.query_set = preprocessing_state[0]
+            if self.use_templates:
+                self.inference_config.template_preprocessor_settings = (
+                    preprocessing_state[1]
+                )
         super().setup()
 
 

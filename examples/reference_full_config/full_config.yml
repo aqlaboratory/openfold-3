@@ -175,11 +175,11 @@ template_preprocessor_settings:
   n_processes: 1
   chunksize: 1
   preprocess_timeout: 60
-  structure_directory: <tmp-dir>/of3-of-<user>/template_data/template_structures
+  structure_directory: null
   structure_file_format: cif
-  output_directory: <tmp-dir>/of3-of-<user>/template_data
+  output_directory: null
   precache_directory: null
   structure_array_directory: null
-  cache_directory: <tmp-dir>/of3-of-<user>/template_data/template_cache
+  cache_directory: null
   log_directory: null
   ccd_file_path: null

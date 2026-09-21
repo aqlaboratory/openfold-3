@@ -85,39 +85,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # --- Conda image ---
-
-      - name: Extract metadata for conda image
-        id: meta-conda
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
-        with:
-          images: |
-            name=ghcr.io/${{ github.repository }}/openfold3-docker
-            name=openfoldconsortium/openfold3,enable=${{ github.repository == 'aqlaboratory/openfold-3' }}
-          tags: |
-            type=raw,value=${{ inputs.version }}-conda,enable=${{ github.event_name == 'workflow_dispatch' }}
-            type=raw,value=${{ inputs.additional_tags }}-conda,enable=${{ inputs.additional_tags != '' && github.event_name == 'workflow_dispatch' }}
-            type=semver,pattern={{major}}.{{minor}}-conda
-
-      - name: Build and push conda image
-        id: push-conda
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
-        with:
-          context: .
-          file: docker/Dockerfile.conda
-          target: devel
-          push: true
-          tags: ${{ steps.meta-conda.outputs.tags }}
-          labels: ${{ steps.meta-conda.outputs.labels }}
-
-      - name: Generate artifact attestation (conda)
-        if: github.repository == 'aqlaboratory/openfold-3'
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-name: index.docker.io/openfoldconsortium/openfold3
-          subject-digest: ${{ steps.push-conda.outputs.digest }}
-          push-to-registry: true
-
       # --- Pixi image ---
 
       - name: Extract metadata for pixi image

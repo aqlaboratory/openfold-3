@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import textwrap
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -48,6 +49,15 @@ def default_ckpt_path():
     )
     if not default_ckpt_path.exists():
         pytest.skip("Default checkpoint not found; skipping test.")
+    # Existence is not enough: another test can leave OPENFOLD_CACHE pointing at a
+    # directory holding a placeholder of the same name. Real checkpoints are zip
+    # archives, so anything else is not one -- skip rather than failing later in
+    # torch.load with an unrelated-looking unpickling error.
+    if not zipfile.is_zipfile(default_ckpt_path):
+        pytest.skip(
+            f"{default_ckpt_path} is not a checkpoint archive "
+            f"({default_ckpt_path.stat().st_size} bytes); skipping test."
+        )
     return default_ckpt_path
 
 
