@@ -119,6 +119,81 @@ class TestPredictionWriter:
         parsed_coords = parsed_structure.coord[0]
         np.testing.assert_array_equal(parsed_coords, new_coords, strict=False)
 
+    @pytest.mark.parametrize("structure_format", ["cif", "cif.gz"])
+    def test_cif_round_trip_preserves_cross_chain_covalent_bond(
+        self, tmp_path, structure_format
+    ):
+        atom_array = structure.array(
+            [
+                structure.Atom(
+                    [0.0, 0.0, 0.0],
+                    chain_id="A",
+                    res_id=1,
+                    res_name="CYS",
+                    atom_name="SG",
+                    element="S",
+                    hetero=False,
+                ),
+                structure.Atom(
+                    [1.8, 0.0, 0.0],
+                    chain_id="L",
+                    res_id=1,
+                    res_name="LIG",
+                    atom_name="C1",
+                    element="C",
+                    hetero=True,
+                ),
+            ]
+        )
+        atom_array.set_annotation("entity_id", np.array([1, 2]))
+        atom_array.set_annotation("molecule_type_id", np.array([0, 3]))
+        atom_array.set_annotation("charge", np.array([0, 0]))
+        atom_array.bonds = structure.BondList(
+            len(atom_array),
+            np.asarray([(0, 1, structure.BondType.SINGLE)], dtype=np.uint32),
+        )
+
+        output_path = tmp_path / f"covalent.{structure_format}"
+        OF3OutputWriter.write_structure_prediction(
+            atom_array,
+            atom_array.coord.copy(),
+            np.ones(len(atom_array)),
+            output_path,
+        )
+
+        if structure_format == "cif.gz":
+            with gzip.open(output_path, "rt") as file:
+                cif_file = pdbx.CIFFile.read(file)
+        else:
+            cif_file = pdbx.CIFFile.read(output_path)
+
+        parsed = pdbx.get_structure(
+            cif_file,
+            model=1,
+            include_bonds=True,
+        )
+        bonds = {
+            tuple(
+                sorted(
+                    (
+                        (
+                            str(parsed.chain_id[atom_1]),
+                            int(parsed.res_id[atom_1]),
+                            str(parsed.atom_name[atom_1]),
+                        ),
+                        (
+                            str(parsed.chain_id[atom_2]),
+                            int(parsed.res_id[atom_2]),
+                            str(parsed.atom_name[atom_2]),
+                        ),
+                    )
+                )
+            ): int(bond_type)
+            for atom_1, atom_2, bond_type in parsed.bonds.as_array()
+        }
+        endpoint_pair = tuple(sorted((("A", 1, "SG"), ("L", 1, "C1"))))
+        assert bonds[endpoint_pair] == int(structure.BondType.SINGLE)
+
     def _load_full_confidence_scores(self, output_file_path):
         output_fmt = output_file_path.suffix.lstrip(".")
         match output_fmt:

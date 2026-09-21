@@ -1,0 +1,38 @@
+{
+  "queries": {
+    "cross_chain_peptide": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": "A",
+          "sequence": "A"
+        },
+        {
+          "molecule_type": "protein",
+          "chain_ids": "B",
+          "sequence": "G"
+        }
+      ],
+      "covalent_bonds": [
+        [["A", 1, "C"], ["B", 1, "N"]]
+      ]
+    },
+    "cross_chain_rna": {
+      "chains": [
+        {
+          "molecule_type": "rna",
+          "chain_ids": "R",
+          "sequence": "U"
+        },
+        {
+          "molecule_type": "rna",
+          "chain_ids": "S",
+          "sequence": "A"
+        }
+      ],
+      "covalent_bonds": [
+        [["R", 1, "O3'"], ["S", 1, "P"]]
+      ]
+    }
+  }
+}

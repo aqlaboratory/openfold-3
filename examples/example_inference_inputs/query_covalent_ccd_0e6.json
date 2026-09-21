@@ -1,0 +1,21 @@
+{
+  "queries": {
+    "cysteine_0e6": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": "A",
+          "sequence": "AC"
+        },
+        {
+          "molecule_type": "ligand",
+          "chain_ids": "L",
+          "ccd_codes": "0E6"
+        }
+      ],
+      "covalent_bonds": [
+        [["A", 2, "SG"], ["L", 1, "C11"]]
+      ]
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "queries": {
+    "o_linked_nag": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": "A",
+          "sequence": "AS"
+        },
+        {
+          "molecule_type": "ligand",
+          "chain_ids": "G",
+          "ccd_codes": "NAG"
+        }
+      ],
+      "covalent_bonds": [
+        [["A", 2, "OG"], ["G", 1, "C1"]]
+      ]
+    }
+  }
+}

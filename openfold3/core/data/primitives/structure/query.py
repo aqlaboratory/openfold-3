@@ -17,22 +17,29 @@ Contains code related to parsing Query objects into AtomArrays and processed ref
 molecules.
 """
 
+from __future__ import annotations
+
 import logging
 from collections.abc import Iterable
 from functools import lru_cache
-from typing import NamedTuple
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import biotite.structure as struc
 import numpy as np
 from biotite.interface.rdkit import from_mol, to_mol
-from biotite.structure import AtomArray, BondList, BondType
+from biotite.structure import AtomArray
+from biotite.structure.io import pdbx
 from rdkit import Chem
 
 from openfold3.core.data.pipelines.sample_processing.conformer import (
     ProcessedReferenceMolecule,
 )
 from openfold3.core.data.primitives.structure.cleanup import remove_hydrogens
-from openfold3.core.data.primitives.structure.component import set_atomwise_annotation
+from openfold3.core.data.primitives.structure.component import (
+    BiotiteCCDWrapper,
+    set_atomwise_annotation,
+)
 from openfold3.core.data.primitives.structure.conformer import (
     multistrategy_compute_conformer,
 )
@@ -42,11 +49,19 @@ from openfold3.core.data.resources.residues import (
     MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_3,
     PROTEIN_RESTYPE_1TO3,
     RNA_RESTYPE_1TO3,
+    STANDARD_RESIDUES_3,
     MoleculeType,
 )
-from openfold3.projects.of3_all_atom.config.inference_query_format import Query
+
+if TYPE_CHECKING:
+    from openfold3.projects.of3_all_atom.config.inference_query_format import (
+        Atom,
+        Query,
+    )
 
 logger = logging.getLogger(__name__)
+
+_FORCE_ATOMIZATION_ANNOTATION = "force_atomization"
 
 
 class StructureWithReferenceMolecules(NamedTuple):
@@ -67,6 +82,10 @@ class StructureWithReferenceMolecules(NamedTuple):
 
 get_residue_cached = lru_cache(maxsize=500)(struc.info.residue)
 """Cached residue information retrieval from Biotite to speed up preprocessing."""
+
+
+class CovalentQueryError(ValueError):
+    """A query-scoped validation error caused by a requested structure edit."""
 
 
 def get_leaving_atoms(ccd_code: str) -> np.ndarray:
@@ -94,6 +113,298 @@ def get_leaving_atoms(ccd_code: str) -> np.ndarray:
     leaving_atoms = atom_names[leaving_atom_flag == "Y"]
 
     return leaving_atoms
+
+
+def _query_error(query: Query, message: str) -> CovalentQueryError:
+    """Create an error whose message identifies the affected inference query."""
+    query_name = query.query_name if query.query_name is not None else "<unnamed>"
+    return CovalentQueryError(f"Invalid inference query {query_name!r}: {message}")
+
+
+def _atom_selector_tuple(atom: Atom) -> tuple[str, int, str]:
+    """Convert a public atom selector into a hashable lookup key."""
+    return atom.chain_id, atom.residue_id, atom.atom_name
+
+
+def _atom_selector_text(atom: Atom) -> str:
+    """Format a public atom selector for a user-facing diagnostic."""
+    return repr([atom.chain_id, atom.residue_id, atom.atom_name])
+
+
+def _ccd_code_for_endpoint(query: Query, endpoint: Atom) -> tuple[str, set[str]] | None:
+    """Return an endpoint's CCD code and atoms already removed by construction.
+
+    ``None`` denotes a non-CCD molecule, currently a SMILES ligand. Structural
+    existence and uniqueness are validated again against the final AtomArray.
+    """
+    matching_chains = [
+        chain for chain in query.chains if endpoint.chain_id in chain.chain_ids
+    ]
+    if len(matching_chains) == 0:
+        raise _query_error(
+            query,
+            f"covalent endpoint {_atom_selector_text(endpoint)} references unknown "
+            f"chain {endpoint.chain_id!r}",
+        )
+    if len(matching_chains) > 1:
+        raise _query_error(
+            query,
+            f"covalent endpoint {_atom_selector_text(endpoint)} references chain "
+            f"{endpoint.chain_id!r}, which is declared more than once",
+        )
+
+    chain = matching_chains[0]
+    if chain.smiles is not None:
+        return None
+
+    if chain.molecule_type == MoleculeType.LIGAND:
+        if chain.ccd_codes is None:
+            return None
+        if endpoint.residue_id != 1:
+            raise _query_error(
+                query,
+                f"covalent endpoint {_atom_selector_text(endpoint)} references "
+                "residue ID other than 1 in a single-component ligand chain",
+            )
+        if len(chain.ccd_codes) != 1:
+            # Multi-residue CCD ligands are rejected by structure construction too.
+            return None
+        return chain.ccd_codes[0], set()
+
+    if chain.sequence is None or endpoint.residue_id > len(chain.sequence):
+        raise _query_error(
+            query,
+            f"covalent endpoint {_atom_selector_text(endpoint)} references an unknown "
+            f"residue in chain {endpoint.chain_id!r}",
+        )
+
+    non_canonical_residues = chain.non_canonical_residues or {}
+    if endpoint.residue_id in non_canonical_residues:
+        # CCD leaving flags for noncanonical polymer residues are already consumed by
+        # structure_with_ref_mols_from_sequence().  This set is populated by the
+        # caller from the same selected CCD source.
+        return non_canonical_residues[endpoint.residue_id], set()
+
+    residue_letter = chain.sequence[endpoint.residue_id - 1]
+    match chain.molecule_type:
+        case MoleculeType.PROTEIN:
+            ccd_code = PROTEIN_RESTYPE_1TO3.get(
+                residue_letter,
+                MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_3[MoleculeType.PROTEIN],
+            )
+        case MoleculeType.DNA:
+            ccd_code = DNA_RESTYPE_1TO3.get(
+                residue_letter,
+                MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_3[MoleculeType.DNA],
+            )
+        case MoleculeType.RNA:
+            ccd_code = RNA_RESTYPE_1TO3.get(
+                residue_letter,
+                MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_3[MoleculeType.RNA],
+            )
+        case _:
+            return None
+
+    return ccd_code, set(MOLECULE_TYPE_TO_LEAVING_ATOMS[chain.molecule_type])
+
+
+def _read_ccd_leaving_graph(
+    ccd: Any,
+    ccd_code: str,
+    query: Query,
+) -> tuple[list[str], set[str], dict[str, set[str]]]:
+    """Read atom order, heavy leaving atoms, and adjacency from one CCD block."""
+    try:
+        ccd_entry = ccd[ccd_code]
+        atom_category = ccd_entry["chem_comp_atom"]
+        atom_names = atom_category["atom_id"].as_array().astype(str).tolist()
+        atom_elements = atom_category["type_symbol"].as_array().astype(str)
+        leaving_flags = atom_category["pdbx_leaving_atom_flag"].as_array().astype(str)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise _query_error(
+            query,
+            f"could not read atom/leaving-atom metadata for CCD component "
+            f"{ccd_code!r}: {exc}",
+        ) from exc
+
+    heavy_leaving_atoms = {
+        atom_name
+        for atom_name, element, leaving_flag in zip(
+            atom_names, atom_elements, leaving_flags, strict=True
+        )
+        if leaving_flag == "Y" and element.upper() not in {"H", "D"}
+    }
+    adjacency = {atom_name: set() for atom_name in atom_names}
+
+    try:
+        bond_category = ccd_entry.get("chem_comp_bond")
+        if bond_category is None:
+            return atom_names, heavy_leaving_atoms, adjacency
+        atom_names_1 = bond_category["atom_id_1"].as_array().astype(str)
+        atom_names_2 = bond_category["atom_id_2"].as_array().astype(str)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise _query_error(
+            query,
+            f"could not read bond metadata for CCD component {ccd_code!r}: {exc}",
+        ) from exc
+
+    for atom_name_1, atom_name_2 in zip(atom_names_1, atom_names_2, strict=True):
+        # Invalid CCD references should not make the inference algorithm silently
+        # invent an incomplete graph.
+        if atom_name_1 not in adjacency or atom_name_2 not in adjacency:
+            raise _query_error(
+                query,
+                f"CCD component {ccd_code!r} has a bond referencing an unknown atom "
+                f"({atom_name_1!r}, {atom_name_2!r})",
+            )
+        adjacency[atom_name_1].add(atom_name_2)
+        adjacency[atom_name_2].add(atom_name_1)
+
+    return atom_names, heavy_leaving_atoms, adjacency
+
+
+def _endpoint_local_leaving_groups(
+    atom_names: list[str],
+    heavy_leaving_atoms: set[str],
+    adjacency: dict[str, set[str]],
+    endpoint_atom_name: str,
+) -> list[list[str]]:
+    """Find connected CCD-flagged heavy groups directly adjacent to an endpoint."""
+    if atom_names.count(endpoint_atom_name) != 1:
+        return []
+
+    atom_order = {atom_name: index for index, atom_name in enumerate(atom_names)}
+    direct_seeds = adjacency[endpoint_atom_name] & heavy_leaving_atoms
+    groups: list[list[str]] = []
+    visited: set[str] = set()
+    for seed in sorted(direct_seeds, key=atom_order.__getitem__):
+        if seed in visited:
+            continue
+        stack = [seed]
+        group: set[str] = set()
+        while stack:
+            atom_name = stack.pop()
+            if atom_name in group:
+                continue
+            group.add(atom_name)
+            stack.extend((adjacency[atom_name] & heavy_leaving_atoms) - group)
+        visited.update(group)
+        groups.append(sorted(group, key=atom_order.__getitem__))
+    return groups
+
+
+def normalize_manual_leaving_atoms(query: Query) -> Query:
+    """Return a copy with duplicate manual leaving-atom selectors removed.
+
+    Normalization is independent of automatic CCD inference so the effective query log
+    is stable whether or not leaving-atom inference is enabled.
+    """
+    effective_query = query.model_copy(deep=True)
+    normalized_atoms = []
+    seen_selectors: set[tuple[str, int, str]] = set()
+    for atom in effective_query.leaving_atoms or []:
+        selector = _atom_selector_tuple(atom)
+        if selector not in seen_selectors:
+            normalized_atoms.append(atom)
+            seen_selectors.add(selector)
+    effective_query.leaving_atoms = normalized_atoms or None
+    return effective_query
+
+
+def infer_ccd_leaving_atoms(
+    query: Query,
+    ccd: Any | str | Path | None = None,
+) -> Query:
+    """Conservatively infer endpoint-local heavy leaving atoms for a query.
+
+    The returned query is a deep copy; the input query is never mutated.  ``ccd`` may
+    be a parsed CIF file, a :class:`BiotiteCCDWrapper`, or a path to an uncompressed
+    CCD CIF file. If it is omitted, Biotite's configured global CCD is used.
+
+    Existing manual/effective ``leaving_atoms`` entries take precedence at an endpoint.
+    This makes the operation idempotent when a logged effective query is submitted
+    again and lets a user explicitly resolve an otherwise ambiguous CCD endpoint.
+    """
+    effective_query = normalize_manual_leaving_atoms(query)
+    if not effective_query.covalent_bonds:
+        return effective_query
+
+    if ccd is None:
+        ccd = BiotiteCCDWrapper()
+    elif isinstance(ccd, (str, Path)):
+        ccd = pdbx.CIFFile.read(ccd)
+
+    effective_leaving_atoms = []
+    existing_selectors: set[tuple[str, int, str]] = set()
+    for atom in effective_query.leaving_atoms or []:
+        selector = _atom_selector_tuple(atom)
+        if selector not in existing_selectors:
+            effective_leaving_atoms.append(atom)
+            existing_selectors.add(selector)
+
+    for bond_index, bond in enumerate(effective_query.covalent_bonds):
+        for endpoint in bond:
+            ccd_info = _ccd_code_for_endpoint(effective_query, endpoint)
+            if ccd_info is None:
+                continue
+            ccd_code, atoms_removed_by_construction = ccd_info
+            atom_names, heavy_leaving_atoms, adjacency = _read_ccd_leaving_graph(
+                ccd, ccd_code, effective_query
+            )
+
+            # Noncanonical polymer construction removes every CCD-flagged atom.  Read
+            # that set from the selected CCD rather than Biotite's global CCD.
+            chain = next(
+                chain
+                for chain in effective_query.chains
+                if endpoint.chain_id in chain.chain_ids
+            )
+            if chain.molecule_type != MoleculeType.LIGAND and endpoint.residue_id in (
+                chain.non_canonical_residues or {}
+            ):
+                atoms_removed_by_construction = set(heavy_leaving_atoms)
+
+            heavy_leaving_atoms -= atoms_removed_by_construction
+            groups = _endpoint_local_leaving_groups(
+                atom_names,
+                heavy_leaving_atoms,
+                adjacency,
+                endpoint.atom_name,
+            )
+            if not groups:
+                continue
+
+            component_manual_names = {
+                atom_name
+                for chain_id, residue_id, atom_name in existing_selectors
+                if chain_id == endpoint.chain_id and residue_id == endpoint.residue_id
+            }
+            # A manual entry in any candidate group is treated as an explicit choice.
+            # Do not second-guess or expand it automatically.
+            if any(component_manual_names & set(group) for group in groups):
+                continue
+
+            if len(groups) > 1:
+                formatted_groups = ", ".join(repr(group) for group in groups)
+                raise _query_error(
+                    effective_query,
+                    f"covalent bond {bond_index} endpoint "
+                    f"{_atom_selector_text(endpoint)} has multiple endpoint-local "
+                    f"CCD leaving groups in {ccd_code!r}: {formatted_groups}; "
+                    "specify leaving_atoms explicitly",
+                )
+
+            for atom_name in groups[0]:
+                inferred_atom = type(endpoint)(
+                    endpoint.chain_id, endpoint.residue_id, atom_name
+                )
+                selector = _atom_selector_tuple(inferred_atom)
+                if selector not in existing_selectors:
+                    effective_leaving_atoms.append(inferred_atom)
+                    existing_selectors.add(selector)
+
+    effective_query.leaving_atoms = effective_leaving_atoms or None
+    return effective_query
 
 
 def atom_array_from_ccd_code(
@@ -558,49 +869,320 @@ def _build_smiles_comp_id_mapping(query: Query) -> dict[str, str]:
     return smiles_to_comp_id
 
 
-def add_query_covalent_bonds(atom_array: AtomArray, query: Query) -> None:
-    """Add named query bonds to the assembled structure in place.
+def _reference_atom_names(
+    processed_reference_mol: ProcessedReferenceMolecule,
+) -> list[str]:
+    """Return atom names in the exact order used by a reference molecule mask."""
+    return [
+        atom.GetProp("annot_atom_name")
+        for atom in processed_reference_mol.mol.GetAtoms()
+    ]
 
-    Resolve each endpoint by chain ID, one-based residue ID, and atom name.
-    All endpoints are validated before changing the bond list; missing or
-    ambiguous atoms and bonds from an atom to itself raise ValueError.
 
-    New pairs are added as single bonds. Existing pairs retain their bond types,
-    and duplicate or reversed query bonds are ignored. An absent or empty
-    covalent_bonds list leaves the structure unchanged.
-    """
+def _apply_manual_leaving_atoms(
+    atom_array: AtomArray,
+    processed_reference_mols_by_residue: dict[
+        tuple[str, int], list[ProcessedReferenceMolecule]
+    ],
+    query: Query,
+) -> AtomArray:
+    """Remove query-selected atoms and update matching reference-molecule masks."""
+    if not query.leaving_atoms:
+        return atom_array
+
+    chain_ids = set(atom_array.chain_id.tolist())
+    residues_by_chain = {
+        chain_id: sorted(set(atom_array.res_id[atom_array.chain_id == chain_id]))
+        for chain_id in chain_ids
+    }
+    updates: list[tuple[ProcessedReferenceMolecule, int]] = []
+    atom_indices_to_remove: set[int] = set()
+    seen_selectors: set[tuple[str, int, str]] = set()
+
+    for leaving_atom in query.leaving_atoms:
+        selector = _atom_selector_tuple(leaving_atom)
+        if selector in seen_selectors:
+            continue
+        seen_selectors.add(selector)
+
+        chain_id, residue_id, atom_name = selector
+        if chain_id not in chain_ids:
+            raise _query_error(
+                query,
+                f"leaving atom {_atom_selector_text(leaving_atom)} references unknown "
+                f"chain {chain_id!r}; valid chains are {sorted(chain_ids)!r}",
+            )
+
+        reference_matches = processed_reference_mols_by_residue.get(
+            (chain_id, residue_id), []
+        )
+        if len(reference_matches) == 0:
+            raise _query_error(
+                query,
+                f"leaving atom {_atom_selector_text(leaving_atom)} references unknown "
+                f"residue {residue_id} in chain {chain_id!r}; valid residue IDs are "
+                f"{residues_by_chain[chain_id]!r}",
+            )
+        if len(reference_matches) > 1:
+            raise _query_error(
+                query,
+                f"leaving atom {_atom_selector_text(leaving_atom)} is ambiguous "
+                f"because chain {chain_id!r}, residue {residue_id} occurs more than "
+                "once",
+            )
+
+        processed_reference_mol = reference_matches[0]
+        reference_atom_names = _reference_atom_names(processed_reference_mol)
+        reference_atom_indices = [
+            index
+            for index, reference_atom_name in enumerate(reference_atom_names)
+            if reference_atom_name == atom_name
+        ]
+        if len(reference_atom_indices) == 0:
+            raise _query_error(
+                query,
+                f"leaving atom {_atom_selector_text(leaving_atom)} has unknown atom "
+                f"name {atom_name!r}; valid atom names are "
+                f"{sorted(reference_atom_names)!r}",
+            )
+        if len(reference_atom_indices) > 1:
+            raise _query_error(
+                query,
+                f"leaving atom {_atom_selector_text(leaving_atom)} is ambiguous; atom "
+                f"name {atom_name!r} occurs {len(reference_atom_indices)} times",
+            )
+
+        reference_atom_index = reference_atom_indices[0]
+        if len(processed_reference_mol.in_crop_mask) != len(reference_atom_names):
+            raise _query_error(
+                query,
+                f"reference mask for leaving atom {_atom_selector_text(leaving_atom)} "
+                "is not aligned with its reference molecule",
+            )
+        updates.append((processed_reference_mol, reference_atom_index))
+
+        structure_matches = np.where(
+            (atom_array.chain_id == chain_id)
+            & (atom_array.res_id == residue_id)
+            & (atom_array.atom_name == atom_name)
+        )[0]
+        if len(structure_matches) > 1:
+            raise _query_error(
+                query,
+                f"leaving atom {_atom_selector_text(leaving_atom)} is ambiguous in the "
+                f"assembled structure; it resolves to {len(structure_matches)} atoms",
+            )
+        if len(structure_matches) == 1:
+            atom_indices_to_remove.add(int(structure_matches[0]))
+        elif processed_reference_mol.in_crop_mask[reference_atom_index]:
+            raise _query_error(
+                query,
+                f"leaving atom {_atom_selector_text(leaving_atom)} is present in the "
+                "reference mask but missing from the assembled structure",
+            )
+
+    # Apply all edits only after every selector has validated.
+    for processed_reference_mol, reference_atom_index in updates:
+        processed_reference_mol.in_crop_mask[reference_atom_index] = False
+
+    if atom_indices_to_remove:
+        keep_mask = np.ones(len(atom_array), dtype=bool)
+        keep_mask[list(atom_indices_to_remove)] = False
+        atom_array = atom_array[keep_mask]
+
+    return atom_array
+
+
+def _resolve_covalent_endpoint(
+    atom_array: AtomArray,
+    endpoint: Atom,
+    query: Query,
+    bond_index: int,
+    endpoint_index: int,
+    selector_to_indices: dict[tuple[str, int, str], list[int]],
+) -> int:
+    """Resolve one public endpoint with layered, actionable diagnostics."""
+    chain_id, residue_id, atom_name = _atom_selector_tuple(endpoint)
+    chain_mask = atom_array.chain_id == chain_id
+    if not np.any(chain_mask):
+        raise _query_error(
+            query,
+            f"covalent bond {bond_index} endpoint {endpoint_index} "
+            f"{_atom_selector_text(endpoint)} references unknown chain {chain_id!r}; "
+            f"valid chains are {sorted(set(atom_array.chain_id.tolist()))!r}",
+        )
+
+    residue_mask = chain_mask & (atom_array.res_id == residue_id)
+    if not np.any(residue_mask):
+        valid_residue_ids = sorted(set(atom_array.res_id[chain_mask].tolist()))
+        raise _query_error(
+            query,
+            f"covalent bond {bond_index} endpoint {endpoint_index} "
+            f"{_atom_selector_text(endpoint)} references unknown residue {residue_id} "
+            f"in chain {chain_id!r}; valid residue IDs are {valid_residue_ids!r}",
+        )
+
+    selector = _atom_selector_tuple(endpoint)
+    atom_indices = selector_to_indices.get(selector, [])
+    if len(atom_indices) == 0:
+        valid_atom_names = sorted(set(atom_array.atom_name[residue_mask].tolist()))
+        raise _query_error(
+            query,
+            f"covalent bond {bond_index} endpoint {endpoint_index} "
+            f"{_atom_selector_text(endpoint)} references unknown atom name "
+            f"{atom_name!r}; valid atom names are {valid_atom_names!r}",
+        )
+    if len(atom_indices) > 1:
+        raise _query_error(
+            query,
+            f"covalent bond {bond_index} endpoint {endpoint_index} "
+            f"{_atom_selector_text(endpoint)} is ambiguous and resolves to "
+            f"{len(atom_indices)} atoms",
+        )
+    return atom_indices[0]
+
+
+def _materialize_query_covalent_bonds(
+    atom_array: AtomArray,
+    query: Query,
+) -> None:
+    """Validate and atomically merge query-defined bonds into an AtomArray."""
     if not query.covalent_bonds:
         return
 
-    pairs = []
-    for bond in query.covalent_bonds:
-        endpoints = []
-        for atom in bond:
-            indices = np.flatnonzero(
-                (atom_array.chain_id == atom.chain_id)
-                & (atom_array.res_id == atom.residue_id)
-                & (atom_array.atom_name == atom.atom_name)
-            )
-            if len(indices) != 1:
-                raise ValueError(
-                    f"Covalent bond endpoint {atom}: expected one atom, "
-                    f"found {len(indices)}."
-                )
-            endpoints.append(int(indices[0]))
-        if endpoints[0] == endpoints[1]:
-            raise ValueError("A covalent bond cannot connect an atom to itself.")
-        pairs.append(endpoints)
+    selector_to_indices: dict[tuple[str, int, str], list[int]] = {}
+    for atom_index, selector in enumerate(
+        zip(
+            atom_array.chain_id.tolist(),
+            atom_array.res_id.tolist(),
+            atom_array.atom_name.tolist(),
+            strict=True,
+        )
+    ):
+        selector_to_indices.setdefault(selector, []).append(atom_index)
 
-    if atom_array.bonds is None:
-        atom_array.bonds = BondList(len(atom_array))
-    existing_pairs = {
-        tuple(sorted(pair)) for pair in atom_array.bonds.as_array()[:, :2]
+    leaving_atom_selectors = {
+        _atom_selector_tuple(atom) for atom in query.leaving_atoms or []
     }
-    for atom1, atom2 in pairs:
-        pair = tuple(sorted((atom1, atom2)))
-        if pair not in existing_pairs:
-            atom_array.bonds.add_bond(atom1, atom2, BondType.SINGLE)
-            existing_pairs.add(pair)
+    intrinsic_bonds = (
+        atom_array.bonds.as_array()
+        if atom_array.bonds is not None
+        else np.empty((0, 3), dtype=np.uint32)
+    )
+    intrinsic_bond_types: dict[tuple[int, int], set[int]] = {}
+    for atom_index_1, atom_index_2, bond_type in intrinsic_bonds:
+        pair = tuple(sorted((int(atom_index_1), int(atom_index_2))))
+        intrinsic_bond_types.setdefault(pair, set()).add(int(bond_type))
+
+    seen_custom_pairs: set[tuple[int, int]] = set()
+    resolved_bonds: list[tuple[int, int, int]] = []
+    endpoint_indices: set[int] = set()
+
+    for bond_index, bond in enumerate(query.covalent_bonds):
+        endpoint_1, endpoint_2 = bond
+        for endpoint in (endpoint_1, endpoint_2):
+            if _atom_selector_tuple(endpoint) in leaving_atom_selectors:
+                raise _query_error(
+                    query,
+                    f"covalent bond {bond_index} endpoint "
+                    f"{_atom_selector_text(endpoint)} is also selected as a leaving "
+                    "atom",
+                )
+
+        atom_index_1 = _resolve_covalent_endpoint(
+            atom_array,
+            endpoint_1,
+            query,
+            bond_index,
+            0,
+            selector_to_indices,
+        )
+        atom_index_2 = _resolve_covalent_endpoint(
+            atom_array,
+            endpoint_2,
+            query,
+            bond_index,
+            1,
+            selector_to_indices,
+        )
+
+        if endpoint_1.chain_id == endpoint_2.chain_id:
+            raise _query_error(
+                query,
+                f"covalent bond {bond_index} connects endpoints in the same chain "
+                f"{endpoint_1.chain_id!r}; v1 supports inter-chain bonds only",
+            )
+        if atom_index_1 == atom_index_2:
+            raise _query_error(query, f"covalent bond {bond_index} is a self-bond")
+
+        pair = tuple(sorted((atom_index_1, atom_index_2)))
+        if pair in seen_custom_pairs:
+            raise _query_error(
+                query,
+                f"covalent bond {bond_index} duplicates an earlier custom bond, "
+                "including when its endpoint order is reversed",
+            )
+        seen_custom_pairs.add(pair)
+        endpoint_indices.update(pair)
+
+        existing_types = intrinsic_bond_types.get(pair)
+        if existing_types is not None:
+            if existing_types == {int(struc.BondType.SINGLE)}:
+                logger.debug(
+                    "Query %r covalent bond %d is already present as an intrinsic "
+                    "single bond",
+                    query.query_name,
+                    bond_index,
+                )
+                continue
+            raise _query_error(
+                query,
+                f"covalent bond {bond_index} conflicts with intrinsic bond type(s) "
+                f"{sorted(existing_types)!r}",
+            )
+
+        resolved_bonds.append((atom_index_1, atom_index_2, int(struc.BondType.SINGLE)))
+        logger.debug(
+            "Query %r covalent bond %d resolved %s and %s to atom indices %d and %d",
+            query.query_name,
+            bond_index,
+            _atom_selector_text(endpoint_1),
+            _atom_selector_text(endpoint_2),
+            atom_index_1,
+            atom_index_2,
+        )
+
+    # All declarations are valid: now perform the mutations as one commit.
+    if resolved_bonds:
+        custom_bonds = np.asarray(resolved_bonds, dtype=np.uint32)
+        merged_bonds = np.concatenate((intrinsic_bonds, custom_bonds), axis=0)
+        atom_array.bonds = struc.BondList(len(atom_array), merged_bonds)
+
+    force_atomization = np.zeros(len(atom_array), dtype=bool)
+    forced_residues: set[tuple[str, int]] = set()
+    for endpoint_index in endpoint_indices:
+        if (
+            atom_array.molecule_type_id[endpoint_index] != MoleculeType.LIGAND
+            and atom_array.res_name[endpoint_index] in STANDARD_RESIDUES_3
+        ):
+            forced_residues.add(
+                (
+                    str(atom_array.chain_id[endpoint_index]),
+                    int(atom_array.res_id[endpoint_index]),
+                )
+            )
+            force_atomization |= (
+                atom_array.chain_id == atom_array.chain_id[endpoint_index]
+            ) & (atom_array.res_id == atom_array.res_id[endpoint_index])
+    atom_array.set_annotation(_FORCE_ATOMIZATION_ANNOTATION, force_atomization)
+    logger.debug(
+        "Query %r validated %d custom bond(s), inserted %d new edge(s), and "
+        "marked %d canonical endpoint residue(s) for atomization",
+        query.query_name,
+        len(query.covalent_bonds),
+        len(resolved_bonds),
+        len(forced_residues),
+    )
 
 
 def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMolecules:
@@ -629,6 +1211,9 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
     # Initialize eventually returned objects
     atom_array = None
     processed_reference_mols: list[ProcessedReferenceMolecule] = []
+    processed_reference_mols_by_residue: dict[
+        tuple[str, int], list[ProcessedReferenceMolecule]
+    ] = {}
 
     # Create entity mapping
     all_entities = set()
@@ -703,6 +1288,12 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
 
             # Add processed reference molecules
             processed_reference_mols.extend(segment_ref_mols)
+            for residue_id, processed_reference_mol in enumerate(
+                segment_ref_mols, start=1
+            ):
+                processed_reference_mols_by_residue.setdefault(
+                    (chain_id, residue_id), []
+                ).append(processed_reference_mol)
 
             segment_atom_array.set_annotation(
                 "entity_id",
@@ -719,8 +1310,12 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
             else:
                 atom_array += segment_atom_array
 
-    if atom_array is not None:
-        add_query_covalent_bonds(atom_array, query)
+    atom_array = _apply_manual_leaving_atoms(
+        atom_array,
+        processed_reference_mols_by_residue,
+        query,
+    )
+    _materialize_query_covalent_bonds(atom_array, query)
 
     # Force coordinates to 0 for consistency
     atom_array.coord[:] = 0.0

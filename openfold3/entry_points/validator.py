@@ -314,6 +314,17 @@ class InferenceExperimentSettings(ExperimentSettings):
     use_templates: bool = True
     skip_existing: bool = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_covalent_leaving_atom_yaml_setting(cls, data):
+        """Keep automatic leaving-atom inference an explicit CLI-only opt-in."""
+        if isinstance(data, dict) and "infer_covalent_leaving_atoms" in data:
+            raise ValueError(
+                "infer_covalent_leaving_atoms is CLI-only; remove it from the "
+                "runner YAML and pass --infer-covalent-leaving-atoms to predict"
+            )
+        return data
+
     @model_validator(mode="after")
     def generate_seeds(self):
         """Creates a list of seeds if a list of seeds is not provided."""

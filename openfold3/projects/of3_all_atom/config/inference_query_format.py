@@ -20,6 +20,8 @@ from pydantic import (
     DirectoryPath,
     Field,
     FilePath,
+    StrictStr,
+    StringConstraints,
     field_serializer,
     field_validator,
     model_validator,
@@ -38,16 +40,14 @@ from openfold3.core.data.resources.residues import (
 
 
 class Atom(NamedTuple):
-    """Named atom in a query chain; residue IDs are one-based."""
+    """Public atom selector used by query-level structure edits."""
 
-    chain_id: Annotated[str, Field(min_length=1)]
-    residue_id: Annotated[int, Field(ge=1)]
-    atom_name: Annotated[str, Field(min_length=1)]
+    chain_id: Annotated[StrictStr, StringConstraints(min_length=1)]
+    residue_id: Annotated[int, Field(strict=True, ge=1)]
+    atom_name: Annotated[StrictStr, StringConstraints(min_length=1)]
 
 
 class Bond(NamedTuple):
-    """Covalent connection between two named atoms in a query."""
-
     atom1: Atom
     atom2: Atom
 
@@ -182,6 +182,9 @@ class Chain(BaseModel):
 
 
 class Query(BaseModel):
+    model_config = {
+        "extra": "forbid",
+    }
     query_name: str | None = None
     chains: list[Chain]
     use_msas: bool = True
@@ -189,6 +192,7 @@ class Query(BaseModel):
     use_main_msas: bool = True
     covalent_bonds: list[Bond] | None = None
     pocket_constraint: PocketConstraint | None = None
+    leaving_atoms: list[Atom] | None = None
 
     @model_validator(mode="after")
     def validate_pocket_constraint(self) -> "Query":
@@ -210,8 +214,57 @@ class Query(BaseModel):
             )
         return self
 
+    @field_validator("covalent_bonds", mode="before")
+    @classmethod
+    def validate_covalent_bond_shape(cls, value):
+        """Keep the public bond representation positional and unambiguous."""
+        if value is None:
+            return value
+        if not isinstance(value, (list, tuple)):
+            raise ValueError(
+                "covalent_bonds must be a list of two-endpoint bonds; "
+                f"received {value!r} ({type(value).__name__})"
+            )
+        for bond in value:
+            if not isinstance(bond, (list, tuple)) or len(bond) != 2:
+                raise ValueError(
+                    "each covalent bond must contain exactly two atoms; "
+                    f"received {bond!r}"
+                )
+            for endpoint in bond:
+                if not isinstance(endpoint, (list, tuple)) or len(endpoint) != 3:
+                    raise ValueError(
+                        "each covalent bond atom must be "
+                        "[chain_id, residue_id, atom_name]; "
+                        f"received {endpoint!r}"
+                    )
+        return value
+
+    @field_validator("leaving_atoms", mode="before")
+    @classmethod
+    def validate_leaving_atom_shape(cls, value):
+        """Keep leaving-atom selectors in the same positional form as endpoints."""
+        if value is None:
+            return value
+        if not isinstance(value, (list, tuple)):
+            raise ValueError(
+                "leaving_atoms must be a list of atom selectors; "
+                f"received {value!r} ({type(value).__name__})"
+            )
+        for atom in value:
+            if not isinstance(atom, (list, tuple)) or len(atom) != 3:
+                raise ValueError(
+                    "each leaving atom must be "
+                    "[chain_id, residue_id, atom_name]; "
+                    f"received {atom!r}"
+                )
+        return value
+
 
 class InferenceQuerySet(BaseModel):
+    model_config = {
+        "extra": "forbid",
+    }
     seeds: list[int] = [42]
     queries: dict[str, Query]
 
@@ -226,3 +279,14 @@ class InferenceQuerySet(BaseModel):
         """Add query name to the query objects."""
         for name, query in self.queries.items():
             query.query_name = name
+
+
+__all__ = [
+    "Atom",
+    "Bond",
+    "Chain",
+    "InferenceQuerySet",
+    "PocketConstraint",
+    "PocketResidue",
+    "Query",
+]

@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import textwrap
 
 import pytest  # noqa: F401  - used for pytest tmp fixture
+from pydantic import ValidationError
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import (
@@ -33,6 +35,9 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
+)
+from openfold3.projects.of3_all_atom.config.inference_query_processing import (
+    load_inference_query_set_with_query_errors,
 )
 
 
@@ -359,6 +364,143 @@ class TestOF3DatasetConfigConstruction:
 
 
 class TestInferenceConfigConstruction:
+    def test_covalent_atom_names_and_leaving_atoms_round_trip(self):
+        query_set = InferenceQuerySet.model_validate(
+            {
+                "queries": {
+                    "bonded": {
+                        "chains": [],
+                        "covalent_bonds": [[["A", 42, "SG"], ["L", 1, "C7"]]],
+                        "leaving_atoms": [["L", 1, "CL1"]],
+                    }
+                }
+            }
+        )
+
+        query = query_set.queries["bonded"]
+        assert query.covalent_bonds[0].atom1.atom_name == "SG"
+        assert query.covalent_bonds[0].atom2.atom_name == "C7"
+        assert query.leaving_atoms[0].atom_name == "CL1"
+        assert (
+            InferenceQuerySet.model_validate_json(
+                query_set.model_dump_json()
+            ).model_dump()
+            == query_set.model_dump()
+        )
+
+    @pytest.mark.parametrize(
+        "endpoint",
+        [
+            ["A", 1, 7],
+            ["", 1, "SG"],
+            ["A", 0, "SG"],
+            ["A", 1, ""],
+        ],
+    )
+    def test_invalid_covalent_atom_selector_is_rejected(self, endpoint):
+        with pytest.raises(ValidationError):
+            InferenceQuerySet.model_validate(
+                {
+                    "queries": {
+                        "bonded": {
+                            "chains": [],
+                            "covalent_bonds": [[endpoint, ["L", 1, "C1"]]],
+                        }
+                    }
+                }
+            )
+
+    @pytest.mark.parametrize(
+        "covalent_bonds,leaving_atoms",
+        [
+            (
+                [
+                    {
+                        "atom1": ["A", 1, "SG"],
+                        "atom2": ["L", 1, "C1"],
+                    }
+                ],
+                None,
+            ),
+            (
+                [
+                    [
+                        {"chain_id": "A", "residue_id": 1, "atom_name": "SG"},
+                        ["L", 1, "C1"],
+                    ]
+                ],
+                None,
+            ),
+            (None, [{"chain_id": "L", "residue_id": 1, "atom_name": "CL1"}]),
+        ],
+    )
+    def test_object_shaped_atom_and_bond_selectors_are_rejected(
+        self, covalent_bonds, leaving_atoms
+    ):
+        with pytest.raises(ValidationError) as exc_info:
+            InferenceQuerySet.model_validate(
+                {
+                    "queries": {
+                        "bonded": {
+                            "chains": [],
+                            "covalent_bonds": covalent_bonds,
+                            "leaving_atoms": leaving_atoms,
+                        }
+                    }
+                }
+            )
+        assert "received" in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"queries": {}, "unknown_top_level_field": True},
+            {"queries": {"query": {"chains": [], "unknown_query_field": True}}},
+        ],
+    )
+    def test_inference_query_unknown_fields_are_rejected(self, payload):
+        with pytest.raises(ValidationError, match="extra_forbidden"):
+            InferenceQuerySet.model_validate(payload)
+
+    def test_declared_optional_covalent_fields_may_be_omitted(self):
+        query = InferenceQuerySet.model_validate(
+            {"queries": {"query": {"chains": []}}}
+        ).queries["query"]
+
+        assert query.covalent_bonds is None
+        assert query.leaving_atoms is None
+
+    def test_query_json_loader_isolates_query_level_schema_errors(self, tmp_path):
+        query_path = tmp_path / "queries.json"
+        query_path.write_text(
+            json.dumps(
+                {
+                    "queries": {
+                        "valid": {"chains": []},
+                        "invalid": {
+                            "chains": [],
+                            "covalent_bonds": [[["A", 1, 7], ["L", 1, "C1"]]],
+                        },
+                    }
+                }
+            )
+        )
+
+        query_set, query_errors = load_inference_query_set_with_query_errors(query_path)
+
+        assert list(query_set.queries) == ["valid"]
+        assert query_set.queries["valid"].query_name == "valid"
+        assert list(query_errors) == ["invalid"]
+
+    def test_query_json_loader_still_rejects_top_level_extra_fields(self, tmp_path):
+        query_path = tmp_path / "queries.json"
+        query_path.write_text(
+            json.dumps({"queries": {"valid": {"chains": []}}, "typo": True})
+        )
+
+        with pytest.raises(ValidationError, match="extra_forbidden"):
+            load_inference_query_set_with_query_errors(query_path)
+
     def test_inference_config_loading(self, tmp_path):
         inference_set = InferenceQuerySet.model_validate(
             {
