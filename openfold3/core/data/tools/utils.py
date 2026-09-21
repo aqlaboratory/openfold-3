@@ -25,6 +25,12 @@ import time
 from pathlib import Path
 
 
+def _get_of3_tmpdir_path(subdir: str | None = None) -> Path:
+    """Return the OpenFold temporary path without creating it."""
+    base = Path(tempfile.gettempdir()) / f"of3-of-{getpass.getuser()}"
+    return base / subdir if subdir else base
+
+
 def get_of3_tmpdir(subdir: str | None = None) -> Path:
     """Return a user-namespaced OpenFold3 temporary directory.
 
@@ -34,8 +40,7 @@ def get_of3_tmpdir(subdir: str | None = None) -> Path:
 
     The returned directory is created on disk if it does not already exist.
     """
-    base = Path(tempfile.gettempdir()) / f"of3-of-{getpass.getuser()}"
-    path = base / subdir if subdir else base
+    path = _get_of3_tmpdir_path(subdir)
     path.mkdir(parents=True, exist_ok=True)
     return path
 

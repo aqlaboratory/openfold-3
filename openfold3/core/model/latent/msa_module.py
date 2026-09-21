@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
@@ -30,6 +31,7 @@ from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.layers.msa import MSAPairWeightedAveraging
 from openfold3.core.model.utils import assert_sole_holder
+from openfold3.core.utils.device_utils import empty_device_cache
 from openfold3.core.utils.tensor_utils import add
 
 
@@ -56,6 +58,7 @@ class MSAModuleBlock(MSABlock):
         eps: float,
         linear_init_params: ConfigDict = lin_init.msa_module_init,
         last_block: bool = False,
+        clear_cache_between_blocks: bool = False,
     ):
         """
         Args:
@@ -100,6 +103,9 @@ class MSAModuleBlock(MSABlock):
             last_block:
                 Whether this is the last block and the msa embedding updates should
                 be skipped
+            clear_cache_between_blocks:
+                Whether to clear the accelerator's memory cache between blocks
+                of the stack. Slows down each block but can reduce fragmentation
         """
         super().__init__(
             c_m=c_m,
@@ -122,6 +128,7 @@ class MSAModuleBlock(MSABlock):
         )
 
         self.skip_msa_update = last_block and opm_first
+        self.clear_cache_between_blocks = clear_cache_between_blocks
 
         if not self.skip_msa_update:
             # Column attention is disabled and MSAPairWeightedAveraging replace
@@ -197,11 +204,17 @@ class MSAModuleBlock(MSABlock):
 
             if _offload_inference and inplace_safe:
                 # m: GPU, z: CPU
+                # Read the device before dropping the reference — this holds a
+                # torch.device, not the tensor, so assert_sole_holder still sees
+                # the container as the only holder.
+                accel_device = z.device
                 del m, z
                 assert_sole_holder(input_tensors[1], in_container=True)
                 input_tensors[1] = input_tensors[1].cpu()
-                torch.cuda.empty_cache()
+                empty_device_cache(accel_device)
                 m, z = input_tensors
+            elif self.clear_cache_between_blocks:
+                empty_device_cache(m.device)
 
             m = add(
                 m,
@@ -236,6 +249,8 @@ class MSAModuleBlock(MSABlock):
             input_tensors[0] = input_tensors[0].cpu()
             input_tensors[1] = input_tensors[1].to(device)
             m, z = input_tensors
+        elif self.clear_cache_between_blocks:
+            empty_device_cache(m.device)
 
         if not inplace_safe:
             input_tensors = [m, z]
@@ -263,6 +278,8 @@ class MSAModuleBlock(MSABlock):
             m, _ = input_tensors
         else:
             m = input_tensors[0]
+            if self.clear_cache_between_blocks:
+                empty_device_cache(z.device)
 
         return m, z
 
@@ -379,6 +396,7 @@ class MSAModuleStack(MSAStack):
                 eps=eps,
                 linear_init_params=linear_init_params,
                 last_block=i == no_blocks - 1,
+                clear_cache_between_blocks=clear_cache_between_blocks,
             )
             self.blocks.append(block)
 

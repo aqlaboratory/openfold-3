@@ -1,7 +1,7 @@
 {
-  "torch_version": "2.12.1",
+  "torch_version": "2.10.0",
   "python_version": "3.14.6",
   "cuda_version": "12.9",
   "cudnn_version": "91002",
-  "gpu_name": "NVIDIA GB10"
+  "gpu_name": "NVIDIA RTX 6000 Ada Generation"
 }

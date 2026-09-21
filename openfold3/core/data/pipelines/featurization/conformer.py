@@ -138,6 +138,12 @@ def featurize_reference_conformers_of3(
         mol_ref_mask = torch.tensor(mol_ref_mask, dtype=torch.int32)
         mol_ref_pos = torch.tensor(mol_ref_pos, dtype=torch.float32)
 
+        # Convert NaN ref_pos coordinates to 0
+        assert not torch.any(torch.isnan(mol_ref_pos[mol_ref_mask == 1])), (
+            "Valid atoms (mask=1) have NaN coordinates"
+        )
+        mol_ref_pos[mol_ref_mask == 0] = 0.0
+
         if torch.any(mol_ref_mask):
             # Apply random translation & rotation to reference coordinates
             final_ref_pos = centre_random_augmentation(mol_ref_pos, mol_ref_mask)

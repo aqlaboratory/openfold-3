@@ -180,6 +180,7 @@ class TestOF3Model:
 
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_evo_attn_available()
     @pytest.mark.parametrize(
         "dtype", [torch.float32, torch.bfloat16], ids=lambda d: f"dtype={d}"
     )
@@ -209,6 +210,7 @@ class TestOF3Model:
     @pytest.mark.slow
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_evo_attn_available()
     @pytest.mark.parametrize(
         "dtype", [torch.float32, torch.bfloat16], ids=lambda d: f"dtype={d}"
     )
@@ -233,6 +235,7 @@ class TestOF3Model:
 
     @compare_utils.skip_unless_triton_installed()
     @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_evo_attn_available()
     def test_shape_large_bf16_train(self):
         batch_size = 1
         n_token = 384

@@ -103,6 +103,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         inplace_safe: bool = False,
         offload_inference: bool = False,
         _mask_trans: bool = True,
+        pairformer_dtype: torch.dtype = torch.float32,
     ):
         """
         Args:
@@ -179,7 +180,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         pair_mask = token_mask[..., None] * token_mask[..., None, :]
 
         # Get representative atoms
-        repr_x_pred, repr_x_mask = get_token_representative_atoms(
+        repr_x_pred, _ = get_token_representative_atoms(
             batch=batch, x=atom_positions_predicted, atom_mask=batch["atom_mask"]
         )
 
@@ -202,7 +203,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             si=si,
             zij=zij,
             x_pred=repr_x_pred,
-            single_mask=repr_x_mask,
+            single_mask=token_mask,
             pair_mask=pair_mask,
             chunk_size=chunk_size,
             use_deepspeed_evo_attention=use_deepspeed_evo_attention,
@@ -213,6 +214,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             offload_inference=offload_inference,
             _mask_trans=_mask_trans,
             apply_per_sample=apply_per_sample,
+            pairformer_dtype=pairformer_dtype,
         )
 
         # Get atom mask padded to MAX_ATOMS_PER_TOKEN

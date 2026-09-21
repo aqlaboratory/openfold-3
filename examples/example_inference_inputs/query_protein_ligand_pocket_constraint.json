@@ -1,0 +1,31 @@
+{
+  "queries": {
+    "bla_1PZP_FTA": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": "A",
+          "sequence": "HPETLVKVKDAEDQLGARVGYIELDLNSGKILESFRPEERFPMMSTFKVLLCGAVLSRVDAGQEQLGRRIHYSQRDLVEYSPVTEKHLTDGMTVRELCSAAITMSDNTAANLLLTTIGGPKELTAFLHNMGDHVTRLDRWEPELNEAIPNDERDTTMPAAMATTLRKLLTGELLTLASRQQLIDWMEADKVAGPLLRSALPAGWFIADKSGAGERGSRGIIAALGPDGKPSRIVVIYTTGSQATMDERNRQIAEIGASLIKHW"
+        },
+        {
+          "molecule_type": "ligand",
+          "chain_ids": "L",
+          "smiles": "N(c1ccccc1)c1ccc(cc1)/N=C/[C@H](C#N)c1nnn[nH]1"
+        }
+      ],
+      "pocket_constraint": {
+        "ligand_chain_id": "L",
+        "pocket_residues": [
+          ["A", 2],
+          ["A", 5],
+          ["A", 9],
+          ["A", 12],
+          ["A", 33],
+          ["A", 34],
+          ["A", 35],
+          ["A", 36]
+        ]
+      }
+    }
+  }
+}
