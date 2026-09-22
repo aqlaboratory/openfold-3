@@ -322,3 +322,28 @@ Second consecutive clean night on the unchanged `7de748b` commit (following run 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as runs #265, #267, #269, #271, #274, and #276. Does not affect the day's coverage line above (based on the primary slot, run #277, per this log's established convention).
 
 ---
+
+## 2026-09-22
+
+### Run #279 — primary nightly (schedule `17 3 * * *`, main @ `7de748b` (unchanged since 09-19), [35683449269](https://github.com/aqlaboratory/openfold-3/actions/runs/35683449269))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 28 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 33 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 31 min | |
+
+**2026-09-22: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Third consecutive clean night on the unchanged `7de748b7bc93adb5af0a4032d5e9f208b6e1325f` commit (following run #275 on 09-20 and run #277 on 09-21).
+
+### Run #280 — secondary nightly (schedule `17 4 * * *`, main @ `7de748b`, [35687077344](https://github.com/aqlaboratory/openfold-3/actions/runs/35687077344))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as runs #265, #267, #269, #271, #274, #276, and #278. Does not affect the day's coverage line above (based on the primary slot, run #279, per this log's established convention).
+
+---
