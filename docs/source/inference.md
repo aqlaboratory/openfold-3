@@ -9,7 +9,7 @@ This guide covers how to use OpenFold3 to make structure predictions.
 
 OpenFold3 replicates the full set of input features described in the *AlphaFold3* publication. All features of AlphaFold3 are **fully implemented and supported in training**. We are actively working on integrating the same functionalities into the inference pipeline. 
 
-Below is the current status of inference feature support by molecule type:
+Below is the current status of inference feature support by molecule type.
 
 
 ### 1.1 Protein
@@ -26,10 +26,7 @@ Supported:
     - using pre-computed template alignments
     - using direct CIF template files (no alignments required)
 - Non-canonical residues
-
-Coming soon:
-
-- Covalently modified residues and other cross-chain covalent bonds
+- Query-defined inter-chain covalent bonds
 
 ### 1.2 DNA
 
@@ -37,10 +34,7 @@ Supported:
 
 - Prediction without MSA (per AF3 default)
 - Non-canonical residues
-
-Coming soon:
-
-- Covalently modified residues and other cross-chain covalent bonds
+- Query-defined inter-chain covalent bonds
 
 
 ### 1.3 RNA
@@ -51,11 +45,11 @@ Supported:
 - Prediction without MSA
 - OpenFold3's own MSA generation pipeline
 - Non-canonical residues
+- Query-defined inter-chain covalent bonds
 
 Coming soon:
 
 - Template-based prediction
-- Covalently modified residues and other cross-chain covalent bonds
 - Protein-RNA MSA pairing
 
 
@@ -64,10 +58,10 @@ Coming soon:
 Supported:
 
 - Non-covalent ligands
+- Query-defined inter-chain covalently bound ligands
 
 Coming soon:
 
-- Covalently bound ligands
 - Polymeric ligands such as glycans
 
 
@@ -156,9 +150,13 @@ This command uses the `run_openfold` binary, for which the source code is availa
     - YAML config for full control over model and data parameters. See the {doc}`configuration reference <configuration_reference>` and [full configuration reference file](https://github.com/aqlaboratory/openfold-3/blob/main/examples/reference_full_config/full_config.yml) for all available options.
     - See the {ref}`runner yaml section below for more information <33-customized-inference-settings-using-runneryml>` 
 
+- `--infer-covalent-leaving-atoms` *(optional flag)*
+    - Enable conservative CCD leaving-atom inference. It is disabled by default and
+      cannot be enabled through runner YAML.
+
 📝  *Notes*: 
 - Only protein sequences are submitted to the ColabFold server so this mode only uses MSAs for protein chains.
-- All arguments can also be set via `runner_yaml`, but command-line flags take precedence and will override values specified in the YAML file (see [Customized Inference Settings](33-customized-inference-settings-using-runneryml) for details).
+- Most arguments can also be set via `runner_yaml`, but command-line flags take precedence and will override values specified in the YAML file (see [Customized Inference Settings](33-customized-inference-settings-using-runneryml) for details). `--infer-covalent-leaving-atoms` is intentionally CLI-only.
 
 
 #### 3.2.2 📂 Inference with Precomputed MSAs
@@ -496,12 +494,46 @@ dataset_config_kwargs:
     enabled: True  # default
 ```
 
+(using-covalent-bonds)=
+### 3.6 Specifying Covalent Bonds
+
+Add `covalent_bonds` to a query to connect named atoms through OF3's existing
+structure and token-bond features. Each endpoint is a positional
+`[chain_id, residue_id, atom_name]` selector, and the two endpoints must be in
+different chains. See {ref}`query-covalent-bonds` for validation rules, leaving-atom
+handling, and complete examples.
+
+```json
+"covalent_bonds": [
+  [["A", 1, "ND2"], ["G", 1, "C1"]]
+]
+```
+
+Use `leaving_atoms` to remove explicitly named heavy atoms before the new bonds are
+resolved. Alternatively, `--infer-covalent-leaving-atoms` conservatively infers a
+single unambiguous endpoint-local heavy leaving group from CCD metadata. The flag is
+off by default and does not apply to SMILES ligands.
+
+For SMILES inputs, discover the generated atom names with:
+
+```bash
+run_openfold inspect-molecule --smiles 'CC(=O)Cl'
+```
+
+This feature supplies learned `token_bonds` conditioning; it does not enforce an
+output bond distance. Bonded queries require CIF or CIF.GZ output because PDB cannot
+reliably preserve the declared connection.
+
 ## 4. Model Outputs
 
 The inference pipeline creates a dedicated output directory for each query, named by the corresponding query key (for example, `query_1` or `3hfm` when a PDB ID is provided). Prediction results are stored there. By default, saved MSA records are stored under `<output_dir>/msas`.
 
 (41-prediction-outputs)=
 ### 4.1 Prediction Outputs (`query/seed/`)
+
+For a query containing `covalent_bonds`, the predicted `.cif` or `.cif.gz` structure
+retains each declared connection in `_struct_conn`. Atoms recorded in the effective
+query's `leaving_atoms` are absent from the written model.
 
 Each seed produces `l` (number of diffusion samples) structure predictions, and their associated confidence scores, stored in subdirectories named after the query, seed and the index of the diffusion sample, e.g.:
 ```bash
@@ -613,7 +645,7 @@ There are several system-generated files that record the state of submitted infe
 
 (441-inference-query-set-json)=
 #### 4.4.1 Inference Query Set (`inference_query_set.json`)
-This file representing the full input query in a validated internal format defined by [this Pydantic schema](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/inference_query_format.py).
+This file represents the effective input query in a validated internal format defined by [this Pydantic schema](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/inference_query_format.py). Manual `leaving_atoms` are normalized, and any atoms inferred with `--infer-covalent-leaving-atoms` are recorded so the logged query is reproducible.
 
 - Created automatically from the original `query.json`.
 

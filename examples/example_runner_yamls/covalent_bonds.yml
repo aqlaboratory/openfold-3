@@ -1,0 +1,3 @@
+# Query-defined covalent connectivity is preserved only in CIF/CIF.GZ output.
+output_writer_settings:
+  structure_format: cif

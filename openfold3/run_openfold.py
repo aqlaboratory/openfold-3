@@ -19,6 +19,7 @@ Main run script for OpenFold3. Please see the README for usage details.
 """
 # ruff: noqa: F821
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -38,6 +39,89 @@ logger = logging.getLogger(__name__)
 @click.group()
 def cli():
     pass
+
+
+@cli.command("inspect-molecule")
+@click.option(
+    "--smiles",
+    type=str,
+    required=True,
+    help="SMILES string to inspect using the inference molecule-construction path.",
+)
+@click.option(
+    "--output-json",
+    "--output_json",
+    type=click.Path(file_okay=True, dir_okay=False, path_type=Path),
+    required=False,
+    help="Optional path for the JSON output. Prints to stdout when omitted.",
+)
+def inspect_molecule(smiles: str, output_json: Path | None = None):
+    """Inspect the inference representation generated from a SMILES string.
+
+    The command constructs the molecule through the same path used by inference and
+    emits a JSON array describing its heavy atoms. Each entry contains the generated
+    atom name, element, formal charge, aromaticity, and named bonded neighbors. These
+    generated atom names are the values accepted by covalent-bond and leaving-atom
+    selectors for a SMILES ligand. The included integer atom index is diagnostic only
+    and must not be used as a query selector.
+
+    JSON is printed to standard output unless ``--output-json`` is supplied, in which
+    case the same document is written to that path.
+    """
+    from openfold3.core.data.primitives.structure.query import (
+        structure_with_ref_mol_from_smiles,
+    )
+
+    try:
+        structure = structure_with_ref_mol_from_smiles(smiles, chain_id="L")
+    except Exception as exc:
+        raise click.ClickException(
+            f"Could not construct a molecule from the supplied SMILES: {exc}"
+        ) from exc
+
+    atom_array = structure.atom_array
+    mol = structure.processed_reference_mols[0].mol
+    atom_names = atom_array.atom_name.tolist()
+
+    if len(atom_names) != mol.GetNumAtoms():
+        raise click.ClickException(
+            "The production molecule representations contain different atom counts."
+        )
+
+    atoms = []
+    for atom_name, atom in zip(atom_names, mol.GetAtoms(), strict=True):
+        neighbors = []
+        for bond in atom.GetBonds():
+            neighbor = bond.GetOtherAtom(atom)
+            neighbors.append(
+                {
+                    "atom_name": atom_names[neighbor.GetIdx()],
+                    "bond_type": str(bond.GetBondType()),
+                }
+            )
+        neighbors.sort(key=lambda item: item["atom_name"])
+
+        atoms.append(
+            {
+                "atom_name": atom_name,
+                "element": atom.GetSymbol().upper(),
+                "formal_charge": atom.GetFormalCharge(),
+                "aromatic": atom.GetIsAromatic(),
+                "neighbors": neighbors,
+                "diagnostic_atom_index_not_selector": atom.GetIdx(),
+            }
+        )
+
+    serialized = json.dumps(atoms, indent=2) + "\n"
+    if output_json is None:
+        click.echo(serialized, nl=False)
+    else:
+        try:
+            output_json.write_text(serialized)
+        except OSError as exc:
+            raise click.ClickException(
+                f"Could not write molecule inspection JSON to {output_json}: {exc}"
+            ) from exc
 
 
 @cli.command()
@@ -177,6 +261,15 @@ def train(
     default=True,
     help="Use tf32 precision",
 )
+@click.option(
+    "--infer-covalent-leaving-atoms",
+    is_flag=True,
+    default=False,
+    help=(
+        "Infer unambiguous endpoint-local heavy leaving atoms for covalent bonds "
+        "from CCD metadata."
+    ),
+)
 def predict(
     query_json: Path,
     inference_ckpt_path: Path | None = None,
@@ -188,6 +281,7 @@ def predict(
     use_templates: bool | None = None,
     output_dir: Path | None = None,
     use_tf32: bool = True,
+    infer_covalent_leaving_atoms: bool = False,
 ):
     """Perform inference on a set of queries defined in the query_json."""
     _configure_torch_backend()
@@ -196,12 +290,14 @@ def predict(
 
     from openfold3.entry_points.experiment_runner import (
         InferenceExperimentRunner,
+        load_inference_runner_args,
     )
     from openfold3.entry_points.validator import (
         InferenceExperimentConfig,
     )
-    from openfold3.projects.of3_all_atom.config.inference_query_format import (
-        InferenceQuerySet,
+    from openfold3.projects.of3_all_atom.config.inference_query_processing import (
+        load_inference_query_set_with_query_errors,
+        preflight_covalent_query_set,
     )
 
     logging.basicConfig(level=logging.INFO)
@@ -209,16 +305,31 @@ def predict(
     default_yml = (
         Path(os.environ.get("OPENFOLD_CACHE") or DEFAULT_CACHE_PATH) / "runner.yml"
     )
-    user_default_runner_path = None
+    runner_args, covalent_args, user_default_runner_path = load_inference_runner_args(
+        runner_yaml,
+        default_yml,
+    )
 
-    if default_yml.exists():
-        runner_args = config_utils.load_yaml(default_yml)
-        user_default_runner_path = default_yml.resolve()
-    else:
-        runner_args = dict()
-
-    if runner_yaml:
-        config_utils.deep_update(runner_args, config_utils.load_yaml(runner_yaml))
+    # Parse and preflight queries before full experiment configuration can resolve or
+    # download a checkpoint.
+    query_set, schema_errors = load_inference_query_set_with_query_errors(query_json)
+    for query_id, error in schema_errors.items():
+        logger.error(
+            "Skipping query %s because schema validation failed: %s",
+            query_id,
+            error,
+        )
+    if not query_set.queries:
+        raise click.ClickException(
+            "No valid queries remain after schema validation. "
+            f"Failed queries: {list(schema_errors)}"
+        )
+    query_set = preflight_covalent_query_set(
+        query_set,
+        structure_format=covalent_args.structure_format,
+        ccd_file_path=covalent_args.ccd_file_path,
+        infer_leaving_atoms=infer_covalent_leaving_atoms,
+    )
 
     expt_config = InferenceExperimentConfig(
         inference_ckpt_path=inference_ckpt_path,
@@ -234,9 +345,6 @@ def predict(
         use_templates,
         output_dir,
     )
-
-    # Load inference query set
-    query_set = InferenceQuerySet.from_json(query_json)
 
     # Run the forward pass
     try:

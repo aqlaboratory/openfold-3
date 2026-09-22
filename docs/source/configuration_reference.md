@@ -40,6 +40,11 @@ experiment_settings:
   use_msa_server: true
 ```
 
+Conservative CCD leaving-atom inference is not a runner-YAML setting. It is disabled
+by default and can only be enabled for a `predict` invocation with the
+`--infer-covalent-leaving-atoms` CLI flag. Supplying the similarly named key under
+`experiment_settings` is rejected instead of being silently ignored.
+
 ---
 
 ### 3.2. PyTorch Lightning Trainer Args (`pl_trainer_args`)
@@ -145,7 +150,7 @@ Configures MSA, template, and pocket sampling feature generation.
 **Pydantic Model**: [`InferenceDatasetConfigKwargs`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_configs.py#L270)
 
 **All Options**:
-- `ccd_file_path` *(FilePath | None)*: Path to Chemical Component Dictionary file, uses CCD from Biotite if null (default: `null`)
+- `ccd_file_path` *(FilePath | None)*: Path to an uncompressed text CIF Chemical Component Dictionary used by template processing and covalent leaving-atom inference (default: `null`, which uses Biotite's CCD metadata). This does not replace Biotite's preprocessed BinaryCIF source for query molecule construction.
 - `msa` *(MSASettings)*: MSA processing settings (see below)
 - `template` *(TemplateSettings)*: Template processing settings (see below)
 - `pocket_sampling` *(PocketSamplingSettings)*: Pocket-guided ligand proposal sampling settings (see below)
@@ -338,4 +343,3 @@ For the complete list of default values, see the Pydantic model classes in:
 - [`openfold3/core/data/tools/colabfold_msa_server.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py) - MSA server settings
 - [`openfold3/core/data/pipelines/preprocessing/template.py`](http://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py) - Template preprocessing settings
 - [`openfold3/core/config/pocket_sampling_config.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/pocket_sampling_config.py) - Pocket sampling settings
-

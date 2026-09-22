@@ -22,7 +22,7 @@ import sys
 from abc import ABC, abstractmethod
 from functools import cached_property, wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import ml_collections as mlc
 import pytorch_lightning as pl
@@ -37,6 +37,7 @@ from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.profilers import PyTorchProfiler
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
+from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import (
     DataModule,
     DataModuleConfig,
@@ -59,11 +60,14 @@ from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
     ExperimentConfig,
     InferenceExperimentConfig,
+    InferenceExperimentSettings,
+    OutputWritingSettings,
     TrainingExperimentConfig,
     generate_seeds,
 )
 from openfold3.projects.of3_all_atom import safe_globals  # noqa: F401
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
+    InferenceDatasetConfigKwargs,
     InferenceDatasetSpec,
     InferenceJobConfig,
     TrainingDatasetSpec,
@@ -621,6 +625,45 @@ def skip_random_init():
         m.trunc_normal_init_ = original_trunc_normal_init
 
 
+class InferenceRunnerPreflightSettings(NamedTuple):
+    """Runner settings required to prepare an inference query set."""
+
+    structure_format: str
+    ccd_file_path: Path | None
+
+
+def load_inference_runner_args(
+    runner_yaml: Path | None,
+    default_yaml: Path | None = None,
+) -> tuple[dict, InferenceRunnerPreflightSettings, Path | None]:
+    """Load runner YAML and validate settings needed before query preparation."""
+    runner_args = {}
+    user_default_runner_path = None
+    if default_yaml is not None and default_yaml.exists():
+        runner_args = config_utils.load_yaml(default_yaml)
+        user_default_runner_path = default_yaml.resolve()
+    if runner_yaml is not None:
+        config_utils.deep_update(runner_args, config_utils.load_yaml(runner_yaml))
+
+    InferenceExperimentSettings.model_validate(
+        runner_args.get("experiment_settings", {})
+    )
+    output_writer_settings = OutputWritingSettings.model_validate(
+        runner_args.get("output_writer_settings", {})
+    )
+    dataset_config_kwargs = InferenceDatasetConfigKwargs.model_validate(
+        runner_args.get("dataset_config_kwargs", {})
+    )
+    return (
+        runner_args,
+        InferenceRunnerPreflightSettings(
+            structure_format=output_writer_settings.structure_format,
+            ccd_file_path=dataset_config_kwargs.ccd_file_path,
+        ),
+        user_default_runner_path,
+    )
+
+
 class InferenceExperimentRunner(ExperimentRunner):
     """Inference experiment builder."""
 
@@ -808,8 +851,8 @@ class InferenceExperimentRunner(ExperimentRunner):
         state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
         self._load_state_dict_with_version_validation(state_dict)
 
-    def run(self, inference_query_set) -> None:
-        """Set up the experiment environment."""
+    def run(self, inference_query_set: InferenceQuerySet) -> None:
+        """Run prediction for a preflighted inference query set."""
         self.inference_query_set = inference_query_set
         if self.experiment_config.experiment_settings.skip_existing:
             inference_query_set = self.remove_completed_queries_from_query_set(

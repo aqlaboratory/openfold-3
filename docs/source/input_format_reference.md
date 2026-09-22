@@ -35,6 +35,8 @@ Each query entry is a dictionary with the following structure:
 "query_1": {
   "chains": [ { ... }, { ... } ],
   "pocket_constraint": { ... },
+  "covalent_bonds": [ ... ],
+  "leaving_atoms": [ ... ],
 }
 ```
 
@@ -43,6 +45,10 @@ In the current inference release, the only required field is:
     - A list of chain definitions, where each sub-dictionary specifies one chain in the assembly. See {ref}`Section 3 <3-chains>` for a full breakdown of chain-level fields.
 
 Optional query-level fields include:
+  - `covalent_bonds` *(list, optional, default = null)*
+    - Explicit inter-chain single bonds between named atoms. See {ref}`query-covalent-bonds`.
+  - `leaving_atoms` *(list, optional, default = null)*
+    - Explicit heavy atoms to remove before resolving `covalent_bonds`. See {ref}`query-covalent-bonds`.
   - `pocket_constraint` *(dict, optional, default = null)*
     - Optional ligand-to-pocket constraint for a small-molecule ligand. See
       {ref}`Section 4 <4-pocket-constraints>` for schema details and examples.
@@ -367,3 +373,78 @@ Additional example input JSON files can be found here:
 - [Single protein-single ligand complex](../../examples/example_inference_inputs/query_single_protein_single_ligand.json): T4 Lysozyme (L99A mutant) with toluene (PDB: 7L39)
 - [Protein-ligand complex with a pocket constraint](../../examples/example_inference_inputs/query_protein_ligand_pocket_constraint.json): Beta-lactamase with an allosteric inhibitor (PDB: 1PZP)
 - [Multiple Protein-ligand complexes](../../examples/example_inference_inputs/query_protein_ligand_multiple.json): Two queries with Mcl-1 and different small molecule inhibitors (PDB: 5FDR)
+
+(query-covalent-bonds)=
+## Covalent bonds and leaving atoms
+
+The optional `covalent_bonds` field declares single covalent bonds between explicitly
+named atoms in different chains. The optional `leaving_atoms` field removes explicitly
+named heavy atoms before those bonds are resolved.
+
+| Type or field | JSON form | Meaning |
+| --- | --- | --- |
+| `Atom` | `[chain_id, residue_id, atom_name]` | One atom selected by chain, one-based residue, and exact atom name |
+| `Bond` | `[Atom, Atom]` | An unordered pair of endpoints, represented as a single bond |
+| `covalent_bonds` | `list[Bond]` or `null` | Query-defined inter-chain covalent connectivity |
+| `leaving_atoms` | `list[Atom]` or `null` | Atoms to remove before adding query-defined bonds |
+
+Bond endpoint names are case-sensitive final `AtomArray.atom_name` values. Manual
+`leaving_atoms` instead name atoms in the component before custom removal. CCD inputs
+use CCD atom names. SMILES inputs use pipeline-generated names such as `C1`, `C2`, and
+`N1`; run `run_openfold inspect-molecule --smiles '<SMILES>'` to discover them.
+Integer array or RDKit indices are not valid selectors.
+
+Both endpoints must belong to different chains. A declaration is rejected if it is a
+self-bond, repeats another custom bond in either order, names an atom that is being
+removed, or conflicts with an existing non-single bond. Re-declaring an identical
+intrinsic single bond is idempotent. Unknown or ambiguous chain, residue, or atom
+selectors invalidate that query without partially applying its edits. Unknown JSON
+fields are rejected at the chain, query, and top-level query-set levels.
+
+Manual `leaving_atoms` work for CCD, polymer, and SMILES components. The optional
+`--infer-covalent-leaving-atoms` flag searches CCD metadata for one unambiguous flagged
+heavy leaving group adjacent to each selected endpoint. If none is found, nothing is
+removed; if multiple groups are possible, that query fails and requires an explicit
+choice. Automatic inference is unavailable for SMILES and does not change hydrogens,
+protonation, formal charges, or unrelated bond orders. A configured
+`dataset_config_kwargs.ccd_file_path` supplies the text-CIF metadata for this lookup;
+query molecule construction still uses Biotite's preprocessed BinaryCIF CCD.
+
+The bond is learned model conditioning through `token_bonds`, not a hard geometric
+restraint. Custom-bond queries require CIF or CIF.GZ output; PDB output is rejected.
+
+Example with an explicit leaving atom:
+
+```json
+{
+  "queries": {
+    "cysteine_smiles": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": "A",
+          "sequence": "AC"
+        },
+        {
+          "molecule_type": "ligand",
+          "chain_ids": "L",
+          "smiles": "CC(=O)Cl"
+        }
+      ],
+      "covalent_bonds": [
+        [["A", 2, "SG"], ["L", 1, "C2"]]
+      ],
+      "leaving_atoms": [
+        ["L", 1, "CL1"]
+      ]
+    }
+  }
+}
+```
+
+Runnable examples:
+
+- [CCD inhibitor with inferred leaving atom](../../examples/example_inference_inputs/query_covalent_ccd_0e6.json)
+- [O-linked NAG on serine with inferred leaving atom](../../examples/example_inference_inputs/query_covalent_nag_serine.json)
+- [SMILES ligand with a manual leaving atom](../../examples/example_inference_inputs/query_covalent_smiles.json)
+- [Cross-chain protein and RNA links](../../examples/example_inference_inputs/query_covalent_polymer_polymer.json)

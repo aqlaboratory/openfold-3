@@ -1,0 +1,24 @@
+{
+  "queries": {
+    "cysteine_smiles": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": "A",
+          "sequence": "AC"
+        },
+        {
+          "molecule_type": "ligand",
+          "chain_ids": "L",
+          "smiles": "CC(=O)Cl"
+        }
+      ],
+      "covalent_bonds": [
+        [["A", 2, "SG"], ["L", 1, "C2"]]
+      ],
+      "leaving_atoms": [
+        ["L", 1, "CL1"]
+      ]
+    }
+  }
+}

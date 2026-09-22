@@ -540,6 +540,21 @@ def writer_update_atom_site(
     auth_seq_id[missing_auth_seq_id] = ligand_res_id[missing_auth_seq_id]
     cif_block["atom_site"]["auth_seq_id"] = auth_seq_id
 
+    # Biotite writes inter-residue bonds before ligand label sequence IDs are
+    # masked above. Keep the corresponding struct_conn identifiers in sync so
+    # these bonds can be resolved when the CIF is read again.
+    if "struct_conn" in cif_block:
+        ligand_chain_ids = np.unique(atom_array.chain_id[masks["LIGAND"]])
+        for partner_id in (1, 2):
+            partner_chain_ids = cif_block["struct_conn"][
+                f"ptnr{partner_id}_label_asym_id"
+            ].as_array()
+            partner_seq_ids = cif_block["struct_conn"][
+                f"ptnr{partner_id}_label_seq_id"
+            ].as_array()
+            partner_seq_ids[np.isin(partner_chain_ids, ligand_chain_ids)] = "."
+            cif_block["struct_conn"][f"ptnr{partner_id}_label_seq_id"] = partner_seq_ids
+
     PDB_ins_code = cif_block["atom_site"]["pdbx_PDB_ins_code"].as_array()
     PDB_ins_code[masks["LIGAND"]] = "?"
     cif_block["atom_site"]["pdbx_PDB_ins_code"] = PDB_ins_code

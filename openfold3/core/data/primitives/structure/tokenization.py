@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
@@ -33,6 +35,9 @@ from openfold3.core.data.resources.residues import (
     TOKEN_CENTER_ATOMS,
     MoleculeType,
 )
+
+FORCE_ATOMIZATION_ANNOTATION = "force_atomization"
+logger = logging.getLogger(__name__)
 
 
 @log_runtime_memory(runtime_dict_key="runtime-add-token-pos")
@@ -150,10 +155,12 @@ def tokenize_atom_array(atom_array: AtomArray):
         1. Get atoms in canonical residues in polymers
         2. Get atoms in small molecule ligands, non-canonical residues in polymers and
         amino acid or nucleotide small molecule ligands
-        3. Get atoms in canonical residues in polymer that are modified
+        3. Get atoms in canonical residues in polymer that are modified or explicitly
+            marked for forced atomization
             We consider a residue to be modified if it is connected to any other residue
             via a non-peptide bond for proteins or a non-phospho-diester bond for
-            nucleic acids.
+            nucleic acids. The temporary ``force_atomization`` annotation handles
+            query-defined bonds whose endpoint names resemble canonical polymer links.
         4. Tokenize residues with any atoms from
             - set 2. per atom
             - set 3. per atom
@@ -183,6 +190,47 @@ def tokenize_atom_array(atom_array: AtomArray):
     #    non-canonical bonds, i.e. via bonds that are not peptide or phospho-diester
     atomized_crp_token_ids = find_modified_residue_atom_ids(atom_array)
 
+    # Query-defined covalent bonds carry a temporary marker on their endpoint
+    # residues.  The normal modified-residue heuristic deliberately ignores atom-name
+    # pairs that look like canonical polymer links (for example, C-N or O3'-P), even
+    # when such a link is cross-chain.  Expand any marked canonical residue to all of
+    # its atoms so these custom bonds survive fully-atomized bond filtering.
+    has_force_atomization = (
+        FORCE_ATOMIZATION_ANNOTATION in atom_array.get_annotation_categories()
+    )
+    n_tokens_without_forcing = None
+    n_forced_residues = 0
+    if has_force_atomization:
+        unforced_mod_crp_token_start_ids = np.unique(
+            struc.get_residue_starts_for(atom_array, atomized_crp_token_ids)
+        )
+        unforced_crp_token_start_ids = crp_token_start_ids[
+            ~np.isin(crp_token_start_ids, unforced_mod_crp_token_start_ids)
+        ]
+        n_tokens_without_forcing = len(
+            np.unique(
+                np.concatenate(
+                    [
+                        unforced_crp_token_start_ids,
+                        atom_token_ids,
+                        atomized_crp_token_ids,
+                    ]
+                )
+            )
+        )
+        forced_residue_indices = np.unique(
+            atom_array._residue_idx[
+                np.asarray(
+                    getattr(atom_array, FORCE_ATOMIZATION_ANNOTATION), dtype=bool
+                )
+            ]
+        )
+        n_forced_residues = len(forced_residue_indices)
+        forced_crp_atom_ids = atom_array._atom_idx[
+            is_crp_atom & np.isin(atom_array._residue_idx, forced_residue_indices)
+        ]
+        atomized_crp_token_ids = np.union1d(atomized_crp_token_ids, forced_crp_atom_ids)
+
     # Remove the corresponding residue token start ids
     mod_crp_token_start_ids = np.unique(
         struc.get_residue_starts_for(atom_array, atomized_crp_token_ids)
@@ -201,6 +249,13 @@ def tokenize_atom_array(atom_array: AtomArray):
             ]
         )
     )
+    if has_force_atomization:
+        logger.debug(
+            "Forced atomization for %d residue(s) changed token count from %d to %d",
+            n_forced_residues,
+            n_tokens_without_forcing,
+            len(all_token_start_ids),
+        )
 
     # Add is_atomized annotation
     n_atoms = len(atom_array)
@@ -225,6 +280,11 @@ def tokenize_atom_array(atom_array: AtomArray):
     # Remove temporary atom & residue indices
     remove_atom_indices(atom_array)
     remove_residue_indices(atom_array)
+
+    # This marker exists only to communicate query intent to tokenization.  Keeping it
+    # would leak an implementation detail into downstream features and output.
+    if has_force_atomization:
+        atom_array.del_annotation(FORCE_ATOMIZATION_ANNOTATION)
 
     # Add token_position annotation
     add_token_positions(atom_array)
