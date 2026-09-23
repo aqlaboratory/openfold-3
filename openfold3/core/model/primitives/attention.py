@@ -23,6 +23,7 @@ Optimizations such as LMA and DeepSpeed EvoformerAttention are included.
 
 import importlib
 import math
+import os
 import warnings
 
 import torch
@@ -50,9 +51,13 @@ if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
 try:
-    from openfold3.core.kernels.triton.evoformer import TritonEvoformer
+    from openfold3.core.kernels.triton.evoformer import (
+        TritonEvoformer,
+        TritonEvoformerDynamic,
+    )
 except ImportError:
     TritonEvoformer = None
+    TritonEvoformerDynamic = None
 
 TRITON_AVAILABLE = TritonEvoformer is not None
 
@@ -143,14 +148,14 @@ def _attention(
         key (shape [*, H, K, C_hidden]): key tensor
         value (shape [*, H, V, C_hidden]): value tensor
         biases : list of bias tensors
-        use_high_precision: Whether to use high precision up until
-            and including softmax
+        use_high_precision: Whether to use high precision
 
     Returns:
         shape [*, H, V, C_hidden]: attention output
     """
-    attn_dtype = torch.float32 if use_high_precision else query.dtype
-    with torch.amp.autocast(autocast_device_type(query), dtype=attn_dtype):
+    in_dtype = query.dtype
+    attn_dtype = torch.float32 if use_high_precision else in_dtype
+    with torch.amp.autocast("cuda", dtype=attn_dtype):
         # Generate attention scores
         scores = torch.einsum("...qc, ...kc->...qk", query, key)
 
@@ -161,10 +166,10 @@ def _attention(
         # Normalize the scores
         scores = softmax_no_cast(scores, dim=-1)
 
-    # Multiply scores by values
-    attention = torch.einsum("...qk, ...kc->...qc", scores.to(dtype=value.dtype), value)
+        # Multiply scores by values
+        attention = torch.einsum("...qk, ...kc->...qc", scores, value)
 
-    return attention
+    return attention.to(dtype=in_dtype)
 
 
 @torch.jit.ignore
@@ -373,9 +378,8 @@ class Attention(nn.Module):
             lma_kv_chunk_size:
                 Key/Value chunk size (for LMA)
             use_high_precision:
-                Whether to use high precision up until and including softmax.
-                This requires using the default implementation and cannot be
-                used with the above kernel options.
+                Whether to use high precision.This requires using the default
+                implementation and cannot be used with the above kernel options.
         Returns
             [*, Q, C_q] attention update
         """
@@ -389,7 +393,7 @@ class Attention(nn.Module):
             # cuEquivariance -> Torch fallback for small sequence length and some shapes
             use_fall_back = cueq_would_fall_back(
                 n_token=q_x.shape[-2],
-                hidden_dim=q_x.shape[-1] // self.no_heads,
+                hidden_dim=self.c_hidden,
                 dtype=q_x.dtype,
             )
             if use_fall_back:
@@ -658,19 +662,16 @@ def _triton_evo_attn(
         Batch, N_seq, N_res, Head, Dim = q.shape
         biases.append(_get_zero_pair_bias(q.device, q.dtype, Batch, Head, N_res))
 
-    # Kernel requires fp16 or bf16; cast if needed.
-    orig_dtype = q.dtype
-    if orig_dtype not in [torch.bfloat16, torch.float16]:
-        o = TritonEvoformer(
-            q.to(dtype=torch.bfloat16),
-            k.to(dtype=torch.bfloat16),
-            v.to(dtype=torch.bfloat16),
-            biases[0].to(dtype=torch.bfloat16),
-            biases[1].to(dtype=torch.bfloat16),
-            has_pair_bias,
-        ).to(dtype=orig_dtype)
-    else:
-        o = TritonEvoformer(q, k, v, biases[0], biases[1], has_pair_bias)
+    # Kernel runs bf16/fp16/fp32 natively (fp32 accumulators); pass through as-is.
+    # Opt-in variable-shape entry point: one Triton compile across all sequence
+    # lengths (for variable-size / cold-cache callers, e.g. variable inference).
+    # Off by default; the specialized kernel stays the default everywhere else.
+    _kernel = (
+        TritonEvoformerDynamic
+        if os.environ.get("OF3_TRITON_DYNAMIC_SHAPES") == "1"
+        else TritonEvoformer
+    )
+    o = _kernel(q, k, v, biases[0], biases[1], has_pair_bias)
 
     o = o.reshape(orig_shape)
     return o

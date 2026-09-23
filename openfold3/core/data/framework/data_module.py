@@ -47,7 +47,7 @@ import platform
 import sys
 import warnings
 from functools import partial
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytorch_lightning as pl
 import torch
@@ -73,6 +73,11 @@ from openfold3.core.data.tools.colabfold_msa_server import (
     preprocess_colabfold_msas,
 )
 from openfold3.core.utils.tensor_utils import dict_multimap
+
+if TYPE_CHECKING:
+    from openfold3.projects.of3_all_atom.config.dataset_configs import (
+        InferenceJobConfig,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -349,7 +354,7 @@ class DataModule(pl.LightningDataModule):
     def run_training_dataset_checks(
         cls,
         train_dataset_config: MultiDatasetConfig,
-    ) -> None:
+    ) -> MultiDatasetConfig:
         """Check that dataset weights and crop weights are normalized"""
         if sum(train_dataset_config.weights) != 1:
             warnings.warn(
@@ -377,6 +382,7 @@ class DataModule(pl.LightningDataModule):
                 print(
                     f"{train_dataset_config.configs[idx].crop.token_crop.crop_weights=}"
                 )
+        return train_dataset_config
 
     @classmethod
     def run_checks(cls, multi_dataset_config: MultiDatasetConfig) -> None:
@@ -395,11 +401,23 @@ class DataModule(pl.LightningDataModule):
         """
 
         # Check if provided weights sum to 1
+        train_mask = [mode == DatasetMode.train for mode in multi_dataset_config.modes]
         train_dataset_config = multi_dataset_config.get_subset(
             [mode == DatasetMode.train for mode in multi_dataset_config.modes]
         )
         if len(train_dataset_config.classes):
             cls.run_training_dataset_checks(train_dataset_config)
+            # Write normalized values back to the original config
+            train_idx = 0
+            for i, is_train in enumerate(train_mask):
+                if is_train:
+                    multi_dataset_config.weights[i] = train_dataset_config.weights[
+                        train_idx
+                    ]
+                    multi_dataset_config.configs[i] = train_dataset_config.configs[
+                        train_idx
+                    ]
+                    train_idx += 1
 
         # Check if provided dataset mode combination is valid
         modes = multi_dataset_config.modes
@@ -505,7 +523,6 @@ class DataModule(pl.LightningDataModule):
 
         persistent_workers = self.persistent_workers and num_workers > 0
         prefetch_factor = prefetch_factor if num_workers > 0 else None
-
         # Set a sensible default for multiprocesssing start method
         # depending on platform and python version.
         multiprocessing_context = DataModuleConfig.safe_multiprocessing_context(
@@ -642,6 +659,8 @@ class DataModule(pl.LightningDataModule):
 class InferenceDataModule(DataModule):
     """LightningDataModule that contains a prepare_data hook for inference."""
 
+    inference_config: "InferenceJobConfig"
+
     def __init__(
         self,
         data_module_config: DataModuleConfig,
@@ -652,11 +671,15 @@ class InferenceDataModule(DataModule):
         # get information about msas from the experiment runner
         # probably should add to the config
         super().__init__(data_module_config)
+        # Inference preprocessing writes shared MSA/template intermediates. Run it
+        # once on global rank zero, not once per node, and broadcast the resulting
+        # state in setup().
+        self.prepare_data_per_node = False
         self.use_msa_server = use_msa_server
         self.use_templates = use_templates
         self.msa_computation_settings = msa_computation_settings
         _configs = self.multi_dataset_config.get_config_for_mode(DatasetMode.prediction)
-        self.inference_config = _configs.configs[0]
+        self.inference_config = cast("InferenceJobConfig", _configs.configs[0])
 
     def prepare_data(self) -> None:
         logger.info("=" * 60)
@@ -672,6 +695,7 @@ class InferenceDataModule(DataModule):
             self.inference_config.query_set = preprocess_colabfold_msas(
                 inference_query_set=self.inference_config.query_set,
                 compute_settings=self.msa_computation_settings,
+                use_templates=self.use_templates,
             )
         else:
             self.inference_config.query_set = augment_main_msa_with_query_sequence(
@@ -688,15 +712,26 @@ class InferenceDataModule(DataModule):
             template_preprocessor()
             logger.info("Template preprocessing complete!")
 
-    def setup(self, stage=None):
-        """Broadcast updated query set to all ranks if multiple GPUs are used."""
+    def setup(self, stage: str | None = None) -> None:
+        """Broadcast updated query and template settings to all ranks."""
         if self.world_size and self.world_size > 1:
+            preprocessing_state: list[Any]
             if dist.get_rank() == 0:
-                placeholder = [self.inference_config.query_set]
+                preprocessing_state = [self.inference_config.query_set]
+                if self.use_templates:
+                    preprocessing_state.append(
+                        self.inference_config.template_preprocessor_settings
+                    )
             else:
-                placeholder = [None]
-            dist.broadcast_object_list(placeholder, src=0)
-            self.inference_config.query_set = placeholder[0]
+                preprocessing_state = [None]
+                if self.use_templates:
+                    preprocessing_state.append(None)
+            dist.broadcast_object_list(preprocessing_state, src=0)
+            self.inference_config.query_set = preprocessing_state[0]
+            if self.use_templates:
+                self.inference_config.template_preprocessor_settings = (
+                    preprocessing_state[1]
+                )
         super().setup()
 
 

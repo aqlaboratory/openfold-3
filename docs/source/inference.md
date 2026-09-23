@@ -73,7 +73,7 @@ Coming soon:
 
 ## 2. Pre-requisites
 
-- OpenFold3 Environment. See [OpenFold3 Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md) for instructions on how to build this environment (for both Conda and Pixi).
+- OpenFold3 Environment. See [OpenFold3 Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md) for instructions on how to build this environment.
 - OpenFold3 Model Parameters. See {ref}`OpenFold3 Setup <setup-openfold3-parameters>` for an easy option to download model parameters.
 
 
@@ -214,6 +214,12 @@ The model parameters section of the configuration may by passing an update in th
 
 
 Note that CLI arguments take precedence over configuration file settings.
+
+#### 🏠 Persistent User-Default Configuration
+
+OpenFold3 automatically searches for a base `runner.yml` at `$OPENFOLD_CACHE/runner.yml` (defaults to `~/.openfold3/runner.yml`). If found, it applies these settings globally without requiring the `--runner-yaml` flag.
+
+*Note: The path of the loaded default configuration is tracked in `experiment_config.json` under `"user_default_runner_yaml_path"`.*
 
 Below we'll walk through some of the most common configuration scenarios and how to implement them:
 
@@ -413,6 +419,22 @@ OpenFold saves both forms of MSA output by default:
 
 When temporary MSA work is needed, each run uses a unique workspace. OpenFold removes that workspace when the command finishes normally or exits through a handled error. The saved files are a record of that run. OpenFold does not automatically reuse them as a cache.
 
+By default, temporary MSA and template files live beside the prediction output:
+
+```text
+<output_dir>/
+└── openfold3_intermediates/
+    ├── colabfold_msas/
+    │   └── <run-id>/
+    └── template_data/
+        └── <run-id>/
+```
+
+OpenFold creates these directories only when needed. If `cleanup_msa_dir` is
+`true`, it removes the default template directory after normal completion or a
+handled error. Explicit template output directories are never removed. A process
+or node crash may leave intermediate directories under the output directory.
+
 You can turn off either output in `runner.yml`:
 
 ```yaml
@@ -421,7 +443,8 @@ msa_computation_settings:
   save_colabfold_outputs: false
 ```
 
-For multi-node inference that generates MSAs, keep `save_openfold_outputs` enabled and put the output directory on storage that every node can read. Rank zero broadcasts its alignment paths to the other ranks, and the temporary workspace may be local to the node that created it.
+For multi-node inference, the output directory and any explicit intermediate
+paths must be visible to every node.
 
 Set `colabfold_output_dir` when raw records need a different parent directory.
 Each run still receives its own child directory there.
@@ -458,6 +481,19 @@ Choose the file format for saving MSAs retrieved from ColabFold:
 ```yaml
 msa_computation_settings:
   msa_file_format: a3m     # Options: a3m, npz (default: npz)
+```
+
+(35-using-pocket-constraints)=
+### 3.5 Using Pocket Constraints
+
+Use Pocket Constraints to guide ligand binding in the pocket during inference time using directed diffusion seeds. See {ref}`Section 4 of the input format reference <4-pocket-constraints>` for more information on how to specify a pocket constraint.
+
+Pocket Constraints can be enabled / disabled using the following runner yaml settings. Other settings such as the amount of jitter and conformer settings may also be tuned, please see the {ref}`Pocket Sampling Settings reference <full-ref-pocket-sampling-settings>`.
+
+```yaml
+dataset_config_kwargs:
+  pocket_sampling:
+    enabled: True  # default
 ```
 
 ## 4. Model Outputs

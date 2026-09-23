@@ -335,6 +335,53 @@ class TestColabFoldQueryRunner:
             assert (expected_unpaired_dir / f).exists()
             assert (expected_paired_dir / f).exists()
 
+    @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
+    @patch(_MOCK_QUERY_TARGET)
+    def test_templates_off_skips_rcsb_remap(
+        self, mock_query, mock_chain_map, tmp_path, multimer_query_set
+    ):
+        """With use_templates=False the pdb70.m8 hits are ignored: no RCSB call, no
+        template directory. Regression for nightly CI failing a no-templates test
+        on an RCSB timeout."""
+        mock_query.return_value = [">seq1\nAAA\n", ">seq2\nBBBBB\n"]
+        self._make_dummy_template_file(tmp_path)
+
+        runner = ColabFoldQueryRunner(
+            colabfold_mapper=collect_colabfold_msa_data(multimer_query_set),
+            output_directory=tmp_path,
+            msa_file_format="npz",
+            user_agent="test-agent",
+            host_url="https://dummy.url",
+            use_templates=False,
+        )
+        runner.query_format_main()
+
+        mock_chain_map.assert_not_called()
+        assert (tmp_path / "main").exists()
+        assert not (tmp_path / "template").exists()
+
+    @patch(_MOCK_FETCH_TARGET, side_effect=_mock_fetch_label_to_author)
+    @patch(_MOCK_QUERY_TARGET)
+    def test_templates_on_runs_rcsb_remap(
+        self, mock_query, mock_chain_map, tmp_path, multimer_query_set
+    ):
+        """The default keeps producing template alignments (align-msa-server relies
+        on it)."""
+        mock_query.return_value = [">seq1\nAAA\n", ">seq2\nBBBBB\n"]
+        self._make_dummy_template_file(tmp_path)
+
+        runner = ColabFoldQueryRunner(
+            colabfold_mapper=collect_colabfold_msa_data(multimer_query_set),
+            output_directory=tmp_path,
+            msa_file_format="npz",
+            user_agent="test-agent",
+            host_url="https://dummy.url",
+        )
+        runner.query_format_main()
+
+        mock_chain_map.assert_called_once()
+        assert (tmp_path / "template").exists()
+
     @patch(_MOCK_QUERY_TARGET)
     def test_raw_output_is_saved_before_formatting(
         self, mock_query, tmp_path, multimer_query_set
@@ -813,6 +860,15 @@ class TestRemapObsoletePdb:
 
 
 class TestMsaComputationSettings:
+    def test_setting_workspace_parent_does_not_create_it(self, tmp_path):
+        settings = MsaComputationSettings()
+        workspace_root = tmp_path / "intermediates" / "colabfold_msas"
+
+        settings._set_workspace_root(workspace_root)
+
+        assert settings.workspace_directory.parent == workspace_root
+        assert not workspace_root.exists()
+
     @pytest.mark.parametrize("cleanup_msa_dir", [False, True])
     def test_workspace_cleanup_is_unconditional(self, cleanup_msa_dir):
         settings = MsaComputationSettings(cleanup_msa_dir=cleanup_msa_dir)

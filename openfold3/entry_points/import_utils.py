@@ -20,7 +20,7 @@ Manage imports run_openfold.py
 # ruff: noqa: F401
 
 
-def _torch_gpu_setup():
+def _enable_tf32():
     import torch
 
     torch_versions = torch.__version__.split(".")
@@ -32,6 +32,12 @@ def _torch_gpu_setup():
         # Gives a large speedup on Ampere-class GPUs
         torch.set_float32_matmul_precision("high")
 
-    # On ROCm/HIP backends
+
+def _configure_torch_backend():
+    """Apply backend settings"""
+    import torch
+
+    # Force the cuBLAS backend on AMD/ROCm to match the numerics of
+    # NVIDIA-trained models.
     if torch.cuda.is_available() and torch.version.hip is not None:
         torch.backends.cuda.preferred_blas_library("cublas")

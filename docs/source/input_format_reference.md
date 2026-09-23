@@ -37,6 +37,7 @@ Each query entry is a dictionary with the following structure:
   "use_msas": true,
   "use_main_msas": true,
   "use_paired_msas": true,
+  "pocket_constraint": { ... },
 }
 ```
 
@@ -60,6 +61,12 @@ MSA usage is configured per query and applies to all chains within it -- these f
   - Controls the use of explicitly paired MSAs.
   - For homomers, main MSAs are internally concatenated and treated as implicitly paired, so disabling use_paired_msas does not change their MSA features.
   - For heteromers, paired alignments across chains are used if available and disabling use_paired_msas results in using only main MSAs as MSA features.
+
+Optional query-level fields include:
+
+  - `pocket_constraint` *(dict, optional, default = null)*
+    - Optional ligand-to-pocket constraint for a small-molecule ligand. See
+      {ref}`Section 4 <4-pocket-constraints>` for schema details and examples.
 
 (3-chains)=
 ## 3. Chains
@@ -193,7 +200,8 @@ MSA usage toggles (`use_msas`, `use_main_msas`, `use_paired_msas`) are set at th
   {
     "molecule_type": "ligand",
     "chain_ids": "Z",
-    "smiles": "CC(=O)OC1C[NH+]2CCC1CC2"
+    "smiles": "CC(=O)OC1C[NH+]2CCC1CC2",
+    "ligand_name": "DRG"
   }
   ```
 
@@ -216,12 +224,79 @@ MSA usage toggles (`use_msas`, `use_main_msas`, `use_paired_msas`) are set at th
     - Canonical SMILES string of the ligand.
     - Mutually exclusive with `ccd_codes`.
 
+  - `ligand_name` *(str, optional, SMILES ligands only)*
+    - Component identifier to use instead of the default `LIG0`, `LIG1`, ... name.
+    - Whitespace is stripped and letters are uppercased. The value must be ASCII
+      alphanumeric and cannot be a standard polymer residue name or `GAP`.
+    - Repeated instances of one SMILES must resolve to one name, and distinct SMILES
+      must resolve to distinct names. Explicit names cannot match a CCD or
+      non-canonical residue name in the same query.
+    - PDBx/mmCIF preserves the full name. Legacy PDB output uses its first three
+      characters, so choose names with distinct three-character prefixes.
+
   - `ccd_codes` *(str | list[str], required if smiles not given)*
     - Three-letter CCD code for the ligand component. 
     - Support for providing a list of CCD codes (for instance for polymeric ligands) will be supported in a later release of the inference pipeline.
     - Mutually exclusive with `smiles`.
 
-## 4. Example Input Json for a Single Query Complex
+(4-pocket-constraints)=
+## 4. Pocket Constraints
+
+Pocket constraints bias small-molecule ligand placement toward user-specified
+residues:
+
+```json
+{
+  "queries": {
+    "query_1": {
+      "chains": [
+        {
+          "molecule_type": "protein",
+          "chain_ids": "A",
+          "sequence": "PVLSCGEWQCL"
+        },
+        {
+          "molecule_type": "ligand",
+          "chain_ids": "L",
+          "smiles": "CC(=O)OC1C[NH+]2CCC1CC2"
+        }
+      ],
+      "pocket_constraint": {
+        "ligand_chain_id": "L",
+        "pocket_residues": [["A", 2], ["A", 5], ["A", 9]],
+        "max_distance": 4.0
+      }
+    }
+  }
+}
+```
+
+- `pocket_constraint` *(dict, optional, default = null)*
+  - A ligand-to-pocket constraint. When present, OpenFold3 automatically
+    runs pocket proposal and partial-diffusion refinement for the constrained
+    ligand.
+
+- `ligand_chain_id` *(str, required)*
+  - Chain ID of the ligand to constrain. This must match one of the ligand
+    `chain_ids`.
+
+- `pocket_residues` *(list[[str, int]], required)*
+  - Residues defining the desired pocket, written as `[chain_id, residue_id]`
+    pairs.
+  - At least one residue is required.
+  - `residue_id` uses the residue numbering in the input query structure after
+    OpenFold3 builds the query atom array. For sequence inputs, this is the
+    1-based query sequence position.
+
+- `max_distance` *(float, optional, default = 4.0)*
+  - Distance threshold used when scoring whether ligand atoms contact the
+    specified pocket.
+
+Pocket constraints can be disabled for testing without editing the input
+JSON by toggling the pocket sampling option in the runner.yaml, see {ref}`Using Pocket Constraints <35-using-pocket-constraints>` for an example. Expert sampling defaults
+are defined in `openfold3/core/config/pocket_sampling_config.py`, more information can be found in the {ref}`Pocket Sampling Settings reference <full-ref-pocket-sampling-settings>`.
+
+## 5. Example Input Json for a Single Query Complex
 
 Below is a complete example of an input JSON file specifying a single bioassembly, consisting of:
 
@@ -277,8 +352,7 @@ Below is a complete example of an input JSON file specifying a single bioassembl
             "use_main_msas": true,
             "use_paired_msas": true,
         }
-    },
-    "ccd_file_path": "/path/to/CCD/file.cif"
+    }
 }
 ```
 
@@ -288,4 +362,5 @@ Additional example input JSON files can be found here:
 - [Multi-chain protein with different chains (multimer)](../../examples/example_inference_inputs/query_multimer.json): Deoxy human hemoglobin (PDB: 1A3N)
 - [Protein-ligand complex](../../examples/example_inference_inputs/query_protein_ligand.json): Mcl-1 with small molecule inhibitor (PDB: 5FDR)
 - [Single protein-single ligand complex](../../examples/example_inference_inputs/query_single_protein_single_ligand.json): T4 Lysozyme (L99A mutant) with toluene (PDB: 7L39)
+- [Protein-ligand complex with a pocket constraint](../../examples/example_inference_inputs/query_protein_ligand_pocket_constraint.json): Beta-lactamase with an allosteric inhibitor (PDB: 1PZP)
 - [Multiple Protein-ligand complexes](../../examples/example_inference_inputs/query_protein_ligand_multiple.json): Two queries with Mcl-1 and different small molecule inhibitors (PDB: 5FDR)

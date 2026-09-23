@@ -160,6 +160,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 @click.option(
     "--is_core_train",
     type=bool,
+    default=False,
     help=(
         "Flag to specify the dataset cache is for the core training set. False for"
         " distillation and inference sets."
@@ -337,12 +338,12 @@ def main(
         s3_client_config = parse_s3_config(s3_client_config)
 
     # Error handling
-    if is_core_train & (min_release_date_diff is None):
+    if is_core_train and (min_release_date_diff is None):
         raise ValueError(
             "Minimum release date difference for core training must be specified."
         )
 
-    if (not is_core_train) & (max_release_date is None):
+    if (not is_core_train) and (max_release_date is None):
         raise ValueError(
             "Max release date difference for distillation and inference sets must be"
             " specified."
