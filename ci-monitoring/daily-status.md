@@ -347,3 +347,38 @@ Third consecutive clean night on the unchanged `7de748b7bc93adb5af0a4032d5e9f208
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as runs #265, #267, #269, #271, #274, #276, and #278. Does not affect the day's coverage line above (based on the primary slot, run #279, per this log's established convention).
 
 ---
+
+## 2026-09-23
+
+### Run #281 — primary nightly (schedule `17 3 * * *`, main @ `68b9c5e` — first nightly run on this commit, merging PR #424 dependabot bump of `docker/build-push-action` 7.3.0→7.4.0 (unchanged `7de748b` for the prior 3 nights), [35814661788](https://github.com/aqlaboratory/openfold-3/actions/runs/35814661788))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 32 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 37 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 35 min | |
+
+**2026-09-23: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Fourth consecutive clean night (following runs #275 on 09-20, #277 on 09-21, #279 on 09-22). First nightly run since main advanced from `7de748b` to `68b9c5e` (PR #424, a dependency-bot bump touching only the `docker/build-push-action` version pin in the reusable workflows) — no regression observed from the bump.
+
+### Run #283 — secondary nightly (schedule `17 4 * * *`, main @ `68b9c5e`, [35818592857](https://github.com/aqlaboratory/openfold-3/actions/runs/35818592857))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as runs #265, #267, #269, #271, #274, #276, #278, and #280. Does not affect the day's coverage line above (based on the primary slot, run #281, per this log's established convention).
+
+### Run #282 — workflow_dispatch (`feature/ci-upstream-az-fallback` @ `5a8f3d8`, [35818035055](https://github.com/aqlaboratory/openfold-3/actions/runs/35818035055))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | 10 min | `code` — `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` (6 retries exhausted), independent of the branch under test |
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 0 min | `aws-capacity` at `start-aws-runner` / "Report launch outcome" — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 0 min | same `aws-capacity` signature — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+
+Not a scheduled nightly; excluded from the day's coverage line per this log's established convention (same treatment as runs #263 on 09-14 and #272 on 09-18). Validation run for PR #426, which swaps the hand-rolled multi-pool AWS capacity fallback (added in #400) for the upstream `start-aws-gha-runner` v1.4.0 per-region AZ fallback. Both CUDA legs still hit `g5.4xlarge` capacity exhaustion in both regions under the new action — inconclusive on whether v1.4.0's fallback is effective, since a hard double-region outage isn't distinguishable from a fallback that isn't walking zones; not logged to `aws-outage-failures.md` since it's off the tracked nightly schedule. The AMD leg's ColabFold timeout is the same `code` signature already tracked for the nightly job and is unrelated to the AWS-runner change under test in this run.
+
+---
