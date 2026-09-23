@@ -884,33 +884,44 @@ def get_token_frame_atoms(
         valid_frame_mask:
             [*, N_token] Mask denoting valid frames
     """
-    # Create pairwise atom mask
-    pair_mask = atom_mask[..., None] * atom_mask[..., None, :]
-
-    # Update pairwise atom mask
-    # Restrict to atoms within the same chain
+    # Only the start atom's row of the pairwise distance matrix is ever used,
+    # so compute [*, N_token, N_atom] instead of [*, N_atom, N_atom]
+    start_atom_index = batch["start_atom_index"].long()
     atom_asym_id = broadcast_token_feat_to_atoms(
         token_mask=batch["token_mask"],
         num_atoms_per_token=batch["num_atoms_per_token"],
         token_feat=batch["asym_id"],
     )
-    atom_asym_id_mask = atom_asym_id[..., None] == atom_asym_id[..., None, :]
+    start_atom_mask = torch.gather(atom_mask, dim=-1, index=start_atom_index)
+    start_asym_id = torch.gather(atom_asym_id, dim=-1, index=start_atom_index)
+    start_atom_index = start_atom_index.expand(
+        *x.shape[:-2], start_atom_index.shape[-1]
+    )
+    x_start = torch.gather(
+        x, dim=-2, index=start_atom_index[..., None].expand(*start_atom_index.shape, 3)
+    )
+
+    # Create pairwise atom mask
+    pair_mask = start_atom_mask[..., None] * atom_mask[..., None, :]
+
+    # Update pairwise atom mask
+    # Restrict to atoms within the same chain
+    atom_asym_id_mask = start_asym_id[..., None] == atom_asym_id[..., None, :]
     pair_mask = pair_mask * atom_asym_id_mask
 
     # Compute distance matrix
-    # [*, N_atom, N_atom]
-    d = torch.sum(eps + (x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1) ** 0.5
+    # [*, N_token, N_atom]
+    d = (
+        torch.sum(eps + (x_start[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
+        ** 0.5
+    )
     d = d * pair_mask + inf * (1 - pair_mask)
 
     # Find indices of two closest atoms for start atoms
     # [*, N_token]
-    start_atom_index = batch["start_atom_index"].long()
-    start_atom_index = start_atom_index.expand(
-        *x.shape[:-2], start_atom_index.shape[-1]
-    )
     _, closest_atom_index = torch.topk(d, k=3, dim=-1, largest=False)
-    a_index = torch.gather(closest_atom_index[..., 1], dim=-1, index=start_atom_index)
-    c_index = torch.gather(closest_atom_index[..., 2], dim=-1, index=start_atom_index)
+    a_index = closest_atom_index[..., 1]
+    c_index = closest_atom_index[..., 2]
 
     # Construct indices of atoms used for frame construction
     # [*, N_token]
