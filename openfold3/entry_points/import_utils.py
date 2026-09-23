@@ -19,6 +19,11 @@ Manage imports run_openfold.py
 # ruff: noqa: F821
 # ruff: noqa: F401
 
+import logging
+import os
+
+logger = logging.getLogger(__name__)
+
 
 def _enable_tf32():
     import torch
@@ -35,6 +40,16 @@ def _enable_tf32():
 
 def _configure_torch_backend():
     """Apply backend settings"""
+
+    # NOTE: only set if we are NOT on AMD
+    if "PYTORCH_HIP_ALLOC_CONF" not in os.environ:
+        # NOTE: PYTORCH_ALLOC_CONF is used more often in newer torch versions, but would require
+        # a version pin
+        key = "PYTORCH_CUDA_ALLOC_CONF"
+        value = "expandable_segments:True"
+        os.environ.setdefault(key, value)
+        logger.info(f"Setting env var ${key}={value}")
+
     import torch
 
     # Force the cuBLAS backend on AMD/ROCm to match the numerics of
