@@ -19,10 +19,26 @@ import torch.nn as nn
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
+from openfold3.core.kernels.triton.fused_ln_linear import fused_ln_linear_inference
 from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.model.primitives.fused_ln_linear import is_fused_ln_linear_enabled
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.atomize_utils import max_atom_per_token_masked_select
+
+
+def _ln_linear(zij: torch.Tensor, layer_norm: LayerNorm, linear: Linear):
+    # The fused kernel never materializes the [N, N, C_z] LayerNorm output (1U)
+    if is_fused_ln_linear_enabled() and not torch.is_grad_enabled():
+        return fused_ln_linear_inference(
+            zij,
+            layer_norm.weight,
+            layer_norm.bias,
+            linear.weight,
+            linear.bias,
+            layer_norm.eps,
+        )
+    return linear(layer_norm(zij))
 
 
 class PairformerEmbedding(nn.Module):
@@ -114,7 +130,10 @@ class PairformerEmbedding(nn.Module):
             )
             dij = ((dij > squared_bins) * (dij < upper)).type(x_pred.dtype)
             if inplace and zij.dtype == torch.float32:
-                zij += self.linear_distance(dij)
+                # GEMM-accumulate into zij: no full [N, N, C_z] projection temp
+                zij.view(-1, zij.shape[-1]).addmm_(
+                    dij.view(-1, self.no_bin), self.linear_distance.weight.t()
+                )
             else:
                 zij = zij + self.linear_distance(dij)
 
@@ -405,7 +424,7 @@ class PredictedAlignedErrorHead(nn.Module):
         self.linear = Linear(self.c_z, self.c_out, **linear_init_params.linear)
 
     def _compute_logits(self, zij: torch.Tensor):
-        logits = self.linear(self.layer_norm(zij))
+        logits = _ln_linear(zij, self.layer_norm, self.linear)
         return logits
 
     def _chunk(
@@ -476,7 +495,7 @@ class PredictedDistanceErrorHead(nn.Module):
         self.linear = Linear(self.c_z, self.c_out, **linear_init_params.linear)
 
     def _compute_logits(self, zij: torch.Tensor):
-        logits = self.linear(self.layer_norm(zij))
+        logits = _ln_linear(zij, self.layer_norm, self.linear)
         logits = logits + logits.transpose(-2, -3)
         return logits
 
