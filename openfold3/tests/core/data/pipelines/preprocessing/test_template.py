@@ -936,11 +936,11 @@ def test_requeued_query_set_keeps_cached_templates(tmp_path):
     """A reused query set keeps its cached template entry (issue #420).
 
     Run 1 preprocesses a ColabFold alignment and writes the cache entry path and
-    template ids into the chain. The reused batch mixes that chain, reloaded from
-    the run's serialized query set, with a raw CIF source that run 1 never
+    template ids into the chain. The reused batch mixes that chain, deep-copied
+    from run 1's query set, with a raw CIF source that run 1 never
     processed, so the write-back still runs while the cached entry is bypassed.
     """
-    run_1 = _two_source_query_set(tmp_path, ["q_colabfold"])
+    run_1_qs = _two_source_query_set(tmp_path, ["q_colabfold"])
     structure_dir = tmp_path / "template_structures"
     structure_dir.mkdir()
     shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, structure_dir / TEMPLATE_CIF)
@@ -953,31 +953,28 @@ def test_requeued_query_set_keeps_cached_templates(tmp_path):
         n_processes=1,
     )
 
-    TemplatePreprocessor(input_set=run_1, config=settings)()
+    TemplatePreprocessor(input_set=run_1_qs, config=settings)()
 
-    cached_chain = run_1.queries["q_colabfold"].chains[0]
+    cached_chain = run_1_qs.queries["q_colabfold"].chains[0]
     cached_path = cached_chain.template_alignment_file_path
     assert cached_path is not None
     assert cached_chain.template_entry_chain_ids == ["2q2k_C"]
 
-    requeue_path = _write_file(
-        tmp_path / "inference_query_set.json", run_1.model_dump_json()
-    )
-    requeued = InferenceQuerySet.from_json(requeue_path)
-    fresh = _two_source_query_set(tmp_path, ["q_custom"])
-    requeued.queries["q_custom"] = fresh.queries["q_custom"]
+    run_2_qs = run_1_qs.model_copy(deep=True)
+    fresh_qs = _two_source_query_set(tmp_path, ["q_custom"])
+    run_2_qs.queries |= fresh_qs.queries
 
-    preprocessor = TemplatePreprocessor(input_set=requeued, config=settings)
+    preprocessor = TemplatePreprocessor(input_set=run_2_qs, config=settings)
     preprocessor()
 
-    requeued_cached = requeued.queries["q_colabfold"].chains[0]
+    requeued_cached = run_2_qs.queries["q_colabfold"].chains[0]
     assert requeued_cached.template_alignment_file_path == cached_path, (
         "the cached template entry was dropped when the query set was reused"
     )
     assert requeued_cached.template_entry_chain_ids == ["2q2k_C"], (
         "the template ids were dropped when the query set was reused"
     )
-    requeued_raw = requeued.queries["q_custom"].chains[0]
+    requeued_raw = run_2_qs.queries["q_custom"].chains[0]
     assert requeued_raw.template_entry_chain_ids == ["2q2k_B"], (
         "the raw source in the reused batch was not processed"
     )
