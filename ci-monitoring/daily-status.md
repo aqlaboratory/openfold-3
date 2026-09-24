@@ -382,3 +382,28 @@ Expected skip on the secondary slot (intended for other repos, not `aqlaboratory
 Not a scheduled nightly; excluded from the day's coverage line per this log's established convention (same treatment as runs #263 on 09-14 and #272 on 09-18). Validation run for PR #426, which swaps the hand-rolled multi-pool AWS capacity fallback (added in #400) for the upstream `start-aws-gha-runner` v1.4.0 per-region AZ fallback. Both CUDA legs still hit `g5.4xlarge` capacity exhaustion in both regions under the new action — inconclusive on whether v1.4.0's fallback is effective, since a hard double-region outage isn't distinguishable from a fallback that isn't walking zones; not logged to `aws-outage-failures.md` since it's off the tracked nightly schedule. The AMD leg's ColabFold timeout is the same `code` signature already tracked for the nightly job and is unrelated to the AWS-runner change under test in this run.
 
 ---
+
+## 2026-09-24
+
+### Run #284 — primary nightly (schedule `17 3 * * *`, main @ `3a9ff90` — first nightly run on this commit (PR #337, docs-only MSA chain-level fix; prior 68b9c5e unchanged for 1 night), [35951749406](https://github.com/aqlaboratory/openfold-3/actions/runs/35951749406))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 28 min | |
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 3 min | `aws-capacity` at `start-aws-runner` / "Report launch outcome" — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 3 min | same `aws-capacity` signature — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+
+**2026-09-24: 1/3 passed · 0 skipped · 0 queued · 2 need attention**
+
+AWS `g5.4xlarge` capacity exhaustion across all six capacity pools (3x us-east-2, 3x us-west-2) on both CUDA legs' `start-aws-runner` step, cascading to skipped test jobs and failed `stop-aws-runner` (no instance to stop) — same signature as runs #252 (09-10) and #282 (09-22 `workflow_dispatch`, off-schedule). AMD leg (self-hosted runner, unaffected by AWS capacity) passed. Recorded to `aws-outage-failures.md`.
+
+### Run #285 — secondary nightly (schedule `17 4 * * *`, main @ `3a9ff90`, [35955919993](https://github.com/aqlaboratory/openfold-3/actions/runs/35955919993))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #284, per this log's established convention).
+
+---
