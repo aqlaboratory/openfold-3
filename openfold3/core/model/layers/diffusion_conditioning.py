@@ -105,7 +105,7 @@ class DiffusionConditioning(nn.Module):
 
         self.layer_norm_s = LayerNorm(self.c_s + self.c_s_input, create_offset=False)
         self.linear_s = Linear(
-            self.c_s + self.c_s_input, self.c_s, **linear_init_params.linear_z
+            self.c_s + self.c_s_input, self.c_s, **linear_init_params.linear_s
         )
 
         self.fourier_emb = FourierEmbedding(c=c_fourier_emb, seed=seed_fourier_emb)

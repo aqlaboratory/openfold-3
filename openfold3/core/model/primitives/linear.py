@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,6 +30,11 @@ from openfold3.core.model.primitives.initialization import (
     lecun_normal_init_,
 )
 from openfold3.core.utils.deepspeed_utils import deepspeed_is_initialized
+from openfold3.core.utils.device_utils import autocast_device_type
+
+deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
+if deepspeed_is_installed:
+    import deepspeed
 
 
 class Linear(nn.Linear):
@@ -99,8 +105,9 @@ class Linear(nn.Linear):
                             self.bias.fill_(1.0)
                 elif init == "gating_ada_zero":
                     gating_init_(self.weight)
-                    with torch.no_grad():
-                        self.bias.fill_(-2.0)
+                    if bias:
+                        with torch.no_grad():
+                            self.bias.fill_(-2.0)
                 elif init == "normal":
                     kaiming_normal_init_(self.weight)
                 elif init == "final":
@@ -113,7 +120,7 @@ class Linear(nn.Linear):
     def forward(self, input: torch.Tensor) -> torch.Tensor:
         d = input.dtype
         if self.precision is not None:
-            with torch.amp.autocast("cuda", enabled=False):
+            with torch.amp.autocast(autocast_device_type(input), enabled=False):
                 bias = (
                     self.bias.to(dtype=self.precision)
                     if self.bias is not None
@@ -126,7 +133,7 @@ class Linear(nn.Linear):
                 ).to(dtype=d)
 
         if d is torch.bfloat16 and not deepspeed_is_initialized():
-            with torch.amp.autocast("cuda", enabled=False):
+            with torch.amp.autocast(autocast_device_type(input), enabled=False):
                 bias = self.bias.to(dtype=d) if self.bias is not None else None
                 return nn.functional.linear(input, self.weight.to(dtype=d), bias)
 

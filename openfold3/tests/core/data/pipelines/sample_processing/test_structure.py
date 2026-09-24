@@ -3,26 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
-import biotite.structure as struc
-import numpy as np
-
 MODULE = "openfold3.core.data.pipelines.sample_processing.structure"
-
-
-def _make_atom_array(n_atoms, sym_ids=None):
-    """Create a minimal AtomArray, optionally with a sym_id annotation."""
-    aa = struc.AtomArray(n_atoms)
-    aa.chain_id[:] = "A"
-    aa.res_id[:] = np.arange(1, n_atoms + 1)
-    aa.ins_code[:] = ""
-    aa.res_name[:] = "ALA"
-    aa.atom_name[:] = "CA"
-    aa.element[:] = "C"
-    aa.coord[:] = np.random.randn(n_atoms, 3)
-    aa.set_annotation("token_id", np.arange(n_atoms))
-    if sym_ids is not None:
-        aa.set_annotation("sym_id", np.array(sym_ids))
-    return aa
 
 
 def _run_pipeline(atom_array):
@@ -55,21 +36,21 @@ def _run_pipeline(atom_array):
         )
 
 
-def test_sym_id_removed_when_dummy_values_present():
+def test_sym_id_removed_when_dummy_values_present(_make_atom_array):
     """Legacy patch fires: sym_id with -1 values is removed."""
     aa = _make_atom_array(4, sym_ids=[0, 0, -1, -1])
     _run_pipeline(aa)
     assert "sym_id" not in aa.get_annotation_categories()
 
 
-def test_sym_id_kept_when_no_dummy_values():
+def test_sym_id_kept_when_no_dummy_values(_make_atom_array):
     """Legacy patch skipped: sym_id with only 0 values is kept."""
     aa = _make_atom_array(4, sym_ids=[0, 0, 0, 0])
     _run_pipeline(aa)
     assert "sym_id" in aa.get_annotation_categories()
 
 
-def test_no_sym_id_annotation_is_fine():
+def test_no_sym_id_annotation_is_fine(_make_atom_array):
     """No crash when sym_id annotation is absent entirely."""
     aa = _make_atom_array(4)
     _run_pipeline(aa)

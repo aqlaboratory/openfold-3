@@ -20,11 +20,10 @@ import torch
 logger = logging.getLogger(__name__)
 
 
-def load_model_state_dict_from_ds_checkpoint(checkpoint_dir: Path) -> dict:
+def load_ds_checkpoint(checkpoint_dir: Path) -> dict:
     # Imported lazily so the module does not trigger deepspeed's import-time side
     # effects; only DeepSpeed ZeRO checkpoint directories reach this function.
     from deepspeed.utils import zero_to_fp32
-
     latest_path = checkpoint_dir / "latest"
     if latest_path.is_file():
         with open(latest_path) as fd:
@@ -37,15 +36,15 @@ def load_model_state_dict_from_ds_checkpoint(checkpoint_dir: Path) -> dict:
     state_file = zero_to_fp32.get_model_state_file(
         str(ds_checkpoint_dir), _DS_CHECKPOINT_VERSION
     )
-    return torch.load(state_file)
+    return torch.load(state_file, map_location="cpu", weights_only=False)
 
 
 def load_checkpoint(ckpt_path: Path) -> dict:
     if ckpt_path.is_dir():
-        return load_model_state_dict_from_ds_checkpoint(ckpt_path)
+        return load_ds_checkpoint(ckpt_path)
 
     if ckpt_path.is_file():
-        return torch.load(ckpt_path)
+        return torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
     raise ValueError(f"Checkpoint path {ckpt_path} is not a valid file or directory.")
 

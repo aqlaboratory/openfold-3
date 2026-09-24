@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import textwrap
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -48,6 +49,15 @@ def default_ckpt_path():
     )
     if not default_ckpt_path.exists():
         pytest.skip("Default checkpoint not found; skipping test.")
+    # Existence is not enough: another test can leave OPENFOLD_CACHE pointing at a
+    # directory holding a placeholder of the same name. Real checkpoints are zip
+    # archives, so anything else is not one -- skip rather than failing later in
+    # torch.load with an unrelated-looking unpickling error.
+    if not zipfile.is_zipfile(default_ckpt_path):
+        pytest.skip(
+            f"{default_ckpt_path} is not a checkpoint archive "
+            f"({default_ckpt_path.stat().st_size} bytes); skipping test."
+        )
     return default_ckpt_path
 
 
@@ -124,13 +134,48 @@ class TestOF3ModelCheckpointing:
         reloaded_model = load_checkpoint(param_path)
 
         ema_params = reloaded_model["ema"]["params"]
-        expected_version_number = "1.0.0"
+        expected_version_number = "2.0.0"
         actual_version = ema_params["version_tensor"].long().tolist()
         actual_version_number = (
             f"{actual_version[0]}.{actual_version[1]}.{actual_version[2]}"
         )
 
         assert actual_version_number == expected_version_number
+
+    def test_load_model_ckpt_populates_model_weights(self, tmp_path, default_ckpt_path):
+        """Test that a valid checkpoint's weights actually land in the model.
+
+        The other tests in this class only cover the paths where setup() rejects or
+        warns about a checkpoint. This covers the success path: validating the key set
+        and the version tensor is not enough, the weights have to be loaded. When they
+        are not, the model silently runs on its random init -- the zero-initialised
+        "final" projections stay at zero, so inference returns structures that ignore
+        the sequence, MSA and templates entirely.
+        """
+        inference_config = InferenceExperimentConfig.model_validate(
+            {"inference_ckpt_path": default_ckpt_path}
+        )
+        inference_runner = InferenceExperimentRunner(
+            inference_config, output_dir=tmp_path
+        )
+        inference_runner.setup()
+
+        ckpt = load_checkpoint(default_ckpt_path)
+        expected, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
+        actual = inference_runner.lightning_module.state_dict()
+
+        assert set(actual) == set(expected)
+
+        # Compare as float so a dtype change alone does not read as "not loaded"
+        mismatched = [
+            key
+            for key, value in expected.items()
+            if not torch.equal(value.cpu().float(), actual[key].cpu().float())
+        ]
+        assert not mismatched, (
+            f"{len(mismatched)}/{len(expected)} tensors differ from the checkpoint "
+            f"after setup(); first few: {sorted(mismatched)[:5]}"
+        )
 
     def test_load_model_ckpt_with_no_version_warns(self, tmp_path, default_ckpt_path):
         """Test that warning is raised if version_tensor is the only key that is missing."""
@@ -145,11 +190,34 @@ class TestOF3ModelCheckpointing:
         inference_config = InferenceExperimentConfig.model_validate(
             {"inference_ckpt_path": ckpt_with_no_version_path}
         )
-        inference_runner = InferenceExperimentRunner(inference_config)
+        inference_runner = InferenceExperimentRunner(
+            inference_config, output_dir=tmp_path
+        )
         with patch("openfold3.entry_points.experiment_runner.logger") as mock_logger:
             inference_runner.setup()
         warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
         assert any("version_tensor" in msg for msg in warning_messages)
+
+    def test_load_model_ckpt_with_wrong_version_fails(
+        self, tmp_path, default_ckpt_path
+    ):
+        """Test that loading a checkpoint with wrong version_tensor raises an error."""
+
+        # Load checkpoint and modify version_tensor to an incompatible version
+        ckpt = load_checkpoint(default_ckpt_path)
+        ckpt["version_tensor"] = torch.tensor([0, 0, 1])  # Incompatible version
+        ckpt_with_wrong_version_path = tmp_path / "model_weights_wrong_version.ckpt"
+        torch.save(ckpt, ckpt_with_wrong_version_path)
+
+        # Load via InferenceExperimentRunner and assert the error is raised
+        inference_config = InferenceExperimentConfig.model_validate(
+            {"inference_ckpt_path": ckpt_with_wrong_version_path}
+        )
+        inference_runner = InferenceExperimentRunner(
+            inference_config, output_dir=tmp_path
+        )
+        with pytest.raises(ValueError, match="does not match current model version"):
+            inference_runner.setup()
 
     def test_load_model_ckpt_with_missing_fields_fails(
         self, tmp_path, default_ckpt_path
@@ -169,8 +237,10 @@ class TestOF3ModelCheckpointing:
         inference_config = InferenceExperimentConfig.model_validate(
             {"inference_ckpt_path": bad_ckpt_with_missing_fields}
         )
-        inference_runner = InferenceExperimentRunner(inference_config)
-        with pytest.raises(RuntimeError):
+        inference_runner = InferenceExperimentRunner(
+            inference_config, output_dir=tmp_path
+        )
+        with pytest.raises(ValueError, match="Checkpoint state_dict keys"):
             inference_runner.setup()
 
     def test_inference_load_state_dict_benchmark_under_ten_seconds(
@@ -185,9 +255,7 @@ class TestOF3ModelCheckpointing:
         inference_runner = InferenceExperimentRunner(inference_config)
 
         def _load_state_dict():
-            inference_runner._warn_on_missing_version_tensor_in_load_statedict(
-                state_dict
-            )
+            inference_runner._load_state_dict_with_version_validation(state_dict)
 
         benchmark.pedantic(
             _load_state_dict,

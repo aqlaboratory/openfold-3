@@ -1,0 +1,23 @@
+{
+    "queries": {
+        "mdm2": {
+            "chains": [
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": [
+                        "A"
+                    ],
+                    "sequence": "EQETLVRPKPLLLKLLKSVGAQKDTYTMKEVLFYLGQYIMTKRLYDEKQQHIVYCSNDLLGDLFGVPSFSVKEHRKIYTMIYRNLVVVNQQE"
+                },
+                {
+                    "molecule_type": "protein",
+                    "chain_ids": [
+                        "B"
+                    ],
+                    "sequence": "EALKKESLLL",
+                    "cyclic": true
+                }
+            ]
+        }
+    }
+}
