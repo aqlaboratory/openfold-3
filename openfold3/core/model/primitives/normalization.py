@@ -22,6 +22,7 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.primitives.linear import Linear
+from openfold3.core.utils.deepspeed_utils import deepspeed_is_initialized
 from openfold3.core.utils.device_utils import autocast_device_type
 
 
