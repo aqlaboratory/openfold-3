@@ -38,17 +38,46 @@ def _enable_tf32():
         torch.set_float32_matmul_precision("high")
 
 
-def _configure_torch_backend():
-    """Apply backend settings"""
+# Any of these means the user configured the allocator themselves. Note that
+# PYTORCH_CUDA_ALLOC_CONF *replaces* PYTORCH_ALLOC_CONF (it does not merge), so
+# we must never set one when the user has set the other.
+_ALLOC_CONF_ENV_VARS = (
+    "PYTORCH_ALLOC_CONF",
+    "PYTORCH_CUDA_ALLOC_CONF",
+    "PYTORCH_HIP_ALLOC_CONF",
+)
 
-    # NOTE: only set if we are NOT on AMD
-    if "PYTORCH_HIP_ALLOC_CONF" not in os.environ:
-        # NOTE: PYTORCH_ALLOC_CONF is used more often in newer torch versions, but would require
-        # a version pin
-        key = "PYTORCH_CUDA_ALLOC_CONF"
-        value = "expandable_segments:True"
-        os.environ.setdefault(key, value)
-        logger.info(f"Setting env var ${key}={value}")
+
+def _configure_cuda_allocator(expandable_segments: bool = True) -> None:
+    """Enable expandable segments in the CUDA caching allocator.
+
+    Uses the runtime allocator API rather than an environment variable: CUDA may
+    already be initialised by the time this runs (e.g. ``import deepspeed``), at
+    which point the environment variable is no longer read.
+    """
+    import torch
+
+    if not expandable_segments or not torch.cuda.is_available():
+        return
+    if torch.version.hip is not None:
+        return
+    user_set = [k for k in _ALLOC_CONF_ENV_VARS if k in os.environ]
+    if user_set:
+        logger.info(f"Allocator configured via {user_set}; leaving it untouched")
+        return
+
+    set_allocator_settings = getattr(
+        torch._C,
+        "_accelerator_setAllocatorSettings",
+        torch.cuda.memory._set_allocator_settings,
+    )
+    set_allocator_settings("expandable_segments:True")
+    logger.info("Enabled CUDA allocator expandable_segments")
+
+
+def _configure_torch_backend(expandable_segments: bool = True):
+    """Apply backend settings"""
+    _configure_cuda_allocator(expandable_segments)
 
     import torch
 
