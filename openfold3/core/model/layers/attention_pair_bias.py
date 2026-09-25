@@ -152,6 +152,7 @@ class AttentionPairBias(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
         """
@@ -170,6 +171,9 @@ class AttentionPairBias(nn.Module):
                 Whether to use Triton triangle attention kernel
             use_lma:
                 Whether to use LMA
+            use_megafold_single_attention:
+                Whether to use MegaFold's EvoFlash-3D single attention
+                pair bias.
             use_high_precision_attention:
                 Whether to run attention in high precision
         Returns:
@@ -187,6 +191,7 @@ class AttentionPairBias(nn.Module):
             use_deepspeed_evo_attention
             or use_cueq_triangle_kernels
             or use_triton_triangle_kernels
+            or use_megafold_single_attention
         ) and len(batch_dims) == 1
         if reshape_for_ds_kernel:
             a = a.unsqueeze(1)
@@ -200,6 +205,7 @@ class AttentionPairBias(nn.Module):
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
+            use_megafold_single_attention=use_megafold_single_attention,
             use_high_precision=use_high_precision_attention,
         )
 
@@ -333,6 +339,7 @@ class DiffusionAttentionPairBias(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         use_high_precision_attention: bool = False,
     ) -> torch.Tensor:
         """
@@ -353,6 +360,9 @@ class DiffusionAttentionPairBias(nn.Module):
                 Whether to use Triton triangle attention kernel
             use_lma:
                 Whether to use LMA
+            use_megafold_single_attention:
+                Whether to use MegaFold's EvoFlash-3D single attention
+                pair bias.
             use_high_precision_attention:
                 Whether to run attention in high precision
         Returns
@@ -370,6 +380,7 @@ class DiffusionAttentionPairBias(nn.Module):
             use_deepspeed_evo_attention
             or use_cueq_triangle_kernels
             or use_triton_triangle_kernels
+            or use_megafold_single_attention
         ) and len(batch_dims) == 1
         if reshape_for_ds_kernel:
             a = a.unsqueeze(1)
@@ -383,6 +394,7 @@ class DiffusionAttentionPairBias(nn.Module):
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
+            use_megafold_single_attention=use_megafold_single_attention,
             use_high_precision=use_high_precision_attention,
         )
 
@@ -530,6 +542,7 @@ class CrossAttentionPairBias(nn.Module):
         s: torch.Tensor,
         mask: torch.Tensor | None = None,
         use_high_precision_attention: bool = False,
+        use_megafold_single_attention: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -568,6 +581,7 @@ class CrossAttentionPairBias(nn.Module):
             kv_x=a_k,
             biases=biases,
             use_high_precision=use_high_precision_attention,
+            use_megafold_single_attention=use_megafold_single_attention,
         )
 
         # Convert back to unpadded and flattened atom representation
