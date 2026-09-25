@@ -43,6 +43,13 @@ try:
 except ImportError:
     TRITON_AVAILABLE = False
 
+try:
+    import fast_trimul
+
+    FAST_TRIMUL_AVAILABLE = True
+except ImportError:
+    FAST_TRIMUL_AVAILABLE = False
+
 _TRITON_UNAVAILABLE_ERROR = (
     "Triton kernels requested (use_triton_triangle_kernels=True) but "
     "openfold3.core.kernels.triton is not available. Ensure the package is "
@@ -736,6 +743,19 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             self.c_z, self.c_hidden, **linear_init_params.linear_b_g
         )
 
+    def _ensure_fast_impl(self, z: torch.Tensor) -> None:
+        """Lazily build the fast_trimul module and load this layer's weights into
+        it once. Stored outside nn.Module registration (via __dict__) so it never
+        appears in state_dict / checkpoints."""
+        if self.__dict__.get("_fast_impl") is not None:
+            return
+        mode = "outgoing" if self._outgoing else "incoming"
+        impl = fast_trimul.FastTriangleMultiplication(
+            d_z=self.c_z, d_c=self.c_hidden, mode=mode, residual=False
+        ).to(z.device)
+        impl.load_weights(self.state_dict(), source="openfold3")
+        self.__dict__["_fast_impl"] = impl
+
     def _inference_forward(
         self,
         z: torch.Tensor,
@@ -1123,6 +1143,19 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         """
         if use_triton_triangle_kernels and not TRITON_AVAILABLE:
             raise RuntimeError(_TRITON_UNAVAILABLE_ERROR)
+
+        # fast_trimul: optional third-party fp16 CuTe backend, opt-in per module
+        # via `self.use_fast_trimul`. Inference only (its backward is a correct
+        # but slow torch recompute and it holds a weight copy); when unavailable
+        # or during training this is skipped and the normal path runs.
+        if (
+            getattr(self, "use_fast_trimul", False)
+            and FAST_TRIMUL_AVAILABLE
+            and not self.training
+        ):
+            self._ensure_fast_impl(z)
+            update = self._fast_impl(z, mask=mask)
+            return z + update if _add_with_inplace else update
 
         ## NOTE: valid for inplace safe and use_cueq_triangle_kernels to be enabled
         ## inplace safe is used across the codebase and so should not
