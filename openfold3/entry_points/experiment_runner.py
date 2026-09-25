@@ -56,6 +56,7 @@ from openfold3.core.utils.checkpoint_loading_utils import (
 )
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
+from openfold3.core.utils.strategy_utils import Rank0BroadcastStrategy
 from openfold3.entry_points.validator import (
     ExperimentConfig,
     InferenceExperimentConfig,
@@ -258,8 +259,7 @@ class ExperimentRunner(ABC):
             return _strategy
 
         if self.is_distributed:
-            return DDPStrategy(
-                find_unused_parameters=False,
+            return Rank0BroadcastStrategy(
                 cluster_environment=self.cluster_environment,
                 timeout=self.pl_trainer_args.distributed_timeout,
             )
