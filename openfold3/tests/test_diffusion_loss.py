@@ -14,7 +14,6 @@
 
 import unittest
 from collections.abc import Callable
-from dataclasses import dataclass
 
 import pytest
 import torch
@@ -31,39 +30,11 @@ from openfold3.core.loss.diffusion import (
 from openfold3.core.model.structure.diffusion_module import centre_random_augmentation
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.tests.config import consts
-
-
-@dataclass(frozen=True)
-class CudaMemoryMetrics:
-    """Snapshot of CUDA caching allocator state after a workload."""
-
-    peak_allocated_bytes: int
-    """What tensors actually needed (the useful work)."""
-    peak_reserved_bytes: int
-    """What the caching allocator reserved from CUDA (the real GPU cost)."""
-    peak_inactive_split_bytes: int
-    """Free blocks created by splitting larger segments — the most direct
-    measure of fragmentation."""
-    num_alloc_retries: int
-    """Times the allocator failed to find a block, freed cached memory, and
-    retried. The practical cost of fragmentation."""
-    num_ooms: int
-    """Out-of-memory errors (catastrophic fragmentation)."""
-    peak_segments: int
-    """Number of cudaMalloc segments at peak."""
-
-
-def get_cuda_memory_metrics(device: torch.device | str = "cuda") -> CudaMemoryMetrics:
-    """Collect CUDA caching allocator metrics after a workload."""
-    stats = torch.cuda.memory_stats(device)
-    return CudaMemoryMetrics(
-        peak_allocated_bytes=stats["allocated_bytes.all.peak"],
-        peak_reserved_bytes=stats["reserved_bytes.all.peak"],
-        peak_inactive_split_bytes=stats["inactive_split_bytes.all.peak"],
-        num_alloc_retries=stats["num_alloc_retries"],
-        num_ooms=stats["num_ooms"],
-        peak_segments=stats["segment.all.peak"],
-    )
+from openfold3.tests.utils.cuda_memory import (
+    CudaMemoryMetrics,
+    MiB,
+    measure_cuda_memory,
+)
 
 
 class TestDiffusionLoss(unittest.TestCase):
@@ -373,12 +344,7 @@ def _measure_bond_loss_fn(
     fn: Callable, x: torch.Tensor, batch: dict, device: torch.device
 ) -> CudaMemoryMetrics:
     """Run a bond_loss function and return CUDA memory metrics."""
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats(device)
-    torch.cuda.synchronize()
-    _ = fn(x=x, batch=batch, eps=1e-8)
-    torch.cuda.synchronize()
-    return get_cuda_memory_metrics(device)
+    return measure_cuda_memory(lambda: fn(x=x, batch=batch, eps=1e-8), device)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires GPU")
@@ -418,25 +384,16 @@ class TestBondLossMemory:
         dense_metrics = _measure_bond_loss_fn(bond_loss, x, batch, device)
         sparse_metrics = _measure_bond_loss_fn(bond_loss_sparse, x, batch, device)
 
-        MB = 1024**2
         print(
-            f"\nn_atom={n_atom}  "
-            f"allocated: {dense_metrics.peak_allocated_bytes / MB:.0f}"
-            f" -> {sparse_metrics.peak_allocated_bytes / MB:.0f} MB  "
-            f"reserved: {dense_metrics.peak_reserved_bytes / MB:.0f}"
-            f" -> {sparse_metrics.peak_reserved_bytes / MB:.0f} MB  "
-            f"inactive_split: {dense_metrics.peak_inactive_split_bytes / MB:.0f}"
-            f" -> {sparse_metrics.peak_inactive_split_bytes / MB:.0f} MB  "
-            f"segments: {dense_metrics.peak_segments}"
-            f" -> {sparse_metrics.peak_segments}"
+            f"\nn_atom={n_atom}\n  dense:  {dense_metrics}\n  sparse: {sparse_metrics}"
         )
 
         assert (
             sparse_metrics.peak_reserved_bytes <= dense_metrics.peak_reserved_bytes
         ), (
             f"n_atom={n_atom}: sparse reserved "
-            f"{sparse_metrics.peak_reserved_bytes / MB:.0f} MB > dense "
-            f"{dense_metrics.peak_reserved_bytes / MB:.0f} MB — "
+            f"{sparse_metrics.peak_reserved_bytes / MiB:.0f} MiB > dense "
+            f"{dense_metrics.peak_reserved_bytes / MiB:.0f} MiB — "
             f"fragmentation regression"
         )
 
