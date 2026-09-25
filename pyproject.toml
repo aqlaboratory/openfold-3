@@ -85,6 +85,7 @@ optional-dependencies.deepspeed = [
 run_openfold="openfold3.run_openfold:cli"
 setup_openfold="openfold3.setup_openfold:main"
 validate-openfold3-rocm="openfold3.entry_points.validate_rocm:main"
+validate-openfold3-xpu="openfold3.entry_points.validate_xpu:main"
 
 # Let's take a decision if these are optional-dependencies or dependency-groups
 # See: https://github.com/astral-sh/uv/issues/9011

@@ -30,12 +30,20 @@ _DEVICES = [
             not torch.cuda.is_available(), reason="CUDA not available"
         ),
     ),
+    pytest.param(
+        "xpu",
+        id="xpu",
+        marks=pytest.mark.skipif(
+            not (hasattr(torch, "xpu") and torch.xpu.is_available()),
+            reason="XPU not available",
+        ),
+    ),
 ]
 
 
 @pytest.fixture(params=_DEVICES)
 def device(request) -> str:
-    """Yield 'cpu' or 'cuda'; CUDA tests are auto-skipped when no GPU."""
+    """Yield 'cpu', 'cuda' or 'xpu'; accelerator tests auto-skip without one."""
     return request.param
 
 
@@ -138,9 +146,38 @@ def _check_snapshot_env(snapshot_dir: Path) -> None:
         )
 
 
-def _snapshot_platform() -> str:
-    """Return 'rocm' when running on an AMD GPU, 'nvidia' otherwise."""
-    return "rocm" if torch.version.hip is not None else "nvidia"
+def _snapshot_platform(request: pytest.FixtureRequest | None = None) -> str:
+    """Return the accelerator-specific snapshot bucket for the current test.
+
+    Kernel numerics differ across GPU backends, so each gets its own subdir:
+    'rocm' for AMD/HIP, 'xpu' for Intel GPUs, 'nvidia' for anything else (CUDA,
+    CPU, MPS) -- matching the historical (if imprecisely named) default bucket.
+
+    When ``request`` is given and the test is parametrized over the ``device``
+    fixture, the bucket is chosen from that specific parameter (e.g. a
+    ``cpu``-parametrized test always uses 'nvidia' even on an XPU-capable box)
+    rather than from whatever accelerators happen to be present on the machine.
+    """
+    device_param = None
+    if request is not None:
+        device_param = getattr(request.node, "callspec", None)
+        device_param = (
+            device_param.params.get("device") if device_param is not None else None
+        )
+
+    if device_param == "cpu":
+        return "nvidia"
+    if device_param == "cuda":
+        return "rocm" if torch.version.hip is not None else "nvidia"
+    if device_param == "xpu":
+        return "xpu"
+
+    # No (or non-device-parametrized) request: fall back to machine capability.
+    if torch.version.hip is not None:
+        return "rocm"
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        return "xpu"
+    return "nvidia"
 
 
 def _write_snapshot_env(snapshot_dir: Path) -> None:
@@ -247,17 +284,22 @@ def biotite_ccd_wrapper():
     return BiotiteCCDWrapper()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def original_datadir(request: pytest.FixtureRequest) -> Path:
     """Redirect pytest-regressions snapshot storage to test_data/snapshots/<stem>/.
 
     Modules whose snapshots depend on GPU backend (kernel numerics) opt in to a
     `<platform>/` subdir by setting ``pytestmark = pytest.mark.platform_dependent_snapshot``;
     everything else (the data pipeline, CPU-deterministic) stores under <stem>/ directly.
+
+    Function-scoped (not module-scoped): the bucket must be recomputed per test,
+    since it depends on that test's own ``device`` parametrization -- a
+    module-scoped fixture would cache whichever device happened to run first
+    and silently reuse it for every other parametrization in the module.
     """
     base = Path(__file__).parent / "test_data" / "snapshots" / Path(request.path).stem
     if request.node.get_closest_marker("platform_dependent_snapshot") is not None:
-        base = base / _snapshot_platform()
+        base = base / _snapshot_platform(request)
         _check_snapshot_env(base)
     return base
 

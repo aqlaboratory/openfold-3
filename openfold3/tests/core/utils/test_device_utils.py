@@ -38,7 +38,7 @@ from openfold3.tests.utils.compare_utils import current_accelerator
 #: falls through to a ``fast_dtype in device_supported_dtypes`` check, and since
 #: that set is ``{float16, bfloat16}`` an fp32 request warns and disables autocast
 #: outright. ROCm reports its devices as ``cuda``, so it takes the CUDA branch too.
-FP32_AUTOCAST_STAYS_ENABLED = {"cuda": True, "cpu": False, "mps": False}
+FP32_AUTOCAST_STAYS_ENABLED = {"cuda": True, "cpu": False, "mps": False, "xpu": False}
 
 
 def _accelerator_device_type() -> str | None:

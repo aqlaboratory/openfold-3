@@ -119,8 +119,9 @@ def skip_unless_triton_installed():
 
 #: Accelerator backends the suite knows how to detect. ``cuda`` and ``rocm`` are both
 #: driven through the ``torch.cuda`` API — a ROCm build reports HIP devices through it
-#: too — so they are told apart by ``torch.version.hip``.
-ACCELERATORS = ("cuda", "rocm", "mps")
+#: too — so they are told apart by ``torch.version.hip``. ``xpu`` (Intel GPUs) is a
+#: genuinely separate ``torch.device`` type, like ``mps``.
+ACCELERATORS = ("cuda", "rocm", "mps", "xpu")
 
 
 @functools.lru_cache(maxsize=1)
@@ -130,6 +131,8 @@ def current_accelerator() -> str | None:
         return "rocm" if torch.version.hip is not None else "cuda"
     if torch.backends.mps.is_available():
         return "mps"
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        return "xpu"
     return None
 
 

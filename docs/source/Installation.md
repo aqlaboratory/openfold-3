@@ -16,7 +16,7 @@ Although OpenFold3 can be installed directly with:
 pip install openfold3
 ```
 
-for a more reproducible and streamlined setup, especially when installing OpenFold3 with its full set of dependencies, we recommend using [pixi](https://pixi.prefix.dev/latest/index.html). Using pixi makes it easier to choose the right pre-configured environment for your hardware, such as CPU-only, NVIDIA CUDA, or AMD ROCm.
+for a more reproducible and streamlined setup, especially when installing OpenFold3 with its full set of dependencies, we recommend using [pixi](https://pixi.prefix.dev/latest/index.html). Using pixi makes it easier to choose the right pre-configured environment for your hardware, such as CPU-only, NVIDIA CUDA, AMD ROCm, or Intel XPU.
 
 First, install pixi by following the [official installation instructions](https://pixi.prefix.dev/latest/installation/):
 
@@ -52,8 +52,9 @@ Available pixi environments:
 | `openfold3-cuda12` | `linux-64`, `linux-aarch64`                        | NVIDIA GPU environment using CUDA 12.                                |
 | `openfold3-cuda13` | `linux-64`, `linux-aarch64`                        | NVIDIA GPU environment using CUDA 13.                                |
 | `openfold3-rocm7`  | `linux-64`                                         | AMD GPU environment using ROCm 7.                                    |
+| `openfold3-xpu`    | `linux-64`                                         | Intel GPU environment using XPU.                                    |
 
-Choose the environment that matches your system. For example, use `openfold3-base` for non-CUDA/ROCm installations (including Apple Silicon), `openfold3-cuda12` or `openfold3-cuda13` for NVIDIA GPU systems, and `openfold3-rocm7` for AMD ROCm systems.
+Choose the environment that matches your system. For example, use `openfold3-base` for non-CUDA/ROCm installations (including Apple Silicon), `openfold3-cuda12` or `openfold3-cuda13` for NVIDIA GPU systems, `openfold3-rocm7` for AMD ROCm systems, and `openfold3-xpu` for Intel GPU systems.
 
 For more information, including rationale, tips and tricks, see [Modern Conda Environments with Pixi](./modern-conda-environments-with-pixi.md).
 
@@ -109,6 +110,19 @@ For AMD system installation: After installation, verify your ROCm environment is
 validate-openfold3-rocm
 ```
 
+To use Intel XPU-compatible Triton kernels, first install the XPU PyTorch wheel (which bundles the XPU Triton backend), then install openfold3:
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/xpu
+pip install openfold3
+```
+
+For Intel system installation: After installation, verify your XPU environment is correctly configured:
+
+```bash
+validate-openfold3-xpu
+```
+
 (installation-environment-variables)=
 ### Environment variables
 
@@ -134,6 +148,9 @@ OpenFold may need a few environment variables set so CUDA, compilation, and JIT-
 
 - If you get a `/usr/bin/ld: cannot find -lcurand` error, this usually means the CUDA math libraries (which include `libcurand`) are not on your library search path. You may need to add the appropriate CUDA library directory to  `LIBRARY_PATH`. 
     - Example: `export LIBRARY_PATH="$(echo "$CUDA_HOME" | sed 's|/cuda/|/math_libs/|')/targets/sbsa-linux/lib:${LIBRARY_PATH:-}"`
+
+- `TRITON_DEFAULT_BACKEND` may need to be set to `intel` on machines with both an Intel GPU and an NVIDIA/AMD GPU installed. Triton auto-detects its backend from whichever GPU drivers are visible on the system, and raises `RuntimeError: N active drivers` if it finds more than one. Forcing the backend sidesteps the ambiguity:
+    - Example: `export TRITON_DEFAULT_BACKEND=intel`
 
 
 ### OpenFold3 Docker Image
