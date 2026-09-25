@@ -1697,6 +1697,7 @@ class TemplatePreprocessorSettings(BaseModel):
     structure_directory: Path | None = None
     structure_file_format: str = "cif"
     output_directory: Path | None = None
+    save_template_data: bool = False
 
     precache_directory: Path | None = None
     structure_array_directory: Path | None = None
