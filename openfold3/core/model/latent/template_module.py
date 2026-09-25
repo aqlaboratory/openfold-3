@@ -573,6 +573,7 @@ class TemplateEmbedderAllAtom(nn.Module):
             t = self.template_pair_embedder(
                 batch=batch_templ,
                 z=z,
+                inplace_safe=inplace_safe,
             )
 
             # [*, N_templ, N_token, N_token, C_z]
@@ -612,7 +613,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         inplace_safe: bool = False,
     ) -> torch.Tensor:
         # [*, N_templ, N_token, N_token, C_t]
-        t = self.template_pair_embedder(batch, z)
+        t = self.template_pair_embedder(batch, z, inplace_safe=inplace_safe)
 
         # [*, 1, N_token, N_token]
         pair_mask = pair_mask[..., None, :, :].to(dtype=z.dtype)

@@ -168,6 +168,12 @@ class AuxiliaryHeadsAllAtom(nn.Module):
 
         # Distogram head: Main loop (Algorithm 1), line 17
         distogram_logits = self.distogram(z=zij)
+        # Under offload_inference, move distogram off GPU now; downstream
+        # confidence scoring consumes it once at the very end (gpde) and
+        # can pull it back on demand. Saves ~S*N^2*C_out*4 bytes of GPU
+        # peak during all of the per-pair-head compute that follows.
+        if offload_inference:
+            distogram_logits = distogram_logits.to(device="cpu")
         aux_out["distogram_logits"] = distogram_logits
 
         # Stop grad
@@ -241,22 +247,23 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         )
         aux_out["experimentally_resolved_logits"] = experimentally_resolved_logits
 
-        # zij is moved back to GPU after the single rep confidence heads
-        # because building the max_atom_per_token_mask uses a lot of memory
-        zij = zij.to(device=out_device)
-
-        pde_logits = self.pde(zij, apply_per_sample=apply_per_sample)
+        # We leave zij on CPU here and let the PDE/PAE heads pull what they
+        # need. This enables moving only a single sample onto the GPU at a time
+        # if running with apply_per_sample.
+        aux_out["pde_logits"] = self.pde(
+            zij,
+            apply_per_sample=apply_per_sample,
+            compute_device=out_device,
+        )
 
         if self.config.pae.enabled:
-            # Offload pde logits to not keep all three pairwise tensors
-            # in GPU memory at once
-            offload_device = "cpu" if offload_inference else out_device
-            pde_logits = pde_logits.to(device=offload_device)
-            aux_out["pae_logits"] = self.pae(zij, apply_per_sample=apply_per_sample)
+            aux_out["pae_logits"] = self.pae(
+                zij,
+                apply_per_sample=apply_per_sample,
+                compute_device=out_device,
+            )
 
         del zij
-
-        aux_out["pde_logits"] = pde_logits.to(device=out_device)
 
         aux_out = {k: v.to(dtype=out_dtype) for k, v in aux_out.items()}
 
