@@ -777,7 +777,7 @@ def get_token_frame_atoms(
 
     # Compute distance matrix
     # [*, N_atom, N_atom]
-    d = torch.sum(eps + (x[..., None, :] - x[..., None, :, :]) ** 2, dim=-1) ** 0.5
+    d = torch.cdist(x, x, p=2.0)
     d = d * pair_mask + inf * (1 - pair_mask)
 
     # Find indices of two closest atoms for start atoms
