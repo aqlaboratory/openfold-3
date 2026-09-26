@@ -434,3 +434,30 @@ Expected skip on the secondary slot (intended for other repos, not `aqlaboratory
 Note: run #288 ([36102270668](https://github.com/aqlaboratory/openfold-3/actions/runs/36102270668)), a `workflow_dispatch` validation run on `ci/pr414-integration`, was still `in_progress` at scan time and is excluded from tonight's coverage (not a scheduled nightly, and not yet completed).
 
 ---
+
+## 2026-09-26
+
+### Run #289 — primary nightly (schedule `17 3 * * *`, main @ `f299981` — first nightly run on this commit, merging PR #425 (`ahmedtaha100/issue-420-cached-template-reuse`, fixes cached template reuse in inference query sets; prior `3a9ff90` unchanged for 2 nights), [36214957390](https://github.com/aqlaboratory/openfold-3/actions/runs/36214957390))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 33 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 37 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 35 min | |
+
+**2026-09-26: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Clean night on the first nightly run since main advanced from `3a9ff90` to `f299981` (PR #425) — no regression observed from the merge.
+
+### Run #290 — secondary nightly (schedule `17 4 * * *`, main @ `f299981`, [36217952280](https://github.com/aqlaboratory/openfold-3/actions/runs/36217952280))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #289, per this log's established convention).
+
+**Closing run #288** ([36102270668](https://github.com/aqlaboratory/openfold-3/actions/runs/36102270668), `workflow_dispatch` on `ci/pr414-integration`), flagged `in_progress` at yesterday's (09-25) scan time: it has since completed. `test-pixi-amd (openfold3-rocm7)` **PASSED** (33 min); both `test-pixi-cuda` legs **FAILED** (`code`) — `FAILED openfold3/tests/test_cuda_allocator.py::test_matches_snapshot - AssertionError: Values are not sufficiently close.` on cuda12 and the identical signature on cuda13, at the "Run integration test" step. The test's own warning names the root cause as a stored-snapshot/runtime environment mismatch, not a regression: `Snapshot environment mismatch in nvidia/: torch_version: stored=2.12.1, current=2.10.0, gpu_name: stored=NVIDIA GB10, current=NVIDIA A10G`. Not a scheduled nightly; excluded from any day's coverage line per this log's established convention (same treatment as runs #263, #272, #282).
+
+---
