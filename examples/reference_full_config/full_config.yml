@@ -178,6 +178,7 @@ template_preprocessor_settings:
   structure_directory: null
   structure_file_format: cif
   output_directory: null
+  save_template_data: false
   precache_directory: null
   structure_array_directory: null
   cache_directory: null

@@ -708,9 +708,12 @@ class TestInferenceCommandLineSettings:
 
         assert list(isolated_tmp.glob("of3-of-*")) == []
 
-    @pytest.mark.parametrize("cleanup_enabled", [False, True])
+    @pytest.mark.parametrize(
+        ("cleanup_enabled", "save_template_data"),
+        [(False, False), (True, False), (True, True)],
+    )
     def test_cleanup_respects_template_cleanup_setting(
-        self, tmp_path, dummy_ckpt_file, cleanup_enabled
+        self, tmp_path, dummy_ckpt_file, cleanup_enabled, save_template_data
     ):
         expt_config = InferenceExperimentConfig(
             inference_ckpt_path=dummy_ckpt_file,
@@ -720,6 +723,9 @@ class TestInferenceCommandLineSettings:
                 "use_templates": True,
             },
             msa_computation_settings={"cleanup_msa_dir": cleanup_enabled},
+            template_preprocessor_settings=(
+                {"save_template_data": True} if save_template_data else {}
+            ),
         )
         runner = InferenceExperimentRunner(expt_config)
         template_output = _reserve_template_output(expt_config)
@@ -728,7 +734,7 @@ class TestInferenceCommandLineSettings:
 
         runner.cleanup_intermediates()
 
-        if cleanup_enabled:
+        if cleanup_enabled and not save_template_data:
             assert not template_output.exists()
         else:
             assert artifact.is_file()
