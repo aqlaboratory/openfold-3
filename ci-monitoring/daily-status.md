@@ -461,3 +461,28 @@ Expected skip on the secondary slot (intended for other repos, not `aqlaboratory
 **Closing run #288** ([36102270668](https://github.com/aqlaboratory/openfold-3/actions/runs/36102270668), `workflow_dispatch` on `ci/pr414-integration`), flagged `in_progress` at yesterday's (09-25) scan time: it has since completed. `test-pixi-amd (openfold3-rocm7)` **PASSED** (33 min); both `test-pixi-cuda` legs **FAILED** (`code`) — `FAILED openfold3/tests/test_cuda_allocator.py::test_matches_snapshot - AssertionError: Values are not sufficiently close.` on cuda12 and the identical signature on cuda13, at the "Run integration test" step. The test's own warning names the root cause as a stored-snapshot/runtime environment mismatch, not a regression: `Snapshot environment mismatch in nvidia/: torch_version: stored=2.12.1, current=2.10.0, gpu_name: stored=NVIDIA GB10, current=NVIDIA A10G`. Not a scheduled nightly; excluded from any day's coverage line per this log's established convention (same treatment as runs #263, #272, #282).
 
 ---
+
+## 2026-09-27
+
+### Run #291 — primary nightly (schedule `17 3 * * *`, main @ `f299981` (unchanged since run #289 on 09-26), [36291703877](https://github.com/aqlaboratory/openfold-3/actions/runs/36291703877))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 30 min | |
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 2 min | `aws-capacity` at `start-aws-runner` / "Report launch outcome" — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 2 min | same `aws-capacity` signature — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+
+**2026-09-27: 1/3 passed · 0 skipped · 0 queued · 2 need attention**
+
+AWS `g5.4xlarge` capacity exhaustion across all six capacity pools (3x us-east-2, 3x us-west-2) on both CUDA legs' `start-aws-runner` step — same signature as runs #252 (09-10), #282 (09-22 `workflow_dispatch`, off-schedule), and #284 (09-24). Underlying `botocore.exceptions.ClientError: ... (InsufficientInstanceCapacity) ...` present on both legs before the pool-exhaustion "No capacity" error. AMD leg (self-hosted runner, unaffected by AWS capacity) passed. Recorded to `aws-outage-failures.md`.
+
+### Run #292 — secondary nightly (schedule `17 4 * * *`, main @ `f299981`, [36294497332](https://github.com/aqlaboratory/openfold-3/actions/runs/36294497332))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #291, per this log's established convention).
+
+---

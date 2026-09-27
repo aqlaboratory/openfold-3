@@ -13,6 +13,7 @@ This file records CI failures caused by AWS infrastructure issues (capacity, GPU
 | 2026-09-10 | [34433550459](https://github.com/aqlaboratory/openfold-3/actions/runs/34433550459) | main | No capacity for g5.4xlarge in us-east-2 / us-west-2 | test-pixi-cuda (openfold3-cuda12) / start-aws-runner |
 | 2026-09-10 | [34433550459](https://github.com/aqlaboratory/openfold-3/actions/runs/34433550459) | main | AMD runner — Docker build failure (non-AWS infra) | test-pixi-amd (openfold3-rocm7) |
 | 2026-09-24 | [35951749406](https://github.com/aqlaboratory/openfold-3/actions/runs/35951749406) | main | No capacity for g5.4xlarge in us-east-2 / us-west-2 | test-pixi-cuda (openfold3-cuda12) / start-aws-runner, test-pixi-cuda (openfold3-cuda13) / start-aws-runner |
+| 2026-09-27 | [36291703877](https://github.com/aqlaboratory/openfold-3/actions/runs/36291703877) | main | No capacity for g5.4xlarge in us-east-2 / us-west-2 | test-pixi-cuda (openfold3-cuda12) / start-aws-runner, test-pixi-cuda (openfold3-cuda13) / start-aws-runner |
 
 ---
 
@@ -151,3 +152,24 @@ This file records CI failures caused by AWS infrastructure issues (capacity, GPU
   - `test-pixi-cuda (openfold3-cuda13)` — test-openfold-docker-pixi (job 107481992398)
 - **Passing (self-hosted AMD runner, unaffected):**
   - `test-pixi-amd (openfold3-rocm7)` — test-openfold-docker-pixi-amd (job 107481572442), 28 min
+
+---
+
+### 2026-09-27 — Run [36291703877](https://github.com/aqlaboratory/openfold-3/actions/runs/36291703877) (run #291)
+
+- **Branch:** main @ `f299981063e2ca3a5a5ce79010aa3a6101ca5e3a`
+- **Scan date:** 2026-09-27
+- **Time:** 2026-09-27T03:32:25Z – 03:34:57Z UTC
+- **Error:** `botocore.exceptions.ClientError: An error occurred (InsufficientInstanceCapacity) when calling the RunInstances operation (reached max retries: 4): We currently do not have sufficient g5.4xlarge capacity in the Availability Zone you requested (us-west-2b/us-west-2c)...` → `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2`
+- **Root cause:** AWS could not provision `g5.4xlarge` GPU EC2 instances across all six capacity pools (3x us-east-2, 3x us-west-2) — both CUDA legs' `start-aws-runner` steps failed identically at the "Report launch outcome" step; corresponding `stop-aws-runner` and test jobs failed/were skipped as a cascading consequence. Same signature as runs #252 (09-10) and #284 (09-24).
+- **Failed jobs (start-aws-runner):**
+  - `test-pixi-cuda (openfold3-cuda12)` — start-aws-runner (job 108542906989)
+  - `test-pixi-cuda (openfold3-cuda13)` — start-aws-runner (job 108542907031)
+- **Cascading failures (stop-aws-runner — no instance to stop):**
+  - `test-pixi-cuda (openfold3-cuda12)` — stop-aws-runner (job 108543176812)
+  - `test-pixi-cuda (openfold3-cuda13)` — stop-aws-runner (job 108543178162)
+- **Skipped (no runner available):**
+  - `test-pixi-cuda (openfold3-cuda12)` — test-openfold-docker-pixi (job 108543177273)
+  - `test-pixi-cuda (openfold3-cuda13)` — test-openfold-docker-pixi (job 108543178359)
+- **Passing (self-hosted AMD runner, unaffected):**
+  - `test-pixi-amd (openfold3-rocm7)` — test-openfold-docker-pixi-amd (job 108542906869), 30 min
