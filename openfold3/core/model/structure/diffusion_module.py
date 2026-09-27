@@ -20,6 +20,7 @@ Supplementary Information.
 """
 
 import logging
+from typing import NamedTuple
 
 import torch
 import torch.nn as nn
@@ -89,6 +90,36 @@ def create_noise_schedule(
     )
 
 
+class DiffusionStepInvariants(NamedTuple):
+    """
+    Quantities of the DiffusionModule that do not change between the steps of a
+    diffusion rollout. Computed once per rollout by
+    `DiffusionModule.precompute_step_invariants`.
+
+    Attributes:
+        zij:
+            [*, N_token, N_token, c_z] Conditioned pair representation
+        cl:
+            [*, N_atom, c_atom] Atom single conditioning of the atom attention encoder
+        plm:
+            [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair conditioning of the
+            atom attention encoder
+        token_mask_bias:
+            Attention mask bias of the token-level diffusion transformer
+        atom_enc_mask_bias:
+            Attention mask bias of the atom attention encoder transformer
+        atom_dec_mask_bias:
+            Attention mask bias of the atom attention decoder transformer
+    """
+
+    zij: torch.Tensor
+    cl: torch.Tensor
+    plm: torch.Tensor
+    token_mask_bias: torch.Tensor
+    atom_enc_mask_bias: torch.Tensor
+    atom_dec_mask_bias: torch.Tensor
+
+
 class DiffusionModule(nn.Module):
     """
     Implements AF3 Algorithm 20.
@@ -132,6 +163,65 @@ class DiffusionModule(nn.Module):
 
         self.atom_attn_dec = AtomAttentionDecoder(**config.atom_attn_dec)
 
+    def precompute_step_invariants(
+        self,
+        batch: dict,
+        si_trunk: torch.Tensor,
+        zij_trunk: torch.Tensor,
+        use_conditioning: bool,
+        chunk_size: int | None = None,
+    ) -> DiffusionStepInvariants:
+        """
+        Computes everything in `forward` that is independent of the noisy atom
+        positions and the noise level: the conditioned pair representation, the atom
+        reference / trunk embeddings and the attention mask biases. During a
+        diffusion rollout these are the same at every step, so they can be computed
+        once and passed to `forward` as `step_invariants`.
+
+        Args:
+            batch:
+                Feature dictionary
+            si_trunk:
+                [*, N_token, c_s] Single representation
+            zij_trunk:
+                [*, N_token, N_token, c_z] Pair representation
+            use_conditioning:
+                Whether to condition with the trunk representations
+            chunk_size:
+                Inference-time subbatch size
+        Returns:
+            The step-invariant quantities. Only valid for the same `batch` and trunk
+            representations, and for a `token_mask` in `forward` equal to
+            `batch["token_mask"]`.
+        """
+        zij = self.diffusion_conditioning.condition_pair(
+            batch=batch,
+            zij_trunk=zij_trunk,
+            use_conditioning=use_conditioning,
+            chunk_size=chunk_size,
+        )
+
+        cl, plm = self.atom_attn_enc.get_atom_conditioning(
+            batch=batch,
+            si_trunk=si_trunk,
+            zij_trunk=zij,  # Use conditioned trunk representation
+        )
+
+        return DiffusionStepInvariants(
+            zij=zij,
+            cl=cl,
+            plm=plm,
+            token_mask_bias=self.diffusion_transformer.get_mask_bias(
+                batch["token_mask"]
+            ),
+            atom_enc_mask_bias=self.atom_attn_enc.atom_transformer.get_mask_bias(
+                batch["atom_mask"]
+            ),
+            atom_dec_mask_bias=self.atom_attn_dec.atom_transformer.get_mask_bias(
+                batch["atom_mask"]
+            ),
+        )
+
     def forward(
         self,
         batch: dict,
@@ -150,6 +240,7 @@ class DiffusionModule(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        step_invariants: DiffusionStepInvariants | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -185,9 +276,23 @@ class DiffusionModule(nn.Module):
                 Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
+            step_invariants:
+                Precomputed output of `precompute_step_invariants` for this `batch`,
+                `si_trunk` and `zij_trunk`. If given, these quantities are not
+                recomputed. `token_mask` must equal `batch["token_mask"]`.
         Returns:
             [*, N_atom, 3] Denoised atom positions
         """
+        if step_invariants is None:
+            cached_zij = atom_cond = None
+            token_mask_bias = atom_enc_mask_bias = atom_dec_mask_bias = None
+        else:
+            cached_zij = step_invariants.zij
+            atom_cond = (step_invariants.cl, step_invariants.plm)
+            token_mask_bias = step_invariants.token_mask_bias
+            atom_enc_mask_bias = step_invariants.atom_enc_mask_bias
+            atom_dec_mask_bias = step_invariants.atom_dec_mask_bias
+
         si, zij = self.diffusion_conditioning(
             batch=batch,
             t=t,
@@ -196,6 +301,7 @@ class DiffusionModule(nn.Module):
             zij_trunk=zij_trunk,
             use_conditioning=use_conditioning,
             chunk_size=chunk_size,
+            zij=cached_zij,
         )
 
         xl_noisy = xl_noisy * atom_mask[..., None]
@@ -210,6 +316,8 @@ class DiffusionModule(nn.Module):
             si_trunk=si_trunk,
             zij_trunk=zij,  # Use conditioned trunk representation
             use_high_precision_attention=use_high_precision_attention,
+            atom_cond=atom_cond,
+            mask_bias=atom_enc_mask_bias,
         )
 
         ai = ai + self.linear_s(self.layer_norm_s(si))
@@ -225,6 +333,7 @@ class DiffusionModule(nn.Module):
             use_lma=use_lma,
             use_high_precision_attention=use_high_precision_attention,
             _mask_trans=_mask_trans,
+            mask_bias=token_mask_bias,
         )
 
         ai = self.layer_norm_a(ai)
@@ -236,6 +345,7 @@ class DiffusionModule(nn.Module):
             cl=cl,
             plm=plm,
             use_high_precision_attention=use_high_precision_attention,
+            mask_bias=atom_dec_mask_bias,
         )
 
         xl_out = (
@@ -304,6 +414,7 @@ class SampleDiffusion(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        step_invariants: DiffusionStepInvariants | None = None,
     ) -> torch.Tensor:
         """Run the standard OF3 denoising loop from a chosen schedule index."""
         for tau, c_tau in enumerate(noise_schedule[1:]):
@@ -337,6 +448,7 @@ class SampleDiffusion(nn.Module):
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
+                step_invariants=step_invariants,
             )
 
             delta = (xl_noisy - xl_denoised) / t
@@ -361,6 +473,7 @@ class SampleDiffusion(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        hoist_step_invariants: bool = True,
     ) -> torch.Tensor:
         """
         Args:
@@ -390,6 +503,11 @@ class SampleDiffusion(nn.Module):
                 Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
+            hoist_step_invariants:
+                Whether to compute the quantities that are unchanged between
+                diffusion steps (conditioned pair representation, atom reference
+                embeddings and attention mask biases) once per rollout instead of
+                at every step. Does not change the result.
         Returns:
             [*, N_atom, 3] Sampled atom positions
         """
@@ -427,6 +545,19 @@ class SampleDiffusion(nn.Module):
                 "Pocket proposal/refinement currently supports one query per "
                 "model batch"
             )
+
+        # Shared by the de novo rollout and the pocket refinement rollout
+        rollout_kwargs["step_invariants"] = (
+            self.diffusion_module.precompute_step_invariants(
+                batch=batch,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                use_conditioning=use_conditioning,
+                chunk_size=chunk_size,
+            )
+            if hoist_step_invariants
+            else None
+        )
 
         xl = self._sample_rollout(xl=xl, start_step=0, **rollout_kwargs)
 

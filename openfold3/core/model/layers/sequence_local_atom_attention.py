@@ -196,6 +196,75 @@ class NoisyPositionEmbedder(nn.Module):
         self.linear_z = Linear(c_z, c_atom_pair, **linear_init_params.linear_z)
         self.linear_r = Linear(3, c_atom, **linear_init_params.linear_r)
 
+    def embed_trunk(
+        self,
+        batch: TensorDict,
+        cl: torch.Tensor,
+        plm: torch.Tensor,
+        si_trunk: torch.Tensor,
+        zij_trunk: torch.Tensor,
+        n_query: int,
+        n_key: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Embeds the trunk single and pair representations into the atom conditioning.
+        Independent of the noisy positions, so it is constant across diffusion steps.
+
+        Args:
+            batch:
+                Input feature dictionary. Features used in this function:
+                    - "token_mask": [*, N_token] Token mask
+                    - "num_atoms_per_token": [*, N_token] Number of atoms per token
+            cl:
+                [*, N_atom, c_atom] Atom single conditioning
+            plm:
+                [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair conditioning
+            si_trunk:
+                [*, N_token, c_s] Trunk single representation
+            zij_trunk:
+                [*, N_token, N_token, c_z] Trunk pair representation
+            n_query:
+                Number of queries (block height)
+            n_key:
+                Number of keys (block width)
+        Returns:
+            cl:
+                [*, N_atom, c_atom] Atom single conditioning with trunk single
+                    representation embedded
+            plm:
+                [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair conditioning with
+                    trunk pair representation embedded
+        """
+        # Broadcast trunk single representation into atom single conditioning
+        # [*, N_atom, c_atom]
+        si_trunk = self.linear_s(self.layer_norm_s(si_trunk))
+        si_trunk = broadcast_token_feat_to_atoms(
+            token_mask=batch["token_mask"],
+            num_atoms_per_token=batch["num_atoms_per_token"],
+            token_feat=si_trunk,
+            token_dim=-2,
+        )
+        cl = cl + si_trunk
+
+        # Broadcast trunk pair representation into atom pair conditioning
+        zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
+        zij_trunk = convert_pair_rep_to_blocks(
+            batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
+        )
+        plm = plm + zij_trunk
+
+        return cl, plm
+
+    def embed_noisy_pos(self, rl: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            rl:
+                [*, N_atom, 3] Noisy atom positions
+        Returns:
+            [*, N_atom, c_atom] Noisy coordinate projection
+        """
+        return self.linear_r(rl)
+
     def forward(
         self,
         batch: TensorDict,
@@ -238,28 +307,19 @@ class NoisyPositionEmbedder(nn.Module):
                 [*, N_atom, c_atom] Atom single representation with noisy coordinate
                     projection
         """
-
-        # Broadcast trunk single representation into atom single conditioning
-        # [*, N_atom, c_atom]
-        si_trunk = self.linear_s(self.layer_norm_s(si_trunk))
-        si_trunk = broadcast_token_feat_to_atoms(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=si_trunk,
-            token_dim=-2,
+        cl, plm = self.embed_trunk(
+            batch=batch,
+            cl=cl,
+            plm=plm,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            n_query=n_query,
+            n_key=n_key,
         )
-        cl = cl + si_trunk
-
-        # Broadcast trunk pair representation into atom pair conditioning
-        zij_trunk = self.linear_z(self.layer_norm_z(zij_trunk))
-        zij_trunk = convert_pair_rep_to_blocks(
-            batch=batch, zij_trunk=zij_trunk, n_query=n_query, n_key=n_key
-        )
-        plm = plm + zij_trunk
 
         # Add noisy coordinate projection
         # [*, N_atom, c_atom]
-        ql = cl + self.linear_r(rl)
+        ql = cl + self.embed_noisy_pos(rl)
 
         return cl, plm, ql
 
@@ -392,6 +452,75 @@ class AtomAttentionEncoder(nn.Module):
             Linear(c_atom, c_token, **linear_init_params.linear_q), nn.ReLU()
         )
 
+    def get_atom_conditioning(
+        self,
+        batch: TensorDict,
+        si_trunk: torch.Tensor | None = None,
+        zij_trunk: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Computes the atom single and pair conditioning. This does not depend on the
+        noisy positions, so during the diffusion rollout it only needs to be computed
+        once and can be passed to `forward` as `atom_cond`.
+
+        Args:
+            batch:
+                Input feature dictionary
+            si_trunk:
+                [*, N_token, c_s] Trunk single representation (optional)
+            zij_trunk:
+                [*, N_token, N_token, c_z] Trunk pair representation (optional).
+                If neither trunk representation is given, the trunk embedding is
+                skipped.
+        Returns:
+            cl:
+                [*, N_atom, c_atom] Atom single conditioning
+            plm:
+                [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair representation
+                Note: Converted to block format ahead of time due to reduce memory cost
+        """
+        # Embed reference atom features
+        # cl: [*, N_atom, c_atom]
+        # plm: [*, N_blocks, N_query, N_key, c_atom_pair]
+        cl, plm = self.ref_atom_feature_embedder(
+            batch=batch, n_query=self.n_query, n_key=self.n_key
+        )
+
+        # Embed trunk embeddings
+        # cl: [*, N_atom, c_atom]
+        # plm: [*, N_blocks, N_query, N_key, c_atom_pair]
+        if si_trunk is not None or zij_trunk is not None:
+            cl, plm = self.noisy_position_embedder.embed_trunk(
+                batch=batch,
+                cl=cl,
+                plm=plm,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                n_query=self.n_query,
+                n_key=self.n_key,
+            )
+
+        # Add the combined single conditioning to the pair rep (line 13 - 14)
+        cl_l, cl_m, atom_mask = convert_single_rep_to_blocks(
+            ql=cl, n_query=self.n_query, n_key=self.n_key, atom_mask=batch["atom_mask"]
+        )
+
+        # Note to devs: in previous checkpoints before v13, linear_l and linear_m
+        #  were reversed. Changed it for consistent naming.
+        cl_lm = (
+            self.linear_l(self.relu(cl_l.unsqueeze(-2)))
+            + self.linear_m(self.relu(cl_m.unsqueeze(-3)))
+        ) * atom_mask.unsqueeze(-1)
+
+        # [*, N_blocks, N_query, N_key, c_atom_pair]
+        plm = plm + cl_lm
+
+        plm = plm + self.pair_mlp(plm)
+
+        plm = plm * atom_mask.unsqueeze(-1)
+
+        return cl, plm
+
     def get_atom_reps(
         self,
         batch: TensorDict,
@@ -418,52 +547,21 @@ class AtomAttentionEncoder(nn.Module):
                 [*, N_blocks, N_query, N_key, c_atom_pair] Atom pair representation
                 Note: Converted to block format ahead of time due to reduce memory cost
         """
-        # Embed reference atom features
-        # cl: [*, N_atom, c_atom]
-        # plm: [*, N_blocks, N_query, N_key, c_atom_pair]
-        cl, plm = self.ref_atom_feature_embedder(
-            batch=batch, n_query=self.n_query, n_key=self.n_key
-        )
-
-        # Embed noisy atom positions and trunk embeddings
-        # cl: [*, N_atom, c_atom]
-        # plm: [*, N_blocks, N_query, N_key, c_atom_pair]
-        # ql: [*, N_atom, c_atom]
         if rl is not None:
-            cl, plm, ql = self.noisy_position_embedder(
-                batch=batch,
-                cl=cl,
-                plm=plm,
-                si_trunk=si_trunk,
-                zij_trunk=zij_trunk,
-                rl=rl,
-                n_query=self.n_query,
-                n_key=self.n_key,
+            # Embed noisy atom positions and trunk embeddings
+            # cl: [*, N_atom, c_atom]
+            # plm: [*, N_blocks, N_query, N_key, c_atom_pair]
+            # ql: [*, N_atom, c_atom]
+            cl, plm = self.get_atom_conditioning(
+                batch=batch, si_trunk=si_trunk, zij_trunk=zij_trunk
             )
+            ql = cl + self.noisy_position_embedder.embed_noisy_pos(rl)
         else:
             # Initialize atom single representation when trunk / noisy position
             # inputs are not present
             # [*, N_atom, c_atom]
+            cl, plm = self.get_atom_conditioning(batch=batch)
             ql = cl.clone()
-
-        # Add the combined single conditioning to the pair rep (line 13 - 14)
-        cl_l, cl_m, atom_mask = convert_single_rep_to_blocks(
-            ql=cl, n_query=self.n_query, n_key=self.n_key, atom_mask=batch["atom_mask"]
-        )
-
-        # Note to devs: in previous checkpoints before v13, linear_l and linear_m
-        #  were reversed. Changed it for consistent naming.
-        cl_lm = (
-            self.linear_l(self.relu(cl_l.unsqueeze(-2)))
-            + self.linear_m(self.relu(cl_m.unsqueeze(-3)))
-        ) * atom_mask.unsqueeze(-1)
-
-        # [*, N_blocks, N_query, N_key, c_atom_pair]
-        plm = plm + cl_lm
-
-        plm = plm + self.pair_mlp(plm)
-
-        plm = plm * atom_mask.unsqueeze(-1)
 
         return ql, cl, plm
 
@@ -474,6 +572,8 @@ class AtomAttentionEncoder(nn.Module):
         si_trunk: torch.Tensor | None = None,
         zij_trunk: torch.Tensor | None = None,
         use_high_precision_attention: bool = False,
+        atom_cond: tuple[torch.Tensor, torch.Tensor] | None = None,
+        mask_bias: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -500,6 +600,14 @@ class AtomAttentionEncoder(nn.Module):
                 [*, N_atom, N_atom, c_z] Trunk pair representation (optional)
             use_high_precision_attention:
                 Whether to run attention in high precision
+            atom_cond:
+                Precomputed (cl, plm) from `get_atom_conditioning`. If given, the
+                reference / trunk embedding is skipped and `rl` is added to the
+                given `cl`. Requires `rl`, and `si_trunk` / `zij_trunk` are unused.
+            mask_bias:
+                Precomputed attention mask bias of the atom transformer from
+                `atom_transformer.get_mask_bias`. If given, it is used instead of
+                deriving the bias from the atom mask in every block.
         Returns:
             ai:
                 [*, N_token, c_token] Token representation
@@ -513,18 +621,22 @@ class AtomAttentionEncoder(nn.Module):
         """
         atom_mask = batch["atom_mask"]  # Padding mask
 
-        atom_feat_args = (
-            batch,
-            rl,
-            si_trunk,
-            zij_trunk,
-        )
-        ql, cl, plm = checkpoint_section(
-            fn=self.get_atom_reps,
-            args=atom_feat_args,
-            apply_ckpt=self.ckpt_intermediate_steps,
-            use_reentrant=self.use_reentrant,
-        )
+        if atom_cond is None:
+            atom_feat_args = (
+                batch,
+                rl,
+                si_trunk,
+                zij_trunk,
+            )
+            ql, cl, plm = checkpoint_section(
+                fn=self.get_atom_reps,
+                args=atom_feat_args,
+                apply_ckpt=self.ckpt_intermediate_steps,
+                use_reentrant=self.use_reentrant,
+            )
+        else:
+            cl, plm = atom_cond
+            ql = cl + self.noisy_position_embedder.embed_noisy_pos(rl)
 
         # Cross attention transformer (line 15)
         # [*, N_blocks, N_query, c_atom]
@@ -534,6 +646,7 @@ class AtomAttentionEncoder(nn.Module):
             z=plm,
             mask=atom_mask,
             use_high_precision_attention=use_high_precision_attention,
+            mask_bias=mask_bias,
         )
 
         ql = ql * atom_mask.unsqueeze(-1)
@@ -642,6 +755,7 @@ class AtomAttentionDecoder(nn.Module):
         cl: torch.Tensor,
         plm: torch.Tensor,
         use_high_precision_attention: bool = False,
+        mask_bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -660,6 +774,10 @@ class AtomAttentionDecoder(nn.Module):
                 Note: Converted to block format in AtomAttentionEncoder
             use_high_precision_attention:
                 Whether to run attention in high precision
+            mask_bias:
+                Precomputed attention mask bias of the atom transformer from
+                `atom_transformer.get_mask_bias`. If given, it is used instead of
+                deriving the bias from the atom mask in every block.
         Returns:
             rl_update:
                 [*, N_atom, 3] Atom position updates
@@ -681,6 +799,7 @@ class AtomAttentionDecoder(nn.Module):
             z=plm,
             mask=batch["atom_mask"],  # Padding mask
             use_high_precision_attention=use_high_precision_attention,
+            mask_bias=mask_bias,
         )
 
         # Compute updates for atom positions

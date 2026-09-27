@@ -27,7 +27,10 @@ from openfold3.core.model.primitives import (
     LayerNorm,
     Linear,
 )
-from openfold3.core.utils.atom_attention_block_utils import convert_single_rep_to_blocks
+from openfold3.core.utils.atom_attention_block_utils import (
+    convert_single_rep_to_blocks,
+    get_atom_pair_block_mask,
+)
 from openfold3.core.utils.tensor_utils import permute_final_dims
 
 
@@ -280,11 +283,27 @@ class DiffusionAttentionPairBias(nn.Module):
 
         self.sigmoid = nn.Sigmoid()
 
+    def get_mask_bias(self, mask: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the attention key-mask bias. Depends only on the mask, so it can
+        be computed once and passed to `forward` as `mask_bias` when the mask is
+        unchanged across calls (i.e. across diffusion steps).
+
+        Args:
+            mask:
+                [*, N] Mask for token or atom-level embedding
+
+        Returns:
+            [*, 1, 1, N] Attention mask bias
+        """
+        return (self.inf * (mask - 1))[..., None, None, :]
+
     def _prep_bias(
         self,
         a: torch.Tensor,
         z: torch.Tensor,
         mask: torch.Tensor | None,
+        mask_bias: torch.Tensor | None = None,
     ) -> list[torch.Tensor]:
         """
         Args:
@@ -294,23 +313,32 @@ class DiffusionAttentionPairBias(nn.Module):
                 [*, N, N, C_z] Pair embedding
             mask:
                 [*, N] Mask for token or atom-level embedding
+            mask_bias:
+                [*, 1, 1, N] Precomputed attention mask bias from `get_mask_bias`.
+                If given, `mask` is not used. Its batch dims may be broadcastable
+                to those of `a`.
 
         Returns:
             List of bias terms. Includes the pair bias and attention mask.
         """
-        if mask is None:
-            # [*, N]
-            mask = a.new_ones(
-                a.shape[:-1],
-            )
-
         # DS kernel has strict shape asserts and expects the mask to be
         # tiled to the correct shape for the batch dims
         batch_dims = a.shape[:-2]
-        mask = mask.expand((*batch_dims, -1))
 
-        # [*, 1, 1, N]
-        mask_bias = (self.inf * (mask - 1))[..., None, None, :]
+        if mask_bias is None:
+            if mask is None:
+                # [*, N]
+                mask = a.new_ones(
+                    a.shape[:-1],
+                )
+
+            mask = mask.expand((*batch_dims, -1))
+
+            # [*, 1, 1, N]
+            mask_bias = self.get_mask_bias(mask)
+        else:
+            mask_bias = mask_bias.expand((*batch_dims, *mask_bias.shape[-3:]))
+
         biases = [mask_bias]
 
         # [*, N, N, no_heads]
@@ -334,6 +362,7 @@ class DiffusionAttentionPairBias(nn.Module):
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
+        mask_bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -355,12 +384,15 @@ class DiffusionAttentionPairBias(nn.Module):
                 Whether to use LMA
             use_high_precision_attention:
                 Whether to run attention in high precision
+            mask_bias:
+                [*, 1, 1, N] Precomputed attention mask bias from `get_mask_bias`.
+                If given, it is used instead of deriving the bias from `mask`.
         Returns
             [*, N, C_q] attention updated token or atom-level embedding
         """
         a = self.layer_norm_a(a, s)
 
-        biases = self._prep_bias(a=a, z=z, mask=mask)
+        biases = self._prep_bias(a=a, z=z, mask=mask, mask_bias=mask_bias)
 
         # TODO: Make this less awkward, DS kernel has strict shape asserts
         #  and expects batch and seq dims to exist
@@ -480,11 +512,30 @@ class CrossAttentionPairBias(nn.Module):
 
         self.sigmoid = nn.Sigmoid()
 
+    def get_mask_bias(self, mask: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the blocked attention key-mask bias. Depends only on the mask, so it
+        can be computed once and passed to `forward` as `mask_bias` when the mask is
+        unchanged across calls (i.e. across diffusion steps).
+
+        Args:
+            mask:
+                [*, N] Mask for token or atom-level embedding
+
+        Returns:
+            [*, N_blocks, 1, N_query, N_key] Attention mask bias
+        """
+        atom_pair_mask = get_atom_pair_block_mask(
+            atom_mask=mask, n_query=self.n_query, n_key=self.n_key
+        )
+        return (self.inf * (atom_pair_mask - 1))[..., None, :, :]
+
     def _prep_block_inputs(
         self,
         a: torch.Tensor,
         z: torch.Tensor,
         mask: torch.Tensor,
+        mask_bias: torch.Tensor | None = None,
     ) -> tuple:
         """
         Args:
@@ -494,6 +545,10 @@ class CrossAttentionPairBias(nn.Module):
                 [*, N_blocks, N_query, N_key, C_z] Blocked pair embedding
             mask:
                 [*, N] Mask for token or atom-level embedding
+            mask_bias:
+                [*, N_blocks, 1, N_query, N_key] Precomputed attention mask bias from
+                `get_mask_bias`. If given, the blocked pair mask is not recomputed.
+                Its batch dims may be broadcastable to those of `a`.
 
         Returns:
             a_query:
@@ -505,12 +560,17 @@ class CrossAttentionPairBias(nn.Module):
                 [*, N_blocks, 1, N_query, N_key] and projected pair bias with
                 shape [*, N_blocks, no_heads, N_query, N_key]
         """
-        a_query, a_key, mask = convert_single_rep_to_blocks(
-            ql=a, n_query=self.n_query, n_key=self.n_key, atom_mask=mask
+        a_query, a_key, atom_pair_mask = convert_single_rep_to_blocks(
+            ql=a,
+            n_query=self.n_query,
+            n_key=self.n_key,
+            atom_mask=mask,
+            compute_pair_mask=mask_bias is None,
         )
 
-        # [*, N_blocks, 1, N_query, N_key]
-        mask_bias = (self.inf * (mask - 1))[..., None, :, :]
+        if mask_bias is None:
+            # [*, N_blocks, 1, N_query, N_key]
+            mask_bias = (self.inf * (atom_pair_mask - 1))[..., None, :, :]
         biases = [mask_bias]
 
         # [*, N_blocks, N_query, N_key, no_heads]
@@ -530,6 +590,7 @@ class CrossAttentionPairBias(nn.Module):
         s: torch.Tensor,
         mask: torch.Tensor | None = None,
         use_high_precision_attention: bool = False,
+        mask_bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -543,6 +604,10 @@ class CrossAttentionPairBias(nn.Module):
                 [*, N] Mask for token or atom-level embedding
             use_high_precision_attention:
                 Whether to run attention in high precision
+            mask_bias:
+                [*, N_blocks, 1, N_query, N_key] Precomputed attention mask bias from
+                `get_mask_bias`. If given, it is used instead of deriving the bias
+                from `mask`.
         Returns:
             [*, N, C_q] attention updated token or atom-level embedding
         """
@@ -555,10 +620,16 @@ class CrossAttentionPairBias(nn.Module):
                 a.shape[:-1],
             )
 
-        a_q, a_k, biases = self._prep_block_inputs(a=a, z=z, mask=mask)
+        a_q, a_k, biases = self._prep_block_inputs(
+            a=a, z=z, mask=mask, mask_bias=mask_bias
+        )
 
         s_q, s_k, _ = convert_single_rep_to_blocks(
-            ql=s, n_query=self.n_query, n_key=self.n_key, atom_mask=mask
+            ql=s,
+            n_query=self.n_query,
+            n_key=self.n_key,
+            atom_mask=mask,
+            compute_pair_mask=False,
         )
         a_q = self.layer_norm_a_q(a_q, s_q)
         a_k = self.layer_norm_a_k(a_k, s_k)
