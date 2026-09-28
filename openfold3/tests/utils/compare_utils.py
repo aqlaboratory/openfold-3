@@ -117,8 +117,54 @@ def skip_unless_triton_installed():
     return pytest.mark.skipif(not triton_is_installed, reason="Requires Triton")
 
 
+#: Accelerator backends the suite knows how to detect. ``cuda`` and ``rocm`` are both
+#: driven through the ``torch.cuda`` API — a ROCm build reports HIP devices through it
+#: too — so they are told apart by ``torch.version.hip``.
+ACCELERATORS = ("cuda", "rocm", "mps")
+
+
+@functools.lru_cache(maxsize=1)
+def current_accelerator() -> str | None:
+    """Return the accelerator torch can use here, or None when this is a CPU-only box."""
+    if torch.cuda.is_available():
+        return "rocm" if torch.version.hip is not None else "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return None
+
+
+def skip_unless_accelerator_available(*required: str):
+    """Skip unless an accelerator is available, optionally restricted to *required*.
+
+    With no arguments any accelerator will do, so a test runs wherever torch has one.
+    Pass one or more names from :data:`ACCELERATORS` to demand a specific backend —
+    ``skip_unless_accelerator_available("cuda", "rocm")`` for tests needing real GPU
+    kernels, which is exactly what :func:`skip_unless_cuda_available` asks for. Names
+    are validated eagerly so a typo fails at import rather than skipping forever.
+    """
+    unknown = sorted(set(required) - set(ACCELERATORS))
+    if unknown:
+        raise ValueError(
+            f"Unknown accelerator(s) {unknown}; expected any of {list(ACCELERATORS)}"
+        )
+
+    wanted = required or ACCELERATORS
+    current = current_accelerator()
+    if current in wanted:
+        return _no_skip(f"Running on {current}")
+    return pytest.mark.skipif(
+        True, reason=f"Requires {' or '.join(wanted)}; found {current or 'cpu'}"
+    )
+
+
 def skip_unless_cuda_available():
-    return pytest.mark.skipif(not torch.cuda.is_available(), reason="Requires GPU")
+    """Skip unless a GPU is available.
+
+    ROCm counts: torch reports HIP devices through the ``torch.cuda`` API, so this has
+    always passed on AMD. Use :func:`skip_unless_accelerator_available` directly for
+    tests that can also run on MPS.
+    """
+    return skip_unless_accelerator_available("cuda")
 
 
 def _assert_abs_diff_small_base(compare_func, expected, actual, eps):

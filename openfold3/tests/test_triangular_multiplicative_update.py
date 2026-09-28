@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +14,7 @@
 # limitations under the License.
 
 import re
+from unittest.mock import patch
 
 import pytest
 import torch
@@ -81,3 +83,36 @@ def test_shape(device, seeded_rng, ndarrays_regression):
         {"output": x.cpu().numpy()},
         default_tolerance=tolerances,
     )
+
+
+@pytest.mark.parametrize(
+    "module_cls", [TriangleMultiplicationOutgoing, FusedTriangleMultiplicationOutgoing]
+)
+def test_forward_raises_clear_error_when_triton_unavailable(
+    module_cls, device, seeded_rng
+):
+    """use_triton_triangle_kernels=True must raise a clear RuntimeError when
+    Triton isn't installed (e.g. macOS/MPS ships no Triton wheels at all),
+    not a bare NameError -- matches Attention.forward's behavior for the
+    same flag.
+    """
+    c_z = consts.c_z
+    c = 11
+    n_res = consts.n_res
+    batch_size = consts.batch_size
+
+    tm = module_cls(c_z, c).to(device)
+    tm.eval()
+
+    x = torch.rand((batch_size, n_res, n_res, c_z), device=device)
+    mask = torch.randint(0, 2, size=(batch_size, n_res, n_res), device=device)
+
+    with (
+        patch(
+            "openfold3.core.model.layers.triangular_multiplicative_update.TRITON_AVAILABLE",
+            False,
+        ),
+        torch.no_grad(),
+        pytest.raises(RuntimeError, match="Triton"),
+    ):
+        tm(x, mask, inplace_safe=True, use_triton_triangle_kernels=True)
