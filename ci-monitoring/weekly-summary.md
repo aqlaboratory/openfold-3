@@ -1,5 +1,52 @@
 # Weekly CI Summary
 
+## Week of 2026-09-22 – 2026-09-28
+
+**Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights, against the three tracked jobs: `test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`. Three off-schedule events excluded from coverage stats per this log's established convention: run #282 ([35818035055](https://github.com/aqlaboratory/openfold-3/actions/runs/35818035055), 09-23 `workflow_dispatch` on `feature/ci-upstream-az-fallback`), run #288 ([36102270668](https://github.com/aqlaboratory/openfold-3/actions/runs/36102270668), 09-25 `workflow_dispatch` on `ci/pr414-integration`, closed 09-26), and run #291 attempt 2 (09-27 manual re-run, closed 09-28).
+
+### Days with coverage < 3/3
+
+2 of 7 days — 09-24 and 09-27.
+
+| Date | Primary (03:17 UTC cron) | Secondary (04:17 UTC cron) |
+|---|---|---|
+| 2026-09-22 | 3/3 | SKIP (expected) |
+| 2026-09-23 | 3/3 | SKIP (expected) |
+| 2026-09-24 | 1/3 | SKIP (expected) |
+| 2026-09-25 | 3/3 | SKIP (expected) |
+| 2026-09-26 | 3/3 | SKIP (expected) |
+| 2026-09-27 | 1/3 | SKIP (expected) |
+| 2026-09-28 | 3/3 | SKIP (expected) |
+
+### Count per failure/non-pass class
+
+| Class | Count | Where |
+|---|---|---|
+| `aws-capacity` | 4 | cuda12 & cuda13 `start-aws-runner` ("No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2"), 09-24 primary, run #284 ([35951749406](https://github.com/aqlaboratory/openfold-3/actions/runs/35951749406)); cuda12 & cuda13 `start-aws-runner`, same signature, 09-27 primary, run #291 attempt 1 ([36291703877](https://github.com/aqlaboratory/openfold-3/actions/runs/36291703877)) |
+
+**Most frequent class: `aws-capacity` (4 occurrences) — the only class observed this week.**
+
+Both `aws-capacity` incidents were same-signature `g5.4xlarge` pool exhaustion across all six capacity pools on the CUDA legs' `start-aws-runner` step, with the AMD leg (self-hosted runner) unaffected both times. The 09-27 incident (run #291) was resolved same day: a manual re-run (attempt 2, 14:38–15:20 UTC) passed 3/3 with both CUDA legs launching on pool 1 with no fallback needed — see `daily-status.md`'s 09-28 "Closing run #291" note. No `gpu-unavailable`, `runner-offline`, `msa-hang`, `parameter-cache`, `build-push`, `code`, or `unclassified` non-passes this week. (Run #288's `code` failures — a stored-snapshot/runtime mismatch in `test_cuda_allocator.py::test_matches_snapshot` — are excluded from this count since that run is a `workflow_dispatch` validation run, not nightly coverage.)
+
+SKIPPED results from the secondary-slot `if:` guard (every night this week, expected and by design) are tracked in the coverage table above and are not counted in this class table, per the monitor's classification rules.
+
+### Consecutive non-pass streak per job (as of 2026-09-28)
+
+| Job | Current streak | Detail |
+|---|---|---|
+| `test-pixi-amd (openfold3-rocm7)` | **0 — currently passing** | No non-pass at all this week (7/7 nights PASSED); unaffected by both AWS-capacity outages (09-24, 09-27) since it runs on the self-hosted AMD runner, not AWS EC2. |
+| `test-pixi-cuda (openfold3-cuda12)` | **0 — currently passing** | Last non-pass: FAILED/`aws-capacity`, 2026-09-27 (run #291 attempt 1). Recovered same night via manual re-run (attempt 2) and again on the regular 09-28 nightly (run #293). |
+| `test-pixi-cuda (openfold3-cuda13)` | **0 — currently passing** | Last non-pass: FAILED/`aws-capacity`, 2026-09-27 (run #291 attempt 1). Same recovery pattern as cuda12. |
+
+All three tracked jobs are currently on a green streak entering the next week, with tonight (09-28) a clean 3/3 primary nightly.
+
+### Data-source notes
+
+- Built directly from `daily-status.md` entries for 2026-09-22 through 2026-09-28 (runs #279–#294, plus the run #291 attempt-2 re-run and the run #288 closing note); no independent API re-fetch was needed beyond confirming today's two new runs (#293, #294) and the run #291 re-run, which were fetched live via the GitHub Actions API for this scan.
+- `GET /repos/aqlaboratory/openfold-3/actions/variables` and `/repos/aqlaboratory/openfold-3/actions/runners` remain unattempted this week (not required — no anomalous `if:`-guard skip occurred on the primary slot).
+
+---
+
 ## Week of 2026-09-15 – 2026-09-21
 
 **Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip post-PR #405) across 7 nights, against the three tracked jobs: `test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`. One `workflow_dispatch` validation run (run #272, 09-18, `feature/rcsb-template-call-fix`) excluded from coverage stats per this log's established convention.
