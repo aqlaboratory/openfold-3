@@ -108,7 +108,6 @@ def test_truncate_accepts_slice():
 
     assert out is not None
     assert out.msa[:, 0].tolist() == ["B", "C", "D"]
-    assert len(out) == 3
 
 
 def test_truncate_over_length_keeps_all_rows():

@@ -217,9 +217,7 @@ def setup_biotite_ccd(*, ccd_path: Path, force_download: bool) -> bool:
 #: End-to-end smoke tests run after a successful download to verify the install. Kept to
 #: the two short queries — the template-effect test alongside it is far too slow (two
 #: multi-sample inference runs per case) to belong in setup.
-INTEGRATION_TEST_PATH = (
-    Path(__file__).parent / "tests" / "inference" / "test_inference_full.py"
-)
+INTEGRATION_TEST_PATH = Path(__file__).parent / "tests" / "inference"
 
 
 #: Shown wherever integration tests are wanted but cannot run.

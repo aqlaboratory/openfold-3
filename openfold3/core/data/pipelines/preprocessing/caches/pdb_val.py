@@ -49,6 +49,7 @@ from openfold3.core.data.primitives.caches.filtering import (
     get_validation_summary_stats,
     select_final_validation_data,
     select_one_per_cluster,
+    set_nan_fallback_conformer_flag,
 )
 from openfold3.core.data.primitives.caches.format import (
     PreprocessingDataCache,
@@ -326,11 +327,12 @@ def create_pdb_val_dataset_cache_of3(
     output_path: Path,
     dataset_name: str,
     max_release_date: datetime.date | str = "2023-01-13",
-    min_release_date: datetime.date | str = "2021-09-30",
+    min_release_date: datetime.date | str = "2021-10-01",
+    max_conformer_release_date: datetime.date | str | None = None,
     max_resolution: float = 4.5,
     max_polymer_chains: int = 1000,
     filter_missing_alignment: bool = True,
-    missing_alignment_log: Path = None,
+    alignment_log_dir: Path | None = None,
     max_tokens_initial: int = 2560,
     max_tokens_final: int = 2048,
     ranking_fit_threshold: float = 0.5,
@@ -338,6 +340,27 @@ def create_pdb_val_dataset_cache_of3(
     tanimoto_threshold: float = 0.85,
     random_seed: int = 12345,
 ) -> None:
+    # Normalize all date parameters to datetime.date
+    if isinstance(max_release_date, str):
+        max_release_date = datetime.datetime.strptime(
+            max_release_date, "%Y-%m-%d"
+        ).date()
+    if isinstance(min_release_date, str):
+        min_release_date = datetime.datetime.strptime(
+            min_release_date, "%Y-%m-%d"
+        ).date()
+    if isinstance(max_conformer_release_date, str):
+        max_conformer_release_date = datetime.datetime.strptime(
+            max_conformer_release_date, "%Y-%m-%d"
+        ).date()
+
+    # Default to the day before the validation window starts, so that conformers
+    # from PDBs released on min_release_date (which are validation structures) are
+    # excluded. The conformer check uses strict >, so this aligns the boundary with
+    # the last day of the training window.
+    if max_conformer_release_date is None:
+        max_conformer_release_date = min_release_date - datetime.timedelta(days=1)
+
     metadata_cache = PreprocessingDataCache.from_json(metadata_cache_path)
 
     # TODO: Following code has quite a bit of redundancy with training code, consider
@@ -367,14 +390,23 @@ def create_pdb_val_dataset_cache_of3(
         dataset_name=dataset_name,
     )
 
+    # Block usage of reference conformer coordinates from PDB-IDs that are outside the
+    # date cutoff. Needs to run before further filtering to use the full release date
+    # information in structure_data.
+    set_nan_fallback_conformer_flag(
+        pdb_id_to_release_date=pdb_id_to_release_date,
+        reference_mol_cache=val_dataset_cache.reference_molecule_data,
+        max_model_pdb_release_date=max_conformer_release_date,
+    )
+
     # Convenience wrapper that logs the number of structures filtered out
     with_log = partial(func_with_n_filtered_chain_log, logger=logger)
 
     # Map each target chain to an alignment representative, then filter all structures
     # without alignment representatives
     if filter_missing_alignment:
-        if missing_alignment_log:
-            structure_data, unmatched_entries = with_log(
+        if alignment_log_dir:
+            structure_data, unmatched_entries, fuzzy_match_info = with_log(
                 add_and_filter_alignment_representatives
             )(
                 structure_cache=val_dataset_cache.structure_data,
@@ -383,22 +415,36 @@ def create_pdb_val_dataset_cache_of3(
                 return_no_repr=True,
             )
 
-            # Write all chains without alignment representatives to a JSON file. These
-            # are excluded from training.
-            with open(missing_alignment_log, "w") as f:
-                # Convert the internal dataclasses to dict
+            alignment_log_dir.mkdir(parents=True, exist_ok=True)
+
+            # Write all chains without alignment representatives to a JSON file.
+            # These are excluded from validation.
+            with open(alignment_log_dir / "missing_alignment_repr.json", "w") as f:
+                # Convert the internal dataclasses to dict, including the
+                # query sequence for debugging mismatches
                 unmatched_entries = {
-                    pdb_id: {chain_id: asdict(chain_data)}
-                    for pdb_id, chain_data in unmatched_entries.items()
-                    for chain_id, chain_data in chain_data.items()
+                    pdb_id: {
+                        chain_id: {
+                            **asdict(chain_data),
+                            "query_sequence": val_id_to_sequence.get(
+                                f"{pdb_id}_{chain_id}"
+                            ),
+                        }
+                    }
+                    for pdb_id, chains_data in unmatched_entries.items()
+                    for chain_id, chain_data in chains_data.items()
                 }
 
                 # Format datacache-types appropriately
                 unmatched_entries = format_nested_dict_for_json(unmatched_entries)
 
                 json.dump(unmatched_entries, f, indent=4)
+
+            # Write all fuzzy-matched RNA chains to a separate JSON file
+            with open(alignment_log_dir / "fuzzy_alignment_matches.json", "w") as f:
+                json.dump(fuzzy_match_info, f, indent=4)
         else:
-            structure_data = with_log(add_and_filter_alignment_representatives)(
+            structure_data, _ = with_log(add_and_filter_alignment_representatives)(
                 structure_cache=val_dataset_cache.structure_data,
                 query_chain_to_seq=val_id_to_sequence,
                 alignment_representatives_fasta=alignment_representatives_fasta,

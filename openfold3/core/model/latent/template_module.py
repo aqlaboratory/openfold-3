@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2025 NVIDIA Corporation
 # Copyright 2021 DeepMind Technologies Limited
@@ -36,6 +37,7 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.checkpointing import checkpoint_blocks, checkpoint_section
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.device_utils import empty_device_cache
 from openfold3.core.utils.tensor_utils import add
 
 
@@ -279,6 +281,7 @@ class TemplatePairStack(nn.Module):
         linear_init_params=lin_init.pair_block_init,
         use_reentrant: bool | None = None,
         tune_chunk_size: bool = False,
+        clear_cache_between_blocks: bool = False,
         **kwargs,
     ):
         """
@@ -321,8 +324,12 @@ class TemplatePairStack(nn.Module):
                 this feature)
             tune_chunk_size:
                  Whether to dynamically tune the module's chunk size
+            clear_cache_between_blocks:
+                Whether to clear the accelerator's memory cache between blocks
+                of the stack. Slows down each block but can reduce fragmentation
         """
         super().__init__()
+        self.clear_cache_between_blocks = clear_cache_between_blocks
 
         self.blocks_per_ckpt = None if ckpt_per_template else blocks_per_ckpt
         self.use_reentrant = use_reentrant
@@ -355,8 +362,8 @@ class TemplatePairStack(nn.Module):
 
     def _prep_blocks(
         self,
-        t: torch.tensor,
-        mask: torch.tensor,
+        t: torch.Tensor,
+        mask: torch.Tensor,
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
@@ -379,6 +386,15 @@ class TemplatePairStack(nn.Module):
             )
             for b in self.blocks
         ]
+
+        if self.clear_cache_between_blocks:
+            device = t.device
+
+            def block_with_cache_clear(block, *args, **kwargs):
+                empty_device_cache(device)
+                return block(*args, **kwargs)
+
+            blocks = [partial(block_with_cache_clear, b) for b in blocks]
 
         if chunk_size is not None and self.chunk_size_tuner is not None:
             assert not self.training
@@ -408,8 +424,8 @@ class TemplatePairStack(nn.Module):
 
     def forward(
         self,
-        t: torch.tensor,
-        mask: torch.tensor,
+        t: torch.Tensor,
+        mask: torch.Tensor,
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,

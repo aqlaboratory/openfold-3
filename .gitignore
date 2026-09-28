@@ -27,3 +27,6 @@ cutlass/
 
 # uv environments
 .venv/
+
+# mypy cache
+.mypy_cache/
