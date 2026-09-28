@@ -33,6 +33,7 @@ from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens_segmented,
     broadcast_token_feat_to_atoms,
     broadcast_token_feat_to_atoms_by_index,
+    segmented_reduce_supported,
 )
 from openfold3.core.utils.checkpointing import checkpoint_section
 
@@ -544,7 +545,11 @@ class AtomAttentionEncoder(nn.Module):
 
         ql = ql * atom_mask.unsqueeze(-1)
 
-        if not self.training and not torch.is_grad_enabled():
+        if (
+            not self.training
+            and not torch.is_grad_enabled()
+            and segmented_reduce_supported(atom_mask.device)
+        ):
             aggregate_fn = aggregate_atom_feat_to_tokens_segmented
             agg_args = (
                 batch["num_atoms_per_token"],

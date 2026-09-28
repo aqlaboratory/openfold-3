@@ -120,6 +120,16 @@ def _expand_to_batch(tensor: torch.Tensor, batch_dims: torch.Size) -> torch.Tens
     return tensor.expand(*batch_dims, tensor.shape[-1])
 
 
+# ``torch.segment_reduce`` is a partial op: CPU and CUDA only (ROCm reports
+# ``cuda``). MPS has no kernel, so callers fall back to the scatter path.
+_SEGMENT_REDUCE_DEVICES: frozenset[str] = frozenset({"cpu", "cuda"})
+
+
+def segmented_reduce_supported(device: torch.device | str) -> bool:
+    """Whether deterministic segmented aggregation can run on ``device``."""
+    return torch.device(device).type in _SEGMENT_REDUCE_DEVICES
+
+
 def broadcast_token_feat_to_atoms_by_index(
     token_mask: torch.Tensor,
     atom_to_token_index: torch.Tensor,
