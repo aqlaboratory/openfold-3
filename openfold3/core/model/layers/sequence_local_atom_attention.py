@@ -688,7 +688,14 @@ class AtomAttentionDecoder(nn.Module):
             rl_update:
                 [*, N_atom, 3] Atom position updates
         """
-        # Broadcast per-token activations to atoms
+        # Broadcast per-token activations to atoms.
+        # Gather via the precomputed ``atom_to_token_index`` rather than
+        # repeating by ``num_atoms_per_token``: the count-based path syncs
+        # device->host 3x per call (measured: 2 inside ``repeat_interleave``
+        # with tensor repeats, 1 in the final ``reshape`` using a 0-dim CUDA
+        # int32 as a shape dimension). This runs once per rollout step (200 per
+        # sample), and a value-dependent output shape cannot be CUDA-graph
+        # captured.
         # [*, N_atom, c_atom]
         ql = ql + broadcast_token_feat_to_atoms_by_index(
             token_mask=batch["token_mask"],

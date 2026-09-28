@@ -136,7 +136,30 @@ def broadcast_token_feat_to_atoms_by_index(
     atom_mask: torch.Tensor,
     token_feat: torch.Tensor,
 ) -> torch.Tensor:
-    """Gather token features onto atoms via ``atom_to_token_index``."""
+    """Gather token features onto atoms via ``atom_to_token_index``.
+
+    Equivalent to ``broadcast_token_feat_to_atoms``, but expressed as a plain
+    ``torch.gather`` through the precomputed index rather than
+    ``repeat_interleave``. The count-based form syncs device->host 3x per call
+    (measured: 2 inside ``repeat_interleave`` with tensor repeats, 1 in the
+    final ``reshape`` using a 0-dim CUDA int32 as a shape dimension) and has a
+    value-dependent output shape, so it cannot be CUDA-graph captured. Both
+    properties matter on the diffusion rollout, where this runs once per step.
+    Masking with ``token_mask`` / ``atom_mask`` keeps the result identical to
+    the count-based broadcast.
+
+    Args:
+        token_mask:
+            [*, N_token] Token mask
+        atom_to_token_index:
+            [*, N_atom] Token index for each atom
+        atom_mask:
+            [*, N_atom] Atom mask
+        token_feat:
+            [*, N_token, c] Token-level features
+    Returns:
+        [*, N_atom, c] Atom-level features
+    """
     batch_dims = token_feat.shape[:-2]
     n_token, channels = token_feat.shape[-2:]
     idx = _expand_to_batch(atom_to_token_index, batch_dims).clamp(0, n_token - 1)
