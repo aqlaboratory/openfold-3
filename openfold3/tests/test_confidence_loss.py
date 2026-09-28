@@ -15,6 +15,7 @@
 import unittest
 from unittest.mock import patch
 
+import pytest
 import torch
 import torch.nn.functional as F
 
@@ -31,7 +32,8 @@ from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
 
 class TestConfidenceLoss(unittest.TestCase):
-    def setup_features(self):
+    @staticmethod
+    def setup_features():
         # Example: UNK UNK UNK ALA GLY/A A DT
         # NumAtoms: 1 1 1 5 4 22 21
         token_mask = torch.ones((1, 10))
@@ -158,133 +160,6 @@ class TestConfidenceLoss(unittest.TestCase):
 
         self.assertTrue(l_pde.shape == (batch_size,))
 
-    def test_plddt_loss_target_bins_match_decoder_bin_centers(self):
-        """Regression test: the bin grid used to assign classification targets in
-        all_atom_plddt_loss must match the bin grid get_bin_centers uses to decode
-        predicted bin probabilities back into a pLDDT score at inference time.
-
-        Previously the target grid used bin left-edges (bin_min + k*bin_size) instead
-        of bin centers (bin_min + (k+0.5)*bin_size), so the network was trained
-        against a grid shifted half a bin width from the one its output is decoded
-        against.
-        """
-        no_bins = 50
-        eps = 1e-8
-        bin_min = 0
-        bin_max = 1
-
-        batch = self.setup_features()
-        batch_size, n_atom = batch["ground_truth"]["atom_resolved_mask"].shape
-
-        x = torch.randn_like(batch["ground_truth"]["atom_positions"])
-        logits = torch.randn((batch_size, n_atom, no_bins))
-
-        with patch(
-            "openfold3.core.loss.confidence.binned_one_hot", wraps=binned_one_hot
-        ) as mock_binned_one_hot:
-            all_atom_plddt_loss(
-                batch=batch,
-                x=x,
-                logits=logits,
-                no_bins=no_bins,
-                bin_min=bin_min,
-                bin_max=bin_max,
-                eps=eps,
-            )
-
-        v_bins_used = mock_binned_one_hot.call_args.args[1]
-        expected_bin_centers = get_bin_centers(
-            bin_min=bin_min,
-            bin_max=bin_max,
-            no_bins=no_bins,
-            device=v_bins_used.device,
-            dtype=v_bins_used.dtype,
-        )
-
-        torch.testing.assert_close(v_bins_used, expected_bin_centers)
-
-    def test_pae_loss_target_bins_match_decoder_bin_centers(self):
-        """Regression test: see test_plddt_loss_target_bins_match_decoder_bin_centers.
-        Same left-edge-vs-center bug, in pae_loss.
-        """
-        angle_threshold = 25
-        no_bins = 64
-        bin_min = 0
-        bin_max = 32
-        eps = 1e-8
-        inf = 1e10
-
-        batch = self.setup_features()
-        batch_size, n_token = batch["token_mask"].shape
-
-        x = torch.randn_like(batch["ground_truth"]["atom_positions"])
-        logits = torch.randn((batch_size, n_token, n_token, no_bins))
-
-        with patch(
-            "openfold3.core.loss.confidence.binned_one_hot", wraps=binned_one_hot
-        ) as mock_binned_one_hot:
-            pae_loss(
-                batch=batch,
-                x=x,
-                logits=logits,
-                angle_threshold=angle_threshold,
-                no_bins=no_bins,
-                bin_min=bin_min,
-                bin_max=bin_max,
-                eps=eps,
-                inf=inf,
-            )
-
-        v_bins_used = mock_binned_one_hot.call_args.args[1]
-        expected_bin_centers = get_bin_centers(
-            bin_min=bin_min,
-            bin_max=bin_max,
-            no_bins=no_bins,
-            device=v_bins_used.device,
-            dtype=v_bins_used.dtype,
-        )
-
-        torch.testing.assert_close(v_bins_used, expected_bin_centers)
-
-    def test_pde_loss_target_bins_match_decoder_bin_centers(self):
-        """Regression test: see test_plddt_loss_target_bins_match_decoder_bin_centers.
-        Same left-edge-vs-center bug, in pde_loss.
-        """
-        no_bins = 64
-        bin_min = 0
-        bin_max = 32
-        eps = 1e-8
-
-        batch = self.setup_features()
-        batch_size, n_token = batch["token_mask"].shape
-
-        x = torch.randn_like(batch["ground_truth"]["atom_positions"])
-        logits = torch.randn((batch_size, n_token, n_token, no_bins))
-
-        with patch(
-            "openfold3.core.loss.confidence.binned_one_hot", wraps=binned_one_hot
-        ) as mock_binned_one_hot:
-            pde_loss(
-                batch=batch,
-                x=x,
-                logits=logits,
-                no_bins=no_bins,
-                bin_min=bin_min,
-                bin_max=bin_max,
-                eps=eps,
-            )
-
-        v_bins_used = mock_binned_one_hot.call_args.args[1]
-        expected_bin_centers = get_bin_centers(
-            bin_min=bin_min,
-            bin_max=bin_max,
-            no_bins=no_bins,
-            device=v_bins_used.device,
-            dtype=v_bins_used.dtype,
-        )
-
-        torch.testing.assert_close(v_bins_used, expected_bin_centers)
-
     def test_resolved_loss(self):
         no_bins = 2
         eps = 1e-8
@@ -332,6 +207,77 @@ class TestConfidenceLoss(unittest.TestCase):
         )
 
         self.assertTrue(l_confidence.shape == ())
+
+
+@pytest.mark.parametrize(
+    "loss_fn, logits_dims, bin_kwargs, extra_kwargs",
+    [
+        pytest.param(
+            all_atom_plddt_loss,
+            "atom",
+            {"no_bins": 50, "bin_min": 0, "bin_max": 1},
+            {},
+            id="plddt",
+        ),
+        pytest.param(
+            pae_loss,
+            "token_pair",
+            {"no_bins": 64, "bin_min": 0, "bin_max": 32},
+            {"angle_threshold": 25, "inf": 1e10},
+            id="pae",
+        ),
+        pytest.param(
+            pde_loss,
+            "token_pair",
+            {"no_bins": 64, "bin_min": 0, "bin_max": 32},
+            {},
+            id="pde",
+        ),
+    ],
+)
+def test_loss_target_bins_match_decoder_bin_centers(
+    loss_fn, logits_dims, bin_kwargs, extra_kwargs
+):
+    """The bin grid each confidence loss uses to assign classification targets
+    must match the grid get_bin_centers uses to decode predicted bin
+    probabilities back into pLDDT/PAE/PDE scores at inference time.
+
+    The losses once used bin left edges (bin_min + k * bin_size) while the
+    decoder used centers (bin_min + (k + 0.5) * bin_size), so the network was
+    trained against a grid shifted half a bin from the one its output was read
+    with. v_bins is a local inside each loss, so it is observed by spying on the
+    binned_one_hot call it is passed to.
+    """
+    batch = TestConfidenceLoss.setup_features()
+    batch_size, n_token = batch["token_mask"].shape
+    n_atom = batch["ground_truth"]["atom_resolved_mask"].shape[1]
+    logits_shape = {
+        "atom": (batch_size, n_atom, bin_kwargs["no_bins"]),
+        "token_pair": (batch_size, n_token, n_token, bin_kwargs["no_bins"]),
+    }[logits_dims]
+    x = torch.randn_like(batch["ground_truth"]["atom_positions"])
+
+    with patch(
+        "openfold3.core.loss.confidence.binned_one_hot", wraps=binned_one_hot
+    ) as binned_one_hot_spy:
+        loss_fn(
+            batch=batch,
+            x=x,
+            logits=torch.randn(logits_shape),
+            eps=1e-8,
+            **bin_kwargs,
+            **extra_kwargs,
+        )
+
+    v_bins_used = binned_one_hot_spy.call_args.args[1]
+    expected_bin_centers = get_bin_centers(
+        **bin_kwargs, device=v_bins_used.device, dtype=v_bins_used.dtype
+    )
+    torch.testing.assert_close(
+        v_bins_used,
+        expected_bin_centers,
+        msg="loss target grid != decoder bin centers",
+    )
 
 
 if __name__ == "__main__":
