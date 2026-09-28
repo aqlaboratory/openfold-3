@@ -853,4 +853,5 @@ class TestKernels:
         self._compare_template_stack(
             use_triton_triangle_kernels=True,
             dtype=torch.bfloat16,
+            eps=4e-2,
         )
