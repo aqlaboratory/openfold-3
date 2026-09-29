@@ -22,22 +22,26 @@ from openfold3.core.model.primitives.normalization import LayerNorm
 
 
 @compare_utils.skip_unless_accelerator_available("cuda", "rocm")
-# Test both the vectorized (C%4==0) and non-vectorized (C%4!=0) code paths for both batch>=2^23 and numel>=2^32
+# Test both the vectorized (C%4==0) and non-vectorized (C%4!=0) code paths for
+# batch>=2^23, batch>=2^27, and numel>=2^32
 @pytest.mark.parametrize(
     ("batch", "C"),
     [
-        pytest.param(2**23, 4, id="2^23_4"),
-        pytest.param(2**23 - 1, 3, id="2^23-1_3"),
-        # In testing with HIP, there's actually an "invalid configuration argument" error at exactly batch=2^23 as opposed to bad output
-        pytest.param(2**23, 3, id="2^23_3"),
-        pytest.param(2**23 + 1, 3, id="2^23+1_3"),
-        pytest.param(2**23 + 1, 4, id="2^23+1_4"),
-        pytest.param(2**22, 2**10, marks=pytest.mark.slow, id="2^22_2^10"),
-        pytest.param(2**22 + 1, 2**10, marks=pytest.mark.slow, id="2^22+1_2^10"),
+        # IDs are 2_X because pytest doesn't like carets (^)
+        pytest.param(2**23 + 1, 3, id="2_23+1-3"),
+        pytest.param(2**23 + 1, 4, id="2_23+1-4"),
+        pytest.param(2**27 + 1, 3, id="2_27+1-3"),
+        pytest.param(2**27 + 1, 4, id="2_27+1-4"),
+        pytest.param(2**22 + 1, 2**10, marks=pytest.mark.slow, id="2_22+1-1024"),
+        pytest.param(2**22, 2**10 + 1, marks=pytest.mark.slow, id="2_22-1025"),
     ],
 )
 def test_layer_norm_overflow_bug_workaround(batch, C, seeded_rng):
     """Test we don't hit torch bugs in very large layernorms.
+
+    Tested with a single row repeated across the batch dimension so we can
+    compute the expected output easily. This could miss cases where Torch fills
+    one row with the value for another.
 
     See comments in layer norm implementation for details.
     """
