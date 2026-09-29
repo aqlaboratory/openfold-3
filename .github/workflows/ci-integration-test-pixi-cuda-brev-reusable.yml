@@ -1,0 +1,173 @@
+name: Reusable Docker Test for running heavy test loads on Brev (Pixi)
+
+# Brev counterpart of ci-integration-test-pixi-cuda-reusable.yml. The test job
+# is the same; only the runner lifecycle differs. Brev picks the machine image
+# (Ubuntu with Docker and the NVIDIA Container Toolkit) and the disk size comes
+# with the instance type, so there is no AMI lookup or root device size here.
+
+on:
+  # Can only be called by another workflow, not directly by the user
+  workflow_call:
+    inputs:
+      pixi_env:
+        description: 'Pixi environment name (e.g., openfold3-cuda12, openfold3-cuda13)'
+        required: true
+        type: string
+      base_image:
+        description: 'Base Docker image'
+        required: false
+        type: string
+        default: 'ubuntu:22.04'
+      brev_instance_type:
+        description: 'Brev instance type, or a comma-separated fallback chain. Find values with `brev search`.'
+        required: true
+        type: string
+      smoke_only:
+        description: 'Only check the runner (GPU, Docker, disk); skip the image build and tests.'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/openfold3-docker
+  # The default checkpoint. Keep in step with DEFAULT_CHECKPOINT_NAME in
+  # openfold3/entry_points/parameters.py.
+  OPENFOLD_DEFAULT_CKPT: of3-ob-2025-06-30-174k.pt
+  BREV_ORG: OMSF-Brev
+
+jobs:
+  start-brev-runner:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      mapping: ${{ steps.brev-start.outputs.mapping }}
+      instances: ${{ steps.brev-start.outputs.instances }}
+    steps:
+      # Pinned to a commit: neither Brev action has a release tag yet, and the
+      # `omsf/...@v1` in their READMEs does not resolve.
+      - name: Create Brev runner
+        id: brev-start
+        uses: omsf-eco-infra/start-brev-gha-runner@1f971771abc93ca4948c5b4f55d32e80b977e634
+        with:
+          brev_instance_type: ${{ inputs.brev_instance_type }}
+          brev_org: ${{ env.BREV_ORG }}
+          brev_timeout: 900
+        env:
+          BREV_TOKEN: ${{ secrets.BREV_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+  test-openfold-docker-pixi:
+    runs-on: ${{ fromJSON(needs.start-brev-runner.outputs.instances) }}
+    needs:
+      - start-brev-runner
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # The runner runs as root from /home/ubuntu/workspace, so ~ is /root.
+      - name: Describe runner
+        run: |
+          set -x
+          whoami
+          nvidia-smi
+          docker info
+          docker run --rm --gpus all ubuntu:22.04 nvidia-smi -L
+          df -h / "$GITHUB_WORKSPACE"
+          nproc
+          free -g
+
+      - uses: actions/checkout@v7
+        if: ${{ !inputs.smoke_only }}
+
+      - name: Log in to GHCR
+        if: ${{ !inputs.smoke_only }}
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        if: ${{ !inputs.smoke_only }}
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push test image
+        if: ${{ !inputs.smoke_only }}
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile.pixi
+          target: test
+          push: true
+          build-args: |
+            PIXI_ENV=${{ inputs.pixi_env }}
+            BASE_IMAGE=${{ inputs.base_image }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }},mode=max
+
+      - name: Create parameter cache directory
+        if: ${{ !inputs.smoke_only }}
+        run: mkdir -p ~/.openfold3
+
+      - name: Cache download of parameters
+        if: ${{ !inputs.smoke_only }}
+        id: cache-openfold_parameters
+        uses: actions/cache@v6
+        with:
+          path: ~/.openfold3/
+          key: params-cuda-${{ env.OPENFOLD_DEFAULT_CKPT }}
+
+      # checkpoint is verified by size against the object in S3 and fetched if it
+      # is missing or short, so a relocated or truncated cache entry self-heals
+      # instead of skipping straight to a failing test.
+      - name: Ensure OpenFold parameters
+        if: ${{ !inputs.smoke_only }}
+        run: |
+          set -euo pipefail
+          f=~/.openfold3/$OPENFOLD_DEFAULT_CKPT
+          url=https://openfold3-data.s3.amazonaws.com/openfold3-parameters/$OPENFOLD_DEFAULT_CKPT
+          expected=$(curl -fsSI "$url" | awk 'tolower($1)=="content-length:"{print $2}' | tr -d '\r')
+          actual=$( [ -f "$f" ] && wc -c < "$f" | tr -d " " || echo 0)
+          if [ -n "$expected" ] && [ "$actual" = "$expected" ]; then
+            echo "parameters present and complete: $f ($actual bytes)"
+          else
+            echo "parameters missing or incomplete (have $actual, want ${expected:-?} bytes); downloading"
+            curl -fSL "$url" -o "$f.part" && mv "$f.part" "$f"
+          fi
+
+      - name: Run integration test
+        if: ${{ !inputs.smoke_only }}
+        run: |
+          docker run --rm --gpus all \
+            --shm-size=8g \
+            -v ${{ github.workspace }}:/opt/openfold3 \
+            -v ~/.openfold3:/root/.openfold3 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
+            pytest -x openfold3/tests/ -m slow -vvv -s \
+              -o faulthandler_timeout=900
+
+  stop-brev-runner:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs:
+      - start-brev-runner
+      - test-openfold-docker-pixi
+    if: ${{ always() }}
+    steps:
+      # `brev delete` removes the instance and its storage; `brev stop` would
+      # keep billing for the disk.
+      - name: Delete Brev runner
+        if: ${{ needs.start-brev-runner.outputs.mapping }}
+        uses: omsf-eco-infra/stop-brev-gha-runner@c3112593f0a6ffb584793cdb2cb53cd499bc1b4c
+        with:
+          instance_mapping: ${{ needs.start-brev-runner.outputs.mapping }}
+          brev_org: ${{ env.BREV_ORG }}
+        env:
+          BREV_TOKEN: ${{ secrets.BREV_TOKEN }}
+          GH_PAT: ${{ secrets.GH_PAT }}

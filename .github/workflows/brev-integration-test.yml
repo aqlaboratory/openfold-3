@@ -1,0 +1,44 @@
+name: Run integration tests on Brev
+
+on:
+  workflow_dispatch:
+    inputs:
+      brev_instance_type:
+        description: 'Brev instance type or comma-separated fallback chain (see `brev search`)'
+        required: true
+        type: string
+        # TODO: confirm with `brev search --provider aws --gpu-name A10G`
+        default: 'g5.4xlarge'
+      pixi_env:
+        description: 'Pixi environment'
+        required: true
+        type: choice
+        options:
+          - openfold3-cuda12
+          - openfold3-cuda13
+      smoke_only:
+        description: 'Only check the runner; skip the image build and tests'
+        required: true
+        type: boolean
+        default: true
+  # TEMPORARY: workflow_dispatch only works once this file is on the default
+  # branch, so pushes to the trial branch run the smoke check instead. Remove
+  # before merging.
+  push:
+    branches: [claude/brev-gpu-runner]
+
+jobs:
+  test-pixi-cuda-brev:
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.pixi_env || 'openfold3-cuda12' }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/ci-integration-test-pixi-cuda-brev-reusable.yml
+    with:
+      pixi_env: ${{ inputs.pixi_env || 'openfold3-cuda12' }}
+      brev_instance_type: ${{ inputs.brev_instance_type || 'g5.4xlarge' }}
+      # Push events have no inputs, so they fall through to the smoke check.
+      smoke_only: ${{ github.event_name != 'workflow_dispatch' || inputs.smoke_only }}
+    secrets: inherit
