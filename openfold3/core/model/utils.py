@@ -33,8 +33,8 @@ def assert_sole_holder(t, *, in_container=False) -> None:
     longer creates a temporary for FAST_LOCAL arguments.  See:
     https://docs.python.org/3.14/whatsnew/3.14.html#whatsnew314-refcount
     """
-    expected = 3
+    expected = 4
     if sys.version_info >= (3, 14):
-        expected = 2 if in_container else 1
+        expected = 3 if in_container else 2
 
     assert sys.getrefcount(t) == expected
