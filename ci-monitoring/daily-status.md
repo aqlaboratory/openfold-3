@@ -513,3 +513,28 @@ Expected skip on the secondary slot (intended for other repos, not `aqlaboratory
 **Closing run #291** ([36291703877](https://github.com/aqlaboratory/openfold-3/actions/runs/36291703877), primary nightly 09-27), flagged in yesterday's entry as 1/3 passed with AWS `g5.4xlarge` capacity exhaustion on both CUDA legs (attempt 1, 03:32–03:35 UTC): it was manually re-run (attempt 2, triggering actor `jandom`) at 2026-09-27T14:38:27Z–15:20:01Z, and this time all three jobs passed — `test-pixi-amd (openfold3-rocm7)` (28 min), `test-pixi-cuda (openfold3-cuda13)` (31 min), `test-pixi-cuda (openfold3-cuda12)` (33 min) — with both CUDA legs launching on pool 1 in `us-east-2`/`us-west-2` on the retry, no fallback pools needed. Not counted toward any coverage line (09-27's line already reflects attempt 1 and this log never overwrites a past entry); recorded here purely as a same-day resolution note for that outage.
 
 ---
+
+## 2026-09-29
+
+### Run #295 — primary nightly (schedule `17 3 * * *`, main @ `8605a8c` (`#426`, merged since run #293/09-28), [36517655108](https://github.com/aqlaboratory/openfold-3/actions/runs/36517655108))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 30 min | |
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 2 min | `aws-capacity` at `start-aws-runner` / "Report launch outcome" — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 2 min | same `aws-capacity` signature — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+
+**2026-09-29: 1/3 passed · 0 skipped · 0 queued · 2 need attention**
+
+AWS `g5.4xlarge` capacity exhaustion across all six capacity pools (3x us-east-2, 3x us-west-2) on both CUDA legs' `start-aws-runner` step — same signature as runs #252 (09-10), #282 (09-22 `workflow_dispatch`, off-schedule), #284 (09-24), and #291 attempt 1 (09-27). Both attempts landed on `Unsupported`/`InsufficientInstanceCapacity` across every zone tried before the wrapper step raised `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2`. AMD leg (self-hosted runner, unaffected by AWS capacity) passed. Recorded to `aws-outage-failures.md`.
+
+### Run #296 — secondary nightly (schedule `17 4 * * *`, main @ `8605a8c`, [36522054758](https://github.com/aqlaboratory/openfold-3/actions/runs/36522054758))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #295, per this log's established convention).
+
+---

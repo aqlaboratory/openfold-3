@@ -173,3 +173,24 @@ This file records CI failures caused by AWS infrastructure issues (capacity, GPU
   - `test-pixi-cuda (openfold3-cuda13)` — test-openfold-docker-pixi (job 108543178359)
 - **Passing (self-hosted AMD runner, unaffected):**
   - `test-pixi-amd (openfold3-rocm7)` — test-openfold-docker-pixi-amd (job 108542906869), 30 min
+
+---
+
+### 2026-09-29 — Run [36517655108](https://github.com/aqlaboratory/openfold-3/actions/runs/36517655108) (run #295)
+
+- **Branch:** main @ `8605a8c21076414e080e6bdc04c33451b3f33fa2`
+- **Scan date:** 2026-09-29
+- **Time:** 2026-09-29T03:33:23Z – 03:35:08Z UTC
+- **Error:** `An error occurred (InsufficientInstanceCapacity) when calling the RunInstances operation (reached max retries: 4): We currently do not have sufficient g5.4xlarge capacity in the Availability Zone you requested (...)` across all three `us-east-2` zones and `us-west-2a`/`b`/`c`, plus `An error occurred (Unsupported) ... Your requested instance type (g5.4xlarge) is not supported in your requested Availability Zone (us-west-2d)` → `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2`
+- **Root cause:** AWS could not provision `g5.4xlarge` GPU EC2 instances across all six capacity pools (3x us-east-2, 3x us-west-2, the sixth — `us-west-2d` — unsupported for this instance type) — both CUDA legs' `start-aws-runner` steps failed identically at the "Report launch outcome" step; corresponding `stop-aws-runner` and test jobs failed/were skipped as a cascading consequence. Same signature as runs #252 (09-10), #284 (09-24), and #291 attempt 1 (09-27).
+- **Failed jobs (start-aws-runner):**
+  - `test-pixi-cuda (openfold3-cuda12)` — start-aws-runner (job 109243433390)
+  - `test-pixi-cuda (openfold3-cuda13)` — start-aws-runner (job 109243433213)
+- **Cascading failures (stop-aws-runner — no instance to stop):**
+  - `test-pixi-cuda (openfold3-cuda12)` — stop-aws-runner (job 109243843679)
+  - `test-pixi-cuda (openfold3-cuda13)` — stop-aws-runner (job 109243847500)
+- **Skipped (no runner available):**
+  - `test-pixi-cuda (openfold3-cuda12)` — test-openfold-docker-pixi (job 109243844631)
+  - `test-pixi-cuda (openfold3-cuda13)` — test-openfold-docker-pixi (job 109243847985)
+- **Passing (self-hosted AMD runner, unaffected):**
+  - `test-pixi-amd (openfold3-rocm7)` — test-openfold-docker-pixi-amd (job 109243433112), 30 min
