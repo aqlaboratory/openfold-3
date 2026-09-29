@@ -35,7 +35,11 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.profilers import PyTorchProfiler
-from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
+from pytorch_lightning.strategies import (
+    DDPStrategy,
+    DeepSpeedStrategy,
+    SingleDeviceStrategy,
+)
 
 from openfold3.core.data.framework.data_module import (
     DataModule,
@@ -56,6 +60,7 @@ from openfold3.core.utils.checkpoint_loading_utils import (
 )
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
+from openfold3.core.utils.xpu_accelerator import XPUAccelerator
 from openfold3.entry_points.validator import (
     ExperimentConfig,
     InferenceExperimentConfig,
@@ -104,6 +109,23 @@ def _accelerator_will_use_mps(accelerator: str) -> bool:
     from pytorch_lightning.accelerators import MPSAccelerator
 
     return MPSAccelerator.is_available()
+
+
+def _accelerator_will_use_xpu(accelerator: str) -> bool:
+    """Whether `accelerator` resolves to XPU (Intel GPU) at runtime.
+
+    True for `"xpu"` (explicit request), and also for `"gpu"`/`"auto"` whenever
+    an Intel GPU is visible and no CUDA/ROCm device is (matching the priority a
+    plain CUDA build would have on a machine with both, and avoiding a behavior
+    change for existing CUDA/ROCm users). PyTorch Lightning has no built-in XPU
+    accelerator (see `openfold3.core.utils.xpu_accelerator`), so without this,
+    `"gpu"`/`"auto"` would otherwise silently fall back to CPU on an XPU-only box.
+    """
+    if accelerator not in ("xpu", "gpu", "auto"):
+        return False
+    if not XPUAccelerator.is_available():
+        return False
+    return accelerator == "xpu" or not torch.cuda.is_available()
 
 
 def _model_update_with_mps_preset(model_update: ModelUpdate) -> ModelUpdate:
@@ -242,7 +264,7 @@ class ExperimentRunner(ABC):
         return MPIEnvironment() if self.is_mpi else None
 
     @cached_property
-    def strategy(self) -> DDPStrategy | DeepSpeedStrategy | str:
+    def strategy(self) -> DDPStrategy | DeepSpeedStrategy | SingleDeviceStrategy | str:
         """Determine and return the training strategy."""
         if self.deepspeed_config_path is not None:
             _strategy = DeepSpeedStrategy(
@@ -256,6 +278,25 @@ class ExperimentRunner(ABC):
             _strategy.config["zero_force_ds_cpu_optimizer"] = False
 
             return _strategy
+
+        if _accelerator_will_use_xpu(self.pl_trainer_args.accelerator):
+            # PyTorch Lightning has no built-in XPU accelerator/strategy
+            # resolution (see `openfold3.core.utils.xpu_accelerator`), so the
+            # device(s) must be constructed and handed to a strategy explicitly.
+            xpu_devices = XPUAccelerator.get_parallel_devices(
+                XPUAccelerator.parse_devices(list(range(self.pl_trainer_args.devices)))
+            )
+            if self.is_distributed:
+                return DDPStrategy(
+                    accelerator=XPUAccelerator(),
+                    parallel_devices=xpu_devices,
+                    find_unused_parameters=False,
+                    cluster_environment=self.cluster_environment,
+                    timeout=self.pl_trainer_args.distributed_timeout,
+                )
+            return SingleDeviceStrategy(
+                device=xpu_devices[0], accelerator=XPUAccelerator()
+            )
 
         if self.is_distributed:
             return DDPStrategy(
@@ -300,6 +341,14 @@ class ExperimentRunner(ABC):
     def _build_profiler(self) -> PyTorchProfiler:
         """Build a PyTorch profiler from the profiler config."""
         cfg = self.profiler_config
+        activities = [
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ]
+        # Older torch builds (pre-XPU support) don't have this member.
+        if hasattr(torch.profiler.ProfilerActivity, "XPU"):
+            activities.append(torch.profiler.ProfilerActivity.XPU)
+
         return PyTorchProfiler(
             dirpath=cfg.dirpath,
             filename=cfg.filename,
@@ -310,10 +359,7 @@ class ExperimentRunner(ABC):
                 active=cfg.active,
                 repeat=cfg.repeat,
             ),
-            activities=[
-                torch.profiler.ProfilerActivity.CPU,
-                torch.profiler.ProfilerActivity.CUDA,
-            ],
+            activities=activities,
             record_shapes=cfg.record_shapes,
             profile_memory=cfg.profile_memory,
             with_stack=cfg.with_stack,
@@ -334,6 +380,16 @@ class ExperimentRunner(ABC):
                 "logger": self.loggers,
             }
         )
+
+        if (
+            isinstance(self.strategy, (SingleDeviceStrategy, DDPStrategy))
+            and self.strategy.accelerator
+        ):
+            # Lightning raises if `accelerator` and a strategy carrying its own
+            # accelerator instance are both set, unless the flag is "auto" — the
+            # XPU strategy above builds its own `XPUAccelerator` since Lightning
+            # can't resolve "xpu"/"gpu"/"auto" to one on its own.
+            trainer_args["accelerator"] = "auto"
 
         if self.profiler_config.enabled:
             trainer_args["profiler"] = self._build_profiler()

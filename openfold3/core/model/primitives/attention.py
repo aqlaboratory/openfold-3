@@ -155,7 +155,7 @@ def _attention(
     """
     in_dtype = query.dtype
     attn_dtype = torch.float32 if use_high_precision else in_dtype
-    with torch.amp.autocast("cuda", dtype=attn_dtype):
+    with torch.amp.autocast(autocast_device_type(query), dtype=attn_dtype):
         # Generate attention scores
         scores = torch.einsum("...qc, ...kc->...qk", query, key)
 

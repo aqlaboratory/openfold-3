@@ -23,6 +23,7 @@ import torch.nn as nn
 from openfold3.core.loss.confidence import confidence_loss
 from openfold3.core.loss.diffusion import diffusion_loss
 from openfold3.core.loss.distogram import all_atom_distogram_loss
+from openfold3.core.utils.device_utils import autocast_device_type
 from openfold3.core.utils.tensor_utils import dict_multimap, tensor_tree_map
 
 logger = logging.getLogger(__name__)
@@ -147,7 +148,10 @@ class OpenFold3Loss(nn.Module):
             and self.config.per_sample_atom_cutoff is not None
             and num_atoms > self.config.per_sample_atom_cutoff
         )
-        with torch.amp.autocast(device_type="cuda", dtype=torch.float32):
+        with torch.amp.autocast(
+            autocast_device_type(output["atom_positions_predicted"]),
+            dtype=torch.float32,
+        ):
             if not torch.is_grad_enabled() and apply_per_sample:
                 loss, loss_breakdown = self.loss_chunked(batch, output)
             else:

@@ -104,6 +104,18 @@ class MemorySnapshot(pl.Callback):
         self._setup_done = True
         self._global_rank = trainer.global_rank
 
+        if not torch.cuda.is_available():
+            # torch's memory snapshot/OOM-observer APIs are CUDA-only today (no
+            # XPU/MPS equivalent exposed the same way); skip rather than crash.
+            if self.dump_on_oom or self.step_recording_enabled:
+                logger.warning(
+                    "MemorySnapshot: torch.cuda memory snapshotting is not "
+                    "available on this accelerator; disabling this callback."
+                )
+            self.dump_on_oom = False
+            self.start_step = None
+            return
+
         if self.dump_on_oom:
             torch.cuda.memory._record_memory_history(stacks=self.stacks)
             if trainer.is_global_zero:
@@ -162,6 +174,14 @@ class MemorySnapshot(pl.Callback):
         self._on_batch_end(batch_idx=batch_idx)
 
 
+def _accelerator_synchronize() -> None:
+    """Synchronize whichever accelerator (if any) is in use, else no-op."""
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    elif hasattr(torch, "xpu") and torch.xpu.is_available():
+        torch.xpu.synchronize()
+
+
 class PredictTimer(pl.Callback):
     def __init__(self, output_dir: Path | None):
         super().__init__()
@@ -171,15 +191,15 @@ class PredictTimer(pl.Callback):
         self.batch_start_time = None
 
     def _get_start_time(self, sync=True):
-        if sync and torch.cuda.is_available():
-            torch.cuda.synchronize()
+        if sync:
+            _accelerator_synchronize()
 
         self.batch_start_time = time.perf_counter()
 
     def _get_runtime(self, sync=True):
         """Record the runtime for the current batch."""
-        if sync and torch.cuda.is_available():
-            torch.cuda.synchronize()
+        if sync:
+            _accelerator_synchronize()
 
         batch_end_time = time.perf_counter()
 
@@ -264,9 +284,12 @@ def set_seed_for_rank(seed: int, rank: int) -> None:
     # Set seed for NumPy
     np.random.seed(rank_specific_seed)
 
-    # Set seed for PyTorch on CPU and CUDA
+    # Set seed for PyTorch on CPU and any accelerator
     torch.manual_seed(rank_specific_seed)
     torch.cuda.manual_seed_all(rank_specific_seed)  # Seeds all GPUs
+
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        torch.xpu.manual_seed_all(rank_specific_seed)  # Seeds all Intel GPUs
 
 
 class RankSpecificSeedCallback(pl.Callback):

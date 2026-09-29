@@ -40,6 +40,7 @@ from openfold3.entry_points.experiment_runner import (
     TrainingExperimentRunner,
     WandbHandler,
     _accelerator_will_use_mps,
+    _accelerator_will_use_xpu,
     skip_random_init,
 )
 from openfold3.entry_points.parameters import (
@@ -414,6 +415,53 @@ class TestAcceleratorWillUseMps:
             return_value=mps_available,
         ):
             assert _accelerator_will_use_mps(accelerator) is mps_available
+
+
+class TestAcceleratorWillUseXpu:
+    """_accelerator_will_use_xpu mirrors _accelerator_will_use_mps, but XPU and
+    CUDA/ROCm can coexist on the same machine (unlike MPS), so "gpu"/"auto"
+    must keep preferring CUDA/ROCm when both are visible — only an explicit
+    "xpu" request should win in that case.
+    """
+
+    @pytest.mark.parametrize("accelerator", ["cpu", "cuda"])
+    def test_explicit_non_xpu_accelerator_never_matches(self, accelerator):
+        with (
+            patch(
+                "openfold3.core.utils.xpu_accelerator.XPUAccelerator.is_available",
+                return_value=True,
+            ),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            assert not _accelerator_will_use_xpu(accelerator)
+
+    @pytest.mark.parametrize("xpu_available", [True, False])
+    @pytest.mark.parametrize("accelerator", ["xpu", "gpu", "auto"])
+    def test_resolving_accelerator_follows_xpu_availability_without_cuda(
+        self, accelerator, xpu_available
+    ):
+        with (
+            patch(
+                "openfold3.core.utils.xpu_accelerator.XPUAccelerator.is_available",
+                return_value=xpu_available,
+            ),
+            patch("torch.cuda.is_available", return_value=False),
+        ):
+            assert _accelerator_will_use_xpu(accelerator) is xpu_available
+
+    @pytest.mark.parametrize("accelerator", ["gpu", "auto"])
+    def test_gpu_and_auto_prefer_cuda_when_both_present(self, accelerator):
+        """A machine with both an NVIDIA and an Intel GPU keeps today's
+        CUDA-first behavior for "gpu"/"auto"; "xpu" still forces Intel."""
+        with (
+            patch(
+                "openfold3.core.utils.xpu_accelerator.XPUAccelerator.is_available",
+                return_value=True,
+            ),
+            patch("torch.cuda.is_available", return_value=True),
+        ):
+            assert not _accelerator_will_use_xpu(accelerator)
+            assert _accelerator_will_use_xpu("xpu")
 
 
 class DummyWandbExperiment:

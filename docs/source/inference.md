@@ -197,7 +197,7 @@ We provide several example runner files in our [examples directory](https://gith
 - Using low memory settings
 - Customizing output formats
 - Enabling cuEquivariance kernels
-- Enabling AMD ROCm Triton kernels
+- Enabling AMD ROCm / Intel XPU Triton kernels
 - Saving MSA and Template processing outputs
 - And more
 
@@ -332,6 +332,20 @@ run_openfold predict \
 ```
 
 > **Note on first-run compilation**: Triton JIT-compiles kernels on first use and caches them to `~/.triton/cache`. The compilation is a one-time cost per unique sequence length per machine; subsequent runs at the same length incur no overhead.
+
+---
+
+#### 🔵 Intel XPU Inference
+
+On Intel GPUs, OpenFold3 uses the same Triton triangle-attention/multiplicative-update kernels as ROCm. Triton triangle kernels are already the default for inference, so no `runner.yml` changes are required.
+
+Install PyTorch for XPU and openfold3 (see [Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md)), then run the same minimal command as any other platform:
+
+```bash
+run_openfold predict --query-json=/path/to/query.json --output-dir=/path/to/output/
+```
+
+Verify your XPU environment is correctly configured with `validate-openfold3-xpu` (see the note on first-run compilation above).
 
 ---
 

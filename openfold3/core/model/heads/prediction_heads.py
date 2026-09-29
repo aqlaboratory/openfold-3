@@ -24,6 +24,7 @@ from openfold3.core.model.latent.pairformer import PairFormerStack
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.atomize_utils import max_atom_per_token_masked_select
+from openfold3.core.utils.device_utils import autocast_device_type
 
 
 class PairformerEmbedding(nn.Module):
@@ -221,7 +222,7 @@ class PairformerEmbedding(nn.Module):
             chunk_size = None
 
         in_dtype = zij.dtype
-        with torch.amp.autocast(device_type="cuda", dtype=pairformer_dtype):
+        with torch.amp.autocast(autocast_device_type(zij), dtype=pairformer_dtype):
             si, zij = self.pairformer_stack(
                 si,
                 zij,
