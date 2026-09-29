@@ -30,6 +30,7 @@ from openfold3.core.utils.atomize_utils import (
     get_token_frame_atoms,
     get_token_representative_atoms,
 )
+from openfold3.tests.utils.compare_utils import assert_summation_order_close
 
 
 def example1():
@@ -446,23 +447,83 @@ class TestAggregateAtomFeatToTokens(unittest.TestCase):
 
 
 class TestSegmentedAggregateAtomFeatToTokens(unittest.TestCase):
-    def test_matches_scatter_and_is_cuda_repeatable(self):
-        lengths = torch.tensor([[[3, 2, 1]]])
-        token_mask = torch.ones(1, 1, 3)
-        atom_index = torch.tensor([[[0, 0, 0, 1, 1, 2, 0]]])
-        atom_mask = torch.tensor([[[1, 1, 0, 1, 1, 1, 0]]], dtype=torch.float32)
-        atom_feat = torch.randn(1, 4, 7, 5)
-        expected = aggregate_atom_feat_to_tokens(
-            token_mask, atom_index, atom_mask, atom_feat, atom_dim=-2
-        )
-        actual = aggregate_atom_feat_to_tokens_segmented(lengths, atom_mask, atom_feat)
-        torch.testing.assert_close(actual, expected)
+    """``aggregate_atom_feat_to_tokens_segmented`` correctness and repeatability.
 
-        if not torch.cuda.is_available():
-            return
-        lengths, atom_mask, atom_feat = (
-            t.cuda() for t in (lengths, atom_mask, atom_feat)
+    Correctness and repeatability are separate tests on purpose. The scatter
+    path this replaces is nondeterministic on CUDA (``scatter_add`` atomics sum
+    in a racy order) while CPU reductions are order-fixed, so a repeatability
+    check on CPU cannot fail.
+    """
+
+    def test_matches_scatter_path(self):
+        """Segmented aggregation agrees with the scatter path on each device."""
+        devices = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+        for device in devices:
+            with self.subTest(device=device):
+                # 3 tokens, 7 atom slots, one masked-out atom.
+                lengths = torch.tensor([[[3, 2, 1]]], device=device)
+                token_mask = torch.ones(1, 1, 3, device=device)
+                atom_index = torch.tensor([[[0, 0, 0, 1, 1, 2, 0]]], device=device)
+                atom_mask = torch.tensor(
+                    [[[1, 1, 0, 1, 1, 1, 0]]], dtype=torch.float32, device=device
+                )
+                atom_feat = torch.randn(1, 4, 7, 5, device=device)
+
+                expected = aggregate_atom_feat_to_tokens(
+                    token_mask, atom_index, atom_mask, atom_feat, atom_dim=-2
+                )
+                actual = aggregate_atom_feat_to_tokens_segmented(
+                    lengths, atom_mask, atom_feat
+                )
+                # The scatter path is a different summation order, so the two
+                # cannot be bitwise equal on CUDA; the tolerance is the fp32
+                # bound for this atom count rather than a chosen epsilon.
+                assert_summation_order_close(
+                    actual, expected, n_terms=int(lengths.max().item())
+                )
+
+    def test_exact_on_representable_values(self):
+        """Segmented aggregation is exact when every partial sum is representable.
+
+        Each token's atoms carry a constant power of two, so a mean over ``k``
+        of them is ``(k * 2**p) / k == 2**p`` exactly, in any summation order.
+        That makes the result analytically known, independent of the scatter
+        path -- so unlike ``test_matches_scatter_path`` this cannot be satisfied
+        by a wrong implementation that happens to agree with another wrong one,
+        and it fails on a systematic error that a loose tolerance would absorb.
+        """
+        for device in ["cpu"] + (["cuda"] if torch.cuda.is_available() else []):
+            for n_per_token, exponent in [(3, 0), (16, 1), (22, -4), (64, 3)]:
+                with self.subTest(device=device, n_per_token=n_per_token):
+                    lengths = torch.full((1, 1, 2), n_per_token, device=device)
+                    atom_mask = torch.ones(1, 1, 2 * n_per_token, device=device)
+                    values = torch.tensor(
+                        [2.0**exponent, 2.0 ** (exponent + 1)], device=device
+                    )
+                    atom_feat = values.repeat_interleave(n_per_token).reshape(
+                        1, 1, 2 * n_per_token, 1
+                    )
+
+                    actual = aggregate_atom_feat_to_tokens_segmented(
+                        lengths, atom_mask, atom_feat
+                    )
+                    expected = values.reshape(1, 1, 2, 1)
+                    self.assertTrue(
+                        torch.equal(actual, expected),
+                        f"expected exactly {expected.flatten().tolist()}, "
+                        f"got {actual.flatten().tolist()}",
+                    )
+
+    @unittest.skipUnless(torch.cuda.is_available(), "Requires GPU")
+    def test_is_repeatable_on_cuda(self):
+        """Repeated calls return bitwise-identical results on CUDA."""
+        # 3 tokens, 7 atom slots, one masked-out atom.
+        lengths = torch.tensor([[[3, 2, 1]]], device="cuda")
+        atom_mask = torch.tensor(
+            [[[1, 1, 0, 1, 1, 1, 0]]], dtype=torch.float32, device="cuda"
         )
+        atom_feat = torch.randn(1, 4, 7, 5, device="cuda")
+
         reference = aggregate_atom_feat_to_tokens_segmented(
             lengths, atom_mask, atom_feat
         )
