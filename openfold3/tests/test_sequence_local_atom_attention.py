@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import math
+import random
 import unittest
 
 import ml_collections as mlc
@@ -26,6 +27,7 @@ from openfold3.core.model.layers.sequence_local_atom_attention import (
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.tests.config import consts
+from openfold3.tests.utils.compare_utils import assert_summation_order_close
 from openfold3.tests.utils.data_utils import random_of3_features
 
 C_ATOM_REF = mlc.ConfigDict(
@@ -322,6 +324,135 @@ class TestAtomAttentionEncoder(unittest.TestCase):
         self.assertTrue(
             plm.shape == (batch_size, 1, num_blocks, n_query, n_key, c_atom_pair)
         )
+
+
+class TestAtomAttentionEncoderAggregation(unittest.TestCase):
+    """The encoder's eval-mode aggregation must be as repeatable as the train path.
+
+    In eval mode (and only there) the encoder aggregates atom features to tokens
+    with ``aggregate_atom_feat_to_tokens_segmented``. The training/autograd path
+    cannot use it, because ``segment_reduce`` has no backward, so training keeps
+    the scatter-based ``aggregate_atom_feat_to_tokens``. These two tests pin both
+    halves of that arrangement: the eval path is bitwise repeatable, and it agrees
+    numerically with the path training still uses.
+
+    Note these tests deliberately do *not* take the ``device`` pytest fixture.
+    That fixture turns on ``torch.use_deterministic_algorithms``, which makes
+    ``scatter_add`` deterministic and would mask exactly the behaviour under test
+    here.
+    """
+
+    @staticmethod
+    def _build_encoder(batch_size, n_token, c_atom, c_token, seed, device):
+        # ``random_of3_features`` draws from both the torch and the stdlib RNG
+        # (``random_asym_ids`` uses ``random.randint``), so seed both or two calls
+        # with the same seed still yield different batches.
+        torch.manual_seed(seed)
+        random.seed(seed)
+        batch = random_of3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
+        c_atom_pair = 8
+        encoder = AtomAttentionEncoder(
+            c_atom_ref=C_ATOM_REF,
+            c_atom=c_atom,
+            c_atom_pair=c_atom_pair,
+            c_token=c_token,
+            c_hidden=int(c_atom / 4),
+            add_noisy_pos=False,
+            no_heads=4,
+            no_blocks=2,
+            n_transition=2,
+            n_query=32,
+            n_key=128,
+            use_ada_layer_norm=True,
+        ).to(device)
+        batch = tensor_tree_map(lambda t: t.to(device), batch)
+        return encoder, batch
+
+    @staticmethod
+    def _forward(encoder, batch, training):
+        """One encoder call; ``training`` selects scatter vs segmented aggregation."""
+        previous = encoder.training
+        encoder.train(training)
+        try:
+            with torch.no_grad():
+                ai, _, _, _ = encoder(batch=batch)
+        finally:
+            encoder.train(previous)
+        return ai
+
+    def _run_with_consistent_forward(self, device, training):
+        """Aggregate token features via one path, called 16 times.
+
+        Returns the first result. Every later call must match it bitwise; the
+        point of the test is whether it does, so any mismatch is the failure.
+        """
+        encoder, batch = self._build_encoder(
+            batch_size=consts.batch_size,
+            n_token=consts.n_res,
+            c_atom=32,
+            c_token=64,
+            seed=0,
+            device=device,
+        )
+        reference = self._forward(encoder, batch, training)
+        for repeat in range(16):
+            with self.subTest(device=device, repeat=repeat):
+                self.assertTrue(
+                    torch.equal(
+                        self._forward(encoder, batch, training),
+                        reference,
+                    ),
+                    "repeated encoder call is not bitwise identical",
+                )
+        return reference
+
+    def test_eval_path_is_bitwise_repeatable(self):
+        """Eval-mode (segmented) aggregation gives bitwise-identical repeats."""
+        devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+        for device in devices:
+            with self.subTest(device=device):
+                self._run_with_consistent_forward(device, training=False)
+
+    def test_eval_and_train_paths_agree(self):
+        """Segmented (eval) and scatter (train) aggregation agree numerically.
+
+        One encoder and one batch are reused for both calls, with only the
+        ``training`` flag toggled, so the aggregation branch is the single
+        difference between the two results.
+
+        The tolerance is derived rather than chosen. The two paths sum each
+        token's atoms in different orders, so the difference is bounded by the
+        fp32 summation-order error over the atom count, not by any property of
+        the output: see ``assert_summation_order_close``. ``atol`` alone cannot
+        express that, because rounding-order error tracks the magnitude of the
+        summed terms while ``assert_close`` scales with the output.
+        """
+        devices = ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"]
+        for device in devices:
+            with self.subTest(device=device):
+                encoder, batch = self._build_encoder(
+                    batch_size=consts.batch_size,
+                    n_token=consts.n_res,
+                    c_atom=32,
+                    c_token=64,
+                    seed=0,
+                    device=device,
+                )
+
+                segmented = self._forward(encoder, batch, training=False)
+                scatter = self._forward(encoder, batch, training=True)
+
+                assert_summation_order_close(
+                    segmented,
+                    scatter,
+                    n_terms=int(batch["num_atoms_per_token"].max().item()),
+                    msg=f"eval vs train aggregation on {device}",
+                )
 
 
 class TestAtomAttentionDecoder(unittest.TestCase):
