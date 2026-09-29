@@ -60,6 +60,21 @@ def random_asym_ids(n_res, split_chains=True, min_chain_len=4):
     return np.array(asym_ids).astype(np.float32) + 1
 
 
+def randomize_parameters(module, std=0.1, seed=0):
+    """Randomizes all parameters of a module in-place.
+
+    The default initialization zeros many output layers, which makes modules
+    insensitive to their inputs. Randomizing the parameters lets equivalence tests
+    detect wrongly wired or wrongly cached inputs.
+    """
+    generator = torch.Generator().manual_seed(seed)
+    with torch.no_grad():
+        for param in module.parameters():
+            param.copy_(std * torch.randn(param.shape, generator=generator))
+
+    return module
+
+
 def random_template_feats(n_templ, n, batch_size=None):
     b = []
     if batch_size is not None:

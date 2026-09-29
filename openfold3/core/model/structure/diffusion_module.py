@@ -507,7 +507,7 @@ class SampleDiffusion(nn.Module):
                 Whether to compute the quantities that are unchanged between
                 diffusion steps (conditioned pair representation, atom reference
                 embeddings and attention mask biases) once per rollout instead of
-                at every step. Does not change the result.
+                at every step.
         Returns:
             [*, N_atom, 3] Sampled atom positions
         """
