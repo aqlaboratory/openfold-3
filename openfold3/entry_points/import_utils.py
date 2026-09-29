@@ -66,11 +66,10 @@ def _configure_cuda_allocator(expandable_segments: bool = True) -> None:
         logger.info(f"Allocator configured via {user_set}; leaving it untouched")
         return
 
-    set_allocator_settings = getattr(
-        torch._C,
-        "_accelerator_setAllocatorSettings",
-        torch.cuda.memory._set_allocator_settings,
-    )
+    if hasattr(torch._C, "_accelerator_setAllocatorSettings"):
+        set_allocator_settings = torch._C._accelerator_setAllocatorSettings
+    else:
+        set_allocator_settings = torch.cuda.memory._set_allocator_settings
     set_allocator_settings("expandable_segments:True")
     logger.info("Enabled CUDA allocator expandable_segments")
 
