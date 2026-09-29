@@ -151,7 +151,7 @@ def fix_arginine_naming(atom_array: AtomArray) -> AtomArray:
 
             # Record that residue was changed
             changed_residue_tuples.append(
-                (arginine_view.chain_id[0], arginine_view.res_id[0])
+                (arginine_view.chain_id[0].item(), arginine_view.res_id[0].item())
             )
 
     # Apply the sorting index to the final atom names

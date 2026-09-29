@@ -23,6 +23,7 @@ end to end, so those tests run the real ``__call__``. They stay offline by pre-s
 the template structure directory and setting ``fetch_missing_structures=False``.
 """
 
+import getpass
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -35,9 +36,11 @@ from openfold3.core.data.io.sequence.template import TemplateData
 from openfold3.core.data.io.structure.cif import _load_ciffile
 from openfold3.core.data.pipelines.preprocessing import template as template_module
 from openfold3.core.data.pipelines.preprocessing.template import (
+    TemplatePrecachePreprocessor,
     TemplatePreprocessor,
     TemplatePreprocessorInputInference,
     TemplatePreprocessorSettings,
+    TemplateStructurePreprocessor,
     build_template_cache_key,
     collate_data_logs,
     data_log_to_tsv,
@@ -170,7 +173,7 @@ _T_2021 = datetime(2021, 1, 1)
             _T_2020, None, _T_2021, None, False, id="template_before_max_passes"
         ),
         pytest.param(
-            _T_2020, None, _T_2020, None, False, id="template_equals_max_passes"
+            _T_2020, None, _T_2020, None, True, id="template_equals_max_fails"
         ),
         pytest.param(
             _T_2020,
@@ -473,43 +476,117 @@ def test_settings_rejects_unsupported_structure_format(tmp_path):
 
 
 def test_settings_derives_default_directories(tmp_path):
-    """Only the unconditional sub-dirs are derived under base by default."""
-    settings = TemplatePreprocessorSettings(output_directory=tmp_path)
+    with patch(
+        "openfold3.core.data.tools.utils.tempfile.gettempdir",
+        return_value=str(tmp_path),
+    ):
+        settings = TemplatePreprocessorSettings()
 
-    assert settings.structure_directory == tmp_path / "template_structures"
-    assert settings.cache_directory == tmp_path / "template_cache"
+    output_directory = tmp_path / f"of3-of-{getpass.getuser()}" / "template_data"
+
+    assert settings.output_directory == output_directory
+    assert settings.structure_directory == output_directory / "template_structures"
+    assert settings.cache_directory == output_directory / "template_cache"
     # Conditional directories stay None when their feature flag is off.
     assert settings.precache_directory is None
     assert settings.structure_array_directory is None
     assert settings.log_directory is None
-    # Derived directories are created on disk.
-    assert settings.structure_directory.is_dir()
-    assert settings.cache_directory.is_dir()
+    assert not output_directory.exists()
 
 
-def test_settings_derives_conditional_directories(tmp_path):
+def test_template_directories_are_created_when_preprocessing_starts(tmp_path):
+    output_directory = tmp_path / "template_data"
     settings = TemplatePreprocessorSettings(
-        output_directory=tmp_path,
         create_precache=True,
         preparse_structures=True,
         create_logs=True,
     )
+    settings._set_inference_output_directory(output_directory)
 
-    assert settings.precache_directory == tmp_path / "template_precache"
-    assert settings.structure_array_directory == tmp_path / "template_structure_arrays"
-    assert settings.log_directory == tmp_path / "template_logs"
+    assert settings.precache_directory == output_directory / "template_precache"
+    assert (
+        settings.structure_array_directory
+        == output_directory / "template_structure_arrays"
+    )
+    assert settings.log_directory == output_directory / "template_logs"
+    assert not output_directory.exists()
+
+    preprocessor = TemplatePreprocessor(
+        input_set=InferenceQuerySet(queries={}),
+        config=settings,
+    )
+    preprocessor._ensure_output_directories()
+
+    assert settings.structure_directory.is_dir()
+    assert settings.cache_directory.is_dir()
     assert settings.precache_directory.is_dir()
     assert settings.structure_array_directory.is_dir()
     assert settings.log_directory.is_dir()
 
 
-def test_settings_respects_explicit_directories(tmp_path):
+def test_inference_replaces_only_implicit_template_paths(tmp_path):
     explicit_cache = tmp_path / "my_cache"
-    settings = TemplatePreprocessorSettings(
-        output_directory=tmp_path, cache_directory=explicit_cache
-    )
+    settings = TemplatePreprocessorSettings(cache_directory=explicit_cache)
+    output_directory = tmp_path / "output" / "template_data"
+
+    settings._set_inference_output_directory(output_directory)
+
+    assert settings.output_directory == output_directory
+    assert settings.structure_directory == output_directory / "template_structures"
     assert settings.cache_directory == explicit_cache
     assert explicit_cache.is_dir()
+    assert not output_directory.exists()
+
+
+@pytest.mark.parametrize(
+    "preprocessor_cls,output_field",
+    [
+        pytest.param(
+            TemplatePrecachePreprocessor,
+            "precache_directory",
+            id="precache",
+        ),
+        pytest.param(
+            TemplateStructurePreprocessor,
+            "structure_array_directory",
+            id="structure-arrays",
+        ),
+    ],
+)
+def test_standalone_template_consumers_create_output_when_called(
+    tmp_path, preprocessor_cls, output_field
+):
+    structure_directory = tmp_path / "structures"
+    structure_directory.mkdir()
+    (structure_directory / "1abc.cif").write_text("data_1abc\n")
+    system_tmp = tmp_path / "tmp"
+    with patch(
+        "openfold3.core.data.tools.utils.tempfile.gettempdir",
+        return_value=str(system_tmp),
+    ):
+        if output_field == "precache_directory":
+            settings = TemplatePreprocessorSettings(
+                structure_directory=structure_directory,
+                create_precache=True,
+            )
+        else:
+            settings = TemplatePreprocessorSettings(
+                structure_directory=structure_directory,
+                preparse_structures=True,
+            )
+    output_directory = getattr(settings, output_field)
+    preprocessor = preprocessor_cls(settings)
+
+    assert output_directory is not None
+    assert not output_directory.exists()
+
+    with patch(
+        "openfold3.core.data.pipelines.preprocessing.template.mp.Pool"
+    ) as pool_cls:
+        pool_cls.return_value.__enter__.return_value.imap_unordered.return_value = []
+        preprocessor()
+
+    assert output_directory.is_dir()
 
 
 # ---------------------------------------------------------------------------
@@ -853,3 +930,54 @@ def test_template_sources_do_not_collide_across_queries(tmp_path, order):
     assert (
         custom.template_alignment_file_path != colabfold.template_alignment_file_path
     ), "both queries were pointed at the same template cache entry"
+
+
+def test_requeued_query_set_keeps_cached_templates(tmp_path):
+    """A reused query set keeps its cached template entry (issue #420).
+
+    Run 1 preprocesses a ColabFold alignment and writes the cache entry path and
+    template ids into the chain. The reused batch mixes that chain, deep-copied
+    from run 1's query set, with a raw CIF source that run 1 never
+    processed, so the write-back still runs while the cached entry is bypassed.
+    """
+    run_1_qs = _two_source_query_set(tmp_path, ["q_colabfold"])
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir()
+    shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, structure_dir / TEMPLATE_CIF)
+    settings = TemplatePreprocessorSettings(
+        mode="predict",
+        output_directory=tmp_path / "template_data",
+        # Pre-seeded structures + no fetching keeps this offline.
+        structure_directory=structure_dir,
+        fetch_missing_structures=False,
+        n_processes=1,
+    )
+
+    TemplatePreprocessor(input_set=run_1_qs, config=settings)()
+
+    cached_chain = run_1_qs.queries["q_colabfold"].chains[0]
+    cached_path = cached_chain.template_alignment_file_path
+    assert cached_path is not None
+    assert cached_chain.template_entry_chain_ids == ["2q2k_C"]
+
+    run_2_qs = run_1_qs.model_copy(deep=True)
+    fresh_qs = _two_source_query_set(tmp_path, ["q_custom"])
+    run_2_qs.queries |= fresh_qs.queries
+
+    preprocessor = TemplatePreprocessor(input_set=run_2_qs, config=settings)
+    preprocessor()
+
+    requeued_cached = run_2_qs.queries["q_colabfold"].chains[0]
+    assert requeued_cached.template_alignment_file_path == cached_path, (
+        "the cached template entry was dropped when the query set was reused"
+    )
+    assert requeued_cached.template_entry_chain_ids == ["2q2k_C"], (
+        "the template ids were dropped when the query set was reused"
+    )
+    requeued_raw = run_2_qs.queries["q_custom"].chains[0]
+    assert requeued_raw.template_entry_chain_ids == ["2q2k_B"], (
+        "the raw source in the reused batch was not processed"
+    )
+    # Only the raw source needs preprocessing; the cached entry must not be
+    # re-parsed as an alignment.
+    assert len(preprocessor.inputs) == 1

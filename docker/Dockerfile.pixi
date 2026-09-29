@@ -5,7 +5,7 @@
 #
 # Build args:
 #   BASE_IMAGE   - Base Docker image (default: ubuntu:22.04)
-#   PIXI_VERSION - Pixi version to install (default: v0.68.0)
+#   PIXI_VERSION - Pixi version to install (default: v0.80.0)
 #   PIXI_ENV     - Pixi environment name (default: openfold3-cuda12)
 #
 # Example:
@@ -17,7 +17,7 @@ ARG BASE_IMAGE=ubuntu:22.04
 # === Builder stage: install pixi and resolve environment ===
 FROM ${BASE_IMAGE} AS builder
 
-ARG PIXI_VERSION=v0.76.0
+ARG PIXI_VERSION=v0.80.0
 ARG PIXI_ENV=openfold3-cuda12
 
 # Install minimal system dependencies
@@ -53,7 +53,7 @@ RUN case "${PIXI_ENV}" in \
 # === Devel stage: lean runtime image with pixi activation ===
 FROM ${BASE_IMAGE} AS devel
 
-ARG PIXI_VERSION=v0.76.0
+ARG PIXI_VERSION=v0.80.0
 ARG PIXI_ENV=openfold3-cuda12
 
 # Install runtime system dependencies

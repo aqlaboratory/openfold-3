@@ -872,6 +872,7 @@ class OpenFold3AllAtom(ModelRunner):
             max_lr=optimizer_config.learning_rate,
             warmup_no_steps=lr_sched_config.warmup_no_steps,
             start_decay_after_n_steps=lr_sched_config.start_decay_after_n_steps,
+            decay_every_n_steps=lr_sched_config.decay_every_n_steps,
             decay_factor=lr_sched_config.decay_factor,
         )
 

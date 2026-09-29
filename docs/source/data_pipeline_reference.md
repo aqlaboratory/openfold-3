@@ -21,7 +21,7 @@ For detailed format specifications on the metadata and training/validation datas
 
 ## 1. PDB Preprocessing
 ### 1.1 Structure Download
-Our structure preprocessing expects a flat directory of `.cif` files. We provide an example script to generate this at [scripts/download_pdb_mmcif.sh](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/download_pdb_mmcif.sh).
+Structure preprocessing recursively discovers `.cif` files below the input directory. Each file must have a unique filename stem because the stem is used as its structure ID and output directory name. We provide an example download script at [scripts/download_pdb_mmcif.sh](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/download_pdb_mmcif.sh).
 
 ### 1.2 CCD Preprocessing (recommended but optional)
 
