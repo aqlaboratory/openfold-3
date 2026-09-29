@@ -406,6 +406,7 @@ class OpenFold3(nn.Module):
                 chunk_size=mode_mem_settings.chunk_size,
                 use_high_precision_attention=True,
                 _mask_trans=True,
+                hoist_step_invariants=mode_mem_settings.precompute_step_invariants,
             )
 
             self.clear_autocast_cache()

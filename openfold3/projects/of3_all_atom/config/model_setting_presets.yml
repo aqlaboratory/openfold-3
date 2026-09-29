@@ -25,6 +25,10 @@ low_mem:
     clear_cache_between_steps: True
     memory:
       eval:
+        # Trades the rollout speedup from precomputing step-invariant quantities
+        # (see model_config.py) for not holding them in memory for the whole
+        # rollout.
+        precompute_step_invariants: false
         per_sample_token_cutoff: 0
         per_sample_atom_cutoff: 0
         offload_inference:
