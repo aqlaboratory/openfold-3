@@ -130,8 +130,12 @@ class TestDiffusionTransformerMaskBias(unittest.TestCase):
         mask[..., -20:] = 0
 
         with torch.no_grad():
-            expected = dt(a, s, z, mask=mask) # Compute the output using the mask directly
-            actual = dt(a, s, z, mask=mask, mask_bias=dt.get_mask_bias(mask)) # Use the precomputed mask
+            expected = dt(
+                a, s, z, mask=mask
+            )  # Compute the output using the mask directly
+            actual = dt(
+                a, s, z, mask=mask, mask_bias=dt.get_mask_bias(mask)
+            )  # Use the precomputed mask
 
         torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-6)
 
