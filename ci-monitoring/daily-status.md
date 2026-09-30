@@ -538,3 +538,28 @@ AWS `g5.4xlarge` capacity exhaustion across all six capacity pools (3x us-east-2
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #295, per this log's established convention).
 
 ---
+
+## 2026-09-30
+
+### Run #297 — primary nightly (schedule `17 3 * * *`, main @ `8605a8c` (unchanged since run #295 on 09-29), [36664988247](https://github.com/aqlaboratory/openfold-3/actions/runs/36664988247))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 31 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 40 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 37 min | |
+
+**2026-09-30: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Clean run the night after the 09-29 AWS `g5.4xlarge` capacity exhaustion (run #295) — both CUDA legs launched without a `start-aws-runner` retry needed. No re-run of run #295 was triggered (`run_attempt` stayed at 1, conclusion `failure`), so 09-29's coverage line stands unrevised.
+
+### Run #298 — secondary nightly (schedule `17 4 * * *`, main @ `8605a8c`, [36669325658](https://github.com/aqlaboratory/openfold-3/actions/runs/36669325658))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #297, per this log's established convention).
+
+---
