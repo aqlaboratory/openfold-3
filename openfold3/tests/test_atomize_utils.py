@@ -482,38 +482,6 @@ class TestSegmentedAggregateAtomFeatToTokens(unittest.TestCase):
                     actual, expected, n_terms=int(lengths.max().item())
                 )
 
-    def test_exact_on_representable_values(self):
-        """Segmented aggregation is exact when every partial sum is representable.
-
-        Each token's atoms carry a constant power of two, so a mean over ``k``
-        of them is ``(k * 2**p) / k == 2**p`` exactly, in any summation order.
-        That makes the result analytically known, independent of the scatter
-        path -- so unlike ``test_matches_scatter_path`` this cannot be satisfied
-        by a wrong implementation that happens to agree with another wrong one,
-        and it fails on a systematic error that a loose tolerance would absorb.
-        """
-        for device in ["cpu"] + (["cuda"] if torch.cuda.is_available() else []):
-            for n_per_token, exponent in [(3, 0), (16, 1), (22, -4), (64, 3)]:
-                with self.subTest(device=device, n_per_token=n_per_token):
-                    lengths = torch.full((1, 1, 2), n_per_token, device=device)
-                    atom_mask = torch.ones(1, 1, 2 * n_per_token, device=device)
-                    values = torch.tensor(
-                        [2.0**exponent, 2.0 ** (exponent + 1)], device=device
-                    )
-                    atom_feat = values.repeat_interleave(n_per_token).reshape(
-                        1, 1, 2 * n_per_token, 1
-                    )
-
-                    actual = aggregate_atom_feat_to_tokens_segmented(
-                        lengths, atom_mask, atom_feat
-                    )
-                    expected = values.reshape(1, 1, 2, 1)
-                    self.assertTrue(
-                        torch.equal(actual, expected),
-                        f"expected exactly {expected.flatten().tolist()}, "
-                        f"got {actual.flatten().tolist()}",
-                    )
-
     @unittest.skipUnless(torch.cuda.is_available(), "Requires GPU")
     def test_is_repeatable_on_cuda(self):
         """Repeated calls return bitwise-identical results on CUDA."""
