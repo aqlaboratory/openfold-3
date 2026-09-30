@@ -12,15 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Per-datapoint seeding of on-the-fly inference feature creation.
+
+The datapoint's seed is carried by explicit RNG streams passed into featurization,
+so the same seed reproduces the same features without touching global RNG state.
+"""
+
 import random
 import unittest
 
 import numpy as np
 
-from openfold3.core.data.framework.single_datasets.inference import (
-    InferenceDataset,
-    _seeded_feature_creation,
-)
+from openfold3.core.data.framework.single_datasets.inference import InferenceDataset
 from openfold3.projects.of3_all_atom.config.inference_query_format import Query
 
 LIGAND_QUERY = Query.model_validate(
@@ -38,8 +41,9 @@ LIGAND_QUERY = Query.model_validate(
 
 
 def _reference_conformer_coords(seed: int) -> np.ndarray:
-    with _seeded_feature_creation(seed):
-        swrm = InferenceDataset.get_structure_with_ref_mols(LIGAND_QUERY)
+    swrm = InferenceDataset.get_structure_with_ref_mols(
+        LIGAND_QUERY, rng=random.Random(seed)
+    )
     return swrm.processed_reference_mols[0].mol.GetConformer().GetPositions()
 
 
@@ -58,16 +62,6 @@ class TestInferenceFeatureSeeding(unittest.TestCase):
         second = _reference_conformer_coords(2)
         self.assertFalse(np.allclose(first, second))
 
-    def test_restores_global_python_rng(self):
-        random.seed(7)
-        before = random.random()
-        with _seeded_feature_creation(999):
-            _reference_conformer_coords(999)
-        after = random.random()
 
-        random.seed(7)
-        expected_before = random.random()
-        expected_after = random.random()
-
-        self.assertEqual(before, expected_before)
-        self.assertEqual(after, expected_after)
+if __name__ == "__main__":
+    unittest.main()

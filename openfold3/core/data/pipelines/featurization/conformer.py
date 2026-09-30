@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 def featurize_reference_conformers_of3(
     processed_ref_mol_list: list[ProcessedReferenceMolecule],
     add_ref_space_uid_to_perm: bool = True,
+    generator: torch.Generator | None = None,
 ) -> dict[str, torch.Tensor | dict[str, torch.Tensor]]:
     """AF3 pipeline for creating reference conformer features.
 
@@ -56,6 +57,8 @@ def featurize_reference_conformers_of3(
         add_ref_space_uid_to_perm (bool):
             Whether to add the ref_space_uid_to_perm mapping to the features. This is
             only required in training.
+        generator (torch.Generator | None):
+            RNG source for the rotation & translation; ambient torch RNG by default.
 
     Returns:
         dict[str, torch.Tensor]:
@@ -140,7 +143,9 @@ def featurize_reference_conformers_of3(
 
         if torch.any(mol_ref_mask):
             # Apply random translation & rotation to reference coordinates
-            final_ref_pos = centre_random_augmentation(mol_ref_pos, mol_ref_mask)
+            final_ref_pos = centre_random_augmentation(
+                mol_ref_pos, mol_ref_mask, generator=generator
+            )
 
             ref_pos.append(final_ref_pos)
             ref_mask.append(mol_ref_mask)

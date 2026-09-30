@@ -20,9 +20,7 @@ import itertools
 import logging
 import random
 import traceback
-from contextlib import contextmanager
 
-import numpy as np
 import pandas as pd
 import torch
 from biotite.structure import AtomArray
@@ -73,22 +71,6 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-@contextmanager
-def _seeded_feature_creation(seed: int):
-    py_state = random.getstate()
-    np_state = np.random.get_state()
-    torch_state = torch.random.get_rng_state()
-    random.seed(seed)
-    np.random.seed(seed % (2**32))
-    torch.manual_seed(seed)
-    try:
-        yield
-    finally:
-        random.setstate(py_state)
-        np.random.set_state(np_state)
-        torch.random.set_rng_state(torch_state)
 
 
 @register_dataset
@@ -175,7 +157,9 @@ class InferenceDataset(Dataset):
         self.datapoint_cache = pad_to_world_size(_datapoint_cache, self.world_size)
 
     @staticmethod
-    def get_structure_with_ref_mols(query: Query) -> StructureWithReferenceMolecules:
+    def get_structure_with_ref_mols(
+        query: Query, rng: random.Random | None = None
+    ) -> StructureWithReferenceMolecules:
         """Creates a preprocessed AtomArray and reference molecules from the query.
 
         Parses the Query object into a full AtomArray and processed reference molecules
@@ -195,6 +179,8 @@ class InferenceDataset(Dataset):
         Args:
             query (Query):
                 The Query object containing the chains to construct the structure from.
+            rng (random.Random | None):
+                Conformer generation seed source; defaults to the ambient stdlib RNG.
 
         Returns:
             StructureWithReferenceMolecules:
@@ -204,6 +190,7 @@ class InferenceDataset(Dataset):
         # Gets AtomArray and processed reference molecules with conformers
         atom_array, processed_reference_molecules = structure_with_ref_mols_from_query(
             query=query,
+            rng=rng,
         )
 
         # Add token-related IDs
@@ -219,6 +206,7 @@ class InferenceDataset(Dataset):
         atom_array: AtomArray,
         processed_reference_molecules: list[ProcessedReferenceMolecule],
         n_tokens: int,
+        generator: torch.Generator | None = None,
     ) -> dict[str, torch.Tensor]:
         """Creates the target structure features."""
 
@@ -233,6 +221,7 @@ class InferenceDataset(Dataset):
         reference_conformer_features = featurize_reference_conformers_of3(
             processed_ref_mol_list=processed_reference_molecules,
             add_ref_space_uid_to_perm=False,
+            generator=generator,
         )
 
         # Wrap up features
@@ -301,14 +290,26 @@ class InferenceDataset(Dataset):
     def create_all_features(
         self,
         query: Query,
+        rng: random.Random | None = None,
+        generator: torch.Generator | None = None,
     ) -> dict:
-        """Creates all features for a single datapoint."""
+        """Creates all features for a single datapoint.
+
+        ``rng`` and ``generator`` seed the two draws reached on the default
+        configuration: RDKit conformer generation (stdlib) and reference-coordinate
+        augmentation (torch). ``None`` falls back to the ambient generators.
+
+        The numpy draws under ``template.take_top_k=False`` and
+        ``msa.subsample_main=True`` are not threaded; both default off for inference,
+        so overriding either makes that draw depend on ambient numpy state again.
+        """
 
         features = {}
 
         # Create initial AtomArray and ReferenceMolecules from query entry
         structure_objs = self.get_structure_with_ref_mols(
             query=query,
+            rng=rng,
         )
         preprocessed_atom_array, processed_reference_molecules = structure_objs
 
@@ -322,6 +323,7 @@ class InferenceDataset(Dataset):
             atom_array=preprocessed_atom_array,
             processed_reference_molecules=processed_reference_molecules,
             n_tokens=n_tokens,
+            generator=generator,
         )
         features.update(structure_features)
 
@@ -349,9 +351,12 @@ class InferenceDataset(Dataset):
         seed = datapoint["seed"]
         is_repeated_sample = bool(datapoint["repeated_sample"])
 
+        # Per-datapoint streams, so feature creation never mutates global RNG state.
+        rng = random.Random(int(seed))
+        generator = torch.Generator().manual_seed(int(seed))
+
         try:
-            with _seeded_feature_creation(int(seed)):
-                features = self.create_all_features(query)
+            features = self.create_all_features(query, rng=rng, generator=generator)
             features["query_id"] = query_id
             features["seed"] = torch.tensor([seed])
             features["repeated_sample"] = torch.tensor(
