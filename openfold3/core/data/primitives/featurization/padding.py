@@ -32,6 +32,7 @@ TOKEN_DIM_INDEX_MAP = {
     "is_atomized": [-1],
     "start_atom_index": [-1],
     "token_mask": [-1],
+    "cyclic_mask": [-1],
     "mol_entity_id": [-1],
     "mol_sym_id": [-1],
     "mol_sym_token_index": [-1],
@@ -67,9 +68,13 @@ def pad_token_dim(
                     dim_sizes, range(-len(dim_sizes), 0), strict=True
                 )
             ]
-            feature_padded = (
-                torch.ones(dim_sizes_padded, dtype=feature.dtype, device=feature.device)
-                * pad_value
+            # torch.full rather than ones * pad_value: multiplying promotes bool
+            # features to int64.
+            feature_padded = torch.full(
+                dim_sizes_padded,
+                pad_value,
+                dtype=feature.dtype,
+                device=feature.device,
             )
             feature_padded[
                 tuple(

@@ -101,7 +101,6 @@ diffusion_att_pair_bias_init = ConfigDict(
         "ada_ln": ada_ln_init,
         "linear_ada_out": {"bias": True, "init": "gating_ada_zero"},
         "linear_z": {"bias": False, "init": "default"},
-        "layer_norm_z": {"create_offset": False},
         "mha": att_pair_bias_mha_ada_init,
     }
 )

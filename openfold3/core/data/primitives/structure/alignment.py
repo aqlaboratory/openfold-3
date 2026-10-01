@@ -129,13 +129,22 @@ def coalign_atom_arrays(
         mobile_pocket_residue_start_atoms = mobile_pocket_atoms[
             struc.get_residue_starts(mobile_pocket_atoms)
         ]
+        # Build set of (chain_id, res_id) pairs for pair-wise matching
+        pocket_keys = set(
+            zip(
+                mobile_pocket_residue_start_atoms.chain_id,
+                mobile_pocket_residue_start_atoms.res_id,
+            )
+        )
         mobile_pocket_residues = mobile[
-            np.isin(mobile.res_id, mobile_pocket_residue_start_atoms.res_id)
-            & np.isin(mobile.chain_id, mobile_pocket_residue_start_atoms.chain_id)
+            np.array(
+                [(c, r) in pocket_keys for c, r in zip(mobile.chain_id, mobile.res_id)]
+            )
         ]
         fixed_pocket_residues = fixed[
-            np.isin(fixed.res_id, mobile_pocket_residue_start_atoms.res_id)
-            & np.isin(fixed.chain_id, mobile_pocket_residue_start_atoms.chain_id)
+            np.array(
+                [(c, r) in pocket_keys for c, r in zip(fixed.chain_id, fixed.res_id)]
+            )
         ]
 
         # Get subset of mobile and fixed atoms in the pocket to be aligned
@@ -147,7 +156,7 @@ def coalign_atom_arrays(
         ]
 
         # Get resolved mask
-        resolved_mask = mobile_pocket_align_subset.occupancy == 1.0
+        resolved_mask = mobile_pocket_align_subset.occupancy > 0
 
         # Align
         _, transformation = struc.superimpose(

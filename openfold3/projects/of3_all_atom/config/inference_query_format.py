@@ -20,15 +20,20 @@ from pydantic import (
     DirectoryPath,
     FilePath,
     field_serializer,
+    field_validator,
     model_validator,
 )
 
+from openfold3.core.config import pocket_sampling_config as pocket_defaults
 from openfold3.core.config.config_utils import (
     _cast_keys_to_int,
     _convert_molecule_type,
     _ensure_list,
 )
-from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.core.data.resources.residues import (
+    STANDARD_RESIDUES_WITH_GAP_3,
+    MoleculeType,
+)
 
 
 # Definition for Bonds
@@ -41,6 +46,31 @@ class Atom(NamedTuple):
 class Bond(NamedTuple):
     atom1: Atom
     atom2: Atom
+
+
+class PocketResidue(NamedTuple):
+    """Residue address used to define a ligand pocket constraint."""
+
+    chain_id: str
+    residue_id: int
+
+
+class PocketConstraint(BaseModel):
+    """User-specified ligand-to-pocket site constraint for inference."""
+
+    model_config = {"extra": "forbid"}
+    ligand_chain_id: str
+    pocket_residues: list[PocketResidue]
+    max_distance: float = pocket_defaults.DEFAULT_POCKET_CONSTRAINT_MAX_DISTANCE
+
+    @model_validator(mode="after")
+    def validate_constraint(self) -> "PocketConstraint":
+        """Validate pocket constraint geometry inputs."""
+        if not self.pocket_residues:
+            raise ValueError("pocket_residues must contain at least one residue")
+        if self.max_distance <= 0:
+            raise ValueError("max_distance must be positive")
+        return self
 
 
 class Chain(BaseModel):
@@ -56,6 +86,7 @@ class Chain(BaseModel):
         Annotated[dict[int, str], BeforeValidator(_cast_keys_to_int)] | None
     ) = None
     smiles: str | None = None
+    ligand_name: str | None = None
     ccd_codes: Annotated[list[str], BeforeValidator(_ensure_list)] | None = None
     paired_msa_file_paths: (
         Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)] | None
@@ -74,10 +105,45 @@ class Chain(BaseModel):
         Annotated[list[str | None], BeforeValidator(_ensure_list)] | None
     ) = None
     sdf_file_path: FilePath | None = None
+    cyclic: bool = False
 
     @field_serializer("molecule_type", return_type=str)
     def serialize_enum_name(self, v: MoleculeType, _info):
         return v.name
+
+    @field_validator("ligand_name")
+    @classmethod
+    def normalize_ligand_name(cls, value: str | None) -> str | None:
+        """Normalize and validate a SMILES ligand name."""
+        if value is None:
+            return None
+
+        value = value.strip()
+        if not value.isascii() or not value.isalnum():
+            raise ValueError("'ligand_name' must contain only ASCII letters and digits")
+
+        value = value.upper()
+        if value in STANDARD_RESIDUES_WITH_GAP_3:
+            raise ValueError(
+                f"'ligand_name' cannot use the standard residue name {value!r}"
+            )
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_ligand_name_input(self) -> "Chain":
+        """Restrict ligand names to SMILES-only ligand chains."""
+        if self.ligand_name is not None and not (
+            self.molecule_type == MoleculeType.LIGAND
+            and self.smiles is not None
+            and self.ccd_codes is None
+        ):
+            raise ValueError(
+                "'ligand_name' can only be specified for a ligand using 'smiles' "
+                "without 'ccd_codes'"
+            )
+
+        return self
 
     @model_validator(mode="after")
     def validate_template_inputs(self) -> "Chain":
@@ -118,6 +184,27 @@ class Query(BaseModel):
     use_paired_msas: bool = True
     use_main_msas: bool = True
     covalent_bonds: list[Bond] | None = None
+    pocket_constraint: PocketConstraint | None = None
+
+    @model_validator(mode="after")
+    def validate_pocket_constraint(self) -> "Query":
+        """Validate the query-level pocket constraint."""
+        if self.pocket_constraint is None:
+            return self
+
+        ligand_chain_ids = {
+            chain_id
+            for chain in self.chains
+            if chain.molecule_type == MoleculeType.LIGAND
+            for chain_id in chain.chain_ids
+        }
+        ligand_chain_id = self.pocket_constraint.ligand_chain_id
+        if ligand_chain_id not in ligand_chain_ids:
+            raise ValueError(
+                f"pocket constraint ligand_chain_id {ligand_chain_id!r} does not "
+                "match any ligand chain"
+            )
+        return self
 
 
 class InferenceQuerySet(BaseModel):

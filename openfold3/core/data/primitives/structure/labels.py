@@ -169,9 +169,12 @@ def get_residue_tuples(
 
     residue_starts = struc.get_residue_starts(atom_array, add_exclusive_stop=False)
 
-    # Construct the list of residue tuples
+    # Construct the list of residue tuples, converting numpy scalars to native
+    # Python types so that repr() produces clean output (e.g. in log messages).
     residue_tuples = [
-        tuple(getattr(atom_array, attr)[residue_start] for attr in attrs_to_include)
+        tuple(
+            getattr(atom_array, attr)[residue_start].item() for attr in attrs_to_include
+        )
         for residue_start in residue_starts
     ]
 
@@ -265,7 +268,7 @@ def get_differing_chain_ids(
     differing_chain_ids = np.setxor1d(
         atom_array_1.chain_id,
         atom_array_2.chain_id,
-    )
+    ).tolist()
 
     # Chain IDs in this codebase are often numerical so sort them nicely.
     return sorted(differing_chain_ids, key=lambda x: x.rjust(5, "0"))
@@ -277,7 +280,7 @@ def assign_renumbered_chain_ids(
     """Renumbers the chain IDs in the AtomArray starting from 1
 
     Iterates through all chains in the atom array and assigns unique numerical chain IDs
-    starting with 0 to each chain. This is useful for bioassembly parsing where chain
+    starting with 1 to each chain. This is useful for bioassembly parsing where chain
     IDs can be duplicated after the assembly is expanded.
 
     Args:
@@ -425,7 +428,7 @@ def update_author_to_pdb_labels(
     # Set residue IDs to PDB-assigned IDs but fallback to author-assigned IDs if they
     # are not assigned (important for correct bond record parsing/writing)
     # TODO: check if this is necessary for 'pdb' format
-    if use_author_res_id_if_missing & (atom_array_source_format == "cif"):
+    if use_author_res_id_if_missing and (atom_array_source_format == "cif"):
         author_res_ids = atom_array.res_id
         pdb_res_ids = atom_array.label_seq_id
         merged_res_ids = np.where(

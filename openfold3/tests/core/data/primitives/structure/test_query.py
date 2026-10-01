@@ -1,6 +1,7 @@
 from collections import Counter
 
 import pytest
+from rdkit import Chem
 
 from openfold3.core.data.primitives.structure.query import (
     structure_with_ref_mol_from_ccd_code,
@@ -48,3 +49,55 @@ def test_consistent_structure_from_smiles_and_ccd_code(smiles, ccd_code):
     assert Counter(struct_from_smiles.atom_array.element) == Counter(
         struct_from_ccd.atom_array.element
     )
+
+
+def _stereocenter_orientations(mol: Chem.Mol) -> list[str]:
+    return sorted(
+        orientation
+        for _, orientation in Chem.FindMolChiralCenters(mol, includeUnassigned=True)
+    )
+
+
+def _stereo_bond_orientations(mol: Chem.Mol) -> list[Chem.BondStereo]:
+    return sorted(
+        (
+            bond.GetStereo()
+            for bond in mol.GetBonds()
+            if bond.GetStereo() != Chem.BondStereo.STEREONONE
+        ),
+        key=int,
+    )
+
+
+def test_ccd_tetrahedral_stereochemistry_matches_smiles():
+    ccd_structure = structure_with_ref_mol_from_ccd_code("DAS", chain_id="X")
+    smiles_structure = structure_with_ref_mol_from_smiles(
+        "N[C@H](CC(O)=O)C(O)=O", chain_id="X"
+    )
+
+    ccd_orientations = _stereocenter_orientations(
+        ccd_structure.processed_reference_mols[0].mol
+    )
+    smiles_orientations = _stereocenter_orientations(
+        smiles_structure.processed_reference_mols[0].mol
+    )
+
+    assert smiles_orientations
+    assert ccd_orientations == smiles_orientations
+
+
+def test_ccd_double_bond_stereochemistry_matches_smiles():
+    ccd_structure = structure_with_ref_mol_from_ccd_code("FUM", chain_id="X")
+    smiles_structure = structure_with_ref_mol_from_smiles(
+        "O=C(O)/C=C/C(=O)O", chain_id="X"
+    )
+
+    ccd_orientations = _stereo_bond_orientations(
+        ccd_structure.processed_reference_mols[0].mol
+    )
+    smiles_orientations = _stereo_bond_orientations(
+        smiles_structure.processed_reference_mols[0].mol
+    )
+
+    assert smiles_orientations
+    assert ccd_orientations == smiles_orientations
