@@ -23,9 +23,13 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
-from openfold3.entry_points.import_utils import _torch_gpu_setup
+from openfold3.entry_points.import_utils import (
+    _configure_torch_backend,
+    _enable_tf32,
+)
 
-_torch_gpu_setup()
+_configure_torch_backend()
+_enable_tf32()
 
 import torch  # noqa: E402
 
