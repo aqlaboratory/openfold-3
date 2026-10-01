@@ -139,7 +139,7 @@ def skip_unless_accelerator_available(*required: str):
     With no arguments any accelerator will do, so a test runs wherever torch has one.
     Pass one or more names from :data:`ACCELERATORS` to demand a specific backend —
     ``skip_unless_accelerator_available("cuda", "rocm")`` for tests needing real GPU
-    kernels, which is exactly what :func:`skip_unless_cuda_available` asks for. Names
+    kernels, which is exactly what :func:`skip_unless_gpu_available` asks for. Names
     are validated eagerly so a typo fails at import rather than skipping forever.
     """
     unknown = sorted(set(required) - set(ACCELERATORS))
@@ -157,14 +157,13 @@ def skip_unless_accelerator_available(*required: str):
     )
 
 
-def skip_unless_cuda_available():
-    """Skip unless a GPU is available.
+def skip_unless_gpu_available():
+    """Skip unless a CUDA or ROCm GPU is available.
 
-    ROCm counts: torch reports HIP devices through the ``torch.cuda`` API, so this has
-    always passed on AMD. Use :func:`skip_unless_accelerator_available` directly for
-    tests that can also run on MPS.
+    Use :func:`skip_unless_accelerator_available` directly for tests that can also run
+    on MPS.
     """
-    return skip_unless_accelerator_available("cuda")
+    return skip_unless_accelerator_available("cuda", "rocm")
 
 
 def _assert_abs_diff_small_base(compare_func, expected, actual, eps):
