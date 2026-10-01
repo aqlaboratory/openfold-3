@@ -176,13 +176,18 @@ def relpos_complex(
             rel_pos:
                 [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
         """
-        if row_slice is not None:
+        has_cyclic = cyclic_mask is not None and bool(cyclic_mask.any())
+        if row_slice is not None and not has_cyclic:
             offset = pos[..., row_slice, None] - pos[..., None, :]
         else:
+            # Cyclic wrapping needs the whole chain's offsets, so build the full
+            # [N, N] offset and slice the requested rows afterwards.
             offset = pos[..., None] - pos[..., None, :]
             offset = apply_cyclic_offsets(
                 offset=offset, pos=pos, cyclic_mask=cyclic_mask, asym_id=asym_id
             )
+            if row_slice is not None:
+                offset = offset[..., row_slice, :]
 
         clipped_offset = torch.clamp(offset + rel_clip_idx, min=0, max=2 * rel_clip_idx)
         final_offset = torch.where(

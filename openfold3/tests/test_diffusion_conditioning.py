@@ -88,6 +88,49 @@ class TestDiffusionConditioning(unittest.TestCase):
         rebuilt = torch.cat(parts, dim=-3)
         self.assertTrue(torch.equal(rebuilt, full))
 
+    def test_relpos_row_slice_matches_full_with_cyclic_chain(self):
+        # Chain 0 is cyclic and chain 1 linear, so cyclic wrapping is per chain
+        # and has to survive row slicing.
+        n_cyclic, n_linear = 10, 7
+        n_token = n_cyclic + n_linear
+        batch = {
+            "token_index": torch.arange(n_token)[None, :],
+            "residue_index": torch.cat(
+                [torch.arange(n_cyclic), torch.arange(n_linear)]
+            )[None, :],
+            "sym_id": torch.zeros((1, n_token)),
+            "asym_id": torch.cat(
+                [torch.zeros(n_cyclic), torch.ones(n_linear)]
+            )[None, :],
+            "entity_id": torch.cat(
+                [torch.zeros(n_cyclic), torch.ones(n_linear)]
+            )[None, :],
+            "cyclic_mask": torch.cat(
+                [
+                    torch.ones(n_cyclic, dtype=torch.bool),
+                    torch.zeros(n_linear, dtype=torch.bool),
+                ]
+            )[None, :],
+        }
+        full = relpos_complex(batch, max_relative_idx=32, max_relative_chain=2)
+
+        linear_batch = {**batch, "cyclic_mask": torch.zeros_like(batch["cyclic_mask"])}
+        linear = relpos_complex(linear_batch, max_relative_idx=32, max_relative_chain=2)
+        self.assertFalse(torch.equal(full, linear))
+
+        chunk = 4
+        parts = [
+            relpos_complex(
+                batch,
+                max_relative_idx=32,
+                max_relative_chain=2,
+                row_slice=slice(i, min(i + chunk, n_token)),
+            )
+            for i in range(0, n_token, chunk)
+        ]
+        rebuilt = torch.cat(parts, dim=-3)
+        self.assertTrue(torch.equal(rebuilt, full))
+
     def test_chunked_pair_embed_matches_eager(self):
         batch_size = 1
         n_token = 37
