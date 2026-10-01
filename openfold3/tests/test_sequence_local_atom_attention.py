@@ -366,7 +366,6 @@ class TestAtomAttentionEncoderAggregation(unittest.TestCase):
             n_transition=2,
             n_query=32,
             n_key=128,
-            use_ada_layer_norm=True,
         ).to(device)
         batch = tensor_tree_map(lambda t: t.to(device), batch)
         return encoder, batch

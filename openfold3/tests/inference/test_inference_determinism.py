@@ -40,7 +40,7 @@ reading a green run:
 deterministic and would mask the very nondeterminism under test.
 
 Run with:
-    pytest openfold3/tests/test_inference_determinism.py
+    pytest openfold3/tests/inference/test_inference_determinism.py
 """
 
 from __future__ import annotations
@@ -59,9 +59,9 @@ from openfold3.entry_points.validator import InferenceExperimentConfig
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
-from openfold3.tests.utils.compare_utils import skip_unless_cuda_available
+from openfold3.tests.utils.compare_utils import skip_unless_accelerator_available
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_QUERY_JSON = (
     REPO_ROOT / "examples" / "example_inference_inputs" / "query_ubiquitin.json"
 )
@@ -182,7 +182,7 @@ def _capture_features(batch: dict) -> dict[str, torch.Tensor]:
     return {key: batch[key].detach().clone() for key in FEATURE_KEYS if key in batch}
 
 
-@skip_unless_cuda_available()
+@skip_unless_accelerator_available()
 def test_features_are_bitwise_repeatable_under_rng_pollution(runner):
     """Two retrievals of the same datapoint give bitwise-identical features.
 
@@ -199,7 +199,7 @@ def test_features_are_bitwise_repeatable_under_rng_pollution(runner):
     _assert_bitwise_equal(first, second, label="features")
 
 
-@skip_unless_cuda_available()
+@skip_unless_accelerator_available()
 def test_model_outputs_are_bitwise_repeatable(runner):
     """Two forwards over the same batch give bitwise-identical outputs.
 
