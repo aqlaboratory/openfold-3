@@ -38,6 +38,12 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.model.structure.augmentation import (  # noqa: F401
     centre_random_augmentation,
 )
+from openfold3.core.model.structure.ligand_planarity import (
+    PLANARITY_START_FRACTION,
+    LigandPlanarityRestraints,
+    apply_ligand_planarity_restraints,
+    prepare_ligand_planarity_restraints,
+)
 from openfold3.core.model.structure.pocket_constraints import (
     _batch_scalar,
     _build_pocket_sampling_seeds,
@@ -297,6 +303,7 @@ class SampleDiffusion(nn.Module):
         noise_schedule: torch.Tensor,
         start_step: int,
         use_conditioning: bool,
+        planarity_restraints: LigandPlanarityRestraints | None = None,
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
@@ -339,9 +346,21 @@ class SampleDiffusion(nn.Module):
                 _mask_trans=_mask_trans,
             )
 
+            step_fraction = (tau + 1) / (len(noise_schedule) - 1)
+            if (
+                planarity_restraints is not None
+                and step_fraction >= PLANARITY_START_FRACTION
+            ):
+                xl_denoised = apply_ligand_planarity_restraints(
+                    xl_denoised, planarity_restraints
+                )
+
             delta = (xl_noisy - xl_denoised) / t
             dt = c_tau - t
             xl = xl_noisy + self.step_scale * dt * delta
+
+        if planarity_restraints is not None:
+            xl = apply_ligand_planarity_restraints(xl, planarity_restraints)
 
         return xl
 
@@ -397,6 +416,7 @@ class SampleDiffusion(nn.Module):
         batch_dim, num_atoms = atom_mask.shape[0], atom_mask.shape[-1]
 
         total_steps = len(noise_schedule) - 1
+        planarity_restraints = prepare_ligand_planarity_restraints(batch, atom_mask)
 
         xl = noise_schedule[0] * torch.randn(
             (batch_dim, no_rollout_samples, num_atoms, 3),
@@ -412,6 +432,7 @@ class SampleDiffusion(nn.Module):
             "zij_trunk": zij_trunk,
             "noise_schedule": noise_schedule,
             "use_conditioning": use_conditioning,
+            "planarity_restraints": planarity_restraints,
             "chunk_size": chunk_size,
             "use_deepspeed_evo_attention": use_deepspeed_evo_attention,
             "use_cueq_triangle_kernels": use_cueq_triangle_kernels,

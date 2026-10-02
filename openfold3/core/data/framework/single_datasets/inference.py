@@ -36,6 +36,9 @@ from openfold3.core.data.framework.single_datasets.dataset_utils import (
 from openfold3.core.data.pipelines.featurization.conformer import (
     featurize_reference_conformers_of3,
 )
+from openfold3.core.data.pipelines.featurization.ligand_planarity import (
+    featurize_ligand_planarity,
+)
 from openfold3.core.data.pipelines.featurization.msa import (
     MsaFeaturizerOF3,
     MsaFeaturizerOF3Config,
@@ -221,8 +224,17 @@ class InferenceDataset(Dataset):
             add_ref_space_uid_to_perm=False,
         )
 
+        ligand_planarity_features = featurize_ligand_planarity(
+            atom_array=atom_array,
+            processed_reference_molecules=processed_reference_molecules,
+        )
+
         # Wrap up features
-        structure_features = target_structure_features | reference_conformer_features
+        structure_features = (
+            target_structure_features
+            | reference_conformer_features
+            | ligand_planarity_features
+        )
 
         return structure_features
 
