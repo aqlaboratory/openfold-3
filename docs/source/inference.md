@@ -294,7 +294,7 @@ output_writer_settings:
 #### 🧠 Low Memory Mode
 To run inference on larger queries to run on limited memory, add the following to apply the [model presets](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/model_setting_presets.yml) to run in low memory mode.
 
-Note: These settings cause the pairformer embedding output from the diffusion samples to be computed sequentially. Significant slowdowns may occur, especially for large number of diffusion samples.
+Note: These settings cause the pairformer embedding output from the diffusion samples to be computed sequentially, and stop the diffusion rollout from precomputing its step-invariant quantities. Significant slowdowns may occur, especially for large number of diffusion samples.
 ```yaml
 model_update:
   presets:

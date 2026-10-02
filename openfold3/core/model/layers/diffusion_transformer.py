@@ -112,6 +112,19 @@ class DiffusionTransformerBlock(nn.Module):
             linear_init_params=linear_init_params.cond_transition,
         )
 
+    def get_mask_bias(self, mask: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the attention key-mask bias used by this block, see
+        `get_mask_bias` of the attention module.
+
+        Args:
+            mask:
+                [*, N] Mask for token-level embedding
+        Returns:
+            Attention mask bias
+        """
+        return self.attention_pair_bias.get_mask_bias(mask)
+
     def forward(
         self,
         a: torch.Tensor,
@@ -124,6 +137,7 @@ class DiffusionTransformerBlock(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        mask_bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -147,6 +161,9 @@ class DiffusionTransformerBlock(nn.Module):
                 Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
+            mask_bias:
+                Precomputed attention mask bias from `get_mask_bias`. If given, it
+                is used instead of deriving the bias from `mask`.
         """
         # Note: Differs from SI, residual connection added.
 
@@ -161,6 +178,7 @@ class DiffusionTransformerBlock(nn.Module):
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
+                mask_bias=mask_bias,
             )
         else:
             a = a + self.attention_pair_bias(
@@ -169,6 +187,7 @@ class DiffusionTransformerBlock(nn.Module):
                 s=s,
                 mask=mask,
                 use_high_precision_attention=use_high_precision_attention,
+                mask_bias=mask_bias,
             )
 
         trans_mask = mask if _mask_trans else None
@@ -263,6 +282,21 @@ class DiffusionTransformer(nn.Module):
             ]
         )
 
+    def get_mask_bias(self, mask: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the attention key-mask bias shared by all blocks of the stack. It
+        depends only on the mask, so it can be computed once and passed to `forward`
+        as `mask_bias` when the mask is unchanged across calls (i.e. across
+        diffusion steps).
+
+        Args:
+            mask:
+                [*, N] Mask for token-level embedding
+        Returns:
+            Attention mask bias
+        """
+        return self.blocks[0].get_mask_bias(mask)
+
     def forward(
         self,
         a: torch.Tensor,
@@ -275,6 +309,7 @@ class DiffusionTransformer(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        mask_bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -298,6 +333,10 @@ class DiffusionTransformer(nn.Module):
                 Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
+            mask_bias:
+                Precomputed attention mask bias from `get_mask_bias`. If given, it
+                is used instead of deriving the bias from `mask` in every block.
+                `mask` is still used to mask the transition layer.
         """
         # Single layer norm for atom attention enc/dec diffusion transformer
         z = self.layer_norm_z(z)
@@ -314,6 +353,7 @@ class DiffusionTransformer(nn.Module):
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
+                mask_bias=mask_bias,
             )
             for b in self.blocks
         ]

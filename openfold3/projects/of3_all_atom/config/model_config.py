@@ -96,6 +96,12 @@ model_config = mlc.ConfigDict(
             "memory": {
                 "train": {
                     "chunk_size": None,
+                    # Whether to compute the diffusion rollout's step-invariant
+                    # quantities (conditioned pair representation, atom reference
+                    # embeddings, key-mask bias) once per rollout instead of at every
+                    # step. Faster, at the cost of keeping them in memory for the
+                    # whole rollout. Does not change the result.
+                    "precompute_step_invariants": True,
                     # Use DeepSpeed memory-efficient attention kernel. Mutually
                     # exclusive with use_lma.
                     "use_deepspeed_evo_attention": False,
@@ -114,6 +120,7 @@ model_config = mlc.ConfigDict(
                 "eval": {
                     "chunk_size": None,
                     "tune_chunk_size": tune_chunk_size,
+                    "precompute_step_invariants": True,
                     "use_deepspeed_evo_attention": False,
                     "use_cueq_triangle_kernels": False,
                     "use_triton_triangle_kernels": True,

@@ -612,6 +612,11 @@ class _IdentityDenoiser(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.calls = 0
+        self.precompute_calls = 0
+
+    def precompute_step_invariants(self, **_kwargs):
+        self.precompute_calls += 1
+        return None
 
     def forward(self, *, xl_noisy, **_kwargs):
         self.calls += 1
@@ -728,6 +733,10 @@ def test_sample_diffusion_runs_second_pass_when_pocket_sampling_enabled():
 
     assert result.shape == (1, 2, 5, 3)
     assert denoiser.calls == 3
+    assert denoiser.precompute_calls == 1, (
+        "step-invariant quantities should be computed once and shared by the "
+        "de novo and the pocket refinement rollout"
+    )
 
 
 def test_sample_diffusion_applies_independent_rigid_ligand_jitter(monkeypatch):

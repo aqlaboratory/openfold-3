@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
 import unittest
 
 import torch
@@ -20,6 +21,7 @@ from openfold3.core.model.layers.diffusion_transformer import DiffusionTransform
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.tests.config import consts
+from openfold3.tests.utils.data_utils import randomize_parameters
 
 
 class TestDiffusionTransformer(unittest.TestCase):
@@ -62,6 +64,97 @@ class TestDiffusionTransformer(unittest.TestCase):
         a = dt(a, s, z, mask=single_mask)
 
         self.assertTrue(a.shape == shape_a_before)
+
+
+class TestDiffusionTransformerMaskBias(unittest.TestCase):
+    """
+    `get_mask_bias` lets the token/atom key-mask bias be computed once per diffusion
+    rollout instead of at every block of every step. Passing it to `forward` as
+    `mask_bias` must give the same result as deriving the bias from `mask` inside
+    `forward`, both for the plain (token-level) and the cross-attention (blocked
+    atom-level) transformer.
+    """
+
+    def _make_transformer(self, n_query, n_key, c_a, c_z):
+        dt = DiffusionTransformer(
+            c_a=c_a,
+            c_s=c_a,
+            c_z=c_z,
+            c_hidden=8,
+            no_heads=2,
+            no_blocks=2,
+            n_transition=2,
+            n_query=n_query,
+            n_key=n_key,
+            inf=1e9,
+        ).eval()
+        return randomize_parameters(dt)
+
+    def test_token_level(self):
+        batch_size = consts.batch_size
+        n_sample = 3
+        n_token = consts.n_res
+        c_a = 32
+        c_z = 8
+
+        dt = self._make_transformer(n_query=None, n_key=None, c_a=c_a, c_z=c_z)
+
+        a = torch.randn((batch_size, n_sample, n_token, c_a))
+        s = torch.randn((batch_size, 1, n_token, c_a))
+        z = torch.randn((batch_size, 1, n_token, n_token, c_z))
+        mask = torch.ones((batch_size, 1, n_token))
+        mask[..., -4:] = 0
+
+        with torch.no_grad():
+            expected = dt(a, s, z, mask=mask)
+            actual = dt(a, s, z, mask=mask, mask_bias=dt.get_mask_bias(mask))
+
+        torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-6)
+
+    def test_atom_level_blocks(self):
+        batch_size = consts.batch_size
+        n_sample = 3
+        n_atom = 150
+        n_query = 32
+        n_key = 128
+        num_blocks = math.ceil(n_atom / n_query)
+        c_a = 32
+        c_z = 8
+
+        dt = self._make_transformer(n_query=n_query, n_key=n_key, c_a=c_a, c_z=c_z)
+
+        a = torch.randn((batch_size, n_sample, n_atom, c_a))
+        s = torch.randn((batch_size, 1, n_atom, c_a))
+        z = torch.randn((batch_size, 1, num_blocks, n_query, n_key, c_z))
+        mask = torch.ones((batch_size, 1, n_atom))
+        mask[..., -20:] = 0
+
+        with torch.no_grad():
+            expected = dt(
+                a, s, z, mask=mask
+            )  # Compute the output using the mask directly
+            actual = dt(
+                a, s, z, mask=mask, mask_bias=dt.get_mask_bias(mask)
+            )  # Use the precomputed mask
+
+        torch.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-6)
+
+    def test_atom_level_mask_bias_shape(self):
+        n_atom = 150
+        n_query = 32
+        n_key = 128
+        num_blocks = math.ceil(n_atom / n_query)
+
+        dt = self._make_transformer(n_query=n_query, n_key=n_key, c_a=32, c_z=8)
+
+        mask = torch.ones((consts.batch_size, 1, n_atom))
+        mask[..., -20:] = 0
+        mask_bias = dt.get_mask_bias(mask)
+
+        # Computed once for the sample dim of the batch features, not per sample
+        self.assertEqual(
+            mask_bias.shape, (consts.batch_size, 1, num_blocks, 1, n_query, n_key)
+        )
 
 
 class TestConditionedTransitionBlock(unittest.TestCase):

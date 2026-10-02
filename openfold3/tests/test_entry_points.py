@@ -342,6 +342,9 @@ class TestModelUpdate:
         assert model_cfg.settings.memory.eval.chunk_size == 1024
         assert model_cfg.settings.memory.eval.offload_inference.confidence_heads
         assert model_cfg.settings.memory.eval.offload_inference.token_cutoff == 0
+        assert not model_cfg.settings.memory.eval.precompute_step_invariants
+        # only the eval mode setting is affected by the low_mem preset
+        assert model_cfg.settings.memory.train.precompute_step_invariants
 
         # test existing setting in experiment runner is not overwritten
         assert not model_cfg.settings.memory.eval.use_lma
