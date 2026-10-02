@@ -209,17 +209,6 @@ class PairformerEmbedding(nn.Module):
         single_mask = reshape_inputs(x=single_mask, feat_dims=single_mask.shape[-1:])
         pair_mask = reshape_inputs(x=pair_mask, feat_dims=pair_mask.shape[-2:])
 
-        # The optimized kernels all require that pair bias have size 1 in the
-        # second dimension and cross-sample chunking has to combine the batch
-        # dimensions and expand it.
-        use_kernels = (
-            use_deepspeed_evo_attention
-            or use_cueq_triangle_kernels
-            or use_triton_triangle_kernels
-        )
-        if use_kernels and si.shape[0] > 1:
-            chunk_size = None
-
         in_dtype = zij.dtype
         with torch.amp.autocast(device_type="cuda", dtype=pairformer_dtype):
             si, zij = self.pairformer_stack(
