@@ -26,7 +26,7 @@ from openfold3.tests.utils.data_utils import random_attention_inputs
 
 class TestLMA(unittest.TestCase):
     @pytest.mark.slow
-    @compare_utils.skip_unless_cuda_available()
+    @compare_utils.skip_unless_gpu_available()
     def test_lma_vs_attention(self):
         c_hidden = 32
         no_heads = 4
