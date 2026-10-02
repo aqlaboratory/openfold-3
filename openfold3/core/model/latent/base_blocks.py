@@ -40,6 +40,7 @@ from openfold3.core.model.layers.triangular_multiplicative_update import (
 )
 from openfold3.core.model.primitives import DropoutRowwise
 from openfold3.core.model.utils import assert_sole_holder
+from openfold3.core.utils.chunk_utils import trimul_chunk_cap, use_chunked_trimul
 from openfold3.core.utils.tensor_utils import add
 
 
@@ -315,20 +316,25 @@ class PairBlock(nn.Module):
         use_triton_triangle_kernels: bool = False,
     ) -> torch.Tensor:
         """Perform the outgoing and incoming triangular multiplicative updates."""
-        inplace_safe = inplace_safe and (not use_cueq_triangle_kernels)
+        chunked_trimul = use_chunked_trimul(inplace_safe)
+        use_cueq_trimul = use_cueq_triangle_kernels and not chunked_trimul
+        # cuEq supersedes inplace_safe unless a trimul chunk cap forces eager.
+        inplace_safe = inplace_safe and (not use_cueq_trimul)
         ## VS: having both inplace_safe and use_cueq_triangle_kernels set to
         ## true causes `z = z + self.ps_dropout_row_layer(tmu_update)` below
         ## to be skipped, as this is the expected output of tri_mult w/ inplace
         ## safe, creating an error. So disable inplace_safe if
         ## use_cueq_triangle_kernels is true. Ideally could be refactored to use
         ## _add_with_inplace=False, then wrap with add as done elsewhere
+        inplace_chunk_size = trimul_chunk_cap() if chunked_trimul else 256
         tmu_update = self.tri_mul_out(
             z,
             mask=pair_mask,
             inplace_safe=inplace_safe,
             _add_with_inplace=True,
-            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_cueq_triangle_kernels=use_cueq_trimul,
             use_triton_triangle_kernels=use_triton_triangle_kernels,
+            _inplace_chunk_size=inplace_chunk_size,
         )
         if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)
@@ -345,8 +351,9 @@ class PairBlock(nn.Module):
             mask=pair_mask,
             inplace_safe=inplace_safe,
             _add_with_inplace=True,
-            use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+            use_cueq_triangle_kernels=use_cueq_trimul,
             use_triton_triangle_kernels=use_triton_triangle_kernels,
+            _inplace_chunk_size=inplace_chunk_size,
         )
         if not inplace_safe:
             z = z + self.ps_dropout_row_layer(tmu_update)

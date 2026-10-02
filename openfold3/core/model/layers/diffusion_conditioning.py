@@ -21,7 +21,10 @@ from openfold3.core.model.feature_embedders.input_embedders import FourierEmbedd
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.model.primitives.normalization import LayerNorm
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.chunk_utils import (
+    ChunkSizeTuner,
+    apply_transition_chunk_cap,
+)
 from openfold3.core.utils.relpos import relpos_complex
 
 
@@ -29,6 +32,8 @@ class DiffusionConditioning(nn.Module):
     """
     Implements AF3 Algorithm 21.
     """
+
+    _EMBED_ZIJ_CHUNK_ROWS: int = 128
 
     def __init__(
         self,
@@ -130,6 +135,53 @@ class DiffusionConditioning(nn.Module):
         if tune_chunk_size:
             self.chunk_size_tuner = ChunkSizeTuner()
 
+    def _embed_zij(
+        self,
+        batch: dict,
+        zij_trunk: torch.Tensor,
+    ) -> torch.Tensor:
+        if not torch.is_grad_enabled():
+            return self._embed_zij_chunked(batch, zij_trunk)
+
+        relpos_zij = relpos_complex(
+            batch=batch,
+            max_relative_idx=self.max_relative_idx,
+            max_relative_chain=self.max_relative_chain,
+        ).to(dtype=zij_trunk.dtype)
+
+        zij = torch.cat([zij_trunk, relpos_zij], dim=-1)
+        return self.linear_z(self.layer_norm_z(zij))
+
+    def _embed_zij_chunked(
+        self,
+        batch: dict,
+        zij_trunk: torch.Tensor,
+    ) -> torch.Tensor:
+        """Row-chunked LN/linear over trunk pair + relpos (channel-wise LN)."""
+        n_token = zij_trunk.shape[-3]
+        chunk = self._EMBED_ZIJ_CHUNK_ROWS
+        out = torch.empty(
+            *zij_trunk.shape[:-1],
+            self.c_z,
+            dtype=zij_trunk.dtype,
+            device=zij_trunk.device,
+        )
+        for i in range(0, n_token, chunk):
+            row_slice = slice(i, min(i + chunk, n_token))
+            relpos_chunk = relpos_complex(
+                batch=batch,
+                max_relative_idx=self.max_relative_idx,
+                max_relative_chain=self.max_relative_chain,
+                row_slice=row_slice,
+            ).to(dtype=zij_trunk.dtype)
+            cat_chunk = torch.cat(
+                [zij_trunk[..., row_slice, :, :], relpos_chunk], dim=-1
+            )
+            del relpos_chunk
+            out[..., row_slice, :, :] = self.linear_z(self.layer_norm_z(cat_chunk))
+            del cat_chunk
+        return out
+
     def _embed_trunk_inputs(
         self,
         batch: dict,
@@ -139,14 +191,7 @@ class DiffusionConditioning(nn.Module):
         zij_trunk: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # Pair conditioning
-        relpos_zij = relpos_complex(
-            batch=batch,
-            max_relative_idx=self.max_relative_idx,
-            max_relative_chain=self.max_relative_chain,
-        ).to(dtype=zij_trunk.dtype)
-
-        zij = torch.cat([zij_trunk, relpos_zij], dim=-1)
-        zij = self.linear_z(self.layer_norm_z(zij))
+        zij = self._embed_zij(batch=batch, zij_trunk=zij_trunk)
 
         # Single conditioning
         si = torch.cat([si_trunk, si_input], dim=-1)
@@ -198,6 +243,8 @@ class DiffusionConditioning(nn.Module):
                 ),
                 max_chunk_size=chunk_size,
             )
+
+        chunk_size = apply_transition_chunk_cap(chunk_size)
 
         si, zij = self._forward(
             si=si, zij=zij, token_mask=token_mask, chunk_size=chunk_size
