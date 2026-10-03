@@ -890,7 +890,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         """Remove the template directory created by this run."""
         template_settings = self.experiment_config.template_preprocessor_settings
         path = template_settings._run_owned_output_directory
-        if path is None:
+        if path is None or template_settings.save_template_data:
             return
         with contextlib.suppress(FileNotFoundError):
             shutil.rmtree(path)

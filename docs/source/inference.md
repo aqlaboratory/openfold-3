@@ -432,8 +432,14 @@ By default, temporary MSA and template files live beside the prediction output:
 
 OpenFold creates these directories only when needed. If `cleanup_msa_dir` is
 `true`, it removes the default template directory after normal completion or a
-handled error. Explicit template output directories are never removed. A process
+handled error, unless `template_preprocessor_settings.save_template_data` is
+`true`. Explicit template output directories are never removed. A process
 or node crash may leave intermediate directories under the output directory.
+
+To rerun with a saved `inference_query_set.json`, pass `--use_msa_server false`
+and set `template_preprocessor_settings.output_directory` to its saved
+`template_data/<run-id>` directory. Without this directory setting, the query
+fails even though the command exits with status 0.
 
 You can turn off either output in `runner.yml`:
 

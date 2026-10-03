@@ -272,7 +272,7 @@ Configures the ColabFold MSA server integration.
 - `save_openfold_outputs` *(bool)*: Save OpenFold-formatted alignments (default: `true`)
 - `save_colabfold_outputs` *(bool)*: Save raw ColabFold server outputs (default: `true`)
 - `colabfold_output_dir` *(Path | None)*: Optional parent directory for raw ColabFold run records (default during inference when `msa_output_directory` is not set: `<output_dir>/msas/raw`)
-- `cleanup_msa_dir` *(bool)*: Remove the run-created template directory during cleanup (default: `true`). The MSA workspace is always removed, and explicit template output directories are preserved.
+- `cleanup_msa_dir` *(bool)*: Remove the run-created template directory during cleanup (default: `true`), unless `template_preprocessor_settings.save_template_data` is `true`. The MSA workspace is always removed, and explicit template output directories are preserved.
 
 When temporary MSA work is needed, each command uses a unique workspace under its output directory. The workspace is removed after normal completion or a handled error.
 
@@ -312,6 +312,7 @@ Configures template structure preprocessing and filtering.
 - `structure_directory` *(Path | None)*: Directory for template structures. During inference, the implicit default is `<output_directory>/template_structures`.
 - `structure_file_format` *(str)*: File format of structures - `cif` or `pdb` (default: `cif`)
 - `output_directory` *(Path | None)*: Output directory for templates. During inference, the implicit default is `<output_dir>/openfold3_intermediates/template_data/<run-id>`.
+- `save_template_data` *(bool)*: Keep the implicit inference template directory after the run (default: `false`)
 - `precache_directory` *(Path | None)*: Directory for template precache (default: `null`)
 - `structure_array_directory` *(Path | None)*: Directory for preparsed structures (default: `null`)
 - `cache_directory` *(Path | None)*: Directory for template cache. During inference, the implicit default is `<output_directory>/template_cache`.
