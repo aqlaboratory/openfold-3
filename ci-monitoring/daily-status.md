@@ -613,3 +613,28 @@ Clean recovery the night after the 10-01 AWS `g5.4xlarge` capacity exhaustion (r
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #301, per this log's established convention).
 
 ---
+
+## 2026-10-03
+
+### Run #303 — primary nightly (schedule `17 3 * * *`, main @ `1d48c84` — PR #282 "Do boolean mask sums directly in fp32" (unchanged `270425a` for 1 night; merged since run #301/10-02), [37094018501](https://github.com/aqlaboratory/openfold-3/actions/runs/37094018501))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 53 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 33 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 30 min | |
+
+**2026-10-03: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Clean night on the first nightly run since main advanced from `270425a` to `1d48c84` (PR #282, fp32 boolean-mask-sum change in the loss/diffusion masking code) — no regression observed from the merge. Both CUDA legs launched on pool 1 in `us-east-2` without needing fallback (`Create cloud runner (us-west-2)` skipped on both legs); `Cache download of parameters` hit cleanly on both CUDA legs.
+
+### Run #304 — secondary nightly (schedule `17 4 * * *`, main @ `1d48c84`, [37096930930](https://github.com/aqlaboratory/openfold-3/actions/runs/37096930930))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #303, per this log's established convention).
+
+---
