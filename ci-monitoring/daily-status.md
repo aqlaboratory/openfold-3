@@ -638,3 +638,28 @@ Clean night on the first nightly run since main advanced from `270425a` to `1d48
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #303, per this log's established convention).
 
 ---
+
+## 2026-10-04
+
+### Run #305 — primary nightly (schedule `17 3 * * *`, main @ `1d48c84` — unchanged for 2 nights since run #303/10-03, [37177368403](https://github.com/aqlaboratory/openfold-3/actions/runs/37177368403))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 45 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 53 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 45 min | |
+
+**2026-10-04: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Clean night; both CUDA legs launched on pool 1 in `us-east-2` without needing the pool 2–6 fallback (`Create cloud runner (us-west-2)` skipped on both legs). Note: this run's `created_at` (04:33:51Z) was ~76 min after the 03:17 UTC cron fire time — markedly longer than the typical 14–23 min scheduler delay seen on prior nights in this log; the secondary slot run (#306 below) was delayed ~100 min similarly. Likely GitHub Actions scheduler contention; no impact on job outcomes.
+
+### Run #306 — secondary nightly (schedule `17 4 * * *`, main @ `1d48c84`, [37181355554](https://github.com/aqlaboratory/openfold-3/actions/runs/37181355554))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #305, per this log's established convention).
+
+---
