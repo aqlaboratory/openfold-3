@@ -66,7 +66,7 @@ DEFAULT_QUERY_JSON = (
     REPO_ROOT / "examples" / "example_inference_inputs" / "query_ubiquitin.json"
 )
 DEFAULT_RUNNER_YAML = (
-    REPO_ROOT / "examples" / "example_runner_yamls" / "smoke_inference.yml"
+    REPO_ROOT / "examples" / "example_runner_yamls" / "low_mem.yml"
 )
 
 #: Features whose bitwise stability depends on the per-datapoint seeding. The
@@ -132,8 +132,7 @@ def _assert_bitwise_equal(
         )
 
 
-@pytest.fixture(scope="module")
-def runner() -> InferenceExperimentRunner:
+def _make_runner(output_dir: Path) -> InferenceExperimentRunner:
     """A real inference runner with one seed, no network, no diffusion sampling."""
     if not DEFAULT_QUERY_JSON.exists() or not DEFAULT_RUNNER_YAML.exists():
         pytest.skip("Example inference inputs are not available")
@@ -145,6 +144,7 @@ def runner() -> InferenceExperimentRunner:
     inference_runner = InferenceExperimentRunner(
         InferenceExperimentConfig(**runner_args),
         num_diffusion_samples=1,
+        output_dir=output_dir,
         use_msa_server=False,
         use_templates=False,
     )
@@ -183,24 +183,28 @@ def _capture_features(batch: dict) -> dict[str, torch.Tensor]:
 
 
 @skip_unless_accelerator_available()
-def test_features_are_bitwise_repeatable_under_rng_pollution(runner):
+def test_features_are_bitwise_repeatable_under_rng_pollution(tmp_path):
     """Two retrievals of the same datapoint give bitwise-identical features.
 
     The global RNG is advanced between the retrievals. Without per-datapoint
     seeding the second retrieval inherits that advanced state and produces
     different features, so this fails on the pre-fix code.
     """
-    _pollute_rng()
-    first = _capture_features(_get_batch(runner))
+    runner = _make_runner(tmp_path)
+    try:
+        _pollute_rng()
+        first = _capture_features(_get_batch(runner))
 
-    _pollute_rng()
-    second = _capture_features(_get_batch(runner))
+        _pollute_rng()
+        second = _capture_features(_get_batch(runner))
 
-    _assert_bitwise_equal(first, second, label="features")
+        _assert_bitwise_equal(first, second, label="features")
+    finally:
+        runner.cleanup()
 
 
 @skip_unless_accelerator_available()
-def test_model_outputs_are_bitwise_repeatable(runner):
+def test_model_outputs_are_bitwise_repeatable(tmp_path):
     """Two forwards over the same batch give bitwise-identical outputs.
 
     The batch is held fixed and the RNG is polluted before each forward,
@@ -208,18 +212,22 @@ def test_model_outputs_are_bitwise_repeatable(runner):
     ``predict_step`` uses. This is the end-to-end determinism claim: the same
     seed replays to the same coordinates.
     """
-    batch = _get_batch(runner)
-    module = runner.lightning_module.to("cuda").eval()
+    runner = _make_runner(tmp_path)
+    try:
+        batch = _get_batch(runner)
+        module = runner.lightning_module.to("cuda").eval()
 
-    def run_once() -> dict[str, torch.Tensor]:
-        _pollute_rng()
-        torch.manual_seed(SEED)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(SEED)
-        with torch.inference_mode():
-            return _capture_outputs(module(batch))
+        def run_once() -> dict[str, torch.Tensor]:
+            _pollute_rng()
+            torch.manual_seed(SEED)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(SEED)
+            with torch.inference_mode():
+                return _capture_outputs(module(batch))
 
-    _assert_bitwise_equal(run_once(), run_once(), label="outputs")
+        _assert_bitwise_equal(run_once(), run_once(), label="outputs")
+    finally:
+        runner.cleanup()
 
 
 if __name__ == "__main__":
