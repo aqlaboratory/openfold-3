@@ -1463,18 +1463,6 @@ openfold3/core/loss/diffusion.py:0: note: Perhaps you need "Callable[...]" or a 
 openfold3/core/loss/loss_module.py:0: error: "list[Any]" has no attribute "shape"  [attr-defined]
 openfold3/core/loss/loss_module.py:0: error: "list[Any]" has no attribute "sum"  [attr-defined]
 openfold3/core/loss/loss_module.py:0: error: Incompatible types in assignment (expression has type "Tensor", variable has type "list[Any]")  [assignment]
-openfold3/core/loss/loss_utils.py:0: error: Function "torch._C._VariableFunctions.tensor" is not valid as a type  [valid-type]
-openfold3/core/loss/loss_utils.py:0: error: Function "torch._C._VariableFunctions.tensor" is not valid as a type  [valid-type]
-openfold3/core/loss/loss_utils.py:0: error: No overload variant of "sum" matches argument type "bool"  [call-overload]
-openfold3/core/loss/loss_utils.py:0: error: No overload variant of "sum" matches argument type "int"  [call-overload]
-openfold3/core/loss/loss_utils.py:0: error: Unsupported left operand type for * (torch.tensor?)  [operator]
-openfold3/core/loss/loss_utils.py:0: error: torch.tensor? has no attribute "expand_as"  [attr-defined]
-openfold3/core/loss/loss_utils.py:0: note: Perhaps you need "Callable[...]" or a callback protocol?
-openfold3/core/loss/loss_utils.py:0: note: Perhaps you need "Callable[...]" or a callback protocol?
-openfold3/core/loss/loss_utils.py:0: note: Possible overload variants:
-openfold3/core/loss/loss_utils.py:0: note: def sum(input: Tensor, *, dtype: dtype | None = ...) -> Tensor
-openfold3/core/loss/loss_utils.py:0: note: def sum(input: Tensor, dim: Sequence[str | EllipsisType | None], keepdim: bool = ..., *, dtype: dtype | None = ..., out: Tensor | None = ...) -> Tensor
-openfold3/core/loss/loss_utils.py:0: note: def sum(input: Tensor, dim: int | Size | list[int] | tuple[int, ...] | None, keepdim: bool = ..., *, dtype: dtype | None = ..., out: Tensor | None = ...) -> Tensor
 openfold3/core/metrics/alignment.py:0: error: Item "None" of "BondList[Any] | None" has no attribute "as_array"  [union-attr]
 openfold3/core/metrics/confidence.py:0: error: Bracketed expression "[...]" is not valid as a type  [valid-type]
 openfold3/core/metrics/confidence.py:0: error: Item "None" of "Tensor | None" has no attribute "unsqueeze"  [union-attr]
