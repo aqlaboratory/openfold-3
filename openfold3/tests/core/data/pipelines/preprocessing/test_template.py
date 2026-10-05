@@ -24,11 +24,13 @@ the template structure directory and setting ``fetch_missing_structures=False``.
 """
 
 import getpass
+import gzip
 import shutil
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
 import openfold3
@@ -48,6 +50,11 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     fails_template_sequence_checks,
     match_template_seq_from_aln_to_struc,
     remap_template_chain_id,
+)
+from openfold3.core.data.primitives.caches.format import (
+    ClusteredDatasetCache,
+    ClusteredDatasetChainData,
+    ClusteredDatasetStructureData,
 )
 from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
 from openfold3.core.data.primitives.structure.metadata import (
@@ -981,3 +988,204 @@ def test_requeued_query_set_keeps_cached_templates(tmp_path):
     # Only the raw source needs preprocessing; the cached entry must not be
     # re-parsed as an alignment.
     assert len(preprocessor.inputs) == 1
+
+
+# ---------------------------------------------------------------------------
+# Train mode, end to end: real ColabFold hits -> template cache (1fdl)
+#
+# Inputs are real data for 1fdl (Fab light chain, Fab heavy chain, lysozyme): cut-down
+# ColabFold .m8 hits and the hit structures, offline. See
+# test_data/template_preprocessing/1fdl/README.md for provenance. The dataset cache
+# holds 1fdl twice: once with its real release date (1991-10-15) and once re-dated to
+# 2020. Both copies share the three alignment representatives, so release-date
+# filtering must happen per structure, not per representative.
+# ---------------------------------------------------------------------------
+
+TRAIN_FIXTURE_DIR = (
+    Path(openfold3.__file__).parent
+    / "tests"
+    / "test_data"
+    / "template_preprocessing"
+    / "1fdl"
+)
+
+# Templates must be released at least this many days before the query structure.
+TRAIN_MIN_RELEASE_DATE_DIFF = 60
+
+# chain_id -> (label_asym_id, auth_asym_id, entity_id, alignment_representative_id)
+TRAIN_CHAINS = {
+    "1": ("A", "L", 1, "1fdl_A"),  # Fab light chain
+    "2": ("B", "H", 2, "1fdl_B"),  # Fab heavy chain
+    "3": ("C", "Y", 3, "1fdl_C"),  # lysozyme
+}
+
+TRAIN_STRUCTURE_RELEASE_DATES = {
+    "1fdl": date(1991, 10, 15),
+    "1fdl-2020": date(2020, 1, 1),
+}
+
+# Expected template_ids per structure and chain, in e-value order (for the light chain,
+# deliberately not alphabetical). Template release dates: 1fdl 1991-10-15,
+# 1qbl 1998-12-02, 1jhk 2001-10-10, 3hfm 1989-07-12, 1ior 2001-04-11, 7ynv 2022-09-21,
+# 5lyz 1977-04-12.
+TRAIN_EXPECTED_TEMPLATE_IDS = {
+    # 1fdl itself (released the same day) and every later entry are excluded; the
+    # light chain has no older hit at all.
+    "1fdl": {"1": [], "2": ["3hfm_B"], "3": ["5lyz_A"]},
+    # Same sequences, later date: 1fdl is now a valid template; 7ynv (2022) is not.
+    "1fdl-2020": {
+        "1": ["1fdl_A", "1qbl_A", "1jhk_A"],
+        "2": ["1fdl_B", "1qbl_B", "3hfm_B"],
+        "3": ["1ior_A", "5lyz_A"],
+    },
+}
+
+
+def _train_dataset_cache() -> ClusteredDatasetCache:
+    structure_data = {
+        pdb_id: ClusteredDatasetStructureData(
+            release_date=release_date,
+            resolution=2.5,
+            chains={
+                chain_id: ClusteredDatasetChainData(
+                    label_asym_id=label,
+                    auth_asym_id=auth,
+                    entity_id=entity_id,
+                    molecule_type="PROTEIN",
+                    reference_mol_id=None,
+                    alignment_representative_id=rep_id,
+                    template_ids=None,
+                    cluster_id="0",
+                    cluster_size=1,
+                )
+                for chain_id, (label, auth, entity_id, rep_id) in TRAIN_CHAINS.items()
+            },
+            interfaces={},
+        )
+        for pdb_id, release_date in TRAIN_STRUCTURE_RELEASE_DATES.items()
+    }
+    return ClusteredDatasetCache(
+        name="1fdl-template-train",
+        structure_data=structure_data,
+        reference_molecule_data={},
+    )
+
+
+def _run_train_template_preprocessor(
+    tmp_path: Path,
+) -> tuple[ClusteredDatasetCache, TemplatePreprocessorSettings]:
+    """Run train-mode preprocessing offline on the 1fdl fixture.
+
+    Returns the updated dataset cache and the settings, for their output directories.
+    """
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir()
+    for gz in (TRAIN_FIXTURE_DIR / "template_structures").glob("*.cif.gz"):
+        (structure_dir / gz.name.removesuffix(".gz")).write_bytes(
+            gzip.decompress(gz.read_bytes())
+        )
+
+    settings = TemplatePreprocessorSettings(
+        mode="train",
+        output_directory=tmp_path / "template_data",
+        structure_directory=structure_dir,
+        template_alignment_directory=TRAIN_FIXTURE_DIR / "template_alignments",
+        alignment_representatives_fasta=TRAIN_FIXTURE_DIR / "representatives.fasta",
+        min_release_date_diff=TRAIN_MIN_RELEASE_DATE_DIFF,
+        fetch_missing_structures=False,
+        preparse_structures=True,
+        n_processes=1,
+    )
+    cache = _train_dataset_cache()
+    TemplatePreprocessor(input_set=cache, config=settings)()
+    return cache, settings
+
+
+def _train_template_ids(
+    cache: ClusteredDatasetCache,
+) -> dict[str, dict[str, list[str]]]:
+    return {
+        pdb_id: {
+            chain_id: list(chain.template_ids or [])
+            for chain_id, chain in structure.chains.items()
+        }
+        for pdb_id, structure in cache.structure_data.items()
+    }
+
+
+def test_template_ids_are_filtered_per_structure_release_date(tmp_path):
+    """Each structure gets the e-value-ordered templates its own release date allows.
+
+    Covers the self-template (1fdl for 1fdl), templates newer than the query, and two
+    structures sharing representatives but differing in release date.
+    """
+    cache, _ = _run_train_template_preprocessor(tmp_path)
+
+    assert _train_template_ids(cache) == TRAIN_EXPECTED_TEMPLATE_IDS
+
+
+def test_cache_entries_match_golden(tmp_path):
+    """Every assigned template has a cache entry equal to the golden one.
+
+    The golden entries were produced by predict mode on the same inputs; index,
+    release date and residue index map do not depend on the mode.
+    """
+    cache, settings = _run_train_template_preprocessor(tmp_path)
+
+    for _, chain in _train_assigned_chains(cache):
+        rep_id = chain.alignment_representative_id
+        with (
+            np.load(
+                settings.cache_directory / f"{rep_id}.npz", allow_pickle=True
+            ) as out,
+            np.load(
+                TRAIN_FIXTURE_DIR / "golden" / f"{rep_id}.npz", allow_pickle=True
+            ) as gold,
+        ):
+            for template_id in chain.template_ids:
+                actual = out[template_id].item()
+                expected = gold[template_id].item()
+                assert actual["index"] == expected["index"], template_id
+                assert actual["release_date"] == expected["release_date"], template_id
+                np.testing.assert_array_equal(
+                    actual["idx_map"], expected["idx_map"], err_msg=template_id
+                )
+
+
+def test_cache_entries_keep_alignment_rank(tmp_path):
+    """Each cache entry's index is its hit's rank in the template alignment."""
+    _, settings = _run_train_template_preprocessor(tmp_path)
+
+    for m8 in sorted((TRAIN_FIXTURE_DIR / "template_alignments").glob("*/*.m8")):
+        hits = [line.split("\t")[1] for line in m8.read_text().splitlines()]
+        with np.load(
+            settings.cache_directory / f"{m8.parent.name}.npz", allow_pickle=True
+        ) as entries:
+            ranks = {
+                template_id: entries[template_id].item()["index"]
+                for template_id in entries
+            }
+        assert ranks == {hit: rank for rank, hit in enumerate(hits)}, m8.parent.name
+
+
+def test_structure_arrays_written_for_assigned_templates(tmp_path):
+    """Each assigned template has the preparsed chain array training reads."""
+    cache, settings = _run_train_template_preprocessor(tmp_path)
+
+    for _, chain in _train_assigned_chains(cache):
+        for template_id in chain.template_ids:
+            entry_id = template_id.split("_")[0]
+            path = settings.structure_array_directory / entry_id / f"{template_id}.npz"
+            assert path.exists(), path
+
+
+def _train_assigned_chains(cache: ClusteredDatasetCache):
+    """Yield (pdb_id, chain) for chains with at least one template, failing if none."""
+    assigned = [
+        (pdb_id, chain)
+        for pdb_id, structure in cache.structure_data.items()
+        for chain in structure.chains.values()
+        if chain.template_ids
+    ]
+    assert assigned, "no chain was assigned any template"
+    yield from assigned
