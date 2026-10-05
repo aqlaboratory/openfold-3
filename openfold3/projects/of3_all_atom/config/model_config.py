@@ -97,15 +97,18 @@ model_config = mlc.ConfigDict(
                 "train": {
                     "chunk_size": None,
                     # Use DeepSpeed memory-efficient attention kernel. Mutually
-                    # exclusive with use_lma.
+                    # exclusive with use_megafold_single_attention and use_lma.
                     "use_deepspeed_evo_attention": False,
                     "use_cueq_triangle_kernels": False,
                     # Use Triton-based memory-efficient attention kernel. Mutually
                     # exclusive with use_deepspeed_evo_attention and use_lma.
                     "use_triton_triangle_kernels": False,
                     # Use Staats & Rabe's low-memory attention algorithm. Mutually
-                    # exclusive with use_deepspeed_evo_attention.
+                    # exclusive with use_megafold_single_attention and use_deepspeed_evo_attention.
                     "use_lma": False,
+                    # Use MegaFold's EvoFlash-3D single attention with pair bias.
+                    # Mutally exclusive with use_deepspeed_evo_attention and use_lma.
+                    "use_megafold_single_attention": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
                         "swiglu_seq_chunk_size": None,
@@ -118,6 +121,7 @@ model_config = mlc.ConfigDict(
                     "use_cueq_triangle_kernels": False,
                     "use_triton_triangle_kernels": True,
                     "use_lma": False,
+                    "use_megafold_single_attention": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
                         "swiglu_seq_chunk_size": None,

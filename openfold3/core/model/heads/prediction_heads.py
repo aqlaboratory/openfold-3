@@ -125,6 +125,7 @@ class PairformerEmbedding(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         inplace_safe: bool = False,
         offload_inference: bool = False,
         _mask_trans: bool = True,
@@ -157,6 +158,7 @@ class PairformerEmbedding(nn.Module):
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
+                use_megafold_single_attention=use_megafold_single_attention,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
                 pairformer_dtype=pairformer_dtype,
@@ -187,6 +189,7 @@ class PairformerEmbedding(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         inplace_safe: bool = False,
         _mask_trans: bool = True,
         pairformer_dtype: torch.dtype = torch.float32,
@@ -216,6 +219,7 @@ class PairformerEmbedding(nn.Module):
             use_deepspeed_evo_attention
             or use_cueq_triangle_kernels
             or use_triton_triangle_kernels
+            or use_megafold_single_attention
         )
         if use_kernels and si.shape[0] > 1:
             chunk_size = None
@@ -232,6 +236,7 @@ class PairformerEmbedding(nn.Module):
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
+                use_megafold_single_attention=use_megafold_single_attention,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
             )
@@ -254,6 +259,7 @@ class PairformerEmbedding(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         inplace_safe: bool = False,
         offload_inference: bool = False,
         _mask_trans: bool = True,
@@ -279,12 +285,18 @@ class PairformerEmbedding(nn.Module):
                 self.tune_chunk_size is True
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed memory efficient kernel.
-                Mutually exclusive with use_lma.
+                Mutually exclusive with use_lma and
+                use_megafold_single_attention.
             use_cueq_triangle_kernels:
                 Whether to use CuEquivariance kernels.
             use_lma:
                 Whether to use low-memory attention during inference.
-                Mutually exclusive with use_deepspeed_evo_attention.
+                Mutually exclusive with use_deepspeed_evo_attention
+                and use_megafold_single_attention.
+            use_megafold_single_attention:
+                Whether to use MegaFold's EvoFlash-3D single attention
+                pair bias. Mutually exclusive with use_deepspeed_evo_attention
+                and use_lma.
             inplace_safe:
                 Whether inplace operations can be performed
             offload_inference:
@@ -343,6 +355,7 @@ class PairformerEmbedding(nn.Module):
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
+                use_megafold_single_attention=use_megafold_single_attention,
                 inplace_safe=inplace_safe,
                 offload_inference=offload_inference,
                 _mask_trans=_mask_trans,
@@ -361,6 +374,7 @@ class PairformerEmbedding(nn.Module):
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
+                use_megafold_single_attention=use_megafold_single_attention,
                 inplace_safe=inplace_safe,
                 _mask_trans=_mask_trans,
                 pairformer_dtype=pairformer_dtype,
