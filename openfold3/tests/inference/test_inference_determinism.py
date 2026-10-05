@@ -65,9 +65,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_QUERY_JSON = (
     REPO_ROOT / "examples" / "example_inference_inputs" / "query_ubiquitin.json"
 )
-DEFAULT_RUNNER_YAML = (
-    REPO_ROOT / "examples" / "example_runner_yamls" / "low_mem.yml"
-)
+DEFAULT_RUNNER_YAML = REPO_ROOT / "examples" / "example_runner_yamls" / "low_mem.yml"
 
 #: Features whose bitwise stability depends on the per-datapoint seeding. The
 #: conformer-dependent entries are the sensitive ones: ligand conformers are
