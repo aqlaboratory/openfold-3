@@ -433,12 +433,6 @@ class TestKernels:
           instead of a newly initialized block.
         """
         batch_size = consts.batch_size
-        if chunk_size is not None and (
-            use_deepspeed_evo_attention or use_triton_triangle_kernels
-        ):
-            # Chunk tuning is not supported with batch size > 1 for these kernels
-            batch_size = 1
-
         n_res = 200  # Avoid cuEq seq len constraints
         c_s = consts.c_s
         c_z = consts.c_z
@@ -721,12 +715,6 @@ class TestKernels:
         Template Pair Stack.
         """
         batch_size = consts.batch_size
-        if chunk_size is not None and (
-            use_deepspeed_evo_attention or use_triton_triangle_kernels
-        ):
-            # Chunk tuning is not supported with batch size > 1 for these kernels
-            batch_size = 1
-
         n_templ = 3
         n_token = 200  # Avoid cuEq seq len constraints
 
