@@ -435,3 +435,41 @@ Both jobs show 6 retries against the ColabFold server, each read-timing-out, bef
 None. Second night in this log (after 09-17) where all three tracked jobs are simultaneously non-passing.
 
 ---
+
+## 2026-10-05
+
+**Cause:** `unclassified (log unavailable)` for all three tracked jobs — third night in this log (after 09-17 and 09-19) where all three are simultaneously non-passing, and the first where the classification itself could not be completed. All three legs' setup steps (checkout, GHCR login, Docker Buildx, build-and-push test image, `start-aws-runner`, parameter cache) succeeded; each failed specifically at the "Run integration test" step. That shared failure point is suggestive of a common cause, but it could not be confirmed against any of this log's signatures (`aws-capacity`, `gpu-unavailable`, `runner-offline`, `msa-hang`, `parameter-cache`, `build-push`, `code`) because the job logs could not be fetched this session.
+
+**Why the logs were unavailable:** every attempt to fetch the job logs — `gh api repos/aqlaboratory/openfold-3/actions/jobs/<id>/logs`, `gh run view --log`, and a direct `curl` on the Azure Blob Storage redirect target returned by the GitHub API — returned `403 Forbidden`. This session's egress-proxy status endpoint (`http://127.0.0.1:40399/__agentproxy/status`) confirms these are organization network-policy denials at the CONNECT level (`"connect_rejected"`, `"gateway answered 403 to CONNECT (policy denial or upstream failure)"`), not a GitHub-side error or an expired SAS signature:
+
+```
+"recentRelayFailures": [
+  {"kind": "connect_rejected", "detail": "gateway answered 403 to CONNECT (policy denial or upstream failure)", "host": "productionresultssa1.blob.core.windows.net:443"},
+  {"kind": "connect_rejected", "detail": "gateway answered 403 to CONNECT (policy denial or upstream failure)", "host": "results-receiver.actions.githubusercontent.com:443"}
+]
+```
+
+Both hosts are where GitHub Actions redirects log downloads. Per this session's operating rules, a policy denial (403/407) at the proxy is not to be retried or routed around, so no further log-fetch attempts were made and this is recorded as `unclassified (log unavailable)` per this log's explicit fallback rule, rather than guessed at from the job metadata alone. **Flagged for human follow-up on two fronts:** (1) the underlying test failure itself, and (2) whether this network path needs to be allow-listed for this scanning session/environment so future nightly scans can classify failures again.
+
+- **Run ID:** [37260402169](https://github.com/aqlaboratory/openfold-3/actions/runs/37260402169)
+- **Run #:** 307
+- **Branch:** main @ `1d48c84` (unchanged for 3 nights since run #303/10-03)
+- **Time:** 2026-10-05T03:40:57Z – 04:04:37Z
+
+### Failed Jobs
+
+| Job | Status | Job ID | Failed step | Step window |
+|-----|--------|--------|-------------|-------------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | **failure** | 111606231484 | Run integration test | 03:41:17 – 03:52:51 |
+| `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` | **failure** | 111606858956 | Run integration test | 03:45:11 – 04:04:28 |
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | **failure** | 111606857931 | Run integration test | 03:45:01 – 04:04:33 |
+
+### Failed Test
+
+Log line unavailable — see "Why the logs were unavailable" above. No pytest output, assertion, or exception could be read for any of the three jobs this session.
+
+### Passing Jobs
+
+None. Third night in this log (after 09-17 and 09-19) where all three tracked jobs are simultaneously non-passing.
+
+---

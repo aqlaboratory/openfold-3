@@ -663,3 +663,28 @@ Clean night; both CUDA legs launched on pool 1 in `us-east-2` without needing th
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #305, per this log's established convention).
 
 ---
+
+## 2026-10-05
+
+### Run #307 — primary nightly (schedule `17 3 * * *`, main @ `1d48c84` — unchanged for 3 nights since run #303/10-03, [37260402169](https://github.com/aqlaboratory/openfold-3/actions/runs/37260402169))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | 12 min | failed at step "Run integration test" (03:41:17–03:52:51); `unclassified (log unavailable)` — see note below |
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 20 min | failed at step "Run integration test" (03:45:11–04:04:28); `unclassified (log unavailable)` — see note below |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 20 min | failed at step "Run integration test" (03:45:01–04:04:33); `unclassified (log unavailable)` — see note below |
+
+**2026-10-05: 0/3 passed · 0 skipped · 0 queued · 3 need attention**
+
+First all-three-failure night since run #273 (09-19). All three legs' `start-aws-runner`/checkout/build/parameter-cache steps succeeded; each failed specifically at "Run integration test" within the same 11–20 minute window, which is consistent with a shared cause rather than three independent failures, but **this could not be confirmed from the job logs**: every attempt this session to fetch job logs (`gh api .../actions/jobs/<id>/logs`, `gh run view --log`, and a direct follow of the Azure Blob redirect) hit a `403 Forbidden`. The session's egress proxy status (`recentRelayFailures`) confirms this is an organization network-policy denial at the CONNECT level (`connect_rejected`, "gateway answered 403 to CONNECT") against both `productionresultssa1.blob.core.windows.net:443` and `results-receiver.actions.githubusercontent.com:443` — the two hosts GitHub Actions log downloads redirect to — not a GitHub-side error or an expired signature. Per this session's operating constraints, policy denials are not to be retried or routed around, so all three jobs are recorded `unclassified (log unavailable)` per this log's fallback rule and flagged for human follow-up, both on the underlying test failure itself and on restoring log-fetch access for future nightly scans. Recorded to `test-failures.md`.
+
+### Run #308 — secondary nightly (schedule `17 4 * * *`, main @ `1d48c84`, [37264771144](https://github.com/aqlaboratory/openfold-3/actions/runs/37264771144))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #307, per this log's established convention).
+
+---

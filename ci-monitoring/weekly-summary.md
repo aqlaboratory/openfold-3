@@ -1,5 +1,53 @@
 # Weekly CI Summary
 
+## Week of 2026-09-29 – 2026-10-05
+
+**Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights, against the three tracked jobs: `test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`. No off-schedule (`workflow_dispatch`) runs this week; every run (#295–#308) is a scheduled primary/secondary pair.
+
+### Days with coverage < 3/3
+
+3 of 7 days — 09-29, 10-01, and 10-05.
+
+| Date | Primary (03:17 UTC cron) | Secondary (04:17 UTC cron) |
+|---|---|---|
+| 2026-09-29 | 1/3 | SKIP (expected) |
+| 2026-09-30 | 3/3 | SKIP (expected) |
+| 2026-10-01 | 1/3 | SKIP (expected) |
+| 2026-10-02 | 3/3 | SKIP (expected) |
+| 2026-10-03 | 3/3 | SKIP (expected) |
+| 2026-10-04 | 3/3 | SKIP (expected) |
+| 2026-10-05 | 0/3 | SKIP (expected) |
+
+### Count per failure/non-pass class
+
+| Class | Count | Where |
+|---|---|---|
+| `aws-capacity` | 4 | cuda12 & cuda13 `start-aws-runner` ("No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2"), 09-29 primary, run #295 ([36517655108](https://github.com/aqlaboratory/openfold-3/actions/runs/36517655108)); cuda12 & cuda13 `start-aws-runner`, same signature, 10-01 primary, run #299 ([36811446760](https://github.com/aqlaboratory/openfold-3/actions/runs/36811446760)) |
+| `unclassified (log unavailable)` | 3 | all three legs (amd, cuda12, cuda13), each failed at "Run integration test", 10-05 primary, run #307 ([37260402169](https://github.com/aqlaboratory/openfold-3/actions/runs/37260402169)) — job logs could not be fetched this scan (organization network-policy denial at the egress proxy for the Azure Blob Storage / `results-receiver.actions.githubusercontent.com` log-redirect hosts, confirmed via the proxy status endpoint, not a GitHub-side error); see `test-failures.md` for detail |
+
+**Most frequent class: `aws-capacity` (4 occurrences).**
+
+Both `aws-capacity` incidents were same-signature `g5.4xlarge` pool exhaustion across all six capacity pools on the CUDA legs' `start-aws-runner` step, with the AMD leg (self-hosted runner) unaffected both times; both recovered cleanly the following night with no fallback-pool retry needed. The 10-05 `unclassified` incident is new this week and distinct in kind — the AMD leg failed too (not just the two CUDA legs, unlike both `aws-capacity` nights), each leg's setup steps all succeeded and the failure was isolated to the "Run integration test" step on all three, but the actual cause could not be confirmed because this session could not read the job logs at all (see `test-failures.md`'s 2026-10-05 entry for the proxy-level evidence). No `gpu-unavailable`, `runner-offline`, `msa-hang`, `parameter-cache`, `build-push`, or `code` non-passes this week.
+
+SKIPPED results from the secondary-slot `if:` guard (every night this week, expected and by design) are tracked in the coverage table above and are not counted in this class table, per the monitor's classification rules.
+
+### Consecutive non-pass streak per job (as of 2026-10-05)
+
+| Job | Current streak | Detail |
+|---|---|---|
+| `test-pixi-amd (openfold3-rocm7)` | **1 — currently failing** | PASSED every night 09-29 through 10-04 (6/6), then FAILED tonight (10-05, `unclassified (log unavailable)`) — its first non-pass in at least this week and the prior week. |
+| `test-pixi-cuda (openfold3-cuda12)` | **1 — currently failing** | Last non-pass before tonight: FAILED/`aws-capacity`, 2026-10-01 (run #299), recovered the next three nights (10-02 through 10-04, 3/3). Now FAILED again tonight, 10-05, `unclassified (log unavailable)` — different class from the prior non-pass. |
+| `test-pixi-cuda (openfold3-cuda13)` | **1 — currently failing** | Same pattern as cuda12: last non-pass 2026-10-01 (`aws-capacity`, run #299), clean 10-02–10-04, now FAILED tonight (10-05, `unclassified (log unavailable)`). |
+
+All three tracked jobs failed simultaneously tonight (10-05) for the first time this week, breaking what had otherwise been a recovering trend after the 09-29/10-01 AWS capacity incidents. Because tonight's failure couldn't be classified from logs, it is not yet known whether this is a shared infrastructure issue (like the AWS incidents) or a real regression in the code under test — flagged for human follow-up in both `daily-status.md` and `test-failures.md`.
+
+### Data-source notes
+
+- Built directly from `daily-status.md` entries for 2026-09-29 through 2026-10-05 (runs #295–#308); no independent API re-fetch was needed for days prior to today beyond what's already recorded there.
+- Today's entry (run #307/#308) was fetched live via the GitHub Actions API (`gh run list`, `gh run view --json jobs`) for job-level state, but `GET /repos/aqlaboratory/openfold-3/actions/jobs/<id>/logs` (and the `gh run view --log` / direct-redirect equivalents) all failed with `403 Forbidden` from this session's egress proxy — see `test-failures.md`'s 2026-10-05 entry. This is the first week in this log where a nightly failure could not be classified due to a log-access failure rather than a log signature not matching a known class.
+
+---
+
 ## Week of 2026-09-22 – 2026-09-28
 
 **Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights, against the three tracked jobs: `test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`. Three off-schedule events excluded from coverage stats per this log's established convention: run #282 ([35818035055](https://github.com/aqlaboratory/openfold-3/actions/runs/35818035055), 09-23 `workflow_dispatch` on `feature/ci-upstream-az-fallback`), run #288 ([36102270668](https://github.com/aqlaboratory/openfold-3/actions/runs/36102270668), 09-25 `workflow_dispatch` on `ci/pr414-integration`, closed 09-26), and run #291 attempt 2 (09-27 manual re-run, closed 09-28).
