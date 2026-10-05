@@ -346,7 +346,7 @@ def chunk_layer(
 
 
 class ChunkSizeTuner:
-    def __init__(self):
+    def __init__(self) -> None:
         # (arg_data, max_chunk_size, chunk_size) entries so alternating shapes
         # and distinct max caps can reuse prior tunings.
         self.cached_chunk_sizes: list[tuple[Any, int, int]] = []

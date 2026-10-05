@@ -136,8 +136,9 @@ def _compute_conformer(
     # RDKit always seems to start from some internal seed instead of a truly random seed
     # initialization if no seed is given, so we set a random seed here
     if rng is None:
-        rng = random
-    strategy.randomSeed = rng.randint(0, 10**9)
+        strategy.randomSeed = random.randint(0, 10**9)
+    else:
+        strategy.randomSeed = rng.randint(0, 10**9)
 
     # Disable overly verbose conformer generation warnings
     with rdBase.BlockLogs():
