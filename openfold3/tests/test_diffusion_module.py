@@ -24,7 +24,7 @@ from openfold3.core.model.structure.diffusion_module import (
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.tests.config import consts
-from openfold3.tests.utils.data_utils import random_of3_features
+from openfold3.tests.utils.data_utils import random_of3_features, randomize_parameters
 
 
 class TestDiffusionModule(unittest.TestCase):
@@ -166,6 +166,119 @@ class TestSampleDiffusion(unittest.TestCase):
             )
 
         self.assertTrue(xl.shape == (batch_size, no_rollout_samples, n_atom, 3))
+
+
+class TestStepInvariants(unittest.TestCase):
+    """
+    `precompute_step_invariants` computes the quantities that a diffusion rollout
+    recomputes at every step even though they do not change (the conditioned pair
+    representation, the atom reference/trunk embeddings, and the attention mask
+    biases). Using them via `step_invariants` / `hoist_step_invariants` must give
+    the same result as recomputing everything at every call.
+    """
+
+    def _setup(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
+
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
+
+        dm = randomize_parameters(
+            DiffusionModule(config=config.architecture.diffusion_module).eval(),
+            std=0.05,
+        )
+
+        batch = random_of3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+        # Padded atoms, so that the attention mask biases are not trivially zero
+        batch["atom_mask"][..., -5:] = 0
+
+        inputs = {
+            "si_input": torch.randn((batch_size, 1, n_token, c_s_input)),
+            "si_trunk": torch.randn((batch_size, 1, n_token, c_s)),
+            "zij_trunk": torch.randn((batch_size, 1, n_token, n_token, c_z)),
+        }
+
+        return config, dm, batch, n_atom, inputs
+
+    def test_diffusion_module(self):
+        # The diffusion module recomputes the same quantities at every step of a rollout, so precomputing them must give the same result as recomputing them at every step.
+        n_sample = 3
+        config, dm, batch, n_atom, inputs = self._setup()
+        batch_size = consts.batch_size
+
+        xl_noisy = torch.randn((batch_size, n_sample, n_atom, 3))
+        atom_mask = batch["atom_mask"]
+
+        for use_conditioning in (True, False):
+            with self.subTest(use_conditioning=use_conditioning), torch.no_grad():
+                step_invariants = dm.precompute_step_invariants(
+                    batch=batch,
+                    si_trunk=inputs["si_trunk"],
+                    zij_trunk=inputs["zij_trunk"],
+                    use_conditioning=use_conditioning,
+                )
+
+                # The same precomputed values are used for every noise level
+                for t in (torch.ones(()), torch.full((), 0.3)):
+                    kwargs = {
+                        "batch": batch,
+                        "xl_noisy": xl_noisy,
+                        "token_mask": batch["token_mask"],
+                        "atom_mask": atom_mask,
+                        "t": t,
+                        "use_conditioning": use_conditioning,
+                        **inputs,
+                    }
+                    expected = dm(**kwargs)
+                    actual = dm(**kwargs, step_invariants=step_invariants)
+
+                    self.assertTrue(torch.isfinite(expected).all())
+                    torch.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-5)
+
+    def test_sample_diffusion(self):
+        # The diffusion rollout recomputes the same quantities at every step, so precomputing them must give the same result as recomputing them at every step.
+        no_rollout_samples = 2
+        config, dm, batch, n_atom, inputs = self._setup()
+
+        sd = SampleDiffusion(
+            **config.architecture.sample_diffusion, diffusion_module=dm
+        )
+
+        with torch.no_grad():
+            noise_schedule = create_noise_schedule(
+                no_rollout_steps=3,
+                **config.architecture.noise_schedule,
+                dtype=inputs["si_input"].dtype,
+                device=inputs["si_input"].device,
+            )
+
+            results = {}
+            for hoist in (False, True):
+                # Precomputing must not consume any random numbers
+                torch.manual_seed(1234)
+                results[hoist] = sd(
+                    batch=batch,
+                    noise_schedule=noise_schedule,
+                    no_rollout_samples=no_rollout_samples,
+                    use_conditioning=True,
+                    hoist_step_invariants=hoist,
+                    **inputs,
+                )
+
+        self.assertTrue(torch.isfinite(results[False]).all())
+        torch.testing.assert_close(results[True], results[False], rtol=1e-5, atol=1e-5)
 
 
 if __name__ == "__main__":

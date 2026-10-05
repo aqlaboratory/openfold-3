@@ -183,11 +183,52 @@ def get_pair_atom_block_mask(
     return atom_pair_mask
 
 
+def get_atom_pair_block_mask(
+    atom_mask: torch.Tensor,
+    n_query: int,
+    n_key: int,
+) -> torch.Tensor:
+    """
+    Computes only the 2D q/k block mask of `convert_single_rep_to_blocks`, so that
+    it can be computed once and reused across calls with the same atom mask.
+
+    Args:
+        atom_mask:
+            [*, N_atom] Mask for token or atom-level embedding
+        n_query:
+            Number of queries (block height)
+        n_key:
+            Number of keys (block width)
+
+    Returns:
+        atom_pair_mask:
+            [*, N_blocks, N_query, N_key] 2D mask for atom-level embedding
+    """
+    n_atom = atom_mask.shape[-1]
+    num_blocks = math.ceil(n_atom / n_query)
+    pad_len_right_q = get_query_block_padding(n_atom=n_atom, n_query=n_query)
+
+    key_block_idxs, invalid_mask = get_block_indices(
+        atom_mask=atom_mask, n_query=n_query, n_key=n_key, device=atom_mask.device
+    )
+
+    return get_pair_atom_block_mask(
+        atom_mask=atom_mask,
+        num_blocks=num_blocks,
+        n_query=n_query,
+        n_key=n_key,
+        pad_len_right_q=pad_len_right_q,
+        key_block_idxs=key_block_idxs,
+        invalid_mask=invalid_mask,
+    )
+
+
 def convert_single_rep_to_blocks(
     ql: torch.Tensor,
     n_query: int,
     n_key: int,
     atom_mask: torch.Tensor,
+    compute_pair_mask: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
     """
     Convert single atom representation to q/k blocks for attention.
@@ -202,6 +243,8 @@ def convert_single_rep_to_blocks(
             Number of keys (block width)
         atom_mask:
             [*, N_atom] Mask for token or atom-level embedding
+        compute_pair_mask:
+            Whether to compute the 2D mask. If False, None is returned in its place.
 
     Returns:
         ql_query:
@@ -252,15 +295,17 @@ def convert_single_rep_to_blocks(
     # Reshape back to original batch dims
     ql_key = ql_key_flat.reshape((*batch_dims, num_blocks, n_key, n_dim))
 
-    atom_pair_mask = get_pair_atom_block_mask(
-        atom_mask=atom_mask,
-        num_blocks=num_blocks,
-        n_query=n_query,
-        n_key=n_key,
-        pad_len_right_q=pad_len_right_q,
-        key_block_idxs=key_block_idxs,
-        invalid_mask=invalid_mask,
-    )
+    atom_pair_mask = None
+    if compute_pair_mask:
+        atom_pair_mask = get_pair_atom_block_mask(
+            atom_mask=atom_mask,
+            num_blocks=num_blocks,
+            n_query=n_query,
+            n_key=n_key,
+            pad_len_right_q=pad_len_right_q,
+            key_block_idxs=key_block_idxs,
+            invalid_mask=invalid_mask,
+        )
 
     return ql_query, ql_key, atom_pair_mask
 

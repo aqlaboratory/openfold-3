@@ -126,19 +126,20 @@ class DiffusionConditioning(nn.Module):
         )
 
         self.tune_chunk_size = tune_chunk_size
-        self.chunk_size_tuner = None
+        # The pair and single conditioning are run separately (the pair conditioning
+        # is independent of the noise level and can be precomputed once per rollout),
+        # so each needs its own tuner.
+        self.pair_chunk_size_tuner = None
+        self.single_chunk_size_tuner = None
         if tune_chunk_size:
-            self.chunk_size_tuner = ChunkSizeTuner()
+            self.pair_chunk_size_tuner = ChunkSizeTuner()
+            self.single_chunk_size_tuner = ChunkSizeTuner()
 
-    def _embed_trunk_inputs(
+    def _embed_pair(
         self,
         batch: dict,
-        t: torch.Tensor,
-        si_input: torch.Tensor,
-        si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        # Pair conditioning
+    ) -> torch.Tensor:
         relpos_zij = relpos_complex(
             batch=batch,
             max_relative_idx=self.max_relative_idx,
@@ -148,7 +149,14 @@ class DiffusionConditioning(nn.Module):
         zij = torch.cat([zij_trunk, relpos_zij], dim=-1)
         zij = self.linear_z(self.layer_norm_z(zij))
 
-        # Single conditioning
+        return zij
+
+    def _embed_single(
+        self,
+        t: torch.Tensor,
+        si_input: torch.Tensor,
+        si_trunk: torch.Tensor,
+    ) -> torch.Tensor:
         si = torch.cat([si_trunk, si_input], dim=-1)
         si = self.linear_s(self.layer_norm_s(si))
 
@@ -157,53 +165,142 @@ class DiffusionConditioning(nn.Module):
 
         si = si + self.linear_n(self.layer_norm_n(n)).unsqueeze(-2)
 
-        return si, zij
+        return si
 
-    def _forward(
+    def _forward_pair(
         self,
-        si: torch.Tensor,
         zij: torch.Tensor,
         token_mask: torch.Tensor,
         chunk_size: int | None = None,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         pair_token_mask = token_mask.unsqueeze(-1) * token_mask.unsqueeze(-2)
 
-        # Pair conditioning
         for l in self.transition_z:
             zij = zij + l(zij, mask=pair_token_mask, chunk_size=chunk_size)
 
-        # Single conditioning
+        return zij
+
+    def _forward_single(
+        self,
+        si: torch.Tensor,
+        token_mask: torch.Tensor,
+        chunk_size: int | None = None,
+    ) -> torch.Tensor:
         for l in self.transition_s:
             si = si + l(si, mask=token_mask, chunk_size=chunk_size)
 
-        return si, zij
+        return si
 
     def _chunk_forward(
         self,
-        si: torch.Tensor,
-        zij: torch.Tensor,
+        fn,
+        x: torch.Tensor,
         token_mask: torch.Tensor,
         chunk_size: int,
-    ):
+        chunk_size_tuner: ChunkSizeTuner | None,
+    ) -> torch.Tensor:
         assert not self.training
 
-        if self.chunk_size_tuner is not None:
-            chunk_size = self.chunk_size_tuner.tune_chunk_size(
-                representative_fn=self._forward,
+        if chunk_size_tuner is not None:
+            chunk_size = chunk_size_tuner.tune_chunk_size(
+                representative_fn=fn,
                 # We don't want to write in-place during chunk tuning runs
                 args=(
-                    si.clone(),
-                    zij.clone(),
+                    x.clone(),
                     token_mask,
                 ),
                 max_chunk_size=chunk_size,
             )
 
-        si, zij = self._forward(
-            si=si, zij=zij, token_mask=token_mask, chunk_size=chunk_size
-        )
+        return fn(x, token_mask, chunk_size=chunk_size)
 
-        return si, zij
+    def condition_pair(
+        self,
+        batch: dict,
+        zij_trunk: torch.Tensor,
+        use_conditioning: bool,
+        chunk_size: int | None = None,
+    ) -> torch.Tensor:
+        """
+        Conditions the pair representation. This does not depend on the noise level,
+        so during the diffusion rollout it only needs to be computed once and can be
+        passed to `forward` as `zij`.
+
+        Args:
+            batch:
+                Feature dictionary
+            zij_trunk:
+                [*, N_token, N_token, c_z] Pair representation
+            use_conditioning:
+                Whether to condition with the trunk representations
+            chunk_size:
+                Inference-time subbatch size. Acts as a minimum if
+                self.tune_chunk_size is True
+        Returns:
+            [*, N_token, N_token, c_z] Conditioned pair representation
+        """
+        if not use_conditioning:
+            zij_trunk = zij_trunk * 0
+
+        zij = self._embed_pair(batch=batch, zij_trunk=zij_trunk)
+
+        token_mask = batch["token_mask"]
+        if chunk_size is not None:
+            return self._chunk_forward(
+                fn=self._forward_pair,
+                x=zij,
+                token_mask=token_mask,
+                chunk_size=chunk_size,
+                chunk_size_tuner=self.pair_chunk_size_tuner,
+            )
+
+        return self._forward_pair(zij=zij, token_mask=token_mask)
+
+    def condition_single(
+        self,
+        batch: dict,
+        t: torch.Tensor,
+        si_input: torch.Tensor,
+        si_trunk: torch.Tensor,
+        use_conditioning: bool,
+        chunk_size: int | None = None,
+    ) -> torch.Tensor:
+        """
+        Conditions the single representation. Depends on the noise level.
+
+        Args:
+            batch:
+                Feature dictionary
+            t:
+                [*] Noise level at a diffusion timestep
+            si_input:
+                [*, N_token, c_s_input] Input embedding
+            si_trunk:
+                [*, N_token, c_s] Single representation
+            use_conditioning:
+                Whether to condition with the trunk representations
+            chunk_size:
+                Inference-time subbatch size. Acts as a minimum if
+                self.tune_chunk_size is True
+        Returns:
+            [*, N_token, c_s] Conditioned single representation
+        """
+        if not use_conditioning:
+            si_trunk = si_trunk * 0
+
+        si = self._embed_single(t=t, si_input=si_input, si_trunk=si_trunk)
+
+        token_mask = batch["token_mask"]
+        if chunk_size is not None:
+            return self._chunk_forward(
+                fn=self._forward_single,
+                x=si,
+                token_mask=token_mask,
+                chunk_size=chunk_size,
+                chunk_size_tuner=self.single_chunk_size_tuner,
+            )
+
+        return self._forward_single(si=si, token_mask=token_mask)
 
     def forward(
         self,
@@ -211,9 +308,10 @@ class DiffusionConditioning(nn.Module):
         t: torch.Tensor,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
-        zij_trunk: torch.Tensor,
+        zij_trunk: torch.Tensor | None,
         use_conditioning: bool,
         chunk_size: int | None = None,
+        zij: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
@@ -226,33 +324,38 @@ class DiffusionConditioning(nn.Module):
             si_trunk:
                 [*, N_token, c_s] Single representation
             zij_trunk:
-                [*, N_token, N_token, c_z] Pair representation
+                [*, N_token, N_token, c_z] Pair representation. Not used if `zij`
+                is given.
             use_conditioning:
                 Whether to condition with the trunk representations
             chunk_size:
                 Inference-time subbatch size. Acts as a minimum if
                 self.tune_chunk_size is True
+            zij:
+                [*, N_token, N_token, c_z] Precomputed conditioned pair
+                representation from `condition_pair`. If given, the pair
+                conditioning is skipped and this is returned as is.
         Returns:
             si:
                 [*, N_token, c_s] Conditioned single representation
             zij:
                 [*, N_token, N_token, c_z] Conditioned pair representation
         """
-        token_mask = batch["token_mask"]
-
-        if not use_conditioning:
-            si_trunk = si_trunk * 0
-            zij_trunk = zij_trunk * 0
-
-        si, zij = self._embed_trunk_inputs(
-            batch=batch, t=t, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
-        )
-
-        if chunk_size is not None:
-            si, zij = self._chunk_forward(
-                si=si, zij=zij, token_mask=token_mask, chunk_size=chunk_size
+        if zij is None:
+            zij = self.condition_pair(
+                batch=batch,
+                zij_trunk=zij_trunk,
+                use_conditioning=use_conditioning,
+                chunk_size=chunk_size,
             )
-        else:
-            si, zij = self._forward(si=si, zij=zij, token_mask=token_mask)
+
+        si = self.condition_single(
+            batch=batch,
+            t=t,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            use_conditioning=use_conditioning,
+            chunk_size=chunk_size,
+        )
 
         return si, zij
