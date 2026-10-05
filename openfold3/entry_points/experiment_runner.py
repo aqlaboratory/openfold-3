@@ -706,11 +706,12 @@ class InferenceExperimentRunner(ExperimentRunner):
             self.set_num_diffusion_samples(num_diffusion_samples)
 
         if num_model_seeds:
-            # Start from the configured seed so a seed set in the runner yaml is not
-            # silently discarded. The default configuration is [42], so the generated
-            # seeds are unchanged for anyone not setting a seed explicitly.
+            # Start from configured seed
             configured_seeds = self.experiment_config.experiment_settings.seeds
-            start_seed = configured_seeds[0] if configured_seeds else 42
+            if isinstance(configured_seeds, int):
+                start_seed = configured_seeds
+            else:
+                start_seed = configured_seeds[0] if configured_seeds else 42
             self.seeds = generate_seeds(start_seed, num_model_seeds)
 
         if use_msa_server is not None:

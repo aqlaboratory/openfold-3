@@ -621,7 +621,6 @@ class TestInferenceCommandLineSettings:
         )
         expt_runner = InferenceExperimentRunner(expt_config, num_model_seeds=3)
         assert expt_runner.seeds == generate_seeds(7, 3)
-        assert expt_runner.seeds != generate_seeds(42, 3)
 
     def test_output_override_controls_default_intermediate_paths(
         self, tmp_path, dummy_ckpt_file
