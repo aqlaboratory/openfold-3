@@ -14,8 +14,7 @@
 
 import logging
 import math
-import os
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from functools import partial
 from typing import Any
 
@@ -26,22 +25,39 @@ from openfold3.core.utils.tensor_utils import (
     tree_map,
 )
 
+# Bound from ``settings.memory.{train,eval}.chunk_caps`` on each model forward.
+_chunk_caps: Mapping[str, Any] | None = None
 
-def _positive_env_int(name: str) -> int | None:
-    """Parse a positive int env var; unset/invalid -> None."""
-    raw = os.environ.get(name)
-    if raw is None:
+
+def set_chunk_caps(chunk_caps: Mapping[str, Any] | None) -> None:
+    """Bind triangle/transition caps from the active memory settings."""
+    global _chunk_caps
+    _chunk_caps = chunk_caps
+
+
+def _positive_int(value: Any) -> int | None:
+    if value is None:
         return None
     try:
-        val = int(raw)
-    except ValueError:
+        val = int(value)
+    except (TypeError, ValueError):
         return None
     return val if val > 0 else None
 
 
+def _chunk_cap(name: str) -> int | None:
+    if _chunk_caps is None:
+        return None
+    try:
+        value = _chunk_caps[name]
+    except (KeyError, TypeError):
+        return None
+    return _positive_int(value)
+
+
 def triangle_attn_chunk_cap() -> int | None:
-    """Optional row cap for triangle attention (``OPENFOLD3_TRI_ATTN_CHUNK_CAP``)."""
-    return _positive_env_int("OPENFOLD3_TRI_ATTN_CHUNK_CAP")
+    """Optional row cap for triangle attention."""
+    return _chunk_cap("triangle_attention")
 
 
 def apply_triangle_attn_chunk_cap(
@@ -58,8 +74,8 @@ def apply_triangle_attn_chunk_cap(
 
 
 def trimul_chunk_cap() -> int | None:
-    """Optional row chunk for trimul (``OPENFOLD3_TRIMUL_CHUNK_CAP``)."""
-    return _positive_env_int("OPENFOLD3_TRIMUL_CHUNK_CAP")
+    """Optional row chunk for trimul."""
+    return _chunk_cap("triangle_multiplicative")
 
 
 def use_chunked_trimul(
@@ -72,12 +88,12 @@ def use_chunked_trimul(
 
 
 def transition_chunk_cap() -> int | None:
-    """Optional cap for transition/OPM chunk size (``OPENFOLD3_TRANSITION_CHUNK_CAP``)."""
-    return _positive_env_int("OPENFOLD3_TRANSITION_CHUNK_CAP")
+    """Optional cap for transition/OPM chunk size."""
+    return _chunk_cap("transition")
 
 
 def apply_transition_chunk_cap(chunk_size: int) -> int:
-    """Apply ``OPENFOLD3_TRANSITION_CHUNK_CAP`` after chunk-size tuning."""
+    """Apply the transition chunk cap after chunk-size tuning."""
     cap = transition_chunk_cap()
     return chunk_size if cap is None else min(chunk_size, cap)
 
@@ -402,7 +418,7 @@ def chunk_layer(
 
 
 class ChunkSizeTuner:
-    def __init__(self):
+    def __init__(self) -> None:
         # (arg_data, max_chunk_size, chunk_size) entries so alternating shapes
         # and distinct max caps can reuse prior tunings.
         self.cached_chunk_sizes: list[tuple[Any, int, int]] = []

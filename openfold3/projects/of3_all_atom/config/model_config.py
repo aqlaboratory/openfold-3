@@ -106,6 +106,13 @@ model_config = mlc.ConfigDict(
                     # Use Staats & Rabe's low-memory attention algorithm. Mutually
                     # exclusive with use_deepspeed_evo_attention.
                     "use_lma": False,
+                    # Upper bounds on chunk sizes, applied after the chunk-size
+                    # tuner. None leaves the tuned value unchanged.
+                    "chunk_caps": {
+                        "triangle_attention": None,
+                        "triangle_multiplicative": None,
+                        "transition": None,
+                    },
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
                         "swiglu_seq_chunk_size": None,
@@ -118,6 +125,13 @@ model_config = mlc.ConfigDict(
                     "use_cueq_triangle_kernels": False,
                     "use_triton_triangle_kernels": True,
                     "use_lma": False,
+                    # Upper bounds on chunk sizes, applied after the chunk-size
+                    # tuner. None leaves the tuned value unchanged.
+                    "chunk_caps": {
+                        "triangle_attention": None,
+                        "triangle_multiplicative": None,
+                        "transition": None,
+                    },
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
                         "swiglu_seq_chunk_size": None,

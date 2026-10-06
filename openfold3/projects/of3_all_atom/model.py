@@ -41,6 +41,7 @@ from openfold3.core.model.structure.diffusion_module import (
     centre_random_augmentation,
     create_noise_schedule,
 )
+from openfold3.core.utils.chunk_utils import set_chunk_caps
 from openfold3.core.utils.device_utils import autocast_device_type, empty_device_cache
 from openfold3.core.utils.permutation_alignment import (
     safe_multi_chain_permutation_alignment,
@@ -149,6 +150,7 @@ class OpenFold3(nn.Module):
         mode_mem_settings = (
             self.settings.memory.train if self.training else self.settings.memory.eval
         )
+        set_chunk_caps(mode_mem_settings.get("chunk_caps"))
         return mode_mem_settings
 
     def _do_inference_offload(self, seq_len: int, module_name: str) -> bool:

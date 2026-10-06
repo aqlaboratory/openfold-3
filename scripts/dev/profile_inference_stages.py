@@ -18,10 +18,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import time
 from collections import OrderedDict
 from pathlib import Path
+from typing import Any
 
 from openfold3.entry_points.import_utils import (
     _configure_torch_backend,
@@ -65,7 +65,7 @@ def _mib(n_bytes: int | float) -> float:
 
 
 class FastStageProfiler:
-    def __init__(self):
+    def __init__(self) -> None:
         self.stats: OrderedDict[str, dict] = OrderedDict()
         self._patches: list[tuple[object, str, object]] = []
 
@@ -121,9 +121,7 @@ class FastStageProfiler:
         self._patches.clear()
 
 
-def install_hooks(
-    model, prof: FastStageProfiler, track_trunk_substages: bool
-) -> None:
+def install_hooks(model, prof: FastStageProfiler, track_trunk_substages: bool) -> None:
     prof.wrap(model, "run_trunk", "TRUNK", track_mem=not track_trunk_substages)
     prof.wrap(model.sample_diffusion, "forward", "DIFFUSION", track_mem=True)
     prof.wrap(model.aux_heads, "forward", "CONFIDENCE", track_mem=True)
@@ -190,6 +188,8 @@ def build_runner(
     runner_yaml: Path,
     num_samples: int,
     offload_token_cutoff: int,
+    triangle_chunk_cap: int | None = None,
+    transition_chunk_cap: int | None = None,
 ) -> InferenceExperimentRunner:
     runner_args = config_utils.load_yaml(runner_yaml)
     runner_args.setdefault("data_module_args", {})["num_workers"] = 0
@@ -203,6 +203,11 @@ def build_runner(
     memory.use_deepspeed_evo_attention = False
     memory.use_triton_triangle_kernels = False
     memory.use_cueq_triangle_kernels = True
+    if triangle_chunk_cap is not None:
+        memory.chunk_caps.triangle_attention = triangle_chunk_cap
+        memory.chunk_caps.triangle_multiplicative = triangle_chunk_cap
+    if transition_chunk_cap is not None:
+        memory.chunk_caps.transition = transition_chunk_cap
     runner.setup()
     runner.inference_query_set = InferenceQuerySet.from_json(query_json)
     return runner
@@ -239,9 +244,11 @@ def profile(args) -> dict:
         runner_yaml=runner_yaml,
         num_samples=args.samples,
         offload_token_cutoff=args.offload_token_cutoff,
+        triangle_chunk_cap=args.triangle_chunk_cap,
+        transition_chunk_cap=args.transition_chunk_cap,
     )
     lightning_module = runner.lightning_module.to(device).eval()
-    model = lightning_module.model
+    model: Any = lightning_module.model
     param_info = model_parameter_bytes(model)
     model_params_bytes = param_info["model_params_and_buffers_bytes"]
 
@@ -288,9 +295,7 @@ def profile(args) -> dict:
     print("Hooked stage forward...")
     batch = get_batch(runner, device)
     profiler = FastStageProfiler()
-    install_hooks(
-        model, profiler, track_trunk_substages=args.track_trunk_substages
-    )
+    install_hooks(model, profiler, track_trunk_substages=args.track_trunk_substages)
     try:
         torch.cuda.synchronize()
         torch.cuda.empty_cache()
@@ -304,6 +309,7 @@ def profile(args) -> dict:
         del batch
 
     peak_above_params = overall_peak_bytes - model_params_bytes
+    chunk_caps = model.config.settings.memory.eval.chunk_caps
     return {
         "query_json": str(query_json),
         "runner_yaml": str(runner_yaml),
@@ -321,9 +327,9 @@ def profile(args) -> dict:
         "stage_wall_s": round(stage_wall_s, 2),
         "offload_token_cutoff": args.offload_token_cutoff,
         "track_trunk_substages": args.track_trunk_substages,
-        "tri_attn_chunk_cap": os.environ.get("OPENFOLD3_TRI_ATTN_CHUNK_CAP"),
-        "trimul_chunk_cap": os.environ.get("OPENFOLD3_TRIMUL_CHUNK_CAP"),
-        "transition_chunk_cap": os.environ.get("OPENFOLD3_TRANSITION_CHUNK_CAP"),
+        "tri_attn_chunk_cap": chunk_caps.triangle_attention,
+        "trimul_chunk_cap": chunk_caps.triangle_multiplicative,
+        "transition_chunk_cap": chunk_caps.transition,
         "stages": profiler.stats,
     }
 
@@ -341,8 +347,7 @@ def print_report(result: dict) -> None:
         f"samples={result['n_diffusion_samples']} 1U={_mib(u_bytes):.1f} MiB"
     )
     print(
-        f"model_params+buffers={_gib(params):.2f} GiB  "
-        f"total_peak={_gib(peak):.2f} GiB"
+        f"model_params+buffers={_gib(params):.2f} GiB  total_peak={_gib(peak):.2f} GiB"
     )
     print(f"peak_above_params={_gib(above):.2f} GiB = {above / u_bytes:.2f}U")
     print(
@@ -399,8 +404,9 @@ def main() -> None:
         type=int,
         default=None,
         help=(
-            "Set OPENFOLD3_TRI_ATTN_CHUNK_CAP and OPENFOLD3_TRIMUL_CHUNK_CAP "
-            "(shared MSA/template/pairformer/confidence triangle ops)"
+            "Set memory.eval.chunk_caps.triangle_attention and "
+            "triangle_multiplicative (shared MSA/template/pairformer/"
+            "confidence triangle ops)"
         ),
     )
     parser.add_argument(
@@ -408,18 +414,12 @@ def main() -> None:
         type=int,
         default=None,
         help=(
-            "Set OPENFOLD3_TRANSITION_CHUNK_CAP to force row-chunked "
+            "Set memory.eval.chunk_caps.transition to force row-chunked "
             "pair/MSA transitions (and OPM) after the chunk-size tuner"
         ),
     )
     parser.add_argument("--output-json", type=Path, default=None)
     args = parser.parse_args()
-
-    if args.triangle_chunk_cap is not None:
-        os.environ["OPENFOLD3_TRI_ATTN_CHUNK_CAP"] = str(args.triangle_chunk_cap)
-        os.environ["OPENFOLD3_TRIMUL_CHUNK_CAP"] = str(args.triangle_chunk_cap)
-    if args.transition_chunk_cap is not None:
-        os.environ["OPENFOLD3_TRANSITION_CHUNK_CAP"] = str(args.transition_chunk_cap)
 
     result = profile(args)
     print_report(result)
