@@ -688,3 +688,28 @@ First all-three-failure night since run #273 (09-19). All three legs' `start-aws
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #307, per this log's established convention).
 
 ---
+
+## 2026-10-06
+
+### Run #309 — primary nightly (schedule `17 3 * * *`, main @ `939ebd4` — PR #436 "Start --num_model_seeds from the configured seed instead of a fixed 42" (merged since run #307–308/10-05, previously on `1d48c84`), [37409527801](https://github.com/aqlaboratory/openfold-3/actions/runs/37409527801))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 47 min | |
+| test-pixi-cuda (openfold3-cuda12) | **CANCELLED** | 60 min | hit timeout-minutes cap (60 min); `unclassified` — see note below |
+| test-pixi-cuda (openfold3-cuda13) | **CANCELLED** | 60 min | hit timeout-minutes cap (60 min); `unclassified` — see note below |
+
+**2026-10-06: 1/3 passed · 0 skipped · 0 queued · 2 need attention**
+
+Both CUDA legs ran the full `test-openfold-docker-pixi` budget and were cancelled by the job-level `timeout-minutes: 60` cap (job wall time 60m28s and 60m29s respectively, matching the cap in `ci-integration-test-pixi-cuda-reusable.yml`) — not a fail-fast cascade (no sibling failure triggered it) and not superseded by a newer run (no other run shares either concurrency group tonight). Neither matches this log's `msa-hang` signature precisely enough to classify as such: cuda12's "Run integration test" step was mid-`openfold3/tests/inference/test_templates.py::test_template_lowers_rmsd[1y57]` (not a `test_inference_writes_outputs[msa-...]` case) with no `PASSED`/`FAILED` line following, and no `TimeoutError: MSA server` string anywhere in the log; cuda13's log shows `PASSED` on the prior test at 04:32:37Z and then **zero output for ~3.5 minutes** before the cancellation at 04:36:01Z — no next-test node ID was ever printed, unlike every other test transition in both jobs' logs (which print the node ID within single-digit seconds of the prior `PASSED`). That silent gap doesn't literally match a listed signature but is worth a closer look. Recorded `unclassified` in `test-failures.md`, flagged for human review. Note: earlier in the cuda12 job, on a *passing* test (`test_pocket_constraint_localizes_ligand`), the ColabFold MSA server rate-limited the run for ~10m44s (`Sleeping for Ns. Reason: RATELIMIT`, repeated ~80 times) — not itself the cause of the cancellation, but it shows the 60-minute budget is running tight on nights when ColabFold is slow, which may help explain why the suite ran out of time mid-suite rather than failing outright.
+
+### Run #310 — secondary nightly (schedule `17 4 * * *`, main @ `939ebd4`, [37414182897](https://github.com/aqlaboratory/openfold-3/actions/runs/37414182897))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #309, per this log's established convention).
+
+---

@@ -473,3 +473,49 @@ Log line unavailable — see "Why the logs were unavailable" above. No pytest ou
 None. Third night in this log (after 09-17 and 09-19) where all three tracked jobs are simultaneously non-passing.
 
 ---
+
+## 2026-10-06
+
+**Cause:** `unclassified` for both CUDA legs — each hit the job-level `timeout-minutes: 60` cap mid-suite rather than failing on an assertion or exception, and neither matches this log's `msa-hang` signature closely enough to classify as such (see detail below). The AMD leg passed.
+
+- **Run ID:** [37409527801](https://github.com/aqlaboratory/openfold-3/actions/runs/37409527801)
+- **Run #:** 309 (primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `939ebd4b2b5e26f0b2e97cfc22291853f6be05a0` (PR #436 "Start --num_model_seeds from the configured seed instead of a fixed 42", merged since run #307–308/10-05)
+- **Time:** 2026-10-06T03:33:20Z – 04:42:19Z
+
+### Cancelled Jobs
+
+| Job | Status | Job ID | Cancelled step | Step window | Job wall time |
+|-----|--------|--------|-----------------|-------------|---------------|
+| `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` | **cancelled** | 112095075518 | Run integration test | 03:40:07 – 04:35:32 | 60m28s (03:35:17–04:35:45) |
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | **cancelled** | 112095193667 | Run integration test | 03:39:41 – 04:36:01 | 60m29s (03:35:46–04:36:15) |
+
+Both job wall times match the `timeout-minutes: 60` cap set on `test-openfold-docker-pixi` in `ci-integration-test-pixi-cuda-reusable.yml` — this is a cap cancellation, not a fail-fast cascade (no sibling failure occurred to trigger one; `test-pixi-cuda`'s `strategy:` has no `fail-fast: false` but nothing failed) and not superseded by a newer run (each leg is the only run in its `${{ github.workflow }}-pixi-cuda-...-${{ matrix.pixi_env }}` concurrency group tonight).
+
+### Classification detail (why neither is `msa-hang`)
+
+This log's `msa-hang` signature requires the last pytest line to be a `test_inference_writes_outputs[msa-...]` case with no `PASSED`/`FAILED` after it, or a literal `TimeoutError: MSA server` string. Neither job's log matches:
+
+- **cuda12** — last line before `##[error]The operation was canceled.` (04:35:32.8795952Z):
+  ```
+  openfold3/tests/inference/test_templates.py::test_template_lowers_rmsd[1y57]
+  ```
+  This is `test_template_lowers_rmsd`, not `test_inference_writes_outputs[msa-...]`, and no `TimeoutError: MSA server` string appears anywhere in the log.
+
+- **cuda13** — last line before `##[error]The operation was canceled.` (04:36:01.9591332Z) is simply:
+  ```
+  PASSED
+  ```
+  (timestamped 04:32:37.4853688Z, for the previous test) followed by **no further output at all** for ~3m24s until the cancellation. No next-test node ID was ever printed — in every other test transition in both jobs' logs, the next node ID appears within single-digit seconds of the prior `PASSED`. This gap is anomalous and worth a human look, but it doesn't contain either literal signature string, so it is not binned as `msa-hang` on a guess.
+
+Both are therefore recorded `unclassified` per this log's rule ("none of the above — flag as needing a human").
+
+**Context, not cause:** earlier in the cuda12 job, a different (passing) test — `test_pocket_constraint_localizes_ligand`, which does call the ColabFold MSA server — spent ~10m44s rate-limited (`Sleeping for Ns. Reason: RATELIMIT`, ~80 occurrences, 03:21:18Z–03:32:01Z) before completing and passing. That test did not fail, but it shows the 60-minute per-job budget has little slack on nights when ColabFold responds slowly, which may be a contributing factor to why the suite ran out of time rather than evidence of a specific hang.
+
+### Passing Jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | **success** | 112094591348 | 47 min |
+
+---
