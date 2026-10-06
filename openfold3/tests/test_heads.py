@@ -381,6 +381,7 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
             use_zij_trunk_embedding=True,
             chunk_size=4,
         )
+        self.assertIn("zij_trunk", outputs)
 
         expected_shape_distogram = (
             batch_size,
@@ -431,9 +432,7 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         initialize_model_weights(aux_head)
 
         outputs = {
-            "si_trunk": torch.ones(
-                batch_size, n_token, config.architecture.shared.c_s
-            ),
+            "si_trunk": torch.ones(batch_size, n_token, config.architecture.shared.c_s),
             "zij_trunk": torch.ones(
                 batch_size, n_token, n_token, config.architecture.shared.c_z
             ),
@@ -443,11 +442,10 @@ class TestAuxiliaryHeadsAllAtom(unittest.TestCase):
         with torch.inference_mode():
             aux_head(
                 batch,
-                torch.ones(
-                    batch_size, n_token, config.architecture.shared.c_s_input
-                ),
+                torch.ones(batch_size, n_token, config.architecture.shared.c_s_input),
                 outputs,
                 use_zij_trunk_embedding=True,
+                release_zij_trunk=True,
                 chunk_size=4,
             )
 
