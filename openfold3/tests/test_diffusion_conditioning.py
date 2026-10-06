@@ -99,12 +99,12 @@ class TestDiffusionConditioning(unittest.TestCase):
                 [torch.arange(n_cyclic), torch.arange(n_linear)]
             )[None, :],
             "sym_id": torch.zeros((1, n_token)),
-            "asym_id": torch.cat(
-                [torch.zeros(n_cyclic), torch.ones(n_linear)]
-            )[None, :],
-            "entity_id": torch.cat(
-                [torch.zeros(n_cyclic), torch.ones(n_linear)]
-            )[None, :],
+            "asym_id": torch.cat([torch.zeros(n_cyclic), torch.ones(n_linear)])[
+                None, :
+            ],
+            "entity_id": torch.cat([torch.zeros(n_cyclic), torch.ones(n_linear)])[
+                None, :
+            ],
             "cyclic_mask": torch.cat(
                 [
                     torch.ones(n_cyclic, dtype=torch.bool),
@@ -133,7 +133,7 @@ class TestDiffusionConditioning(unittest.TestCase):
 
     def test_chunked_pair_embed_matches_eager(self):
         batch_size = 1
-        n_token = 37
+        n_token = 300
         c_s_input = consts.c_s + 65
         c_s = consts.c_s
         c_z = consts.c_z
@@ -155,10 +155,7 @@ class TestDiffusionConditioning(unittest.TestCase):
         with torch.enable_grad():
             zij_eager = dc._embed_zij(batch, zij_trunk.detach())
 
-        self.assertTrue(
-            torch.allclose(zij_chunked, zij_eager, atol=1e-5, rtol=1e-5),
-            f"max abs diff={(zij_chunked - zij_eager).abs().max().item():.3e}",
-        )
+        self.assertTrue(torch.equal(zij_chunked, zij_eager))
 
     def test_with_different_schedule(self):
         batch_size = consts.batch_size
