@@ -734,6 +734,6 @@ class OpenFold3(nn.Module):
         # due to different sizes of msa/all-atom tensors used between steps
         # Clear the cache between steps if unallocated reserved mem is high
         if self.settings.clear_cache_between_steps:
-            empty_device_cache(zij_trunk.device)
+            empty_device_cache(si_trunk.device)
 
         return batch, output
