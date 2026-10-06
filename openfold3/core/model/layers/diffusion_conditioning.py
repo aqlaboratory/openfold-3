@@ -157,15 +157,15 @@ class DiffusionConditioning(nn.Module):
         batch: dict,
         zij_trunk: torch.Tensor,
     ) -> torch.Tensor:
-        """Row-chunked LN/linear over trunk pair + relpos (channel-wise LN)."""
+        """Row-chunked LN/linear over trunk pair + relpos.
+
+        Processes ``_EMBED_ZIJ_CHUNK_ROWS`` rows at a time. LN normalizes over
+        the last dim so each row is independent — chunking is mathematically
+        exact.
+        """
         n_token = zij_trunk.shape[-3]
         chunk = self._EMBED_ZIJ_CHUNK_ROWS
-        out = torch.empty(
-            *zij_trunk.shape[:-1],
-            self.c_z,
-            dtype=zij_trunk.dtype,
-            device=zij_trunk.device,
-        )
+        out: torch.Tensor | None = None
         for i in range(0, n_token, chunk):
             row_slice = slice(i, min(i + chunk, n_token))
             relpos_chunk = relpos_complex(
@@ -178,8 +178,17 @@ class DiffusionConditioning(nn.Module):
                 [zij_trunk[..., row_slice, :, :], relpos_chunk], dim=-1
             )
             del relpos_chunk
-            out[..., row_slice, :, :] = self.linear_z(self.layer_norm_z(cat_chunk))
+            chunk_out = self.linear_z(self.layer_norm_z(cat_chunk))
             del cat_chunk
+            if out is None:
+                out = torch.empty(
+                    *zij_trunk.shape[:-1],
+                    self.c_z,
+                    dtype=chunk_out.dtype,
+                    device=chunk_out.device,
+                )
+            out[..., row_slice, :, :] = chunk_out
+        assert out is not None
         return out
 
     def _embed_trunk_inputs(
