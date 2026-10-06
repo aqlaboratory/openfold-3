@@ -28,14 +28,21 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 )
 from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
+    DATASET_CONFIG_REGISTRY,
     InferenceDatasetSpec,
     InferenceJobConfig,
     TrainingDatasetPaths,
     TrainingDatasetSpec,
+    WeightedPDBConfig,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
+
+
+def test_register_dataset_config_returns_decorated_class():
+    assert isinstance(WeightedPDBConfig, type)
+    assert DATASET_CONFIG_REGISTRY.get("WeightedPDBDataset") is WeightedPDBConfig
 
 
 class TestOF3DatasetConfigConstruction:
