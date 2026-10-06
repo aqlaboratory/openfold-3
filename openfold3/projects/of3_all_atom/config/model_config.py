@@ -133,6 +133,7 @@ model_config = mlc.ConfigDict(
                         "transition": None,
                     },
                     "release_trunk_pair": False,
+                    "stream_templates": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
                         "swiglu_seq_chunk_size": None,

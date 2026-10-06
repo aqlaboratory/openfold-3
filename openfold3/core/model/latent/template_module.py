@@ -434,9 +434,7 @@ class TemplatePairStack(nn.Module):
             attn_chunk = (
                 tuned_chunk_size if use_flash_kernels else max(1, tuned_chunk_size // 4)
             )
-            attn_chunk = apply_triangle_attn_chunk_cap(
-                attn_chunk, n_tokens=t.shape[-3]
-            )
+            attn_chunk = apply_triangle_attn_chunk_cap(attn_chunk, n_tokens=t.shape[-3])
             tuned_chunk_size = apply_transition_chunk_cap(tuned_chunk_size)
             blocks = [
                 partial(
@@ -726,6 +724,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         use_lma: bool = False,
         inplace_safe: bool = False,
         offload_inference: bool = False,
+        stream_templates: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -751,6 +750,8 @@ class TemplateEmbedderAllAtom(nn.Module):
                 Whether inplace operations can be performed
             offload_inference:
                 Whether to offload some computation to CPU
+            stream_templates:
+                Embed templates sequentially instead of as a batch.
 
         Returns:
             t:
@@ -759,7 +760,8 @@ class TemplateEmbedderAllAtom(nn.Module):
         n_templ = batch["template_restype"].shape[-3]
         template_sum_done = False
         can_stream = (
-            inplace_safe
+            stream_templates
+            and inplace_safe
             and not self.training
             and not torch.is_grad_enabled()
             and not offload_inference

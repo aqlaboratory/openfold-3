@@ -255,6 +255,9 @@ class OpenFold3(nn.Module):
                         use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
                         offload_inference=offload_template_module,
+                        stream_templates=mode_mem_settings.get(
+                            "stream_templates", False
+                        ),
                     ),
                     inplace=inplace_safe,
                 )

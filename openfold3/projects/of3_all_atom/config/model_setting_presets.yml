@@ -32,6 +32,7 @@ low_mem:
           triangle_multiplicative: 128
           transition: 128
         release_trunk_pair: true
+        stream_templates: true
         offload_inference:
           template_module: true
           msa_module: true

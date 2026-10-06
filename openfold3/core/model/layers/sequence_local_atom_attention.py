@@ -546,28 +546,30 @@ class AtomAttentionEncoder(nn.Module):
             and not torch.is_grad_enabled()
             and segmented_reduce_supported(atom_mask.device)
         ):
-            aggregate_fn = aggregate_atom_feat_to_tokens_segmented
-            agg_args = (
-                batch["num_atoms_per_token"],
-                atom_mask,
-                self.linear_q(ql),
+            ai = checkpoint_section(
+                fn=aggregate_atom_feat_to_tokens_segmented,
+                args=(
+                    batch["num_atoms_per_token"],
+                    atom_mask,
+                    self.linear_q(ql),
+                ),
+                apply_ckpt=self.ckpt_intermediate_steps,
+                use_reentrant=self.use_reentrant,
             )
         else:
-            aggregate_fn = aggregate_atom_feat_to_tokens
-            agg_args = (
-                batch["token_mask"],
-                batch["atom_to_token_index"],
-                atom_mask,
-                self.linear_q(ql),
-                -2,
-                "mean",
+            ai = checkpoint_section(
+                fn=aggregate_atom_feat_to_tokens,
+                args=(
+                    batch["token_mask"],
+                    batch["atom_to_token_index"],
+                    atom_mask,
+                    self.linear_q(ql),
+                    -2,
+                    "mean",
+                ),
+                apply_ckpt=self.ckpt_intermediate_steps,
+                use_reentrant=self.use_reentrant,
             )
-        ai = checkpoint_section(
-            fn=aggregate_fn,
-            args=agg_args,
-            apply_ckpt=self.ckpt_intermediate_steps,
-            use_reentrant=self.use_reentrant,
-        )
 
         return ai, ql, cl, plm
 

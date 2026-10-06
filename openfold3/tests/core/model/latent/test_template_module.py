@@ -89,6 +89,7 @@ class TestTemplateEmbedderAllAtom(unittest.TestCase):
                 pair_mask=pair_mask,
                 chunk_size=4,
                 inplace_safe=True,
+                stream_templates=True,
             )
             t_full = embedder._forward(
                 batch=batch,
