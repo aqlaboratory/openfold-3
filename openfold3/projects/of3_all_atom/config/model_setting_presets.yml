@@ -31,6 +31,7 @@ low_mem:
           triangle_attention: 128
           triangle_multiplicative: 128
           transition: 128
+        release_trunk_pair: true
         offload_inference:
           template_module: true
           msa_module: true

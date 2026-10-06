@@ -343,6 +343,7 @@ class TestModelUpdate:
         assert model_cfg.settings.memory.eval.chunk_caps.triangle_attention == 128
         assert model_cfg.settings.memory.eval.chunk_caps.triangle_multiplicative == 128
         assert model_cfg.settings.memory.eval.chunk_caps.transition == 128
+        assert model_cfg.settings.memory.eval.release_trunk_pair
         assert model_cfg.settings.memory.eval.offload_inference.confidence_heads
         assert model_cfg.settings.memory.eval.offload_inference.token_cutoff == 0
 

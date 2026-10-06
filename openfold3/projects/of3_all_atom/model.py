@@ -631,7 +631,10 @@ class OpenFold3(nn.Module):
                 "si_trunk" ([*, N_token, C_s]):
                     Single representation output from model trunk
                 "zij_trunk" ([*, N_token, N_token, C_z]):
-                    Pair representation output from model trunk
+                    Pair representation output from model trunk. Always kept
+                    for training and validation. Dropped on inference after
+                    the confidence clone when
+                    ``settings.memory.eval.release_trunk_pair`` is set.
                 "atom_positions_predicted" ([*, N_atom, 3]):
                     Predicted atom positions
                 "plddt_logits" ([*, N_atom, 50]):
@@ -684,17 +687,25 @@ class OpenFold3(nn.Module):
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
         batch["ref_space_uid_to_perm"] = ref_space_uid_to_perm
 
-        retain_trunk_pair = self.training or "ground_truth" in batch
-        zij_release = None if retain_trunk_pair else [zij_trunk]
-        if zij_release is not None:
+        retain_trunk_pair = (
+            self.training
+            or "ground_truth" in batch
+            or not self.settings.memory.eval.release_trunk_pair
+        )
+        if retain_trunk_pair:
+            zij_release = None
+            zij_for_rollout = zij_trunk
+        else:
+            zij_release = [zij_trunk]
             del zij_trunk
+            zij_for_rollout = zij_release[0]
 
         # Mini rollout
         rollout_output = self._rollout(
             batch=batch,
             si_input=si_input,
             si_trunk=si_trunk,
-            zij_trunk=(zij_trunk if retain_trunk_pair else zij_release[0]),
+            zij_trunk=zij_for_rollout,
             inplace_safe=inplace_safe,
             zij_release=zij_release,
         )
