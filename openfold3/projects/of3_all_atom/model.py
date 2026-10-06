@@ -433,6 +433,7 @@ class OpenFold3(nn.Module):
                     si_input=si_input,
                     output=output,
                     use_zij_trunk_embedding=use_trunk_embedding,
+                    release_zij_trunk=zij_release is not None,
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
                     use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
