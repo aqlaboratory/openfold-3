@@ -316,9 +316,11 @@ class PairBlock(nn.Module):
         use_triton_triangle_kernels: bool = False,
     ) -> torch.Tensor:
         """Perform the outgoing and incoming triangular multiplicative updates."""
-        chunked_trimul = use_chunked_trimul(inplace_safe)
-        use_cueq_trimul = use_cueq_triangle_kernels and not chunked_trimul
-        # cuEq supersedes inplace_safe unless a trimul chunk cap forces eager.
+        chunked_trimul = use_chunked_trimul(
+            inplace_safe, use_cueq_triangle_kernels=use_cueq_triangle_kernels
+        )
+        # A trimul cap must not override an explicit cuEq request.
+        use_cueq_trimul = use_cueq_triangle_kernels
         inplace_safe = inplace_safe and (not use_cueq_trimul)
         ## VS: having both inplace_safe and use_cueq_triangle_kernels set to
         ## true causes `z = z + self.ps_dropout_row_layer(tmu_update)` below

@@ -512,6 +512,11 @@ class TestUtils(unittest.TestCase):
             self.assertEqual(trimul_chunk_cap(), 128)
             self.assertTrue(use_chunked_trimul(inplace_safe=True))
             self.assertFalse(use_chunked_trimul(inplace_safe=False))
+            self.assertFalse(
+                use_chunked_trimul(
+                    inplace_safe=True, use_cueq_triangle_kernels=True
+                )
+            )
         finally:
             if old is None:
                 os.environ.pop(key, None)

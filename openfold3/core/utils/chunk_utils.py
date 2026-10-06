@@ -62,8 +62,12 @@ def trimul_chunk_cap() -> int | None:
     return _positive_env_int("OPENFOLD3_TRIMUL_CHUNK_CAP")
 
 
-def use_chunked_trimul(inplace_safe: bool) -> bool:
-    """Use eager chunked trimul instead of cuEq when a cap is set."""
+def use_chunked_trimul(
+    inplace_safe: bool, *, use_cueq_triangle_kernels: bool = False
+) -> bool:
+    """Use eager chunked trimul when a cap is set and cuEq was not requested."""
+    if use_cueq_triangle_kernels:
+        return False
     return inplace_safe and trimul_chunk_cap() is not None
 
 

@@ -1127,10 +1127,13 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
 
         ## NOTE: valid for inplace safe and use_cueq_triangle_kernels to be enabled
         ## inplace safe is used across the codebase and so should not
-        ## be disabled. So if use_cueq_triangle_kernels is True, it will always
-        ## supersede inplace_safe unless a trimul chunk cap forces eager.
-        chunked_trimul = use_chunked_trimul(inplace_safe)
-        if use_cueq_triangle_kernels and not chunked_trimul:
+        ## be disabled. So if use_cueq_triangle_kernels is True, it supersedes
+        ## inplace_safe. A trimul chunk cap only selects eager chunking when
+        ## cuEq was not requested.
+        chunked_trimul = use_chunked_trimul(
+            inplace_safe, use_cueq_triangle_kernels=use_cueq_triangle_kernels
+        )
+        if use_cueq_triangle_kernels:
             ## VS: The cuequivariance kernel is based on the boltz implementation
             ## of triangle multiplicative update, which fuses the linear_*_p
             ## projections into a single layer (similarly for linear_*_g).
