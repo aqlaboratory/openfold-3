@@ -29,10 +29,17 @@ from pathlib import Path
 
 import torch
 
+from openfold3.core.loss.loss_module import OpenFold3Loss
+from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
+from openfold3.core.utils.tensor_utils import tensor_tree_map
+from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
+
 # Import through the CLI module, so CUDA is initialised exactly as in production
 # before the allocator is configured.
 from openfold3.run_openfold import _configure_torch_backend
 from openfold3.tests.utils.cuda_memory import CudaMemoryMetrics, get_cuda_memory_metrics
+from openfold3.tests.utils.data_utils import random_of3_features
 
 # Varying sizes are what fragment the caching allocator; a single size would
 # reuse the same blocks every step.
@@ -46,13 +53,6 @@ def run_training_steps(n_tokens: Sequence[int], n_msa: int) -> list[CudaMemoryMe
     cache is not emptied: blocks cached by earlier, differently sized steps are
     exactly what fragments the allocator.
     """
-    from openfold3.core.loss.loss_module import OpenFold3Loss
-    from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
-    from openfold3.core.utils.tensor_utils import tensor_tree_map
-    from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
-    from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom
-    from openfold3.tests.utils.data_utils import random_of3_features
-
     device = torch.device("cuda")
     torch.manual_seed(0)
 
