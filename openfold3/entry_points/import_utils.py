@@ -16,18 +16,16 @@
 """
 Manage imports run_openfold.py
 """
-# ruff: noqa: F821
-# ruff: noqa: F401
 
 import logging
 import os
+
+import torch
 
 logger = logging.getLogger(__name__)
 
 
 def _enable_tf32():
-    import torch
-
     torch_versions = torch.__version__.split(".")
     torch_major_version = int(torch_versions[0])
     torch_minor_version = int(torch_versions[1])
@@ -55,8 +53,6 @@ def _configure_cuda_allocator(expandable_segments: bool = True) -> None:
     already be initialised by the time this runs (e.g. ``import deepspeed``), at
     which point the environment variable is no longer read.
     """
-    import torch
-
     if not expandable_segments or not torch.cuda.is_available():
         return
     if torch.version.hip is not None:
@@ -77,8 +73,6 @@ def _configure_cuda_allocator(expandable_segments: bool = True) -> None:
 def _configure_torch_backend(expandable_segments: bool = True):
     """Apply backend settings"""
     _configure_cuda_allocator(expandable_segments)
-
-    import torch
 
     # Force the cuBLAS backend on AMD/ROCm to match the numerics of
     # NVIDIA-trained models.
