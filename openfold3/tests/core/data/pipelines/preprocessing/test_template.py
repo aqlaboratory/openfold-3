@@ -1199,6 +1199,139 @@ def test_structure_arrays_written_for_assigned_templates(tmp_path):
             assert path.exists(), path
 
 
+# Content of the train-mode outputs, checked against values read off the fixture's
+# inputs (template structures, RCSB release dates) rather than golden outputs.
+
+
+@pytest.fixture(scope="module")
+def train_preprocessor_run(tmp_path_factory):
+    """One train-mode run on the 1fdl fixture, shared by the content checks."""
+    return _run_train_template_preprocessor(
+        tmp_path_factory.mktemp("train_preprocessor_run")
+    )
+
+
+def _read_cache_entries(
+    settings: TemplatePreprocessorSettings, rep_id: str
+) -> dict[str, dict]:
+    """Template ID -> cache entry, from the representative's template cache file."""
+    assert settings.cache_directory is not None
+    with np.load(settings.cache_directory / f"{rep_id}.npz", allow_pickle=True) as npz:
+        return {template_id: npz[template_id].item() for template_id in npz}
+
+
+def _diagonal_idx_map(n_residues: int) -> np.ndarray:
+    """idx_map pairing query residue i with template residue i, for i in 1..n."""
+    residues = np.arange(1, n_residues + 1)
+    return np.stack([residues, residues], axis=1)
+
+
+def test_idx_map_of_same_sequence_hit_is_diagonal(train_preprocessor_run):
+    """A template with the query's exact sequence pairs every residue with itself."""
+    _, settings = train_preprocessor_run
+    # (rep_id, template_id): query length. Each template is the same protein
+    # as its query.
+    same_sequence_hits = {
+        ("1fdl_A", "1fdl_A"): 214,  # 1fdl light chain is its own top hit
+        ("1fdl_B", "1fdl_B"): 218,  # 1fdl heavy chain is its own top hit
+        ("1fdl_C", "5lyz_A"): 129,  # hen egg-white lysozyme, another entry
+    }
+
+    for (rep_id, template_id), n_residues in same_sequence_hits.items():
+        actual = _read_cache_entries(settings, rep_id)[template_id]["idx_map"]
+        expected = _diagonal_idx_map(n_residues)
+        np.testing.assert_array_equal(actual, expected, err_msg=template_id)
+
+
+def test_cache_entry_release_dates_match_pdb(train_preprocessor_run):
+    """Each cache entry carries its template structure's RCSB release date."""
+    _, settings = train_preprocessor_run
+    expected = {
+        "1fdl_A": {
+            "1fdl_A": datetime(1991, 10, 15),
+            "1qbl_A": datetime(1998, 12, 2),
+            "1jhk_A": datetime(2001, 10, 10),
+        },
+        "1fdl_B": {
+            "1fdl_B": datetime(1991, 10, 15),
+            "1qbl_B": datetime(1998, 12, 2),
+            "3hfm_B": datetime(1989, 7, 12),
+        },
+        "1fdl_C": {
+            "1ior_A": datetime(2001, 4, 11),
+            "7ynv_A": datetime(2022, 9, 21),
+            "5lyz_A": datetime(1977, 4, 12),
+        },
+    }
+
+    actual = {
+        rep_id: {
+            template_id: entry["release_date"]
+            for template_id, entry in _read_cache_entries(settings, rep_id).items()
+        }
+        for rep_id in expected
+    }
+
+    assert actual == expected
+
+
+def _summarize_structure_array(
+    settings: TemplatePreprocessorSettings, template_id: str
+) -> dict:
+    """The chain IDs and residue counts in a template's preparsed structure array."""
+    entry_id = template_id.split("_")[0]
+    assert settings.structure_array_directory is not None
+    path = settings.structure_array_directory / entry_id / f"{template_id}.npz"
+    with np.load(path) as array:
+        res_ids = array["res_id"]
+        has_coords = ~np.isnan(array["coord"]).any(axis=1)
+        return {
+            "label_chain_ids": set(array["label_asym_id"].tolist()),
+            "author_chain_ids": set(array["auth_asym_id"].tolist()),
+            "n_residues": len(np.unique(res_ids)),
+            "n_unresolved": len(np.setdiff1d(res_ids, res_ids[has_coords])),
+        }
+
+
+def test_structure_array_holds_the_template_chain(train_preprocessor_run):
+    """A hit's structure array holds its label chain, with every residue of it.
+
+    Residues without coordinates in the deposited structure are kept, with NaN
+    coordinates, so the residue count is the chain's full sequence length.
+    """
+    _, settings = train_preprocessor_run
+    expected = {
+        # Label B, but ColabFold names this hit 1qbl_H by its author chain ID
+        "1qbl_B": {
+            "label_chain_ids": {"B"},
+            "author_chain_ids": {"H"},
+            "n_residues": 219,
+            "n_unresolved": 0,
+        },
+        # The C-terminal Cys has no coordinates but is still there
+        "1jhk_A": {
+            "label_chain_ids": {"A"},
+            "author_chain_ids": {"L"},
+            "n_residues": 214,
+            "n_unresolved": 1,
+        },
+        # Label and author chain IDs agree
+        "5lyz_A": {
+            "label_chain_ids": {"A"},
+            "author_chain_ids": {"A"},
+            "n_residues": 129,
+            "n_unresolved": 0,
+        },
+    }
+
+    actual = {
+        template_id: _summarize_structure_array(settings, template_id)
+        for template_id in expected
+    }
+
+    assert actual == expected
+
+
 def _fixture_label_to_author(pdb_ids: set[str]) -> dict[str, dict[str, str]]:
     """Stands in for the RCSB chain mapping call: read from the fixture structures."""
     label_to_author = {}
