@@ -9,6 +9,8 @@ Inputs: the full ColabFold pdb70 ``.m8`` hit tables for the three 1fdl chains, n
 by atomworks' sequence hash (sha256[:11]). Writes, next to this script:
 
     representatives.fasta                          rep_id -> sequence
+    raw_pdb70.m8                                   selected real rows, author chain
+                                                   IDs, all three chains in one table
     template_alignments/<rep_id>/colabfold_template.m8   selected real rows only, with
                                                    author chain IDs remapped to label
                                                    chain IDs (as align-msa-server does)
@@ -93,6 +95,12 @@ def main() -> None:
         raw = (args.raw_m8_dir / f"{sequence_hash(rep_seqs[rep_id])}.m8").read_text()
         lines = raw.splitlines()
         kept_rows[rep_id] = [lines[i - 1].split("\t") for i in row_numbers]
+
+    # The selected rows as ColabFold returns them (author chain IDs, one table for all
+    # chains), the input to remap_colabfold_template_chain_ids.
+    (FIXTURE_DIR / "raw_pdb70.m8").write_text(
+        "".join("\t".join(row) + "\n" for rows in kept_rows.values() for row in rows)
+    )
 
     hit_ids = {r[1].split("_")[0].lower() for rows in kept_rows.values() for r in rows}
     for pdb_id in sorted(hit_ids):

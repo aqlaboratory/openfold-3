@@ -8,6 +8,7 @@ released 1991-10-15).
 | Path | Contents |
 |---|---|
 | `representatives.fasta` | Alignment representatives `1fdl_A`/`1fdl_B`/`1fdl_C` (1fdl label chains) and their canonical SEQRES sequences |
+| `raw_pdb70.m8` | The selected hits as ColabFold returns them: one table for all three chains (column 1 is ColabFold's query index, 101-103), author chain IDs |
 | `template_alignments/<rep_id>/colabfold_template.m8` | Rows of the real ColabFold pdb70 hit tables for each chain, cut down to the hits below |
 | `template_structures/<pdb_id>.cif.gz` | The hit structures, as downloaded from RCSB |
 | `golden/<rep_id>.npz` | Template cache entries from predict mode on the same inputs, with no release-date filtering |

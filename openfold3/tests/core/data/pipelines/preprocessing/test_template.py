@@ -25,12 +25,16 @@ the template structure directory and setting ``fetch_missing_structures=False``.
 
 import getpass
 import gzip
+import logging
 import shutil
 from datetime import date, datetime
+from multiprocessing.dummy import Pool as ThreadPool
 from pathlib import Path
 from unittest.mock import patch
 
+import biotite.structure.io.pdbx as pdbx
 import numpy as np
+import pandas as pd
 import pytest
 
 import openfold3
@@ -61,6 +65,9 @@ from openfold3.core.data.primitives.structure.metadata import (
     get_asym_id_to_canonical_seq_dict,
 )
 from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.core.data.tools.colabfold_msa_server import (
+    remap_colabfold_template_chain_ids,
+)
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Chain,
     InferenceQuerySet,
@@ -1019,6 +1026,9 @@ TRAIN_CHAINS = {
     "3": ("C", "Y", 3, "1fdl_C"),  # lysozyme
 }
 
+# rep_id -> ColabFold query index (column 1 of raw_pdb70.m8)
+TRAIN_REP_ID_TO_M = {"1fdl_A": 101, "1fdl_B": 102, "1fdl_C": 103}
+
 TRAIN_STRUCTURE_RELEASE_DATES = {
     "1fdl": date(1991, 10, 15),
     "1fdl-2020": date(2020, 1, 1),
@@ -1072,11 +1082,12 @@ def _train_dataset_cache() -> ClusteredDatasetCache:
 
 
 def _run_train_template_preprocessor(
-    tmp_path: Path,
+    tmp_path: Path, **overrides
 ) -> tuple[ClusteredDatasetCache, TemplatePreprocessorSettings]:
     """Run train-mode preprocessing offline on the 1fdl fixture.
 
-    Returns the updated dataset cache and the settings, for their output directories.
+    ``overrides`` replace the fixture's settings. Returns the updated dataset cache and
+    the settings, for their output directories.
     """
     structure_dir = tmp_path / "template_structures"
     structure_dir.mkdir()
@@ -1086,15 +1097,19 @@ def _run_train_template_preprocessor(
         )
 
     settings = TemplatePreprocessorSettings(
-        mode="train",
-        output_directory=tmp_path / "template_data",
-        structure_directory=structure_dir,
-        template_alignment_directory=TRAIN_FIXTURE_DIR / "template_alignments",
-        alignment_representatives_fasta=TRAIN_FIXTURE_DIR / "representatives.fasta",
-        min_release_date_diff=TRAIN_MIN_RELEASE_DATE_DIFF,
-        fetch_missing_structures=False,
-        preparse_structures=True,
-        n_processes=1,
+        **{
+            "mode": "train",
+            "output_directory": tmp_path / "template_data",
+            "structure_directory": structure_dir,
+            "template_alignment_directory": TRAIN_FIXTURE_DIR / "template_alignments",
+            "alignment_representatives_fasta": TRAIN_FIXTURE_DIR
+            / "representatives.fasta",
+            "min_release_date_diff": TRAIN_MIN_RELEASE_DATE_DIFF,
+            "fetch_missing_structures": False,
+            "preparse_structures": True,
+            "n_processes": 1,
+            **overrides,
+        }
     )
     cache = _train_dataset_cache()
     TemplatePreprocessor(input_set=cache, config=settings)()
@@ -1177,6 +1192,106 @@ def test_structure_arrays_written_for_assigned_templates(tmp_path):
             entry_id = template_id.split("_")[0]
             path = settings.structure_array_directory / entry_id / f"{template_id}.npz"
             assert path.exists(), path
+
+
+def _fixture_label_to_author(pdb_ids: set[str]) -> dict[str, dict[str, str]]:
+    """Stands in for the RCSB chain mapping call: read from the fixture structures."""
+    label_to_author = {}
+    for pdb_id in pdb_ids:
+        with gzip.open(
+            TRAIN_FIXTURE_DIR / "template_structures" / f"{pdb_id}.cif.gz", "rt"
+        ) as f:
+            scheme = pdbx.CIFFile.read(f).block["pdbx_poly_seq_scheme"]
+        label_to_author[pdb_id] = dict(
+            zip(
+                map(str, scheme["asym_id"].as_array()),
+                map(str, scheme["pdb_strand_id"].as_array()),
+                strict=True,
+            )
+        )
+    return label_to_author
+
+
+@patch(
+    "openfold3.core.data.tools.colabfold_msa_server.fetch_label_to_author_chain_ids",
+    side_effect=_fixture_label_to_author,
+)
+def test_author_chain_hits_remapped_for_train_mode(_fetch, tmp_path):
+    """Raw ColabFold hits (author chain IDs) work in train mode once remapped.
+
+    1fdl's antibody chains are author L/H/Y but label A/B/C, so without the remap the
+    light and heavy chains' hits could not be found in their structures.
+    """
+    remapped = remap_colabfold_template_chain_ids(
+        template_alignments=pd.read_csv(
+            TRAIN_FIXTURE_DIR / "raw_pdb70.m8", sep="\t", header=None
+        ),
+        m_with_templates={101, 102, 103},
+        rep_ids=list(TRAIN_REP_ID_TO_M),
+        rep_id_to_m=TRAIN_REP_ID_TO_M,
+    )
+    aln_dir = tmp_path / "template_alignments"
+    for rep_id, df in remapped.items():
+        # As ColabFoldQueryRunner writes them
+        (aln_dir / rep_id).mkdir(parents=True)
+        df.to_csv(
+            aln_dir / rep_id / "colabfold_template.m8",
+            sep="\t",
+            header=False,
+            index=False,
+        )
+
+    # Remapping renames chains and keeps every hit in its original rank
+    for rep_id in TRAIN_REP_ID_TO_M:
+        expected = pd.read_csv(
+            TRAIN_FIXTURE_DIR
+            / "template_alignments"
+            / rep_id
+            / "colabfold_template.m8",
+            sep="\t",
+            header=None,
+        )
+        pd.testing.assert_frame_equal(remapped[rep_id].reset_index(drop=True), expected)
+
+    cache, _ = _run_train_template_preprocessor(
+        tmp_path, template_alignment_directory=aln_dir
+    )
+
+    assert _train_template_ids(cache) == TRAIN_EXPECTED_TEMPLATE_IDS
+
+
+def test_template_chain_missing_from_structure_warns(tmp_path, caplog):
+    """A hit whose chain ID is not in its structure is dropped with a warning.
+
+    Un-remapped author chain IDs (1fdl_L for the light chain) are the usual cause.
+    """
+    aln_dir = tmp_path / "template_alignments"
+    shutil.copytree(TRAIN_FIXTURE_DIR / "template_alignments", aln_dir)
+    light = aln_dir / "1fdl_A" / "colabfold_template.m8"
+    light.write_text(light.read_text().replace("_A\t", "_L\t"))  # undo the remap
+
+    # In-process workers, so caplog sees their records
+    with patch.object(template_module.mp, "Pool", ThreadPool):
+        cache, _ = _run_train_template_preprocessor(
+            tmp_path, template_alignment_directory=aln_dir
+        )
+
+    # The light chain's hits are unusable; the other chains are unaffected.
+    template_ids = _train_template_ids(cache)
+    assert template_ids["1fdl-2020"]["1"] == []
+    assert (
+        template_ids["1fdl-2020"]["2"] == TRAIN_EXPECTED_TEMPLATE_IDS["1fdl-2020"]["2"]
+    )
+    assert (
+        template_ids["1fdl-2020"]["3"] == TRAIN_EXPECTED_TEMPLATE_IDS["1fdl-2020"]["3"]
+    )
+    warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING and "label chain ID" in record.getMessage()
+    ]
+    for template_id in ("1fdl_L", "1qbl_L", "1jhk_L"):
+        assert any(f"{template_id} not found" in w for w in warnings), warnings
 
 
 def _train_assigned_chains(cache: ClusteredDatasetCache):
