@@ -168,6 +168,8 @@ template_preprocessor_settings:
   max_release_date: null
   min_release_date_diff: null
   max_templates: 20
+  cif_direct_min_score: 0.1
+  min_f_resolved: 0.1
   fetch_missing_structures: true
   create_precache: false
   preparse_structures: false
@@ -183,3 +185,5 @@ template_preprocessor_settings:
   cache_directory: null
   log_directory: null
   ccd_file_path: null
+  template_alignment_directory: null  # train mode only
+  alignment_representatives_fasta: null  # train mode only

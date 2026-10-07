@@ -302,6 +302,8 @@ Configures template structure preprocessing and filtering.
 - `max_release_date` *(datetime | None)*: Maximum template release date (default: `null`)
 - `min_release_date_diff` *(int | None)*: Minimum days between query and template release (default: `null`)
 - `max_templates` *(int)*: Maximum templates per chain (default: `20`)
+- `cif_direct_min_score` *(float)*: CIF-direct mode only. Minimum sequence identity × query coverage for a template chain to be used (default: `0.1`)
+- `min_f_resolved` *(float)*: Minimum fraction of resolved residues for a template to be valid; only used when template structure arrays and precache entries are computed separately from the template cache (default: `0.1`)
 - `fetch_missing_structures` *(bool)*: Fetch missing structures from PDB (default: `true`)
 - `create_precache` *(bool)*: Cache template structure data (default: `false`)
 - `preparse_structures` *(bool)*: Preparse structures into .npz files (default: `false`)
@@ -317,6 +319,8 @@ Configures template structure preprocessing and filtering.
 - `cache_directory` *(Path | None)*: Directory for template cache. During inference, the implicit default is `<output_directory>/template_cache`.
 - `log_directory` *(Path | None)*: Directory for logs (default: `null`)
 - `ccd_file_path` *(Path | None)*: Path to Chemical Component Dictionary file (default: `null`)
+- `template_alignment_directory` *(Path | None)*: Train mode only. Directory with one `<rep_id>/colabfold_template.m8` per alignment representative, the layout `align-msa-server` writes; template IDs must use label chain IDs (default: `null`)
+- `alignment_representatives_fasta` *(Path | None)*: Train mode only. FASTA mapping alignment representative IDs (headers) to their sequences, one line each (default: `null`)
 
 **Example**:
 ```yaml

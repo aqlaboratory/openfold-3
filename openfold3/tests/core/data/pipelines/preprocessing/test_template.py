@@ -38,6 +38,7 @@ import pandas as pd
 import pytest
 
 import openfold3
+from openfold3.core.data.io.dataset_cache import read_datacache, write_datacache_to_json
 from openfold3.core.data.io.sequence.template import TemplateData
 from openfold3.core.data.io.structure.cif import _load_ciffile
 from openfold3.core.data.pipelines.preprocessing import template as template_module
@@ -1081,6 +1082,29 @@ def _train_dataset_cache() -> ClusteredDatasetCache:
     )
 
 
+def _train_settings_kwargs(tmp_path: Path) -> dict:
+    """Offline train-mode settings for the 1fdl fixture (all but `mode`).
+
+    Decompresses the fixture's template structures into ``tmp_path``.
+    """
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir()
+    for gz in (TRAIN_FIXTURE_DIR / "template_structures").glob("*.cif.gz"):
+        (structure_dir / gz.name.removesuffix(".gz")).write_bytes(
+            gzip.decompress(gz.read_bytes())
+        )
+    return {
+        "output_directory": tmp_path / "template_data",
+        "structure_directory": structure_dir,
+        "template_alignment_directory": TRAIN_FIXTURE_DIR / "template_alignments",
+        "alignment_representatives_fasta": TRAIN_FIXTURE_DIR / "representatives.fasta",
+        "min_release_date_diff": TRAIN_MIN_RELEASE_DATE_DIFF,
+        "fetch_missing_structures": False,
+        "preparse_structures": True,
+        "n_processes": 1,
+    }
+
+
 def _run_train_template_preprocessor(
     tmp_path: Path, **overrides
 ) -> tuple[ClusteredDatasetCache, TemplatePreprocessorSettings]:
@@ -1089,27 +1113,8 @@ def _run_train_template_preprocessor(
     ``overrides`` replace the fixture's settings. Returns the updated dataset cache and
     the settings, for their output directories.
     """
-    structure_dir = tmp_path / "template_structures"
-    structure_dir.mkdir()
-    for gz in (TRAIN_FIXTURE_DIR / "template_structures").glob("*.cif.gz"):
-        (structure_dir / gz.name.removesuffix(".gz")).write_bytes(
-            gzip.decompress(gz.read_bytes())
-        )
-
     settings = TemplatePreprocessorSettings(
-        **{
-            "mode": "train",
-            "output_directory": tmp_path / "template_data",
-            "structure_directory": structure_dir,
-            "template_alignment_directory": TRAIN_FIXTURE_DIR / "template_alignments",
-            "alignment_representatives_fasta": TRAIN_FIXTURE_DIR
-            / "representatives.fasta",
-            "min_release_date_diff": TRAIN_MIN_RELEASE_DATE_DIFF,
-            "fetch_missing_structures": False,
-            "preparse_structures": True,
-            "n_processes": 1,
-            **overrides,
-        }
+        mode="train", **{**_train_settings_kwargs(tmp_path), **overrides}
     )
     cache = _train_dataset_cache()
     TemplatePreprocessor(input_set=cache, config=settings)()
@@ -1304,3 +1309,226 @@ def _train_assigned_chains(cache: ClusteredDatasetCache):
     ]
     assert assigned, "no chain was assigned any template"
     yield from assigned
+
+
+def _train_chain(
+    rep_id: str | None, molecule_type: str = "PROTEIN", template_ids=None
+) -> ClusteredDatasetChainData:
+    return ClusteredDatasetChainData(
+        label_asym_id="A",
+        auth_asym_id="A",
+        entity_id=1,
+        molecule_type=molecule_type,
+        reference_mol_id=None,
+        alignment_representative_id=rep_id,
+        template_ids=template_ids,
+        cluster_id="0",
+        cluster_size=1,
+    )
+
+
+def _train_cache(
+    structures: dict[str, tuple[date, dict[str, ClusteredDatasetChainData]]],
+) -> ClusteredDatasetCache:
+    return ClusteredDatasetCache(
+        name="unit",
+        structure_data={
+            pdb_id: ClusteredDatasetStructureData(
+                release_date=release_date,
+                resolution=2.0,
+                chains=chains,
+                interfaces={},
+            )
+            for pdb_id, (release_date, chains) in structures.items()
+        },
+        reference_molecule_data={},
+    )
+
+
+def test_parse_dataset_cache_one_input_per_representative(tmp_path):
+    """One input per protein representative with an alignment and a sequence."""
+    aln_dir = tmp_path / "template_alignments"
+    for rep_id in ("r1", "r3", "d1"):
+        _write_file_with_parents(aln_dir / rep_id / "colabfold_template.m8")
+    fasta = _write_file(tmp_path / "reps.fasta", ">r1\nACDEF\n>r2\nGHIKL\n>d1\nACGT\n")
+    cache = _train_cache(
+        {
+            "1abc": (
+                date(2000, 1, 1),
+                {"1": _train_chain("r1"), "2": _train_chain(None, "LIGAND")},
+            ),
+            "2abc": (
+                date(2001, 1, 1),
+                {
+                    "1": _train_chain("r1"),  # shared representative
+                    "2": _train_chain("r2"),  # no alignment file
+                    "3": _train_chain("r3"),  # not in the FASTA
+                    "4": _train_chain("d1", "DNA"),  # not a requested moltype
+                },
+            ),
+        }
+    )
+    pre = _make_bare_preprocessor(
+        input_set=cache,
+        moltypes=[MoleculeType.PROTEIN],
+        template_alignment_directory=aln_dir,
+        alignment_representatives_fasta=fasta,
+    )
+
+    pre._parse_dataset_cache()
+
+    assert list(pre.inputs) == ["r1"]
+    assert pre.inputs["r1"].aln_path == aln_dir / "r1" / "colabfold_template.m8"
+    assert pre.inputs["r1"].query_seq_str == "ACDEF"
+    assert pre.inputs["r1"].cache_key == "r1"
+
+
+def test_parse_dataset_cache_summarizes_skipped_representatives(tmp_path, caplog):
+    """Representatives without template inputs are listed in one warning."""
+    aln_dir = tmp_path / "template_alignments"
+    for rep_id in ("r1", "r3"):
+        _write_file_with_parents(aln_dir / rep_id / "colabfold_template.m8")
+    fasta = _write_file(tmp_path / "reps.fasta", ">r1\nACDEF\n>r2\nGHIKL\n")
+    cache = _train_cache(
+        {
+            "1abc": (
+                date(2000, 1, 1),
+                {
+                    "1": _train_chain("r1"),
+                    "2": _train_chain("r2"),  # no alignment file
+                    "3": _train_chain("r3"),  # not in the FASTA
+                },
+            )
+        }
+    )
+    pre = _make_bare_preprocessor(
+        input_set=cache,
+        moltypes=[MoleculeType.PROTEIN],
+        template_alignment_directory=aln_dir,
+        alignment_representatives_fasta=fasta,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        pre._parse_dataset_cache()
+
+    actual = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    expected = [
+        "2 of 3 alignment representatives have no template inputs and get no "
+        f"templates. No alignment in {aln_dir}: ['r2']. Not in {fasta}: ['r3']."
+    ]
+    assert actual == expected
+
+
+def test_parse_dataset_cache_fails_when_no_representative_has_an_alignment(tmp_path):
+    """No representative with a template alignment means mismatched inputs."""
+    aln_dir = tmp_path / "template_alignments"
+    aln_dir.mkdir()
+    fasta = _write_file(tmp_path / "reps.fasta", ">r1\nACDEF\n>r2\nGHIKL\n")
+    cache = _train_cache(
+        {
+            "1abc": (
+                date(2000, 1, 1),
+                {"1": _train_chain("r1"), "2": _train_chain("r2")},
+            )
+        }
+    )
+    pre = _make_bare_preprocessor(
+        input_set=cache,
+        moltypes=[MoleculeType.PROTEIN],
+        template_alignment_directory=aln_dir,
+        alignment_representatives_fasta=fasta,
+    )
+
+    with pytest.raises(ValueError, match="None of the 2 alignment representatives"):
+        pre._parse_dataset_cache()
+
+
+def test_parse_dataset_cache_requires_train_settings():
+    """Train mode needs the alignment directory and the representatives FASTA."""
+    pre = _make_bare_preprocessor(
+        input_set=_train_cache({}),
+        moltypes=[MoleculeType.PROTEIN],
+        template_alignment_directory=None,
+        alignment_representatives_fasta=None,
+    )
+
+    with pytest.raises(ValueError, match="template_alignment_directory"):
+        pre._parse_dataset_cache()
+
+
+def test_update_dataset_cache_truncates_after_date_filtering(tmp_path):
+    """max_templates applies to the templates that pass this structure's dates."""
+    idx_map = np.zeros((1, 2), dtype=int)
+    np.savez_compressed(
+        tmp_path / "r1.npz",
+        **{
+            "new_A": {
+                "index": 0,
+                "release_date": datetime(2020, 1, 1),
+                "idx_map": idx_map,
+            },
+            "mid_A": {"index": 1, "release_date": "1990-01-01", "idx_map": idx_map},
+            "old_A": {
+                "index": 2,
+                "release_date": datetime(1980, 1, 1),
+                "idx_map": idx_map,
+            },
+        },
+    )
+    cache = _train_cache(
+        {
+            "1abc": (
+                date(2000, 1, 1),
+                {
+                    "1": _train_chain("r1"),
+                    "2": _train_chain("r9", template_ids=["stale_A"]),
+                    "3": _train_chain("d1", "DNA", template_ids=["keep_A"]),
+                },
+            )
+        }
+    )
+    pre = _make_bare_preprocessor(
+        input_set=cache,
+        inputs={"r1": object()},
+        cache_directory=tmp_path,
+        moltypes=[MoleculeType.PROTEIN],
+        max_release_date=None,
+        min_release_date_diff=60,
+        max_templates=1,
+    )
+
+    pre._update_dataset_cache()
+
+    chains = cache.structure_data["1abc"].chains
+    assert chains["1"].template_ids == ["mid_A"]
+    # A protein representative without template inputs gets no templates, not the
+    # template_ids the input cache had.
+    assert chains["2"].template_ids == []
+    # A chain of a molecule type that was not preprocessed keeps what it had.
+    assert chains["3"].template_ids == ["keep_A"]
+
+
+def _write_file_with_parents(path: Path, content: str = "") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return _write_file(path, content)
+
+
+def test_train_mode_on_dataset_cache_read_from_json(tmp_path):
+    """Train mode works on a dataset cache read from JSON, and its output round-trips.
+
+    The steps of the preprocessing script's train mode. Read from JSON, release dates
+    are strings rather than dates.
+    """
+    input_path = tmp_path / "dataset_cache.json"
+    write_datacache_to_json(_train_dataset_cache(), input_path)
+    cache = read_datacache(input_path)
+    settings = TemplatePreprocessorSettings(
+        mode="train", **_train_settings_kwargs(tmp_path)
+    )
+
+    TemplatePreprocessor(input_set=cache, config=settings)()
+    output_path = tmp_path / "dataset_cache_with_templates.json"
+    write_datacache_to_json(cache, output_path)
+
+    actual = _train_template_ids(read_datacache(output_path))
+    assert actual == TRAIN_EXPECTED_TEMPLATE_IDS
