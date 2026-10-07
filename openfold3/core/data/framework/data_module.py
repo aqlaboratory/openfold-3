@@ -695,6 +695,7 @@ class InferenceDataModule(DataModule):
             self.inference_config.query_set = preprocess_colabfold_msas(
                 inference_query_set=self.inference_config.query_set,
                 compute_settings=self.msa_computation_settings,
+                use_templates=self.use_templates,
             )
         else:
             self.inference_config.query_set = augment_main_msa_with_query_sequence(

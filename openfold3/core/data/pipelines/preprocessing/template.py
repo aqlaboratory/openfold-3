@@ -1547,6 +1547,11 @@ def build_template_cache_key(
     return None
 
 
+def _is_template_cache_entry(path: Path | str | None) -> bool:
+    """Reports whether a declared template alignment path is a `.npz` cache entry."""
+    return path is not None and Path(path).suffix == ".npz"
+
+
 # New template preprocessing pipelines
 # TODO: replace old versions from above with these new ones
 class TemplatePreprocessorInputTrain(BaseModel):
@@ -1916,6 +1921,10 @@ class TemplatePreprocessor:
 
                 # CASE 1: Alignment file mode
                 if chain.template_alignment_file_path is not None:
+                    # A reused query set points this field at the cache entry
+                    # the previous run wrote; it is already preprocessed.
+                    if _is_template_cache_entry(chain.template_alignment_file_path):
+                        continue
                     template_input = TemplatePreprocessorInputInference(
                         aln_path=Path(chain.template_alignment_file_path),
                         query_seq_str=chain.sequence,
@@ -1953,6 +1962,11 @@ class TemplatePreprocessor:
         for query_name, query in self.input_set.queries.items():
             for idx, chain in enumerate(query.chains):
                 if chain.molecule_type not in self.moltypes:
+                    continue
+                # Cache entries carried over from a previous run keep their
+                # declared path and IDs: a key rebuilt from the entry's own bytes
+                # cannot match its name, which hashes the original alignment.
+                if _is_template_cache_entry(chain.template_alignment_file_path):
                     continue
                 # Must be derived from the chain's *declared* template source, before
                 # `template_alignment_file_path` is overwritten with the cache path

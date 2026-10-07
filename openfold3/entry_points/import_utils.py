@@ -16,13 +16,16 @@
 """
 Manage imports run_openfold.py
 """
-# ruff: noqa: F821
-# ruff: noqa: F401
+
+import logging
+import os
+
+import torch
+
+logger = logging.getLogger(__name__)
 
 
 def _enable_tf32():
-    import torch
-
     torch_versions = torch.__version__.split(".")
     torch_major_version = int(torch_versions[0])
     torch_minor_version = int(torch_versions[1])
@@ -33,9 +36,43 @@ def _enable_tf32():
         torch.set_float32_matmul_precision("high")
 
 
-def _configure_torch_backend():
+# Any of these means the user configured the allocator themselves. Note that
+# PYTORCH_CUDA_ALLOC_CONF *replaces* PYTORCH_ALLOC_CONF (it does not merge), so
+# we must never set one when the user has set the other.
+_ALLOC_CONF_ENV_VARS = (
+    "PYTORCH_ALLOC_CONF",
+    "PYTORCH_CUDA_ALLOC_CONF",
+    "PYTORCH_HIP_ALLOC_CONF",
+)
+
+
+def _configure_cuda_allocator(expandable_segments: bool = True) -> None:
+    """Enable expandable segments in the CUDA caching allocator.
+
+    Uses the runtime allocator API rather than an environment variable: CUDA may
+    already be initialised by the time this runs (e.g. ``import deepspeed``), at
+    which point the environment variable is no longer read.
+    """
+    if not expandable_segments or not torch.cuda.is_available():
+        return
+    if torch.version.hip is not None:
+        return
+    user_set = [k for k in _ALLOC_CONF_ENV_VARS if k in os.environ]
+    if user_set:
+        logger.info(f"Allocator configured via {user_set}; leaving it untouched")
+        return
+
+    if hasattr(torch._C, "_accelerator_setAllocatorSettings"):
+        set_allocator_settings = torch._C._accelerator_setAllocatorSettings
+    else:
+        set_allocator_settings = torch.cuda.memory._set_allocator_settings
+    set_allocator_settings("expandable_segments:True")
+    logger.info("Enabled CUDA allocator expandable_segments")
+
+
+def _configure_torch_backend(expandable_segments: bool = True):
     """Apply backend settings"""
-    import torch
+    _configure_cuda_allocator(expandable_segments)
 
     # Force the cuBLAS backend on AMD/ROCm to match the numerics of
     # NVIDIA-trained models.
