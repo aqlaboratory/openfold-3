@@ -713,3 +713,28 @@ Both CUDA legs ran the full `test-openfold-docker-pixi` budget and were cancelle
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #309, per this log's established convention).
 
 ---
+
+## 2026-10-07
+
+### Run #311 — primary nightly (schedule `17 3 * * *`, main @ `332d3a1` — PR #414 "Sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` by default" (merged 2026-10-06T12:23:40Z, new since run #309/10-06's `939ebd4`), [37567531088](https://github.com/aqlaboratory/openfold-3/actions/runs/37567531088))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 42 min | |
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 23 min | `code` — `FAILED openfold3/tests/test_cuda_allocator.py::test_matches_snapshot - AssertionError: Values are not sufficiently close.` at the "Run integration test" step |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 22 min | same signature — `FAILED openfold3/tests/test_cuda_allocator.py::test_matches_snapshot - AssertionError: Values are not sufficiently close.` at the "Run integration test" step |
+
+**2026-10-07: 1/3 passed · 0 skipped · 0 queued · 2 need attention**
+
+`start-aws-runner` succeeded on both CUDA legs (ruling out `aws-capacity`/`gpu-unavailable`); each failed specifically inside pytest at "Run integration test". Both legs' pytest run emits the same `UserWarning` seen on 2026-09-25/26 (run #288, a `workflow_dispatch` off-schedule run): `Snapshot environment mismatch in nvidia/: torch_version: stored=2.12.1, current=2.10.0, gpu_name: stored=NVIDIA GB10, current=NVIDIA A10G` (`openfold3/tests/conftest.py:261`), i.e. the stored allocator snapshot was captured on different hardware/torch version than the CI runner uses — the same stored-snapshot/runtime mismatch flagged as the likely root cause back then. New this time: main advanced from `939ebd4` (run #309/10-06, which had its own `unclassified` CUDA-leg cancellation) to `332d3a1`, which includes PR #414 — a change to `PYTORCH_CUDA_ALLOC_CONF` (`expandable_segments:True`) that directly touches CUDA allocator behavior, the exact subsystem `test_matches_snapshot` exercises. This failure is therefore classified `code` per this log's rules (pytest FAILED line + exception from test/library code), but given the direct overlap between PR #414's change and the failing test's subsystem, it should not be waved off purely as the pre-existing environment-mismatch issue without a human confirming whether PR #414 shifted the allocator's actual byte counts (not just the stored-snapshot env staleness). First time this specific `test_matches_snapshot` failure has hit the regular nightly schedule — it was previously only seen on the off-schedule run #288. Recorded to `test-failures.md`.
+
+### Run #312 — secondary nightly (schedule `17 4 * * *`, main @ `332d3a1`, [37572037787](https://github.com/aqlaboratory/openfold-3/actions/runs/37572037787))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #311, per this log's established convention).
+
+---

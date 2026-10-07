@@ -519,3 +519,41 @@ Both are therefore recorded `unclassified` per this log's rule ("none of the abo
 | `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | **success** | 112094591348 | 47 min |
 
 ---
+
+## 2026-10-07
+
+**Cause:** `code` — `test_cuda_allocator.py::test_matches_snapshot` failed on both CUDA legs with `AssertionError: Values are not sufficiently close.` Both legs' logs carry the identical `UserWarning` (`openfold3/tests/conftest.py:261`) already seen on 2026-09-25/26 (run #288, off-schedule): `Snapshot environment mismatch in nvidia/: torch_version: stored=2.12.1, current=2.10.0, gpu_name: stored=NVIDIA GB10, current=NVIDIA A10G` — the stored allocator snapshot was captured on different hardware/torch version than the CI runner. Not an AWS GPU outage: `start-aws-runner` succeeded on both legs; the failure is isolated to pytest inside the "Run integration test" step. **New context this time:** main advanced from `939ebd4` (run #309/10-06) to `332d3a1`, carrying PR #414, "Sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` by default" (merged 2026-10-06T12:23:40Z) — a direct change to CUDA allocator behavior, the exact subsystem this snapshot test exercises. Classified `code` per this log's rules (pytest FAILED line + exception from test/library code), but flagged for a human to confirm whether PR #414 changed the allocator's actual byte-count behavior (a real regression) versus this being the same pre-existing stored-snapshot staleness as run #288 coincidentally recurring now that the test finally ran on CUDA again. First time `test_matches_snapshot` has failed on the regular nightly schedule (previously only seen on the off-schedule run #288).
+
+- **Run ID:** [37567531088](https://github.com/aqlaboratory/openfold-3/actions/runs/37567531088)
+- **Run #:** 311
+- **Branch:** main @ `332d3a1` (PR #414, merged 2026-10-06T12:23:40Z)
+- **Time:** 2026-10-07T03:36:27Z – 04:18:52Z
+
+### Failed Jobs
+
+| Job | Status | Job ID | Failed step | Duration |
+|-----|--------|--------|--------------|----------|
+| `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` | **failure** | 112619031745 | Run integration test | 23 min (03:38:25–04:01:43) |
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | **failure** | 112619056940 | Run integration test | 22 min (03:38:31–04:00:15) |
+
+### Failed Test (both jobs, identical signature)
+
+```
+FAILED openfold3/tests/test_cuda_allocator.py::test_matches_snapshot - AssertionError: Values are not sufficiently close.
+```
+
+```
+openfold3/tests/test_cuda_allocator.py::test_matches_snapshot
+  /opt/openfold3/openfold3/tests/conftest.py:261: UserWarning: Snapshot environment mismatch in nvidia/:
+    torch_version: stored=2.12.1, current=2.10.0
+    gpu_name: stored=NVIDIA GB10, current=NVIDIA A10G
+  Snapshot tests may fail. Regenerate with: pytest --force-regen
+```
+
+### Passing Jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | **success** | 112618559356 | 42 min |
+
+---
