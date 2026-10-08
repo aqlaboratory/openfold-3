@@ -17,7 +17,21 @@ To make a contribution, you should first set up your repository, then submit a p
       git fetch origin && git pull origin main
       ```
 
-   4. Install openfold3 locally, using
+   4. Install openfold3 locally from the repository root, using either Pixi or pip.
+
+      **Pixi:** Install [Pixi](https://pixi.sh/latest/installation/), then install the development environment:
+
+      ```shell
+      pixi install -e openfold3-base --frozen
+      ```
+
+      `--frozen` installs the versions recorded in `pixi.lock` without updating the lockfile. The `openfold3-base` environment includes an editable installation of OpenFold3, testing tools, and Ruff, so source changes take effect without reinstalling.
+
+      Use `pixi run -e openfold3-base` to run commands in this environment, as shown below. No shell activation is needed.
+
+      The base environment does not include CUDA or ROCm. For GPU development and integration tests, choose the appropriate [hardware-specific environment](./Installation.md) and replace `openfold3-base` in the install and run commands.
+
+      **pip:** If you manage your own Python environment, install the development dependencies using:
 
       ```shell
       pip install .[dev]
@@ -25,9 +39,18 @@ To make a contribution, you should first set up your repository, then submit a p
 
    5. Setup OpenFold3. Make sure to run the full integration tests and that these tests pass. Also run all the unit tests and make sure the unit tests pass.
 
+      **Pixi:**
+
       ```shell
-      $ setup_openfold
-      $ pytest openfold3/tests/*
+      pixi run -e openfold3-base setup_openfold
+      pixi run -e openfold3-base pytest openfold3/tests/*
+      ```
+
+      **pip:**
+
+      ```shell
+      setup_openfold
+      pytest openfold3/tests/*
       ```
    ::::
 
@@ -38,13 +61,29 @@ To make a contribution, you should first set up your repository, then submit a p
    1. Include unit tests to test your changes. If you have limited experience writing tests, we can help. A good starting point is to convert the examples that you used to verify that your changes work into individual test cases
    2. Run all the unit tests, make sure they pass
 
+      **Pixi:**
+
+      ```shell
+      pixi run -e openfold3-base pytest openfold3/tests/*
       ```
+
+      **pip:**
+
+      ```shell
       pytest openfold3/tests/*
       ```
    3. If you are adding a new feature, consider adding documentation. It can help make your feature more discoverable.. If you are unsure where to place the documentation, the core team can provide suggestions during review.
    ::::
 
 4. Format the changes. In the OpenFold project, we use Ruff as our Linting tool. You can run Ruff in the same environment with.
+
+    **Pixi:**
+
+    ```shell
+    pixi run -e openfold3-base ruff format && pixi run -e openfold3-base ruff check --fix
+    ```
+
+    **pip:**
 
     ```shell
     ruff format && ruff check --fix
