@@ -93,8 +93,18 @@ jobs:
             BASE_IMAGE=${{ inputs.base_image }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }},mode=max
+          # The environment layer is keyed by the lockfile that produced it. Without
+          # that key every branch shares one cache tag, so a build from a branch with
+          # different dependencies publishes an environment layer that later builds
+          # reuse -- and a branch whose lockfile adds a package gets an image without
+          # it. That is not hypothetical: main does not depend on universal-pathlib,
+          # so its builds poisoned this tag for every branch that does, which failed
+          # with "No module named 'upath'" while main itself passed.
+          #
+          # Branches sharing a lockfile still share the cache, so the common case is
+          # unaffected; a cold environment build is paid only when the lockfile moves.
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}-${{ hashFiles('pixi.lock') }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}-${{ hashFiles('pixi.lock') }},mode=max
 
       - name: Run unit tests
         run: |
