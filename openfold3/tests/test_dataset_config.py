@@ -290,6 +290,62 @@ class TestOF3DatasetConfigConstruction:
                 }
             )
 
+    @staticmethod
+    def _dataset_paths(tmp_path):
+        cache_file = tmp_path / "cache.json"
+        cache_file.write_text("{}")
+        return {
+            "alignments_directory": tmp_path,
+            "dataset_cache_file": cache_file,
+            "target_structures_directory": tmp_path,
+            "target_structure_file_format": "npz",
+            "reference_molecule_directory": tmp_path,
+            "template_structure_array_directory": tmp_path,
+            "template_file_format": "npz",
+        }
+
+    def test_partial_max_seq_counts_replaces_default_map(self, tmp_path):
+        # Keys of max_seq_counts select which MSA files are parsed
+        spec = TrainingDatasetSpec.model_validate(
+            {
+                "name": "train",
+                "mode": "train",
+                "dataset_class": "WeightedPDBDataset",
+                "config": {
+                    "dataset_paths": self._dataset_paths(tmp_path),
+                    "msa": {"max_seq_counts": {"uniprot_hits": 50000}},
+                },
+            }
+        )
+
+        assert spec.config.msa.max_seq_counts == {"uniprot_hits": 50000}
+
+    def test_shared_config_does_not_leak_between_datasets(self, tmp_path):
+        shared_config = {
+            "dataset_paths": self._dataset_paths(tmp_path),
+            "template": {"n_templates": 2},
+        }
+        train = TrainingDatasetSpec.model_validate(
+            {
+                "name": "train",
+                "mode": "train",
+                "dataset_class": "WeightedPDBDataset",
+                "config": shared_config,
+            }
+        )
+        val = TrainingDatasetSpec.model_validate(
+            {
+                "name": "val",
+                "mode": "validation",
+                "dataset_class": "ValidationPDBDataset",
+                "config": shared_config,
+            }
+        )
+
+        assert train.config.template.take_top_k is False
+        assert val.config.template.take_top_k is True
+        assert shared_config["template"] == {"n_templates": 2}
+
     def test_dataset_config_with_no_template_paths(self, tmp_path):
         """Test that dataset configs work when template paths are None."""
         test_dummy_file = tmp_path / "test.json"
