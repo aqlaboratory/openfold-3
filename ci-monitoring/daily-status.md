@@ -737,4 +737,39 @@ Expected skip on the secondary slot (intended for other repos, not `aqlaboratory
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #311, per this log's established convention).
 
+### Run #313 — workflow_dispatch (`jandom/2026-10/ci/fix-daily-tests-after-expandable-segments` @ `6dcb629`, [37603411922](https://github.com/aqlaboratory/openfold-3/actions/runs/37603411922))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 38 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 39 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 35 min | |
+
+Not a scheduled nightly; excluded from the day's coverage line per this log's established convention (same treatment as runs #256, #263, #272, and #282). Validation run for commit `6dcb629` ("ci: fix daily tests after expandable_segments", Jan Domanski, 2026-10-07T09:38:35Z) — almost certainly the fix for run #311's (10-07) `test_matches_snapshot` allocator-snapshot failure. All three legs passed on this commit. `6dcb629` is also `main`'s head for tonight's primary run (#314) below, so this run is read as pre-confirmation that the fix holds before it hit the nightly schedule.
+
+---
+
+## 2026-10-08
+
+### Run #314 — primary nightly (schedule `17 3 * * *`, main @ `6dcb629` — first nightly run on this commit ("ci: fix daily tests after expandable_segments", new since run #311–312/10-07's `332d3a1`), [37723512781](https://github.com/aqlaboratory/openfold-3/actions/runs/37723512781))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 34 min | |
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 2 min | `aws-capacity` at `start-aws-runner` / "Report launch outcome" — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 2 min | same `aws-capacity` signature — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+
+**2026-10-08: 1/3 passed · 0 skipped · 0 queued · 2 need attention**
+
+AWS `g5.4xlarge` capacity exhaustion across all six capacity pools (3x us-east-2 zones InsufficientInstanceCapacity, 3x us-west-2 zones — 2a/2b/2c InsufficientInstanceCapacity, 2d Unsupported for this instance type) on both CUDA legs' `start-aws-runner` step, failing at "Report launch outcome"; corresponding `stop-aws-runner` failed as a cascading consequence (no instance to stop) and `test-openfold-docker-pixi` never ran (cuda13: `skipped`; cuda12: `cancelled` — matrix sibling raced to the same empty-outputs state slightly differently, same root cause). Same signature as runs #252 (09-10), #282 (09-22, `workflow_dispatch`), #284 (09-24), #291 (09-27), #295 (09-29), and #299 (10-01). AMD leg (self-hosted runner, unaffected by AWS capacity) passed. Not related to the `6dcb629` allocator fix validated by run #313 just above — that fix held (AMD ran the full suite clean); tonight's non-pass is purely AWS infrastructure. Recorded to `aws-outage-failures.md`.
+
+### Run #315 — secondary nightly (schedule `17 4 * * *`, main @ `6dcb629`, [37728067887](https://github.com/aqlaboratory/openfold-3/actions/runs/37728067887))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #314, per this log's established convention).
+
 ---
