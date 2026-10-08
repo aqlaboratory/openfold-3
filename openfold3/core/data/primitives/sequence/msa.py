@@ -1112,8 +1112,13 @@ def sort_by_row_id_product(
         block_mask = n_unpaired == n_unpaired_i
         paired_row_id_block = paired_row_ids_sample[block_mask, :]
         paired_species_id_block = paired_species_ids[block_mask, :]
+
+        max_id = int(paired_row_id_block.max(initial=1))
+        n_paired = paired_row_id_block.shape[1] - int(n_unpaired_i)
+        dtype = np.int64 if max_id**n_paired <= np.iinfo(np.int64).max else object
+
         sorting_ids = np.argsort(
-            np.abs(np.prod(paired_row_id_block.astype(object), axis=1))
+            np.abs(np.prod(paired_row_id_block, axis=1, dtype=dtype))
         )
         paired_row_id_block_sorted = paired_row_id_block[sorting_ids, :]
         paired_species_id_block_sorted = paired_species_id_block[sorting_ids, :]
