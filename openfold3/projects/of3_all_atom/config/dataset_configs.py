@@ -29,7 +29,7 @@ These fields are parsed by the DataModule to create the appropriate Dataset clas
 """
 
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, TypeVar
 
 from pydantic import (
@@ -371,6 +371,31 @@ class TrainingDatasetSpec(DatasetSpec):
         return values
 
 
+def _overlay_on_model(default: BaseModel, update: Any) -> Any:
+    """Return `default`'s fields overlaid with the fields given in `update`.
+
+    `update` may be a mapping or an instance of `default`'s type, in which case
+    only the fields pydantic records as set count. Anything else is returned
+    unchanged for normal validation to accept or reject. Recursion only
+    descends into fields whose default is itself a model. Any other value,
+    including a dict such as `MSASettings.max_seq_counts` whose keys select
+    which MSAs are parsed, replaces the default whole.
+    """
+    if isinstance(update, type(default)):
+        update = update.model_dump(exclude_unset=True)
+    if not isinstance(update, Mapping):
+        return update
+
+    merged = default.model_dump()
+    for key, value in update.items():
+        default_value = getattr(default, key, None)
+        if isinstance(default_value, BaseModel):
+            merged[key] = _overlay_on_model(default_value, value)
+        else:
+            merged[key] = value
+    return merged
+
+
 class InferenceDatasetConfigKwargs(BaseModel):
     """Class to hold msa, template, and pocket sampling kwargs for inference pipeline"""
 
@@ -378,6 +403,23 @@ class InferenceDatasetConfigKwargs(BaseModel):
     msa: MSASettings = MSASettings(subsample_main=False)
     template: TemplateSettings = TemplateSettings(take_top_k=True)
     pocket_sampling: PocketSamplingSettings = PocketSamplingSettings()
+
+    @model_validator(mode="before")
+    @classmethod
+    def overlay_partial_settings_on_defaults(cls, data: Any) -> Any:
+        """Apply partial settings on top of the inference defaults above rather
+        than on the settings classes' own defaults, so that e.g.
+        `template: {n_templates: 2}` keeps `take_top_k=True`."""
+        if not isinstance(data, Mapping):
+            return data
+
+        data = dict(data)
+        for field_name, field_info in cls.model_fields.items():
+            if field_name in data and isinstance(field_info.default, BaseModel):
+                data[field_name] = _overlay_on_model(
+                    field_info.default, data[field_name]
+                )
+        return data
 
 
 class InferenceJobConfig(BaseModel):
