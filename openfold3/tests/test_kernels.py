@@ -46,7 +46,7 @@ pytestmark = [pytest.mark.slow]
 torch.backends.cuda.preferred_blas_library("cublas")
 
 
-@compare_utils.skip_unless_cuda_available()
+@compare_utils.skip_unless_gpu_available()
 class TestKernels:
     def _compare_attn_kernel_forward(
         self,
