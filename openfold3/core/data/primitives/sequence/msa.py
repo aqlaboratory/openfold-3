@@ -1112,7 +1112,9 @@ def sort_by_row_id_product(
         block_mask = n_unpaired == n_unpaired_i
         paired_row_id_block = paired_row_ids_sample[block_mask, :]
         paired_species_id_block = paired_species_ids[block_mask, :]
-        sorting_ids = np.argsort(np.abs(np.prod(paired_row_id_block, axis=1)))
+        sorting_ids = np.argsort(
+            np.abs(np.prod(paired_row_id_block.astype(object), axis=1))
+        )
         paired_row_id_block_sorted = paired_row_id_block[sorting_ids, :]
         paired_species_id_block_sorted = paired_species_id_block[sorting_ids, :]
         paired_row_ids_sample[block_mask, :] = paired_row_id_block_sorted
