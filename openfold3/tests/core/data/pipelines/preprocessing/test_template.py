@@ -36,11 +36,15 @@ import biotite.structure.io.pdbx as pdbx
 import numpy as np
 import pandas as pd
 import pytest
+from biotite.structure import AtomArray
 
 import openfold3
 from openfold3.core.data.io.dataset_cache import read_datacache, write_datacache_to_json
 from openfold3.core.data.io.sequence.template import TemplateData
-from openfold3.core.data.io.structure.cif import _load_ciffile
+from openfold3.core.data.io.structure.cif import _load_ciffile, parse_mmcif
+from openfold3.core.data.pipelines.featurization.template import (
+    featurize_template_structures_of3,
+)
 from openfold3.core.data.pipelines.preprocessing import template as template_module
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePrecachePreprocessor,
@@ -56,6 +60,9 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     match_template_seq_from_aln_to_struc,
     remap_template_chain_id,
 )
+from openfold3.core.data.pipelines.sample_processing.template import (
+    process_template_structures_of3,
+)
 from openfold3.core.data.primitives.caches.format import (
     ClusteredDatasetCache,
     ClusteredDatasetChainData,
@@ -65,6 +72,7 @@ from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
 from openfold3.core.data.primitives.structure.metadata import (
     get_asym_id_to_canonical_seq_dict,
 )
+from openfold3.core.data.primitives.structure.tokenization import tokenize_atom_array
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.core.data.tools.colabfold_msa_server import (
     remap_colabfold_template_chain_ids,
@@ -1329,6 +1337,89 @@ def test_structure_array_holds_the_template_chain(train_preprocessor_run):
         for template_id in expected
     }
 
+    assert actual == expected
+
+
+def _tokenized_1fdl(settings: TemplatePreprocessorSettings) -> AtomArray:
+    """1fdl's protein chains, chain IDs "1"-"3" as in the dataset cache, tokenized."""
+    assert settings.structure_directory is not None
+    atom_array = parse_mmcif(
+        settings.structure_directory / "1fdl.cif", renumber_chain_ids=True
+    ).atom_array
+    atom_array = atom_array[atom_array.molecule_type_id == MoleculeType.PROTEIN]
+    tokenize_atom_array(atom_array)
+    return atom_array
+
+
+def _residues_covered_per_template(
+    template_features: dict, atom_array: AtomArray
+) -> dict[str, list[int]]:
+    """Chain ID -> number of the chain's residues each template slot covers.
+
+    A residue is covered when its tokens have template_pseudo_beta_mask set. Counted
+    per residue, not per token: disulfide-bonded cysteines take one token per atom.
+    """
+    mask = template_features["template_pseudo_beta_mask"].numpy()
+    covered = {}
+    for chain_id in np.unique(atom_array.chain_id):
+        chain = atom_array[atom_array.chain_id == chain_id]
+        covered[str(chain_id)] = [
+            len(np.unique(chain.res_id[np.isin(chain.token_id, np.flatnonzero(slot))]))
+            for slot in mask
+        ]
+    return covered
+
+
+def test_train_mode_outputs_give_training_template_features(train_preprocessor_run):
+    """Training's template pipeline turns train-mode outputs into template features.
+
+    Runs the dataset's template steps (sample templates from the cache, align them to
+    the query, featurize) on the 1fdl-2020 entry, taking the top templates in order.
+    """
+    cache, settings = train_preprocessor_run
+    atom_array = _tokenized_1fdl(settings)
+    # What the dataset reads from the dataset cache for each chain
+    assembly_data = {
+        chain_id: {
+            "alignment_representative_id": chain.alignment_representative_id,
+            "template_ids": chain.template_ids,
+        }
+        for chain_id, chain in cache.structure_data["1fdl-2020"].chains.items()
+    }
+
+    template_slices = process_template_structures_of3(
+        atom_array=atom_array,
+        n_templates=4,
+        take_top_k=True,
+        min_n_tokens_per_chain=5,
+        template_cache_directory=settings.cache_directory,
+        assembly_data=assembly_data,
+        template_structures_directory=None,
+        template_structure_array_directory=settings.structure_array_directory,
+        template_file_format="npz",
+        ccd=None,
+    )
+    template_features = featurize_template_structures_of3(
+        atom_array=atom_array,
+        template_slice_collection=template_slices,
+        n_templates=4,
+        n_tokens=len(np.unique(atom_array.token_id)),
+        min_bin=3.25,
+        max_bin=50.75,
+        n_bins=39,
+    )
+
+    actual = _residues_covered_per_template(template_features, atom_array)
+    # One entry per template slot, in template_ids order; 0 for an empty slot.
+    expected = {
+        # 1fdl_A, 1qbl_A: all 214 residues. 1jhk_A: its C-terminal Cys has no
+        # coordinates.
+        "1": [214, 214, 213, 0],
+        # 1fdl_B, 1qbl_B: all 218 residues. 3hfm_B: aligned to 215 of them.
+        "2": [218, 218, 215, 0],
+        # 1ior_A, 5lyz_A: all 129 residues; only two templates.
+        "3": [129, 129, 0, 0],
+    }
     assert actual == expected
 
 
