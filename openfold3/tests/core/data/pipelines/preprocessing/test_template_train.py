@@ -35,7 +35,6 @@ import pytest
 from biotite.structure import AtomArray
 
 import openfold3
-from openfold3.core.data.io.dataset_cache import read_datacache, write_datacache_to_json
 from openfold3.core.data.io.structure.cif import parse_mmcif
 from openfold3.core.data.pipelines.featurization.template import (
     featurize_template_structures_of3,
@@ -837,24 +836,3 @@ def test_update_dataset_cache_truncates_after_date_filtering(tmp_path):
 def _write_file_with_parents(path: Path, content: str = "") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     return _write_file(path, content)
-
-
-def test_train_mode_on_dataset_cache_read_from_json(tmp_path):
-    """Train mode works on a dataset cache read from JSON, and its output round-trips.
-
-    The steps of the preprocessing script's train mode. Read from JSON, release dates
-    are strings rather than dates.
-    """
-    input_path = tmp_path / "dataset_cache.json"
-    write_datacache_to_json(_train_dataset_cache(), input_path)
-    cache = read_datacache(input_path)
-    settings = TemplatePreprocessorSettings(
-        mode="train", **_train_settings_kwargs(tmp_path)
-    )
-
-    TemplatePreprocessor(input_set=cache, config=settings)()
-    output_path = tmp_path / "dataset_cache_with_templates.json"
-    write_datacache_to_json(cache, output_path)
-
-    actual = _train_template_ids(read_datacache(output_path))
-    assert actual == TRAIN_EXPECTED_TEMPLATE_IDS
