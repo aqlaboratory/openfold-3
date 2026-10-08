@@ -326,20 +326,28 @@ python preprocess_template_alignments_new_of3.py \
     --input_set_path <path/to/input/query.json> \
     --input_set_type "predict" \
     --runner_yaml <path/to/runner.yml> \
-    --output_set_path <path/to/updated/output/query.json> \
+    --output_directory <path/to/output/directory>
 ```
 
-where `input_set_path` is the inference query.json, `output_set_path` is the output json with the updated template information following preprocessing and `runner_yaml` contains the preprocessing configuration, for example:
+where `input_set_path` is the inference query.json, `runner_yaml` contains the preprocessing configuration and `output_directory` receives all outputs:
+
+```
+<output_directory>/
+├── query.json                            # the input query set (same file name), with template information
+├── template_preprocessor_settings.json   # settings used for this run
+└── template_cache/                       # template cache entries
+```
+
+An example `runner_yaml`:
 
 ```
 template_preprocessor_settings:
   n_processes: 4  
   chunksize: 1
   precache_directory: <path/to/precache>
-  cache_directory: <path/to/output/template/cache>
 ```
 
-This script runs 4 parallel processes to preprocesse the template alignments specified under the `template_alignment_file_path` field of each chain in the inference query json, using the template structures precached at the path given by `precache_directory` and outputs the template cache to `cache_directory`. If precaching was not done, you can run processing from the raw structures by specifying them under the `structure_directory` field and dropping `precache_directory`.
+This script runs 4 parallel processes to preprocesse the template alignments specified under the `template_alignment_file_path` field of each chain in the inference query json, using the template structures precached at the path given by `precache_directory`, and writes the template cache to `<output_directory>/template_cache`. If precaching was not done, you can run processing from the raw structures by specifying them under the `structure_directory` field and dropping `precache_directory`. `output_directory`, `cache_directory` and `log_directory` in the YAML are ignored in favor of `--output_directory`; `precache_directory` and `structure_array_directory` are used when given.
 
 (32-template-structure-preprocessing)=
 ### 3.2. Template Structure Preprocessing
@@ -364,4 +372,4 @@ template_preprocessor_settings:
   ccd_file_path: <optional/path/to/ccd/file>
 ```
 
-where a CCD file can be optionally provided if the template structures contain custom ligands or other chemical components.
+where a CCD file can be optionally provided if the template structures contain custom ligands or other chemical components. The script writes `<structure_array_directory>/<entry_id>/<entry_id>_<chain_id>.npz` for every chain of the requested molecule types, plus a `chain_id_to_moltype.npz` per entry that maps its chains to molecule types. Template precache creation reads this map and skips entries without one, so keep it with the arrays.

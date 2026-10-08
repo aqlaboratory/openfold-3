@@ -332,6 +332,8 @@ template_preprocessor_settings:
 
 Explicit template paths override these inference defaults.
 
+When running [`preprocess_template_alignments_new_of3.py`](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/preprocess_template_alignments_new_of3.py), `mode` follows `--input_set_type`, and `--output_directory` replaces `output_directory`, `cache_directory` and `log_directory`. `precache_directory` and `structure_array_directory` are used when given. The settings used are saved as `template_preprocessor_settings.json` in the output directory.
+
 ---
 
 ## 4. Default Values Reference
