@@ -1728,6 +1728,18 @@ class TemplatePreprocessorSettings(BaseModel):
     _run_owned_output_directory: Path | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
+    def _check_min_release_date_diff(self) -> "TemplatePreprocessorSettings":
+        # Train mode applies it per structure, in _update_dataset_cache. Inference
+        # queries have no release date to measure the difference from.
+        if self.mode == "predict" and self.min_release_date_diff is not None:
+            raise ValueError(
+                "min_release_date_diff only applies in train mode: inference queries "
+                "have no release date. Use max_release_date to exclude recent "
+                "templates."
+            )
+        return self
+
+    @model_validator(mode="after")
     def _prepare_output_directories(self) -> "TemplatePreprocessorSettings":
         # TODO: add .pdb support
         if self.structure_file_format not in ["cif", "npz"]:
@@ -2341,9 +2353,8 @@ class TemplatePreprocessor:
         # by entry ID, and cannot index by sequence hash due to the way filtering is
         # done
         cache_key = input_data.cache_key
-        # Train-mode entries are shared by all chains of a representative: release date
-        # filtering against the query and capping at max_templates happen per structure
-        # in _update_dataset_cache instead.
+        # Train-mode entries are shared by all chains of a representative: capping at
+        # max_templates happens per structure in _update_dataset_cache instead.
         is_train = isinstance(input_data, TemplatePreprocessorInputTrain)
         # skip template preprocessing for chain if already done. Keyed on sequence +
         # template source, so a second chain only short-circuits when it would produce
@@ -2572,13 +2583,13 @@ class TemplatePreprocessor:
                 # F. Apply release date checks
                 if not isinstance(release_date, datetime):
                     release_date = datetime.strptime(release_date, "%Y-%m-%d")
+                # min_release_date_diff needs the query's release date: applied per
+                # structure in _update_dataset_cache, and not used in predict mode.
                 if fails_template_release_date_checks(
                     template_release_date=release_date,
                     query_release_date=None,
                     max_template_release_date=self.max_release_date,
-                    min_release_date_diff=None
-                    if is_train
-                    else self.min_release_date_diff,
+                    min_release_date_diff=None,
                 ):
                     if self.create_logs:
                         worker_logger.info(

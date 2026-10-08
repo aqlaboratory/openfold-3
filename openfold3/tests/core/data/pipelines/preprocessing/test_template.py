@@ -498,6 +498,20 @@ def test_settings_rejects_unsupported_structure_format(tmp_path):
         )
 
 
+def test_settings_rejects_min_release_date_diff_in_predict_mode(tmp_path):
+    """Predict mode has no query release date to measure the difference from."""
+    with pytest.raises(ValueError, match="min_release_date_diff"):
+        TemplatePreprocessorSettings(
+            mode="predict", output_directory=tmp_path, min_release_date_diff=60
+        )
+
+    # Train mode applies it per structure, against each structure's release date
+    settings = TemplatePreprocessorSettings(
+        mode="train", output_directory=tmp_path, min_release_date_diff=60
+    )
+    assert settings.min_release_date_diff == 60
+
+
 def test_settings_derives_default_directories(tmp_path):
     with patch(
         "openfold3.core.data.tools.utils.tempfile.gettempdir",

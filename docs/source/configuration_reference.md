@@ -300,7 +300,7 @@ Configures template structure preprocessing and filtering.
 - `min_align` *(float | None)*: Minimum alignment coverage (default: `null`)
 - `min_len` *(int | None)*: Minimum aligned residues (default: `null`)
 - `max_release_date` *(datetime | None)*: Maximum template release date (default: `null`)
-- `min_release_date_diff` *(int | None)*: Minimum days between query and template release (default: `null`)
+- `min_release_date_diff` *(int | None)*: Train mode only. Minimum days between a structure's release and its templates' release; inference queries have no release date, so use `max_release_date` there (default: `null`)
 - `max_templates` *(int)*: Maximum templates per chain (default: `20`)
 - `cif_direct_min_score` *(float)*: CIF-direct mode only. Minimum sequence identity × query coverage for a template chain to be used (default: `0.1`)
 - `min_f_resolved` *(float)*: Minimum fraction of resolved residues for a template to be valid; only used when template structure arrays and precache entries are computed separately from the template cache (default: `0.1`)
