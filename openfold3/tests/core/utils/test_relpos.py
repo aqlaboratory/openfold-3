@@ -71,12 +71,48 @@ class TestCyclicOffset:
         off = cyclic_offset(idx)
         assert (off.diagonal() == 0).all()
 
-    def test_antisymmetry(self):
-        # Cyclic offset is antisymmetric: off[i,j] == -off[j,i].
-        # Equivalently, the magnitudes are symmetric.
-        idx = torch.arange(6)
+    def test_docstring_example(self):
+        # The example shown in the docstring
+
+        off = cyclic_offset(torch.arange(6))
+        expected = torch.tensor(
+            [
+                [0, -1, -2, -3, 2, 1],
+                [1, 0, -1, -2, -3, 2],
+                [2, 1, 0, -1, -2, -3],
+                [3, 2, 1, 0, -1, -2],
+                [-2, 3, 2, 1, 0, -1],
+                [-1, -2, 3, 2, 1, 0],
+            ],
+            dtype=torch.int32,
+        )
+        assert torch.equal(off, expected)
+
+    @pytest.mark.parametrize("n", range(1, 17))
+    def test_antisymmetry(self, n):
+        off = cyclic_offset(torch.arange(n))
+        assert torch.equal(off, -off.T)
+
+    @pytest.mark.parametrize("n", range(2, 17, 2))
+    def test_antipode_keeps_the_sign_of_the_linear_offset(self, n):
+        # In an even ring, residues n // 2 apart are that far apart either way
+        # round. To preserve antisymmetry, they keep the sign of the linear
+        # offset.
+        idx = torch.arange(n)
+        linear = idx[:, None] - idx[None, :]
+        antipodal = linear.abs() == n // 2
+
         off = cyclic_offset(idx)
-        assert torch.equal(off.abs(), off.T.abs())
+
+        assert antipodal.sum() == n
+        assert torch.equal(off[antipodal], linear[antipodal].to(off.dtype))
+
+    @pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+    def test_returns_int32_on_input_device(self, dtype):
+        idx = torch.arange(7, dtype=dtype)
+        off = cyclic_offset(idx)
+        assert off.dtype == torch.int32
+        assert off.device == idx.device
 
     def test_max_distance_at_midpoint(self):
         # For an even-length chain the maximum offset magnitude is peptide_length // 2.
@@ -85,12 +121,62 @@ class TestCyclicOffset:
         off = cyclic_offset(idx)
         assert int(off.abs().max()) == n // 2
 
-    def test_odd_length(self):
+    @pytest.mark.parametrize("n", [3, 5, 7, 11])
+    def test_odd_length(self, n):
         # For an odd-length chain all entries are <= (n-1)//2 away from 0.
-        n = 7
         idx = torch.arange(n)
         off = cyclic_offset(idx)
-        assert int(off.abs().max()) <= (n - 1) // 2 + 1
+        assert int(off.abs().max()) == (n - 1) // 2
+
+    @pytest.mark.parametrize("n", range(1, 17))
+    def test_congruent_to_linear(self, n):
+        idx = torch.arange(n)
+        linear = idx[:, None] - idx[None, :]
+
+        off = cyclic_offset(idx)
+
+        assert torch.equal((off - linear) % n, torch.zeros_like(linear))
+
+    @pytest.mark.parametrize("n", range(1, 17))
+    def test_shortest_way_around_the_ring(self, n):
+        idx = torch.arange(n)
+        linear = idx[:, None] - idx[None, :]
+        forward = linear % n
+        shortest = torch.minimum(forward, n - forward)
+
+        off = cyclic_offset(idx)
+
+        assert torch.equal(off.abs(), shortest.to(off.dtype))
+
+    # In a ring of 2 tail is also the antipode of head, so it keeps the sign of
+    # the linear offset and off[0, 1] == -1.
+    @pytest.mark.parametrize("n", range(3, 17))
+    def test_head_and_tail_are_adjacent(self, n):
+        off = cyclic_offset(torch.arange(n))
+        assert off[0, n - 1] == 1
+        assert off[n - 1, 0] == -1
+
+    def test_uses_residue_index_values(self):
+        # Inference residue indices start at 1; only differences matter.
+        assert torch.equal(
+            cyclic_offset(torch.arange(1, 8)), cyclic_offset(torch.arange(7))
+        )
+
+    @pytest.mark.parametrize(
+        "residue_index",
+        [torch.tensor([0, 1, 1, 1, 2, 3, 4]), torch.tensor([0, 1, 1, 1, 1, 1, 2, 3])],
+    )
+    def test_tokens_of_one_residue_are_zero_apart(self, residue_index):
+        # An atomized residue contributes several tokens with the same residue index;
+        # the ring still has one position per residue, so the tokens get the
+        # offsets of their residues.
+        n_residues = int(residue_index.max()) + 1
+        per_residue = cyclic_offset(torch.arange(n_residues))
+
+        off = cyclic_offset(residue_index)
+
+        assert torch.equal(off, per_residue[residue_index][:, residue_index])
+        assert torch.equal(off, -off.T)
 
     def test_output_shape(self):
         n = 5

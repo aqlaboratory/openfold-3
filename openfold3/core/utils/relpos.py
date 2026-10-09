@@ -18,36 +18,36 @@ from openfold3.core.utils.tensor_utils import binned_one_hot
 
 
 def cyclic_offset(residue_index: torch.Tensor) -> torch.Tensor:
-    """Calculate the cyclic offset for the given residue index.
+    """Calculate the offsets between tokens of a cyclic chain of residues.
+
+    Each offset is the linear offset wrapped to the shorter way around the ring
+    of residues where the ring length is determined based on the difference
+    between the maximum and minimum residue indices. The antipode residue
+    directly opposite in an even ring keeps the sign of the linear offset, so
+    the offsets are antisymmetric.
+
     Args:
         residue_index:
-            [*, N_token] Token index
+            [N_token] Residue index of each token of one cyclic chain
 
     Returns:
         cyclic_offset_array:
-            [N_token, N_token] token by token index distances
+            [N_token, N_token] int32 offsets in [-(L // 2), L // 2], congruent
+            to residue_index[i] - residue_index[j] modulo the ring length L
 
     Example:
-        >>> import torch
-        >>> residue_index = torch.tensor([0,1,2,3,4,5,6])
-        >>> cyclic_offset_array = cyclic_offset(residue_index)
-        >>> cyclic_offset_array:
-            tensor([[ 0, -1, -2, -3,  2,  1],
-                    [ 1,  0, -1, -2, -3,  2],
-                    [ 2,  1,  0, -1, -2, -3],
-                    [-3,  2,  1,  0, -1, -2],
-                    [-2, -3,  2,  1,  0, -1],
-                    [-1, -2, -3,  2,  1,  0]], device='cuda:0', dtype=torch.int32)
-
+        >>> cyclic_offset(torch.arange(6))
+        tensor([[ 0, -1, -2, -3,  2,  1],
+                [ 1,  0, -1, -2, -3,  2],
+                [ 2,  1,  0, -1, -2, -3],
+                [ 3,  2,  1,  0, -1, -2],
+                [-2,  3,  2,  1,  0, -1],
+                [-1, -2,  3,  2,  1,  0]], dtype=torch.int32)
     """
-    peptide_length = residue_index.shape[0]
-    cyclic_offset_array = torch.zeros((peptide_length, peptide_length))
-    cyc_row = torch.arange(0, -peptide_length, -1)
-    pc = int(torch.round(torch.tensor(peptide_length / 2)))  # Get centre
-    cyc_row[pc + 1 :] = torch.arange(len(cyc_row[pc + 1 :]), 0, -1)
-    for i in range(len(cyclic_offset_array)):
-        cyclic_offset_array[i] = torch.roll(cyc_row, i)
-    return cyclic_offset_array.type(torch.int).to(residue_index.device)
+    ring_length = int(residue_index.max() - residue_index.min()) + 1
+    offset = residue_index[:, None] - residue_index[None, :]
+    # At antipodes offset / ring_length is exactly +-1/2, so torch.round RNE rounds to 0
+    return (offset - ring_length * torch.round(offset / ring_length)).type(torch.int)
 
 
 def apply_cyclic_offsets(
