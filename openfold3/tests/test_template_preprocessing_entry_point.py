@@ -22,7 +22,6 @@ tests.
 
 import json
 import logging
-import os
 from pathlib import Path
 
 import pytest
@@ -53,20 +52,8 @@ from openfold3.tests.core.data.pipelines.preprocessing.test_template_train impor
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def in_tmp_path(tmp_path):
-    """Runs the test with tmp_path as the working directory."""
-    # TODO: replace with contextlib.chdir (Python 3.11+) once Python 3.10 is dropped
-    previous = os.getcwd()
-    os.chdir(tmp_path)
-    try:
-        yield tmp_path
-    finally:
-        os.chdir(previous)
-
-
-# The resolved output paths for the same settings, whatever the YAML gave. Tests run
-# inside tmp_path, so these are relative to it.
+# The resolved output paths for the same settings, whatever the YAML gave. Relative
+# to tmp_path, which the test prefixes to every path.
 DEFAULT_OUTPUT_PATHS = {
     "output_directory": Path("out"),
     "cache_directory": Path("out/template_cache"),
@@ -114,7 +101,7 @@ DEFAULT_OUTPUT_PATHS = {
     ],
 )
 def test_resolved_output_paths(
-    in_tmp_path, caplog, yaml_paths, expected_paths, expected_ignored
+    tmp_path, caplog, yaml_paths, expected_paths, expected_ignored
 ):
     """Where each output goes, given paths from the YAML.
 
@@ -122,13 +109,19 @@ def test_resolved_output_paths(
     from the YAML, with a warning. Precache and structure array directories hold
     parsed template structures reused across runs, so the YAML's are kept.
     """
+    yaml_paths = {key: str(tmp_path / value) for key, value in yaml_paths.items()}
+    expected_paths = {
+        key: None if value is None else tmp_path / value
+        for key, value in expected_paths.items()
+    }
+    output_directory = tmp_path / "out"
     settings_kwargs = {"preparse_structures": True, "create_logs": True, **yaml_paths}
 
     with caplog.at_level(logging.WARNING):
         settings = resolve_template_preprocessor_settings(
             settings_kwargs=settings_kwargs,
             input_set_type="train",
-            output_directory=Path("out"),
+            output_directory=output_directory,
         )
 
     actual = {key: getattr(settings, key) for key in expected_paths}
@@ -137,7 +130,7 @@ def test_resolved_output_paths(
     expected_warnings = (
         [
             f"Ignoring template_preprocessor_settings {expected_ignored}: all "
-            "outputs go to out."
+            f"outputs go to {output_directory}."
         ]
         if expected_ignored
         else []
@@ -162,7 +155,6 @@ def test_mode_in_settings_is_rejected(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-# REVIEW: make two separate functions for train inputs and inference input
 def _write_dataset_cache_json(directory: Path) -> Path:
     """Train-mode input: the 1fdl dataset cache."""
     input_path = directory / "dataset_cache.json"
