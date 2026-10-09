@@ -41,6 +41,7 @@ from openfold3.core.model.structure.diffusion_module import (
     centre_random_augmentation,
     create_noise_schedule,
 )
+from openfold3.core.utils.chunk_utils import set_chunk_caps
 from openfold3.core.utils.device_utils import autocast_device_type, empty_device_cache
 from openfold3.core.utils.permutation_alignment import (
     safe_multi_chain_permutation_alignment,
@@ -149,6 +150,7 @@ class OpenFold3(nn.Module):
         mode_mem_settings = (
             self.settings.memory.train if self.training else self.settings.memory.eval
         )
+        set_chunk_caps(mode_mem_settings.get("chunk_caps"))
         return mode_mem_settings
 
     def _do_inference_offload(self, seq_len: int, module_name: str) -> bool:
@@ -253,6 +255,9 @@ class OpenFold3(nn.Module):
                         use_lma=mode_mem_settings.use_lma,
                         inplace_safe=inplace_safe,
                         offload_inference=offload_template_module,
+                        stream_templates=mode_mem_settings.get(
+                            "stream_templates", False
+                        ),
                     ),
                     inplace=inplace_safe,
                 )
@@ -331,6 +336,7 @@ class OpenFold3(nn.Module):
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
         inplace_safe: bool = False,
+        zij_release: list | None = None,
     ) -> dict:
         """
         Mini diffusion rollout described in section 4.1.
@@ -347,6 +353,8 @@ class OpenFold3(nn.Module):
                 [*, N_token, N_token, C_z] Pair representation output from model trunk
             inplace_safe:
                 Whether inplace operations can be performed
+            zij_release:
+                Optional owned trunk-pair slot cleared before confidence.
 
         Returns:
             Output dictionary containing the predicted trunk embeddings,
@@ -415,8 +423,11 @@ class OpenFold3(nn.Module):
             "zij_trunk": zij_trunk,
             "atom_positions_predicted": atom_positions_predicted,
         }
+        del zij_trunk
+        if zij_release is not None:
+            zij_release[0] = None
 
-        cast_dtype = torch.float32 if self.training else si_trunk.dtype
+        cast_dtype = torch.float32 if self.training else output["si_trunk"].dtype
         with torch.amp.autocast(
             device_type=autocast_device_type(si_trunk), dtype=cast_dtype
         ):
@@ -427,6 +438,7 @@ class OpenFold3(nn.Module):
                     si_input=si_input,
                     output=output,
                     use_zij_trunk_embedding=use_trunk_embedding,
+                    release_zij_trunk=zij_release is not None,
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
                     use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
@@ -622,7 +634,10 @@ class OpenFold3(nn.Module):
                 "si_trunk" ([*, N_token, C_s]):
                     Single representation output from model trunk
                 "zij_trunk" ([*, N_token, N_token, C_z]):
-                    Pair representation output from model trunk
+                    Pair representation output from model trunk. Always kept
+                    for training and validation. Dropped on inference after
+                    the confidence clone when
+                    ``settings.memory.eval.release_trunk_pair`` is set.
                 "atom_positions_predicted" ([*, N_atom, 3]):
                     Predicted atom positions
                 "plddt_logits" ([*, N_atom, 50]):
@@ -675,13 +690,27 @@ class OpenFold3(nn.Module):
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
         batch["ref_space_uid_to_perm"] = ref_space_uid_to_perm
 
+        retain_trunk_pair = (
+            self.training
+            or "ground_truth" in batch
+            or not self.settings.memory.eval.release_trunk_pair
+        )
+        if retain_trunk_pair:
+            zij_release = None
+            zij_for_rollout = zij_trunk
+        else:
+            zij_release = [zij_trunk]
+            del zij_trunk
+            zij_for_rollout = zij_release[0]
+
         # Mini rollout
         rollout_output = self._rollout(
             batch=batch,
             si_input=si_input,
             si_trunk=si_trunk,
-            zij_trunk=zij_trunk,
+            zij_trunk=zij_for_rollout,
             inplace_safe=inplace_safe,
+            zij_release=zij_release,
         )
 
         output.update(rollout_output)
@@ -722,6 +751,6 @@ class OpenFold3(nn.Module):
         # due to different sizes of msa/all-atom tensors used between steps
         # Clear the cache between steps if unallocated reserved mem is high
         if self.settings.clear_cache_between_steps:
-            empty_device_cache(zij_trunk.device)
+            empty_device_cache(si_trunk.device)
 
         return batch, output

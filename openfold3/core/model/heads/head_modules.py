@@ -95,6 +95,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         si_input: torch.Tensor,
         output: dict,
         use_zij_trunk_embedding: bool,
+        release_zij_trunk: bool = False,
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
@@ -122,6 +123,9 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_zij_trunk_embedding:
                 Whether to use the zij trunk embedding in the confidence Pairformer
                 embedding.
+            release_zij_trunk:
+                Drop the caller's ``zij_trunk`` after cloning so the trunk pair
+                can be freed before the confidence Pairformer.
             chunk_size:
                 Inference-time subbatch size. Associated with PairFormer embedding.
             use_deepspeed_evo_attention:
@@ -174,6 +178,10 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         si_input = si_input.detach().clone()
         si = si.detach().clone()
         zij = zij.detach().clone()
+        if release_zij_trunk:
+            # Drop the caller's reference so the trunk pair is freed before
+            # the confidence Pairformer; only the clone above stays alive.
+            del output["zij_trunk"]
         atom_positions_predicted = atom_positions_predicted.detach().clone()
 
         token_mask = batch["token_mask"]

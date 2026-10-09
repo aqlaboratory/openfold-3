@@ -18,7 +18,18 @@ import unittest
 import torch
 
 from openfold3.core.model.primitives import Linear
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner, _chunk_slice, chunk_layer
+from openfold3.core.utils.chunk_utils import (
+    ChunkSizeTuner,
+    _chunk_slice,
+    apply_transition_chunk_cap,
+    apply_triangle_attn_chunk_cap,
+    chunk_layer,
+    set_chunk_caps,
+    transition_chunk_cap,
+    triangle_attn_chunk_cap,
+    trimul_chunk_cap,
+    use_chunked_trimul,
+)
 from openfold3.core.utils.rigid_utils import (
     Rigid,
     Rotation,
@@ -448,3 +459,56 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(small, 32)
         self.assertEqual(large, 64)
         self.assertEqual(tuner.tune_chunk_size(fn, args, max_chunk_size=32), small)
+
+    def test_triangle_attn_chunk_cap(self):
+        try:
+            set_chunk_caps(None)
+            self.assertIsNone(triangle_attn_chunk_cap())
+
+            set_chunk_caps({"triangle_attention": 64})
+            self.assertEqual(triangle_attn_chunk_cap(), 64)
+
+            set_chunk_caps({"triangle_attention": "bad"})
+            self.assertIsNone(triangle_attn_chunk_cap())
+        finally:
+            set_chunk_caps(None)
+
+    def test_apply_triangle_attn_chunk_cap(self):
+        try:
+            set_chunk_caps({"triangle_attention": 128})
+            self.assertEqual(apply_triangle_attn_chunk_cap(1024, n_tokens=1264), 128)
+            # Cap cannot shrink the working set when N already fits.
+            self.assertEqual(apply_triangle_attn_chunk_cap(1024, n_tokens=76), 1024)
+            set_chunk_caps(None)
+            self.assertEqual(apply_triangle_attn_chunk_cap(1024, n_tokens=1264), 1024)
+        finally:
+            set_chunk_caps(None)
+
+    def test_trimul_chunk_cap_selects_chunked_eager_path(self):
+        try:
+            set_chunk_caps(None)
+            self.assertIsNone(trimul_chunk_cap())
+            self.assertFalse(use_chunked_trimul(inplace_safe=True))
+
+            set_chunk_caps({"triangle_multiplicative": 128})
+            self.assertEqual(trimul_chunk_cap(), 128)
+            self.assertTrue(use_chunked_trimul(inplace_safe=True))
+            self.assertFalse(use_chunked_trimul(inplace_safe=False))
+            self.assertFalse(
+                use_chunked_trimul(inplace_safe=True, use_cueq_triangle_kernels=True)
+            )
+        finally:
+            set_chunk_caps(None)
+
+    def test_transition_chunk_cap(self):
+        try:
+            set_chunk_caps(None)
+            self.assertIsNone(transition_chunk_cap())
+            self.assertEqual(apply_transition_chunk_cap(1024), 1024)
+
+            set_chunk_caps({"transition": 128})
+            self.assertEqual(transition_chunk_cap(), 128)
+            self.assertEqual(apply_transition_chunk_cap(1024), 128)
+            self.assertEqual(apply_transition_chunk_cap(64), 64)
+        finally:
+            set_chunk_caps(None)

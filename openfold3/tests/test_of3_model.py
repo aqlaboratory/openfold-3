@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from unittest import mock
+
 import pytest
 import torch
 
@@ -158,6 +160,45 @@ class TestOF3Model:
             reduce_model_size=True,
             use_deepspeed_evo_attention=False,
         )
+
+    @pytest.mark.parametrize(
+        "clear_cache", [True, False], ids=lambda c: f"clear_cache={c}"
+    )
+    def test_inference_clear_cache_between_steps(self, clear_cache):
+        """The device cache is emptied once per inference step only when enabled."""
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        config = OF3ProjectEntry().get_model_config_with_presets()
+        config.settings.clear_cache_between_steps = clear_cache
+        config.settings.memory.eval.use_deepspeed_evo_attention = False
+        config.settings.memory.eval.use_triton_triangle_kernels = False
+        config.architecture.pairformer.no_blocks = 4
+        config.architecture.diffusion_module.diffusion_transformer.no_blocks = 4
+
+        of3 = OpenFold3AllAtom(config).to(device=device, dtype=torch.float32)
+        of3.eval()
+
+        # Inference batches carry no ground truth
+        batch = random_of3_features(
+            batch_size=consts.batch_size, n_token=18, n_msa=10, n_templ=3, is_eval=True
+        )
+        batch.pop("ground_truth")
+        batch = tensor_tree_map(lambda t: t.to(device=torch.device(device)), batch)
+
+        with (
+            mock.patch(
+                "openfold3.projects.of3_all_atom.model.empty_device_cache"
+            ) as empty_cache,
+            torch.no_grad(),
+        ):
+            of3(batch=batch)
+
+        if clear_cache:
+            empty_cache.assert_called_once()
+            (cache_device,), _ = empty_cache.call_args
+            assert torch.device(cache_device).type == device
+        else:
+            empty_cache.assert_not_called()
 
     def test_shape_small_chunk_size_one(self):
         batch_size = consts.batch_size

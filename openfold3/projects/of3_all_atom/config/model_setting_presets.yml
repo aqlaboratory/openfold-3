@@ -27,6 +27,12 @@ low_mem:
       eval:
         per_sample_token_cutoff: 0
         per_sample_atom_cutoff: 0
+        chunk_caps:
+          triangle_attention: 128
+          triangle_multiplicative: 128
+          transition: 128
+        release_trunk_pair: true
+        stream_templates: true
         offload_inference:
           template_module: true
           msa_module: true
