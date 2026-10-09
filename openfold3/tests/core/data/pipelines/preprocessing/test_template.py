@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for training half of template preprocessing pipeline using new TemplatePreprocessor object
+"""Tests for the shared and inference halves of the TemplatePreprocessor pipeline.
+
+Train-mode tests live in test_template_train.py.
 """
 
 import getpass
