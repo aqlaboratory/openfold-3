@@ -241,3 +241,26 @@ This file records CI failures caused by AWS infrastructure issues (capacity, GPU
   - `test-pixi-amd (openfold3-rocm7)` — test-openfold-docker-pixi-amd (job 113136318077), 34 min
 
 Note: a validation run (#313, `workflow_dispatch` on `jandom/2026-10/ci/fix-daily-tests-after-expandable-segments`, same `6dcb629` commit) completed ~6 hours earlier with all three jobs passing — the allocator-snapshot fix for run #311's (10-07) failure held; tonight's non-pass is unrelated AWS capacity exhaustion, not a regression.
+
+---
+
+### 2026-10-09 — Run [37880128785](https://github.com/aqlaboratory/openfold-3/actions/runs/37880128785) (run #316)
+
+- **Branch:** main @ `1d8518550ac920a2e5e4dc899cda72b2ca918de7` (merge "Merge branch 'public-main' into internal-main", Jan Domanski, 1774+/180- across 29 files, merged 2026-10-08T14:54:31Z — new since run #314/10-08's `6dcb629`)
+- **Scan date:** 2026-10-09
+- **Time:** 2026-10-09T03:37:30Z – 03:39:33Z UTC
+- **Error:** `Failed to launch in us-east-2a: An error occurred (InsufficientInstanceCapacity) when calling the RunInstances operation (reached max retries: 4): We currently do not have sufficient g5.4xlarge capacity in the Availability Zone you requested (us-east-2a)...` (same across `us-east-2b`/`c` and `us-west-2a`/`b`/`c`), plus `Failed to launch in us-west-2d: An error occurred (Unsupported) ... Your requested instance type (g5.4xlarge) is not supported in your requested Availability Zone (us-west-2d)` → `ValueError: Failed to launch in any available Availability Zone` → `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2`
+- **Root cause:** AWS could not provision `g5.4xlarge` GPU EC2 instances across all six capacity pools (3x us-east-2, 3x us-west-2, the sixth — `us-west-2d` — unsupported for this instance type) — both CUDA legs' `start-aws-runner` steps failed identically at the "Report launch outcome" step; corresponding `stop-aws-runner` failed as a cascading consequence (no instance to stop), and the `test-openfold-docker-pixi` test job never ran (both legs: `skipped`). Same signature as runs #252 (09-10), #282 (09-22, `workflow_dispatch`), #284 (09-24), #291 (09-27), #295 (09-29), #299 (10-01), and #314 (10-08).
+- **Failed jobs (start-aws-runner):**
+  - `test-pixi-cuda (openfold3-cuda12)` — start-aws-runner (job 113657668667)
+  - `test-pixi-cuda (openfold3-cuda13)` — start-aws-runner (job 113657668833)
+- **Cascading failures (stop-aws-runner — no instance to stop):**
+  - `test-pixi-cuda (openfold3-cuda12)` — stop-aws-runner (job 113658093376)
+  - `test-pixi-cuda (openfold3-cuda13)` — stop-aws-runner (job 113658152465)
+- **Skipped (no runner available):**
+  - `test-pixi-cuda (openfold3-cuda12)` — test-openfold-docker-pixi (job 113658094387), conclusion `skipped`
+  - `test-pixi-cuda (openfold3-cuda13)` — test-openfold-docker-pixi (job 113658153147), conclusion `skipped`
+- **Passing (self-hosted AMD runner, unaffected):**
+  - `test-pixi-amd (openfold3-rocm7)` — test-openfold-docker-pixi-amd (job 113657668956), 58 min
+
+Note: third AWS-capacity night of this exact signature in the last nine days (#299 10-01, #314 10-08, #316 10-09) — worth flagging the `g5.4xlarge` instance type/region choice to a human; a fallback instance type or additional region/AZ may be warranted. Main advanced to a large `public-main` → `internal-main` merge since the last primary nightly; the CUDA legs still haven't exercised it due to capacity, though AMD's clean pass on the same commit is a good sign.

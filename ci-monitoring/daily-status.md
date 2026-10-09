@@ -773,3 +773,28 @@ AWS `g5.4xlarge` capacity exhaustion across all six capacity pools (3x us-east-2
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #314, per this log's established convention).
 
 ---
+
+## 2026-10-09
+
+### Run #316 — primary nightly (schedule `17 3 * * *`, main @ `1d85185` — merge "Merge branch 'public-main' into internal-main" (Jan Domanski, 1774+/180- across 29 files, merged 2026-10-08T14:54:31Z, new since run #314/315's `6dcb629`), [37880128785](https://github.com/aqlaboratory/openfold-3/actions/runs/37880128785))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 58 min | |
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 2 min | `aws-capacity` at `start-aws-runner` / "Report launch outcome" — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 2 min | same `aws-capacity` signature — `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+
+**2026-10-09: 1/3 passed · 0 skipped · 0 queued · 2 need attention**
+
+AWS `g5.4xlarge` capacity exhaustion across all six capacity pools (3x us-east-2 zones InsufficientInstanceCapacity, 3x us-west-2 zones — 2a/2b/2c InsufficientInstanceCapacity, 2d Unsupported for this instance type) on both CUDA legs' `start-aws-runner` step, failing at "Report launch outcome"; corresponding `stop-aws-runner` failed as a cascading consequence (no instance to stop) and `test-openfold-docker-pixi` never ran (both legs: `skipped`). Same signature as runs #252 (09-10), #282 (09-22, `workflow_dispatch`), #284 (09-24), #291 (09-27), #295 (09-29), #299 (10-01), and #314 (10-08) — third such night in the last nine days. AMD leg (self-hosted runner, unaffected by AWS capacity) passed cleanly against the large `public-main` → `internal-main` merge now on `main`; the CUDA legs still haven't exercised that merge due to AWS capacity. Recorded to `aws-outage-failures.md`.
+
+### Run #317 — secondary nightly (schedule `17 4 * * *`, main @ `1d85185`, [37884546220](https://github.com/aqlaboratory/openfold-3/actions/runs/37884546220))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #316, per this log's established convention).
+
+---
