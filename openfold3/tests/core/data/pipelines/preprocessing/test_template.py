@@ -12,15 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the easily-isolated seams of the template preprocessing pipeline.
+"""Tests for the shared and inference halves of the TemplatePreprocessor pipeline.
 
-Scope (see plan): the side-effect-free helpers, the pydantic validators, the no-IO
-instance methods (built via ``object.__new__`` to bypass ``__init__``'s multiprocessing
-and file IO), and the legacy TSV log helpers.
-
-Tier E is the exception: cross-query template source isolation is only observable
-end to end, so those tests run the real ``__call__``. They stay offline by pre-seeding
-the template structure directory and setting ``fetch_missing_structures=False``.
+Train-mode tests live in test_template_train.py.
 """
 
 import getpass
@@ -473,6 +467,20 @@ def test_settings_rejects_unsupported_structure_format(tmp_path):
         TemplatePreprocessorSettings(
             output_directory=tmp_path, structure_file_format="pdb"
         )
+
+
+def test_settings_rejects_min_release_date_diff_in_predict_mode(tmp_path):
+    """Predict mode has no query release date to measure the difference from."""
+    with pytest.raises(ValueError, match="min_release_date_diff"):
+        TemplatePreprocessorSettings(
+            mode="predict", output_directory=tmp_path, min_release_date_diff=60
+        )
+
+    # Train mode applies it per structure, against each structure's release date
+    settings = TemplatePreprocessorSettings(
+        mode="train", output_directory=tmp_path, min_release_date_diff=60
+    )
+    assert settings.min_release_date_diff == 60
 
 
 def test_settings_derives_default_directories(tmp_path):

@@ -795,7 +795,8 @@ class M8Parser(TemplateParser):
         elif len(alignment_source.columns) == 13:
             alignment_source.columns = columns + ["cigar"]
 
-        df = alignment_source.sort_values("e_value", ignore_index=True)
+        # Stable, so hits with equal e-values keep the order they have in the file
+        df = alignment_source.sort_values("e_value", ignore_index=True, kind="stable")
         if self.max_sequences is None:
             max_sequences = len(df)
         else:
