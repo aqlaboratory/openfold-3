@@ -103,16 +103,17 @@ if _TRITON_AVAILABLE:
         pb_dz = pb_iz - pb_jz
         dist2 = pb_dx * pb_dx + pb_dy * pb_dy + pb_dz * pb_dz
 
-        # Pick the bin from the distance, then test membership on squared
-        # bounds with open intervals to match the reference featurizer.
-        distance = tl.sqrt(dist2)
-        bin_index = tl.floor((distance - _MIN_BIN) / _BIN_STEP).to(tl.int32)
-        bin_index = tl.maximum(0, tl.minimum(_NUM_BINS - 1, bin_index))
-        lower = _MIN_BIN + bin_index.to(tl.float32) * _BIN_STEP
-        lower2 = lower * lower
-        upper = lower + _BIN_STEP
-        upper2 = tl.where(bin_index == _NUM_BINS - 1, 1.0e8, upper * upper)
-        in_bin = (dist2 > lower2) & (dist2 < upper2)
+        # Bin on squared edges with open intervals, as the reference. Rounding
+        # cannot change the nearest edge, so compare dist2 to that edge only.
+        k = tl.floor((tl.sqrt(dist2) - _MIN_BIN) / _BIN_STEP + 0.5).to(tl.int32)
+        k = tl.maximum(0, tl.minimum(_NUM_BINS - 1, k))
+        edge = _MIN_BIN + k.to(tl.float32) * _BIN_STEP
+        edge2 = edge * edge
+        bin_index = k - (dist2 < edge2).to(tl.int32)
+        # 1e8 is the reference's squared upper edge of the last bin; it also
+        # drops NaN distances, which fail every comparison.
+        in_bin = (bin_index >= 0) & (dist2 != edge2) & (dist2 < 1.0e8)
+        bin_index = tl.maximum(bin_index, 0)
 
         pb_mask_i = tl.load(
             pb_mask_ptr + i * stride_pb_mask_i, mask=pair_mask, other=0.0

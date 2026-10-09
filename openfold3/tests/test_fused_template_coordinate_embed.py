@@ -753,6 +753,43 @@ def test_coordinate_kernel_preserves_open_bin_boundaries():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
+def test_coordinate_kernel_bins_match_reference_near_edges():
+    from openfold3.core.kernels.triton.fused_template_coordinate import (
+        template_coordinate_projection,
+    )
+
+    # Distances within a few fp32 ulps of every bin edge, where binning from a
+    # rounded sqrt(dist2) can disagree with the squared-edge reference.
+    distances = []
+    for k in range(39):
+        edge = torch.tensor(3.25 + 1.25 * k, dtype=torch.float32)
+        below, above = edge.clone(), edge.clone()
+        distances.append(edge)
+        for _ in range(4):
+            below = torch.nextafter(below, torch.tensor(0.0))
+            above = torch.nextafter(above, torch.tensor(1.0e9))
+            distances.extend((below, above))
+    distances = torch.stack(distances).cuda()
+    n_token = len(distances) + 1
+    pseudo_beta = torch.zeros(1, n_token, 3, device="cuda")
+    pseudo_beta[0, 1:, 0] = distances
+    _, frame_cpu = _coordinates(n_token)
+    frame = frame_cpu.cuda()
+    mask = torch.ones(1, n_token, device="cuda")
+    asym = torch.ones(1, n_token, dtype=torch.int32, device="cuda")
+    dgram_weight = torch.zeros(64, 39, device="cuda")
+    dgram_weight[:39] = torch.eye(39, device="cuda")
+    scalar_weight = torch.zeros(64, 5, device="cuda")
+    source = torch.zeros(1, n_token, n_token, 64, device="cuda")
+    args = (pseudo_beta, frame, mask, mask, asym, dgram_weight, scalar_weight)
+
+    with torch.no_grad():
+        actual = template_coordinate_projection(source, *args)
+        expected = template_coordinate_projection_reference(source, *args)
+    torch.testing.assert_close(actual[0, 0], expected[0, 0], rtol=0, atol=0)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA required")
 def test_template_coordinate_compile_reuse_across_lengths():
     """One filesystem compile per math mode must serve every sequence length."""
     script = r"""
