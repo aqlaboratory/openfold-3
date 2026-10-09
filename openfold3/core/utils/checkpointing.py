@@ -12,31 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import importlib
 from collections.abc import Callable, Sequence
 from typing import Any
 
 import torch
 import torch.utils.checkpoint
 
-deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-if deepspeed_is_installed:
-    import deepspeed
-    from deepspeed.runtime.activation_checkpointing.checkpointing import (
-        non_reentrant_checkpoint as ds_non_reentrant_checkpoint,
-    )
-
+from openfold3.core.utils.deepspeed_utils import deepspeed_checkpointing_is_configured
 
 BLOCK_ARG = Any
 BLOCK_ARGS = Sequence[BLOCK_ARG]
 
 
 def is_deepspeed_configured() -> bool:
-    return deepspeed_is_installed and deepspeed.checkpointing.is_configured()
+    return deepspeed_checkpointing_is_configured()
 
 
 def get_checkpoint_fn(use_reentrant: bool | None = None):
     if is_deepspeed_configured():
+        import deepspeed
+        from deepspeed.runtime.activation_checkpointing.checkpointing import (
+            non_reentrant_checkpoint as ds_non_reentrant_checkpoint,
+        )
+
         if use_reentrant is False:
             checkpoint = ds_non_reentrant_checkpoint
         else:
