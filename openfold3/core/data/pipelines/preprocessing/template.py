@@ -23,7 +23,7 @@ import traceback
 from datetime import date, datetime
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Literal
 
 import numpy as np
 import pandas as pd
@@ -63,7 +63,12 @@ from openfold3.core.data.io.structure.atom_array import (
     write_atomarray_to_npz,
 )
 from openfold3.core.data.io.structure.cif import _load_ciffile, parse_mmcif
-from openfold3.core.data.primitives.caches.format import DatasetCache
+from openfold3.core.data.primitives.caches.format import (
+    ClusteredDatasetCache,
+    ClusteredDatasetStructureDataCache,
+    DatasetCache,
+    ValidationDatasetCache,
+)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     PDB_ID,
     TEMPLATE_PROCESS_LOGGER,
@@ -1614,7 +1619,7 @@ class TemplatePreprocessorSettings(BaseModel):
     See AF3 SI Section 2.4. for details on some of these settings.
 
     Attributes:
-        mode (Literal["train", "inference"]):
+        mode (Literal["train", "predict"]):
             Whether templates are preprocessed for training or inference.
         moltypes (list[MoleculeType]):
             List of molecule types to preprocess templates for.
@@ -1942,13 +1947,16 @@ class TemplatePreprocessor:
             if directory is not None:
                 directory.mkdir(parents=True, exist_ok=True)
 
-    def _train_structure_data(self) -> dict[str, Any]:
+    def _train_structure_data(self) -> ClusteredDatasetStructureDataCache:
         """The input dataset cache's structure_data, keyed by PDB ID."""
-        if not isinstance(self.input_set, DatasetCache):
-            raise TypeError("Train mode requires a dataset cache as the input set.")
-        # DatasetCache types structure_data only as a dataclass; every subclass makes
-        # it a dict of structure entries.
-        return cast(dict[str, Any], self.input_set.structure_data)
+        if not isinstance(
+            self.input_set, (ClusteredDatasetCache, ValidationDatasetCache)
+        ):
+            raise TypeError(
+                "Train mode requires a clustered or validation dataset cache: it reads "
+                "per-structure release dates and per-chain molecule types."
+            )
+        return self.input_set.structure_data
 
     def _parse_dataset_cache(self) -> None:
         """Creates one input per alignment representative of the requested moltypes.
