@@ -21,7 +21,7 @@ from openfold3.core.model.feature_embedders.input_embedders import FourierEmbedd
 from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.model.primitives.normalization import LayerNorm
-from openfold3.core.utils.chunk_utils import ChunkSizeTuner
+from openfold3.core.utils.chunk_utils import ChunkSizeTuner, chunk_layer
 from openfold3.core.utils.relpos import relpos_complex
 
 
@@ -137,16 +137,28 @@ class DiffusionConditioning(nn.Module):
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
+        chunk_size: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        # Pair conditioning
         relpos_zij = relpos_complex(
             batch=batch,
             max_relative_idx=self.max_relative_idx,
             max_relative_chain=self.max_relative_chain,
         ).to(dtype=zij_trunk.dtype)
 
-        zij = torch.cat([zij_trunk, relpos_zij], dim=-1)
-        zij = self.linear_z(self.layer_norm_z(zij))
+        def _proj_zij(zij_trunk_in, relpos_in):
+            return self.linear_z(
+                self.layer_norm_z(torch.cat([zij_trunk_in, relpos_in], dim=-1))
+            )
+
+        if chunk_size is not None:
+            zij = chunk_layer(
+                layer=_proj_zij,
+                inputs={"zij_trunk_in": zij_trunk, "relpos_in": relpos_zij},
+                chunk_size=chunk_size,
+                no_batch_dims=zij_trunk.dim() - 2,
+            )
+        else:
+            zij = _proj_zij(zij_trunk, relpos_zij)
 
         # Single conditioning
         si = torch.cat([si_trunk, si_input], dim=-1)
@@ -245,7 +257,12 @@ class DiffusionConditioning(nn.Module):
             zij_trunk = zij_trunk * 0
 
         si, zij = self._embed_trunk_inputs(
-            batch=batch, t=t, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+            batch=batch,
+            t=t,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            chunk_size=chunk_size,
         )
 
         if chunk_size is not None:
