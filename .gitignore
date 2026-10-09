@@ -16,7 +16,8 @@ cutlass/
 /datasets/
 
 # User-specific claude settings
-.claude/
+.claude/*
+!.claude/skills/
 
 # User-specific pre-commit settings
 .pre-commit-config.yaml
