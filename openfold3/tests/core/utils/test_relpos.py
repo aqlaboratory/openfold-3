@@ -322,6 +322,44 @@ class TestRelposComplex:
         cyclic_out = self._relpos(cyclic_batch)
         assert not torch.equal(linear_out, cyclic_out)
 
+    def _split(self, out):
+        """Split relpos_complex output into (rel_pos, rest) along the channel dim.
+
+        rest holds the token offset, same-entity and chain-copy features.
+        """
+        n_rel_pos = 2 * self.MAX_IDX + 2
+        return out[..., :n_rel_pos], out[..., n_rel_pos:]
+
+    def test_cyclic_wraps_only_the_residue_offset(self):
+        n = 10
+        linear_out = self._relpos(_make_batch(n, [1] * n, [False] * n))
+        cyclic_out = self._relpos(_make_batch(n, [1] * n, [True] * n))
+
+        linear_rel_pos, linear_rest = self._split(linear_out)
+        cyclic_rel_pos, cyclic_rest = self._split(cyclic_out)
+        assert not torch.equal(cyclic_rel_pos, linear_rel_pos)
+        assert torch.equal(cyclic_rest, linear_rest)
+
+    def test_cyclic_chain_with_atomized_residue(self):
+        # Residue 2 is atomized into five tokens, which are 0 apart in the residue
+        # offset; the ring has three residues. The token offset, which only applies
+        # within a residue, stays linear even though the residue spans more than
+        # half of the chain's tokens.
+        residue_index = torch.tensor([[1, 2, 2, 2, 2, 2, 3]])
+        n = residue_index.shape[-1]
+        linear_batch = _make_batch(n, [1] * n, [False] * n)
+        cyclic_batch = _make_batch(n, [1] * n, [True] * n)
+        linear_batch["residue_index"] = residue_index
+        cyclic_batch["residue_index"] = residue_index
+
+        cyclic_rel_pos, cyclic_rest = self._split(self._relpos(cyclic_batch))
+        _, linear_rest = self._split(self._relpos(linear_batch))
+
+        expected_offset = cyclic_offset(residue_index[0])
+        expected_bin = expected_offset + self.MAX_IDX
+        assert torch.equal(cyclic_rel_pos[0].argmax(dim=-1), expected_bin)
+        assert torch.equal(cyclic_rest, linear_rest)
+
     def test_cyclic_self_pairs_get_center_bin(self):
         # Self-pairs always have offset=0, which clamps to MAX_IDX → one-hot at bin MAX_IDX.
         n = 8

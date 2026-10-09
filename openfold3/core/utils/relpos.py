@@ -182,18 +182,21 @@ def relpos_complex(
         asym_id=asym_id,
     )
 
+    # No cyclic_mask. Only the residue offset goes around the ring. The token
+    # offset is only used within a residue, and all tokens of a chain share one
+    # sym_id.
     rel_token = relpos(
         pos=batch["token_index"],
         condition=same_chain & same_res,
         rel_clip_idx=max_relative_idx,
-        cyclic_mask=cyclic_mask,
+        cyclic_mask=None,
         asym_id=asym_id,
     )
     rel_chain = relpos(
         pos=batch["sym_id"],
         condition=same_entity,
         rel_clip_idx=max_relative_chain,
-        cyclic_mask=cyclic_mask,
+        cyclic_mask=None,
         asym_id=asym_id,
     )
 
