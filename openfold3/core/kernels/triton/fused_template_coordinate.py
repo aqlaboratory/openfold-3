@@ -46,6 +46,27 @@ if _TRITON_AVAILABLE:
     _BWD_SPLIT_K = 64
     _BWD_FEATURES = 44
 
+    # Feature layout: [0, 39) distogram one-hot, 39 pseudo-beta pair mask,
+    # 40..42 local unit vector xyz, 43 backbone pair mask.
+    _C_OUT = tl.constexpr(64)
+    _NUM_BINS = tl.constexpr(39)
+    _NUM_FEATURES = tl.constexpr(_BWD_FEATURES)
+    _MIN_BIN = tl.constexpr(3.25)
+    _BIN_STEP = tl.constexpr(1.25)
+    _NORM_EPS2 = tl.constexpr(1.0e-12)  # squared F.normalize(eps=1e-6)
+
+    @triton.jit
+    def _load_xyz(ptr, stride_xyz, mask):
+        x = tl.load(ptr, mask=mask, other=0.0).to(tl.float32)
+        y = tl.load(ptr + stride_xyz, mask=mask, other=0.0).to(tl.float32)
+        z = tl.load(ptr + 2 * stride_xyz, mask=mask, other=0.0).to(tl.float32)
+        return x, y, z
+
+    @triton.jit
+    def _normalize3(x, y, z):
+        inv_norm = tl.rsqrt(tl.maximum(x * x + y * y + z * z, _NORM_EPS2))
+        return x * inv_norm, y * inv_norm, z * inv_norm
+
     @triton.jit
     def _template_coordinate_pair_features(
         pair,
@@ -71,50 +92,26 @@ if _TRITON_AVAILABLE:
         i = pair // N64
         j = pair - i * N64
 
-        pb_ix = tl.load(
-            pb_coords_ptr + i * stride_pb_i,
-            mask=pair_mask,
-            other=0.0,
-        ).to(tl.float32)
-        pb_iy = tl.load(
-            pb_coords_ptr + i * stride_pb_i + stride_pb_xyz,
-            mask=pair_mask,
-            other=0.0,
-        ).to(tl.float32)
-        pb_iz = tl.load(
-            pb_coords_ptr + i * stride_pb_i + 2 * stride_pb_xyz,
-            mask=pair_mask,
-            other=0.0,
-        ).to(tl.float32)
-        pb_jx = tl.load(
-            pb_coords_ptr + j * stride_pb_i,
-            mask=pair_mask,
-            other=0.0,
-        ).to(tl.float32)
-        pb_jy = tl.load(
-            pb_coords_ptr + j * stride_pb_i + stride_pb_xyz,
-            mask=pair_mask,
-            other=0.0,
-        ).to(tl.float32)
-        pb_jz = tl.load(
-            pb_coords_ptr + j * stride_pb_i + 2 * stride_pb_xyz,
-            mask=pair_mask,
-            other=0.0,
-        ).to(tl.float32)
+        pb_ix, pb_iy, pb_iz = _load_xyz(
+            pb_coords_ptr + i * stride_pb_i, stride_pb_xyz, pair_mask
+        )
+        pb_jx, pb_jy, pb_jz = _load_xyz(
+            pb_coords_ptr + j * stride_pb_i, stride_pb_xyz, pair_mask
+        )
         pb_dx = pb_ix - pb_jx
         pb_dy = pb_iy - pb_jy
         pb_dz = pb_iz - pb_jz
         dist2 = pb_dx * pb_dx + pb_dy * pb_dy + pb_dz * pb_dz
 
-        min_bin = 3.25
-        bin_step = 1.25
+        # Pick the bin from the distance, then test membership on squared
+        # bounds with open intervals to match the reference featurizer.
         distance = tl.sqrt(dist2)
-        bin_index = tl.floor((distance - min_bin) / bin_step).to(tl.int32)
-        bin_index = tl.maximum(0, tl.minimum(38, bin_index))
-        lower = min_bin + bin_index.to(tl.float32) * bin_step
+        bin_index = tl.floor((distance - _MIN_BIN) / _BIN_STEP).to(tl.int32)
+        bin_index = tl.maximum(0, tl.minimum(_NUM_BINS - 1, bin_index))
+        lower = _MIN_BIN + bin_index.to(tl.float32) * _BIN_STEP
         lower2 = lower * lower
-        upper = lower + bin_step
-        upper2 = tl.where(bin_index == 38, 1.0e8, upper * upper)
+        upper = lower + _BIN_STEP
+        upper2 = tl.where(bin_index == _NUM_BINS - 1, 1.0e8, upper * upper)
         in_bin = (dist2 > lower2) & (dist2 < upper2)
 
         pb_mask_i = tl.load(
@@ -129,6 +126,7 @@ if _TRITON_AVAILABLE:
         bb_mask_j = tl.load(
             bb_mask_ptr + j * stride_bb_mask_i, mask=pair_mask, other=0.0
         ).to(tl.float32)
+        # Different fill values make masked tail lanes count as cross-chain.
         asym_i = tl.load(asym_id_ptr + i * stride_asym_i, mask=pair_mask, other=0)
         asym_j = tl.load(asym_id_ptr + j * stride_asym_i, mask=pair_mask, other=1)
         same_chain = (asym_i == asym_j).to(tl.float32)
@@ -136,77 +134,30 @@ if _TRITON_AVAILABLE:
         bb_pair_mask = bb_mask_i * bb_mask_j * same_chain
 
         frame_i_base = frame_coords_ptr + i * stride_frame_i
-        n_x = tl.load(frame_i_base, mask=pair_mask, other=0.0).to(tl.float32)
-        n_y = tl.load(
-            frame_i_base + stride_frame_xyz, mask=pair_mask, other=0.0
-        ).to(tl.float32)
-        n_z = tl.load(
-            frame_i_base + 2 * stride_frame_xyz, mask=pair_mask, other=0.0
-        ).to(tl.float32)
-        ca_x = tl.load(
-            frame_i_base + stride_frame_atom, mask=pair_mask, other=0.0
-        ).to(tl.float32)
-        ca_y = tl.load(
-            frame_i_base + stride_frame_atom + stride_frame_xyz,
-            mask=pair_mask,
-            other=0.0,
-        ).to(tl.float32)
-        ca_z = tl.load(
-            frame_i_base + stride_frame_atom + 2 * stride_frame_xyz,
-            mask=pair_mask,
-            other=0.0,
-        ).to(tl.float32)
-        c_x = tl.load(
-            frame_i_base + 2 * stride_frame_atom, mask=pair_mask, other=0.0
-        ).to(tl.float32)
-        c_y = tl.load(
-            frame_i_base + 2 * stride_frame_atom + stride_frame_xyz,
-            mask=pair_mask,
-            other=0.0,
-        ).to(tl.float32)
-        c_z = tl.load(
-            frame_i_base + 2 * stride_frame_atom + 2 * stride_frame_xyz,
-            mask=pair_mask,
-            other=0.0,
-        ).to(tl.float32)
-        frame_j_base = frame_coords_ptr + j * stride_frame_i + stride_frame_atom
-        j_ca_x = tl.load(frame_j_base, mask=pair_mask, other=0.0).to(tl.float32)
-        j_ca_y = tl.load(
-            frame_j_base + stride_frame_xyz, mask=pair_mask, other=0.0
-        ).to(tl.float32)
-        j_ca_z = tl.load(
-            frame_j_base + 2 * stride_frame_xyz, mask=pair_mask, other=0.0
-        ).to(tl.float32)
-
-        axis_x_x = c_x - ca_x
-        axis_x_y = c_y - ca_y
-        axis_x_z = c_z - ca_z
-        inv_x_norm = tl.rsqrt(
-            tl.maximum(
-                axis_x_x * axis_x_x + axis_x_y * axis_x_y + axis_x_z * axis_x_z,
-                1.0e-12,
-            )
+        n_x, n_y, n_z = _load_xyz(frame_i_base, stride_frame_xyz, pair_mask)
+        ca_x, ca_y, ca_z = _load_xyz(
+            frame_i_base + stride_frame_atom, stride_frame_xyz, pair_mask
         )
-        axis_x_x *= inv_x_norm
-        axis_x_y *= inv_x_norm
-        axis_x_z *= inv_x_norm
+        c_x, c_y, c_z = _load_xyz(
+            frame_i_base + 2 * stride_frame_atom, stride_frame_xyz, pair_mask
+        )
+        j_ca_x, j_ca_y, j_ca_z = _load_xyz(
+            frame_coords_ptr + j * stride_frame_i + stride_frame_atom,
+            stride_frame_xyz,
+            pair_mask,
+        )
+
+        axis_x_x, axis_x_y, axis_x_z = _normalize3(c_x - ca_x, c_y - ca_y, c_z - ca_z)
 
         axis_y_x = n_x - ca_x
         axis_y_y = n_y - ca_y
         axis_y_z = n_z - ca_z
         projection = axis_y_x * axis_x_x + axis_y_y * axis_x_y + axis_y_z * axis_x_z
-        axis_y_x -= projection * axis_x_x
-        axis_y_y -= projection * axis_x_y
-        axis_y_z -= projection * axis_x_z
-        inv_y_norm = tl.rsqrt(
-            tl.maximum(
-                axis_y_x * axis_y_x + axis_y_y * axis_y_y + axis_y_z * axis_y_z,
-                1.0e-12,
-            )
+        axis_y_x, axis_y_y, axis_y_z = _normalize3(
+            axis_y_x - projection * axis_x_x,
+            axis_y_y - projection * axis_x_y,
+            axis_y_z - projection * axis_x_z,
         )
-        axis_y_x *= inv_y_norm
-        axis_y_y *= inv_y_norm
-        axis_y_z *= inv_y_norm
 
         axis_z_x = axis_x_y * axis_y_z - axis_x_z * axis_y_y
         axis_z_y = axis_x_z * axis_y_x - axis_x_x * axis_y_z
@@ -215,18 +166,11 @@ if _TRITON_AVAILABLE:
         delta_x = j_ca_x - ca_x
         delta_y = j_ca_y - ca_y
         delta_z = j_ca_z - ca_z
-        local_x = delta_x * axis_x_x + delta_y * axis_x_y + delta_z * axis_x_z
-        local_y = delta_x * axis_y_x + delta_y * axis_y_y + delta_z * axis_y_z
-        local_z = delta_x * axis_z_x + delta_y * axis_z_y + delta_z * axis_z_z
-        inv_delta_norm = tl.rsqrt(
-            tl.maximum(
-                local_x * local_x + local_y * local_y + local_z * local_z,
-                1.0e-12,
-            )
+        local_x, local_y, local_z = _normalize3(
+            delta_x * axis_x_x + delta_y * axis_x_y + delta_z * axis_x_z,
+            delta_x * axis_y_x + delta_y * axis_y_y + delta_z * axis_y_z,
+            delta_x * axis_z_x + delta_y * axis_z_y + delta_z * axis_z_z,
         )
-        local_x *= inv_delta_norm
-        local_y *= inv_delta_norm
-        local_z *= inv_delta_norm
         return (
             i,
             j,
@@ -361,21 +305,12 @@ if _TRITON_AVAILABLE:
         ).to(tl.float32)
         out += w_dgram * (pb_pair_mask * in_bin.to(tl.float32))[:, None]
 
-        w_pb = tl.load(
-            w_scalar_ptr + channel * stride_w_scalar_c + 0 * stride_w_scalar_feat
-        ).to(tl.float32)
-        w_x = tl.load(
-            w_scalar_ptr + channel * stride_w_scalar_c + 1 * stride_w_scalar_feat
-        ).to(tl.float32)
-        w_y = tl.load(
-            w_scalar_ptr + channel * stride_w_scalar_c + 2 * stride_w_scalar_feat
-        ).to(tl.float32)
-        w_z = tl.load(
-            w_scalar_ptr + channel * stride_w_scalar_c + 3 * stride_w_scalar_feat
-        ).to(tl.float32)
-        w_bb = tl.load(
-            w_scalar_ptr + channel * stride_w_scalar_c + 4 * stride_w_scalar_feat
-        ).to(tl.float32)
+        w_scalar_base = w_scalar_ptr + channel * stride_w_scalar_c
+        w_pb = tl.load(w_scalar_base).to(tl.float32)
+        w_x = tl.load(w_scalar_base + stride_w_scalar_feat).to(tl.float32)
+        w_y = tl.load(w_scalar_base + 2 * stride_w_scalar_feat).to(tl.float32)
+        w_z = tl.load(w_scalar_base + 3 * stride_w_scalar_feat).to(tl.float32)
+        w_bb = tl.load(w_scalar_base + 4 * stride_w_scalar_feat).to(tl.float32)
         out += pb_pair_mask[:, None] * w_pb[None, :]
         out += bb_pair_mask[:, None] * (
             local_x[:, None] * w_x[None, :]
@@ -443,7 +378,7 @@ if _TRITON_AVAILABLE:
         stride_partial_f,
         COMPUTE_DGRAM: tl.constexpr,
         COMPUTE_SCALAR: tl.constexpr,
-        ALLOW_TF32: tl.constexpr,
+        INPUT_PRECISION: tl.constexpr,
         BLOCK_PAIRS: tl.constexpr,
         BLOCK_CHANNELS: tl.constexpr,
         BLOCK_FEATURES: tl.constexpr,
@@ -452,18 +387,18 @@ if _TRITON_AVAILABLE:
         channel = tl.program_id(0) * BLOCK_CHANNELS + tl.arange(0, BLOCK_CHANNELS)
         feature = tl.program_id(1) * BLOCK_FEATURES + tl.arange(0, BLOCK_FEATURES)
         split = tl.program_id(2)
-        channel_mask = channel < 64
-        feature_mask = feature < 44
+        channel_mask = channel < _C_OUT
+        feature_mask = feature < _NUM_FEATURES
         if not COMPUTE_DGRAM:
-            feature_mask &= feature >= 39
+            feature_mask &= feature >= _NUM_BINS
         if not COMPUTE_SCALAR:
-            feature_mask &= feature < 39
+            feature_mask &= feature < _NUM_BINS
 
         accumulator = tl.zeros(
             (BLOCK_CHANNELS, BLOCK_FEATURES), dtype=tl.float32
         )
         channel_offsets = channel[None, :].to(tl.int64) * stride_grad_c
-        pair_count = N * N
+        pair_count = N.to(tl.int64) * N
         pairs_per_split = (
             pair_count + SPLIT_K * BLOCK_PAIRS - 1
         ) // (SPLIT_K * BLOCK_PAIRS) * BLOCK_PAIRS
@@ -510,53 +445,35 @@ if _TRITON_AVAILABLE:
                 other=0.0,
             ).to(tl.float32)
 
+            # [BLOCK_PAIRS, BLOCK_FEATURES] slice of the 44-feature layout.
+            f = feature[None, :]
             dgram_scale = pb_pair_mask * in_bin.to(tl.float32)
             features = tl.where(
-                (feature[None, :] < 39)
-                & (feature[None, :] == bin_index[:, None]),
+                (f < _NUM_BINS) & (f == bin_index[:, None]),
                 dgram_scale[:, None],
                 0.0,
             )
+            features += tl.where(f == _NUM_BINS, pb_pair_mask[:, None], 0.0)
             features += tl.where(
-                feature[None, :] == 39, pb_pair_mask[:, None], 0.0
+                f == _NUM_BINS + 1, (bb_pair_mask * local_x)[:, None], 0.0
             )
             features += tl.where(
-                feature[None, :] == 40,
-                (bb_pair_mask * local_x)[:, None],
-                0.0,
+                f == _NUM_BINS + 2, (bb_pair_mask * local_y)[:, None], 0.0
             )
             features += tl.where(
-                feature[None, :] == 41,
-                (bb_pair_mask * local_y)[:, None],
-                0.0,
+                f == _NUM_BINS + 3, (bb_pair_mask * local_z)[:, None], 0.0
             )
-            features += tl.where(
-                feature[None, :] == 42,
-                (bb_pair_mask * local_z)[:, None],
-                0.0,
-            )
-            features += tl.where(
-                feature[None, :] == 43, bb_pair_mask[:, None], 0.0
-            )
+            features += tl.where(f == _NUM_BINS + 4, bb_pair_mask[:, None], 0.0)
             features = tl.where(
                 pair_mask[:, None] & feature_mask[None, :], features, 0.0
             )
-            if ALLOW_TF32:
-                accumulator = tl.dot(
-                    tl.trans(grad),
-                    features,
-                    accumulator,
-                    input_precision="tf32",
-                    out_dtype=tl.float32,
-                )
-            else:
-                accumulator = tl.dot(
-                    tl.trans(grad),
-                    features,
-                    accumulator,
-                    input_precision="ieee",
-                    out_dtype=tl.float32,
-                )
+            accumulator = tl.dot(
+                tl.trans(grad),
+                features,
+                accumulator,
+                input_precision=INPUT_PRECISION,
+                out_dtype=tl.float32,
+            )
             pair_start += BLOCK_PAIRS
 
         partial_offsets = (
@@ -603,9 +520,9 @@ if _TRITON_AVAILABLE:
         BLOCK_OUTPUTS: tl.constexpr,
     ):
         output = tl.program_id(0) * BLOCK_OUTPUTS + tl.arange(0, BLOCK_OUTPUTS)
-        output_mask = output < 64 * 44
-        channel = output // 44
-        feature = output - channel * 44
+        output_mask = output < _C_OUT * _NUM_FEATURES
+        channel = output // _NUM_FEATURES
+        feature = output - channel * _NUM_FEATURES
         accumulator = tl.zeros((BLOCK_OUTPUTS,), dtype=tl.float32)
         for split in range(SPLIT_K):
             accumulator += tl.load(
@@ -618,23 +535,38 @@ if _TRITON_AVAILABLE:
             ).to(tl.float32)
 
         if COMPUTE_DGRAM:
-            dgram_mask = output_mask & (feature < 39)
+            dgram_mask = output_mask & (feature < _NUM_BINS)
             tl.store(
-                grad_dgram_ptr
-                + channel * stride_dgram_c
-                + feature * stride_dgram_f,
+                grad_dgram_ptr + channel * stride_dgram_c + feature * stride_dgram_f,
                 accumulator,
                 mask=dgram_mask,
             )
         if COMPUTE_SCALAR:
-            scalar_mask = output_mask & (feature >= 39)
+            scalar_mask = output_mask & (feature >= _NUM_BINS)
             tl.store(
                 grad_scalar_ptr
                 + channel * stride_scalar_c
-                + (feature - 39) * stride_scalar_f,
+                + (feature - _NUM_BINS) * stride_scalar_f,
                 accumulator,
                 mask=scalar_mask,
             )
+
+
+def _coordinate_inputs_match(
+    n_token: int,
+    pseudo_beta_coords: torch.Tensor,
+    frame_atom_coords: torch.Tensor,
+    pseudo_beta_mask: torch.Tensor,
+    backbone_frame_mask: torch.Tensor,
+    asym_id: torch.Tensor,
+) -> bool:
+    return (
+        pseudo_beta_coords.shape == (1, n_token, 3)
+        and frame_atom_coords.shape == (1, n_token, 3, 3)
+        and pseudo_beta_mask.shape == (1, n_token)
+        and backbone_frame_mask.shape == (1, n_token)
+        and asym_id.shape == (1, n_token)
+    )
 
 
 def template_coordinate_projection(
@@ -699,14 +631,7 @@ def template_coordinate_projection(
             "Expected source and out [1,N,N,64], got "
             f"{tuple(source.shape)} and {tuple(out.shape)}"
         )
-    input_shapes = (
-        pseudo_beta_coords.shape == (1, n_token, 3)
-        and frame_atom_coords.shape == (1, n_token, 3, 3)
-        and pseudo_beta_mask.shape == (1, n_token)
-        and backbone_frame_mask.shape == (1, n_token)
-        and asym_id.shape == (1, n_token)
-    )
-    if not input_shapes:
+    if not _coordinate_inputs_match(n_token, *inputs[:5]):
         raise ValueError("Coordinate inputs do not match source token dimensions")
     if torch._debug_has_internal_overlap(out) != 0:
         raise ValueError("Template coordinate output must not overlap internally")
@@ -797,13 +722,7 @@ def template_coordinate_projection_backward(
     n_token = grad_output.shape[1]
     if grad_output.shape != (1, n_token, n_token, 64):
         raise ValueError("Expected grad_output [1,N,N,64]")
-    if not (
-        pseudo_beta_coords.shape == (1, n_token, 3)
-        and frame_atom_coords.shape == (1, n_token, 3, 3)
-        and pseudo_beta_mask.shape == (1, n_token)
-        and backbone_frame_mask.shape == (1, n_token)
-        and asym_id.shape == (1, n_token)
-    ):
+    if not _coordinate_inputs_match(n_token, *inputs):
         raise ValueError("Coordinate inputs do not match grad_output token dimensions")
 
     grad = grad_output[0]
@@ -850,7 +769,7 @@ def template_coordinate_projection_backward(
         partial.stride(2),
         COMPUTE_DGRAM=compute_dgram,
         COMPUTE_SCALAR=compute_scalar,
-        ALLOW_TF32=torch.backends.cuda.matmul.allow_tf32,
+        INPUT_PRECISION="tf32" if torch.backends.cuda.matmul.allow_tf32 else "ieee",
         BLOCK_PAIRS=_BWD_BLOCK_PAIRS,
         BLOCK_CHANNELS=_BWD_BLOCK_CHANNELS,
         BLOCK_FEATURES=_BWD_BLOCK_FEATURES,
