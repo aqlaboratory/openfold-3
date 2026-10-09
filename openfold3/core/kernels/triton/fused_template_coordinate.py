@@ -64,9 +64,12 @@ if _TRITON_AVAILABLE:
         stride_bb_mask_i,
         stride_asym_i,
     ):
-        pair_mask = pair < N * N
-        i = pair // N
-        j = pair - i * N
+        # int64 so downstream i/j stride offsets cannot wrap: (N*N-1)*64
+        # exceeds int32 at N>=5793 and caused CUDA illegal memory access.
+        N64 = N.to(tl.int64)
+        pair_mask = pair < N64 * N64
+        i = pair // N64
+        j = pair - i * N64
 
         pb_ix = tl.load(
             pb_coords_ptr + i * stride_pb_i,
@@ -336,14 +339,14 @@ if _TRITON_AVAILABLE:
         )
 
         source_offsets = (
-            i[:, None] * stride_source_i
-            + j[:, None] * stride_source_j
-            + channel[None, :] * stride_source_c
+            i[:, None].to(tl.int64) * stride_source_i
+            + j[:, None].to(tl.int64) * stride_source_j
+            + channel[None, :].to(tl.int64) * stride_source_c
         )
         out_offsets = (
-            i[:, None] * stride_out_i
-            + j[:, None] * stride_out_j
-            + channel[None, :] * stride_out_c
+            i[:, None].to(tl.int64) * stride_out_i
+            + j[:, None].to(tl.int64) * stride_out_j
+            + channel[None, :].to(tl.int64) * stride_out_c
         )
         out = tl.load(source_ptr + source_offsets, mask=pair_mask[:, None]).to(
             tl.float32
@@ -459,6 +462,7 @@ if _TRITON_AVAILABLE:
         accumulator = tl.zeros(
             (BLOCK_CHANNELS, BLOCK_FEATURES), dtype=tl.float32
         )
+        channel_offsets = channel[None, :].to(tl.int64) * stride_grad_c
         pair_count = N * N
         pairs_per_split = (
             pair_count + SPLIT_K * BLOCK_PAIRS - 1
@@ -496,9 +500,9 @@ if _TRITON_AVAILABLE:
                 stride_asym_i,
             )
             grad_offsets = (
-                i[:, None] * stride_grad_i
-                + j[:, None] * stride_grad_j
-                + channel[None, :] * stride_grad_c
+                i[:, None].to(tl.int64) * stride_grad_i
+                + j[:, None].to(tl.int64) * stride_grad_j
+                + channel_offsets
             )
             grad = tl.load(
                 grad_output_ptr + grad_offsets,
