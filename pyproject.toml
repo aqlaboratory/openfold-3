@@ -32,11 +32,11 @@ dependencies = [
     "numpy",
     "scipy",
     "pandas",
-    "torch", # ==2.5.1",
+    "torch",
     "ml-collections",
     "pytorch-lightning >=2.1",
     "biotite",
-    "rdkit<2026", # aqlaboratory/openfold-3/issues/285 
+    "rdkit",
     "pdbeccdutils",
     "kalign-python",
     "requests",

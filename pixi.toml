@@ -216,7 +216,7 @@ ml-collections = "*"
 # --- Handling molecules
 # with newer rdkit we are failing one test:
 # openfold3/tests/core/data/primitives/structure/test_conformer.py::test_compute_conformer_snapshot[paracetamol_default_no_hs]
-rdkit = "<2026"
+rdkit = "*"
 biotite = ">=1.6"
 pdbeccdutils = "*"
 
