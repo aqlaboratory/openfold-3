@@ -798,3 +798,28 @@ AWS `g5.4xlarge` capacity exhaustion across all six capacity pools (3x us-east-2
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #316, per this log's established convention).
 
 ---
+
+## 2026-10-10
+
+### Run #318 — primary nightly (schedule `17 3 * * *`, main @ `3b9ec5d` — merge PR #440 "Template preprocessing entry point" (new since run #316/317/10-09's `1d85185`), [38021091242](https://github.com/aqlaboratory/openfold-3/actions/runs/38021091242))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 39 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 35 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 32 min | |
+
+**2026-10-10: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Clean recovery after three AWS `g5.4xlarge` capacity-exhaustion nights in the preceding nine days (10-01 run #299, 10-08 run #314, 10-09 run #316) — both CUDA legs' `start-aws-runner` launched on pool 1 in `us-east-2` without needing the `us-west-2` fallback (`Create cloud runner (us-west-2)` skipped on both legs), and `Cache download of parameters` hit cleanly on both. First nightly run since main advanced from `1d85185` to `3b9ec5d` (PR #440). This is also the first CUDA-leg exercise of the large `public-main` → `internal-main` merge that landed on `1d85185` (run #316/317, 10-09) — AWS capacity exhaustion had kept the CUDA legs from testing that merge until tonight; AMD passed against it cleanly both nights. No regression observed from either the merge or PR #440.
+
+### Run #319 — secondary nightly (schedule `17 4 * * *`, main @ `3b9ec5d`, [38024412493](https://github.com/aqlaboratory/openfold-3/actions/runs/38024412493))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #318, per this log's established convention).
+
+---
