@@ -29,7 +29,7 @@ To make a contribution, you should first set up your repository, then submit a p
 
       Use `pixi run -e openfold3-base` to run commands in this environment, as shown below. No shell activation is needed.
 
-      The base environment does not include CUDA or ROCm. For GPU development and integration tests, choose the appropriate [hardware-specific environment](./Installation.md) and replace `openfold3-base` in the install and run commands.
+      The base environment does not include CUDA or ROCm. For GPU development and integration tests, choose the appropriate [hardware-specific environment](https://openfold-3.readthedocs.io/en/latest/Installation.html#modern-conda-environments-with-pixi-recommended) and replace `openfold3-base` in the install and run commands.
 
       **pip:** If you manage your own Python environment, install the development dependencies using:
 
