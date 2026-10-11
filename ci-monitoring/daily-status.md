@@ -823,3 +823,28 @@ Clean recovery after three AWS `g5.4xlarge` capacity-exhaustion nights in the pr
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #318, per this log's established convention).
 
 ---
+
+## 2026-10-11
+
+### Run #320 — primary nightly (schedule `17 3 * * *`, main @ `3b9ec5d`, [38109056932](https://github.com/aqlaboratory/openfold-3/actions/runs/38109056932))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 33 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 39 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 35 min | |
+
+**2026-10-11: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Second consecutive clean night on the same `main` commit (`3b9ec5d`, PR #440) as run #318/#319 (10-10) — no new merges landed since yesterday. Both CUDA legs' `start-aws-runner` launched on pool 1 in `us-east-2` without needing the `us-west-2` fallback again (`Create cloud runner (us-west-2)` skipped on both legs), and `Cache download of parameters` hit cleanly on both — continuing the recovery from the AWS `g5.4xlarge` capacity-exhaustion nights earlier in the month.
+
+### Run #321 — secondary nightly (schedule `17 4 * * *`, main @ `3b9ec5d`, [38111960976](https://github.com/aqlaboratory/openfold-3/actions/runs/38111960976))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #320, per this log's established convention).
+
+---
