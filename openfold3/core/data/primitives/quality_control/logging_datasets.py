@@ -51,6 +51,7 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 from openfold3.core.data.resources.residues import (
     STANDARD_DNA_RESIDUES,
     STANDARD_PROTEIN_RESIDUES_3,
+    STANDARD_RESIDUES_WITH_GAP_1,
     STANDARD_RNA_RESIDUES,
     MoleculeType,
 )
@@ -540,8 +541,11 @@ class LoggingMixin:
             statistics += [msa.shape[0]]
             # Number of paired MSA rows
             statistics += [features["num_paired_seqs"].item()]
-            # number of tokens with any aligned MSA columns in the crop
-            statistics += [(msa.sum(dim=0)[:, -1] < msa.size(0)).sum().item()]
+            # number of tokens with any aligned MSA columns in the crop.
+            # msa is stored as integer indices; the gap residue is the last
+            # index of STANDARD_RESIDUES_WITH_GAP_1.
+            gap_idx = len(STANDARD_RESIDUES_WITH_GAP_1) - 1
+            statistics += [(msa != gap_idx).any(dim=0).sum().item()]
 
             # number of templates
             tbfm = features["template_backbone_frame_mask"]

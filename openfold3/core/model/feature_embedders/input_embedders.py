@@ -23,9 +23,11 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
+from openfold3.core.data.resources.residues import STANDARD_RESIDUES_WITH_GAP_1
 from openfold3.core.model.layers.sequence_local_atom_attention import (
     AtomAttentionEncoder,
 )
@@ -493,7 +495,7 @@ class MSAModuleEmbedder(nn.Module):
         Args:
             batch:
                 Input feature dictionary. Features used in this function:
-                    - "msa": [*, N_msa, N_token, 32]
+                    - "msa": [*, N_msa, N_token]
                     - "has_deletion": [*, N_msa, N_token]
                     - "deletion_value": [*, N_msa, N_token]
                     - "msa_mask": [*, N_msa, N_token]
@@ -508,12 +510,18 @@ class MSAModuleEmbedder(nn.Module):
             msa_mask:
                 [*, N_seq, N_token] MSA mask
         """
-        batch_dims = batch["msa"].shape[:-3]
+        batch_dims = batch["msa"].shape[:-2]
+
+        # batch["msa"] is stored as compact uint8 indices, expand to one-hot
+        msa_one_hot = F.one_hot(
+            batch["msa"].long(),
+            num_classes=len(STANDARD_RESIDUES_WITH_GAP_1),
+        ).to(self.linear_m.weight.dtype)
 
         # [*, N_msa, N_token, 34]
         msa_feat = torch.cat(
             [
-                batch["msa"],
+                msa_one_hot,
                 batch["has_deletion"].unsqueeze(-1),
                 batch["deletion_value"].unsqueeze(-1),
             ],

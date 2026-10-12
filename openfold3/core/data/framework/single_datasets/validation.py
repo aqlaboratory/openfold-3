@@ -362,7 +362,9 @@ class ValidationPDBDataset(BaseOF3Dataset):
             token_dim=-2,
         )
         inter_ab_ag_type_atomized = inter_ab_ag_type_atomized.transpose(-1, -2)
-        features["inter_ab_ag_type_atomized"] = inter_ab_ag_type_atomized
+        features["inter_ab_ag_type_atomized"] = inter_ab_ag_type_atomized.to(
+            torch.uint8
+        )
 
         return features
 

@@ -116,19 +116,12 @@ class MSASettings(BaseModel):
     paired_msa_order: list = ["colabfold_paired"]
 
 
-class TemplateDistogramSettings(BaseModel):
-    min_bin: float = 3.25
-    max_bin: float = 50.75
-    n_bins: int = 39
-
-
 class TemplateSettings(BaseModel):
     """Settings for processing Template features."""
 
     n_templates: int = 4
     take_top_k: bool = False
     min_n_tokens_per_chain: int = 5
-    distogram: TemplateDistogramSettings = TemplateDistogramSettings()
 
 
 class CropWeights(BaseModel):

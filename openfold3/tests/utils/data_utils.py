@@ -68,7 +68,7 @@ def random_template_feats(n_templ, n, batch_size=None):
         "template_mask": np.random.randint(0, 2, (*b, n_templ)),
         "template_pseudo_beta_mask": np.random.randint(0, 2, (*b, n_templ, n)),
         "template_pseudo_beta": np.random.rand(*b, n_templ, n, 3),
-        "template_aatype": np.random.randint(0, 22, (*b, n_templ, n)),
+        "template_restype": np.random.randint(0, 22, (*b, n_templ, n)),
         "template_all_atom_mask": np.random.randint(0, 2, (*b, n_templ, n, 37)),
         "template_all_atom_positions": np.random.rand(*b, n_templ, n, 37, 3) * 10,
         "template_torsion_angles_sin_cos": np.random.rand(*b, n_templ, n, 7, 2),
@@ -76,7 +76,7 @@ def random_template_feats(n_templ, n, batch_size=None):
         "template_torsion_angles_mask": np.random.rand(*b, n_templ, n, 7),
     }
     batch = {k: v.astype(np.float32) for k, v in batch.items()}
-    batch["template_aatype"] = batch["template_aatype"].astype(np.int64)
+    batch["template_restype"] = batch["template_restype"].astype(np.int64)
 
     return batch
 
@@ -234,22 +234,24 @@ def random_of3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)).int(),
         "ref_space_uid": atom_to_token_index.unsqueeze(0).repeat((batch_size, 1)),
         # MSA features
-        "msa": torch.ones((batch_size, n_msa, n_token, 32)).int(),
+        "msa": torch.zeros((batch_size, n_msa, n_token), dtype=torch.uint8),
         "has_deletion": torch.ones((batch_size, n_msa, n_token)).float(),
         "deletion_value": torch.ones((batch_size, n_msa, n_token)).float(),
         "profile": torch.ones((batch_size, n_token, 32)).float(),
         "deletion_mean": torch.ones((batch_size, n_token)).float(),
         # Template features
-        "template_restype": torch.ones((batch_size, n_templ, n_token, 32)).int(),
+        "template_restype": torch.zeros(
+            (batch_size, n_templ, n_token), dtype=torch.int32
+        ),
         "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)).float(),
         "template_backbone_frame_mask": torch.ones(
             (batch_size, n_templ, n_token)
         ).float(),
-        "template_distogram": torch.ones(
-            (batch_size, n_templ, n_token, n_token, 39)
+        "template_pseudo_beta_coords": torch.zeros(
+            (batch_size, n_templ, n_token, 3)
         ).float(),
-        "template_unit_vector": torch.ones(
-            (batch_size, n_templ, n_token, n_token, 3)
+        "template_frame_atom_coords": torch.zeros(
+            (batch_size, n_templ, n_token, 3, 3)
         ).float(),
         # Bond features
         "token_bonds": torch.ones((batch_size, n_token, n_token)).int(),

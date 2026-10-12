@@ -111,7 +111,12 @@ class TestMSAModuleEmbedder:
             num_paired = torch.zeros((batch_size,), dtype=torch.long)
 
         batch = {
-            "msa": torch.rand((batch_size, n_total_msa_seq, n_token, one_hot_dim)),
+            "msa": torch.randint(
+                0,
+                one_hot_dim,
+                (batch_size, n_total_msa_seq, n_token),
+                dtype=torch.uint8,
+            ),
             "has_deletion": torch.ones((batch_size, n_total_msa_seq, n_token)),
             "deletion_value": torch.rand((batch_size, n_total_msa_seq, n_token)),
             "msa_mask": torch.ones((batch_size, n_total_msa_seq, n_token)),
@@ -150,14 +155,16 @@ class TestTemplateEmbedders:
         n_token = 10
         batch = {
             "asym_id": torch.ones((batch_size, n_token)),
-            "template_restype": torch.ones((batch_size, n_templ, n_token, 32)),
+            "template_restype": torch.zeros(
+                (batch_size, n_templ, n_token), dtype=torch.int32
+            ),
             "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)),
             "template_backbone_frame_mask": torch.ones((batch_size, n_templ, n_token)),
-            "template_distogram": torch.ones(
-                (batch_size, n_templ, n_token, n_token, 39)
+            "template_pseudo_beta_coords": torch.ones(
+                (batch_size, n_templ, n_token, 3)
             ),
-            "template_unit_vector": torch.ones(
-                (batch_size, n_templ, n_token, n_token, 3)
+            "template_frame_atom_coords": torch.ones(
+                (batch_size, n_templ, n_token, 3, 3)
             ),
         }
         return {
