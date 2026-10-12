@@ -23,13 +23,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import partial
 from pathlib import Path
+from typing import Generic, TypeVar
 
 import numpy as np
 
 from openfold3.core.config.config_utils import DirectoryPathOrNone
 from openfold3.core.config.msa_pipeline_configs import (
     MsaKind,
-    MsaSampleProcessorInput,
     MsaSampleProcessorInputInference,
     MsaSampleProcessorInputTrain,
 )
@@ -432,8 +432,13 @@ class MsaSampleParserMapper:
     rep_id_to_paired_msa: dict[str, dict[str, MsaArray]] = field(default_factory=dict)
 
 
-class MsaSampleParser:
-    """Base MSA sample parser class"""
+InputT = TypeVar(
+    "InputT", MsaSampleProcessorInputTrain, MsaSampleProcessorInputInference
+)
+
+
+class MsaSampleParser(Generic[InputT]):
+    """Base MSA sample parser class, generic over the input it parses MSAs for."""
 
     def __init__(
         self,
@@ -452,13 +457,13 @@ class MsaSampleParser:
         self.alignments_directory = alignments_directory
         self.use_roda_monomer_format = use_roda_monomer_format
 
-    def create_maps(self) -> None:
+    def create_maps(self, input: InputT) -> MsaSampleParserMapper:
         raise NotImplementedError(
             "You are trying to use the MsaSampleParser directly. Subclass it and "
             "implement create_maps and parse_msas methods to use it."
         )
 
-    def parse_msas(self) -> None:
+    def parse_msas(self, maps: MsaSampleParserMapper) -> MsaSampleParserMapper:
         raise NotImplementedError(
             "You are trying to use the MsaSampleParser directly. Subclass it and "
             "implement create_maps and parse_msas methods to use it."
@@ -482,7 +487,7 @@ class MsaSampleParser:
         return msa_array_collection
 
     @log_runtime_memory(runtime_dict_key="runtime-msa-proc-parse")
-    def __call__(self, input: MsaSampleProcessorInput) -> MsaArrayCollection:
+    def __call__(self, input: InputT) -> MsaArrayCollection:
         # Create maps between chain IDs, representative IDs, molecule types
         maps = self.create_maps(input=input)
 
@@ -498,7 +503,7 @@ class MsaSampleParser:
         return msa_array_collection
 
 
-class MsaSampleParserTrain(MsaSampleParser):
+class MsaSampleParserTrain(MsaSampleParser[MsaSampleProcessorInputTrain]):
     """Training MSA sample parser class"""
 
     def __init__(self, config: MSASettings, **paths_kwargs):
@@ -749,7 +754,7 @@ def _unread_notes(statuses: list[_AlignmentStatus], roles: set[_AlignmentRole]) 
     return notes
 
 
-class MsaSampleParserInference(MsaSampleParser):
+class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]):
     """Inference MSA sample parser class"""
 
     def __init__(self, config: MSASettings, **paths_kwargs):

@@ -121,43 +121,18 @@ openfold3/core/data/io/s3.py:0: error: Incompatible return value type (got "IO[A
 openfold3/core/data/io/s3.py:0: error: Incompatible return value type (got "list[Path]", expected "list[str]")  [return-value]
 openfold3/core/data/io/s3.py:0: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
 openfold3/core/data/io/s3.py:0: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
-openfold3/core/data/io/sequence/msa.py:0: error: "create_maps" of "MsaSampleParser" does not return a value (it only ever returns None)  [func-returns-value]
-openfold3/core/data/io/sequence/msa.py:0: error: "parse_msas" of "MsaSampleParser" does not return a value (it only ever returns None)  [func-returns-value]
 openfold3/core/data/io/sequence/msa.py:0: error: Argument "deletion_matrix" to "from_parsed" of "MsaArray" has incompatible type "list[list[int]]"; expected "ndarray[tuple[Any, ...], dtype[Any]]"  [arg-type]
 openfold3/core/data/io/sequence/msa.py:0: error: Argument "deletion_matrix" to "from_parsed" of "MsaArray" has incompatible type "list[list[int]]"; expected "ndarray[tuple[Any, ...], dtype[Any]]"  [arg-type]
-openfold3/core/data/io/sequence/msa.py:0: error: Argument 1 to "create_msa_array_collection" of "MsaSampleParser" has incompatible type "None"; expected "MsaSampleParserMapper"  [arg-type]
 openfold3/core/data/io/sequence/msa.py:0: error: Function "numpy._core.multiarray.array" is not valid as a type  [valid-type]
 openfold3/core/data/io/sequence/msa.py:0: error: Incompatible types in assignment (expression has type "Callable[[list[Path]], dict[str, MsaArray]]", variable has type "partial[dict[str, MsaArray]]")  [assignment]
 openfold3/core/data/io/sequence/msa.py:0: error: Incompatible types in assignment (expression has type "Callable[[list[Path]], dict[str, MsaArray]]", variable has type "partial[dict[str, MsaArray]]")  [assignment]
 openfold3/core/data/io/sequence/msa.py:0: error: Incompatible types in assignment (expression has type "ndarray[tuple[Any, ...], dtype[Any]]", variable has type "list[list[int]]")  [assignment]
 openfold3/core/data/io/sequence/msa.py:0: error: Incompatible types in assignment (expression has type "ndarray[tuple[Any, ...], dtype[Any]]", variable has type "list[list[int]]")  [assignment]
-openfold3/core/data/io/sequence/msa.py:0: error: Signature of "create_maps" incompatible with supertype "MsaSampleParser"  [override]
-openfold3/core/data/io/sequence/msa.py:0: error: Signature of "create_maps" incompatible with supertype "MsaSampleParser"  [override]
-openfold3/core/data/io/sequence/msa.py:0: error: Signature of "parse_msas" incompatible with supertype "MsaSampleParser"  [override]
-openfold3/core/data/io/sequence/msa.py:0: error: Signature of "parse_msas" incompatible with supertype "MsaSampleParser"  [override]
-openfold3/core/data/io/sequence/msa.py:0: error: Unexpected keyword argument "input" for "create_maps" of "MsaSampleParser"  [call-arg]
-openfold3/core/data/io/sequence/msa.py:0: error: Unexpected keyword argument "maps" for "parse_msas" of "MsaSampleParser"  [call-arg]
 openfold3/core/data/io/sequence/msa.py:0: error: Unsupported operand types for / ("None" and "Path")  [operator]
 openfold3/core/data/io/sequence/msa.py:0: error: Value of type "dict[Any, Any] | None" is not indexable  [index]
 openfold3/core/data/io/sequence/msa.py:0: error: callable? not callable  [misc]
 openfold3/core/data/io/sequence/msa.py:0: note: Left operand is of type "Path | None"
 openfold3/core/data/io/sequence/msa.py:0: note: Perhaps you need "Callable[...]" or a callback protocol?
-openfold3/core/data/io/sequence/msa.py:0: note: Subclass:
-openfold3/core/data/io/sequence/msa.py:0: note: Subclass:
-openfold3/core/data/io/sequence/msa.py:0: note: Subclass:
-openfold3/core/data/io/sequence/msa.py:0: note: Subclass:
-openfold3/core/data/io/sequence/msa.py:0: note: Superclass:
-openfold3/core/data/io/sequence/msa.py:0: note: Superclass:
-openfold3/core/data/io/sequence/msa.py:0: note: Superclass:
-openfold3/core/data/io/sequence/msa.py:0: note: Superclass:
-openfold3/core/data/io/sequence/msa.py:0: note: def create_maps(self) -> None
-openfold3/core/data/io/sequence/msa.py:0: note: def create_maps(self) -> None
-openfold3/core/data/io/sequence/msa.py:0: note: def create_maps(self, input: MsaSampleProcessorInputInference) -> MsaSampleParserMapper
-openfold3/core/data/io/sequence/msa.py:0: note: def create_maps(self, input: MsaSampleProcessorInputTrain) -> MsaSampleParserMapper
-openfold3/core/data/io/sequence/msa.py:0: note: def parse_msas(self) -> None
-openfold3/core/data/io/sequence/msa.py:0: note: def parse_msas(self) -> None
-openfold3/core/data/io/sequence/msa.py:0: note: def parse_msas(self, maps: MsaSampleParserMapper) -> MsaSampleParserMapper
-openfold3/core/data/io/sequence/msa.py:0: note: def parse_msas(self, maps: MsaSampleParserMapper) -> MsaSampleParserMapper
 openfold3/core/data/io/sequence/template.py:0: error: Argument "query_aln_str" to "_process_alignment_hits" of "TemplateParser" has incompatible type "str | None"; expected "str"  [arg-type]
 openfold3/core/data/io/sequence/template.py:0: error: Argument "template_alignments" to "_process_alignment_hits" of "TemplateParser" has incompatible type "Sequence[str]"; expected "list[str]"  [arg-type]
 openfold3/core/data/io/sequence/template.py:0: error: Argument "template_alignments" to "_process_alignment_hits" of "TemplateParser" has incompatible type "list[str | None]"; expected "list[str]"  [arg-type]

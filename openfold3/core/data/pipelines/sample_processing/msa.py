@@ -18,7 +18,7 @@ import logging
 import warnings
 from collections.abc import Sequence
 from functools import partial
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -474,7 +474,8 @@ class MsaSampleProcessor:
 
     def __init__(self, config: MSASettings):
         self.config = config
-        self.msa_sample_parser = MsaSampleParser(config=config)
+        # Subclasses replace it with the parser for their kind of input
+        self.msa_sample_parser: MsaSampleParser[Any] = MsaSampleParser(config=config)
         self.query_seq_processor = create_query_seqs
         self.paired_msa_processor = partial(
             create_paired,
