@@ -241,31 +241,6 @@ def test_create_pocket_sampling_features_uses_default_vdw_radius_for_non_string_
     )
 
 
-def test_resolve_ligand_reference_molecule_rejects_missing_sequence():
-    query = Query.model_validate(
-        {
-            "chains": [
-                {
-                    "molecule_type": "protein",
-                    "chain_ids": "A",
-                },
-                {
-                    "molecule_type": "ligand",
-                    "chain_ids": "L",
-                    "smiles": "CCO",
-                },
-            ],
-        }
-    )
-
-    with pytest.raises(ValueError, match="has no sequence"):
-        pocket_constraints._resolve_ligand_reference_molecule(
-            query=query,
-            processed_reference_molecules=[],
-            ligand_chain_id="L",
-        )
-
-
 def test_resolve_ligand_reference_molecule_rejects_short_reference_list():
     query = _query_with_pocket_constraint()
 

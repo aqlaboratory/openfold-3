@@ -270,6 +270,29 @@ def test_smiles_ligand_name_validation(overrides, match):
         Query.model_validate({"chains": [chain]})
 
 
+@pytest.mark.parametrize("molecule_type", ["protein", "dna", "rna"])
+@pytest.mark.parametrize(
+    "sequence, raises",
+    [
+        pytest.param({}, True, id="missing"),
+        pytest.param({"sequence": ""}, True, id="empty"),
+        pytest.param({"sequence": "ACG"}, False, id="given"),
+    ],
+)
+def test_polymer_chain_requires_sequence(molecule_type, sequence, raises):
+    """Polymer chains are built from their sequence, so a query without one is
+    rejected when it is read rather than when its structure is built."""
+    chain = {"molecule_type": molecule_type, "chain_ids": "A"} | sequence
+    if raises:
+        with pytest.raises(
+            ValueError, match=rf"Chain \['A'\]: a {molecule_type} chain must specify"
+        ):
+            Query.model_validate({"chains": [chain]})
+    else:
+        query = Query.model_validate({"chains": [chain]})
+        assert query.chains[0].sequence == "ACG"
+
+
 @pytest.mark.parametrize(
     ("chains", "match"),
     [

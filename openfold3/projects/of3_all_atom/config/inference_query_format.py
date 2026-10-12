@@ -146,6 +146,21 @@ class Chain(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def validate_polymer_sequence(self) -> "Chain":
+        """Require a sequence for polymer chains, which are built from it."""
+        if (
+            self.molecule_type
+            in (MoleculeType.PROTEIN, MoleculeType.DNA, MoleculeType.RNA)
+            and not self.sequence
+        ):
+            raise ValueError(
+                f"Chain {self.chain_ids}: a {self.molecule_type.name.lower()} chain "
+                "must specify a 'sequence'"
+            )
+
+        return self
+
+    @model_validator(mode="after")
     def validate_template_inputs(self) -> "Chain":
         """Validate template input consistency."""
         if (
@@ -173,7 +188,6 @@ class Chain(BaseModel):
         return self
 
     # TODO(jennifer): Add validations to this class
-    # - if molecule type is protein / dna / rna - must specify sequence
     # - if molecule type is ligand - either ccd or smiles needs to be specifified
 
 

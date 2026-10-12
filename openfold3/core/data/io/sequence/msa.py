@@ -768,7 +768,7 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
         Chains with the same molecule type and sequence share one representative,
         named after the first such chain, and are featurized from the MSA files of
         that chain. MSA file and directory names play no part in this, so they can
-        be named arbitrarily. A chain without a sequence is its own representative.
+        be named arbitrarily.
 
         Updates the following attributes:
             - chain_id_to_rep_id: dict
@@ -812,12 +812,9 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
                     continue
 
                 # Fetch representative ID
-                if chain_data.sequence is None:
-                    rep_id = chain_id
-                else:
-                    rep_id = sequence_to_rep_id.setdefault(
-                        (chain_data.molecule_type, chain_data.sequence), chain_id
-                    )
+                rep_id = sequence_to_rep_id.setdefault(
+                    (chain_data.molecule_type, chain_data.sequence), chain_id
+                )
 
                 # Identical sequences pointing at different MSA files: only the
                 # representative's files are read. The same files given differently,
@@ -874,10 +871,8 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
             chain_data = input.msa_chain_data[chain_id]
             # A copy of a sequence that has MSAs elsewhere in the query is most
             # likely missing its paths by mistake
-            copy_with_msas = (
-                sequence_to_rep_id.get((chain_data.molecule_type, chain_data.sequence))
-                if chain_data.sequence is not None
-                else None
+            copy_with_msas = sequence_to_rep_id.get(
+                (chain_data.molecule_type, chain_data.sequence)
             )
             copy_note = (
                 f" Chain {copy_with_msas} has the same sequence and does have MSA "

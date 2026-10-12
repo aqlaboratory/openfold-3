@@ -777,8 +777,6 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
         for rep_id in sorted(msa_array_collection.rep_id_to_query_seq):
             chain_data = input.msa_chain_data[rep_id]
             sequence = chain_data.sequence
-            if sequence is None:
-                continue
             chain_ids = chains_of_rep(msa_array_collection.chain_id_to_rep_id, rep_id)
 
             # The query row itself comes from a main alignment, or a paired one if

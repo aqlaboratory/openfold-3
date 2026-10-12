@@ -258,3 +258,25 @@ def test_missing_paired_msa_does_not_warn_for_rna_rep(tmp_path, recwarn):
 
     messages = [str(w.message) for w in recwarn.list]
     assert not any("precomputed paired MSA" in m for m in messages), messages
+
+
+def test_inference_input_has_polymer_chains_only():
+    """MSAs are matched to chains by sequence, so the MSA input holds the chains
+    that have one, the polymer chains, and leaves out ligands."""
+    query = Query(
+        chains=[
+            Chain(molecule_type="protein", chain_ids=["A", "B"], sequence="ACDEF"),
+            Chain(molecule_type="dna", chain_ids=["C"], sequence="ACGT"),
+            Chain(molecule_type="ligand", chain_ids=["D"], ccd_codes=["ATP"]),
+            Chain(molecule_type="ligand", chain_ids=["E"], smiles="CCO"),
+        ],
+    )
+
+    input = MsaSampleProcessorInputInference.create_from_inference_query_entry(
+        inference_query=query
+    )
+
+    assert {
+        chain_id: chain_data.sequence
+        for chain_id, chain_data in input.msa_chain_data.items()
+    } == {"A": "ACDEF", "B": "ACDEF", "C": "ACGT"}

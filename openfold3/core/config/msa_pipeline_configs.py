@@ -50,10 +50,13 @@ class MsaKind(str, Enum):
 
 
 class MsaChainDataInference(BaseModel):
-    """Inference input for a single chain in the MSA sample processor pipeline."""
+    """Inference input for a single chain in the MSA sample processor pipeline.
+
+    Built for polymer chains only: ligand chains have no sequence and no MSAs.
+    """
 
     molecule_type: MoleculeType
-    sequence: str | None = None
+    sequence: str
     paired_msa_file_paths: (
         Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)] | None
     ) = None
@@ -128,6 +131,9 @@ class MsaSampleProcessorInputInference(BaseModel):
     def create_from_inference_query_entry(cls, inference_query: Query):
         msa_chain_data = {}
         for chain in inference_query.chains:
+            # Ligands, the only chains without a sequence, have no MSAs
+            if chain.sequence is None:
+                continue
             for chain_id in chain.chain_ids:
                 msa_chain_data[chain_id] = MsaChainDataInference(
                     molecule_type=chain.molecule_type,
