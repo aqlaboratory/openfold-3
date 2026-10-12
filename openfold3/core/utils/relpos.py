@@ -47,7 +47,8 @@ def cyclic_offset(residue_index: torch.Tensor) -> torch.Tensor:
     """
     ring_length = int(residue_index.max() - residue_index.min()) + 1
     offset = residue_index[:, None] - residue_index[None, :]
-    # At antipodes offset / ring_length is exactly +-1/2, so torch.round RNE rounds to 0
+    # At antipodes offset / ring_length is exactly +-1/2, so torch round-to-even
+    # rounds to 0 and the linear offset is kept.
     return (offset - ring_length * torch.round(offset / ring_length)).type(torch.int)
 
 
