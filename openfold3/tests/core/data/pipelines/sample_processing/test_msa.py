@@ -22,24 +22,24 @@ from openfold3.core.data.primitives.featurization.msa import vstack_pad_msa_arra
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
 from openfold3.projects.of3_all_atom.config.inference_query_format import Chain, Query
 
-# Heterodimer fixture: chain A (query ACDEF) and chain B (query GHIKL). Each
-# chain's main a3m starts with its own query row (as real colabfold_main.a3m
-# files do) followed by two hit rows, one of which also appears in that
-# chain's paired block — see the module docstring for why that's the case
-# this bug hinges on.
+# Heterodimer fixture: chain A (query ACDEF) and chain B (query GHIKL). Like
+# real colabfold_main.a3m and colabfold_paired.a3m files, each chain's main and
+# paired a3m start with its own query row, followed by hit rows, one of which
+# appears in both — see the module docstring for why that's the case this bug
+# hinges on.
 #
 #            chain A                          chain B
 # main a3m   ACDEF (query row), AADEF, ACDEA   GHIKL (query row), GGIKL, GHIKG
-# paired a3m AADEF, ACAEF                      GGIKL, GHGKL
-#            ^^^^^ shared with main            ^^^^^ shared with main
+# paired a3m ACDEF (query row), AADEF, ACAEF   GHIKL (query row), GGIKL, GHGKL
+#                               ^^^^^ shared                      ^^^^^ shared
 #
-# create_main dedups main against paired only, not against the standalone
-# query row, so the query row legitimately survives inside main too.
+# create_main dedups main against the paired block, which includes the query
+# row, so main keeps only ACDEA / GHIKG.
 # MSASettings defaults to randomly subsampling the main MSA
-# (subsample_main=True), so which of the surviving main rows make it into the
-# final stack is itself a random draw — the test pins that draw via the
-# `seeded_rng` fixture rather than disabling subsampling, to exercise the
-# same default config used at inference.
+# (subsample_main=True). With a single surviving main row the draw is
+# deterministic, but the test still pins it via the `seeded_rng` fixture rather
+# than disabling subsampling, to exercise the same default config used at
+# inference.
 MAIN_A3M = {
     "A": textwrap.dedent(
         """\
@@ -66,16 +66,20 @@ PAIRED_A3M = {
     "A": textwrap.dedent(
         """\
         >101
-        AADEF
+        ACDEF
         >101_1
+        AADEF
+        >101_2
         ACAEF
         """
     ),
     "B": textwrap.dedent(
         """\
         >102
-        GGIKL
+        GHIKL
         >102_1
+        GGIKL
+        >102_2
         GHGKL
         """
     ),
@@ -97,8 +101,7 @@ RNA_MAIN_A3M = textwrap.dedent(
 
 def _write_a3m(root: Path, kind: str, rep_id: str, filename: str, content: str) -> Path:
     """Writes `content` to root/<kind>/<rep_id>/<filename> and returns the rep's
-    directory (as chain.*_msa_file_paths expects — the a3m file's parent dir
-    name is what the parser reads back as the representative ID).
+    directory, which chain.*_msa_file_paths accepts in place of the file.
     """
     rep_dir = root / kind / rep_id
     rep_dir.mkdir(parents=True)
@@ -158,22 +161,23 @@ def test_msa_sample_processor_inference_includes_precomputed_paired_msa(
 
     # The core GH-371 bug: this stayed 0 because create_paired_from_precomputed
     # never called set_row_counts.
-    assert msa_array_collection.row_counts.n_rows_paired_subsampled == 2
+    assert msa_array_collection.row_counts.n_rows_paired_subsampled == 3
 
-    # With seeded_rng pinning the main-MSA subsampling draw, chain A keeps only
-    # its query-row hit from main (ACDEA is subsampled out) and chain B keeps
-    # only its non-query hit (GHIKL is subsampled out) — both paired blocks
-    # survive intact either way, which is what this test guards.
+    # Each stack is the query row, then the paired block intact (starting with
+    # the query row again, as with real ColabFold MSAs), then the main rows not
+    # shared with the paired block.
     stack_a, _ = vstack_pad_msa_arrays(msa_array_collection, "A")
     assert ["".join(row) for row in stack_a.msa] == [
         "ACDEF",
+        "ACDEF",
         "AADEF",
         "ACAEF",
-        "ACDEF",
+        "ACDEA",
     ]
 
     stack_b, _ = vstack_pad_msa_arrays(msa_array_collection, "B")
     assert ["".join(row) for row in stack_b.msa] == [
+        "GHIKL",
         "GHIKL",
         "GGIKL",
         "GHGKL",

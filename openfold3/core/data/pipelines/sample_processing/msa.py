@@ -18,12 +18,15 @@ import logging
 import warnings
 from collections.abc import Sequence
 from functools import partial
+from typing import cast
 
 import numpy as np
 import pandas as pd
 
 from openfold3.core.config.config_utils import DirectoryPathOrNone
 from openfold3.core.config.msa_pipeline_configs import (
+    MsaChainDataInference,
+    MsaKind,
     MsaSampleProcessorInput,
     MsaSampleProcessorInputInference,
     MsaSampleProcessorInputTrain,
@@ -32,9 +35,16 @@ from openfold3.core.data.io.sequence.msa import (
     MsaSampleParser,
     MsaSampleParserInference,
     MsaSampleParserTrain,
+    chains_of_rep,
+    select_query_alignment,
 )
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
+)
+from openfold3.core.data.primitives.quality_control.msa_issues import (
+    MsaIssue,
+    MsaIssueKind,
+    report_msa_issues,
 )
 from openfold3.core.data.primitives.sequence.msa import (
     MsaArray,
@@ -628,6 +638,61 @@ class MsaSampleProcessorTrain(MsaSampleProcessor):
         return chain_id_to_main_msa, chain_id_to_profile, chain_id_to_del_mean
 
 
+# Residues that match any residue when comparing an MSA's query row to a sequence
+_QUERY_ROW_WILDCARDS = {
+    MoleculeType.PROTEIN: frozenset("X"),
+    MoleculeType.RNA: frozenset("XN"),
+}
+# RNA alignments from DNA databases may spell uracil as thymine
+_QUERY_ROW_NORMALIZATION = {MoleculeType.RNA: str.maketrans("T", "U")}
+
+
+def find_query_row_mismatches(
+    query_row: str, sequence: str, molecule_type: MoleculeType
+) -> list[int]:
+    """Finds the positions at which an MSA's query row differs from a sequence of
+    the same length.
+
+    Case is ignored, wildcard residues (X, and N for RNA) match any residue, and
+    for RNA T matches U.
+
+    Returns:
+        list[int]:
+            0-based positions of the residues that differ.
+    """
+    table = _QUERY_ROW_NORMALIZATION.get(molecule_type, {})
+    wildcards = _QUERY_ROW_WILDCARDS.get(molecule_type, frozenset())
+    query_row = query_row.upper().translate(table)
+    sequence = sequence.upper().translate(table)
+    return [
+        i
+        for i, (row_res, seq_res) in enumerate(zip(query_row, sequence, strict=True))
+        if row_res != seq_res and row_res not in wildcards and seq_res not in wildcards
+    ]
+
+
+# An MSA whose query row differs from a chain's sequence is still used for that
+# chain if it differs by a single residue or matches at least this fraction of
+# residues, which covers reusing a wild-type MSA for point mutants
+MIN_QUERY_ROW_IDENTITY = 0.9
+
+
+def is_tolerated_query_row(n_mismatches: int, length: int) -> bool:
+    """Whether an MSA whose query row differs from a chain's sequence at
+    `n_mismatches` of `length` residues may be used for that chain."""
+    return n_mismatches <= 1 or 1 - n_mismatches / length >= MIN_QUERY_ROW_IDENTITY
+
+
+def _describe_query_row_mismatches(
+    query_row: str, sequence: str, mismatches: list[int]
+) -> str:
+    """E.g. "2 of 20 residues differ (E4W, K9A)", with residues given as
+    <chain residue><position><MSA residue>."""
+    examples = ", ".join(f"{sequence[i]}{i + 1}{query_row[i]}" for i in mismatches[:5])
+    more = ", ..." if len(mismatches) > 5 else ""
+    return f"{len(mismatches)} of {len(sequence)} residues differ ({examples}{more})"
+
+
 class MsaSampleProcessorInference(MsaSampleProcessor):
     """Pipeline for MSA sample processing for inference."""
 
@@ -642,12 +707,179 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
     ) -> dict[str, MsaArray]:
         """Create query sequences from MSA arrays."""
         if (len(msa_array_collection.rep_id_to_query_seq) > 0) & input.use_msas:
+            report_msa_issues(
+                input.query_name,
+                self.check_query_rows(
+                    input=input, msa_array_collection=msa_array_collection
+                ),
+            )
             chain_id_to_query_seq = self.query_seq_processor(
                 msa_array_collection=msa_array_collection
             )
         else:
             chain_id_to_query_seq = {}
         return chain_id_to_query_seq
+
+    def check_query_rows(
+        self,
+        input: MsaSampleProcessorInputInference,
+        msa_array_collection: MsaArrayCollection,
+    ) -> list[MsaIssue]:
+        """Checks that the first row of every alignment a chain uses is the chain's
+        own sequence.
+
+        MSA columns are mapped onto a chain's residues by position, so an alignment
+        of another length either crashes featurization or silently misaligns, and
+        is an error. An alignment of the same length with different residues is
+        expected when reusing the MSA of a related sequence, such as for point
+        mutants, so it only warns if the difference is tolerated (see
+        `is_tolerated_query_row`), and is an error otherwise. See
+        `find_query_row_mismatches` for the residues that are treated as equal.
+        The problems are reported as QUERY_ROW_LENGTH, QUERY_ROW_MISMATCH and
+        QUERY_ROW_TOLERATED issues.
+
+        This expectation only holds at inference, where each chain's MSAs are given
+        for that chain. In training, chains are matched to alignment representatives
+        by sequence, fuzzily for RNA (see `map_chains_to_representatives`), so an
+        MSA's first row can legitimately differ from a chain's sequence there. The
+        training sample processor does not run this check, and it should not be
+        reused for training without accounting for that.
+
+        Args:
+            input (MsaSampleProcessorInputInference):
+                The query's MSA input, with each chain's sequence and MSA paths.
+            msa_array_collection (MsaArrayCollection):
+                The parsed alignments of each representative.
+
+        Returns:
+            list[MsaIssue]:
+                The problems found, to be passed to `report_msa_issues`.
+        """
+        main_names = set()
+        if input.use_main_msas:
+            main_names |= set(self.config.aln_order)
+        if input.use_paired_msas:
+            main_names |= set(self.config.msas_to_pair)
+        paired_names = (
+            set(self.config.paired_msa_order) if input.use_paired_msas else set()
+        )
+
+        # Still in the parsed state, which holds one MsaArray per alignment name;
+        # the attribute is annotated with the processed state
+        rep_id_to_paired_msa = cast(
+            dict[str, dict[str, MsaArray]],
+            msa_array_collection.rep_id_to_paired_msa or {},
+        )
+
+        issues = []
+        tolerance = f"{1 - MIN_QUERY_ROW_IDENTITY:.0%}"
+        for rep_id in sorted(msa_array_collection.rep_id_to_query_seq):
+            chain_data = input.msa_chain_data[rep_id]
+            sequence = chain_data.sequence
+            if sequence is None:
+                continue
+            chain_ids = chains_of_rep(msa_array_collection.chain_id_to_rep_id, rep_id)
+
+            # The query row itself comes from a main alignment, or a paired one if
+            # there are none; see MsaSampleParserInference.parse_msas
+            main = msa_array_collection.rep_id_to_main_msa.get(rep_id) or {}
+            paired = rep_id_to_paired_msa.get(rep_id) or {}
+            query_source = (
+                (
+                    MsaKind.MAIN,
+                    select_query_alignment(
+                        main, [*self.config.aln_order, *self.config.msas_to_pair]
+                    ),
+                )
+                if main
+                else (
+                    MsaKind.PAIRED,
+                    select_query_alignment(paired, self.config.paired_msa_order),
+                )
+            )
+            used = [
+                (kind, name, msas[name])
+                for kind, msas, used_names in [
+                    (MsaKind.MAIN, main, main_names),
+                    (MsaKind.PAIRED, paired, paired_names),
+                ]
+                for name in sorted(msas)
+                if name in used_names or (kind, name) == query_source
+            ]
+
+            rows_to_alignments: dict[str, list[tuple[MsaKind, str]]] = {}
+            for kind, name, msa in used:
+                row = "".join(msa.msa[0])
+                if len(row) != len(sequence):
+                    issues.append(
+                        MsaIssue(
+                            kind=MsaIssueKind.QUERY_ROW_LENGTH,
+                            query_name=input.query_name,
+                            chain_ids=chain_ids,
+                            msa_kind=kind,
+                            details={
+                                **self._describe_alignments(chain_data, [(kind, name)]),
+                                "row_length": len(row),
+                                "sequence_length": len(sequence),
+                                "tolerance": tolerance,
+                            },
+                        )
+                    )
+                else:
+                    rows_to_alignments.setdefault(row, []).append((kind, name))
+
+            differences = []
+            for row, alignments in rows_to_alignments.items():
+                mismatches = find_query_row_mismatches(
+                    row, sequence, chain_data.molecule_type
+                )
+                if not mismatches:
+                    continue
+                description = _describe_query_row_mismatches(row, sequence, mismatches)
+                if is_tolerated_query_row(len(mismatches), len(sequence)):
+                    names = ", ".join(f"{kind} '{name}'" for kind, name in alignments)
+                    differences.append(f"{names}: {description}")
+                else:
+                    issues.append(
+                        MsaIssue(
+                            kind=MsaIssueKind.QUERY_ROW_MISMATCH,
+                            query_name=input.query_name,
+                            chain_ids=chain_ids,
+                            details={
+                                **self._describe_alignments(chain_data, alignments),
+                                "differences": description,
+                                "tolerance": tolerance,
+                            },
+                        )
+                    )
+            if differences:
+                issues.append(
+                    MsaIssue(
+                        kind=MsaIssueKind.QUERY_ROW_TOLERATED,
+                        query_name=input.query_name,
+                        chain_ids=chain_ids,
+                        details={"differences": "; ".join(differences)},
+                    )
+                )
+
+        return issues
+
+    @staticmethod
+    def _describe_alignments(
+        chain_data: MsaChainDataInference,
+        alignments: list[tuple[MsaKind, str]],
+    ) -> dict[str, object]:
+        """Names a chain's alignments and the MSA paths they are read from, as the
+        `alignments` and `paths` details of an issue."""
+        kinds = {kind for kind, _ in alignments}
+        paths = [
+            str(p)
+            for kind in MsaKind
+            if kind in kinds
+            for p in chain_data.msa_file_paths(kind)
+        ]
+        names = ", ".join(f"{kind} '{name}'" for kind, name in alignments)
+        return {"alignments": names, "paths": paths}
 
     def create_paired_msa(
         self,
