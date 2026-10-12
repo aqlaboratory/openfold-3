@@ -14,15 +14,26 @@
 
 """Regression tests for MSA parsing and MsaArray truncation.
 
-Covers the ``max_seq_count`` cap in ``parse_a3m`` / ``parse_stockholm`` and the
-``MsaArray.truncate`` int/slice handling.
+Covers the ``max_seq_count`` cap in ``parse_a3m`` / ``parse_stockholm``, the
+``MsaArray.truncate`` int/slice handling, and the training parser's handling of
+chains without an alignment representative.
 """
 
 import numpy as np
 import pytest
 
-from openfold3.core.data.io.sequence.msa import parse_a3m, parse_stockholm
+from openfold3.core.config.msa_pipeline_configs import (
+    MsaChainDataTrain,
+    MsaSampleProcessorInputTrain,
+)
+from openfold3.core.data.io.sequence.msa import (
+    MsaSampleParserTrain,
+    parse_a3m,
+    parse_stockholm,
+)
 from openfold3.core.data.primitives.sequence.msa import MsaArray
+from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
 
 QUERY_LEN = 4
 
@@ -118,3 +129,39 @@ def test_truncate_over_length_keeps_all_rows():
 
     assert out is not None
     assert len(out) == 5
+
+
+@pytest.mark.parametrize(
+    "molecule_type, raises",
+    [
+        pytest.param(MoleculeType.PROTEIN, True, id="protein"),
+        pytest.param(MoleculeType.RNA, True, id="rna"),
+        pytest.param(MoleculeType.DNA, False, id="dna"),
+        pytest.param(MoleculeType.LIGAND, False, id="ligand"),
+    ],
+)
+def test_train_create_maps_requires_a_representative_for_msa_chains(
+    molecule_type, raises
+):
+    """A protein or RNA chain without an alignment representative has no MSAs to
+    read, which used to fail later with an unrelated TypeError, KeyError or
+    missing-file error. Chains of other molecule types get no MSAs and need none.
+    """
+    input = MsaSampleProcessorInputTrain(
+        msa_chain_data={
+            "A": MsaChainDataTrain(
+                molecule_type=MoleculeType.PROTEIN, alignment_representative_id="rep"
+            ),
+            "B": MsaChainDataTrain(
+                molecule_type=molecule_type, alignment_representative_id=None
+            ),
+        }
+    )
+    parser = MsaSampleParserTrain(config=MSASettings())
+
+    if raises:
+        with pytest.raises(ValueError, match="Chain B .* no alignment representative"):
+            parser.create_maps(input=input)
+    else:
+        maps = parser.create_maps(input=input)
+        assert maps.chain_id_to_rep_id == {"A": "rep"}

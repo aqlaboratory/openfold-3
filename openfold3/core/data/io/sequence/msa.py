@@ -395,25 +395,41 @@ def parse_msas_preparsed(
     return msas
 
 
+@dataclass
 class MsaSampleParserMapper:
     """Data class to hold mappings between chain IDs, representative IDs, and MSA
-    objects for MSA parsing."""
+    objects for MSA parsing.
 
-    map_keys: tuple = (
-        "chain_id_to_rep_id",
-        "chain_id_to_mol_type",
-        "rep_id_to_chain_id",
-        "rep_id_to_mol_type",
-        "rep_id_to_main_msa_paths",
-        "rep_id_to_paired_msa_paths",
-        "rep_id_to_query_seq",
-        "rep_id_to_main_msa",
-        "rep_id_to_paired_msa",
-    )
+    Attributes:
+        chain_id_to_rep_id (dict[str, str]):
+            Maps chain IDs to representative IDs.
+        chain_id_to_mol_type (dict[str, MoleculeType]):
+            Maps chain IDs to molecule types.
+        rep_id_to_chain_id (dict[str, str]):
+            Maps representative IDs to an example chain ID.
+        rep_id_to_mol_type (dict[str, MoleculeType]):
+            Maps representative IDs to molecule types.
+        rep_id_to_main_msa_paths (dict[str, list[Path]]):
+            Maps representative IDs to main MSA file paths. Inference only.
+        rep_id_to_paired_msa_paths (dict[str, list[Path]]):
+            Maps representative IDs to paired MSA file paths. Inference only.
+        rep_id_to_query_seq (dict[str, np.ndarray]):
+            Maps representative IDs to query sequences, as arrays of shape (1, L).
+        rep_id_to_main_msa (dict[str, dict[str, MsaArray]]):
+            Maps representative IDs to their main MSAs by alignment name.
+        rep_id_to_paired_msa (dict[str, dict[str, MsaArray]]):
+            Maps representative IDs to their paired MSAs by alignment name.
+    """
 
-    def __init__(self) -> None:
-        for name in self.map_keys:
-            setattr(self, name, {})
+    chain_id_to_rep_id: dict[str, str] = field(default_factory=dict)
+    chain_id_to_mol_type: dict[str, MoleculeType] = field(default_factory=dict)
+    rep_id_to_chain_id: dict[str, str] = field(default_factory=dict)
+    rep_id_to_mol_type: dict[str, MoleculeType] = field(default_factory=dict)
+    rep_id_to_main_msa_paths: dict[str, list[Path]] = field(default_factory=dict)
+    rep_id_to_paired_msa_paths: dict[str, list[Path]] = field(default_factory=dict)
+    rep_id_to_query_seq: dict[str, np.ndarray] = field(default_factory=dict)
+    rep_id_to_main_msa: dict[str, dict[str, MsaArray]] = field(default_factory=dict)
+    rep_id_to_paired_msa: dict[str, dict[str, MsaArray]] = field(default_factory=dict)
 
 
 class MsaSampleParser:
@@ -500,11 +516,23 @@ class MsaSampleParserTrain(MsaSampleParser):
                 Maps representative IDs to an example chain ID.
             - rep_id_to_mol_type: dict
                 Maps representative IDs to molecule types.
+
+        Raises:
+            ValueError:
+                If a chain of a molecule type with MSAs has no alignment
+                representative, so there are no MSAs to read for it.
         """
         maps = MsaSampleParserMapper()
         for chain_id, chain_data in input.msa_chain_data.items():
             if chain_data.molecule_type in self.config.moltypes:
                 rep_id = chain_data.alignment_representative_id
+                if rep_id is None:
+                    raise ValueError(
+                        f"Chain {chain_id} ({chain_data.molecule_type.name}) has no "
+                        "alignment representative, so its MSAs cannot be found. "
+                        "Build the dataset cache with alignment representatives, "
+                        "which removes structures that have none."
+                    )
                 maps.chain_id_to_rep_id[chain_id] = rep_id
                 maps.chain_id_to_mol_type[chain_id] = chain_data.molecule_type
                 if rep_id not in maps.rep_id_to_chain_id:
