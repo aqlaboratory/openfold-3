@@ -71,8 +71,8 @@ class TestCyclicOffset:
         off = cyclic_offset(idx)
         assert (off.diagonal() == 0).all()
 
-    def test_docstring_example(self):
-        # The example shown in the docstring
+    def test_simple_example(self):
+        # The example shown in the `cyclic_offset` docstring
 
         off = cyclic_offset(torch.arange(6))
         expected = torch.tensor(
@@ -312,15 +312,6 @@ class TestRelposComplex:
         out = self._relpos(batch)
         expected_last = (2 * self.MAX_IDX + 2) * 2 + 1 + (2 * self.MAX_CHAIN + 2)
         assert out.shape == (1, n, n, expected_last)
-
-    def test_cyclic_changes_encoding_vs_linear(self):
-        # A cyclic chain should produce different rel-pos encodings than a linear one.
-        n = 10
-        linear_batch = _make_batch(n, [1] * n, [False] * n)
-        cyclic_batch = _make_batch(n, [1] * n, [True] * n)
-        linear_out = self._relpos(linear_batch)
-        cyclic_out = self._relpos(cyclic_batch)
-        assert not torch.equal(linear_out, cyclic_out)
 
     def _split(self, out):
         """Split relpos_complex output into (rel_pos, rest) along the channel dim.

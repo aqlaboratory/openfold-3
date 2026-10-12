@@ -22,9 +22,10 @@ def cyclic_offset(residue_index: torch.Tensor) -> torch.Tensor:
 
     Each offset is the linear offset wrapped to the shorter way around the ring
     of residues where the ring length is determined based on the difference
-    between the maximum and minimum residue indices. The antipode residue
-    directly opposite in an even ring keeps the sign of the linear offset, so
-    the offsets are antisymmetric.
+    between the maximum and minimum residue indices. For antipodal residues
+    (directly opposite in an even ring) it is the same distance either way
+    around the ring. The function keeps the sign of the linear offset, so the
+    offsets are antisymmetric (i.e., offset[i, j] == -offset[j, i]).
 
     Args:
         residue_index:
