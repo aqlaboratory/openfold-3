@@ -264,10 +264,7 @@ def create_paired_from_precomputed(
     # since it more likely means paired_msa_file_paths was left unset by mistake.
     for rep_id, query_seq in msa_array_collection.rep_id_to_query_seq.items():
         if rep_id not in processed_prepaired_msas:
-            if (
-                msa_array_collection.rep_id_to_mol_type.get(rep_id)
-                == MoleculeType.PROTEIN
-            ):
+            if msa_array_collection.rep_id_to_mol_type[rep_id] == MoleculeType.PROTEIN:
                 warnings.warn(
                     f"Representative {rep_id} is a protein chain with no "
                     "precomputed paired MSA, while other representatives in this "

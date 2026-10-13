@@ -711,6 +711,10 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
                 Maps chain IDs to representative IDs.
             - chain_id_to_mol_type: dict
                 Maps chain IDs to molecule types.
+            - rep_id_to_chain_id: dict
+                Maps representative IDs to their first chain ID.
+            - rep_id_to_mol_type: dict
+                Maps representative IDs to molecule types.
             - rep_id_to_query_seq: dict
                 Maps representative IDs to their uppercased sequence, as an array
                 of shape (1, L).
@@ -733,83 +737,55 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
         sequence_to_rep_id: dict[tuple[MoleculeType, str], str] = {}
         chain_ids_without_msas: list[str] = []
         for chain_id, chain_data in input.msa_chain_data.items():
-            if chain_data.molecule_type in self.config.moltypes:
-                main_msa_file_paths = (
-                    sorted(chain_data.main_msa_file_paths)
-                    if chain_data.main_msa_file_paths
-                    else []
-                )
-                paired_msa_file_paths = (
-                    sorted(chain_data.paired_msa_file_paths)
-                    if chain_data.paired_msa_file_paths
-                    else []
-                )
+            if chain_data.molecule_type not in self.config.moltypes:
+                continue
+            paths = {kind: sorted(chain_data.msa_file_paths(kind)) for kind in MsaKind}
+            if not any(paths.values()):
+                # Warned about below, once all chains with MSAs are known
+                chain_ids_without_msas.append(chain_id)
+                continue
 
-                if len(main_msa_file_paths) == 0 and len(paired_msa_file_paths) == 0:
-                    # Warned about below, once all chains with MSAs are known
-                    chain_ids_without_msas.append(chain_id)
+            rep_id = sequence_to_rep_id.setdefault(
+                (chain_data.molecule_type, chain_data.sequence), chain_id
+            )
+            maps.chain_id_to_rep_id[chain_id] = rep_id
+            maps.chain_id_to_mol_type[chain_id] = chain_data.molecule_type
+            if rep_id not in maps.rep_id_to_chain_id:
+                maps.rep_id_to_chain_id[rep_id] = chain_id
+                maps.rep_id_to_mol_type[rep_id] = chain_data.molecule_type
+                # Uppercased like parsed alignment rows, see MsaArray.from_parsed
+                query_seq = _msa_list_to_np([chain_data.sequence])
+                _uppercase_ascii_inplace(query_seq)
+                maps.rep_id_to_query_seq[rep_id] = query_seq
+
+            # Each kind of MSA is read from the files of the first chain with the
+            # sequence that has them. Identical sequences pointing at different MSA
+            # files are reported; the same files given differently, e.g. as a
+            # directory or as relative paths, are not different.
+            for msa_kind, rep_id_to_paths in [
+                (MsaKind.MAIN, maps.rep_id_to_main_msa_paths),
+                (MsaKind.PAIRED, maps.rep_id_to_paired_msa_paths),
+            ]:
+                if not paths[msa_kind]:
                     continue
-
-                # Fetch representative ID
-                rep_id = sequence_to_rep_id.setdefault(
-                    (chain_data.molecule_type, chain_data.sequence), chain_id
-                )
-
-                # Identical sequences pointing at different MSA files: only the
-                # representative's files are read. The same files given differently,
-                # e.g. as a directory or as relative paths, are not different.
-                for msa_kind, rep_id_to_paths, paths in [
-                    (MsaKind.MAIN, maps.rep_id_to_main_msa_paths, main_msa_file_paths),
-                    (
-                        MsaKind.PAIRED,
-                        maps.rep_id_to_paired_msa_paths,
-                        paired_msa_file_paths,
-                    ),
-                ]:
-                    rep_paths = rep_id_to_paths.get(rep_id)
-                    if (
-                        rep_paths is not None
-                        and paths
-                        and not self._same_alignment_files(paths, rep_paths)
-                    ):
-                        issues.append(
-                            MsaIssue(
-                                kind=MsaIssueKind.DIFFERENT_FILES_SAME_SEQUENCE,
-                                query_name=input.query_name,
-                                chain_ids=(rep_id, chain_id),
-                                msa_kind=msa_kind,
-                                details={
-                                    "rep_chain": rep_id,
-                                    "chain": chain_id,
-                                    "rep_paths": [str(p) for p in rep_paths],
-                                    "paths": [str(p) for p in paths],
-                                },
-                            )
+                rep_paths = rep_id_to_paths.get(rep_id)
+                if rep_paths is None:
+                    rep_id_to_paths[rep_id] = paths[msa_kind]
+                elif not self._same_alignment_files(paths[msa_kind], rep_paths):
+                    issues.append(
+                        MsaIssue(
+                            kind=MsaIssueKind.DIFFERENT_FILES_SAME_SEQUENCE,
+                            query_name=input.query_name,
+                            chain_ids=(rep_id, chain_id),
+                            msa_kind=msa_kind,
+                            details={
+                                "rep_chain": rep_id,
+                                "chain": chain_id,
+                                "rep_paths": [str(p) for p in rep_paths],
+                                "paths": [str(p) for p in paths[msa_kind]],
+                            },
                         )
-
-                maps.chain_id_to_rep_id[chain_id] = rep_id
-                maps.chain_id_to_mol_type[chain_id] = chain_data.molecule_type
-                if rep_id not in maps.rep_id_to_query_seq:
-                    # Uppercased like parsed alignment rows, see MsaArray.from_parsed
-                    query_seq = _msa_list_to_np([chain_data.sequence])
-                    _uppercase_ascii_inplace(query_seq)
-                    maps.rep_id_to_query_seq[rep_id] = query_seq
-                if (rep_id not in maps.rep_id_to_chain_id) & (
-                    len(main_msa_file_paths) > 0
-                ):
-                    maps.rep_id_to_chain_id[rep_id] = chain_id
-                if (rep_id not in maps.rep_id_to_mol_type) & (
-                    len(main_msa_file_paths) > 0
-                ):
-                    maps.rep_id_to_mol_type[rep_id] = chain_data.molecule_type
-                if (rep_id not in maps.rep_id_to_main_msa_paths) & (
-                    len(main_msa_file_paths) > 0
-                ):
-                    maps.rep_id_to_main_msa_paths[rep_id] = main_msa_file_paths
-                if (rep_id not in maps.rep_id_to_paired_msa_paths) & (
-                    len(paired_msa_file_paths) > 0
-                ):
-                    maps.rep_id_to_paired_msa_paths[rep_id] = paired_msa_file_paths
+                    )
 
         for chain_id in chain_ids_without_msas:
             chain_data = input.msa_chain_data[chain_id]
