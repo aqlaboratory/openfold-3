@@ -22,11 +22,6 @@ on:
         description: 'Brev instance type, or a comma-separated fallback chain. Find values with `brev search`.'
         required: true
         type: string
-      smoke_only:
-        description: 'Only check the runner (GPU, Docker, disk); skip the image build and tests.'
-        required: false
-        type: boolean
-        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -81,10 +76,8 @@ jobs:
           free -g
 
       - uses: actions/checkout@v7
-        if: ${{ !inputs.smoke_only }}
 
       - name: Log in to GHCR
-        if: ${{ !inputs.smoke_only }}
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -92,11 +85,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        if: ${{ !inputs.smoke_only }}
         uses: docker/setup-buildx-action@v4
 
       - name: Build and push test image
-        if: ${{ !inputs.smoke_only }}
         uses: docker/build-push-action@v7.4.0
         with:
           context: .
@@ -112,11 +103,9 @@ jobs:
           cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }},mode=max
 
       - name: Create parameter cache directory
-        if: ${{ !inputs.smoke_only }}
         run: mkdir -p ~/.openfold3
 
       - name: Cache download of parameters
-        if: ${{ !inputs.smoke_only }}
         id: cache-openfold_parameters
         uses: actions/cache@v6
         with:
@@ -127,7 +116,6 @@ jobs:
       # is missing or short, so a relocated or truncated cache entry self-heals
       # instead of skipping straight to a failing test.
       - name: Ensure OpenFold parameters
-        if: ${{ !inputs.smoke_only }}
         run: |
           set -euo pipefail
           f=~/.openfold3/$OPENFOLD_DEFAULT_CKPT
@@ -142,7 +130,6 @@ jobs:
           fi
 
       - name: Run integration test
-        if: ${{ !inputs.smoke_only }}
         run: |
           docker run --rm --gpus all \
             --shm-size=8g \
