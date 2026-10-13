@@ -25,15 +25,10 @@ All tests run against the default `MSASettings`, as users get them.
 """
 
 import warnings
-from dataclasses import dataclass
-from pathlib import Path
 
 import pytest
 
-from openfold3.core.config.msa_pipeline_configs import (
-    MsaKind,
-    MsaSampleProcessorInputInference,
-)
+from openfold3.core.config.msa_pipeline_configs import MsaSampleProcessorInputInference
 from openfold3.core.data.io.sequence.msa import MsaSampleParserInference
 from openfold3.core.data.primitives.quality_control.msa_issues import (
     MsaIssueKind,
@@ -41,73 +36,20 @@ from openfold3.core.data.primitives.quality_control.msa_issues import (
     Severity,
 )
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
-from openfold3.projects.of3_all_atom.config.inference_query_format import Query
 from openfold3.tests.utils.msa_helpers import (
+    LONG,
+    MEDIUM,
     MSA_FORMATS,
-    pairable_alignment,
+    SHORT,
+    ChainSpec,
+    build_query,
     parse,
     process,
-    write_msas,
 )
-
-SEQUENCES = {
-    "long": "ACDEFGHIKLMNPQRSTVWY",
-    "medium": "MKTAYIAKQRQISFVK",
-    "short": "GSHMLEDP",
-}
 
 MSA_SETTINGS = MSASettings()
 
-
-@dataclass(frozen=True)
-class ChainMsas:
-    """One chain of a query, and the names of the alignments in its MSA files."""
-
-    sequence_key: str
-    main: tuple[str, ...] = ()
-    paired: tuple[str, ...] = ()
-
-
-def _chains(*specs: tuple[str, str | tuple[str, ...], str | tuple[str, ...]]):
-    """Chains from (sequence_key, main, paired) tuples; a single alignment name
-    may be given as a plain string."""
-
-    def names(value: str | tuple[str, ...]) -> tuple[str, ...]:
-        return (value,) if isinstance(value, str) else value
-
-    return tuple(
-        ChainMsas(seq, names(main), names(paired)) for seq, main, paired in specs
-    )
-
-
 GOOD_MAIN = ("uniref90_hits", "uniprot_hits")
-
-
-def _build_query(root: Path, fmt: str, chains: tuple[ChainMsas, ...], **flags) -> Query:
-    """Builds a query with one entry per chain, writing an alignment for every
-    listed name. Every alignment carries species information, so whether a
-    chain gets paired depends on its alignment names only. MSA files are stored
-    per sequence, so copies of a sequence share them."""
-    entries = []
-    for chain_id, chain in zip("ABCDEFGH", chains, strict=False):
-        sequence = SEQUENCES[chain.sequence_key]
-        entry: dict = {
-            "molecule_type": "protein",
-            "chain_ids": [chain_id],
-            "sequence": sequence,
-        }
-        for msa_kind, names in [
-            (MsaKind.MAIN, chain.main),
-            (MsaKind.PAIRED, chain.paired),
-        ]:
-            if names:
-                entry[f"{msa_kind}_msa_file_paths"] = write_msas(
-                    fmt,
-                    root / msa_kind / chain.sequence_key,
-                    {name: pairable_alignment(sequence) for name in names},
-                )
-        entries.append(entry)
-    return Query.model_validate({"query_name": "q", "chains": entries, **flags})
 
 
 fmt_parametrize = pytest.mark.parametrize("fmt", list(MSA_FORMATS))
@@ -118,34 +60,37 @@ fmt_parametrize = pytest.mark.parametrize("fmt", list(MSA_FORMATS))
     "chains, match",
     [
         pytest.param(
-            _chains(("long", "chainA", ())),
+            (ChainSpec(LONG, ("chainA",)),),
             r"can be used as a main MSA\. Found alignments: \['chainA'\]",
             id="main_unknown_name",
         ),
         pytest.param(
-            _chains(("long", ("chainA", "my_db"), ())),
+            (ChainSpec(LONG, ("chainA", "my_db")),),
             r"can be used as a main MSA\. Found alignments: \['chainA', 'my_db'\]",
             id="main_several_unknown_names",
         ),
         pytest.param(
-            _chains(("long", "uniprot_hits", ())),
+            (ChainSpec(LONG, ("uniprot_hits",)),),
             r"\['uniprot_hits'\] are only used as named in msas_to_pair",
             id="main_pairing_alignment_only",
         ),
         pytest.param(
-            _chains(("long", "colabfold_paired", ())),
+            (ChainSpec(LONG, ("colabfold_paired",)),),
             r"can be used as a main MSA\. Found alignments: \['colabfold_paired'\]",
             id="main_paired_alignment_given_as_main",
         ),
         pytest.param(
-            _chains(("long", GOOD_MAIN, "pair"), ("short", GOOD_MAIN, "pair")),
+            (
+                ChainSpec(LONG, GOOD_MAIN, paired=("pair",)),
+                ChainSpec(SHORT, GOOD_MAIN, paired=("pair",)),
+            ),
             r"can be used as a paired MSA\. Found alignments: \['pair'\]",
             id="paired_unknown_name",
         ),
         pytest.param(
-            _chains(
-                ("long", GOOD_MAIN, "uniprot_hits"),
-                ("short", GOOD_MAIN, "uniprot_hits"),
+            (
+                ChainSpec(LONG, GOOD_MAIN, paired=("uniprot_hits",)),
+                ChainSpec(SHORT, GOOD_MAIN, paired=("uniprot_hits",)),
             ),
             r"can be used as a paired MSA\. Found alignments: \['uniprot_hits'\]",
             id="paired_main_alignment_given_as_paired",
@@ -155,7 +100,7 @@ fmt_parametrize = pytest.mark.parametrize("fmt", list(MSA_FORMATS))
 def test_unusable_alignment_names_raise(tmp_path, fmt, chains, match):
     """An MSA without any alignment the settings use fails before parsing, with a
     message naming the alignments found and the settings that select them."""
-    query = _build_query(tmp_path, fmt, chains)
+    query = build_query(tmp_path, fmt, chains)
 
     with pytest.raises(ValueError, match=match) as excinfo:
         process(query, MSA_SETTINGS)
@@ -207,7 +152,7 @@ def test_used_alignments_are_read_up_to_their_limit(
     """An alignment is read if a setting uses it, and limited to the rows given by
     its max_seq_counts entry if it has one, alike for raw and .npz files. Other
     alignments are ignored with a warning."""
-    query = _build_query(tmp_path, fmt, _chains(("long", names, ())))
+    query = build_query(tmp_path, fmt, (ChainSpec(LONG, names),))
 
     with warnings.catch_warnings(record=True) as record:
         warnings.simplefilter("always")
@@ -228,21 +173,8 @@ def test_used_alignments_are_read_up_to_their_limit(
 def test_messages_name_unnamed_queries(tmp_path):
     """A Query built without a name, rather than loaded from a query file, is
     named as such in MSA messages."""
-    query = Query.model_validate(
-        {
-            "chains": [
-                {
-                    "molecule_type": "protein",
-                    "chain_ids": ["A"],
-                    "sequence": SEQUENCES["long"],
-                    "main_msa_file_paths": write_msas(
-                        "sto",
-                        tmp_path / "A",
-                        {"chainA": pairable_alignment(SEQUENCES["long"])},
-                    ),
-                }
-            ]
-        }
+    query = build_query(
+        tmp_path, "sto", [ChainSpec(LONG, ("chainA",))], query_name=None
     )
     assert query.query_name is None
 
@@ -260,21 +192,21 @@ def _settings_with_counts(**counts: int) -> MSASettings:
     "chains, counts, expected",
     [
         pytest.param(
-            _chains(("long", ("uniref90_hits", "mgnify_hits"), ())),
+            (ChainSpec(LONG, ("uniref90_hits", "mgnify_hits")),),
             {"uniref90_hits": 0},
             {"A": {"mgnify_hits"}},
             id="first_alignment_in_aln_order",
         ),
         pytest.param(
-            _chains(("long", ("uniref90_hits", "mgnify_hits"), ())),
+            (ChainSpec(LONG, ("uniref90_hits", "mgnify_hits")),),
             {"mgnify_hits": 0},
             {"A": {"uniref90_hits"}},
             id="other_alignment",
         ),
         pytest.param(
-            _chains(
-                ("long", ("uniref90_hits", "mgnify_hits"), ()),
-                ("short", ("uniref90_hits", "mgnify_hits"), ()),
+            (
+                ChainSpec(LONG, ("uniref90_hits", "mgnify_hits")),
+                ChainSpec(SHORT, ("uniref90_hits", "mgnify_hits")),
             ),
             {"mgnify_hits": 0, "uniref90_hits": 0},
             None,
@@ -289,7 +221,7 @@ def test_zero_max_seq_count_disables_alignment(tmp_path, fmt, chains, counts, ex
     Raw files used to be truncated to no rows and crash with an IndexError where
     their (empty) first row was read, and .npz files ignored the entry.
     """
-    query = _build_query(tmp_path, fmt, chains)
+    query = build_query(tmp_path, fmt, chains)
     settings = _settings_with_counts(**counts)
 
     if expected is None:
@@ -313,12 +245,12 @@ def test_zero_max_seq_count_disables_alignment(tmp_path, fmt, chains, counts, ex
 
 @fmt_parametrize
 def test_zero_max_seq_count_disables_paired_alignment(tmp_path, fmt):
-    query = _build_query(
+    query = build_query(
         tmp_path,
         fmt,
-        _chains(
-            ("long", GOOD_MAIN, "colabfold_paired"),
-            ("short", GOOD_MAIN, "colabfold_paired"),
+        (
+            ChainSpec(LONG, GOOD_MAIN, paired=("colabfold_paired",)),
+            ChainSpec(SHORT, GOOD_MAIN, paired=("colabfold_paired",)),
         ),
     )
 
@@ -334,8 +266,8 @@ def test_zero_max_seq_count_disables_paired_alignment(tmp_path, fmt):
 def test_zero_max_seq_count_of_pairing_alignment_skips_pairing(tmp_path, fmt):
     """Disabling the alignment used for species pairing leaves a heteromer
     without paired rows, which is reported."""
-    query = _build_query(
-        tmp_path, fmt, _chains(("long", GOOD_MAIN, ()), ("short", GOOD_MAIN, ()))
+    query = build_query(
+        tmp_path, fmt, (ChainSpec(LONG, GOOD_MAIN), ChainSpec(SHORT, GOOD_MAIN))
     )
 
     with pytest.warns(
@@ -353,32 +285,32 @@ def test_zero_max_seq_count_of_pairing_alignment_skips_pairing(tmp_path, fmt):
     "chains, match",
     [
         pytest.param(
-            _chains(("long", (*GOOD_MAIN, "my_db"), ())),
+            (ChainSpec(LONG, (*GOOD_MAIN, "my_db")),),
             r"Ignoring alignments in the main MSA files .* of chain\(s\) A in query "
             r"q: my_db \(not in aln_order or msas_to_pair\)",
             id="main_extra_alignment",
         ),
         pytest.param(
-            _chains(
-                ("long", GOOD_MAIN, ("colabfold_paired", "extra")),
-                ("short", GOOD_MAIN, "colabfold_paired"),
+            (
+                ChainSpec(LONG, GOOD_MAIN, paired=("colabfold_paired", "extra")),
+                ChainSpec(SHORT, GOOD_MAIN, paired=("colabfold_paired",)),
             ),
             r"Ignoring alignments in the paired MSA files .* of chain\(s\) A in "
             r"query q: extra \(not in paired_msa_order\)",
             id="paired_extra_alignment",
         ),
         pytest.param(
-            _chains(("long", "uniref90_hits", ()), ("short", "uniref90_hits", ())),
+            (ChainSpec(LONG, ("uniref90_hits",)), ChainSpec(SHORT, ("uniref90_hits",))),
             r"Protein chain\(s\) A, B in query q have no main MSA alignment named in "
             r"msas_to_pair .*, so no species-paired MSA rows are generated for this "
             r"complex",
             id="heteromer_without_pairing_alignments",
         ),
         pytest.param(
-            _chains(
-                ("long", GOOD_MAIN, ()),
-                ("medium", GOOD_MAIN, ()),
-                ("short", "uniref90_hits", ()),
+            (
+                ChainSpec(LONG, GOOD_MAIN),
+                ChainSpec(MEDIUM, GOOD_MAIN),
+                ChainSpec(SHORT, ("uniref90_hits",)),
             ),
             r"Protein chain\(s\) C in query q have no main MSA alignment named in "
             r"msas_to_pair .*, so these chains get no species-paired MSA rows",
@@ -389,7 +321,7 @@ def test_zero_max_seq_count_of_pairing_alignment_skips_pairing(tmp_path, fmt):
 def test_unused_alignments_warn(tmp_path, fmt, chains, match):
     """Alignments that are found but not used are reported, and the query still
     runs on the alignments that are used."""
-    query = _build_query(tmp_path, fmt, chains)
+    query = build_query(tmp_path, fmt, chains)
 
     with pytest.warns(UserWarning, match=match):
         process(query, MSA_SETTINGS)
@@ -399,19 +331,22 @@ def test_unused_alignments_warn(tmp_path, fmt, chains, match):
 @pytest.mark.parametrize(
     "chains",
     [
-        pytest.param(_chains(("long", GOOD_MAIN, ())), id="monomer"),
+        pytest.param((ChainSpec(LONG, GOOD_MAIN),), id="monomer"),
         pytest.param(
-            _chains(("long", "uniref90_hits", ()), ("long", "uniref90_hits", ())),
+            (
+                ChainSpec(LONG, ("uniref90_hits",), location="long"),
+                ChainSpec(LONG, ("uniref90_hits",), location="long"),
+            ),
             id="homomer_without_pairing_alignments",
         ),
         pytest.param(
-            _chains(("long", GOOD_MAIN, ()), ("short", GOOD_MAIN, ())),
+            (ChainSpec(LONG, GOOD_MAIN), ChainSpec(SHORT, GOOD_MAIN)),
             id="heteromer",
         ),
         pytest.param(
-            _chains(
-                ("long", "uniref90_hits", "colabfold_paired"),
-                ("short", "uniref90_hits", "colabfold_paired"),
+            (
+                ChainSpec(LONG, ("uniref90_hits",), paired=("colabfold_paired",)),
+                ChainSpec(SHORT, ("uniref90_hits",), paired=("colabfold_paired",)),
             ),
             id="heteromer_with_precomputed_paired_msas",
         ),
@@ -420,7 +355,7 @@ def test_unused_alignments_warn(tmp_path, fmt, chains, match):
 def test_usable_alignments_do_not_warn(tmp_path, fmt, chains):
     """Homomers and heteromers with precomputed paired MSAs are not paired
     online, so they need no alignment named in msas_to_pair."""
-    query = _build_query(tmp_path, fmt, chains)
+    query = build_query(tmp_path, fmt, chains)
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
@@ -432,31 +367,34 @@ def test_usable_alignments_do_not_warn(tmp_path, fmt, chains):
     "chains, flags",
     [
         pytest.param(
-            _chains(("long", ("uniprot_hits", "my_db"), ())),
+            (ChainSpec(LONG, ("uniprot_hits", "my_db")),),
             {"use_main_msas": False},
             id="main_disabled",
         ),
         pytest.param(
             # The query row is the chain's sequence, so unused files need not be
             # readable
-            _chains(("long", "chainA", ())),
+            (ChainSpec(LONG, ("chainA",)),),
             {"use_main_msas": False},
             id="main_disabled_with_unreadable_files",
         ),
         pytest.param(
-            _chains(("long", GOOD_MAIN, "pair"), ("short", GOOD_MAIN, "pair")),
+            (
+                ChainSpec(LONG, GOOD_MAIN, paired=("pair",)),
+                ChainSpec(SHORT, GOOD_MAIN, paired=("pair",)),
+            ),
             {"use_paired_msas": False},
             id="paired_disabled",
         ),
         pytest.param(
-            _chains(("long", "uniref90_hits", ()), ("short", "uniref90_hits", ())),
+            (ChainSpec(LONG, ("uniref90_hits",)), ChainSpec(SHORT, ("uniref90_hits",))),
             {"use_paired_msas": False},
             id="pairing_disabled",
         ),
     ],
 )
 def test_disabled_msa_types_are_not_checked(tmp_path, fmt, chains, flags):
-    query = _build_query(tmp_path, fmt, chains, **flags)
+    query = build_query(tmp_path, fmt, chains, **flags)
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
@@ -467,8 +405,8 @@ def test_disabled_msa_types_are_not_checked(tmp_path, fmt, chains, flags):
 def test_unusable_msas_of_all_chains_are_reported_together(tmp_path, fmt):
     """One error lists every representative with unusable MSA files, rather than
     stopping at the first."""
-    query = _build_query(
-        tmp_path, fmt, _chains(("long", "chainA", ()), ("short", "my_db", ()))
+    query = build_query(
+        tmp_path, fmt, (ChainSpec(LONG, ("chainA",)), ChainSpec(SHORT, ("my_db",)))
     )
 
     with pytest.raises(MsaValidationError) as excinfo:
@@ -485,10 +423,10 @@ def test_unusable_msas_of_all_chains_are_reported_together(tmp_path, fmt):
 @fmt_parametrize
 def test_check_alignment_names_returns_issues(tmp_path, fmt):
     """The check itself only returns issues; create_maps reports them."""
-    query = _build_query(
+    query = build_query(
         tmp_path,
         fmt,
-        _chains(("long", (*GOOD_MAIN, "my_db"), ()), ("short", "uniref90_hits", ())),
+        (ChainSpec(LONG, (*GOOD_MAIN, "my_db")), ChainSpec(SHORT, ("uniref90_hits",))),
     )
     input = MsaSampleProcessorInputInference.create_from_inference_query_entry(
         inference_query=query

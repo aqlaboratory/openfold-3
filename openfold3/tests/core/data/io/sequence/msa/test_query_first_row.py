@@ -27,70 +27,29 @@ the MSA features is the chain's own sequence.
 
 import re
 import warnings
-from pathlib import Path
 
 import pytest
 
-from openfold3.core.config.msa_pipeline_configs import MsaKind
 from openfold3.core.data.pipelines.sample_processing.msa import (
     find_query_row_mismatches,
     is_tolerated_query_row,
 )
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
-from openfold3.projects.of3_all_atom.config.inference_query_format import Query
 from openfold3.tests.utils.msa_helpers import (
+    LONG,
     MSA_FORMATS,
+    SHORT,
+    ChainSpec,
+    build_query,
     features,
     mutate,
-    pairable_alignment,
     process,
-    write_msas,
 )
 
-LONG = "ACDEFGHIKLMNPQRSTVWY"
-SHORT = "GSHMLEDP"
 RNA = "ACGUACGUAC"
 
 MSA_SETTINGS = MSASettings()
-
-
-def _chain(
-    sequence: str,
-    main: dict[str, str] | None = None,
-    paired: dict[str, str] | None = None,
-    molecule_type: str = "protein",
-) -> dict:
-    """A chain whose MSAs map alignment names to the sequence each alignment
-    was built for, i.e. its query row."""
-    return {
-        "sequence": sequence,
-        "molecule_type": molecule_type,
-        MsaKind.MAIN: main or {},
-        MsaKind.PAIRED: paired or {},
-    }
-
-
-def _build_query(root: Path, fmt: str, chains: list[dict], **flags) -> Query:
-    entries = []
-    for chain_id, chain in zip("ABCD", chains, strict=False):
-        entry = {
-            "molecule_type": chain["molecule_type"],
-            "chain_ids": [chain_id],
-            "sequence": chain["sequence"],
-        }
-        for msa_kind in MsaKind:
-            if chain[msa_kind]:
-                entry[f"{msa_kind}_msa_file_paths"] = write_msas(
-                    fmt,
-                    root / msa_kind / chain_id,
-                    {
-                        name: pairable_alignment(msa_sequence)
-                        for name, msa_sequence in chain[msa_kind].items()
-                    },
-                )
-        entries.append(entry)
-    return Query.model_validate({"query_name": "q", "chains": entries, **flags})
 
 
 def _mutate_at(sequence: str, positions: list[int]) -> str:
@@ -111,53 +70,53 @@ fmt_parametrize = pytest.mark.parametrize("fmt", list(MSA_FORMATS))
     "chains, match",
     [
         pytest.param(
-            [_chain(LONG, _main(LONG)), _chain(SHORT, _main(LONG))],
+            [ChainSpec(LONG, _main(LONG)), ChainSpec(SHORT, _main(LONG))],
             r"chain\(s\) B, main 'uniprot_hits' from .*: the query row has 20 "
             r"residues, the chain's sequence 8",
             id="chain_given_another_chains_msas",
         ),
         pytest.param(
-            [_chain(LONG, _main(LONG[:-2]))],
+            [ChainSpec(LONG, _main(LONG[:-2]))],
             r"chain\(s\) A, main 'uniprot_hits' from .*: the query row has 18 "
             r"residues, the chain's sequence 20",
             id="msa_of_truncated_sequence",
         ),
         pytest.param(
-            [_chain(LONG, {"uniref90_hits": LONG, "mgnify_hits": SHORT})],
+            [ChainSpec(LONG, {"uniref90_hits": LONG, "mgnify_hits": SHORT})],
             r"chain\(s\) A, main 'mgnify_hits' from .*: the query row has 8 "
             r"residues",
             id="one_of_several_alignments_of_another_sequence",
         ),
         pytest.param(
             [
-                _chain(LONG, _main(LONG), {"colabfold_paired": LONG}),
-                _chain(SHORT, _main(SHORT), {"colabfold_paired": LONG}),
+                ChainSpec(LONG, _main(LONG), {"colabfold_paired": LONG}),
+                ChainSpec(SHORT, _main(SHORT), {"colabfold_paired": LONG}),
             ],
             r"chain\(s\) B, paired 'colabfold_paired' from .*: the query row has "
             r"20 residues, the chain's sequence 8",
             id="chain_given_another_chains_paired_msa",
         ),
         pytest.param(
-            [_chain(LONG, {"uniref90_hits": LONG, "mgnify_hits": "W" * len(LONG)})],
+            [ChainSpec(LONG, {"uniref90_hits": LONG, "mgnify_hits": "W" * len(LONG)})],
             r"chain\(s\) A, main 'mgnify_hits' from .*: 19 of 20 residues differ "
             r"\(A1W, C2W, D3W, E4W, F5W, \.\.\.\)",
             id="msa_of_unrelated_sequence_of_same_length",
         ),
         pytest.param(
-            [_chain(LONG, _main(_mutate_at(LONG, [3, 8, 15])))],
+            [ChainSpec(LONG, _main(_mutate_at(LONG, [3, 8, 15])))],
             r"chain\(s\) A, main 'uniprot_hits', main 'uniref90_hits' from .*: 3 of "
             r"20 residues differ \(E4W, K9W, S16W\)",
             id="three_of_20_residues_differ",
         ),
         pytest.param(
-            [_chain(SHORT, _main(_mutate_at(SHORT, [1, 5])))],
+            [ChainSpec(SHORT, _main(_mutate_at(SHORT, [1, 5])))],
             r"chain\(s\) A, .*: 2 of 8 residues differ \(S2W, E6W\)",
             id="two_of_8_residues_differ",
         ),
     ],
 )
 def test_mismatching_query_row_raises(tmp_path, fmt, chains, match):
-    query = _build_query(tmp_path, fmt, chains)
+    query = build_query(tmp_path, fmt, chains)
 
     with pytest.raises(ValueError, match=match):
         process(query, MSA_SETTINGS)
@@ -166,10 +125,10 @@ def test_mismatching_query_row_raises(tmp_path, fmt, chains, match):
 @fmt_parametrize
 def test_all_query_row_errors_are_reported_at_once(tmp_path, fmt):
     """Swapped MSA paths are reported for both chains in a single error."""
-    query = _build_query(
+    query = build_query(
         tmp_path,
         fmt,
-        [_chain(LONG, _main(SHORT)), _chain(SHORT, _main(LONG))],
+        [ChainSpec(LONG, _main(SHORT)), ChainSpec(SHORT, _main(LONG))],
     )
 
     with pytest.raises(ValueError) as excinfo:
@@ -185,27 +144,29 @@ def test_all_query_row_errors_are_reported_at_once(tmp_path, fmt):
     "chains, match",
     [
         pytest.param(
-            [_chain(LONG, _main(mutate(LONG, 3, "W")))],
+            [ChainSpec(LONG, _main(mutate(LONG, 3, "W")))],
             r"for chain\(s\) A in query q differ from the chain's sequence, given "
             r"as <chain residue><position><MSA residue>: main 'uniprot_hits', main "
             r"'uniref90_hits': 1 of 20 residues differ \(E4W\)",
             id="point_mutant_reusing_wild_type_msas",
         ),
         pytest.param(
-            [_chain(LONG, _main(_mutate_at(LONG, [3, 8])))],
+            [ChainSpec(LONG, _main(_mutate_at(LONG, [3, 8])))],
             r"main 'uniprot_hits', main 'uniref90_hits': 2 of 20 residues differ "
             r"\(E4W, K9W\)",
             id="two_of_20_residues_differ",
         ),
         pytest.param(
-            [_chain(SHORT, _main(_mutate_at(SHORT, [1])))],
+            [ChainSpec(SHORT, _main(_mutate_at(SHORT, [1])))],
             r"1 of 8 residues differ \(S2W\)",
             id="single_mutation_in_peptide",
         ),
         pytest.param(
             [
-                _chain(LONG, _main(LONG), {"colabfold_paired": mutate(LONG, 0, "M")}),
-                _chain(SHORT, _main(SHORT), {"colabfold_paired": SHORT}),
+                ChainSpec(
+                    LONG, _main(LONG), {"colabfold_paired": mutate(LONG, 0, "M")}
+                ),
+                ChainSpec(SHORT, _main(SHORT), {"colabfold_paired": SHORT}),
             ],
             r"chain\(s\) A .*: paired 'colabfold_paired': 1 of 20 residues differ "
             r"\(A1M\)",
@@ -214,7 +175,7 @@ def test_all_query_row_errors_are_reported_at_once(tmp_path, fmt):
     ],
 )
 def test_tolerated_query_row_warns(tmp_path, fmt, chains, match):
-    query = _build_query(tmp_path, fmt, chains)
+    query = build_query(tmp_path, fmt, chains)
 
     with pytest.warns(UserWarning, match=match):
         process(query, MSA_SETTINGS)
@@ -224,35 +185,35 @@ def test_tolerated_query_row_warns(tmp_path, fmt, chains, match):
 @pytest.mark.parametrize(
     "chains",
     [
-        pytest.param([_chain(LONG, _main(LONG))], id="monomer"),
+        pytest.param([ChainSpec(LONG, _main(LONG))], id="monomer"),
         pytest.param(
             [
-                _chain(LONG, _main(LONG), {"colabfold_paired": LONG}),
-                _chain(SHORT, _main(SHORT), {"colabfold_paired": SHORT}),
+                ChainSpec(LONG, _main(LONG), {"colabfold_paired": LONG}),
+                ChainSpec(SHORT, _main(SHORT), {"colabfold_paired": SHORT}),
             ],
             id="heteromer_with_precomputed_paired_msas",
         ),
         pytest.param(
-            [_chain(LONG, _main(mutate(LONG, 3, "X")))],
+            [ChainSpec(LONG, _main(mutate(LONG, 3, "X")))],
             id="unknown_residue_in_msa",
         ),
         pytest.param(
-            [_chain(mutate(LONG, 3, "X"), _main(LONG))],
+            [ChainSpec(mutate(LONG, 3, "X"), _main(LONG))],
             id="unknown_residue_in_sequence",
         ),
         pytest.param(
-            [_chain(RNA, {"rfam_hits": RNA.replace("U", "T")}, molecule_type="rna")],
+            [ChainSpec(RNA, {"rfam_hits": RNA.replace("U", "T")}, molecule_type="rna")],
             id="rna_msa_spelling_uracil_as_thymine",
         ),
         pytest.param(
             # Only aln_order and msas_to_pair alignments are used, and checked
-            [_chain(LONG, {**_main(LONG), "my_db": SHORT})],
+            [ChainSpec(LONG, {**_main(LONG), "my_db": SHORT})],
             id="unused_alignment_of_another_sequence",
         ),
     ],
 )
 def test_matching_query_rows_do_not_warn(tmp_path, fmt, chains):
-    query = _build_query(tmp_path, fmt, chains)
+    query = build_query(tmp_path, fmt, chains)
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
@@ -264,13 +225,13 @@ def test_matching_query_rows_do_not_warn(tmp_path, fmt, chains):
 @pytest.mark.parametrize(
     "chain",
     [
-        pytest.param(_chain(mutate(LONG, 3, "W"), _main(LONG)), id="point_mutant"),
-        pytest.param(_chain(LONG, _main(mutate(LONG, 3, "X"))), id="x_in_msa"),
-        pytest.param(_chain(mutate(LONG, 3, "X"), _main(LONG)), id="x_in_sequence"),
-        pytest.param(_chain(LONG, _main(LONG.lower())), id="lowercase_msa"),
-        pytest.param(_chain(LONG.lower(), _main(LONG)), id="lowercase_sequence"),
+        pytest.param(ChainSpec(mutate(LONG, 3, "W"), _main(LONG)), id="point_mutant"),
+        pytest.param(ChainSpec(LONG, _main(mutate(LONG, 3, "X"))), id="x_in_msa"),
+        pytest.param(ChainSpec(mutate(LONG, 3, "X"), _main(LONG)), id="x_in_sequence"),
+        pytest.param(ChainSpec(LONG, _main(LONG.lower())), id="lowercase_msa"),
+        pytest.param(ChainSpec(LONG.lower(), _main(LONG)), id="lowercase_sequence"),
         pytest.param(
-            _chain(RNA, {"rfam_hits": RNA.replace("U", "T")}, molecule_type="rna"),
+            ChainSpec(RNA, {"rfam_hits": RNA.replace("U", "T")}, molecule_type="rna"),
             id="rna_msa_spelling_uracil_as_thymine",
         ),
     ],
@@ -280,19 +241,19 @@ def test_query_row_is_the_chain_sequence(tmp_path, fmt, chain):
     """The query row of the MSA features is the chain's own sequence, uppercased
     like alignment rows, even where the first row of its alignments differs from
     it in a way the check allows."""
-    query = _build_query(tmp_path, fmt, [chain])
+    query = build_query(tmp_path, fmt, [chain])
 
     msa_features = features(query, MSA_SETTINGS)
 
-    assert "".join(msa_features.msa[0]) == chain["sequence"].upper()
+    assert "".join(msa_features.msa[0]) == chain.sequence.upper()
 
 
 @fmt_parametrize
 def test_query_rows_are_not_checked_without_msas(tmp_path, fmt):
-    query = _build_query(
+    query = build_query(
         tmp_path,
         fmt,
-        [_chain(LONG, _main(LONG)), _chain(SHORT, _main(LONG))],
+        [ChainSpec(LONG, _main(LONG)), ChainSpec(SHORT, _main(LONG))],
         use_msas=False,
     )
 
