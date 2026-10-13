@@ -28,7 +28,7 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.layers.msa import MSAPairWeightedAveraging
-from openfold3.core.model.utils import assert_sole_holder
+from openfold3.core.model.memory import assert_sole_holder
 from openfold3.core.utils.device_utils import empty_device_cache
 from openfold3.core.utils.tensor_utils import add
 

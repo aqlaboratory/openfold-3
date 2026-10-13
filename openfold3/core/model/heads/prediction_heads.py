@@ -21,8 +21,8 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.pairformer import PairFormerStack
+from openfold3.core.model.memory import assert_sole_holder
 from openfold3.core.model.primitives import LayerNorm, Linear
-from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.atomize_utils import max_atom_per_token_masked_select
 
 

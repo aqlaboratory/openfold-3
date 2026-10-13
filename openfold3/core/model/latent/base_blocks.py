@@ -37,8 +37,8 @@ from openfold3.core.model.layers.triangular_multiplicative_update import (
     TriangleMultiplicationIncoming,
     TriangleMultiplicationOutgoing,
 )
+from openfold3.core.model.memory import assert_sole_holder
 from openfold3.core.model.primitives import DropoutRowwise
-from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.tensor_utils import add
 
 
