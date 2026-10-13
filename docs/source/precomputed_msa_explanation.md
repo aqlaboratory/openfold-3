@@ -37,7 +37,7 @@ As shown in the figure above, paired MSAs are only provided for protein chains t
 Users can alter the way MSAs are processed in the OF3 inference pipeline by modifying the [`MSASettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py#L32) class via the `runner.yml` as outlined in the {ref}`Precomputed MSA How-To Guide <5-modifying-msa-settings-for-custom-precomputed-msas>`.
 
 The main settings to update when using custom precomputed MSAs are:
-1. *max_seq_counts*: A dictionary specifying how many sequences to read from each MSA file with the associated name. `.sto` and `.a3m` files whose names are not provided in this dictionary *will not be parsed*; arrays in preparsed `.npz` files are read regardless. A count of `0` disables the alignment of that name, in `.sto`, `.a3m` and `.npz` files alike. For example, to use `custom_database_hits.a3m` MSA files, two changes are needed. First, for the files to be parsed, the following field should be specified:
+1. *max_seq_counts*: A dictionary limiting how many sequences are read from the alignment of each name, in `.sto`, `.a3m` and `.npz` files alike. Alignments without an entry are read in full, and a count of `0` disables the alignment of that name. This setting only limits alignments; which ones are used is decided by *aln_order*, *msas_to_pair* and *paired_msa_order* below. For example, to read at most 10000 sequences from each `custom_database_hits` alignment:
 
 ```
 dataset_config_kwargs:
@@ -48,11 +48,9 @@ dataset_config_kwargs:
       custom_database_hits: 10000
 ```
 
-where up to the first 10000 sequences will be read from each `custom_database_hits.a3m` file. Second, for the parsed alignments to become part of the main MSA, `custom_database_hits` must also be added to `aln_order` (see *aln_order* below). For preparsed `.npz` files, only this second change is needed.
+2. *msas_to_pair*: The list of MSA filenames that contain species information that can be used for online pairing. These alignments are read from the main MSA files even if they are not in *aln_order*. See the {ref}`Online MSA Pairing <3-online-msa-pairing>` section for details.
 
-2. *msas_to_pair*: The list of MSA filenames that contain species information that can be used for online pairing. See the {ref}`Online MSA Pairing <3-online-msa-pairing>` section for details.
-
-3. *aln_order*: The order in which to vertically concatenate MSA files for each chain for main MSA features. MSA files whose names are not provided in this list *will not be used*. For example, if one has MSA files named `uniprot_hits`, `mgnify_hits` and `custom_database_hits` and want to vertically concatenate them for each chain in this order, they should update the `runner.yml` as follows:
+3. *aln_order*: The order in which to vertically concatenate MSA files for each chain for main MSA features. Main MSA files whose names are in neither this list nor *msas_to_pair* *will not be used*. To use a custom source such as `custom_database_hits`, adding its name here is the only change needed; a *max_seq_counts* entry is optional. For example, if one has MSA files named `uniprot_hits`, `mgnify_hits` and `custom_database_hits` and want to vertically concatenate them for each chain in this order, they should update the `runner.yml` as follows:
 
 ```
 dataset_config_kwargs:

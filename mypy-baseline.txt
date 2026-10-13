@@ -124,8 +124,6 @@ openfold3/core/data/io/s3.py:0: note: Use https://github.com/hauntsaninja/no_imp
 openfold3/core/data/io/sequence/msa.py:0: error: Argument "deletion_matrix" to "from_parsed" of "MsaArray" has incompatible type "list[list[int]]"; expected "ndarray[tuple[Any, ...], dtype[Any]]"  [arg-type]
 openfold3/core/data/io/sequence/msa.py:0: error: Argument "deletion_matrix" to "from_parsed" of "MsaArray" has incompatible type "list[list[int]]"; expected "ndarray[tuple[Any, ...], dtype[Any]]"  [arg-type]
 openfold3/core/data/io/sequence/msa.py:0: error: Function "numpy._core.multiarray.array" is not valid as a type  [valid-type]
-openfold3/core/data/io/sequence/msa.py:0: error: Incompatible types in assignment (expression has type "Callable[[list[Path]], dict[str, MsaArray]]", variable has type "partial[dict[str, MsaArray]]")  [assignment]
-openfold3/core/data/io/sequence/msa.py:0: error: Incompatible types in assignment (expression has type "Callable[[list[Path]], dict[str, MsaArray]]", variable has type "partial[dict[str, MsaArray]]")  [assignment]
 openfold3/core/data/io/sequence/msa.py:0: error: Incompatible types in assignment (expression has type "ndarray[tuple[Any, ...], dtype[Any]]", variable has type "list[list[int]]")  [assignment]
 openfold3/core/data/io/sequence/msa.py:0: error: Incompatible types in assignment (expression has type "ndarray[tuple[Any, ...], dtype[Any]]", variable has type "list[list[int]]")  [assignment]
 openfold3/core/data/io/sequence/msa.py:0: error: Unsupported operand types for / ("None" and "Path")  [operator]

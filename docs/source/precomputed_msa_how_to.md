@@ -350,7 +350,7 @@ dataset_config_kwargs:
       - custom_database_hits
 ```
 
-Where `max_seq_counts` specifies the maximum number of sequences to use from each file, `msas_to_pair` specifies which files to use for online pairing and `aln_order` instructs the pipeline to vertically concatenate the MSAs in the order `uniprot_hits`-`mgnify_hits`-`custom_database_hits` from top to bottom. Refer to the {ref}`Precomputed MSA Explanation Document <2-msasettings-reference>` for further details on modifying MSASettings.
+Where `max_seq_counts` specifies the maximum number of sequences to use from each file (optional; files without an entry are read in full), `msas_to_pair` specifies which files to use for online pairing and `aln_order` instructs the pipeline to vertically concatenate the MSAs in the order `uniprot_hits`-`mgnify_hits`-`custom_database_hits` from top to bottom. Refer to the {ref}`Precomputed MSA Explanation Document <2-msasettings-reference>` for further details on modifying MSASettings.
 
 The `runner.yml` can then be passed as a command line argument to `run_openfold.py`:
 
@@ -370,7 +370,7 @@ The pipeline checks the MSA files of each chain before using them, and stops wit
 
 | Message | Kind | Meaning and fix |
 |---|---|---|
-| `None of the alignments in the main MSA files ... can be used as a main MSA` | Error | None of the chain's files (or `.npz` arrays) is named in `aln_order`, or, for `.sto`/`.a3m` files, also in `max_seq_counts`. The message lists the names found. Rename the files, or add the names to the {ref}`MSA settings <5-modifying-msa-settings-for-custom-precomputed-msas>`. |
+| `None of the alignments in the main MSA files ... can be used as a main MSA` | Error | None of the chain's files (or `.npz` arrays) is named in `aln_order`, or those that are have been disabled with a `max_seq_counts` of `0`. The message lists the names found. Rename the files, or add the names to the {ref}`MSA settings <5-modifying-msa-settings-for-custom-precomputed-msas>`. |
 | ... `are only used as named in msas_to_pair` | Error | The chain only has alignments used for species pairing, such as `uniprot_hits`, which are not part of the main MSA by default. Add an alignment named in `aln_order`, or add the name to `aln_order`. |
 | `None of the alignments in the paired MSA files ... can be used as a paired MSA` | Error | None of the chain's pre-paired files is named in `paired_msa_order`. |
 | `The first row of an MSA must be the sequence of the chain it is used for` | Error | An MSA starts with a sequence of a different length than the chain's, or differs from it in more than one residue and more than 10% of residues. Usually a chain points at another chain's files. All such MSAs in the query are listed at once. |

@@ -164,20 +164,65 @@ def test_unusable_alignment_names_raise(tmp_path, fmt, chains, match):
 
 
 @fmt_parametrize
-def test_raw_alignments_must_be_named_in_max_seq_counts(tmp_path, fmt):
-    """ "dummy" is in aln_order but not in max_seq_counts: the ColabFold runner
-    only ever writes it to .npz files, and raw .sto/.a3m files are only read if
-    named in max_seq_counts."""
-    query = _build_query(tmp_path, fmt, _chains(("long", "dummy", ())))
+@pytest.mark.parametrize(
+    "names, settings, expected_rows, warning",
+    [
+        pytest.param(
+            ("uniref90_hits", "my_db"),
+            MSASettings(
+                aln_order=[*MSA_SETTINGS.aln_order, "my_db"],
+                max_seq_counts={**MSA_SETTINGS.max_seq_counts, "my_db": 2},
+            ),
+            {"uniref90_hits": 3, "my_db": 2},
+            None,
+            id="listed_with_a_limit",
+        ),
+        pytest.param(
+            ("uniref90_hits", "my_db"),
+            MSASettings(aln_order=[*MSA_SETTINGS.aln_order, "my_db"]),
+            {"uniref90_hits": 3, "my_db": 3},
+            None,
+            id="listed_without_a_limit",
+        ),
+        pytest.param(
+            # "uniprot" is in the default msas_to_pair, but not in max_seq_counts
+            ("uniref90_hits", "uniprot"),
+            MSA_SETTINGS,
+            {"uniref90_hits": 3, "uniprot": 3},
+            None,
+            id="pairing_alignment_without_a_limit",
+        ),
+        pytest.param(
+            ("uniref90_hits", "my_db"),
+            MSA_SETTINGS,
+            {"uniref90_hits": 3},
+            "my_db (not in aln_order or msas_to_pair)",
+            id="not_used",
+        ),
+    ],
+)
+def test_used_alignments_are_read_up_to_their_limit(
+    tmp_path, fmt, names, settings, expected_rows, warning
+):
+    """An alignment is read if a setting uses it, and limited to the rows given by
+    its max_seq_counts entry if it has one, alike for raw and .npz files. Other
+    alignments are ignored with a warning."""
+    query = _build_query(tmp_path, fmt, _chains(("long", names, ())))
 
-    if fmt == "npz":
-        process(query, MSA_SETTINGS)
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter("always")
+        collection = parse(query, settings)
+
+    rows = {name: len(msa) for name, msa in collection.rep_id_to_main_msa["A"].items()}
+    assert rows == expected_rows
+    ignored = [
+        str(w.message) for w in record if "Ignoring alignments" in str(w.message)
+    ]
+    if warning is None:
+        assert not ignored
     else:
-        with pytest.raises(
-            ValueError,
-            match=r"must also be named in max_seq_counts, which \['dummy'\] are not",
-        ):
-            process(query, MSA_SETTINGS)
+        (message,) = ignored
+        assert warning in message
 
 
 def test_messages_name_unnamed_queries(tmp_path):

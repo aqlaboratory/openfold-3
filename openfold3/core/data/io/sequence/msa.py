@@ -18,10 +18,9 @@ import os
 import string
 import warnings
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from functools import partial
 from pathlib import Path
 from typing import Generic, TypeVar
 
@@ -237,7 +236,7 @@ MSA_PARSER_REGISTRY = {".a3m": parse_a3m, ".sto": parse_stockholm}
 
 
 def parse_msas_direct(
-    file_list: list[Path], max_seq_counts: dict[str, int] | None = None
+    file_list: list[Path], max_seq_counts: Mapping[str, int | None] | None = None
 ) -> dict[str, MsaArray]:
     """Parses a set of MSA files (a3m or sto) into a dictionary of Msa objects.
 
@@ -246,10 +245,11 @@ def parse_msas_direct(
     Args:
         folder_path (Path | list[Path]):
             A list of paths to the MSA files to parse.
-        max_seq_counts (dict[str, int] | None):
+        max_seq_counts (Mapping[str, int | None] | None):
             A map from file names to maximum sequences to keep from the corresponding
-            MSA file. The set of keys in this dict is also used to parse only a subset
-            of the files in the folder with the corresponding names.
+            MSA file, or None to keep all. The set of keys in this dict is also used
+            to parse only a subset of the files in the folder with the corresponding
+            names.
 
     Returns:
         dict[str: Msa]: A dict containing the parsed MSAs.
@@ -667,79 +667,26 @@ class _AlignmentRole(Enum):
     UNSELECTED = "unselected"
 
 
-class _UnreadReason(Enum):
-    """Why an alignment found in a chain's MSA files is not read."""
-
-    # Raw .sto/.a3m files are only read if named in max_seq_counts
-    NOT_IN_MAX_SEQ_COUNTS = "not_in_max_seq_counts"
-    # A max_seq_counts entry of 0 disables an alignment in any format
-    DISABLED = "disabled"
-
-
 @dataclass(frozen=True)
 class _AlignmentStatus:
-    """What happens to one alignment found in a chain's MSA files, and why.
+    """What happens to one alignment found in a chain's MSA files.
 
     Attributes:
         name (str):
             The alignment name, see `_find_alignment_names`.
         role (_AlignmentRole):
             What the alignment is used for.
-        unread_reason (_UnreadReason | None):
-            Why the alignment is not read, or None if it is read.
+        disabled (bool):
+            Whether a max_seq_counts entry of 0 disables the alignment.
     """
 
     name: str
     role: _AlignmentRole
-    unread_reason: _UnreadReason | None
+    disabled: bool
 
     @property
     def is_read(self) -> bool:
-        return self.unread_reason is None
-
-
-def _why_ignored(
-    status: _AlignmentStatus, selection: _AlignmentSelection
-) -> str | None:
-    """Why an alignment found in a chain's MSA files is not used, or None if it is
-    used or was deliberately disabled."""
-    if status.unread_reason is _UnreadReason.DISABLED:
-        return None
-    if status.role is _AlignmentRole.UNSELECTED:
-        settings = " or ".join(
-            setting
-            for setting in [selection.required_setting, selection.optional_setting]
-            if setting is not None
-        )
-        return f"not in {settings}"
-    if status.unread_reason is _UnreadReason.NOT_IN_MAX_SEQ_COUNTS:
-        return "not in max_seq_counts"
-    return None
-
-
-def _unread_notes(statuses: list[_AlignmentStatus], roles: set[_AlignmentRole]) -> str:
-    """Explains why alignments with one of `roles` are not read, for an error
-    message."""
-    not_in_max_seq_counts = sorted(
-        status.name
-        for status in statuses
-        if status.unread_reason is _UnreadReason.NOT_IN_MAX_SEQ_COUNTS
-        and status.role in roles
-    )
-    disabled = sorted(
-        status.name
-        for status in statuses
-        if status.unread_reason is _UnreadReason.DISABLED and status.role in roles
-    )
-    notes = ""
-    if not_in_max_seq_counts:
-        notes += (
-            "; .sto/.a3m alignments must also be named in max_seq_counts, which "
-            f"{not_in_max_seq_counts} are not"
-        )
-    if disabled:
-        notes += f"; {disabled} are disabled by a max_seq_counts of 0"
-    return notes
+        return self.role is not _AlignmentRole.UNSELECTED and not self.disabled
 
 
 class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]):
@@ -901,13 +848,13 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
         """Checks that each representative's MSA files hold alignments that the MSA
         settings use, so misnamed files fail early with an actionable message.
 
-        Alignments are selected by name (see `_find_alignment_names`): .sto/.a3m
-        files are only read if named in `max_seq_counts`, a `max_seq_counts` entry
-        of 0 disables an alignment, main MSAs are stacked from the alignments named
-        in `aln_order`, online pairing uses those named in `msas_to_pair`, and
+        Alignments are selected by name (see `_find_alignment_names`), alike for
+        raw and .npz files: main MSAs are stacked from the alignments named in
+        `aln_order`, online pairing uses those named in `msas_to_pair`, and
         precomputed paired MSAs are stacked from those named in `paired_msa_order`.
-        Each alignment found is classified once, see `_classify_alignments`, and
-        the rules below follow from that:
+        A `max_seq_counts` entry of 0 disables an alignment. Each alignment found
+        is classified once, see `_classify_alignments`, and the rules below follow
+        from that:
 
             - NO_USABLE_ALIGNMENT: for each kind of MSA the query uses, at least
               one alignment the MSA is made from must be read.
@@ -1012,21 +959,16 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
                 One status per alignment found, sorted by name.
         """
         statuses = []
-        for name, path in sorted(_find_alignment_names(paths).items()):
+        for name in sorted(_find_alignment_names(paths)):
             if name in selection.required_names:
                 role = _AlignmentRole.REQUIRED
             elif name in selection.optional_names:
                 role = _AlignmentRole.OPTIONAL
             else:
                 role = _AlignmentRole.UNSELECTED
-
-            if self._is_disabled_alignment(name):
-                unread_reason = _UnreadReason.DISABLED
-            elif path.suffix != ".npz" and name not in self.config.max_seq_counts:
-                unread_reason = _UnreadReason.NOT_IN_MAX_SEQ_COUNTS
-            else:
-                unread_reason = None
-            statuses.append(_AlignmentStatus(name, role, unread_reason))
+            statuses.append(
+                _AlignmentStatus(name, role, self._is_disabled_alignment(name))
+            )
         return statuses
 
     @staticmethod
@@ -1048,8 +990,15 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
         """
         read = [status for status in statuses if status.is_read]
         if not any(status.role is _AlignmentRole.REQUIRED for status in read):
-            notes = _unread_notes(
-                statuses, roles={_AlignmentRole.REQUIRED, _AlignmentRole.OPTIONAL}
+            disabled = sorted(
+                status.name
+                for status in statuses
+                if status.disabled and status.role is not _AlignmentRole.UNSELECTED
+            )
+            notes = (
+                f"; {disabled} are disabled by a max_seq_counts of 0"
+                if disabled
+                else ""
             )
             pairing_only = sorted(
                 status.name for status in read if status.role is _AlignmentRole.OPTIONAL
@@ -1069,21 +1018,22 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
                     },
                 )
             ]
-        ignored = {
-            status.name: reason
+        # Disabled alignments are left out on purpose, so not warned about
+        ignored = [
+            status.name
             for status in statuses
-            if (reason := _why_ignored(status, selection)) is not None
-        }
+            if status.role is _AlignmentRole.UNSELECTED and not status.disabled
+        ]
         if ignored:
+            settings = " or ".join(
+                setting
+                for setting in [selection.required_setting, selection.optional_setting]
+                if setting is not None
+            )
             return [
                 (
                     MsaIssueKind.IGNORED_ALIGNMENTS,
-                    {
-                        "ignored": ", ".join(
-                            f"{name} ({reason})"
-                            for name, reason in sorted(ignored.items())
-                        )
-                    },
+                    {"ignored": f"{', '.join(ignored)} (not in {settings})"},
                 )
             ]
         return []
@@ -1149,23 +1099,59 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
         ]
 
     def _is_disabled_alignment(self, name: str) -> bool:
-        """Whether a max_seq_counts entry of 0 disables the alignment `name`.
-
-        This applies to raw and preparsed .npz alignments alike, although other
-        max_seq_counts entries only limit raw ones.
-        """
+        """Whether a max_seq_counts entry of 0 disables the alignment `name`."""
         return self.config.max_seq_counts.get(name) == 0
 
-    def _drop_disabled_alignments(
-        self, msas: dict[str, MsaArray]
+    def _parse_rep_alignments(
+        self, paths: list[Path], msa_kind: MsaKind
     ) -> dict[str, MsaArray]:
-        """Drops the parsed alignments disabled by a max_seq_counts entry of 0,
-        which would otherwise be left without rows."""
-        return {
-            name: msa
-            for name, msa in msas.items()
+        """Parses the alignments of one representative's MSA files of one kind.
+
+        Only the alignments that `msa_kind` MSAs use are read (see
+        `_alignment_selection`), except those disabled by a max_seq_counts entry
+        of 0. Each is limited to the rows given by its max_seq_counts entry, if it
+        has one. Raw and preparsed .npz alignments are treated alike.
+
+        Args:
+            paths (list[Path]):
+                .sto/.a3m files, directories containing them, or .npz files.
+            msa_kind (MsaKind):
+                The kind of MSA the files hold.
+
+        Returns:
+            dict[str, MsaArray]:
+                The parsed alignments, by name.
+
+        Raises:
+            ValueError:
+                If the paths are not in a supported format.
+        """
+        selection = self._alignment_selection(msa_kind)
+        limits = {
+            name: self.config.max_seq_counts.get(name)
+            for name in [*selection.required_names, *selection.optional_names]
             if not self._is_disabled_alignment(name)
         }
+        file_list = standardize_filepaths(paths)
+        if paths[0].is_dir() or paths[0].suffix in MSA_PARSER_REGISTRY:
+            return parse_msas_direct(file_list=file_list, max_seq_counts=limits)
+        if paths[0].suffix == ".npz":
+            msas = {
+                name: msa
+                for name, msa in parse_msas_preparsed(file_list=file_list).items()
+                if name in limits
+            }
+            for name, msa in msas.items():
+                if (limit := limits[name]) is not None:
+                    msa.truncate(limit, inplace=True)
+            return msas
+        raise ValueError(
+            f"Unsupported MSA path found {paths[0]}. Needs to be one of the "
+            "following: \n"
+            " - an .a3m or .sto file \n"
+            " - a directory containing .a3m or .sto files \n"
+            " - a .npz file \n"
+        )
 
     @staticmethod
     def _same_alignment_files(paths: list[Path], other_paths: list[Path]) -> bool:
@@ -1197,80 +1183,26 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
             - rep_id_to_paired_msa: dict
                 Maps representative IDs to paired MSA objects.
 
+        See `_parse_rep_alignments` for which alignments are read.
+
         Raises:
             ValueError:
                 If the MSA file paths are not in the expected format or if the MSA
                 file paths are not supported.
         """
 
-        if len(maps.chain_id_to_rep_id) > 0:
-            # Parse MSAs for each representative
-            representative_chain_ids = sorted(set(maps.chain_id_to_rep_id.values()))
-            for rep_id in representative_chain_ids:
-                # Parse main MSAs
-                if rep_id in maps.rep_id_to_main_msa_paths:
-                    example_path = maps.rep_id_to_main_msa_paths[rep_id][0]
-                    if example_path.is_dir() or (
-                        example_path.suffix in [".sto", ".a3m"]
-                    ):
-                        file_list = standardize_filepaths(
-                            maps.rep_id_to_main_msa_paths[rep_id],
-                        )
-                        chain_msa_parser = partial(
-                            parse_msas_direct,
-                            max_seq_counts=self.config.max_seq_counts,
-                        )
-                    elif example_path.suffix == ".npz":
-                        file_list = standardize_filepaths(
-                            maps.rep_id_to_main_msa_paths[rep_id]
-                        )
-                        chain_msa_parser = parse_msas_preparsed
-                    else:
-                        raise ValueError(
-                            f"Unsupported MSA path found {example_path}. Needs to be "
-                            "one of the following: \n"
-                            " - an .a3m or .sto file \n"
-                            " - a directory containing .a3m or .sto files \n"
-                            " - a .npz file \n"
-                        )
-
-                    # Parse MSAs into a dict of MsaArrays
-                    all_msas_per_chain = self._drop_disabled_alignments(
-                        chain_msa_parser(file_list=file_list)
+        for rep_id in sorted(set(maps.chain_id_to_rep_id.values())):
+            for msa_kind, rep_id_to_paths, rep_id_to_msas in [
+                (MsaKind.MAIN, maps.rep_id_to_main_msa_paths, maps.rep_id_to_main_msa),
+                (
+                    MsaKind.PAIRED,
+                    maps.rep_id_to_paired_msa_paths,
+                    maps.rep_id_to_paired_msa,
+                ),
+            ]:
+                if rep_id in rep_id_to_paths:
+                    rep_id_to_msas[rep_id] = self._parse_rep_alignments(
+                        rep_id_to_paths[rep_id], msa_kind
                     )
-                    maps.rep_id_to_main_msa[rep_id] = all_msas_per_chain
-
-                # Parse paired MSAs
-                if rep_id in maps.rep_id_to_paired_msa_paths:
-                    example_path = maps.rep_id_to_paired_msa_paths[rep_id][0]
-                    if example_path.is_dir() or (
-                        example_path.suffix in [".sto", ".a3m"]
-                    ):
-                        file_list = standardize_filepaths(
-                            maps.rep_id_to_paired_msa_paths[rep_id],
-                        )
-                        chain_msa_parser = partial(
-                            parse_msas_direct,
-                            max_seq_counts=self.config.max_seq_counts,
-                        )
-                    elif example_path.suffix == ".npz":
-                        file_list = standardize_filepaths(
-                            maps.rep_id_to_paired_msa_paths[rep_id]
-                        )
-                        chain_msa_parser = parse_msas_preparsed
-                    else:
-                        raise ValueError(
-                            f"Unsupported MSA path found {example_path}. Needs to be "
-                            "one of the following: \n"
-                            " - an .a3m or .sto file \n"
-                            " - a directory containing .a3m or .sto files \n"
-                            " - a .npz file \n"
-                        )
-
-                    # Parse MSAs into a dict of MsaArrays
-                    all_msas_per_chain = self._drop_disabled_alignments(
-                        chain_msa_parser(file_list=file_list)
-                    )
-                    maps.rep_id_to_paired_msa[rep_id] = all_msas_per_chain
 
         return maps
