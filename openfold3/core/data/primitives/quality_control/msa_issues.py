@@ -91,13 +91,6 @@ class MsaIssueKind(Enum):
         "named in {required_setting} {required_names}{notes}.",
         _ALIGNMENT_NAMES_HINT,
     )
-    NO_READABLE_ALIGNMENT = (
-        Severity.ERROR,
-        "None of the alignments in the {msa_kind} MSA files {paths} of chain(s) "
-        "{chains} in query {query_name} is read, but these chains' query sequence "
-        "is taken from them. Found alignments: {found}{notes}.",
-        _ALIGNMENT_NAMES_HINT,
-    )
     IGNORED_ALIGNMENTS = (
         Severity.WARNING,
         "Ignoring alignments in the {msa_kind} MSA files {paths} of chain(s) {chains} "

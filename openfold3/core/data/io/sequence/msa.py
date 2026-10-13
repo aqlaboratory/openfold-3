@@ -45,6 +45,7 @@ from openfold3.core.data.primitives.quality_control.msa_issues import (
 from openfold3.core.data.primitives.sequence.msa import (
     MsaArray,
     MsaArrayCollection,
+    _uppercase_ascii_inplace,
 )
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
@@ -623,19 +624,6 @@ def _find_alignment_names(paths: list[Path]) -> dict[str, Path]:
     return names
 
 
-def select_query_alignment(msas: dict[str, MsaArray], preferred: list[str]) -> str:
-    """Selects the alignment whose first row is used as a chain's query sequence:
-    the first of `preferred` present in `msas`, else the alphabetically first.
-
-    Args:
-        msas (dict[str, MsaArray]):
-            A chain's parsed alignments, by name.
-        preferred (list[str]):
-            Names of the alignments the MSA settings use, in order of preference.
-    """
-    return next((name for name in preferred if name in msas), min(msas))
-
-
 def chains_of_rep(chain_id_to_rep_id: dict[str, str], rep_id: str) -> tuple[str, ...]:
     """The IDs of the chains that share representative `rep_id`."""
     return tuple(
@@ -768,13 +756,17 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
         Chains with the same molecule type and sequence share one representative,
         named after the first such chain, and are featurized from the MSA files of
         that chain. MSA file and directory names play no part in this, so they can
-        be named arbitrarily.
+        be named arbitrarily. The query row of a representative's MSA features is
+        its own sequence; its alignments only supply the rows aligned to it.
 
         Updates the following attributes:
             - chain_id_to_rep_id: dict
                 Maps chain IDs to representative IDs.
             - chain_id_to_mol_type: dict
                 Maps chain IDs to molecule types.
+            - rep_id_to_query_seq: dict
+                Maps representative IDs to their uppercased sequence, as an array
+                of shape (1, L).
             - rep_id_to_main_msa_paths: dict
                 Maps representative IDs to main MSA file paths.
             - rep_id_to_paired_msa_paths: dict
@@ -850,6 +842,11 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
 
                 maps.chain_id_to_rep_id[chain_id] = rep_id
                 maps.chain_id_to_mol_type[chain_id] = chain_data.molecule_type
+                if rep_id not in maps.rep_id_to_query_seq:
+                    # Uppercased like parsed alignment rows, see MsaArray.from_parsed
+                    query_seq = _msa_list_to_np([chain_data.sequence])
+                    _uppercase_ascii_inplace(query_seq)
+                    maps.rep_id_to_query_seq[rep_id] = query_seq
                 if (rep_id not in maps.rep_id_to_chain_id) & (
                     len(main_msa_file_paths) > 0
                 ):
@@ -916,9 +913,6 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
               one alignment the MSA is made from must be read.
             - IGNORED_ALIGNMENTS: for each kind of MSA the query uses, alignments
               that are found but not used are reported.
-            - NO_READABLE_ALIGNMENT: for a kind of MSA the query does not use, any
-              alignment must be read if a representative's query sequence is taken
-              from it.
             - UNPAIRABLE_CHAINS: protein chains of a heteromer that online pairing
               cannot pair are reported.
 
@@ -951,11 +945,10 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
                     rep_id_to_read_main[rep_id] = {
                         status.name for status in statuses if status.is_read
                     }
-                problems = self._alignment_name_problems(
-                    statuses,
-                    selection,
-                    uses_msa_kind=uses_msa_kind,
-                    is_query_source=self._is_query_source(maps, rep_id, msa_kind),
+                problems = (
+                    self._alignment_name_problems(statuses, selection)
+                    if uses_msa_kind
+                    else []
                 )
                 issues += [
                     MsaIssue(
@@ -987,14 +980,6 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
             input.use_main_msas if msa_kind is MsaKind.MAIN else input.use_paired_msas
         )
         return input.use_msas and use_msa_kind
-
-    @staticmethod
-    def _is_query_source(
-        maps: MsaSampleParserMapper, rep_id: str, msa_kind: MsaKind
-    ) -> bool:
-        """Whether a representative's query sequence is taken from its `msa_kind`
-        MSAs: from the main MSAs, or the paired ones if there are no main MSAs."""
-        return msa_kind is MsaKind.MAIN or rep_id not in maps.rep_id_to_main_msa_paths
 
     def _alignment_selection(self, msa_kind: MsaKind) -> _AlignmentSelection:
         """The MSA settings that select the alignments of `msa_kind` MSAs."""
@@ -1046,78 +1031,59 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
 
     @staticmethod
     def _alignment_name_problems(
-        statuses: list[_AlignmentStatus],
-        selection: _AlignmentSelection,
-        uses_msa_kind: bool,
-        is_query_source: bool,
+        statuses: list[_AlignmentStatus], selection: _AlignmentSelection
     ) -> list[tuple[MsaIssueKind, dict[str, object]]]:
         """Applies the rules of `check_alignment_names` to the alignments of one
-        representative's MSA files of one kind.
+        representative's MSA files of a kind the query uses.
 
         Args:
             statuses (list[_AlignmentStatus]):
                 The alignments found in the files, see `_classify_alignments`.
             selection (_AlignmentSelection):
                 The settings selecting the alignments of this kind of MSA.
-            uses_msa_kind (bool):
-                Whether the query uses this kind of MSA.
-            is_query_source (bool):
-                Whether the representative's query sequence is taken from these
-                files.
 
         Returns:
             list[tuple[MsaIssueKind, dict[str, object]]]:
                 The kind of each problem found, with the details of its message.
         """
         read = [status for status in statuses if status.is_read]
-        if uses_msa_kind:
-            if not any(status.role is _AlignmentRole.REQUIRED for status in read):
-                notes = _unread_notes(
-                    statuses,
-                    roles={_AlignmentRole.REQUIRED, _AlignmentRole.OPTIONAL},
+        if not any(status.role is _AlignmentRole.REQUIRED for status in read):
+            notes = _unread_notes(
+                statuses, roles={_AlignmentRole.REQUIRED, _AlignmentRole.OPTIONAL}
+            )
+            pairing_only = sorted(
+                status.name for status in read if status.role is _AlignmentRole.OPTIONAL
+            )
+            if pairing_only:
+                notes += (
+                    f". {pairing_only} are only used as named in "
+                    f"{selection.optional_setting}, e.g. for species pairing"
                 )
-                pairing_only = sorted(
-                    status.name
-                    for status in read
-                    if status.role is _AlignmentRole.OPTIONAL
-                )
-                if pairing_only:
-                    notes += (
-                        f". {pairing_only} are only used as named in "
-                        f"{selection.optional_setting}, e.g. for species pairing"
-                    )
-                return [
-                    (
-                        MsaIssueKind.NO_USABLE_ALIGNMENT,
-                        {
-                            "required_setting": selection.required_setting,
-                            "required_names": selection.required_names,
-                            "notes": notes,
-                        },
-                    )
-                ]
-            ignored = {
-                status.name: reason
-                for status in statuses
-                if (reason := _why_ignored(status, selection)) is not None
-            }
-            if ignored:
-                return [
-                    (
-                        MsaIssueKind.IGNORED_ALIGNMENTS,
-                        {
-                            "ignored": ", ".join(
-                                f"{name} ({reason})"
-                                for name, reason in sorted(ignored.items())
-                            )
-                        },
-                    )
-                ]
-        elif is_query_source and not read:
             return [
                 (
-                    MsaIssueKind.NO_READABLE_ALIGNMENT,
-                    {"notes": _unread_notes(statuses, roles=set(_AlignmentRole))},
+                    MsaIssueKind.NO_USABLE_ALIGNMENT,
+                    {
+                        "required_setting": selection.required_setting,
+                        "required_names": selection.required_names,
+                        "notes": notes,
+                    },
+                )
+            ]
+        ignored = {
+            status.name: reason
+            for status in statuses
+            if (reason := _why_ignored(status, selection)) is not None
+        }
+        if ignored:
+            return [
+                (
+                    MsaIssueKind.IGNORED_ALIGNMENTS,
+                    {
+                        "ignored": ", ".join(
+                            f"{name} ({reason})"
+                            for name, reason in sorted(ignored.items())
+                        )
+                    },
                 )
             ]
         return []
@@ -1226,8 +1192,6 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
         """Parses MSAs for each representative chain and representative chain set.
 
         Updates the following attributes:
-            - rep_id_to_query_seq: dict
-                Maps representative IDs to query sequences.
             - rep_id_to_main_msa: dict
                 Maps representative IDs to main MSA objects.
             - rep_id_to_paired_msa: dict
@@ -1276,15 +1240,6 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
                     )
                     maps.rep_id_to_main_msa[rep_id] = all_msas_per_chain
 
-                    # Create query sequence from the first row of a used alignment
-                    query_alignment = select_query_alignment(
-                        all_msas_per_chain,
-                        [*self.config.aln_order, *self.config.msas_to_pair],
-                    )
-                    maps.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
-                        query_alignment
-                    ].msa[0, :][np.newaxis, :]
-
                 # Parse paired MSAs
                 if rep_id in maps.rep_id_to_paired_msa_paths:
                     example_path = maps.rep_id_to_paired_msa_paths[rep_id][0]
@@ -1317,15 +1272,5 @@ class MsaSampleParserInference(MsaSampleParser[MsaSampleProcessorInputInference]
                         chain_msa_parser(file_list=file_list)
                     )
                     maps.rep_id_to_paired_msa[rep_id] = all_msas_per_chain
-
-                    if rep_id not in maps.rep_id_to_query_seq:
-                        # Create query sequence from the first row of a used
-                        # alignment
-                        query_alignment = select_query_alignment(
-                            all_msas_per_chain, self.config.paired_msa_order
-                        )
-                        maps.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
-                            query_alignment
-                        ].msa[0, :][np.newaxis, :]
 
         return maps

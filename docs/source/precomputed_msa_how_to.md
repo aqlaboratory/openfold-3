@@ -42,7 +42,7 @@ MSAs generated with a custom workflow should follow the same format as that of t
 - need to have one multiple sequence alignment per file per chain
 - need to have the query sequence (the protein or RNA sequence for which the structure is to be predicted) as the first sequence in the MSA
 
-The first sequence is checked against the sequence of the chain the MSA is used for. It must have the same length, and it may differ by a single residue or in at most 10% of residues, which allows reusing the MSA of a wild-type sequence for its point mutants. Such differences are reported with a warning; larger ones are an error. `X` (and `N` for RNA) matches any residue, and for RNA `T` matches `U`.
+The first sequence is checked against the sequence of the chain the MSA is used for. It must have the same length, and it may differ by a single residue or in at most 10% of residues, which allows reusing the MSA of a wild-type sequence for its point mutants. Such differences are reported with a warning; larger ones are an error. `X` (and `N` for RNA) matches any residue, and for RNA `T` matches `U`. Either way, the query row of the MSA features is the chain's own sequence; the MSA only contributes the sequences aligned to it.
 
 <details>
 <summary>Example `a3m` for PDB entry 5k36 protein chain B ...</summary>
@@ -371,12 +371,11 @@ The pipeline checks the MSA files of each chain before using them, and stops wit
 | Message | Kind | Meaning and fix |
 |---|---|---|
 | `None of the alignments in the main MSA files ... can be used as a main MSA` | Error | None of the chain's files (or `.npz` arrays) is named in `aln_order`, or, for `.sto`/`.a3m` files, also in `max_seq_counts`. The message lists the names found. Rename the files, or add the names to the {ref}`MSA settings <5-modifying-msa-settings-for-custom-precomputed-msas>`. |
-| `None of the alignments in the main MSA files ... is read, but these chains' query sequence is taken from them` | Error | Main MSAs are turned off (`use_main_msas: false`), but a chain's query sequence still comes from its main MSA files, and none of them is read. Name at least one of them in `max_seq_counts`, or rename it to a name that is. |
 | ... `are only used as named in msas_to_pair` | Error | The chain only has alignments used for species pairing, such as `uniprot_hits`, which are not part of the main MSA by default. Add an alignment named in `aln_order`, or add the name to `aln_order`. |
 | `None of the alignments in the paired MSA files ... can be used as a paired MSA` | Error | None of the chain's pre-paired files is named in `paired_msa_order`. |
 | `The first row of an MSA must be the sequence of the chain it is used for` | Error | An MSA starts with a sequence of a different length than the chain's, or differs from it in more than one residue and more than 10% of residues. Usually a chain points at another chain's files. All such MSAs in the query are listed at once. |
 | `Ignoring alignments in ...` | Warning | Some files are not used, for example `hmm_output.sto` in a directory of search results. Harmless if intended; otherwise rename the files or add the names to the MSA settings. |
 | `Protein chain(s) ... have no main MSA alignment named in msas_to_pair` | Warning | In a complex of different proteins, these chains have no alignment with species information, so they get no species-paired MSA rows. |
-| `The query rows of MSAs for chain(s) ... differ from the chain's sequence` | Warning | An MSA of a closely related sequence is used, for example the wild-type MSA for a point mutant. The differing residues are listed. |
+| `The query rows of MSAs for chain(s) ... differ from the chain's sequence` | Warning | An MSA of a closely related sequence is used, for example the wild-type MSA for a point mutant. The differing residues are listed. The chain's own sequence is used as the query row. |
 | `Chains ... have the same sequence but different main` (or `paired`) `MSA files` | Warning | See {ref}`Chains with Identical Sequences <21-chains-with-identical-sequences>`. |
 | `Expected MSA file for chain ..., but no MSA files found` | Warning | The chain has no MSA paths and gets no MSA features. If another chain with the same sequence has MSA files, the message names it. |

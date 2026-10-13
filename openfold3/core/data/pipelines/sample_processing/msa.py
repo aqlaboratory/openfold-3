@@ -36,7 +36,6 @@ from openfold3.core.data.io.sequence.msa import (
     MsaSampleParserInference,
     MsaSampleParserTrain,
     chains_of_rep,
-    select_query_alignment,
 )
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
@@ -729,7 +728,9 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
         """Checks that the first row of every alignment a chain uses is the chain's
         own sequence.
 
-        MSA columns are mapped onto a chain's residues by position, so an alignment
+        The chain's sequence is the query row of its MSA features, and the other
+        rows of an alignment are aligned to the alignment's first row. MSA columns
+        are mapped onto a chain's residues by position, so an alignment
         of another length either crashes featurization or silently misaligns, and
         is an error. An alignment of the same length with different residues is
         expected when reusing the MSA of a related sequence, such as for point
@@ -778,32 +779,22 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
             chain_data = input.msa_chain_data[rep_id]
             sequence = chain_data.sequence
             chain_ids = chains_of_rep(msa_array_collection.chain_id_to_rep_id, rep_id)
-
-            # The query row itself comes from a main alignment, or a paired one if
-            # there are none; see MsaSampleParserInference.parse_msas
-            main = msa_array_collection.rep_id_to_main_msa.get(rep_id) or {}
-            paired = rep_id_to_paired_msa.get(rep_id) or {}
-            query_source = (
-                (
-                    MsaKind.MAIN,
-                    select_query_alignment(
-                        main, [*self.config.aln_order, *self.config.msas_to_pair]
-                    ),
-                )
-                if main
-                else (
-                    MsaKind.PAIRED,
-                    select_query_alignment(paired, self.config.paired_msa_order),
-                )
-            )
             used = [
                 (kind, name, msas[name])
                 for kind, msas, used_names in [
-                    (MsaKind.MAIN, main, main_names),
-                    (MsaKind.PAIRED, paired, paired_names),
+                    (
+                        MsaKind.MAIN,
+                        msa_array_collection.rep_id_to_main_msa.get(rep_id) or {},
+                        main_names,
+                    ),
+                    (
+                        MsaKind.PAIRED,
+                        rep_id_to_paired_msa.get(rep_id) or {},
+                        paired_names,
+                    ),
                 ]
                 for name in sorted(msas)
-                if name in used_names or (kind, name) == query_source
+                if name in used_names
             ]
 
             rows_to_alignments: dict[str, list[tuple[MsaKind, str]]] = {}

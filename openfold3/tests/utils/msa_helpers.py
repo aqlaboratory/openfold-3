@@ -29,7 +29,19 @@ from openfold3.core.data.io.sequence.msa import (
 from openfold3.core.data.pipelines.sample_processing.msa import (
     MsaSampleProcessorInference,
 )
+from openfold3.core.data.primitives.featurization.msa import (
+    MsaFeaturePrecursorOF3,
+    create_msa_feature_precursor_of3,
+)
 from openfold3.core.data.primitives.sequence.msa import MsaArrayCollection
+from openfold3.core.data.primitives.structure.query import (
+    structure_with_ref_mols_from_query,
+)
+from openfold3.core.data.primitives.structure.tokenization import (
+    add_token_positions,
+    get_token_count,
+    tokenize_atom_array,
+)
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
 from openfold3.projects.of3_all_atom.config.inference_query_format import Query
 
@@ -157,3 +169,17 @@ def process(query: Query, settings: MSASettings) -> MsaArrayCollection:
         inference_query=query
     )
     return MsaSampleProcessorInference(config=settings)(input=input)
+
+
+def features(query: Query, settings: MSASettings) -> MsaFeaturePrecursorOF3:
+    """Runs the inference MSA pipeline and featurizes its output for the query's
+    structure, as the inference dataset does."""
+    msa_array_collection = process(query, settings)
+    atom_array, _ = structure_with_ref_mols_from_query(query=query)
+    tokenize_atom_array(atom_array)
+    add_token_positions(atom_array)
+    return create_msa_feature_precursor_of3(
+        atom_array=atom_array,
+        msa_array_collection=msa_array_collection,
+        n_tokens=get_token_count(atom_array),
+    )

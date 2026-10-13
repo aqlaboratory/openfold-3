@@ -21,7 +21,8 @@ with an IndexError, or silently misalign when it was longer.
 `MsaSampleProcessorInference.check_query_rows` now raises for those. An MSA of
 the right length built for a different sequence is legitimate when reusing a
 wild-type MSA for point mutants, so it only warns if a single residue or at
-most 10% of residues differ, and raises otherwise.
+most 10% of residues differ, and raises otherwise. Either way, the query row of
+the MSA features is the chain's own sequence.
 """
 
 import re
@@ -40,6 +41,7 @@ from openfold3.projects.of3_all_atom.config.dataset_config_components import MSA
 from openfold3.projects.of3_all_atom.config.inference_query_format import Query
 from openfold3.tests.utils.msa_helpers import (
     MSA_FORMATS,
+    features,
     mutate,
     pairable_alignment,
     process,
@@ -256,6 +258,33 @@ def test_matching_query_rows_do_not_warn(tmp_path, fmt, chains):
         warnings.simplefilter("error", UserWarning)
         warnings.filterwarnings("ignore", "Ignoring alignments", UserWarning)
         process(query, MSA_SETTINGS)
+
+
+@fmt_parametrize
+@pytest.mark.parametrize(
+    "chain",
+    [
+        pytest.param(_chain(mutate(LONG, 3, "W"), _main(LONG)), id="point_mutant"),
+        pytest.param(_chain(LONG, _main(mutate(LONG, 3, "X"))), id="x_in_msa"),
+        pytest.param(_chain(mutate(LONG, 3, "X"), _main(LONG)), id="x_in_sequence"),
+        pytest.param(_chain(LONG, _main(LONG.lower())), id="lowercase_msa"),
+        pytest.param(_chain(LONG.lower(), _main(LONG)), id="lowercase_sequence"),
+        pytest.param(
+            _chain(RNA, {"rfam_hits": RNA.replace("U", "T")}, molecule_type="rna"),
+            id="rna_msa_spelling_uracil_as_thymine",
+        ),
+    ],
+)
+@pytest.mark.filterwarnings("ignore:The query rows of MSAs:UserWarning")
+def test_query_row_is_the_chain_sequence(tmp_path, fmt, chain):
+    """The query row of the MSA features is the chain's own sequence, uppercased
+    like alignment rows, even where the first row of its alignments differs from
+    it in a way the check allows."""
+    query = _build_query(tmp_path, fmt, [chain])
+
+    msa_features = features(query, MSA_SETTINGS)
+
+    assert "".join(msa_features.msa[0]) == chain["sequence"].upper()
 
 
 @fmt_parametrize

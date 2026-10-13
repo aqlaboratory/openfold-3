@@ -24,7 +24,6 @@ actionable error for unusable MSAs and warns about ignored alignments.
 All tests run against the default `MSASettings`, as users get them.
 """
 
-import re
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -393,6 +392,13 @@ def test_usable_alignments_do_not_warn(tmp_path, fmt, chains):
             id="main_disabled",
         ),
         pytest.param(
+            # The query row is the chain's sequence, so unused files need not be
+            # readable
+            _chains(("long", "chainA", ())),
+            {"use_main_msas": False},
+            id="main_disabled_with_unreadable_files",
+        ),
+        pytest.param(
             _chains(("long", GOOD_MAIN, "pair"), ("short", GOOD_MAIN, "pair")),
             {"use_paired_msas": False},
             id="paired_disabled",
@@ -409,18 +415,6 @@ def test_disabled_msa_types_are_not_checked(tmp_path, fmt, chains, flags):
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
-        process(query, MSA_SETTINGS)
-
-
-@pytest.mark.parametrize("fmt", ["sto", "sto_dir"])
-def test_unreadable_alignments_raise_even_when_main_msas_are_disabled(tmp_path, fmt):
-    """The query row is read from the main MSA files, so they must hold at least
-    one alignment that is parsed at all."""
-    query = _build_query(
-        tmp_path, fmt, _chains(("long", "chainA", ())), use_main_msas=False
-    )
-
-    with pytest.raises(ValueError, match=re.escape("Found alignments: ['chainA']")):
         process(query, MSA_SETTINGS)
 
 
@@ -441,23 +435,6 @@ def test_unusable_msas_of_all_chains_are_reported_together(tmp_path, fmt):
     ]
     # The hint is shared, so it is given once
     assert str(excinfo.value).count("dataset_config_kwargs.msa") == 1
-
-
-@pytest.mark.parametrize("fmt", ["sto", "sto_dir"])
-def test_unreadable_query_source_is_reported_as_such(tmp_path, fmt):
-    """With main MSAs disabled, the error says the files are needed for the query
-    sequence, not that main MSAs are made from aln_order."""
-    query = _build_query(
-        tmp_path, fmt, _chains(("long", "chainA", ())), use_main_msas=False
-    )
-
-    with pytest.raises(MsaValidationError) as excinfo:
-        process(query, MSA_SETTINGS)
-
-    (issue,) = excinfo.value.issues
-    assert issue.kind is MsaIssueKind.NO_READABLE_ALIGNMENT
-    assert "query sequence" in issue.message
-    assert "aln_order" not in issue.message
 
 
 @fmt_parametrize
