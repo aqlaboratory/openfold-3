@@ -873,3 +873,28 @@ Third consecutive clean night. Both CUDA legs' `start-aws-runner` launched on po
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #322, per this log's established convention).
 
 ---
+
+## 2026-10-13
+
+### Run #324 — primary nightly (schedule `17 3 * * *`, main @ `0c82648` — "Merge branch 'consortium-main' into public-main", carrying PR #471 "fix: issue #340 wrong MSAs loaded" (new since run #322/323's `2496c32`), [38342766977](https://github.com/aqlaboratory/openfold-3/actions/runs/38342766977))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 40 min | |
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 36 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 33 min | |
+
+**2026-10-13: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Fourth consecutive clean night. Both CUDA legs' `start-aws-runner` launched on pool 1 in `us-east-2` without needing the `us-west-2` fallback (`Create cloud runner (us-west-2)` skipped on both legs), and `Cache download of parameters` hit cleanly on both. Main advanced from `2496c32` to `0c82648` (PR #471, MSA-loading bugfix) — no regression observed.
+
+### Run #325 — secondary nightly (schedule `17 4 * * *`, main @ `0c82648`, [38347394537](https://github.com/aqlaboratory/openfold-3/actions/runs/38347394537))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event.schedule == vars.NIGHTLY_CRON` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #324, per this log's established convention).
+
+---
