@@ -170,27 +170,66 @@ Output: individual **NPZ files\*** for each chain in the template pool:
 ```
 template_structure_arrays/
 ├── 101m
-│   └── 101m_A.npz
-│   └── 101m_B.npz
-│   └── 101m_C.npz
+│   ├── 101m_A.npz
+│   ├── 101m_B.npz
+│   ├── 101m_C.npz
+│   └── chain_id_to_moltype.npz
 ├── 102l
-│   └── 102l_A.npz
+│   ├── 102l_A.npz
+│   └── chain_id_to_moltype.npz
 ├── ...
 ```
+
+Every chain of the requested molecule types is written, whether or not it is ever a template hit, so the directory can be reused for any dataset. `chain_id_to_moltype.npz` maps each written chain to its molecule type; template precache creation reads it and skips entries without one, so keep it with the arrays.
 
 ### 4.2 Template Cache
 As the final step, template alignments are preprocessed per dataset (training and validation separately). This creates NPZ files storing template ranks, release dates, and residue-token correspondences, and adds the list of template IDs to the respective dataset cache.
 
 Script: [scripts/data_preprocessing/preprocess_template_alignments_new_of3.py](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/preprocess_template_alignments_new_of3.py)
 
-Output: **template_cache/\*** directory and updated **training_cache.json\*** (with template IDs added):
+Inputs:
+- The dataset cache from step 3 (`training_cache.json` or the validation cache).
+- Template alignments: one `<rep_id>/colabfold_template.m8` per alignment representative, where `<rep_id>` is the chain's `alignment_representative_id` in the dataset cache. Template IDs must use label chain IDs (`<pdb_id>_<label_asym_id>`). ColabFold names its hits by author chain ID, which `align-msa-server` remaps to label chain IDs when it writes this layout.
+- The representatives FASTA, in the format of the {ref}`MSA representatives file <msa-representatives-file>`.
+- The template structures, and optionally the structure arrays from step 4.1.
+
+Example:
 
 ```
-template_cache/
-├── 102l_A.npz
-├── 103l_A.npz
-├── 104l_A.npz
-├── ...
+python scripts/data_preprocessing/preprocess_template_alignments_new_of3.py \
+    --input_set_path training_cache.json \
+    --output_directory train_template_data \
+    --input_set_type train \
+    --runner_yaml template_preprocessing.yml
 ```
 
-The resulting `training_cache.json` is the final input to the training script.
+with `template_preprocessing.yml`:
+
+```
+template_preprocessor_settings:
+  structure_directory: <path/to/template/structures>
+  structure_array_directory: <path/to/template_structure_arrays>
+  template_alignment_directory: <path/to/template_alignments>
+  alignment_representatives_fasta: <path/to/MSA_representatives.fasta>
+  min_release_date_diff: 60
+  fetch_missing_structures: false
+  preparse_structures: true
+  n_processes: 16
+```
+
+`structure_array_directory` points at the arrays from step 4.1; with `preparse_structures: true`, any hit structures missing from it are preparsed into it. Without it, structure arrays are written to `<output_directory>/template_structure_arrays`. Template release dates are filtered per structure: a template must be released at least `min_release_date_diff` days before the structure it is used for.
+
+Output: everything goes to `--output_directory`; `output_directory`, `cache_directory` and `log_directory` in the YAML are ignored.
+
+```
+train_template_data/
+├── training_cache.json                   # input dataset cache, with template IDs added
+├── template_preprocessor_settings.json   # settings used for this run
+├── template_cache/
+│   ├── 102l_A.npz
+│   ├── 103l_A.npz
+│   ├── ...
+└── template_structure_arrays/            # unless structure_array_directory is given
+```
+
+The updated `training_cache.json` is the final input to the training script; set the dataset's `template_cache_directory` to `train_template_data/template_cache` and `template_structure_array_directory` to the structure arrays (see {doc}`training <training>`). Representatives without a template alignment get no templates, and are listed in a warning; if none of the dataset cache's representatives has one, the script fails, since the alignments do not belong to the dataset cache.

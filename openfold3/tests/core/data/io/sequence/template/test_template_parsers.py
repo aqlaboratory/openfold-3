@@ -136,6 +136,48 @@ def test_m8_parser():
         _compare_template_data(actual, expected)
 
 
+def test_m8_parser_keeps_file_order_for_tied_e_values():
+    """Hits with equal e-values keep their order in the file.
+
+    ColabFold ranks its hits; sorting by e-value must not reshuffle ties. These are
+    ColabFold's hits for hen egg-white lysozyme (1fdl chain C), 13 of them tied.
+    """
+    hits = [
+        ("1ior_A", 2.201e-61),
+        ("1ioq_A", 1.068e-60),
+        ("1iot_A", 2.754e-60),
+        ("1kxw_A", 3.778e-60),
+        ("7ynv_A", 5.181e-60),
+        ("1ir7_A", 5.181e-60),
+        ("5lyz_A", 7.106e-60),
+        ("4m6d_E", 7.106e-60),
+        ("1xej_A", 7.106e-60),
+        ("1sf6_A", 7.106e-60),
+        ("1xek_A", 7.106e-60),
+        ("1hem_A", 7.106e-60),
+        ("1ja7_A", 7.106e-60),
+        ("1gxv_A", 7.106e-60),
+        ("2a6u_A", 7.106e-60),
+        ("3lyt_B", 7.106e-60),
+        ("1lsg_A", 7.106e-60),
+        ("2iff_C", 9.745e-60),
+        ("1lsn_A", 9.745e-60),
+        ("6p4a_C", 1.337e-59),
+    ]
+    m8 = pd.DataFrame(
+        [
+            [101, template_id, 1.0, 129, 0, 0, 1, 129, 1, 129, e_value, 260]
+            for template_id, e_value in hits
+        ]
+    )
+
+    templates = M8Parser(max_sequences=None)(m8, query_seq_str="A" * 129)
+
+    actual = [f"{t.entry_id}_{t.chain_id}" for t in templates.values()]
+    expected = [template_id for template_id, _ in hits]
+    assert actual == expected
+
+
 def _compare_template_data(actual, expected):
     for key in TemplateData._fields:
         v_actual = getattr(actual, key)

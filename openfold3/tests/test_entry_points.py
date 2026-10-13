@@ -54,6 +54,7 @@ from openfold3.entry_points.validator import (
     TrainingExperimentConfig,
     TrainingExperimentSettings,
     WandbConfig,
+    generate_seeds,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
@@ -605,6 +606,21 @@ class TestInferenceCommandLineSettings:
         assert msa_settings.saved_output_directory == (
             expt_runner.output_dir / "msas" / msa_settings.run_directory_name
         )
+
+    def test_num_seeds_default_start_seed_is_unchanged(self, dummy_ckpt_file):
+        """Without a configured seed, generated seeds still start from 42."""
+        expt_config = InferenceExperimentConfig(inference_ckpt_path=dummy_ckpt_file)
+        expt_runner = InferenceExperimentRunner(expt_config, num_model_seeds=3)
+        assert expt_runner.seeds == generate_seeds(42, 3)
+
+    def test_num_seeds_starts_from_configured_seed(self, dummy_ckpt_file):
+        """A seed set in experiment_settings is the start of the generated seeds."""
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            experiment_settings={"seeds": [7]},
+        )
+        expt_runner = InferenceExperimentRunner(expt_config, num_model_seeds=3)
+        assert expt_runner.seeds == generate_seeds(7, 3)
 
     def test_output_override_controls_default_intermediate_paths(
         self, tmp_path, dummy_ckpt_file
