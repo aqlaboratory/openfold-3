@@ -30,7 +30,7 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-pixi-cuda-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
       cancel-in-progress: true
-    uses: ./.github/workflows/ci-integration-test-pixi-cuda-reusable.yml
+    uses: ./.github/workflows/ci-integration-test-aws-pixi-cuda.yml
     with:
       pixi_env: ${{ matrix.pixi_env }}
     secrets: inherit
