@@ -21,8 +21,6 @@ Note that this does not include the MSA sampling, which is handled in the
 MSAModuleEmbedder.
 """
 
-from collections.abc import Sequence
-
 import torch
 from ml_collections import ConfigDict
 
@@ -162,7 +160,7 @@ class MSAModuleBlock(MSABlock):
         _mask_trans: bool = True,
         _attn_chunk_size: int | None = None,
         _offload_inference: bool = False,
-        _offloadable_inputs: Sequence[torch.Tensor] | None = None,
+        _offloadable_inputs: list[torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         msa_trans_mask = msa_mask if _mask_trans else None
 
@@ -170,9 +168,11 @@ class MSAModuleBlock(MSABlock):
             _attn_chunk_size = chunk_size
 
         if _offload_inference and inplace_safe:
+            assert _offloadable_inputs is not None
             input_tensors = _offloadable_inputs
             del _offloadable_inputs
         else:
+            assert m is not None and z is not None
             input_tensors = [m, z]
 
         m, z = input_tensors

@@ -21,7 +21,6 @@ the EvoformerStack, ExtraMSAStack, and MSAModule.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
@@ -161,7 +160,7 @@ class MSABlock(nn.Module, ABC):
 
     def _compute_opm(
         self,
-        input_tensors: Sequence[torch.Tensor],
+        input_tensors: list[torch.Tensor],
         msa_mask: torch.Tensor,
         chunk_size: int | None = None,
         inplace_safe: bool = False,
@@ -213,7 +212,7 @@ class MSABlock(nn.Module, ABC):
         _mask_trans: bool = True,
         _attn_chunk_size: int | None = None,
         _offload_inference: bool = False,
-        _offloadable_inputs: Sequence[torch.Tensor] | None = None,
+        _offloadable_inputs: list[torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         pass
 
