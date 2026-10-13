@@ -32,6 +32,17 @@ def _diagonal(n, on_diagonal, off_diagonal):
     return torch.full((n, n), off_diagonal).fill_diagonal_(on_diagonal)
 
 
+def _assert_one_hot(t):
+    """Assert that a tensor is one-hot encoded along the last dimension."""
+    # hide from pytest traceback
+    __tracebackhide__ = True
+    assert ((t == 0) | (t == 1)).all(), "Tensor contains values other than 0 and 1"
+    if t.ndim > 1:
+        assert (t.sum(dim=-1) == 1).all(), (
+            "One-hot encoding does not have exactly one 1 per row"
+        )
+
+
 def _chain_layout(chain_lengths, cyclic_flags):
     """Build (pos, asym_id, cyclic_mask) for consecutive chains of given lengths."""
     asym_id = torch.tensor(
@@ -322,26 +333,6 @@ class TestRelposComplex:
         expected_last = (2 * self.MAX_IDX + 2) * 2 + 1 + (2 * self.MAX_CHAIN + 2)
         assert out.shape == (1, n, n, expected_last)
 
-    def _encodings(self, out):
-        """Split relpos_complex output back into the encodings it concatenates.
-
-        relpos_complex returns
-        torch.cat([rel_pos, rel_token, same_entity, rel_chain], dim=-1), so the last
-        dim holds, in order:
-            rel_pos      residue offset, 2 * MAX_IDX + 2 one-hot bins
-            rel_token    token offset within a residue, 2 * MAX_IDX + 2 bins
-            same_entity  1 flag
-            rel_chain    chain-copy (sym_id) offset, 2 * MAX_CHAIN + 2 bins
-        torch.split raises if the widths no longer add up to the output width.
-        """
-        widths = {
-            "rel_pos": 2 * self.MAX_IDX + 2,
-            "rel_token": 2 * self.MAX_IDX + 2,
-            "same_entity": 1,
-            "rel_chain": 2 * self.MAX_CHAIN + 2,
-        }
-        return dict(zip(widths, torch.split(out, list(widths.values()), dim=-1)))
-
     def _bins(self, out):
         """Decode relpos_complex output into a [*, N_token, N_token] tensor per encoding.
 
@@ -352,16 +343,27 @@ class TestRelposComplex:
         This basically undoes the one-hot encoding coming out of relpos_complex,
         making it easier to assert on while validating it.
         """
-        encodings = self._encodings(out)
-        for name, encoding in encodings.items():
-            assert ((encoding == 0) | (encoding == 1)).all(), name
-            if name != "same_entity":
-                assert (encoding.sum(dim=-1) == 1).all(), name
+        idx_bins = 2 * self.MAX_IDX + 2
+        chain_bins = 2 * self.MAX_CHAIN + 2
+        # relpos_complex returns
+        # torch.cat([rel_pos, rel_token, same_entity, rel_chain], dim=-1), so the last dim holds, in order:
+        #     rel_pos      residue offset, idx_bins
+        #     rel_token    token offset within a residue, idx_bins
+        #     same_entity  1 flag
+        #     rel_chain    chain-copy (sym_id) offset, chain_bins
+        # torch.split raises if the widths don't add up to the output width.
+        rel_pos, rel_token, same_entity, rel_chain = torch.split(
+            out, (idx_bins, idx_bins, 1, chain_bins), dim=-1
+        )
+        _assert_one_hot(rel_pos)
+        _assert_one_hot(rel_token)
+        _assert_one_hot(rel_chain)
+        assert ((same_entity == 0) | (same_entity == 1)).all()
         return {
-            name: (
-                encoding[..., 0] if name == "same_entity" else encoding.argmax(dim=-1)
-            )
-            for name, encoding in encodings.items()
+            "rel_pos": rel_pos.argmax(dim=-1),
+            "rel_token": rel_token.argmax(dim=-1),
+            "same_entity": same_entity[..., 0],
+            "rel_chain": rel_chain.argmax(dim=-1),
         }
 
     def _assert_bins(self, out, expected):
