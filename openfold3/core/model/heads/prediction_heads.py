@@ -21,7 +21,7 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.pairformer import PairFormerStack
-from openfold3.core.model.memory import assert_sole_holder
+from openfold3.core.model.memory import storage_weak_ref
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.atomize_utils import max_atom_per_token_masked_select
 
@@ -130,6 +130,10 @@ class PairformerEmbedding(nn.Module):
         _mask_trans: bool = True,
         pairformer_dtype: torch.dtype = torch.float32,
     ):
+        # Inference only: the caller takes this path only with grad disabled.
+        # With grad on, autograd keeps every sample's activations alive anyway.
+        assert not torch.is_grad_enabled()
+
         batch_dims = x_pred.shape[:-2]
         no_samples = x_pred.shape[-3]
 
@@ -162,14 +166,13 @@ class PairformerEmbedding(nn.Module):
                 pairformer_dtype=pairformer_dtype,
             )
 
-            if offload_inference:
-                assert_sole_holder(si_chunk)
-                assert_sole_holder(zij_chunk)
-
             si_out[..., i : i + 1, :, :] = si_chunk.to(device=device)
             zij_out[..., i : i + 1, :, :, :] = zij_chunk.to(device=device)
 
+            si_storage = storage_weak_ref(si_chunk)
+            zij_storage = storage_weak_ref(zij_chunk)
             del si_chunk, zij_chunk
+            assert si_storage.expired() and zij_storage.expired()
 
         # If offloading, do not return to device for now and let caller handle it
         return si_out.to(dtype=in_dtype), zij_out.to(dtype=in_dtype)

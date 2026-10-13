@@ -12,29 +12,49 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
+import torch
+from torch.multiprocessing.reductions import StorageWeakRef
 
 
-def assert_sole_holder(t, *, in_container=False) -> None:
-    """Assert that `t` is the only live Python reference to this object.
+def storage_weak_ref(t: torch.Tensor) -> StorageWeakRef:
+    """Return a weak reference to the storage (memory) behind `t`.
 
-    Used in offload-inference loops to verify that a tensor has no unexpected
-    references before it is moved to CPU, ensuring in-place memory reuse works
-    as intended.
+    Used in offload-inference paths to check that dropping a tensor actually
+    releases its memory. Take the reference before dropping what should be the
+    last reference to the memory, and assert that it expired afterwards::
 
-    ``in_container`` is required to indicate if the reference is a container
-    subscript like ``container[i]``, which creates an additional counted
-    reference on the evaluation stack, so the expected count differs.
+        storage = storage_weak_ref(t)
+        del t
+        assert storage.expired()
 
-    The expected count changes across Python versions because of the LOAD_FAST
-    optimisation introduced in Python 3.14: in older versions the function call
-    itself keeps an extra reference on the caller's stack and getrefcount adds
-    its own temporary, whereas Python 3.14 steals the caller's reference and no
-    longer creates a temporary for FAST_LOCAL arguments.  See:
-    https://docs.python.org/3.14/whatsnew/3.14.html#whatsnew314-refcount
+    The reference tracks the storage, not the tensor object. Python reference
+    counting on the tensor object isn't enough: other tensors can share its
+    storage (views, `detach()`) without holding a reference to it, so the
+    object can be dropped while the memory stays alive.
+
+    Expired means PyTorch released the storage. The allocator may keep the
+    memory for reuse (the CUDA caching allocator does) rather than return it to
+    the device.
     """
-    expected = 3
-    if sys.version_info >= (3, 14):
-        expected = 2 if in_container else 1
+    return StorageWeakRef(t.untyped_storage())
 
-    assert sys.getrefcount(t) == expected
+
+def move_and_free(
+    tensors: list[torch.Tensor],
+    index: int,
+    device: torch.device | str,
+) -> None:
+    """Move ``tensors[index]`` to `device` and assert its old memory is freed.
+
+    The container slot must hold the only reference to the tensor's storage
+    (see `storage_weak_ref`). Nothing happens if the tensor is already on
+    `device`.
+    """
+    storage = storage_weak_ref(tensors[index])
+    moved = tensors[index].to(device)
+    if moved is tensors[index]:
+        return
+    tensors[index] = moved
+    assert storage.expired(), (
+        f"Memory of tensor {index} is still referenced after moving it to {device}"
+    )

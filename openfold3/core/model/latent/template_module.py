@@ -33,7 +33,7 @@ from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
 )
 from openfold3.core.model.latent.base_blocks import PairBlock
-from openfold3.core.model.memory import assert_sole_holder
+from openfold3.core.model.memory import storage_weak_ref
 from openfold3.core.model.primitives import LayerNorm, Linear
 from openfold3.core.utils.checkpointing import checkpoint_blocks, checkpoint_section
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
@@ -588,11 +588,11 @@ class TemplateEmbedderAllAtom(nn.Module):
                 _mask_trans=_mask_trans,
             )
 
-            assert_sole_holder(t)
-
             t_out[..., i : i + 1, :, :, :] = t.cpu()
 
+            storage = storage_weak_ref(t)
             del t
+            assert storage.expired()
 
         del z
 

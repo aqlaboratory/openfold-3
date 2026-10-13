@@ -28,7 +28,7 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.layers.msa import MSAPairWeightedAveraging
-from openfold3.core.model.memory import assert_sole_holder
+from openfold3.core.model.memory import move_and_free
 from openfold3.core.utils.device_utils import empty_device_cache
 from openfold3.core.utils.tensor_utils import add
 
@@ -205,12 +205,11 @@ class MSAModuleBlock(MSABlock):
             if _offload_inference and inplace_safe:
                 # m: GPU, z: CPU
                 # Read the device before dropping the reference — this holds a
-                # torch.device, not the tensor, so assert_sole_holder still sees
-                # the container as the only holder.
+                # torch.device, not the tensor, so the container stays the only
+                # holder of z's memory.
                 accel_device = z.device
                 del m, z
-                assert_sole_holder(input_tensors[1], in_container=True)
-                input_tensors[1] = input_tensors[1].cpu()
+                move_and_free(input_tensors, 1, "cpu")
                 empty_device_cache(accel_device)
                 m, z = input_tensors
             elif self.clear_cache_between_blocks:
@@ -244,9 +243,8 @@ class MSAModuleBlock(MSABlock):
         if _offload_inference and inplace_safe:
             # m: CPU, z: GPU
             del m, z
-            assert_sole_holder(input_tensors[0], in_container=True)
             device = input_tensors[0].device
-            input_tensors[0] = input_tensors[0].cpu()
+            move_and_free(input_tensors, 0, "cpu")
             input_tensors[1] = input_tensors[1].to(device)
             m, z = input_tensors
         elif self.clear_cache_between_blocks:
@@ -272,9 +270,7 @@ class MSAModuleBlock(MSABlock):
 
         if _offload_inference and inplace_safe:
             # m: GPU, z: GPU
-            device = z.device
-            assert_sole_holder(input_tensors[0], in_container=True)
-            input_tensors[0] = input_tensors[0].to(device)
+            move_and_free(input_tensors, 0, z.device)
             m, _ = input_tensors
         else:
             m = input_tensors[0]
