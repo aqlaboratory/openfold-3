@@ -27,6 +27,7 @@ from openfold3.core.model.heads.prediction_heads import (
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
 )
+from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.atomize_utils import (
     broadcast_token_feat_to_atoms,
     get_token_representative_atoms,
@@ -181,6 +182,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         if release_zij_trunk:
             # Drop the caller's reference so the trunk pair is freed before
             # the confidence Pairformer; only the clone above stays alive.
+            assert_sole_holder(output["zij_trunk"], in_container=True)
             del output["zij_trunk"]
         atom_positions_predicted = atom_positions_predicted.detach().clone()
 
