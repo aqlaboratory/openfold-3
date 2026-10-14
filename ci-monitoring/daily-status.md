@@ -923,3 +923,21 @@ Fifth consecutive clean night. Both CUDA legs' `start-aws-runner` launched on po
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #326, per this log's established convention).
 
 ---
+
+## 2026-10-14 — scope update (same-day addendum)
+
+The monitoring brief now tracks five jobs per night instead of three, effective immediately: `test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-cuda-brev (openfold3-cuda12)`, `test-pixi-cuda-brev (openfold3-cuda13)`, and `test-pixi-amd (openfold3-rocm7)`. The `test-pixi-cuda-brev` legs were excluded from the coverage line above because they were new that same night (run #326) and out of scope under the prior three-job convention; re-stated under the new five-job scope, using the same run #326 data already recorded above:
+
+| Job | State | Duration |
+|-----|-------|----------|
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 37 min |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 35 min |
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 38 min |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 35 min |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 37 min |
+
+**2026-10-14: 5/5 passed · 0 skipped · 0 queued · 0 need attention**
+
+No new workflow run occurred in the scan window beyond run #326/#327, already logged above — this addendum only restates that same night's result under the expanded scope so the five-job convention starts cleanly from 2026-10-14 onward. Brev vs. AWS agreement so far: 2/2 nights (10-14 only, first night tracked) — both legs passing on both providers every run tracked to date. Per the monitoring brief, a two-week brev-vs-AWS pass-rate comparison is due once two weeks of data have accumulated (around 2026-10-28); too early to report today.
+
+---
