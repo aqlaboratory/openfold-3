@@ -692,23 +692,30 @@ class OpenFold3(nn.Module):
             or "ground_truth" in batch
             or not self.settings.memory.eval.release_trunk_pair
         )
+        # Do not bind the released trunk pair to another local. That name
+        # stays alive for the rest of forward and keeps the pair tensor from
+        # being freed after the confidence clone.
         if retain_trunk_pair:
             zij_release = None
-            zij_for_rollout = zij_trunk
+            rollout_output = self._rollout(
+                batch=batch,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                inplace_safe=inplace_safe,
+                zij_release=zij_release,
+            )
         else:
             zij_release = [zij_trunk]
             del zij_trunk
-            zij_for_rollout = zij_release[0]
-
-        # Mini rollout
-        rollout_output = self._rollout(
-            batch=batch,
-            si_input=si_input,
-            si_trunk=si_trunk,
-            zij_trunk=zij_for_rollout,
-            inplace_safe=inplace_safe,
-            zij_release=zij_release,
-        )
+            rollout_output = self._rollout(
+                batch=batch,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_release[0],
+                inplace_safe=inplace_safe,
+                zij_release=zij_release,
+            )
 
         output.update(rollout_output)
 
