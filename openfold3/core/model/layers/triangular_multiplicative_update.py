@@ -30,6 +30,7 @@ import torch.nn as nn
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.kernels.cueq_utils import is_cuequivariance_available
 from openfold3.core.model.primitives import LayerNorm, Linear
+from openfold3.core.utils.chunk_utils import trimul_chunk_cap, use_chunked_trimul
 from openfold3.core.utils.tensor_utils import permute_final_dims
 
 if is_cuequivariance_available():
@@ -1126,8 +1127,12 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
 
         ## NOTE: valid for inplace safe and use_cueq_triangle_kernels to be enabled
         ## inplace safe is used across the codebase and so should not
-        ## be disabled. So if use_cueq_triangle_kernels is True, it will always
-        ## supersede inplace_safe
+        ## be disabled. So if use_cueq_triangle_kernels is True, it supersedes
+        ## inplace_safe. A trimul chunk cap only selects eager chunking when
+        ## cuEq was not requested.
+        chunked_trimul = use_chunked_trimul(
+            inplace_safe, use_cueq_triangle_kernels=use_cueq_triangle_kernels
+        )
         if use_cueq_triangle_kernels:
             ## VS: The cuequivariance kernel is based on the boltz implementation
             ## of triangle multiplicative update, which fuses the linear_*_p
@@ -1159,10 +1164,11 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
             return x
 
         if inplace_safe:
+            chunk_size = trimul_chunk_cap() if chunked_trimul else _inplace_chunk_size
             x = self._inference_forward(
                 z,
                 mask,
-                inplace_chunk_size=_inplace_chunk_size,
+                inplace_chunk_size=chunk_size,
                 with_add=_add_with_inplace,
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
             )
