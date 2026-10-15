@@ -1,8 +1,10 @@
 # Integration Test — Daily Coverage
 
-Coverage is tracked against the three jobs that must run every night on the primary schedule (`17 3 * * *`, NIGHTLY_CRON):
+Coverage is tracked against the jobs that must run every night on the primary schedule (`17 3 * * *`, NIGHTLY_CRON). Scope was three jobs through 2026-10-13; expanded to five effective 2026-10-14 (see that date's addendum) once the Brev comparison jobs were added in PR #448:
 - `test-pixi-cuda (openfold3-cuda12)`
 - `test-pixi-cuda (openfold3-cuda13)`
+- `test-pixi-cuda-brev (openfold3-cuda12)` (since 2026-10-14)
+- `test-pixi-cuda-brev (openfold3-cuda13)` (since 2026-10-14)
 - `test-pixi-amd (openfold3-rocm7)`
 
 States: **PASSED** / **FAILED** / **CANCELLED** (reason) / **SKIPPED** (reason) / **QUEUED**
@@ -939,5 +941,35 @@ The monitoring brief now tracks five jobs per night instead of three, effective 
 **2026-10-14: 5/5 passed · 0 skipped · 0 queued · 0 need attention**
 
 No new workflow run occurred in the scan window beyond run #326/#327, already logged above — this addendum only restates that same night's result under the expanded scope so the five-job convention starts cleanly from 2026-10-14 onward. Brev vs. AWS agreement so far: 2/2 nights (10-14 only, first night tracked) — both legs passing on both providers every run tracked to date. Per the monitoring brief, a two-week brev-vs-AWS pass-rate comparison is due once two weeks of data have accumulated (around 2026-10-28); too early to report today.
+
+---
+
+## 2026-10-15
+
+### Run #328 — primary nightly (schedule `17 3 * * *`, main @ `a5867f8` — merge PR #451 "expect-freed" (AMD-Ecosystem) and PR #445 "cyclic-relpos-ring-fix" (new since run #326/327's `8b0244c`), [38676626674](https://github.com/aqlaboratory/openfold-3/actions/runs/38676626674))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 37 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 35 min | |
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 49 min | |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 39 min | |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 41 min | |
+
+**2026-10-15: 5/5 passed · 0 skipped · 0 queued · 0 need attention**
+
+Second consecutive clean night under the five-job scope (first: 2026-10-14, run #326). Both CUDA legs' `start-aws-runner` and both Brev legs' `start-brev-runner` completed without incident; `Cache download of parameters` hit cleanly on all four CUDA/Brev legs. Main advanced from `8b0244c` to `a5867f8` (PRs #451, #445) — no regression observed on any tracked job.
+
+### Run #329 — secondary nightly (schedule `17 4 * * *`, main @ `a5867f8`, [38681684175](https://github.com/aqlaboratory/openfold-3/actions/runs/38681684175))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-cuda-brev | **SKIPPED** | — | same guard; job named plain `test-pixi-cuda-brev`, confirming it never expanded |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #328, per this log's established convention).
+
+Brev vs. AWS agreement so far: 2/2 nights tracked (10-14, 10-15) — both legs passing on both providers every run tracked to date under the five-job scope. Per the monitoring brief, a two-week brev-vs-AWS pass-rate comparison is due once two weeks of data have accumulated (brev jobs added 2026-10-14 in PR #448; due ~2026-10-28); too early to report today.
 
 ---
