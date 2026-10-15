@@ -268,3 +268,17 @@ run_openfold predict \
     --inference-ckpt-path inference.ckpt \
     ... # other options
 ```
+
+### 7.3 Using checkpoints with older OpenFold3 releases
+
+Checkpoints from older model versions are converted automatically when they are
+loaded, so a run can resume on newer code. To go the other way, for example to
+resume a run on an older release or to share parameters with users of one,
+convert the checkpoint to that release's model version:
+
+```bash
+python scripts/dev/convert_checkpoint_version.py last.ckpt last-v2.0.0.ckpt --version 2.0.0
+```
+
+The supported versions are listed in
+`openfold3/projects/of3_all_atom/checkpoint_migrations.py`.
