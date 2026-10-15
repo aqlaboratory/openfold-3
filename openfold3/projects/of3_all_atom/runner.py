@@ -433,7 +433,7 @@ class OpenFold3AllAtom(ModelRunner):
             # Only required when running in distributed mode
             sync_context = (
                 self.trainer.model.no_sync()
-                if self.trainer.world_size > 1
+                if hasattr(self.trainer.model, "no_sync")
                 else nullcontext()
             )
 
