@@ -78,6 +78,7 @@ class PerSampleGradManager:
         self.max_grad_norm = gradient_clip_val
         self.accumulate_grad_batches = accumulate_grad_batches
         self.log_grad_norm = log_grad_norm
+        self.do_grad_accum = accumulate_grad_batches > 1
 
         self.grad_accumulator = {}
         self._params_to_update = {}
@@ -119,10 +120,11 @@ class PerSampleGradManager:
 
         self._device = next(iter(self._params_to_update.values())).device
 
-        self.grad_accumulator = {
-            name: torch.zeros_like(p, requires_grad=False)
-            for name, p in self._params_to_update.items()
-        }
+        if self.do_grad_accum:
+            self.grad_accumulator = {
+                name: torch.zeros_like(p, requires_grad=False)
+                for name, p in self._params_to_update.items()
+            }
 
         if self.max_grad_norm is not None:
             self._max_norm_tensor = torch.tensor(
@@ -267,10 +269,13 @@ class PerSampleGradManager:
         # Manually accumulate clipped grads and track param participation
         for name, param in self._params_to_update.items():
             if name in disabled_params:
+                if not self.do_grad_accum and param.grad is not None:
+                    param.grad.zero_()
                 continue
 
             if param.grad is not None:
-                self.grad_accumulator[name].add_(param.grad)
+                if self.do_grad_accum:
+                    self.grad_accumulator[name].add_(param.grad)
 
                 if name not in self.parameter_participation_counts:
                     self.parameter_participation_counts[name] = 0
@@ -293,8 +298,9 @@ class PerSampleGradManager:
         This should be called before opt.step().
         """
         # Copy summed grads from accumulator
-        for name, param in self._params_to_update.items():
-            param.grad = self.grad_accumulator[name].clone()
+        if self.do_grad_accum:
+            for name, param in self._params_to_update.items():
+                param.grad = self.grad_accumulator[name].clone()
 
         # Sync and average globally
         self._sync_and_average_grads()
