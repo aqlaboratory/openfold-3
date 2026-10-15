@@ -12,15 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the easily-isolated seams of the template preprocessing pipeline.
+"""Tests for the shared and inference halves of the TemplatePreprocessor pipeline.
 
-Scope (see plan): the side-effect-free helpers, the pydantic validators, the no-IO
-instance methods (built via ``object.__new__`` to bypass ``__init__``'s multiprocessing
-and file IO), and the legacy TSV log helpers.
-
-Tier E is the exception: cross-query template source isolation is only observable
-end to end, so those tests run the real ``__call__``. They stay offline by pre-seeding
-the template structure directory and setting ``fetch_missing_structures=False``.
+Train-mode tests live in test_template_train.py.
 """
 
 import getpass
@@ -473,6 +467,20 @@ def test_settings_rejects_unsupported_structure_format(tmp_path):
         TemplatePreprocessorSettings(
             output_directory=tmp_path, structure_file_format="pdb"
         )
+
+
+def test_settings_rejects_min_release_date_diff_in_predict_mode(tmp_path):
+    """Predict mode has no query release date to measure the difference from."""
+    with pytest.raises(ValueError, match="min_release_date_diff"):
+        TemplatePreprocessorSettings(
+            mode="predict", output_directory=tmp_path, min_release_date_diff=60
+        )
+
+    # Train mode applies it per structure, against each structure's release date
+    settings = TemplatePreprocessorSettings(
+        mode="train", output_directory=tmp_path, min_release_date_diff=60
+    )
+    assert settings.min_release_date_diff == 60
 
 
 def test_settings_derives_default_directories(tmp_path):
@@ -930,3 +938,54 @@ def test_template_sources_do_not_collide_across_queries(tmp_path, order):
     assert (
         custom.template_alignment_file_path != colabfold.template_alignment_file_path
     ), "both queries were pointed at the same template cache entry"
+
+
+def test_requeued_query_set_keeps_cached_templates(tmp_path):
+    """A reused query set keeps its cached template entry (issue #420).
+
+    Run 1 preprocesses a ColabFold alignment and writes the cache entry path and
+    template ids into the chain. The reused batch mixes that chain, deep-copied
+    from run 1's query set, with a raw CIF source that run 1 never
+    processed, so the write-back still runs while the cached entry is bypassed.
+    """
+    run_1_qs = _two_source_query_set(tmp_path, ["q_colabfold"])
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir()
+    shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, structure_dir / TEMPLATE_CIF)
+    settings = TemplatePreprocessorSettings(
+        mode="predict",
+        output_directory=tmp_path / "template_data",
+        # Pre-seeded structures + no fetching keeps this offline.
+        structure_directory=structure_dir,
+        fetch_missing_structures=False,
+        n_processes=1,
+    )
+
+    TemplatePreprocessor(input_set=run_1_qs, config=settings)()
+
+    cached_chain = run_1_qs.queries["q_colabfold"].chains[0]
+    cached_path = cached_chain.template_alignment_file_path
+    assert cached_path is not None
+    assert cached_chain.template_entry_chain_ids == ["2q2k_C"]
+
+    run_2_qs = run_1_qs.model_copy(deep=True)
+    fresh_qs = _two_source_query_set(tmp_path, ["q_custom"])
+    run_2_qs.queries |= fresh_qs.queries
+
+    preprocessor = TemplatePreprocessor(input_set=run_2_qs, config=settings)
+    preprocessor()
+
+    requeued_cached = run_2_qs.queries["q_colabfold"].chains[0]
+    assert requeued_cached.template_alignment_file_path == cached_path, (
+        "the cached template entry was dropped when the query set was reused"
+    )
+    assert requeued_cached.template_entry_chain_ids == ["2q2k_C"], (
+        "the template ids were dropped when the query set was reused"
+    )
+    requeued_raw = run_2_qs.queries["q_custom"].chains[0]
+    assert requeued_raw.template_entry_chain_ids == ["2q2k_B"], (
+        "the raw source in the reused batch was not processed"
+    )
+    # Only the raw source needs preprocessing; the cached entry must not be
+    # re-parsed as an alignment.
+    assert len(preprocessor.inputs) == 1

@@ -811,6 +811,10 @@ class ColabFoldQueryRunner:
             formats. Elements can be "a3m" or "npz".
         user_agent (str):
             The user agent to use for the API calls.
+        use_templates (bool):
+            Whether to turn the template hits ColabFold returns alongside the main
+            MSA into per-chain template alignment files. This is the only step that
+            talks to the RCSB API, so it is skipped when templates are not used.
     """
 
     def __init__(
@@ -821,6 +825,7 @@ class ColabFoldQueryRunner:
         user_agent: str,
         host_url: Url = "https://api.colabfold.com",
         colabfold_output_dir: Path | None = None,
+        use_templates: bool = True,
     ):
         self.colabfold_mapper = colabfold_mapper
         self.output_directory = output_directory
@@ -829,6 +834,7 @@ class ColabFoldQueryRunner:
         )
         self.user_agent = user_agent
         self.colabfold_output_dir = colabfold_output_dir
+        self.use_templates = use_templates
         self.output_directory.mkdir(parents=True, exist_ok=True)
         self.host_url = host_url
         for subdir in ["raw", "main", "paired"]:
@@ -872,8 +878,6 @@ class ColabFoldQueryRunner:
 
         main_alignments_path = self.output_directory / "main"
         main_alignments_path.mkdir(parents=True, exist_ok=True)
-        template_alignments_path = self.output_directory / "template"
-        template_alignments_path.mkdir(parents=True, exist_ok=True)
 
         # 1) Save MSA a3m/npz files
         for rep_id, aln in zip(
@@ -892,6 +896,15 @@ class ColabFoldQueryRunner:
                 msas = {"colabfold_main": parse_a3m(aln)}
                 msas_preparsed = {k: v.to_dict() for k, v in msas.items()}
                 np.savez_compressed(npz_file, **msas_preparsed)
+
+        # ColabFold returns pdb70.m8 template hits with every main-MSA query, whether
+        # or not templates are wanted. Only process them when they will be used: the
+        # chain-ID remap below is a network round trip to RCSB.
+        if not self.use_templates:
+            return
+
+        template_alignments_path = self.output_directory / "template"
+        template_alignments_path.mkdir(parents=True, exist_ok=True)
 
         # 2) Read raw template alignments and collect unique PDB IDs
         template_alignments_file = self.output_directory / "raw/main/pdb70.m8"
@@ -1267,6 +1280,7 @@ class MsaComputationSettings(BaseModel):
 def preprocess_colabfold_msas(
     inference_query_set: InferenceQuerySet,
     compute_settings: MsaComputationSettings,
+    use_templates: bool = True,
 ) -> InferenceQuerySet:
     """Gathers sequences, runs the ColabFold MSA server queries, updates MSA paths.
 
@@ -1282,6 +1296,11 @@ def preprocess_colabfold_msas(
                 The user agent to use for the API calls.
             save_mappings (bool, optional):
                 Whether to save the mappings to JSON files. Defaults to False.
+        use_templates (bool, optional):
+            Whether the run will use templates. When False, the template hits that
+            ColabFold returns are not converted into template alignment files, which
+            also skips the chain-ID remapping call to the RCSB API. Defaults to True
+            so that standalone MSA precomputation keeps producing them.
 
     Returns:
         InferenceQuerySet:
@@ -1347,6 +1366,7 @@ def preprocess_colabfold_msas(
             and compute_settings.saved_colabfold_output_directory is not None
             else None
         ),
+        use_templates=use_templates,
     )
     colabfold_query_runner.query_format_main()
     colabfold_query_runner.query_format_paired()

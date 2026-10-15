@@ -19,6 +19,8 @@ import string
 import warnings
 from collections import OrderedDict
 from collections.abc import Sequence
+from dataclasses import dataclass, field
+from enum import Enum
 from functools import partial
 from pathlib import Path
 
@@ -26,6 +28,7 @@ import numpy as np
 
 from openfold3.core.config.config_utils import DirectoryPathOrNone
 from openfold3.core.config.msa_pipeline_configs import (
+    MsaKind,
     MsaSampleProcessorInput,
     MsaSampleProcessorInputInference,
     MsaSampleProcessorInputTrain,
@@ -34,10 +37,16 @@ from openfold3.core.data.io.sequence.fasta import parse_fasta
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
+from openfold3.core.data.primitives.quality_control.msa_issues import (
+    MsaIssue,
+    MsaIssueKind,
+    report_msa_issues,
+)
 from openfold3.core.data.primitives.sequence.msa import (
     MsaArray,
     MsaArrayCollection,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.of3_all_atom.config.dataset_config_components import MSASettings
 
 
@@ -556,6 +565,162 @@ class MsaSampleParserTrain(MsaSampleParser):
         return maps
 
 
+def _find_alignment_names(paths: list[Path]) -> dict[str, Path]:
+    """Finds the alignments stored at a chain's MSA paths, without parsing them.
+
+    Alignments are named after the file stem for .sto/.a3m files and after the
+    array name for .npz files. Files with other extensions are skipped.
+
+    Args:
+        paths (list[Path]):
+            MSA files, or directories containing them.
+
+    Returns:
+        dict[str, Path]:
+            Maps alignment names to the file they are stored in.
+    """
+    names = {}
+    for path in standardize_filepaths(paths):
+        if path.suffix in MSA_PARSER_REGISTRY:
+            names[path.stem] = path
+        elif path.suffix == ".npz":
+            # Only reads the archive's index, not the arrays
+            with np.load(path, allow_pickle=True) as npz:
+                names.update(dict.fromkeys(npz.files, path))
+    return names
+
+
+def select_query_alignment(msas: dict[str, MsaArray], preferred: list[str]) -> str:
+    """Selects the alignment whose first row is used as a chain's query sequence:
+    the first of `preferred` present in `msas`, else the alphabetically first.
+
+    Args:
+        msas (dict[str, MsaArray]):
+            A chain's parsed alignments, by name.
+        preferred (list[str]):
+            Names of the alignments the MSA settings use, in order of preference.
+    """
+    return next((name for name in preferred if name in msas), min(msas))
+
+
+def chains_of_rep(chain_id_to_rep_id: dict[str, str], rep_id: str) -> tuple[str, ...]:
+    """The IDs of the chains that share representative `rep_id`."""
+    return tuple(
+        chain_id
+        for chain_id, chain_rep_id in chain_id_to_rep_id.items()
+        if chain_rep_id == rep_id
+    )
+
+
+@dataclass(frozen=True)
+class _AlignmentSelection:
+    """The MSA settings that select the alignments of one kind of MSA.
+
+    Attributes:
+        required_setting (str):
+            The name of the setting listing the alignments this kind of MSA is made
+            from, at least one of which must be read when it is used.
+        required_names (list[str]):
+            The alignment names listed by `required_setting`.
+        optional_setting (str | None):
+            The name of a setting listing further alignments this kind of MSA
+            uses, if any.
+        optional_names (list[str]):
+            The alignment names listed by `optional_setting`.
+    """
+
+    required_setting: str
+    required_names: list[str]
+    optional_setting: str | None = None
+    optional_names: list[str] = field(default_factory=list)
+
+
+class _AlignmentRole(Enum):
+    """What an alignment is used for in one kind of MSA."""
+
+    # Named in the setting the MSA is made from, e.g. aln_order
+    REQUIRED = "required"
+    # Only named in a setting the MSA also uses, e.g. msas_to_pair
+    OPTIONAL = "optional"
+    # Named in neither, so not used
+    UNSELECTED = "unselected"
+
+
+class _UnreadReason(Enum):
+    """Why an alignment found in a chain's MSA files is not read."""
+
+    # Raw .sto/.a3m files are only read if named in max_seq_counts
+    NOT_IN_MAX_SEQ_COUNTS = "not_in_max_seq_counts"
+    # A max_seq_counts entry of 0 disables an alignment in any format
+    DISABLED = "disabled"
+
+
+@dataclass(frozen=True)
+class _AlignmentStatus:
+    """What happens to one alignment found in a chain's MSA files, and why.
+
+    Attributes:
+        name (str):
+            The alignment name, see `_find_alignment_names`.
+        role (_AlignmentRole):
+            What the alignment is used for.
+        unread_reason (_UnreadReason | None):
+            Why the alignment is not read, or None if it is read.
+    """
+
+    name: str
+    role: _AlignmentRole
+    unread_reason: _UnreadReason | None
+
+    @property
+    def is_read(self) -> bool:
+        return self.unread_reason is None
+
+
+def _why_ignored(
+    status: _AlignmentStatus, selection: _AlignmentSelection
+) -> str | None:
+    """Why an alignment found in a chain's MSA files is not used, or None if it is
+    used or was deliberately disabled."""
+    if status.unread_reason is _UnreadReason.DISABLED:
+        return None
+    if status.role is _AlignmentRole.UNSELECTED:
+        settings = " or ".join(
+            setting
+            for setting in [selection.required_setting, selection.optional_setting]
+            if setting is not None
+        )
+        return f"not in {settings}"
+    if status.unread_reason is _UnreadReason.NOT_IN_MAX_SEQ_COUNTS:
+        return "not in max_seq_counts"
+    return None
+
+
+def _unread_notes(statuses: list[_AlignmentStatus], roles: set[_AlignmentRole]) -> str:
+    """Explains why alignments with one of `roles` are not read, for an error
+    message."""
+    not_in_max_seq_counts = sorted(
+        status.name
+        for status in statuses
+        if status.unread_reason is _UnreadReason.NOT_IN_MAX_SEQ_COUNTS
+        and status.role in roles
+    )
+    disabled = sorted(
+        status.name
+        for status in statuses
+        if status.unread_reason is _UnreadReason.DISABLED and status.role in roles
+    )
+    notes = ""
+    if not_in_max_seq_counts:
+        notes += (
+            "; .sto/.a3m alignments must also be named in max_seq_counts, which "
+            f"{not_in_max_seq_counts} are not"
+        )
+    if disabled:
+        notes += f"; {disabled} are disabled by a max_seq_counts of 0"
+    return notes
+
+
 class MsaSampleParserInference(MsaSampleParser):
     """Inference MSA sample parser class"""
 
@@ -567,6 +732,11 @@ class MsaSampleParserInference(MsaSampleParser):
     ) -> MsaSampleParserMapper:
         """Creates maps between chain IDs, representative IDs, and molecule types.
 
+        Chains with the same molecule type and sequence share one representative,
+        named after the first such chain, and are featurized from the MSA files of
+        that chain. MSA file and directory names play no part in this, so they can
+        be named arbitrarily. A chain without a sequence is its own representative.
+
         Updates the following attributes:
             - chain_id_to_rep_id: dict
                 Maps chain IDs to representative IDs.
@@ -576,9 +746,20 @@ class MsaSampleParserInference(MsaSampleParser):
                 Maps representative IDs to main MSA file paths.
             - rep_id_to_paired_msa_paths: dict
                 Maps representative IDs to paired MSA file paths.
+
+        Problems with the chains' MSA files, including those found by
+        `check_alignment_names`, are warned about or raised together.
+
+        Raises:
+            MsaValidationError:
+                If any representative's MSA files are unusable, see
+                `check_alignment_names`.
         """
         # Create maps
         maps = MsaSampleParserMapper()
+        issues: list[MsaIssue] = []
+        sequence_to_rep_id: dict[tuple[MoleculeType, str], str] = {}
+        chain_ids_without_msas: list[str] = []
         for chain_id, chain_data in input.msa_chain_data.items():
             if chain_data.molecule_type in self.config.moltypes:
                 main_msa_file_paths = (
@@ -592,42 +773,50 @@ class MsaSampleParserInference(MsaSampleParser):
                     else []
                 )
 
-                # Fetch representative ID
-                rep_ids = set()
-                # from paired if no main MSAs
-                paths = (
-                    main_msa_file_paths
-                    if len(main_msa_file_paths) > 0
-                    else paired_msa_file_paths
-                )
-
-                if len(paths) == 0:
-                    warnings.warn(
-                        (
-                            f"Expected MSA file for chain {chain_id} of type "
-                            f"{chain_data.molecule_type.name} in query "
-                            f"{input.query_name}, but no MSA files found. No MSA "
-                            "features will be computed for this chain."
-                        ),
-                        stacklevel=2,
-                    )
+                if len(main_msa_file_paths) == 0 and len(paired_msa_file_paths) == 0:
+                    # Warned about below, once all chains with MSAs are known
+                    chain_ids_without_msas.append(chain_id)
                     continue
 
-                for msa_file_path in paths:
-                    if msa_file_path.is_dir() or msa_file_path.suffix == ".npz":
-                        rep_ids.add(msa_file_path.stem)
-                    elif msa_file_path.suffix in [".sto", ".a3m"]:
-                        rep_ids.add(msa_file_path.parent.stem)
-
-                rep_id = sorted(rep_ids)[0]
-
-                if len(rep_ids) > 1:
-                    warnings.warn(
-                        f"Found multiple representative IDs {rep_ids} for chain ID "
-                        f"{chain_id}. Only the first representative ID will be used:"
-                        f" {rep_id}.",
-                        stacklevel=2,
+                # Fetch representative ID
+                if chain_data.sequence is None:
+                    rep_id = chain_id
+                else:
+                    rep_id = sequence_to_rep_id.setdefault(
+                        (chain_data.molecule_type, chain_data.sequence), chain_id
                     )
+
+                # Identical sequences pointing at different MSA files: only the
+                # representative's files are read. The same files given differently,
+                # e.g. as a directory or as relative paths, are not different.
+                for msa_kind, rep_id_to_paths, paths in [
+                    (MsaKind.MAIN, maps.rep_id_to_main_msa_paths, main_msa_file_paths),
+                    (
+                        MsaKind.PAIRED,
+                        maps.rep_id_to_paired_msa_paths,
+                        paired_msa_file_paths,
+                    ),
+                ]:
+                    rep_paths = rep_id_to_paths.get(rep_id)
+                    if (
+                        rep_paths is not None
+                        and paths
+                        and not self._same_alignment_files(paths, rep_paths)
+                    ):
+                        issues.append(
+                            MsaIssue(
+                                kind=MsaIssueKind.DIFFERENT_FILES_SAME_SEQUENCE,
+                                query_name=input.query_name,
+                                chain_ids=(rep_id, chain_id),
+                                msa_kind=msa_kind,
+                                details={
+                                    "rep_chain": rep_id,
+                                    "chain": chain_id,
+                                    "rep_paths": [str(p) for p in rep_paths],
+                                    "paths": [str(p) for p in paths],
+                                },
+                            )
+                        )
 
                 maps.chain_id_to_rep_id[chain_id] = rep_id
                 maps.chain_id_to_mol_type[chain_id] = chain_data.molecule_type
@@ -648,7 +837,362 @@ class MsaSampleParserInference(MsaSampleParser):
                 ):
                     maps.rep_id_to_paired_msa_paths[rep_id] = paired_msa_file_paths
 
+        for chain_id in chain_ids_without_msas:
+            chain_data = input.msa_chain_data[chain_id]
+            # A copy of a sequence that has MSAs elsewhere in the query is most
+            # likely missing its paths by mistake
+            copy_with_msas = (
+                sequence_to_rep_id.get((chain_data.molecule_type, chain_data.sequence))
+                if chain_data.sequence is not None
+                else None
+            )
+            copy_note = (
+                f" Chain {copy_with_msas} has the same sequence and does have MSA "
+                f"files; to use them for chain {chain_id} too, list both chain IDs "
+                "in one chain entry or give both entries the same MSA file paths."
+                if copy_with_msas is not None
+                else ""
+            )
+            issues.append(
+                MsaIssue(
+                    kind=MsaIssueKind.CHAIN_WITHOUT_MSAS,
+                    query_name=input.query_name,
+                    chain_ids=(chain_id,),
+                    details={
+                        "molecule_type": chain_data.molecule_type.name,
+                        "copy_note": copy_note,
+                    },
+                )
+            )
+
+        issues += self.check_alignment_names(input=input, maps=maps)
+        report_msa_issues(input.query_name, issues)
+
         return maps
+
+    def check_alignment_names(
+        self, input: MsaSampleProcessorInputInference, maps: MsaSampleParserMapper
+    ) -> list[MsaIssue]:
+        """Checks that each representative's MSA files hold alignments that the MSA
+        settings use, so misnamed files fail early with an actionable message.
+
+        Alignments are selected by name (see `_find_alignment_names`): .sto/.a3m
+        files are only read if named in `max_seq_counts`, a `max_seq_counts` entry
+        of 0 disables an alignment, main MSAs are stacked from the alignments named
+        in `aln_order`, online pairing uses those named in `msas_to_pair`, and
+        precomputed paired MSAs are stacked from those named in `paired_msa_order`.
+        Each alignment found is classified once, see `_classify_alignments`, and
+        the rules below follow from that:
+
+            - NO_USABLE_ALIGNMENT: for each kind of MSA the query uses, at least
+              one alignment the MSA is made from must be read.
+            - IGNORED_ALIGNMENTS: for each kind of MSA the query uses, alignments
+              that are found but not used are reported.
+            - NO_READABLE_ALIGNMENT: for a kind of MSA the query does not use, any
+              alignment must be read if a representative's query sequence is taken
+              from it.
+            - UNPAIRABLE_CHAINS: protein chains of a heteromer that online pairing
+              cannot pair are reported.
+
+        Args:
+            input (MsaSampleProcessorInputInference):
+                The query's MSA input, whose `use_*` flags say which kinds of MSA
+                are used.
+            maps (MsaSampleParserMapper):
+                Maps from `create_maps`, with each representative's MSA paths.
+
+        Returns:
+            list[MsaIssue]:
+                The problems found, to be passed to `report_msa_issues`.
+        """
+        issues = []
+        rep_id_to_read_main: dict[str, set[str]] = {}
+        rep_id_to_chain_ids: dict[str, tuple[str, ...]] = {}
+        for msa_kind, rep_id_to_paths in [
+            (MsaKind.MAIN, maps.rep_id_to_main_msa_paths),
+            (MsaKind.PAIRED, maps.rep_id_to_paired_msa_paths),
+        ]:
+            selection = self._alignment_selection(msa_kind)
+            uses_msa_kind = self._uses(input, msa_kind)
+            for rep_id, paths in rep_id_to_paths.items():
+                chain_ids = rep_id_to_chain_ids.setdefault(
+                    rep_id, chains_of_rep(maps.chain_id_to_rep_id, rep_id)
+                )
+                statuses = self._classify_alignments(paths, selection)
+                if msa_kind is MsaKind.MAIN:
+                    rep_id_to_read_main[rep_id] = {
+                        status.name for status in statuses if status.is_read
+                    }
+                problems = self._alignment_name_problems(
+                    statuses,
+                    selection,
+                    uses_msa_kind=uses_msa_kind,
+                    is_query_source=self._is_query_source(maps, rep_id, msa_kind),
+                )
+                issues += [
+                    MsaIssue(
+                        kind=kind,
+                        query_name=input.query_name,
+                        chain_ids=chain_ids,
+                        msa_kind=msa_kind,
+                        details={
+                            "paths": [str(p) for p in paths],
+                            "found": [status.name for status in statuses],
+                            **details,
+                        },
+                    )
+                    for kind, details in problems
+                ]
+
+        # Online pairing only runs without precomputed paired MSAs
+        if self._uses(input, MsaKind.PAIRED) and not maps.rep_id_to_paired_msa_paths:
+            issues += self._unpairable_chains(
+                input, maps, rep_id_to_read_main, rep_id_to_chain_ids
+            )
+
+        return issues
+
+    @staticmethod
+    def _uses(input: MsaSampleProcessorInputInference, msa_kind: MsaKind) -> bool:
+        """Whether the query uses MSAs of `msa_kind`."""
+        use_msa_kind = (
+            input.use_main_msas if msa_kind is MsaKind.MAIN else input.use_paired_msas
+        )
+        return input.use_msas and use_msa_kind
+
+    @staticmethod
+    def _is_query_source(
+        maps: MsaSampleParserMapper, rep_id: str, msa_kind: MsaKind
+    ) -> bool:
+        """Whether a representative's query sequence is taken from its `msa_kind`
+        MSAs: from the main MSAs, or the paired ones if there are no main MSAs."""
+        return msa_kind is MsaKind.MAIN or rep_id not in maps.rep_id_to_main_msa_paths
+
+    def _alignment_selection(self, msa_kind: MsaKind) -> _AlignmentSelection:
+        """The MSA settings that select the alignments of `msa_kind` MSAs."""
+        if msa_kind is MsaKind.MAIN:
+            return _AlignmentSelection(
+                required_setting="aln_order",
+                required_names=self.config.aln_order,
+                optional_setting="msas_to_pair",
+                optional_names=self.config.msas_to_pair,
+            )
+        return _AlignmentSelection(
+            required_setting="paired_msa_order",
+            required_names=self.config.paired_msa_order,
+        )
+
+    def _classify_alignments(
+        self, paths: list[Path], selection: _AlignmentSelection
+    ) -> list[_AlignmentStatus]:
+        """Finds the alignments at a representative's MSA paths of one kind, and
+        what happens to each of them.
+
+        Args:
+            paths (list[Path]):
+                MSA files, or directories containing them.
+            selection (_AlignmentSelection):
+                The settings selecting the alignments of this kind of MSA.
+
+        Returns:
+            list[_AlignmentStatus]:
+                One status per alignment found, sorted by name.
+        """
+        statuses = []
+        for name, path in sorted(_find_alignment_names(paths).items()):
+            if name in selection.required_names:
+                role = _AlignmentRole.REQUIRED
+            elif name in selection.optional_names:
+                role = _AlignmentRole.OPTIONAL
+            else:
+                role = _AlignmentRole.UNSELECTED
+
+            if self._is_disabled_alignment(name):
+                unread_reason = _UnreadReason.DISABLED
+            elif path.suffix != ".npz" and name not in self.config.max_seq_counts:
+                unread_reason = _UnreadReason.NOT_IN_MAX_SEQ_COUNTS
+            else:
+                unread_reason = None
+            statuses.append(_AlignmentStatus(name, role, unread_reason))
+        return statuses
+
+    @staticmethod
+    def _alignment_name_problems(
+        statuses: list[_AlignmentStatus],
+        selection: _AlignmentSelection,
+        uses_msa_kind: bool,
+        is_query_source: bool,
+    ) -> list[tuple[MsaIssueKind, dict[str, object]]]:
+        """Applies the rules of `check_alignment_names` to the alignments of one
+        representative's MSA files of one kind.
+
+        Args:
+            statuses (list[_AlignmentStatus]):
+                The alignments found in the files, see `_classify_alignments`.
+            selection (_AlignmentSelection):
+                The settings selecting the alignments of this kind of MSA.
+            uses_msa_kind (bool):
+                Whether the query uses this kind of MSA.
+            is_query_source (bool):
+                Whether the representative's query sequence is taken from these
+                files.
+
+        Returns:
+            list[tuple[MsaIssueKind, dict[str, object]]]:
+                The kind of each problem found, with the details of its message.
+        """
+        read = [status for status in statuses if status.is_read]
+        if uses_msa_kind:
+            if not any(status.role is _AlignmentRole.REQUIRED for status in read):
+                notes = _unread_notes(
+                    statuses,
+                    roles={_AlignmentRole.REQUIRED, _AlignmentRole.OPTIONAL},
+                )
+                pairing_only = sorted(
+                    status.name
+                    for status in read
+                    if status.role is _AlignmentRole.OPTIONAL
+                )
+                if pairing_only:
+                    notes += (
+                        f". {pairing_only} are only used as named in "
+                        f"{selection.optional_setting}, e.g. for species pairing"
+                    )
+                return [
+                    (
+                        MsaIssueKind.NO_USABLE_ALIGNMENT,
+                        {
+                            "required_setting": selection.required_setting,
+                            "required_names": selection.required_names,
+                            "notes": notes,
+                        },
+                    )
+                ]
+            ignored = {
+                status.name: reason
+                for status in statuses
+                if (reason := _why_ignored(status, selection)) is not None
+            }
+            if ignored:
+                return [
+                    (
+                        MsaIssueKind.IGNORED_ALIGNMENTS,
+                        {
+                            "ignored": ", ".join(
+                                f"{name} ({reason})"
+                                for name, reason in sorted(ignored.items())
+                            )
+                        },
+                    )
+                ]
+        elif is_query_source and not read:
+            return [
+                (
+                    MsaIssueKind.NO_READABLE_ALIGNMENT,
+                    {"notes": _unread_notes(statuses, roles=set(_AlignmentRole))},
+                )
+            ]
+        return []
+
+    def _unpairable_chains(
+        self,
+        input: MsaSampleProcessorInputInference,
+        maps: MsaSampleParserMapper,
+        rep_id_to_read_main: dict[str, set[str]],
+        rep_id_to_chain_ids: dict[str, tuple[str, ...]],
+    ) -> list[MsaIssue]:
+        """Finds the protein chains of a heteromer that online pairing cannot pair,
+        because none of their main alignments is named in msas_to_pair.
+
+        Args:
+            input (MsaSampleProcessorInputInference):
+                The query's MSA input.
+            maps (MsaSampleParserMapper):
+                Maps from `create_maps`.
+            rep_id_to_read_main (dict[str, set[str]]):
+                The main alignments read for each representative.
+            rep_id_to_chain_ids (dict[str, tuple[str, ...]]):
+                The chains of each representative.
+
+        Returns:
+            list[MsaIssue]:
+                An UNPAIRABLE_CHAINS issue if there are such chains, else nothing.
+        """
+        protein_rep_ids = [
+            rep_id
+            for rep_id in rep_id_to_read_main
+            if maps.rep_id_to_mol_type[rep_id] == MoleculeType.PROTEIN
+        ]
+        if len(protein_rep_ids) < 2:
+            return []
+        unpairable = [
+            rep_id
+            for rep_id in protein_rep_ids
+            if not rep_id_to_read_main[rep_id] & set(self.config.msas_to_pair)
+        ]
+        if not unpairable:
+            return []
+        consequence = (
+            "so no species-paired MSA rows are generated for this complex"
+            if len(protein_rep_ids) - len(unpairable) < 2
+            else "so these chains get no species-paired MSA rows"
+        )
+        return [
+            MsaIssue(
+                kind=MsaIssueKind.UNPAIRABLE_CHAINS,
+                query_name=input.query_name,
+                chain_ids=tuple(
+                    chain_id
+                    for rep_id in unpairable
+                    for chain_id in rep_id_to_chain_ids[rep_id]
+                ),
+                msa_kind=MsaKind.MAIN,
+                details={
+                    "msas_to_pair": self.config.msas_to_pair,
+                    "consequence": consequence,
+                },
+            )
+        ]
+
+    def _is_disabled_alignment(self, name: str) -> bool:
+        """Whether a max_seq_counts entry of 0 disables the alignment `name`.
+
+        This applies to raw and preparsed .npz alignments alike, although other
+        max_seq_counts entries only limit raw ones.
+        """
+        return self.config.max_seq_counts.get(name) == 0
+
+    def _drop_disabled_alignments(
+        self, msas: dict[str, MsaArray]
+    ) -> dict[str, MsaArray]:
+        """Drops the parsed alignments disabled by a max_seq_counts entry of 0,
+        which would otherwise be left without rows."""
+        return {
+            name: msa
+            for name, msa in msas.items()
+            if not self._is_disabled_alignment(name)
+        }
+
+    @staticmethod
+    def _same_alignment_files(paths: list[Path], other_paths: list[Path]) -> bool:
+        """Whether two lists of MSA paths hold the same alignments in the same
+        files, however the paths are given: as files or the directories
+        containing them, in any order, and as relative or absolute paths.
+
+        Args:
+            paths (list[Path]):
+                MSA files, or directories containing them.
+            other_paths (list[Path]):
+                MSA files, or directories containing them.
+        """
+
+        def alignment_files(paths: list[Path]) -> dict[str, Path]:
+            return {
+                name: path.resolve()
+                for name, path in _find_alignment_names(paths).items()
+            }
+
+        return alignment_files(paths) == alignment_files(other_paths)
 
     def parse_msas(self, maps: MsaSampleParserMapper) -> MsaSampleParserMapper:
         """Parses MSAs for each representative chain and representative chain set.
@@ -699,12 +1243,18 @@ class MsaSampleParserInference(MsaSampleParser):
                         )
 
                     # Parse MSAs into a dict of MsaArrays
-                    all_msas_per_chain = chain_msa_parser(file_list=file_list)
+                    all_msas_per_chain = self._drop_disabled_alignments(
+                        chain_msa_parser(file_list=file_list)
+                    )
                     maps.rep_id_to_main_msa[rep_id] = all_msas_per_chain
 
-                    # Create query sequence from the first row
+                    # Create query sequence from the first row of a used alignment
+                    query_alignment = select_query_alignment(
+                        all_msas_per_chain,
+                        [*self.config.aln_order, *self.config.msas_to_pair],
+                    )
                     maps.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
-                        sorted(all_msas_per_chain.keys())[0]
+                        query_alignment
                     ].msa[0, :][np.newaxis, :]
 
                 # Parse paired MSAs
@@ -735,13 +1285,19 @@ class MsaSampleParserInference(MsaSampleParser):
                         )
 
                     # Parse MSAs into a dict of MsaArrays
-                    all_msas_per_chain = chain_msa_parser(file_list=file_list)
+                    all_msas_per_chain = self._drop_disabled_alignments(
+                        chain_msa_parser(file_list=file_list)
+                    )
                     maps.rep_id_to_paired_msa[rep_id] = all_msas_per_chain
 
                     if rep_id not in maps.rep_id_to_query_seq:
-                        # Create query sequence from the first row
+                        # Create query sequence from the first row of a used
+                        # alignment
+                        query_alignment = select_query_alignment(
+                            all_msas_per_chain, self.config.paired_msa_order
+                        )
                         maps.rep_id_to_query_seq[rep_id] = all_msas_per_chain[
-                            sorted(all_msas_per_chain.keys())[0]
+                            query_alignment
                         ].msa[0, :][np.newaxis, :]
 
         return maps
