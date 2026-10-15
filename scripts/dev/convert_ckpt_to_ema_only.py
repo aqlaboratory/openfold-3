@@ -26,9 +26,10 @@ def convert_checkpoint_to_ema_only(input_ckpt_path, output_ckpt_path):
 
 
 def add_version_tensor_to_checkpoint(input_ckpt, output_ckpt):
-    # Should only be required for checkpoint release before versioning was added
+    # Should only be required for checkpoint release before versioning was added.
+    # A stored version describes the layout of the weights, so it is kept.
     model = torch.load(input_ckpt, map_location="cpu")
-    model["version_tensor"] = MODEL_VERSION
+    model.setdefault("version_tensor", MODEL_VERSION)
     torch.save(model, output_ckpt)
 
 
