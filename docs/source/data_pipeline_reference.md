@@ -44,6 +44,27 @@ The core structure preprocessing converts raw PDB mmCIF files into an efficient 
 - **Generating reference molecules** with RDKit conformers for each unique ligand (saved as **SDF files\***)
 - **Extracting metadata** into a `metadata.json` with structure-level, chain-level, and interface-level information
 
+Before structure parsing, each input is checked against the minimum schema required by
+the preprocessing workflow. The validator reports all missing categories and data items
+in one error. Each file must contain exactly one named data block; this name becomes the
+structure ID. The required data items are:
+
+- `_atom_site`: `group_PDB`, `type_symbol`, `label_atom_id`, `label_comp_id`,
+  `label_asym_id`, `label_entity_id`, `label_seq_id`, `Cartn_x`, `Cartn_y`,
+  `Cartn_z`, and `pdbx_PDB_model_num`
+- `_chem_comp`: `id` and `type`
+- `_entity_poly`: `entity_id` and `pdbx_seq_one_letter_code_can`
+- `_entity_poly_seq`: `entity_id`, `num`, and `mon_id`
+- `_exptl`: `method`
+- `_pdbx_audit_revision_history`: `revision_date`
+
+Resolution metadata and `_struct_asym` are not read by the current ingestion path.
+Biological-assembly records may be omitted, in which case preprocessing uses the
+asymmetric unit. If `_pdbx_struct_assembly_gen` is present, its operation fields and
+the corresponding `_pdbx_struct_oper_list` are required. Using
+`--max-polymer-chains` additionally requires
+`_pdbx_struct_assembly.oligomeric_count`.
+
 Script: [scripts/data_preprocessing/preprocess_pdb_of3.py](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/preprocess_pdb_of3.py)
 
 Output: per-structure directories with **NPZ\***, FASTA, and optionally CIF files, plus a **metadata.json\*** and **reference molecule SDF files\***:
