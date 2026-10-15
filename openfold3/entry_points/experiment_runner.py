@@ -769,6 +769,19 @@ class InferenceExperimentRunner(ExperimentRunner):
 
     def _load_state_dict_with_version_validation(self, state_dict: dict) -> None:
         """Validate checkpoint keys, warning if only version_tensor is missing."""
+        # Check the version first: a version with no migration path to the current
+        # one also explains any key mismatch.
+        loaded_model_version = state_dict.get("model.version_tensor")
+        current_model_verison = OF3_MODEL_VERSION
+        if loaded_model_version is not None and not torch.equal(
+            loaded_model_version, current_model_verison
+        ):
+            raise ValueError(
+                f"Loaded checkpoint model version ({loaded_model_version}) does not"
+                f" match current model version ({current_model_verison})."
+                f" Please verify your checkpoint selection."
+            )
+
         # perform the key check manually.
         model_keys = set(self.lightning_module.state_dict().keys())
         ckpt_keys = set(state_dict.keys())
@@ -791,15 +804,6 @@ class InferenceExperimentRunner(ExperimentRunner):
                 f"Missing keys: {missing}, Unexpected keys: {unexpected}"
             )
 
-        # raise error if version tensor is present but does not match
-        loaded_model_version = state_dict.get("model.version_tensor")
-        current_model_verison = OF3_MODEL_VERSION
-        if not torch.equal(loaded_model_version, current_model_verison):
-            raise ValueError(
-                f"Loaded checkpoint model version ({loaded_model_version}) does not"
-                f" match current model version ({current_model_verison})."
-                f" Please verify your checkpoint selection."
-            )
         self.lightning_module.load_state_dict(state_dict, strict=True)
         return
 
