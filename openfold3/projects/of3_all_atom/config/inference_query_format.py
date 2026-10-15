@@ -185,6 +185,7 @@ class Query(BaseModel):
     use_main_msas: bool = True
     covalent_bonds: list[Bond] | None = None
     pocket_constraint: PocketConstraint | None = None
+    ligand_chemical_steering: bool = False
 
     @model_validator(mode="after")
     def validate_pocket_constraint(self) -> "Query":
@@ -203,6 +204,17 @@ class Query(BaseModel):
             raise ValueError(
                 f"pocket constraint ligand_chain_id {ligand_chain_id!r} does not "
                 "match any ligand chain"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_ligand_chemical_steering(self) -> "Query":
+        """Require ligand chemistry when chemical steering is enabled."""
+        if self.ligand_chemical_steering and not any(
+            chain.molecule_type == MoleculeType.LIGAND for chain in self.chains
+        ):
+            raise ValueError(
+                "'ligand_chemical_steering' requires at least one ligand chain."
             )
         return self
 

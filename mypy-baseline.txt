@@ -49,7 +49,6 @@ openfold3/core/data/framework/single_datasets/base_of3.py:0: error: callable? no
 openfold3/core/data/framework/single_datasets/base_of3.py:0: error: callable? not callable  [misc]
 openfold3/core/data/framework/single_datasets/base_of3.py:0: note: did you mean to use ',' instead of ':' ?
 openfold3/core/data/framework/single_datasets/inference.py:0: error: "dict" expects 2 type arguments, but 1 given  [type-arg]
-openfold3/core/data/framework/single_datasets/inference.py:0: error: Argument 1 to "update" of "MutableMapping" has incompatible type "dict[str, Tensor]"; expected "SupportsKeysAndGetItem[str, AtomArray[Any]]"  [arg-type]
 openfold3/core/data/framework/single_datasets/inference.py:0: error: Incompatible types in assignment (expression has type "BiotiteCCDWrapper", variable has type "CIFFile")  [assignment]
 openfold3/core/data/framework/single_datasets/inference.py:0: error: Invalid type comment or annotation  [valid-type]
 openfold3/core/data/framework/single_datasets/inference.py:0: note: did you mean to use ',' instead of ':' ?
