@@ -17,6 +17,7 @@ from unittest.mock import patch
 import pytest
 import torch
 
+from openfold3.projects.of3_all_atom.model import MODEL_VERSION
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.projects.of3_all_atom.runner import OpenFold3AllAtom, logger
 
@@ -131,3 +132,18 @@ def test_version_registration():
     # Check that the version property returns the expected version string
     expected_version = "2.0.0"
     assert model_runner.version == expected_version
+
+
+def test_loading_a_checkpoint_does_not_mutate_model_version() -> None:
+    project_entry = OF3ProjectEntry()
+    config = project_entry.get_model_config_with_presets()
+    model_runner = OpenFold3AllAtom(model_config=config)
+    expected = MODEL_VERSION.clone()
+
+    state_dict = model_runner.model.state_dict()
+    state_dict["version_tensor"] = torch.tensor([9.0, 9.0, 9.0])
+    model_runner.model.load_state_dict(state_dict)
+
+    loaded = model_runner.model.state_dict()["version_tensor"]
+    assert torch.equal(loaded, torch.tensor([9.0, 9.0, 9.0]))
+    assert torch.equal(MODEL_VERSION, expected)

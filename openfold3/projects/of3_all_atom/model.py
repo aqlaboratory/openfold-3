@@ -113,7 +113,8 @@ class OpenFold3(nn.Module):
         # Confidence and Distogram Heads
         self.aux_heads = AuxiliaryHeadsAllAtom(config=self.config.architecture.heads)
 
-        self.register_buffer("version_tensor", MODEL_VERSION)
+        # Clone so that loading a checkpoint cannot overwrite MODEL_VERSION in place
+        self.register_buffer("version_tensor", MODEL_VERSION.clone())
 
     def _disable_activation_checkpointing(self):
         """
