@@ -288,13 +288,32 @@ class OpenFold3(nn.Module):
 
                     del input_tensors, msa_mask
                 else:
-                    z = self.msa_module(
-                        m,
-                        z,
-                        msa_mask=msa_mask.to(dtype=m.dtype),
+                    with torch.autograd.graph.save_on_cpu(pin_memory=True):
+                        z = self.msa_module(
+                            m,
+                            z,
+                            msa_mask=msa_mask.to(dtype=m.dtype),
+                            pair_mask=pair_mask.to(dtype=z.dtype),
+                            chunk_size=mode_mem_settings.chunk_size,
+                            transition_ckpt_chunk_size=transition_ckpt_chunk_size,
+                            use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
+                            use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
+                            use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
+                            use_lma=mode_mem_settings.use_lma,
+                            inplace_safe=inplace_safe,
+                            _mask_trans=True,
+                        )
+
+                    del m, msa_mask
+
+                s = s_init + self.linear_s(self.layer_norm_s(s))
+                with torch.autograd.graph.save_on_cpu(pin_memory=True):
+                    s, z = self.pairformer_stack(
+                        s=s,
+                        z=z,
+                        single_mask=token_mask.to(dtype=s.dtype),
                         pair_mask=pair_mask.to(dtype=z.dtype),
                         chunk_size=mode_mem_settings.chunk_size,
-                        transition_ckpt_chunk_size=transition_ckpt_chunk_size,
                         use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
                         use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
                         use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
@@ -302,23 +321,6 @@ class OpenFold3(nn.Module):
                         inplace_safe=inplace_safe,
                         _mask_trans=True,
                     )
-
-                    del m, msa_mask
-
-                s = s_init + self.linear_s(self.layer_norm_s(s))
-                s, z = self.pairformer_stack(
-                    s=s,
-                    z=z,
-                    single_mask=token_mask.to(dtype=s.dtype),
-                    pair_mask=pair_mask.to(dtype=z.dtype),
-                    chunk_size=mode_mem_settings.chunk_size,
-                    use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
-                    use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
-                    use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
-                    use_lma=mode_mem_settings.use_lma,
-                    inplace_safe=inplace_safe,
-                    _mask_trans=True,
-                )
 
         del s_init, z_init
 
