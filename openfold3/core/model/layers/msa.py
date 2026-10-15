@@ -420,8 +420,6 @@ class MSAColumnAttention(nn.Module):
 
         # [*, N_seq, N_res, C_in]
         m = m.transpose(-2, -3)
-        if mask is not None:
-            mask = mask.transpose(-1, -2)
 
         return m
 
@@ -569,7 +567,7 @@ class MSAPairWeightedAveraging(nn.Module):
         self,
         z: torch.Tensor,
         mask: torch.Tensor | None = None,
-    ) -> [torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor:
         if mask is None:
             # [*, N_token, N_token]
             mask = z.new_ones(
@@ -592,7 +590,9 @@ class MSAPairWeightedAveraging(nn.Module):
 
         return z
 
-    def _get_pair_weighted_avg(self, m: torch.Tensor, z: torch.Tensor) -> torch.Tensor:
+    def _get_pair_weighted_avg(
+        self, m: torch.Tensor, z: torch.Tensor, use_softmax_kernel: bool
+    ) -> torch.Tensor:
         v = self.linear_v(m)
 
         # [*, Q/K, H, C_hidden]
@@ -601,7 +601,7 @@ class MSAPairWeightedAveraging(nn.Module):
         # [*, H, Q/K, C_hidden]
         v = v.transpose(-2, -3)
 
-        if triton_is_installed and z.is_cuda:
+        if use_softmax_kernel:
             o = fused_softmax(z)
         else:
             o = softmax_no_cast(z, -1)
@@ -612,9 +612,9 @@ class MSAPairWeightedAveraging(nn.Module):
         return o
 
     def compute_msa_pair_average(
-        self, m: torch.Tensor, z: torch.Tensor
+        self, m: torch.Tensor, z: torch.Tensor, use_softmax_kernel: bool
     ) -> torch.Tensor:
-        o = self._get_pair_weighted_avg(m=m, z=z)
+        o = self._get_pair_weighted_avg(m=m, z=z, use_softmax_kernel=use_softmax_kernel)
 
         g = self.sigmoid(self.linear_g(m))
 
@@ -636,6 +636,7 @@ class MSAPairWeightedAveraging(nn.Module):
         m: torch.Tensor,
         z: torch.Tensor,
         chunk_size: int,
+        use_softmax_kernel: bool,
     ) -> torch.Tensor:
         def fn(m_in, z_in):
             # [*, N_seq, N_token, C_m]
@@ -643,11 +644,10 @@ class MSAPairWeightedAveraging(nn.Module):
             return self.compute_msa_pair_average(
                 m=m_in,
                 z=z_in,
+                use_softmax_kernel=use_softmax_kernel,
             )
 
         inputs = {"m_in": m, "z_in": z}
-
-        fn = partial(fn)
 
         return chunk_layer(
             fn, inputs, chunk_size=chunk_size, no_batch_dims=len(m.shape[:-2])
@@ -659,6 +659,7 @@ class MSAPairWeightedAveraging(nn.Module):
         z: torch.Tensor | None = None,
         mask: torch.Tensor | None = None,
         chunk_size: int | None = None,
+        use_softmax_kernel: bool = False,
         **kwargs,
     ) -> torch.Tensor:
         """
@@ -673,15 +674,22 @@ class MSAPairWeightedAveraging(nn.Module):
                 Size of chunks into which the inputs are split along their
                 batch dimensions. A low value decreases memory overhead at the
                 cost of slower execution. Chunking is not performed by default.
+            use_softmax_kernel:
+                Whether to use the fused softmax kernel. Needed when m has a
+                large MSA seq dimension.
 
         """
         z = self._prep_inputs(z=z, mask=mask)
 
         if chunk_size is not None:
-            m = self._chunk(m=m, z=z, chunk_size=chunk_size)
+            m = self._chunk(
+                m=m, z=z, chunk_size=chunk_size, use_softmax_kernel=use_softmax_kernel
+            )
         else:
             # [*, N_seq, N_token, C_m]
             m = self.layer_norm_m(m)
-            m = self.compute_msa_pair_average(m=m, z=z)
+            m = self.compute_msa_pair_average(
+                m=m, z=z, use_softmax_kernel=use_softmax_kernel
+            )
 
         return m

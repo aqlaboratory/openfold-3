@@ -25,6 +25,7 @@ from openfold3.core.data.io.sequence.template import (
     M8Parser,
     StoParser,
     TemplateData,
+    calculate_ids_hit,
 )
 from openfold3.core.data.io.structure.cif import _load_ciffile
 from openfold3.core.data.pipelines.preprocessing.template import (
@@ -133,6 +134,48 @@ def test_m8_parser():
         templates_no_cigar.values(), expected_templates_no_cigar.values(), strict=False
     ):
         _compare_template_data(actual, expected)
+
+
+def test_m8_parser_keeps_file_order_for_tied_e_values():
+    """Hits with equal e-values keep their order in the file.
+
+    ColabFold ranks its hits; sorting by e-value must not reshuffle ties. These are
+    ColabFold's hits for hen egg-white lysozyme (1fdl chain C), 13 of them tied.
+    """
+    hits = [
+        ("1ior_A", 2.201e-61),
+        ("1ioq_A", 1.068e-60),
+        ("1iot_A", 2.754e-60),
+        ("1kxw_A", 3.778e-60),
+        ("7ynv_A", 5.181e-60),
+        ("1ir7_A", 5.181e-60),
+        ("5lyz_A", 7.106e-60),
+        ("4m6d_E", 7.106e-60),
+        ("1xej_A", 7.106e-60),
+        ("1sf6_A", 7.106e-60),
+        ("1xek_A", 7.106e-60),
+        ("1hem_A", 7.106e-60),
+        ("1ja7_A", 7.106e-60),
+        ("1gxv_A", 7.106e-60),
+        ("2a6u_A", 7.106e-60),
+        ("3lyt_B", 7.106e-60),
+        ("1lsg_A", 7.106e-60),
+        ("2iff_C", 9.745e-60),
+        ("1lsn_A", 9.745e-60),
+        ("6p4a_C", 1.337e-59),
+    ]
+    m8 = pd.DataFrame(
+        [
+            [101, template_id, 1.0, 129, 0, 0, 1, 129, 1, 129, e_value, 260]
+            for template_id, e_value in hits
+        ]
+    )
+
+    templates = M8Parser(max_sequences=None)(m8, query_seq_str="A" * 129)
+
+    actual = [f"{t.entry_id}_{t.chain_id}" for t in templates.values()]
+    expected = [template_id for template_id, _ in hits]
+    assert actual == expected
 
 
 def _compare_template_data(actual, expected):
@@ -276,3 +319,63 @@ def test_parse_templates_from_cif_files_missing_cif_skipped():
     templates = pre._parse_templates_from_cif_files(input_data)
 
     assert templates == {}
+
+
+def _template_with_alignment(query_aln: str, template_aln: str) -> TemplateData:
+    query_arr = np.fromiter(query_aln, dtype="<U1", count=len(query_aln))
+    template_arr = np.fromiter(template_aln, dtype="<U1", count=len(template_aln))
+    query_ids_hit, template_ids_hit = calculate_ids_hit(
+        q=query_arr, t=template_arr, query_start=1, template_start=1
+    )
+    return TemplateData(
+        index=0,
+        entry_id="1abc",
+        chain_id="A",
+        query_aln_pos=query_ids_hit,
+        aln_pos=template_ids_hit,
+        seq_id=1.0,
+        q_cov=1.0,
+        seq=template_aln.replace("-", ""),
+    )
+
+
+@pytest.mark.parametrize(
+    "query_aln, template_aln, expected",
+    [
+        pytest.param(
+            "ACDEF",
+            "ACDEF",
+            [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5]],
+            id="ungapped_alignment_is_identity",
+        ),
+        pytest.param(
+            # query    A C D - - E F G H I K
+            # template A C D E F G H - - I K
+            "ACD--EFGHIK",
+            "ACDEFGH--IK",
+            [[1, 1], [2, 2], [3, 3], [4, 6], [5, 7], [8, 8], [9, 9]],
+            id="gaps_on_both_sides_dropped",
+        ),
+        pytest.param(
+            "ACD--",
+            "--DEF",
+            [[3, 1]],
+            id="offset_alignment_keeps_single_overlap",
+        ),
+        pytest.param(
+            "AC--",
+            "--DE",
+            [],
+            id="no_overlapping_columns_gives_empty_map",
+        ),
+    ],
+)
+def test_build_residue_idx_map_drops_gapped_columns(query_aln, template_aln, expected):
+    """Gapped alignment columns must not reach the template cache: downstream
+    featurization requires one row per aligned residue pair."""
+    idx_map = _template_with_alignment(query_aln, template_aln).build_residue_idx_map()
+
+    assert (idx_map >= 0).all()
+    np.testing.assert_array_equal(
+        idx_map, np.array(expected, dtype=idx_map.dtype).reshape(len(expected), 2)
+    )

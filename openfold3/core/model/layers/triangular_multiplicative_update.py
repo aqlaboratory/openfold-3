@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 # Copyright 2026 Advanced Micro Devices, Inc.
 # Copyright 2021 DeepMind Technologies Limited
 #
@@ -41,6 +42,12 @@ try:
     TRITON_AVAILABLE = True
 except ImportError:
     TRITON_AVAILABLE = False
+
+_TRITON_UNAVAILABLE_ERROR = (
+    "Triton kernels requested (use_triton_triangle_kernels=True) but "
+    "openfold3.core.kernels.triton is not available. Ensure the package is "
+    "installed with Triton support."
+)
 
 warnings.filterwarnings("once")
 
@@ -1114,6 +1121,9 @@ class TriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
+        if use_triton_triangle_kernels and not TRITON_AVAILABLE:
+            raise RuntimeError(_TRITON_UNAVAILABLE_ERROR)
+
         ## NOTE: valid for inplace safe and use_cueq_triangle_kernels to be enabled
         ## inplace safe is used across the codebase and so should not
         ## be disabled. So if use_cueq_triangle_kernels is True, it will always
@@ -1403,6 +1413,9 @@ class FusedTriangleMultiplicativeUpdate(BaseTriangleMultiplicativeUpdate):
         Returns:
             [*, N_res, N_res, C_z] output tensor
         """
+        if use_triton_triangle_kernels and not TRITON_AVAILABLE:
+            raise RuntimeError(_TRITON_UNAVAILABLE_ERROR)
+
         # Supersede inplace_safe conditional if cueq kernel is used
         if use_cueq_triangle_kernels:
             x = _cueq_triangle_mult(

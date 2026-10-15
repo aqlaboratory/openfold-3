@@ -366,9 +366,6 @@ def main(
         log_memory,
     )
 
-    # Seed (use the model/experiment seed from the new config)
-    pl.seed_everything(experiment_cfg.experiment_settings.seed, workers=False)
-
     # Build DataModuleConfig the same way TrainingExperimentRunner does it
     _cfgs: list[TrainingDatasetSpec] = []
     for mode, ds_specs in experiment_cfg.dataset_configs.items():

@@ -56,7 +56,7 @@ class DatapointCollection:
     n_ligand: list[int]
     type: list[str]
     n_clust: list[int]
-    metadata = pd.DataFrame()
+    metadata: pd.DataFrame = dataclasses.field(default_factory=pd.DataFrame)
 
     @classmethod
     def create_empty(cls):

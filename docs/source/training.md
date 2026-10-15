@@ -4,7 +4,18 @@ Welcome to the training documentation for OpenFold3. This guide covers how to tr
 
 ## 1. Prerequisites
 
-- OpenFold3 Conda environment. See [OpenFold3 Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md) for instructions on how to build the environment.
+- OpenFold3 environment. See [OpenFold3 Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md) for instructions on how to build the environment.
+
+Optionally test your installation for training OpenFold3 using a small subset of the PDB dataset. The command `setup-pdb-subset`, comprised of `generate-pdb-subset` + `download-pdb-subset` will create a mini PDB training set complete with the MSAs, template files, and OpenFold cache files.
+
+```
+# Run once to generate a mini training set
+pixi run -e openfold3-cuda12 setup-pdb-subset
+
+# Invoke the training test
+pixi run -e openfold3-cuda12 pytest openfold3/tests/test_training_full.py
+```
+
 
 ## 2. Download the Dataset
 

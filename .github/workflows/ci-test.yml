@@ -10,33 +10,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-conda:
-    if: |
-      (github.event_name == 'push') ||
-      (github.event_name == 'workflow_dispatch') ||
-      (github.event_name == 'pull_request_target' &&
-       (github.repository == 'aqlaboratory/openfold-3' &&
-        github.event.action == 'labeled' &&
-        github.event.label.name == 'safe-to-test') ||
-       (github.repository != 'aqlaboratory/openfold-3'))
-    permissions:
-      id-token: write
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        include:
-          - cuda_base_image_tag: "12.1.1-cudnn8-devel-ubuntu22.04"
-            build_mode: "yaml"
-    concurrency:
-      group: ${{ github.workflow }}-conda-${{ github.head_ref || github.ref }}-${{ matrix.cuda_base_image_tag }}
-      cancel-in-progress: true
-    uses: ./.github/workflows/ci-test-conda-reusable.yml
-    with:
-      cuda_base_image_tag: ${{ matrix.cuda_base_image_tag }}
-      build_mode: ${{ matrix.build_mode }}
-    secrets: inherit
-
   test-pixi:
     if: |
       (github.event_name == 'push') ||

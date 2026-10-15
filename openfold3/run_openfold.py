@@ -20,12 +20,17 @@ Main run script for OpenFold3. Please see the README for usage details.
 # ruff: noqa: F821
 
 import logging
+import os
 from pathlib import Path
 
 import click
 
 from openfold3.core.config import config_utils
-from openfold3.entry_points.import_utils import _torch_gpu_setup
+from openfold3.entry_points.import_utils import (
+    _configure_torch_backend,
+    _enable_tf32,
+)
+from openfold3.entry_points.parameters import DEFAULT_CACHE_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +56,23 @@ def cli():
     type=int,
     help="Initial seed for data pipeline. Defaults to seed if not specified.",
 )
-def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = None):
+@click.option(
+    "--use_tf32",
+    type=bool,
+    default=False,
+    help="Use tf32 precision",
+)
+def train(
+    runner_yaml: Path,
+    seed: int | None = None,
+    data_seed: int | None = None,
+    use_tf32: bool = False,
+):
     """Perform a training experiment with a preprepared dataset cache."""
-    _torch_gpu_setup()
+    _configure_torch_backend()
+    if use_tf32:
+        _enable_tf32()
+
     from openfold3.entry_points.experiment_runner import (
         TrainingExperimentRunner,
     )
@@ -153,6 +172,14 @@ def train(runner_yaml: Path, seed: int | None = None, data_seed: int | None = No
     help="Output directory for writing results",
 )
 @click.option(
+    "--use_tf32",
+    "--use_tf32",
+    type=bool,
+    default=True,
+    help="Use tf32 precision",
+)
+@click.option(
+    "--unmasked",
     "--unmasked",
     type=bool,
     default=None,
@@ -168,10 +195,13 @@ def predict(
     use_msa_server: bool | None = None,
     use_templates: bool | None = None,
     output_dir: Path | None = None,
+    use_tf32: bool = True,
     unmasked: bool | None = None,
 ):
     """Perform inference on a set of queries defined in the query_json."""
-    _torch_gpu_setup()
+    _configure_torch_backend()
+    if use_tf32:
+        _enable_tf32()
 
     from openfold3.entry_points.experiment_runner import (
         InferenceExperimentRunner,
@@ -184,11 +214,25 @@ def predict(
     )
 
     logging.basicConfig(level=logging.INFO)
-    runner_args = config_utils.load_yaml(runner_yaml) if runner_yaml else dict()
+
+    default_yml = (
+        Path(os.environ.get("OPENFOLD_CACHE") or DEFAULT_CACHE_PATH) / "runner.yml"
+    )
+    user_default_runner_path = None
+
+    if default_yml.exists():
+        runner_args = config_utils.load_yaml(default_yml)
+        user_default_runner_path = default_yml.resolve()
+    else:
+        runner_args = dict()
+
+    if runner_yaml:
+        config_utils.deep_update(runner_args, config_utils.load_yaml(runner_yaml))
 
     expt_config = InferenceExperimentConfig(
         inference_ckpt_path=inference_ckpt_path,
         inference_ckpt_name=inference_ckpt_name,
+        user_default_runner_yaml_path=user_default_runner_path,
         **runner_args,
     )
     expt_runner = InferenceExperimentRunner(
@@ -205,8 +249,12 @@ def predict(
     query_set = InferenceQuerySet.from_json(query_json)
 
     # Run the forward pass
-    expt_runner.setup()
-    expt_runner.run(query_set)
+    try:
+        expt_runner.setup()
+        expt_runner.run(query_set)
+    except BaseException:
+        expt_runner.cleanup_intermediates()
+        raise
     expt_runner.cleanup()
 
 
@@ -238,17 +286,12 @@ def align_msa_server(
     output_dir: Path,
     msa_computation_settings_yaml: Path | None = None,
 ):
-    """Run MSA server alignment only with ColabFold MSA server.
-    
-    Example command:
-    python run_openfold.py align-msa-server \
-        --query_json query_example.json \
-        --output_dir output/msa_server_test \
-    
-    More settings can be specified using the `msa_computation_settings_yaml` flag
-    An example yaml file is provided in `examples/msa_server.yml`
+    """Generate ColabFold alignments without running model inference.
+
+    Submit all queries for the job in one JSON file. The command writes a new
+    ``query_msa.json`` whose alignment paths point to files in ``output_dir``.
+    Server settings can be supplied with ``msa_computation_settings_yaml``.
     """
-    _torch_gpu_setup()
     from openfold3.core.data.tools.colabfold_msa_server import (
         MsaComputationSettings,
         preprocess_colabfold_msas,
@@ -257,18 +300,30 @@ def align_msa_server(
         InferenceQuerySet,
     )
 
-    query_set = InferenceQuerySet.from_json(query_json)
-
     msa_settings = MsaComputationSettings.from_config_with_cli_override(
         output_dir, msa_computation_settings_yaml
     )
-    query_set = preprocess_colabfold_msas(
-        inference_query_set=query_set,
-        compute_settings=msa_settings,
+    msa_settings._set_workspace_root(
+        output_dir / "openfold3_intermediates" / "colabfold_msas"
     )
+    try:
+        query_set = InferenceQuerySet.from_json(query_json)
+        query_set = preprocess_colabfold_msas(
+            inference_query_set=query_set,
+            compute_settings=msa_settings,
+        )
 
-    with open(output_dir / "query_msa.json", "w") as fp:
-        fp.write(query_set.model_dump_json(indent=4))
+        with open(output_dir / "query_msa.json", "w") as fp:
+            fp.write(query_set.model_dump_json(indent=4))
+    finally:
+        try:
+            msa_settings.cleanup_workspace()
+        except OSError:
+            logger.warning(
+                "Could not remove temporary MSA workspace for run %s",
+                msa_settings.run_directory_name,
+                exc_info=True,
+            )
 
 
 if __name__ == "__main__":

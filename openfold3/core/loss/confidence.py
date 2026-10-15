@@ -252,19 +252,19 @@ def all_atom_plddt_loss(
         * ((d < 0.5).int() + (d < 1).int() + (d < 2).int() + (d < 4).int())
         * pair_mask,
         dim=-1,
-    ) / (torch.sum(pair_mask, dim=-1) + eps)
+    ) / (torch.sum(pair_mask, dim=-1, dtype=torch.float32) + eps)
 
     # Compute binned lddt
     # [*, N_atom, no_bins]
     bin_size = (bin_max - bin_min) / no_bins
-    v_bins = bin_min + torch.arange(no_bins, device=x.device) * bin_size
+    v_bins = bin_min + bin_size / 2 + torch.arange(no_bins, device=x.device) * bin_size
     lddt_b = binned_one_hot(lddt, v_bins).to(dtype=x.dtype)
 
     errors = softmax_cross_entropy(logits, lddt_b)
 
     # Compute loss on plddt
     l_plddt = torch.sum(errors * atom_mask_gt, dim=-1) / (
-        torch.sum(atom_mask_gt, dim=-1) + eps
+        torch.sum(atom_mask_gt, dim=-1, dtype=torch.float32) + eps
     )
 
     return l_plddt
@@ -344,7 +344,9 @@ def pae_loss(
     # Compute binned alignment error
     # [*, N_token, N_token, no_bins]
     bin_size = (bin_max - bin_min) / no_bins
-    v_bins = bin_min + torch.arange(no_bins, device=logits.device) * bin_size
+    v_bins = (
+        bin_min + bin_size / 2 + torch.arange(no_bins, device=logits.device) * bin_size
+    )
     e_b = binned_one_hot(e, v_bins).to(dtype=logits.dtype)
 
     # Compute predicted alignment error
@@ -414,7 +416,7 @@ def pde_loss(
 
     # Compute binned prediction target
     bin_size = (bin_max - bin_min) / no_bins
-    v_bins = bin_min + torch.arange(no_bins, device=e.device) * bin_size
+    v_bins = bin_min + bin_size / 2 + torch.arange(no_bins, device=e.device) * bin_size
     e_b = binned_one_hot(e, v_bins).to(dtype=e.dtype)
 
     pair_mask = (rep_atom_mask_gt[..., None] * rep_atom_mask_gt[..., None, :]).bool()
@@ -423,7 +425,7 @@ def pde_loss(
 
     # Compute loss on predicted distance error
     l_pde = torch.sum(errors * pair_mask, dim=(-1, -2)) / (
-        torch.sum(pair_mask, dim=(-1, -2)) + eps
+        torch.sum(pair_mask, dim=(-1, -2), dtype=torch.float32) + eps
     )
 
     return l_pde
@@ -460,7 +462,7 @@ def all_atom_experimentally_resolved_loss(
     errors = softmax_cross_entropy(logits, y_b)
 
     l_resolved = torch.sum(errors * atom_mask, dim=-1) / (
-        torch.sum(atom_mask, dim=-1) + eps
+        torch.sum(atom_mask, dim=-1, dtype=torch.float32) + eps
     )
 
     return l_resolved

@@ -165,7 +165,7 @@ class TestUtils(unittest.TestCase):
         chunked = chunk_layer(l, {"input": x}, chunk_size=4, no_batch_dims=3)
         unchunked = l(x)
 
-        self.assertTrue(torch.all(chunked == unchunked))
+        torch.testing.assert_close(chunked, unchunked)
 
     def test_chunk_layer_dict(self):
         class LinearDictLayer(Linear):
@@ -179,8 +179,8 @@ class TestUtils(unittest.TestCase):
         chunked = chunk_layer(l, {"input": x}, chunk_size=4, no_batch_dims=3)
         unchunked = l(x)
 
-        self.assertTrue(torch.all(chunked["out"] == unchunked["out"]))
-        self.assertTrue(torch.all(chunked["inner"]["out"] == unchunked["inner"]["out"]))
+        torch.testing.assert_close(chunked["out"], unchunked["out"])
+        torch.testing.assert_close(chunked["inner"]["out"], unchunked["inner"]["out"])
 
     def test_chunk_slice_dict(self):
         x = torch.rand(3, 4, 3, 5)
@@ -195,7 +195,7 @@ class TestUtils(unittest.TestCase):
                 chunked = _chunk_slice(x, i, j, len(x.shape[:-1]))
                 chunked_flattened = x_flat[i:j]
 
-                self.assertTrue(torch.all(chunked == chunked_flattened))
+                torch.testing.assert_close(chunked, chunked_flattened)
 
     def test_chunk_size_tuner_caches(self):
         tuner = ChunkSizeTuner()
@@ -415,3 +415,36 @@ class TestUtils(unittest.TestCase):
         self.assertNotEqual(
             first, second, "Chunk size should have been re-tuned for new arg count"
         )
+
+    def test_chunk_size_tuner_reuses_prior_shape_after_other_shapes(self):
+        tuner = ChunkSizeTuner()
+        calls = []
+
+        def fn(t, chunk_size):
+            calls.append(t.shape[-1])
+            if chunk_size > t.shape[-1]:
+                raise RuntimeError("simulated OOM")
+
+        a = (torch.zeros(2, 3, 16),)
+        b = (torch.zeros(2, 3, 128),)
+        first = tuner.tune_chunk_size(fn, a, max_chunk_size=256)
+        tuner.tune_chunk_size(fn, b, max_chunk_size=256)
+        tune_calls = len(calls)
+        reused = tuner.tune_chunk_size(fn, a, max_chunk_size=256)
+
+        self.assertEqual(reused, first)
+        self.assertEqual(len(calls), tune_calls)
+
+    def test_chunk_size_tuner_caches_max_chunk_size_separately(self):
+        tuner = ChunkSizeTuner()
+
+        def fn(t, chunk_size):
+            if chunk_size > t.shape[-1]:
+                raise RuntimeError("simulated OOM")
+
+        args = (torch.zeros(2, 3, 64),)
+        small = tuner.tune_chunk_size(fn, args, max_chunk_size=32)
+        large = tuner.tune_chunk_size(fn, args, max_chunk_size=256)
+        self.assertEqual(small, 32)
+        self.assertEqual(large, 64)
+        self.assertEqual(tuner.tune_chunk_size(fn, args, max_chunk_size=32), small)
