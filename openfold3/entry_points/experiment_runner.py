@@ -63,6 +63,7 @@ from openfold3.entry_points.validator import (
     generate_seeds,
 )
 from openfold3.projects.of3_all_atom import safe_globals  # noqa: F401
+from openfold3.projects.of3_all_atom.checkpoint_migrations import migrate_checkpoint
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
     InferenceJobConfig,
@@ -487,6 +488,7 @@ class TrainingExperimentRunner(ExperimentRunner):
     def manual_load_checkpoint(self):
         init_from_ema_weights = self.ckpt_load_settings.init_from_ema_weights
         ckpt = load_checkpoint(Path(self.restart_checkpoint_path))
+        migrate_checkpoint(ckpt, OF3_MODEL_VERSION)
         state_dict, ema = get_state_dict_from_checkpoint(
             ckpt, init_from_ema_weights=init_from_ema_weights
         )
@@ -814,6 +816,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         self._log_model_config()
         logger.info(f"Loading weights from {self.ckpt_path}")
         ckpt = load_checkpoint(self.ckpt_path)
+        migrate_checkpoint(ckpt, OF3_MODEL_VERSION)
         state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
         self._load_state_dict_with_version_validation(state_dict)
 
