@@ -51,7 +51,7 @@ from openfold3.projects.of3_all_atom.checkpoint_migrations import migrate_state_
 
 # Bump the minor version for state dict layout changes that have a Migration in
 # checkpoint_migrations.py, and the major version for ones that cannot.
-MODEL_VERSION = torch.tensor([2, 0, 0], dtype=torch.float32)
+MODEL_VERSION = torch.tensor([2, 1, 0], dtype=torch.float32)
 
 
 def _migrate_on_load(
@@ -129,7 +129,6 @@ class OpenFold3(nn.Module):
 
         self.sample_diffusion = SampleDiffusion(
             **self.config.architecture.sample_diffusion,
-            diffusion_module=self.diffusion_module,
         )
 
         # Confidence and Distogram Heads
@@ -420,6 +419,7 @@ class OpenFold3(nn.Module):
 
             # TODO: Add back triton and cueq APB kernel
             atom_positions_predicted = self.sample_diffusion(
+                diffusion_module=self.diffusion_module,
                 batch=batch,
                 si_input=si_input,
                 si_trunk=si_trunk,

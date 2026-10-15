@@ -41,7 +41,33 @@ class Migration:
     down: Callable[[StateDict, str], None]
 
 
-MIGRATIONS: list[Migration] = []
+_DIFFUSION_MODULE = "diffusion_module."
+_SAMPLE_DIFFUSION_ALIAS = "sample_diffusion.diffusion_module."
+
+
+def _drop_sample_diffusion_alias(state_dict: StateDict, prefix: str) -> None:
+    """2.0.0 -> 2.1.0: SampleDiffusion no longer registers the DiffusionModule."""
+    alias = prefix + _SAMPLE_DIFFUSION_ALIAS
+    for k in [k for k in state_dict if k.startswith(alias)]:
+        del state_dict[k]
+
+
+def _add_sample_diffusion_alias(state_dict: StateDict, prefix: str) -> None:
+    """2.1.0 -> 2.0.0: restores the alias keys, sharing the DiffusionModule tensors."""
+    source = prefix + _DIFFUSION_MODULE
+    alias = prefix + _SAMPLE_DIFFUSION_ALIAS
+    for k in [k for k in state_dict if k.startswith(source)]:
+        state_dict[alias + k[len(source) :]] = state_dict[k]
+
+
+MIGRATIONS: list[Migration] = [
+    Migration(
+        lower=(2, 0, 0),
+        upper=(2, 1, 0),
+        up=_drop_sample_diffusion_alias,
+        down=_add_sample_diffusion_alias,
+    ),
+]
 
 
 def as_version(version: torch.Tensor | Sequence[int | str]) -> Version:

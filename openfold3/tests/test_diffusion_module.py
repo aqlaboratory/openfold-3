@@ -131,7 +131,7 @@ class TestSampleDiffusion(unittest.TestCase):
         sample_config = config.architecture.sample_diffusion
 
         dm = DiffusionModule(config=config.architecture.diffusion_module)
-        sd = SampleDiffusion(**sample_config, diffusion_module=dm)
+        sd = SampleDiffusion(**sample_config)
 
         batch = random_of3_features(
             batch_size=batch_size,
@@ -156,6 +156,7 @@ class TestSampleDiffusion(unittest.TestCase):
             )
 
             xl = sd(
+                diffusion_module=dm,
                 batch=batch,
                 si_input=si_input,
                 si_trunk=si_trunk,
