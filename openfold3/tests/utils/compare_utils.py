@@ -191,7 +191,7 @@ def assert_differences_along_last_dim(expected, actual):
     """
     assert torch.max(torch.not_equal(expected, actual), -1).values.min()
 
-    
+
 #: fp32 unit roundoff, 2**-24.
 FP32_EPS = 2.0**-24
 
