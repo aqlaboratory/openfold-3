@@ -212,10 +212,36 @@ pretty = false
 # latter is a no-op for every other module, since `follow_imports` stays at its
 # default of "normal" outside this override.
 follow_imports_for_stubs = true
+# Every check in --strict, for openfold3 except its tests (see the override
+# below). Existing violations are recorded in mypy-baseline.txt, so these apply
+# in full to new files, and to new code in existing ones.
+strict = true
+# Name modules by their path from the project root. scripts/ has no __init__.py,
+# so otherwise each script is a top-level module named after its file, and the
+# "scripts.*" override below could not match them.
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = ["rdkit.*", "gemmi.*"]
 follow_imports = "skip"
+
+# Tests and scripts are exempt from strict: `strict` itself can only be set
+# globally, so this lists every per-module flag it enables, set back to mypy's
+# default.
+[[tool.mypy.overrides]]
+module = ["openfold3.tests.*", "scripts.*"]
+disallow_any_generics = false
+disallow_subclassing_any = false
+disallow_untyped_calls = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+disallow_untyped_decorators = false
+warn_unused_ignores = false
+warn_return_any = false
+no_implicit_reexport = false
+strict_equality = false
+extra_checks = false
 
 [tool.mypy-baseline]
 # Keep the baseline sorted so its diffs stay reviewable.

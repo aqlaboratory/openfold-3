@@ -117,6 +117,7 @@ MSA usage toggles (`use_msas`, `use_main_msas`, `use_paired_msas`) are set at th
   - `main_msa_file_paths` *(str | list[str], optional, default = null)*
     - Path or list of paths to the MSA files for this chain.
     - Use this field only when running inference with **precomputed MSAs**. See the {doc}`Precomputed MSA documentation <precomputed_msa_how_to>` for details.
+    - Alignments are selected by file name, and each must start with this chain's sequence. Chains with identical sequences share the MSA of the first such chain. See {ref}`File Name Conventions <2-precomputed-msa-directory-structure-and-file-name-conventions>`.
     - If using the ColabFold MSA server (`--use_msa_server=True`), this field will be automatically populated and will **override any user-provided path**.
 
   - `paired_msa_file_paths` *(str | list[str], optional, default = null)*
@@ -172,6 +173,7 @@ MSA usage toggles (`use_msas`, `use_main_msas`, `use_paired_msas`) are set at th
   - `main_msa_file_paths` *(str | list[str], optional, default = null)*
     - Path or list of paths to the MSA files for this chain.
     - Use this field only when running inference with **precomputed MSAs**. See the {doc}`Precomputed MSA documentation <precomputed_msa_how_to>` for details.
+    - Alignments are selected by file name, and each must start with this chain's sequence. Chains with identical sequences share the MSA of the first such chain. See {ref}`File Name Conventions <2-precomputed-msa-directory-structure-and-file-name-conventions>`.
 
 
   ### 3.3. DNA Chains
