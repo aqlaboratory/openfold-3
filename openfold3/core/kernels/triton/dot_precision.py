@@ -46,11 +46,17 @@ _ALLOWED_BY_TARGET: dict[object, tuple[str, ...]] = {}
 def torch_fp32_precision() -> str:
     """torch's current fp32 matmul precision, as ``IEEE`` or ``TF32``.
 
+    If Torch reports that TF32 is not supported it returns ``IEEE`` immediately.
+    Triton will report bf16x3 as available on any target, but it's only faster
+    on a few. Torch counts "has a faster bf16x3 path" as support for TF32.
+
     Uses ``matmul.fp32_precision`` where available. The older
     ``get_float32_matmul_precision()`` or ``matmul.allow_tf32`` raise if a
     process has mixed torch's precision APIs whereas this works no matter how
     the precision was set.
     """
+    if not torch.cuda.is_tf32_supported():
+        return IEEE
     matmul = torch.backends.cuda.matmul
     if hasattr(matmul, "fp32_precision"):
         return TF32 if matmul.fp32_precision == TF32 else IEEE

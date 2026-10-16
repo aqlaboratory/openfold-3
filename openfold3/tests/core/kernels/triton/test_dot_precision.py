@@ -20,7 +20,7 @@ suite reads ``matmul.allow_tf32``, which raises once a process has written
 through the newer ``fp32_precision`` API.
 """
 
-from types import SimpleNamespace
+import contextlib
 from unittest import mock
 
 import pytest
@@ -84,38 +84,55 @@ def test_resolve_fails_when_no_mode_is_available():
 # Reading the precision from torch.
 
 
+@pytest.fixture
+def tf32_supported():
+    """Pretend the device supports TF32, so tests don't depend on the hardware."""
+    with mock.patch.object(torch.cuda, "is_tf32_supported", return_value=True):
+        yield
+
+
 @pytest.mark.parametrize(("level", "expected"), [("highest", "ieee"), ("high", "tf32")])
-def test_follows_the_torch_setting(level, expected):
-    """torch's setting is the only input."""
+def test_follows_the_torch_setting(tf32_supported, level, expected):
     with matmul_precision(level):
         assert dot_precision.torch_fp32_precision() == expected
 
 
-def test_reads_ieee_when_torch_has_no_setting():
-    """torch reports "none" until something is set, which is full precision."""
-    unset = SimpleNamespace(
-        backends=SimpleNamespace(
-            cuda=SimpleNamespace(matmul=SimpleNamespace(fp32_precision="none"))
-        )
-    )
-    with mock.patch.object(dot_precision, "torch", unset):
+@pytest.mark.parametrize("level", ["highest", "high"])
+def test_reads_ieee_where_torch_reports_no_tf32_support(level):
+    """Reduced precision is only used where torch says the device supports it."""
+    with (
+        mock.patch.object(torch.cuda, "is_tf32_supported", return_value=False),
+        matmul_precision(level),
+    ):
         assert dot_precision.torch_fp32_precision() == "ieee"
 
 
-@pytest.mark.parametrize(("allow_tf32", "expected"), [(True, "tf32"), (False, "ieee")])
-def test_reads_allow_tf32_on_torch_without_fp32_precision(allow_tf32, expected):
-    """torch before 2.9 has only ``matmul.allow_tf32``. Stubbing the module is
-    the only way to reach that branch on a newer torch."""
-    legacy = SimpleNamespace(
-        backends=SimpleNamespace(
-            cuda=SimpleNamespace(matmul=SimpleNamespace(allow_tf32=allow_tf32))
-        )
-    )
-    with mock.patch.object(dot_precision, "torch", legacy):
+@contextlib.contextmanager
+def without_fp32_precision():
+    """Hide ``matmul.fp32_precision`` as on torch before 2.9, which has only
+    ``matmul.allow_tf32``. Every other attribute reads through to torch."""
+    matmul_type = type(torch.backends.cuda.matmul)
+    real_getattr = matmul_type.__getattr__
+
+    def getattr_without_fp32_precision(self, name):
+        if name == "fp32_precision":
+            raise AttributeError(name)
+        return real_getattr(self, name)
+
+    with mock.patch.object(matmul_type, "__getattr__", getattr_without_fp32_precision):
+        yield
+
+
+@pytest.mark.parametrize(("level", "expected"), [("highest", "ieee"), ("high", "tf32")])
+def test_reads_allow_tf32_on_torch_without_fp32_precision(
+    tf32_supported, level, expected
+):
+    with matmul_precision(level), without_fp32_precision():
+        assert not hasattr(torch.backends.cuda.matmul, "fp32_precision")
         assert dot_precision.torch_fp32_precision() == expected
 
 
-def test_reading_the_torch_setting_leaves_the_legacy_getters_working():
+def test_reading_the_torch_setting_leaves_the_legacy_getters_working(tf32_supported):
     """Reading must not break a caller still using the legacy getters. Only
     writing trips torch's mixed-API check."""
     with matmul_precision("highest"):
@@ -212,12 +229,11 @@ def test_tl_dot_computes_the_product(level, with_acc):
 def skip_unless_reduced_precision_dot() -> None:
     """Skip unless the target has a reduced-precision fp32 matmul.
 
-    Where it does not, tf32 correctly resolves to ieee and there is nothing to
+    Where it does not, "high" correctly resolves to ieee and there is nothing to
     tell apart.
     """
-    mode = dot_precision.resolve(
-        dot_precision.TF32, dot_precision._allowed_dot_precisions()
-    )
+    with matmul_precision("high"):
+        mode = dot_precision.current_dot_precision(fp32_operands=True)
     if mode == dot_precision.IEEE:
         pytest.skip("no reduced-precision fp32 dot on this target")
 
