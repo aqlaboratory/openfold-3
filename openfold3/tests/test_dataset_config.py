@@ -31,6 +31,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.dataset_config_components import (
     MSASettings,
+    SampleWeights,
     TemplateSettings,
 )
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
@@ -319,6 +320,35 @@ class TestOF3DatasetConfigConstruction:
         )
 
         assert spec.config.msa.max_seq_counts == {"uniprot_hits": 50000}
+
+    def test_partial_sample_weights_keep_defaults(self, tmp_path):
+        spec = TrainingDatasetSpec.model_validate(
+            {
+                "name": "train",
+                "mode": "train",
+                "dataset_class": "WeightedPDBDataset",
+                "config": {
+                    "dataset_paths": self._dataset_paths(tmp_path),
+                    "sample_weights": {"a_prot": 9.0},
+                },
+            }
+        )
+
+        assert spec.config.sample_weights == SampleWeights(a_prot=9.0)
+
+    def test_unknown_sample_weight_is_rejected(self, tmp_path):
+        with pytest.raises(ValidationError, match="a_protein"):
+            TrainingDatasetSpec.model_validate(
+                {
+                    "name": "train",
+                    "mode": "train",
+                    "dataset_class": "WeightedPDBDataset",
+                    "config": {
+                        "dataset_paths": self._dataset_paths(tmp_path),
+                        "sample_weights": {"a_protein": 9.0},
+                    },
+                }
+            )
 
     def test_shared_config_does_not_leak_between_datasets(self, tmp_path):
         shared_config = {

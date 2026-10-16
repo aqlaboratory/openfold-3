@@ -57,6 +57,7 @@ from openfold3.projects.of3_all_atom.config.dataset_config_components import (
     CropWeights,
     LossConfig,
     MSASettings,
+    SampleWeights,
     TemplateSettings,
     TokenCropSettings,
 )
@@ -259,13 +260,7 @@ class WeightedPDBConfig(DefaultDatasetConfigSection):
     crop: CropSettings = CropSettings(
         chain_crop=ChainCropSettings(enabled=True),
     )
-    sample_weights: dict = {
-        "a_prot": 3.0,
-        "a_nuc": 3.0,
-        "a_ligand": 1.0,
-        "w_chain": 0.5,
-        "w_interface": 1.0,
-    }
+    sample_weights: SampleWeights = SampleWeights()
 
 
 @register_dataset_config("ProteinMonomerDataset")
@@ -326,13 +321,7 @@ class DisorderedPDBConfig(DefaultDatasetConfigSection):
     crop: CropSettings = CropSettings(
         chain_crop=ChainCropSettings(enabled=True),
     )
-    sample_weights: dict = {
-        "a_prot": 3.0,
-        "a_nuc": 3.0,
-        "a_ligand": 1.0,
-        "w_chain": 0.5,
-        "w_interface": 1.0,
-    }
+    sample_weights: SampleWeights = SampleWeights()
     disable_non_protein_diffusion_weights: bool = True
     loss: LossConfig = LossConfig(
         loss_weights={

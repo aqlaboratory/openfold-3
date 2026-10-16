@@ -24,6 +24,7 @@ The main sections of the dataset configuration are:
 from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator
+from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import _convert_molecule_type
 from openfold3.core.data.resources.residues import MoleculeType
@@ -184,3 +185,16 @@ class LossConfig(BaseModel):
         "pae",
     ]
     loss_weights: LossWeights = LossWeights()
+
+
+class SampleWeights(BaseModel):
+    """Datapoint sampling weights for the weighted PDB datasets (AF3 SI section
+    2.5.1, Algorithm 1)."""
+
+    model_config = PydanticConfigDict(extra="forbid")
+
+    a_prot: float = 3.0
+    a_nuc: float = 3.0
+    a_ligand: float = 1.0
+    w_chain: float = 0.5
+    w_interface: float = 1.0
