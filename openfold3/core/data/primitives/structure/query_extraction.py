@@ -22,7 +22,7 @@ inference `query.json` from an existing structure.
 """
 
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import biotite.structure as struc
 import biotite.structure.io.pdbx as pdbx
@@ -97,7 +97,7 @@ def _build_polymer_chain(
 
 
 def chains_from_atom_array(
-    atom_array: AtomArray, keep_excluded: bool = False
+    atom_array: AtomArray[Any], keep_excluded: bool = False
 ) -> ChainExtractionResult:
     """Classifies each chain in a parsed structure into inference-query `Chain`s.
 
