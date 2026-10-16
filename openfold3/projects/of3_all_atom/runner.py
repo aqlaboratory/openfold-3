@@ -42,6 +42,7 @@ from openfold3.core.utils.grad_manager import PerSampleGradManager, compute_glob
 from openfold3.core.utils.lr_schedulers import AlphaFoldLRScheduler
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.core.utils.timing import PerformanceTimer
+from openfold3.projects.of3_all_atom.checkpoint_migrations import migrate_checkpoint
 from openfold3.projects.of3_all_atom.config.model_config import (
     model_selection_metric_weights_config,
 )
@@ -53,7 +54,7 @@ from openfold3.projects.of3_all_atom.constants import (
     VAL_LOGGED_METRICS,
     VAL_LOSSES,
 )
-from openfold3.projects.of3_all_atom.model import OpenFold3
+from openfold3.projects.of3_all_atom.model import MODEL_VERSION, OpenFold3
 
 deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
 if deepspeed_is_installed:
@@ -886,6 +887,9 @@ class OpenFold3AllAtom(ModelRunner):
         }
 
     def on_load_checkpoint(self, checkpoint):
+        # Model weights are migrated by OpenFold3's load_state_dict pre-hook, but
+        # the EMA is a plain dict, so migrate the checkpoint here as well.
+        migrate_checkpoint(checkpoint, MODEL_VERSION)
         ema = checkpoint["ema"]
         self.ema.load_state_dict(ema)
 

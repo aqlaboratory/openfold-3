@@ -63,6 +63,7 @@ from openfold3.entry_points.validator import (
     generate_seeds,
 )
 from openfold3.projects.of3_all_atom import safe_globals  # noqa: F401
+from openfold3.projects.of3_all_atom.checkpoint_migrations import migrate_checkpoint
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceDatasetSpec,
     InferenceJobConfig,
@@ -487,6 +488,7 @@ class TrainingExperimentRunner(ExperimentRunner):
     def manual_load_checkpoint(self):
         init_from_ema_weights = self.ckpt_load_settings.init_from_ema_weights
         ckpt = load_checkpoint(Path(self.restart_checkpoint_path))
+        migrate_checkpoint(ckpt, OF3_MODEL_VERSION)
         state_dict, ema = get_state_dict_from_checkpoint(
             ckpt, init_from_ema_weights=init_from_ema_weights
         )
@@ -769,6 +771,19 @@ class InferenceExperimentRunner(ExperimentRunner):
 
     def _load_state_dict_with_version_validation(self, state_dict: dict) -> None:
         """Validate checkpoint keys, warning if only version_tensor is missing."""
+        # Check the version first: a version with no migration path to the current
+        # one also explains any key mismatch.
+        loaded_model_version = state_dict.get("model.version_tensor")
+        current_model_verison = OF3_MODEL_VERSION
+        if loaded_model_version is not None and not torch.equal(
+            loaded_model_version, current_model_verison
+        ):
+            raise ValueError(
+                f"Loaded checkpoint model version ({loaded_model_version}) does not"
+                f" match current model version ({current_model_verison})."
+                f" Please verify your checkpoint selection."
+            )
+
         # perform the key check manually.
         model_keys = set(self.lightning_module.state_dict().keys())
         ckpt_keys = set(state_dict.keys())
@@ -791,15 +806,6 @@ class InferenceExperimentRunner(ExperimentRunner):
                 f"Missing keys: {missing}, Unexpected keys: {unexpected}"
             )
 
-        # raise error if version tensor is present but does not match
-        loaded_model_version = state_dict.get("model.version_tensor")
-        current_model_verison = OF3_MODEL_VERSION
-        if not torch.equal(loaded_model_version, current_model_verison):
-            raise ValueError(
-                f"Loaded checkpoint model version ({loaded_model_version}) does not"
-                f" match current model version ({current_model_verison})."
-                f" Please verify your checkpoint selection."
-            )
         self.lightning_module.load_state_dict(state_dict, strict=True)
         return
 
@@ -810,6 +816,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         self._log_model_config()
         logger.info(f"Loading weights from {self.ckpt_path}")
         ckpt = load_checkpoint(self.ckpt_path)
+        migrate_checkpoint(ckpt, OF3_MODEL_VERSION)
         state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
         self._load_state_dict_with_version_validation(state_dict)
 

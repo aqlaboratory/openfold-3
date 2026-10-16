@@ -264,7 +264,6 @@ class SampleDiffusion(nn.Module):
         gamma_min: float,
         noise_scale: float,
         step_scale: float,
-        diffusion_module: DiffusionModule,
     ):
         """
         Args:
@@ -276,18 +275,16 @@ class SampleDiffusion(nn.Module):
                 Noise scaling factor
             step_scale:
                 Step scaling factor
-            diffusion_module:
-                An instantiated DiffusionModule
         """
         super().__init__()
         self.gamma_0 = gamma_0
         self.gamma_min = gamma_min
         self.noise_scale = noise_scale
         self.step_scale = step_scale
-        self.diffusion_module = diffusion_module
 
     def _sample_rollout(
         self,
+        diffusion_module: DiffusionModule,
         batch: dict,
         xl: torch.Tensor,
         atom_mask: torch.Tensor,
@@ -320,7 +317,7 @@ class SampleDiffusion(nn.Module):
             )
             xl_noisy = xl + noise
 
-            xl_denoised = self.diffusion_module(
+            xl_denoised = diffusion_module(
                 batch=batch,
                 xl_noisy=xl_noisy,
                 token_mask=batch["token_mask"],
@@ -347,6 +344,7 @@ class SampleDiffusion(nn.Module):
 
     def forward(
         self,
+        diffusion_module: DiffusionModule,
         batch: dict,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
@@ -364,6 +362,9 @@ class SampleDiffusion(nn.Module):
     ) -> torch.Tensor:
         """
         Args:
+            diffusion_module:
+                The DiffusionModule used as the denoiser. It is passed in rather
+                than stored so that it is registered only once, under its owner.
             batch:
                 Feature dictionary
             si_input:
@@ -405,6 +406,7 @@ class SampleDiffusion(nn.Module):
         )
 
         rollout_kwargs = {
+            "diffusion_module": diffusion_module,
             "batch": batch,
             "atom_mask": atom_mask,
             "si_input": si_input,

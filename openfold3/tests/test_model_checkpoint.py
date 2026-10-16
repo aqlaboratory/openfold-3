@@ -38,6 +38,8 @@ from openfold3.entry_points.validator import (
     InferenceExperimentConfig,
     TrainingExperimentConfig,
 )
+from openfold3.projects.of3_all_atom.checkpoint_migrations import migrate_checkpoint
+from openfold3.projects.of3_all_atom.model import MODEL_VERSION
 
 
 @pytest.fixture
@@ -134,7 +136,7 @@ class TestOF3ModelCheckpointing:
         reloaded_model = load_checkpoint(param_path)
 
         ema_params = reloaded_model["ema"]["params"]
-        expected_version_number = "2.0.0"
+        expected_version_number = "2.1.0"
         actual_version = ema_params["version_tensor"].long().tolist()
         actual_version_number = (
             f"{actual_version[0]}.{actual_version[1]}.{actual_version[2]}"
@@ -161,6 +163,7 @@ class TestOF3ModelCheckpointing:
         inference_runner.setup()
 
         ckpt = load_checkpoint(default_ckpt_path)
+        migrate_checkpoint(ckpt, MODEL_VERSION)
         expected, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
         actual = inference_runner.lightning_module.state_dict()
 
@@ -180,8 +183,10 @@ class TestOF3ModelCheckpointing:
     def test_load_model_ckpt_with_no_version_warns(self, tmp_path, default_ckpt_path):
         """Test that warning is raised if version_tensor is the only key that is missing."""
 
-        # Load checkpoint and remove version_tensor from EMA params
+        # Load checkpoint and remove version_tensor from EMA params. Migrate first:
+        # without a version, an older layout cannot be migrated as it loads.
         ckpt = load_checkpoint(default_ckpt_path)
+        migrate_checkpoint(ckpt, MODEL_VERSION)
         ckpt.pop("version_tensor", None)
         ckpt_with_no_version_path = tmp_path / "model_weights_no_version.ckpt"
         torch.save(ckpt, ckpt_with_no_version_path)
@@ -248,6 +253,7 @@ class TestOF3ModelCheckpointing:
     ):
         """Guard against regressions in load_state_dict latency during setup."""
         ckpt = load_checkpoint(default_ckpt_path)
+        migrate_checkpoint(ckpt, MODEL_VERSION)
         state_dict, _ = get_state_dict_from_checkpoint(ckpt, init_from_ema_weights=True)
         inference_config = InferenceExperimentConfig.model_validate(
             {"inference_ckpt_path": default_ckpt_path}

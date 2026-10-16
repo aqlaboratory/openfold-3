@@ -703,11 +703,11 @@ def test_sample_diffusion_runs_second_pass_when_pocket_sampling_enabled():
         gamma_min=0.0,
         noise_scale=0.0,
         step_scale=1.0,
-        diffusion_module=denoiser,
     )
 
     with torch.no_grad():
         result = sampler(
+            diffusion_module=denoiser,
             batch=_pocket_sampling_batch_without_jitter(),
             si_input=torch.zeros(1, 1, 1),
             si_trunk=torch.zeros(1, 1, 1),
@@ -737,7 +737,6 @@ def test_sample_diffusion_applies_independent_rigid_ligand_jitter():
         gamma_min=0.0,
         noise_scale=0.0,
         step_scale=1.0,
-        diffusion_module=_IdentityDenoiser(),
     )
     with (
         patch.object(diffusion_module.torch, "randn", side_effect=controlled_randn),
@@ -759,6 +758,7 @@ def test_sample_diffusion_applies_independent_rigid_ligand_jitter():
         torch.no_grad(),
     ):
         result = sampler(
+            diffusion_module=_IdentityDenoiser(),
             batch=batch,
             si_input=torch.zeros(1, 1, 1),
             si_trunk=torch.zeros(1, 1, 1),
@@ -792,13 +792,14 @@ def test_sample_diffusion_requires_complete_pocket_sampling_features():
         gamma_min=0.0,
         noise_scale=0.0,
         step_scale=1.0,
-        diffusion_module=_IdentityDenoiser(),
     )
+    denoiser = _IdentityDenoiser()
     batch = _pocket_sampling_batch_without_jitter()
     del batch["pocket_sampling_vdw_buffer"]
 
     with pytest.raises(KeyError, match="pocket_sampling_vdw_buffer"):
         sampler(
+            diffusion_module=denoiser,
             batch=batch,
             si_input=torch.zeros(1, 1, 1),
             si_trunk=torch.zeros(1, 1, 1),
@@ -808,7 +809,7 @@ def test_sample_diffusion_requires_complete_pocket_sampling_features():
         )
     # The first (unconstrained) rollout already ran before the missing
     # feature was discovered while building the pocket-sampling seeds.
-    assert sampler.diffusion_module.calls == 2
+    assert denoiser.calls == 2
 
 
 def test_sample_diffusion_rejects_multi_query_pocket_sampling_batch():
@@ -817,11 +818,11 @@ def test_sample_diffusion_rejects_multi_query_pocket_sampling_batch():
         gamma_min=0.0,
         noise_scale=0.0,
         step_scale=1.0,
-        diffusion_module=_IdentityDenoiser(),
     )
 
     with pytest.raises(ValueError, match="one query per model batch"):
         sampler(
+            diffusion_module=_IdentityDenoiser(),
             batch=_pocket_sampling_batch_without_jitter(batch_dim=2),
             si_input=torch.zeros(2, 1, 1),
             si_trunk=torch.zeros(2, 1, 1),

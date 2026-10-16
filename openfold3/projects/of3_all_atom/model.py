@@ -20,6 +20,7 @@ The main inference and training loops for AlphaFold3.
 
 import random
 from enum import Enum
+from typing import Any
 
 import numpy as np
 import torch
@@ -46,8 +47,29 @@ from openfold3.core.utils.permutation_alignment import (
     safe_multi_chain_permutation_alignment,
 )
 from openfold3.core.utils.tensor_utils import add, tensor_tree_map
+from openfold3.projects.of3_all_atom.checkpoint_migrations import migrate_state_dict
 
-MODEL_VERSION = torch.tensor([2, 0, 0], dtype=torch.float32)
+# Bump the minor version for state dict layout changes that have a Migration in
+# checkpoint_migrations.py, and the major version for ones that cannot.
+MODEL_VERSION = torch.tensor([2, 1, 0], dtype=torch.float32)
+
+
+def _migrate_on_load(
+    module: nn.Module,
+    state_dict: dict[str, torch.Tensor],
+    prefix: str,
+    local_metadata: dict[str, Any],
+    strict: bool,
+    missing_keys: list[str],
+    unexpected_keys: list[str],
+    error_msgs: list[str],
+) -> None:
+    """
+    Migrates state dicts saved by other model versions as they are loaded.
+
+    Signature of a torch.nn.Module.register_load_state_dict_pre_hook hook.
+    """
+    migrate_state_dict(state_dict, MODEL_VERSION, prefix)
 
 
 class OffloadModules(Enum):
@@ -107,13 +129,14 @@ class OpenFold3(nn.Module):
 
         self.sample_diffusion = SampleDiffusion(
             **self.config.architecture.sample_diffusion,
-            diffusion_module=self.diffusion_module,
         )
 
         # Confidence and Distogram Heads
         self.aux_heads = AuxiliaryHeadsAllAtom(config=self.config.architecture.heads)
 
-        self.register_buffer("version_tensor", MODEL_VERSION)
+        # Clone so that loading a checkpoint cannot overwrite MODEL_VERSION in place
+        self.register_buffer("version_tensor", MODEL_VERSION.clone())
+        self.register_load_state_dict_pre_hook(_migrate_on_load)
 
     def _disable_activation_checkpointing(self):
         """
@@ -396,6 +419,7 @@ class OpenFold3(nn.Module):
 
             # TODO: Add back triton and cueq APB kernel
             atom_positions_predicted = self.sample_diffusion(
+                diffusion_module=self.diffusion_module,
                 batch=batch,
                 si_input=si_input,
                 si_trunk=si_trunk,
