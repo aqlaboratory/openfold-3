@@ -139,6 +139,12 @@ class PlTrainerArgs(BaseModel):
     deepspeed_config_path: Path | None = None
     distributed_timeout: timedelta | None = default_pg_timeout
     mpi_plugin: bool = False
+    # How ranks are launched and discovered (issue #47). "auto" lets Lightning
+    # detect the environment, except that a SLURM allocation whose batch step
+    # runs this process directly (sbatch without srun) falls back to the local
+    # launcher instead of hanging. "slurm"/"local"/"mpi" force the
+    # corresponding Lightning ClusterEnvironment.
+    cluster_environment: Literal["auto", "slurm", "local", "mpi"] = "auto"
 
     use_distributed_sampler: bool = True
 
