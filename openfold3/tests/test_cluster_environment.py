@@ -28,6 +28,7 @@ forever at 0% GPU. These tests pin the resolution rules that prevent that:
 
 import importlib.util
 import os
+from unittest import mock
 
 import pytest
 from lightning_fabric.plugins.environments.lightning import LightningEnvironment
@@ -36,6 +37,22 @@ from lightning_fabric.plugins.environments.slurm import SLURMEnvironment
 
 from openfold3.entry_points.experiment_runner import InferenceExperimentRunner
 from openfold3.entry_points.validator import InferenceExperimentConfig, PlTrainerArgs
+
+requires_mpi4py = pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None,
+    reason="MPIEnvironment requires mpi4py",
+)
+
+# A batch step running the process directly: allocation vars, no SLURM_STEP_ID.
+SBATCH_WITHOUT_SRUN = {"SLURM_NTASKS": "8", "SLURM_JOB_NAME": "of3-job"}
+# An srun-launched task within the allocation.
+SRUN_LAUNCHED = {**SBATCH_WITHOUT_SRUN, "SLURM_STEP_ID": "0"}
+
+
+def scrubbed_slurm_env(extra_env: dict[str, str]) -> mock._patch_dict:
+    """Patch os.environ to contain no SLURM variables except `extra_env`."""
+    base = {k: v for k, v in os.environ.items() if not k.startswith("SLURM")}
+    return mock.patch.dict(os.environ, {**base, **extra_env}, clear=True)
 
 
 @pytest.fixture()
@@ -52,82 +69,75 @@ def make_runner(tmp_path):
     return _make
 
 
-@pytest.fixture()
-def no_slurm_env(monkeypatch):
-    for key in list(os.environ):
-        if key.startswith("SLURM"):
-            monkeypatch.delenv(key)
+@pytest.mark.parametrize(
+    ("env", "pl_trainer_args", "expected"),
+    [
+        pytest.param({}, {}, None, id="auto-outside-slurm-defers-to-lightning"),
+        pytest.param(
+            SBATCH_WITHOUT_SRUN,
+            {},
+            LightningEnvironment,
+            id="auto-sbatch-without-srun-falls-back-to-local",
+        ),
+        pytest.param(
+            SRUN_LAUNCHED,
+            {},
+            None,
+            id="auto-srun-launched-defers-to-lightning",
+        ),
+        pytest.param(
+            # Lightning treats job name bash/interactive as "not SLURM-managed"
+            # already; auto must not override that.
+            {**SBATCH_WITHOUT_SRUN, "SLURM_JOB_NAME": "bash"},
+            {},
+            None,
+            id="auto-interactive-job-name-defers-to-lightning",
+        ),
+        pytest.param(
+            SRUN_LAUNCHED,
+            {"cluster_environment": "local"},
+            LightningEnvironment,
+            id="local-forced-even-under-srun",
+        ),
+        pytest.param(
+            {},
+            {"cluster_environment": "slurm"},
+            SLURMEnvironment,
+            id="slurm-forced-even-outside-slurm",
+        ),
+        pytest.param(
+            {},
+            {"cluster_environment": "mpi"},
+            MPIEnvironment,
+            id="mpi-forced",
+            marks=requires_mpi4py,
+        ),
+        pytest.param(
+            {},
+            {"mpi_plugin": True},
+            MPIEnvironment,
+            id="legacy-mpi-plugin-flag",
+            marks=requires_mpi4py,
+        ),
+    ],
+)
+def test_cluster_environment_resolution(make_runner, env, pl_trainer_args, expected):
+    with scrubbed_slurm_env(env):
+        resolved = make_runner(**pl_trainer_args).cluster_environment
+    if expected is None:
+        assert resolved is None
+    else:
+        assert isinstance(resolved, expected)
 
 
-@pytest.fixture()
-def sbatch_env_without_srun(no_slurm_env, monkeypatch):
-    """A batch step running the process directly: no SLURM_STEP_ID."""
-    monkeypatch.setenv("SLURM_NTASKS", "8")
-    monkeypatch.setenv("SLURM_JOB_NAME", "of3-job")
+def test_invalid_value_rejected(make_runner):
+    with pytest.raises(ValueError):
+        make_runner(cluster_environment="k8s")
 
 
-@pytest.fixture()
-def srun_env(sbatch_env_without_srun, monkeypatch):
-    """An srun-launched task within the allocation."""
-    monkeypatch.setenv("SLURM_STEP_ID", "0")
-
-
-class TestAutoResolution:
-    def test_no_slurm_defers_to_lightning(self, make_runner, no_slurm_env):
-        assert make_runner().cluster_environment is None
-
-    def test_sbatch_without_srun_falls_back_to_local(
-        self, make_runner, sbatch_env_without_srun
-    ):
-        env = make_runner().cluster_environment
-        assert isinstance(env, LightningEnvironment)
-
-    def test_srun_launched_defers_to_lightning(self, make_runner, srun_env):
-        # Lightning's own detection will (correctly) pick SLURMEnvironment.
-        assert make_runner().cluster_environment is None
-
-    def test_interactive_job_name_defers_to_lightning(
-        self, make_runner, sbatch_env_without_srun, monkeypatch
-    ):
-        # Lightning treats job name bash/interactive as "not SLURM-managed"
-        # already; auto must not override that.
-        monkeypatch.setenv("SLURM_JOB_NAME", "bash")
-        assert make_runner().cluster_environment is None
-
-
-class TestExplicitResolution:
-    def test_local_forced(self, make_runner, srun_env):
-        env = make_runner(cluster_environment="local").cluster_environment
-        assert isinstance(env, LightningEnvironment)
-
-    def test_slurm_forced(self, make_runner, no_slurm_env):
-        env = make_runner(cluster_environment="slurm").cluster_environment
-        assert isinstance(env, SLURMEnvironment)
-
-    @pytest.mark.skipif(
-        importlib.util.find_spec("mpi4py") is None,
-        reason="MPIEnvironment requires mpi4py",
-    )
-    def test_mpi_forced(self, make_runner, no_slurm_env):
-        env = make_runner(cluster_environment="mpi").cluster_environment
-        assert isinstance(env, MPIEnvironment)
-
-    @pytest.mark.skipif(
-        importlib.util.find_spec("mpi4py") is None,
-        reason="MPIEnvironment requires mpi4py",
-    )
-    def test_legacy_mpi_plugin_flag(self, make_runner, no_slurm_env):
-        env = make_runner(mpi_plugin=True).cluster_environment
-        assert isinstance(env, MPIEnvironment)
-
-    def test_invalid_value_rejected(self, make_runner):
-        with pytest.raises(ValueError):
-            make_runner(cluster_environment="k8s")
-
-
-class TestTrainerIntegration:
-    def test_knob_not_forwarded_to_pl_trainer(self, make_runner, no_slurm_env):
-        """pl.Trainer must never see the cluster_environment kwarg."""
+def test_knob_not_forwarded_to_pl_trainer(make_runner):
+    """pl.Trainer must never see the cluster_environment kwarg."""
+    with scrubbed_slurm_env({}):
         runner = make_runner(accelerator="cpu", devices=1, cluster_environment="local")
         trainer = runner.trainer  # raises TypeError if the kwarg leaks through
         assert isinstance(
@@ -135,8 +145,8 @@ class TestTrainerIntegration:
             LightningEnvironment,
         )
 
-    def test_distributed_strategy_carries_env(
-        self, make_runner, sbatch_env_without_srun
-    ):
+
+def test_distributed_strategy_carries_env(make_runner):
+    with scrubbed_slurm_env(SBATCH_WITHOUT_SRUN):
         runner = make_runner(accelerator="cpu", devices=8)
         assert isinstance(runner.strategy.cluster_environment, LightningEnvironment)
