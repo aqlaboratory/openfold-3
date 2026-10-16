@@ -9,6 +9,7 @@ The configuration file is organized into several main sections. Each section cor
 ## 2. Important Notes
 
 - **Selective Configuration**: Only specify the settings you want to override in your runner YAML file. All unspecified options will use their default values.
+- **Default Cache Configuration**: Placing a `runner.yml` in `$OPENFOLD_CACHE` (or `~/.openfold3/runner.yml`) automatically sets it as the baseline configuration for all inference runs. This is merged with any explicitly passed `--runner-yaml` file.
 - **Command-line Priority**: Command-line arguments take precedence and will override any values specified in the YAML file.
 - **Reference Implementation**: The full configuration file serves as a reference - create your own simplified runner YAML based on your specific needs. See `examples/example_runner_yamls/` for common usage examples.
 
@@ -107,6 +108,7 @@ model_update:
   - Must be a key in `OPENFOLD_MODEL_CHECKPOINT_REGISTRY`(https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/parameters.py#L29)
 - `cache_path` *(Path | None)*: Directory for storing cached model parameters
   - Default: `$HOME/.openfold3/`
+- `user_default_runner_yaml_path` *(Path | None)*: Path to the automatically loaded user-default `runner.yml`. Recorded in `experiment_config.json` for run traceability.
 
 ---
 
@@ -131,14 +133,14 @@ data_module_args:
 ```
 
 ---
-### 3.X Checkpoint Confiugration (`checkpoint_config`)
+### 3.6 Checkpoint Confiugration (`checkpoint_config`)
 
 Configures Checkpoint writing settings, which are passed to [pl.ModelCheckpoint callback](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.ModelCheckpoint.html). 
 
+---
+### 3.7. Dataset Config Kwargs (`dataset_config_kwargs`)
 
-### 3.6. Dataset Config Kwargs (`dataset_config_kwargs`)
-
-Configures MSA and template feature generation.
+Configures MSA, template, and pocket sampling feature generation.
 
 **Pydantic Model**: [`InferenceDatasetConfigKwargs`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_configs.py#L270)
 
@@ -146,8 +148,9 @@ Configures MSA and template feature generation.
 - `ccd_file_path` *(FilePath | None)*: Path to Chemical Component Dictionary file, uses CCD from Biotite if null (default: `null`)
 - `msa` *(MSASettings)*: MSA processing settings (see below)
 - `template` *(TemplateSettings)*: Template processing settings (see below)
+- `pocket_sampling` *(PocketSamplingSettings)*: Pocket-guided ligand proposal sampling settings (see below)
 
-#### 3.6.1. MSA Settings (`msa`)
+#### 3.7.1. MSA Settings (`msa`)
 
 Controls how MSAs are parsed and processed into features.
 
@@ -174,7 +177,7 @@ dataset_config_kwargs:
     moltypes: [0, 1]  # protein and RNA
 ```
 
-#### 3.6.2. Template Settings (`template`)
+#### 3.7.2. Template Settings (`template`)
 
 Controls template structure processing.
 
@@ -197,9 +200,41 @@ dataset_config_kwargs:
     take_top_k: true
 ```
 
+(full-ref-pocket-sampling-settings)=
+#### 3.7.3 Pocket Sampling Settings (`pocket_sampling`)
+
+Controls pocket-guided ligand proposal sampling and refinement. These settings only take effect when a query supplies a `pocket_constraint`; the presence of that constraint enables proposal sampling by default.
+
+**Pydantic Model**: [`PocketSamplingSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/pocket_sampling_config.py#L28)
+
+**All Options**:
+- `enabled` *(bool)*: Whether pocket-guided proposal sampling runs when a query provides a `pocket_constraint`; useful for ablations without changing the input JSON (default: `true`)
+- `num_parents` *(int)*: Number of de-novo rollout parents to seed refinement from, capped by `no_rollout_samples` at runtime (default: `16`, minimum: `1`)
+- `candidates` *(int)*: Number of random rigid ligand proposals to rank before diversity filtering (default: `1024`, minimum: `1`)
+- `noise_frac` *(float)*: Fraction of the diffusion schedule to complete before starting the refinement pass (default: `0.75`, range: `0.0`–`1.0`)
+- `ligand_jitter` *(float)*: Ligand-only coordinate jitter in Angstroms applied before refinement, so repeated samples from the same seed do not follow identical trajectories (default: `0.25`, minimum: `0.0`)
+- `center_jitter` *(float)*: Pocket-center proposal jitter in Angstroms, exploring placements around the residue set centroid (default: `4.0`, minimum: `0.0`)
+- `surface_jitter` *(float)*: Pocket-surface proposal jitter in Angstroms, exploring local contacts around individual pocket atoms (default: `1.5`, minimum: `0.0`)
+- `vdw_buffer` *(float)*: Clash screening uses van der Waals radii multiplied by `(1 - vdw_buffer)`, allowing imperfect poses while rejecting severe overlaps (default: `0.225`, minimum: `0.0`)
+- `diversity_rmsd` *(float)*: Minimum heavy-atom RMSD in Angstroms between selected ligand proposals (default: `0.5`, minimum: `0.0`)
+- `rdkit_num_conformers` *(int)*: Number of RDKit conformers to generate for the ligand ensemble; set to `0` to disable RDKit conformer generation (default: `32`, minimum: `0`)
+- `rdkit_conformer_rng` *(int)*: Random seed for deterministic RDKit conformer embedding (default: `0`)
+- `rdkit_conformer_prune_rmsd` *(float)*: RDKit embedding RMSD pruning threshold; disabled by default so OF3 proposal ranking, not RDKit, controls diversity (default: `0.0`, minimum: `0.0`)
+- `rdkit_conformer_max_iters` *(int)*: Maximum number of force-field optimization iterations per RDKit conformer (default: `200`, minimum: `1`)
+
+**Example**:
+```yaml
+dataset_config_kwargs:
+  pocket_sampling:
+    enabled: true
+    num_parents: 16
+    candidates: 1024
+    noise_frac: 0.75
+```
+
 ---
 
-### 3.7. Output Writer Settings (`output_writer_settings`)
+### 3.8. Output Writer Settings (`output_writer_settings`)
 
 Configures the format of output files.
 
@@ -222,31 +257,36 @@ output_writer_settings:
 
 ---
 
-### 3.8. MSA Computation Settings (`msa_computation_settings`)
+### 3.9. MSA Computation Settings (`msa_computation_settings`)
 
 Configures the ColabFold MSA server integration.
 
-**Pydantic Model**: [`MsaComputationSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py#L904)
+**Pydantic Model**: [`MsaComputationSettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py)
 
 **All Options**:
 - `msa_file_format` *(Literal["npz", "a3m"])*: Format for saved MSAs (default: `npz`)
 - `server_user_agent` *(str)*: User agent string (default: `openfold`)
 - `server_url` *(Url)*: ColabFold server URL (default: `https://api.colabfold.com`)
 - `save_mappings` *(bool)*: Save sequence ID mappings (default: `true`)
-- `msa_output_directory` *(Path)*: Directory for MSA outputs (default: `temporary directory/of3-of-<user>/colabfold_msas`)
-- `cleanup_msa_dir` *(bool)*: Delete MSAs after processing (default: `true`)
+- `msa_output_directory` *(Path | None)*: Optional exact destination for OpenFold-formatted alignments (default during inference: `<output_dir>/msas/<run-id>`)
+- `save_openfold_outputs` *(bool)*: Save OpenFold-formatted alignments (default: `true`)
+- `save_colabfold_outputs` *(bool)*: Save raw ColabFold server outputs (default: `true`)
+- `colabfold_output_dir` *(Path | None)*: Optional parent directory for raw ColabFold run records (default during inference when `msa_output_directory` is not set: `<output_dir>/msas/raw`)
+- `cleanup_msa_dir` *(bool)*: Remove the run-created template directory during cleanup (default: `true`). The MSA workspace is always removed, and explicit template output directories are preserved.
+
+When temporary MSA work is needed, each command uses a unique workspace under its output directory. The workspace is removed after normal completion or a handled error.
 
 **Example**:
 ```yaml
 msa_computation_settings:
   msa_file_format: npz
-  cleanup_msa_dir: false
-  msa_output_directory: /path/to/msas
+  save_openfold_outputs: true
+  save_colabfold_outputs: false
 ```
 
 ---
 
-### 3.9. Template Preprocessor Settings (`template_preprocessor_settings`)
+### 3.10. Template Preprocessor Settings (`template_preprocessor_settings`)
 
 Configures template structure preprocessing and filtering.
 
@@ -260,8 +300,10 @@ Configures template structure preprocessing and filtering.
 - `min_align` *(float | None)*: Minimum alignment coverage (default: `null`)
 - `min_len` *(int | None)*: Minimum aligned residues (default: `null`)
 - `max_release_date` *(datetime | None)*: Maximum template release date (default: `null`)
-- `min_release_date_diff` *(int | None)*: Minimum days between query and template release (default: `null`)
+- `min_release_date_diff` *(int | None)*: Train mode only. Minimum days between a structure's release and its templates' release; inference queries have no release date, so use `max_release_date` there (default: `null`)
 - `max_templates` *(int)*: Maximum templates per chain (default: `20`)
+- `cif_direct_min_score` *(float)*: CIF-direct mode only. Minimum sequence identity × query coverage for a template chain to be used (default: `0.1`)
+- `min_f_resolved` *(float)*: Minimum fraction of resolved residues for a template to be valid; only used when template structure arrays and precache entries are computed separately from the template cache (default: `0.1`)
 - `fetch_missing_structures` *(bool)*: Fetch missing structures from PDB (default: `true`)
 - `create_precache` *(bool)*: Cache template structure data (default: `false`)
 - `preparse_structures` *(bool)*: Preparse structures into .npz files (default: `false`)
@@ -269,14 +311,16 @@ Configures template structure preprocessing and filtering.
 - `n_processes` *(int)*: Number of preprocessing processes (default: `1`)
 - `chunksize` *(int)*: Tasks per worker in multiprocessing (default: `1`)
 - `preprocess_timeout` *(int)*: Maximum preprocessing time in seconds (default: `60`)
-- `structure_directory` *(Path | None)*: Directory for template structures (default: `null`)
+- `structure_directory` *(Path | None)*: Directory for template structures. During inference, the implicit default is `<output_directory>/template_structures`.
 - `structure_file_format` *(str)*: File format of structures - `cif` or `pdb` (default: `cif`)
-- `output_directory` *(Path | None)*: Output directory for templates (default: `null`)
+- `output_directory` *(Path | None)*: Output directory for templates. During inference, the implicit default is `<output_dir>/openfold3_intermediates/template_data/<run-id>`.
 - `precache_directory` *(Path | None)*: Directory for template precache (default: `null`)
 - `structure_array_directory` *(Path | None)*: Directory for preparsed structures (default: `null`)
-- `cache_directory` *(Path | None)*: Directory for template cache (default: `null`)
+- `cache_directory` *(Path | None)*: Directory for template cache. During inference, the implicit default is `<output_directory>/template_cache`.
 - `log_directory` *(Path | None)*: Directory for logs (default: `null`)
 - `ccd_file_path` *(Path | None)*: Path to Chemical Component Dictionary file (default: `null`)
+- `template_alignment_directory` *(Path | None)*: Train mode only. Directory with one `<rep_id>/colabfold_template.m8` per alignment representative, the layout `align-msa-server` writes; template IDs must use label chain IDs (default: `null`)
+- `alignment_representatives_fasta` *(Path | None)*: Train mode only. FASTA mapping alignment representative IDs (headers) to their sequences, one line each (default: `null`)
 
 **Example**:
 ```yaml
@@ -285,6 +329,10 @@ template_preprocessor_settings:
   max_templates: 20
   fetch_missing_structures: true
 ```
+
+Explicit template paths override these inference defaults.
+
+When running [`preprocess_template_alignments_new_of3.py`](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/preprocess_template_alignments_new_of3.py), `mode` follows `--input_set_type`, and `--output_directory` replaces `output_directory`, `cache_directory` and `log_directory`. `precache_directory` and `structure_array_directory` are used when given. The settings used are saved as `template_preprocessor_settings.json` in the output directory.
 
 ---
 
@@ -295,4 +343,5 @@ For the complete list of default values, see the Pydantic model classes in:
 - [`openfold3/projects/of3_all_atom/config/dataset_config_components.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py) - MSA and template settings
 - [`openfold3/core/data/tools/colabfold_msa_server.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/tools/colabfold_msa_server.py) - MSA server settings
 - [`openfold3/core/data/pipelines/preprocessing/template.py`](http://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/data/pipelines/preprocessing/template.py) - Template preprocessing settings
+- [`openfold3/core/config/pocket_sampling_config.py`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/core/config/pocket_sampling_config.py) - Pocket sampling settings
 

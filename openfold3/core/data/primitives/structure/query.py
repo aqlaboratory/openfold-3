@@ -18,6 +18,7 @@ molecules.
 """
 
 import logging
+import random
 from collections.abc import Iterable
 from functools import lru_cache
 from typing import NamedTuple
@@ -39,7 +40,7 @@ from openfold3.core.data.primitives.structure.conformer import (
 from openfold3.core.data.resources.residues import (
     DNA_RESTYPE_1TO3,
     MOLECULE_TYPE_TO_LEAVING_ATOMS,
-    MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3,
+    MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_3,
     PROTEIN_RESTYPE_1TO3,
     RNA_RESTYPE_1TO3,
     MoleculeType,
@@ -182,6 +183,7 @@ def atom_array_from_mol(
 def processed_reference_molecule_from_atom_array(
     atom_array: struc.AtomArray,
     atoms_to_mask: Iterable[str] = None,
+    rng: random.Random | None = None,
 ) -> ProcessedReferenceMolecule:
     """Creates a processed reference molecule from an AtomArray.
 
@@ -196,6 +198,8 @@ def processed_reference_molecule_from_atom_array(
             will still be part of the RDKit mol object to retain chemical validity and
             generate the correct conformer. If None, which is the default, no atoms will
             be masked.
+        rng (random.Random | None):
+            Conformer generation seed source; defaults to the ambient stdlib RNG.
 
     Returns:
         ProcessedReferenceMolecule:
@@ -219,6 +223,7 @@ def processed_reference_molecule_from_atom_array(
         mol=mol,
         atom_names=atom_array.atom_name,
         atom_mask=atom_mask,
+        rng=rng,
     )
 
 
@@ -226,6 +231,7 @@ def processed_reference_molecule_from_mol(
     mol: Chem.Mol,
     atom_names: Iterable[str] | None = None,
     atom_mask: np.ndarray | None = None,
+    rng: random.Random | None = None,
 ) -> ProcessedReferenceMolecule:
     """Creates a processed reference molecule from an RDKit mol object.
 
@@ -241,6 +247,8 @@ def processed_reference_molecule_from_mol(
             still be part of the rdkit.Mol object to retain chemical validity of the
             molecule and generate the correct conformer. If None, which is the default,
             no atoms will be masked.
+        rng (random.Random | None):
+            Conformer generation seed source; defaults to the ambient stdlib RNG.
 
     Returns:
         ProcessedReferenceMolecule:
@@ -251,7 +259,10 @@ def processed_reference_molecule_from_mol(
     # function will remove all hydrogens in the input mol and can therefore change the
     # mask length)
     result = multistrategy_compute_conformer(
-        mol, remove_hs=True, timeouts={"default": 120, "random_init": 120}
+        mol,
+        remove_hs=True,
+        timeouts={"default": 120, "random_init": 120},
+        rng=rng,
     )
     mol, conf_id = result.mol, result.conf_id
     assert conf_id == 0
@@ -287,6 +298,7 @@ def structure_with_ref_mols_from_sequence(
     poly_type: MoleculeType,
     chain_id: str,
     non_canonical_residues: dict[int, str] | None = None,
+    rng: random.Random | None = None,
 ) -> StructureWithReferenceMolecules:
     """Builds an AtomArray and processed reference molecules from a sequence.
 
@@ -306,6 +318,8 @@ def structure_with_ref_mols_from_sequence(
         non_canonical_residues (dict[int, str] | None):
             A dictionary mapping residue IDs to non-canonical residue names. Defaults to
             None.
+        rng (random.Random | None):
+            Conformer generation seed source; forwarded to each residue.
 
     Returns:
         StructureWithReferenceMolecules:
@@ -327,7 +341,7 @@ def structure_with_ref_mols_from_sequence(
             raise ValueError(f"Unsupported molecule type: {poly_type}")
 
     # Figure out the unknown residue 3-letter identifier and leaving atom names
-    unk_res = MOLECULE_TYPE_TO_UKNOWN_RESIDUES_3[poly_type]
+    unk_res = MOLECULE_TYPE_TO_UNKNOWN_RESIDUES_3[poly_type]
     base_leaving_atoms = MOLECULE_TYPE_TO_LEAVING_ATOMS[poly_type]
 
     atom_array = None
@@ -371,7 +385,7 @@ def structure_with_ref_mols_from_sequence(
 
         # Parse into RDKit mol and compute conformer
         processed_ref_mol = processed_reference_molecule_from_atom_array(
-            res_array, atoms_to_mask=leaving_atoms
+            res_array, atoms_to_mask=leaving_atoms, rng=rng
         )
         processed_reference_mols.append(processed_ref_mol)
 
@@ -409,6 +423,7 @@ def structure_with_ref_mol_from_mol(
     chain_id: str,
     atom_mask: np.ndarray | None = None,
     res_name: str = "LIG",
+    rng: random.Random | None = None,
 ) -> StructureWithReferenceMolecules:
     """Creates a single AtomArray and processed reference molecule from an RDKit mol.
 
@@ -423,6 +438,8 @@ def structure_with_ref_mol_from_mol(
             None, all atoms will be included.
         res_name (str):
             The residue name to assign to the created AtomArray. Defaults to "LIG".
+        rng (random.Random | None):
+            Conformer generation seed source; defaults to the ambient stdlib RNG.
     Returns:
         StructureWithReferenceMolecules:
             A named tuple containing the AtomArray and a list with a single processed
@@ -430,7 +447,9 @@ def structure_with_ref_mol_from_mol(
     """
 
     # Build the ligand molecule
-    proc_ref_mol = processed_reference_molecule_from_mol(mol, atom_mask=atom_mask)
+    proc_ref_mol = processed_reference_molecule_from_mol(
+        mol, atom_mask=atom_mask, rng=rng
+    )
 
     # Get the processed mol that now will have a computed conformer
     mol = proc_ref_mol.mol
@@ -454,6 +473,7 @@ def structure_with_ref_mol_from_mol(
 def structure_with_ref_mol_from_ccd_code(
     ccd_code: str,
     chain_id: str,
+    rng: random.Random | None = None,
 ) -> StructureWithReferenceMolecules:
     """Creates a single AtomArray and processed reference molecule from a CCD code.
 
@@ -462,6 +482,8 @@ def structure_with_ref_mol_from_ccd_code(
             The CCD code of the molecule to create.
         chain_id (str):
             The chain ID to assign to the created AtomArray.
+        rng (random.Random | None):
+            Conformer generation seed source; defaults to the ambient stdlib RNG.
 
     Returns:
         StructureWithReferenceMolecules:
@@ -478,7 +500,7 @@ def structure_with_ref_mol_from_ccd_code(
     )
 
     # Get processed reference molecule
-    proc_ref_mol = processed_reference_molecule_from_atom_array(atom_array)
+    proc_ref_mol = processed_reference_molecule_from_atom_array(atom_array, rng=rng)
 
     # Force coordinates to 0 for consistency
     atom_array.coord[:] = 0.0
@@ -492,6 +514,7 @@ def structure_with_ref_mol_from_smiles(
     smiles: str,
     chain_id: str,
     res_name: str = "LIG",
+    rng: random.Random | None = None,
 ) -> StructureWithReferenceMolecules:
     """Creates a single AtomArray and processed ref molecule from a SMILES string.
 
@@ -502,6 +525,8 @@ def structure_with_ref_mol_from_smiles(
             The chain ID to assign to the created AtomArray.
         res_name (str):
             The residue name to assign to the created AtomArray. Defaults to "LIG".
+        rng (random.Random | None):
+            Conformer generation seed source; defaults to the ambient stdlib RNG.
 
     Returns:
         StructureWithReferenceMolecules:
@@ -515,10 +540,53 @@ def structure_with_ref_mol_from_smiles(
         mol,
         chain_id=chain_id,
         res_name=res_name,
+        rng=rng,
     )
 
 
-def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMolecules:
+def _build_smiles_comp_id_mapping(query: Query) -> dict[str, str]:
+    """Build the component-ID mapping for SMILES ligands."""
+    all_smiles = sorted(
+        {chain.smiles for chain in query.chains if chain.smiles is not None}
+    )
+    smiles_to_comp_id = {smiles: f"LIG{i}" for i, smiles in enumerate(all_smiles)}
+
+    explicit_names: dict[str, str] = {}
+    for chain in query.chains:
+        if chain.smiles is None or chain.ligand_name is None:
+            continue
+
+        previous_name = explicit_names.get(chain.smiles)
+        if previous_name is not None and previous_name != chain.ligand_name:
+            raise ValueError("The same SMILES string cannot use multiple ligand names")
+        explicit_names[chain.smiles] = chain.ligand_name
+
+    reserved_component_ids = {
+        component_id.upper()
+        for chain in query.chains
+        for component_id in [
+            *(chain.ccd_codes or []),
+            *(chain.non_canonical_residues or {}).values(),
+        ]
+    }
+    collisions = set(explicit_names.values()) & reserved_component_ids
+    if collisions:
+        raise ValueError(
+            "Explicit SMILES ligand names conflict with CCD or non-canonical "
+            f"residue names: {sorted(collisions)}"
+        )
+
+    smiles_to_comp_id.update(explicit_names)
+    component_ids = list(smiles_to_comp_id.values())
+    if len(component_ids) != len(set(component_ids)):
+        raise ValueError("Distinct SMILES strings must use distinct ligand names")
+
+    return smiles_to_comp_id
+
+
+def structure_with_ref_mols_from_query(
+    query: Query, rng: random.Random | None = None
+) -> StructureWithReferenceMolecules:
     """Builds an AtomArray and processed reference molecules from a Query object.
 
     Parses the Query object into a full AtomArray and processed reference molecules
@@ -528,12 +596,17 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
     specifies multiple chain IDs, repeated identical chains with those IDs will be
     constructed and given the same entity ID.
 
-    Residue names will be inferred from the sequence or CCD codes. If a ligand is
-    specified through a SMILES string, it will be named as "LIG".
+    Residue names will be inferred from the sequence or CCD codes. SMILES ligands use
+    an explicit ``ligand_name`` when provided and otherwise retain their deterministic
+    ``LIG0``, ``LIG1``, ... defaults.
 
     Args:
         query (Query):
             The Query object containing the chains to construct the structure from.
+        rng (random.Random | None):
+            Conformer generation seed source for every conformer in this query. One
+            shared stream advances per molecule, so repeated chains still get distinct
+            seeds. Defaults to the ambient stdlib RNG.
 
     Returns:
         StructureWithReferenceMolecules:
@@ -557,17 +630,7 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
     all_entities = sorted(all_entities)
     entity_to_id = {e: i + 1 for i, e in enumerate(all_entities)}
 
-    # Create smiles->comp ID mapping to allow for distinguishing different ligands
-    # specified by smiles
-    all_smiles = set()
-    for chain in query.chains:
-        if chain.smiles is not None:
-            all_smiles.add(chain.smiles)
-    if len(all_smiles) > 0:
-        all_smiles = sorted(all_smiles)
-        smiles_to_comp_id = {s: f"LIG{i}" for i, s in enumerate(all_smiles)}
-    else:
-        smiles_to_comp_id = {}
+    smiles_to_comp_id = _build_smiles_comp_id_mapping(query)
 
     # Build the structure segment-wise from all chains in the query.
     for chain in query.chains:
@@ -581,6 +644,7 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                             poly_type=chain.molecule_type,
                             chain_id=chain_id,
                             non_canonical_residues=chain.non_canonical_residues,
+                            rng=rng,
                         )
                     )
                     representation = chain.sequence
@@ -594,6 +658,7 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                                 smiles=chain.smiles,
                                 chain_id=chain_id,
                                 res_name=smiles_to_comp_id[chain.smiles],
+                                rng=rng,
                             )
                         )
                         representation = chain.smiles
@@ -611,6 +676,7 @@ def structure_with_ref_mols_from_query(query: Query) -> StructureWithReferenceMo
                             structure_with_ref_mol_from_ccd_code(
                                 ccd_code=chain.ccd_codes[0],
                                 chain_id=chain_id,
+                                rng=rng,
                             )
                         )
                         representation = chain.ccd_codes[0]

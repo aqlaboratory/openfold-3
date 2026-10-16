@@ -19,6 +19,8 @@ Diffusion module. Implements the algorithms in section 3.7 of the
 Supplementary Information.
 """
 
+import logging
+
 import torch
 import torch.nn as nn
 
@@ -35,8 +37,15 @@ from openfold3.core.model.primitives import LayerNorm, Linear
 # in the heavy model stack (e.g. cuequivariance). See augmentation.py / issue #268.
 from openfold3.core.model.structure.augmentation import (  # noqa: F401
     centre_random_augmentation,
-    sample_rotations,
 )
+from openfold3.core.model.structure.pocket_constraints import (
+    _batch_scalar,
+    _build_pocket_sampling_seeds,
+    _feature_mask,
+    _pocket_sampling_enabled,
+)
+
+logger = logging.getLogger(__name__)
 
 
 # Move this somewhere else?
@@ -277,6 +286,65 @@ class SampleDiffusion(nn.Module):
         self.step_scale = step_scale
         self.diffusion_module = diffusion_module
 
+    def _sample_rollout(
+        self,
+        batch: dict,
+        xl: torch.Tensor,
+        atom_mask: torch.Tensor,
+        si_input: torch.Tensor,
+        si_trunk: torch.Tensor,
+        zij_trunk: torch.Tensor,
+        noise_schedule: torch.Tensor,
+        start_step: int,
+        use_conditioning: bool,
+        chunk_size: int | None = None,
+        use_deepspeed_evo_attention: bool = False,
+        use_cueq_triangle_kernels: bool = False,
+        use_triton_triangle_kernels: bool = False,
+        use_lma: bool = False,
+        use_high_precision_attention: bool = False,
+        _mask_trans: bool = True,
+    ) -> torch.Tensor:
+        """Run the standard OF3 denoising loop from a chosen schedule index."""
+        for tau, c_tau in enumerate(noise_schedule[1:]):
+            if tau < start_step:
+                continue
+            xl = centre_random_augmentation(xl=xl, atom_mask=atom_mask)
+
+            gamma = self.gamma_0 if c_tau > self.gamma_min else 0
+            t = noise_schedule[tau] * (gamma + 1)
+            noise = (
+                self.noise_scale
+                * torch.sqrt(t**2 - noise_schedule[tau] ** 2)
+                * torch.randn_like(xl)
+            )
+            xl_noisy = xl + noise
+
+            xl_denoised = self.diffusion_module(
+                batch=batch,
+                xl_noisy=xl_noisy,
+                token_mask=batch["token_mask"],
+                atom_mask=atom_mask,
+                t=t.to(xl_noisy.device),
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                use_conditioning=use_conditioning,
+                chunk_size=chunk_size,
+                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
+                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
+                use_triton_triangle_kernels=use_triton_triangle_kernels,
+                use_lma=use_lma,
+                use_high_precision_attention=use_high_precision_attention,
+                _mask_trans=_mask_trans,
+            )
+
+            delta = (xl_noisy - xl_denoised) / t
+            dt = c_tau - t
+            xl = xl_noisy + self.step_scale * dt * delta
+
+        return xl
+
     def forward(
         self,
         batch: dict,
@@ -328,50 +396,87 @@ class SampleDiffusion(nn.Module):
         atom_mask = batch["atom_mask"]
         batch_dim, num_atoms = atom_mask.shape[0], atom_mask.shape[-1]
 
+        total_steps = len(noise_schedule) - 1
+
         xl = noise_schedule[0] * torch.randn(
             (batch_dim, no_rollout_samples, num_atoms, 3),
             device=atom_mask.device,
             dtype=atom_mask.dtype,
         )
 
-        for tau, c_tau in enumerate(noise_schedule[1:]):
-            xl = centre_random_augmentation(xl=xl, atom_mask=atom_mask)
+        rollout_kwargs = {
+            "batch": batch,
+            "atom_mask": atom_mask,
+            "si_input": si_input,
+            "si_trunk": si_trunk,
+            "zij_trunk": zij_trunk,
+            "noise_schedule": noise_schedule,
+            "use_conditioning": use_conditioning,
+            "chunk_size": chunk_size,
+            "use_deepspeed_evo_attention": use_deepspeed_evo_attention,
+            "use_cueq_triangle_kernels": use_cueq_triangle_kernels,
+            "use_triton_triangle_kernels": use_triton_triangle_kernels,
+            "use_lma": use_lma,
+            "use_high_precision_attention": use_high_precision_attention,
+            "_mask_trans": _mask_trans,
+        }
 
-            gamma = self.gamma_0 if c_tau > self.gamma_min else 0
-
-            t = noise_schedule[tau] * (gamma + 1)
-
-            noise = (
-                self.noise_scale
-                * torch.sqrt(t**2 - noise_schedule[tau] ** 2)
-                * torch.randn_like(xl)
+        pocket_sampling_enabled = _pocket_sampling_enabled(batch)
+        if pocket_sampling_enabled and batch_dim != 1:
+            raise ValueError(
+                "Pocket proposal/refinement currently supports one query per "
+                "model batch"
             )
 
-            xl_noisy = xl + noise
+        xl = self._sample_rollout(xl=xl, start_step=0, **rollout_kwargs)
 
-            xl_denoised = self.diffusion_module(
+        if pocket_sampling_enabled:
+            seed = _build_pocket_sampling_seeds(
                 batch=batch,
-                xl_noisy=xl_noisy,
-                token_mask=batch["token_mask"],
+                xl_base=xl.detach(),
                 atom_mask=atom_mask,
-                t=t.to(xl_noisy.device),
-                si_input=si_input,
-                si_trunk=si_trunk,
-                zij_trunk=zij_trunk,
-                use_conditioning=use_conditioning,
-                chunk_size=chunk_size,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                use_triton_triangle_kernels=use_triton_triangle_kernels,
-                use_lma=use_lma,
-                use_high_precision_attention=use_high_precision_attention,
-                _mask_trans=_mask_trans,
+                no_rollout_samples=no_rollout_samples,
             )
-
-            # TODO: Changed from SI, xl_noisy used instead of xl as in EDM paper
-            #  Verify that this is working correctly
-            delta = (xl_noisy - xl_denoised) / t
-            dt = c_tau - t
-            xl = xl_noisy + self.step_scale * dt * delta
+            pocket_sampling_start_frac = _batch_scalar(
+                batch, "pocket_sampling_start_frac", float
+            )
+            pocket_sampling_jitter = _batch_scalar(
+                batch, "pocket_sampling_ligand_jitter", float
+            )
+            pocket_sampling_start_step = max(
+                0,
+                min(
+                    total_steps - 1,
+                    int(round(pocket_sampling_start_frac * total_steps)),
+                ),
+            )
+            lig_mask = _feature_mask(
+                batch, atom_mask, "pocket_sampling_ligand_atom_mask"
+            )
+            lig = lig_mask[:, None, :, None]
+            lig_jitter = pocket_sampling_jitter * torch.randn(
+                (batch_dim, no_rollout_samples, 1, 3),
+                device=atom_mask.device,
+                dtype=atom_mask.dtype,
+            )
+            seed = torch.where(lig, seed + lig_jitter, seed)
+            xl = seed + noise_schedule[pocket_sampling_start_step] * torch.randn_like(
+                seed
+            )
+            logger.info(
+                "[pocket_sampling] start_frac=%.3f start_step=%s/%s "
+                "sigma=%.3g jitter=%.3g seed_proposals=%s",
+                pocket_sampling_start_frac,
+                pocket_sampling_start_step,
+                total_steps,
+                float(noise_schedule[pocket_sampling_start_step]),
+                pocket_sampling_jitter,
+                seed.shape[1],
+            )
+            xl = self._sample_rollout(
+                xl=xl,
+                start_step=pocket_sampling_start_step,
+                **rollout_kwargs,
+            )
 
         return xl

@@ -114,6 +114,84 @@ def broadcast_token_feat_to_atoms(
     return atom_feat
 
 
+def _expand_to_batch(tensor: torch.Tensor, batch_dims: torch.Size) -> torch.Tensor:
+    while tensor.ndim - 1 < len(batch_dims):
+        tensor = tensor.unsqueeze(-2)
+    return tensor.expand(*batch_dims, tensor.shape[-1])
+
+
+# ``torch.segment_reduce`` is a partial op: CPU and CUDA only (ROCm reports
+# ``cuda``). MPS has no kernel, so callers fall back to the scatter path.
+_SEGMENT_REDUCE_DEVICES: frozenset[str] = frozenset({"cpu", "cuda"})
+
+
+def segmented_reduce_supported(device: torch.device | str) -> bool:
+    """Whether deterministic segmented aggregation can run on ``device``."""
+    return torch.device(device).type in _SEGMENT_REDUCE_DEVICES
+
+
+def broadcast_token_feat_to_atoms_by_index(
+    token_mask: torch.Tensor,
+    atom_to_token_index: torch.Tensor,
+    atom_mask: torch.Tensor,
+    token_feat: torch.Tensor,
+) -> torch.Tensor:
+    """Gather token features onto atoms via ``atom_to_token_index``.
+
+    Equivalent to ``broadcast_token_feat_to_atoms``, but expressed as a plain
+    ``torch.gather`` through the precomputed index rather than
+    ``repeat_interleave``. The count-based form syncs device->host 3x per call
+    (measured: 2 inside ``repeat_interleave`` with tensor repeats, 1 in the
+    final ``reshape`` using a 0-dim CUDA int32 as a shape dimension) and has a
+    value-dependent output shape, so it cannot be CUDA-graph captured. Both
+    properties matter on the diffusion rollout, where this runs once per step.
+    Masking with ``token_mask`` / ``atom_mask`` keeps the result identical to
+    the count-based broadcast.
+
+    Args:
+        token_mask:
+            [*, N_token] Token mask
+        atom_to_token_index:
+            [*, N_atom] Token index for each atom
+        atom_mask:
+            [*, N_atom] Atom mask
+        token_feat:
+            [*, N_token, c] Token-level features
+    Returns:
+        [*, N_atom, c] Atom-level features
+    """
+    batch_dims = token_feat.shape[:-2]
+    n_token, channels = token_feat.shape[-2:]
+    idx = _expand_to_batch(atom_to_token_index, batch_dims).clamp(0, n_token - 1)
+    idx = idx.long().unsqueeze(-1).expand(*idx.shape, channels)
+    token_mask = _expand_to_batch(token_mask, batch_dims).unsqueeze(-1)
+    atom_mask = _expand_to_batch(atom_mask, batch_dims).unsqueeze(-1)
+    return torch.gather(token_feat * token_mask, -2, idx) * atom_mask
+
+
+def aggregate_atom_feat_to_tokens_segmented(
+    num_atoms_per_token: torch.Tensor,
+    atom_mask: torch.Tensor,
+    atom_feat: torch.Tensor,
+    eps: float = 1e-9,
+) -> torch.Tensor:
+    """Deterministic mean-reduce of packed, token-sorted atoms."""
+    batch_dims = atom_feat.shape[:-2]
+    n_token = num_atoms_per_token.shape[-1]
+    atom_mask = _expand_to_batch(atom_mask, batch_dims)
+    lengths = _expand_to_batch(num_atoms_per_token, batch_dims).long()
+    lengths = torch.cat(
+        [lengths, atom_feat.shape[-2] - lengths.sum(dim=-1, keepdim=True)], dim=-1
+    )
+    token_feat = torch.segment_reduce(
+        atom_feat * atom_mask.unsqueeze(-1), "sum", lengths=lengths, axis=-2
+    )[..., :n_token, :]
+    counts = torch.segment_reduce(
+        atom_mask.to(atom_feat.dtype), "sum", lengths=lengths, axis=-1
+    )[..., :n_token]
+    return token_feat / (counts.unsqueeze(-1) + eps)
+
+
 def aggregate_atom_feat_to_tokens(
     token_mask: torch.Tensor,
     atom_to_token_index: torch.Tensor,

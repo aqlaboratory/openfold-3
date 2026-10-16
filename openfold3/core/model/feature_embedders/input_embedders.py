@@ -134,6 +134,8 @@ class InputEmbedderAllAtom(nn.Module):
                 use_high_precision_attention=use_high_precision_attention,
             )
 
+        # For training with DeepSpeed, convert back to runtime dtype
+        # No-op for DDP
         a = a.to(dtype=self.linear_s.weight.dtype)
 
         # [*, N_token, C_s_input]

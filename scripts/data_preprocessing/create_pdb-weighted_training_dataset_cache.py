@@ -91,12 +91,13 @@ from openfold3.core.data.pipelines.preprocessing.caches.pdb_weighted import (
     ),
 )
 @click.option(
-    "--missing-alignment-log",
-    type=click.Path(exists=False, file_okay=True, dir_okay=False, path_type=Path),
+    "--alignment-log-dir",
+    type=click.Path(exists=False, file_okay=False, dir_okay=True, path_type=Path),
     default=None,
     help=(
-        "If this is specified, writes all entries without an alignment representative "
-        "to the specified log file."
+        "If specified, write alignment diagnostic logs to this directory: "
+        "missing_alignment_repr.json (unmatched chains) and "
+        "fuzzy_alignment_matches.json (chains matched via fuzzy RNA matching)."
     ),
 )
 @click.option(
@@ -122,7 +123,7 @@ def main(
     max_resolution: float | None = None,
     max_polymer_chains: int | None = None,
     allow_missing_alignment: bool = False,
-    missing_alignment_log: Path | None = None,
+    alignment_log_dir: Path | None = None,
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "WARNING",
     log_file: Path | None = None,
 ) -> None:
@@ -157,13 +158,6 @@ def main(
     else:
         parsed_max_release_date = None
 
-    if max_conformer_release_date is not None:
-        parsed_max_conformer_release_date = datetime.strptime(
-            max_conformer_release_date, "%Y-%m-%d"
-        ).date()
-    else:
-        parsed_max_conformer_release_date = parsed_max_release_date
-
     # Set up logger
     logger = logging.getLogger("openfold3")
     logger.setLevel(getattr(logging, log_level))
@@ -175,11 +169,15 @@ def main(
         file_handler = logging.FileHandler(log_file, mode="w")
         logger.addHandler(file_handler)
 
+    # Default max_conformer_release_date to max_release_date
+    if max_conformer_release_date is None and parsed_max_release_date is not None:
+        max_conformer_release_date = max_release_date
+
     filter_dict = {
         "max_release_date": parsed_max_release_date,
         "max_resolution": max_resolution,
         "max_polymer_chains": max_polymer_chains,
-        "max_conformer_release_date": parsed_max_conformer_release_date,
+        "max_conformer_release_date": max_conformer_release_date,
     }
     for filter_name, filter_value in filter_dict.items():
         if filter_value is None:
@@ -192,11 +190,11 @@ def main(
         output_path=output_path,
         dataset_name=dataset_name,
         max_release_date=parsed_max_release_date,
-        max_conformer_release_date=parsed_max_conformer_release_date,
+        max_conformer_release_date=max_conformer_release_date,
         max_resolution=max_resolution,
         max_polymer_chains=max_polymer_chains,
         filter_missing_alignment=not allow_missing_alignment,
-        missing_alignment_log=missing_alignment_log,
+        alignment_log_dir=alignment_log_dir,
     )
 
 

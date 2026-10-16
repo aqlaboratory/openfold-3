@@ -55,7 +55,7 @@ import yaml
 import openfold3
 from openfold3.core.config import config_utils
 from openfold3.entry_points.validator import TrainingExperimentConfig
-from openfold3.tests.utils.compare_utils import skip_unless_cuda_available
+from openfold3.tests.utils.compare_utils import skip_unless_gpu_available
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -246,7 +246,7 @@ def test_run_streaming_survives_leftover_child_holding_stdout(capsys):
     assert elapsed < timeout_s, f"blocked on the pipe for {elapsed:.0f}s"
 
 
-@skip_unless_cuda_available()
+@skip_unless_gpu_available()
 @pytest.mark.training_verification
 @pytest.mark.parametrize("case", CASES)
 def test_train(case: TrainCase, tmp_path, capsys):

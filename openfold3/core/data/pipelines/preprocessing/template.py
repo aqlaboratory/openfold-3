@@ -20,7 +20,7 @@ import os
 import random
 import re
 import traceback
-from datetime import datetime
+from datetime import date, datetime
 from functools import wraps
 from pathlib import Path
 from typing import Annotated, Literal
@@ -37,6 +37,7 @@ from func_timeout.exceptions import FunctionTimedOut
 from pydantic import (
     BaseModel,
     BeforeValidator,
+    PrivateAttr,
     model_validator,
 )
 from pydantic import ConfigDict as PydanticConfigDict
@@ -48,6 +49,7 @@ from openfold3.core.config.config_utils import (
 )
 from openfold3.core.data.io.dataset_cache import read_datacache, write_datacache_to_json
 from openfold3.core.data.io.s3 import open_local_or_s3
+from openfold3.core.data.io.sequence.fasta import get_chain_id_to_seq_from_fasta
 from openfold3.core.data.io.sequence.template import (
     A3mParser,
     CifDirectParser,
@@ -61,7 +63,12 @@ from openfold3.core.data.io.structure.atom_array import (
     write_atomarray_to_npz,
 )
 from openfold3.core.data.io.structure.cif import _load_ciffile, parse_mmcif
-from openfold3.core.data.primitives.caches.format import DatasetCache
+from openfold3.core.data.primitives.caches.format import (
+    ClusteredDatasetCache,
+    ClusteredDatasetStructureDataCache,
+    DatasetCache,
+    ValidationDatasetCache,
+)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     PDB_ID,
     TEMPLATE_PROCESS_LOGGER,
@@ -1030,10 +1037,12 @@ class _OF3TemplateCacheFilter:
             return valid_templates
         except Exception as e:
             if self.is_core_train:
+                query_pdb_chain_id = input.dated_query.query_pdb_chain_id
                 TEMPLATE_PROCESS_LOGGER.get().info(
-                    f"Failed to filter templates for query {input[0][0]}: \n{e}\n"
+                    f"Failed to filter templates for query {query_pdb_chain_id}: "
+                    f"\n{e}\n"
                 )
-                return {input[0][0]: []}
+                return {tuple(query_pdb_chain_id.split("_")): []}
             else:
                 query_pdb_chain_ids = [
                     query_pdb_chain_id.query_pdb_chain_id
@@ -1045,7 +1054,8 @@ class _OF3TemplateCacheFilter:
                     f"\n{e}\n"
                 )
                 return {
-                    query_pdb_chain_id: [] for query_pdb_chain_id in query_pdb_chain_ids
+                    tuple(query_pdb_chain_id.split("_")): []
+                    for query_pdb_chain_id in query_pdb_chain_ids
                 }
 
 
@@ -1543,10 +1553,24 @@ def build_template_cache_key(
     return None
 
 
+def _is_template_cache_entry(path: Path | str | None) -> bool:
+    """Reports whether a declared template alignment path is a `.npz` cache entry."""
+    return path is not None and Path(path).suffix == ".npz"
+
+
 # New template preprocessing pipelines
 # TODO: replace old versions from above with these new ones
 class TemplatePreprocessorInputTrain(BaseModel):
-    pass
+    """Template alignment of one training-set alignment representative."""
+
+    aln_path: Path
+    rep_id: str
+    query_seq_str: str
+
+    @property
+    def cache_key(self) -> str:
+        """Training reads `{template_cache_directory}/{rep_id}.npz`."""
+        return self.rep_id
 
 
 class TemplatePreprocessorInputInference(BaseModel):
@@ -1595,7 +1619,7 @@ class TemplatePreprocessorSettings(BaseModel):
     See AF3 SI Section 2.4. for details on some of these settings.
 
     Attributes:
-        mode (Literal["train", "inference"]):
+        mode (Literal["train", "predict"]):
             Whether templates are preprocessed for training or inference.
         moltypes (list[MoleculeType]):
             List of molecule types to preprocess templates for.
@@ -1659,6 +1683,13 @@ class TemplatePreprocessorSettings(BaseModel):
         ccd_file_path (FilePath | None):
             Path to the Chemical Component Dictionary file. Only required if
             `preparse_structures` is True.
+        template_alignment_directory (DirectoryPath | None):
+            Train mode only. Directory with one `<rep_id>/colabfold_template.m8` per
+            alignment representative, the layout align-msa-server writes. Template
+            IDs must use label chain IDs.
+        alignment_representatives_fasta (FilePath | None):
+            Train mode only. FASTA with alignment representative IDs as headers and
+            their sequences, one line each.
     """
 
     model_config = PydanticConfigDict(extra="forbid")
@@ -1695,6 +1726,23 @@ class TemplatePreprocessorSettings(BaseModel):
     log_directory: Path | None = None
 
     ccd_file_path: Path | None = None
+    template_alignment_directory: Path | None = None
+    alignment_representatives_fasta: Path | None = None
+    _implicit_paths: set[str] = PrivateAttr(default_factory=set)
+    _output_directory_is_run_default: bool = PrivateAttr(default=False)
+    _run_owned_output_directory: Path | None = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def _check_min_release_date_diff(self) -> "TemplatePreprocessorSettings":
+        # Train mode applies it per structure, in _update_dataset_cache. Inference
+        # queries have no release date to measure the difference from.
+        if self.mode == "predict" and self.min_release_date_diff is not None:
+            raise ValueError(
+                "min_release_date_diff only applies in train mode: inference queries "
+                "have no release date. Use max_release_date to exclude recent "
+                "templates."
+            )
+        return self
 
     @model_validator(mode="after")
     def _prepare_output_directories(self) -> "TemplatePreprocessorSettings":
@@ -1708,41 +1756,86 @@ class TemplatePreprocessorSettings(BaseModel):
             )
 
         if self.output_directory is None:
-            from openfold3.core.data.tools.utils import get_of3_tmpdir
+            from openfold3.core.data.tools.utils import _get_of3_tmpdir_path
 
-            self.output_directory = get_of3_tmpdir("template_data")
+            self.output_directory = _get_of3_tmpdir_path("template_data")
+            self._implicit_paths.add("output_directory")
 
+        self._set_derived_output_directories()
+        output_is_implicit = "output_directory" in self._implicit_paths
+        for field_name, directory in (
+            ("output_directory", self.output_directory),
+            ("structure_directory", self.structure_directory),
+            ("cache_directory", self.cache_directory),
+            ("precache_directory", self.precache_directory),
+            ("structure_array_directory", self.structure_array_directory),
+            ("log_directory", self.log_directory),
+        ):
+            if directory is not None and (
+                not output_is_implicit or field_name not in self._implicit_paths
+            ):
+                directory.mkdir(parents=True, exist_ok=True)
+        return self
+
+    def _set_derived_output_directories(self) -> None:
+        """Fill unset template subdirectories from the configured output root."""
         base = self.output_directory
+        if base is None:
+            return
 
-        # only set these if the user did not give them explicitly
-        self.structure_directory = self.structure_directory or (
-            base / "template_structures"
-        )
-        self.cache_directory = self.cache_directory or (base / "template_cache")
+        derived_paths = {
+            "structure_directory": base / "template_structures",
+            "cache_directory": base / "template_cache",
+        }
         if self.create_precache:
-            self.precache_directory = self.precache_directory or (
-                base / "template_precache"
-            )
+            derived_paths["precache_directory"] = base / "template_precache"
         if self.preparse_structures:
-            self.structure_array_directory = self.structure_array_directory or (
+            derived_paths["structure_array_directory"] = (
                 base / "template_structure_arrays"
             )
         if self.create_logs:
-            self.log_directory = self.log_directory or (base / "template_logs")
+            derived_paths["log_directory"] = base / "template_logs"
 
-        for d in (
-            base,
-            self.output_directory,
-            self.structure_directory,
-            self.cache_directory,
-            self.precache_directory,
-            self.structure_array_directory,
-            self.log_directory,
-        ):
-            if d is not None:
-                os.makedirs(d, exist_ok=True)
+        for field_name, path in derived_paths.items():
+            if getattr(self, field_name) is None:
+                setattr(self, field_name, path)
+                self._implicit_paths.add(field_name)
 
-        return self
+    def _set_inference_output_directory(self, output_directory: Path) -> None:
+        """Use the inference output directory in place of the temporary default."""
+        if self._run_owned_output_directory is not None:
+            raise RuntimeError(
+                "Cannot change the template output directory while it is in use"
+            )
+        if "output_directory" not in self._implicit_paths:
+            return
+
+        output_directory = Path(output_directory)
+        self.output_directory = output_directory
+        derived_paths = {
+            "structure_directory": output_directory / "template_structures",
+            "cache_directory": output_directory / "template_cache",
+            "precache_directory": output_directory / "template_precache",
+            "structure_array_directory": output_directory / "template_structure_arrays",
+            "log_directory": output_directory / "template_logs",
+        }
+        for field_name, path in derived_paths.items():
+            if field_name in self._implicit_paths:
+                setattr(self, field_name, path)
+        self._output_directory_is_run_default = True
+
+    def _record_output_directory_created(self) -> None:
+        """Record that this run created the default template directory."""
+        if not self._output_directory_is_run_default:
+            raise RuntimeError(
+                "Cannot record an explicitly configured template directory "
+                "as created by this run"
+            )
+        self._run_owned_output_directory = self.output_directory
+
+    def _record_output_directory_removed(self) -> None:
+        """Clear the record after cleanup."""
+        self._run_owned_output_directory = None
 
 
 class TemplatePreprocessor:
@@ -1769,6 +1862,8 @@ class TemplatePreprocessor:
         self.max_release_date = config.max_release_date
         self.min_release_date_diff = config.min_release_date_diff
         self.max_templates = config.max_templates
+        self.template_alignment_directory = config.template_alignment_directory
+        self.alignment_representatives_fasta = config.alignment_representatives_fasta
 
         self.cif_direct_min_score = config.cif_direct_min_score
 
@@ -1780,6 +1875,9 @@ class TemplatePreprocessor:
         self.chunksize = config.chunksize
         self.preprocess_timeout = config.preprocess_timeout
 
+        self.config = config
+        self.output_directory = config.output_directory
+        self.output_directory_is_run_default = config._output_directory_is_run_default
         self.structure_directory = config.structure_directory
         self.structure_file_format = config.structure_file_format
         self.precache_directory = config.precache_directory
@@ -1808,8 +1906,125 @@ class TemplatePreprocessor:
                 "Input set must be either DatasetCache or InferenceQuerySet"
             )
 
+    def _ensure_output_directories(self) -> None:
+        """Create configured output directories immediately before use."""
+        if self.cache_directory is None:
+            raise ValueError(
+                "Template preprocessing requires cache_directory. Configure it "
+                "directly or provide template_preprocessor_settings.output_directory."
+            )
+        if self.create_precache and self.precache_directory is None:
+            raise ValueError(
+                "create_precache=True requires precache_directory. Configure it "
+                "directly or provide template_preprocessor_settings.output_directory."
+            )
+        if self.preparse_structures and self.structure_array_directory is None:
+            raise ValueError(
+                "preparse_structures=True requires structure_array_directory. "
+                "Configure it directly or provide "
+                "template_preprocessor_settings.output_directory."
+            )
+        if self.create_logs and self.log_directory is None:
+            raise ValueError(
+                "create_logs=True requires log_directory. Configure it directly or "
+                "provide template_preprocessor_settings.output_directory."
+            )
+
+        if self.output_directory is not None:
+            self.output_directory.mkdir(
+                parents=True,
+                exist_ok=not self.output_directory_is_run_default,
+            )
+            if self.output_directory_is_run_default:
+                self.config._record_output_directory_created()
+        for directory in (
+            self.structure_directory,
+            self.cache_directory,
+            self.precache_directory,
+            self.structure_array_directory,
+            self.log_directory,
+        ):
+            if directory is not None:
+                directory.mkdir(parents=True, exist_ok=True)
+
+    def _train_structure_data(self) -> ClusteredDatasetStructureDataCache:
+        """The input dataset cache's structure_data, keyed by PDB ID."""
+        if not isinstance(
+            self.input_set, (ClusteredDatasetCache, ValidationDatasetCache)
+        ):
+            raise TypeError(
+                "Train mode requires a clustered or validation dataset cache: it reads "
+                "per-structure release dates and per-chain molecule types."
+            )
+        return self.input_set.structure_data
+
     def _parse_dataset_cache(self) -> None:
-        raise NotImplementedError
+        """Creates one input per alignment representative of the requested moltypes.
+
+        Template cache entries are shared by every chain with the same representative,
+        so they are built without per-query release date filtering; that is applied
+        per structure in `_update_dataset_cache`.
+        """
+        if (
+            self.template_alignment_directory is None
+            or self.alignment_representatives_fasta is None
+        ):
+            raise ValueError(
+                "Train mode requires template_alignment_directory and "
+                "alignment_representatives_fasta in TemplatePreprocessorSettings."
+            )
+        rep_id_to_seq = get_chain_id_to_seq_from_fasta(
+            self.alignment_representatives_fasta
+        )
+
+        moltype_names = {moltype.name for moltype in self.moltypes}
+        inputs: dict[str, TemplatePreprocessorInputTrain] = {}
+        seen_rep_ids: set[str] = set()
+        no_alignment: list[str] = []
+        not_in_fasta: list[str] = []
+        for structure in self._train_structure_data().values():
+            for chain in structure.chains.values():
+                rep_id = chain.alignment_representative_id
+                if (
+                    chain.molecule_type not in moltype_names
+                    or rep_id is None
+                    or rep_id in seen_rep_ids
+                ):
+                    continue
+                seen_rep_ids.add(rep_id)
+
+                aln_path = (
+                    self.template_alignment_directory / rep_id / "colabfold_template.m8"
+                )
+                if not aln_path.exists():
+                    no_alignment.append(rep_id)
+                    continue
+                if rep_id not in rep_id_to_seq:
+                    not_in_fasta.append(rep_id)
+                    continue
+                inputs[rep_id] = TemplatePreprocessorInputTrain(
+                    aln_path=aln_path,
+                    rep_id=rep_id,
+                    query_seq_str=rep_id_to_seq[rep_id],
+                )
+
+        if seen_rep_ids and not inputs:
+            raise ValueError(
+                f"None of the {len(seen_rep_ids)} alignment representatives in the "
+                f"dataset cache has a template alignment in "
+                f"{self.template_alignment_directory} and a sequence in "
+                f"{self.alignment_representatives_fasta}. Check that these belong to "
+                "the same dataset as the dataset cache."
+            )
+        if no_alignment or not_in_fasta:
+            logger.warning(
+                f"{len(no_alignment) + len(not_in_fasta)} of {len(seen_rep_ids)} "
+                "alignment representatives have no template inputs and get no "
+                f"templates. No alignment in {self.template_alignment_directory}: "
+                f"{no_alignment}. Not in {self.alignment_representatives_fasta}: "
+                f"{not_in_fasta}."
+            )
+        self.inputs = inputs
 
     def _parse_inference_query_set(self) -> None:
         inputs: dict[str, TemplatePreprocessorInputInference] = {}
@@ -1820,6 +2035,10 @@ class TemplatePreprocessor:
 
                 # CASE 1: Alignment file mode
                 if chain.template_alignment_file_path is not None:
+                    # A reused query set points this field at the cache entry
+                    # the previous run wrote; it is already preprocessed.
+                    if _is_template_cache_entry(chain.template_alignment_file_path):
+                        continue
                     template_input = TemplatePreprocessorInputInference(
                         aln_path=Path(chain.template_alignment_file_path),
                         query_seq_str=chain.sequence,
@@ -1851,12 +2070,57 @@ class TemplatePreprocessor:
         self.inputs = inputs
 
     def _update_dataset_cache(self) -> None:
-        raise NotImplementedError
+        """Sets each chain's template_ids from its representative's cache entry.
+
+        Templates are filtered against the chain's own structure release date, ordered
+        by their rank in the alignment, then capped at `max_templates`. Chains whose
+        representative has no template inputs get no templates; chains of other
+        molecule types are left unchanged.
+        """
+        if self.cache_directory is None:
+            raise RuntimeError("Template cache directory was not configured")
+        entries_by_rep_id: dict[str, dict[str, dict]] = {}
+        for rep_id in self.inputs:
+            cache_entry_file = self.cache_directory / f"{rep_id}.npz"
+            if cache_entry_file.exists():
+                with np.load(cache_entry_file, allow_pickle=True) as cache_npz:
+                    entries_by_rep_id[rep_id] = {
+                        key: value.item() for key, value in cache_npz.items()
+                    }
+            else:
+                entries_by_rep_id[rep_id] = {}
+
+        moltype_names = {moltype.name for moltype in self.moltypes}
+        for structure in self._train_structure_data().values():
+            query_release_date = _to_datetime(structure.release_date)
+            for chain in structure.chains.values():
+                rep_id = chain.alignment_representative_id
+                if chain.molecule_type not in moltype_names or rep_id is None:
+                    continue
+                entries = entries_by_rep_id.get(rep_id, {})
+                valid = sorted(
+                    (entry["index"], template_id)
+                    for template_id, entry in entries.items()
+                    if not fails_template_release_date_checks(
+                        template_release_date=_to_datetime(entry["release_date"]),
+                        query_release_date=query_release_date,
+                        max_template_release_date=self.max_release_date,
+                        min_release_date_diff=self.min_release_date_diff,
+                    )
+                )
+                chain.template_ids = [
+                    template_id for _, template_id in valid[: self.max_templates]
+                ]
 
     def _update_inference_query_set(self) -> None:
         for query_name, query in self.input_set.queries.items():
             for idx, chain in enumerate(query.chains):
                 if chain.molecule_type not in self.moltypes:
+                    continue
+                # Cache entries carried over from a previous run keep their
+                # declared path and IDs: a key rebuilt from the entry's own bytes
+                # cannot match its name, which hashes the original alignment.
+                if _is_template_cache_entry(chain.template_alignment_file_path):
                     continue
                 # Must be derived from the chain's *declared* template source, before
                 # `template_alignment_file_path` is overwritten with the cache path
@@ -1893,6 +2157,7 @@ class TemplatePreprocessor:
     def __call__(self) -> None:
         # Preprocess template alignments into template cache entries
         if len(self.inputs) >= 1:
+            self._ensure_output_directories()
             manager = mp.Manager()
             self.processed_cache_keys = manager.dict()
             self.template_ids_by_cache_key = manager.dict()
@@ -2096,6 +2361,9 @@ class TemplatePreprocessor:
         # by entry ID, and cannot index by sequence hash due to the way filtering is
         # done
         cache_key = input_data.cache_key
+        # Train-mode entries are shared by all chains of a representative: capping at
+        # max_templates happens per structure in _update_dataset_cache instead.
+        is_train = isinstance(input_data, TemplatePreprocessorInputTrain)
         # skip template preprocessing for chain if already done. Keyed on sequence +
         # template source, so a second chain only short-circuits when it would produce
         # exactly the same cache entry
@@ -2111,7 +2379,8 @@ class TemplatePreprocessor:
             )
 
         # 5. Template consistency checks and filtering
-        if not cache_entry_available:  # !!! cannot do this for training!
+        # Train-mode entries are not filtered per query, so reusing them is safe.
+        if not cache_entry_available:
             if self.create_logs:
                 worker_logger.info(
                     f"Creating new cache entry {template_cache_entry_file}."
@@ -2296,24 +2565,39 @@ class TemplatePreprocessor:
                         )
                     template_sequence = chain_id_seq_map.get(template.chain_id)
                     if template_sequence is None:
-                        # TODO: add warning - the chain ID from the alignment is not
-                        # present in the structure file
+                        # Usually an author chain ID that was never remapped, e.g. raw
+                        # ColabFold hits
+                        msg = (
+                            f"Skipping template {template.entry_id}_{template.chain_id}"
+                            f" for {cache_key}: chain {template.entry_id}_"
+                            f"{template.chain_id} not found in its structure (chains:"
+                            f" {sorted(chain_id_seq_map)}). Template IDs must use"
+                            " label chain IDs; remap author chain IDs first."
+                        )
+                        logger.warning(msg)
+                        if self.create_logs:
+                            worker_logger.warning(msg)
                         continue
                     parser = A3mParser(max_sequences=None)
-                    template = parser(
+                    realigned = parser(
                         f">query_X/1-{len(input_data.query_seq_str)}\n{input_data.query_seq_str}\n>{template.entry_id}_{template.chain_id}/{1}-{len(template_sequence)}\n{template_sequence}\n",
                         input_data.query_seq_str,
                         realign=True,
                     )[1]
+                    # The realignment holds only this hit (row 1); keep its rank in the
+                    # original alignment, which orders the cache entry's templates.
+                    template = realigned._replace(index=template.index)
 
                 # F. Apply release date checks
                 if not isinstance(release_date, datetime):
                     release_date = datetime.strptime(release_date, "%Y-%m-%d")
+                # min_release_date_diff needs the query's release date: applied per
+                # structure in _update_dataset_cache, and not used in predict mode.
                 if fails_template_release_date_checks(
                     template_release_date=release_date,
-                    query_release_date=None,  # TODO: add for training logic
+                    query_release_date=None,
                     max_template_release_date=self.max_release_date,
-                    min_release_date_diff=self.min_release_date_diff,
+                    min_release_date_diff=None,
                 ):
                     if self.create_logs:
                         worker_logger.info(
@@ -2362,7 +2646,7 @@ class TemplatePreprocessor:
                     )
 
                 # I. Break if max templates reached
-                if len(template_cache_entry) == self.max_templates:
+                if not is_train and len(template_cache_entry) == self.max_templates:
                     break
 
             # 6. Save template cache entry and update shared dict of template IDs
@@ -2443,6 +2727,11 @@ class TemplatePrecachePreprocessor:
             print("No structure array directory provided. No additional filtering.")
 
     def __call__(self) -> None:
+        if not self.template_entry_ids:
+            return
+        if self.precache_directory is None:
+            raise RuntimeError("Precache output path was not configured")
+        self.precache_directory.mkdir(parents=True, exist_ok=True)
         with mp.Pool(self.n_processes) as pool:
             for _ in tqdm(
                 pool.imap_unordered(
@@ -2622,6 +2911,11 @@ class TemplateStructurePreprocessor:
         print(f"Found {len(self.template_entry_ids)} template structures to process.")
 
     def __call__(self) -> None:
+        if not self.template_entry_ids:
+            return
+        if self.structure_array_directory is None:
+            raise RuntimeError("Structure array output path was not configured")
+        self.structure_array_directory.mkdir(parents=True, exist_ok=True)
         with mp.Pool(self.n_processes) as pool:
             for _ in tqdm(
                 pool.imap_unordered(
@@ -2668,9 +2962,18 @@ def fails_template_sequence_checks(
         fails |= template.seq_id > max_seq_id
     if min_align is not None:
         fails |= template.q_cov < min_align
-    if min_len is not None:
+    if min_len is not None and template.seq is not None:
         fails |= len(template.seq) < min_len
     return fails
+
+
+def _to_datetime(value: datetime | date | str) -> datetime:
+    """Normalizes a release date from a dataset cache or template cache entry."""
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    return datetime.strptime(value, "%Y-%m-%d")
 
 
 def fails_template_release_date_checks(
@@ -2692,7 +2995,7 @@ def fails_template_release_date_checks(
         ).days < min_release_date_diff
 
     if max_template_release_date is not None:
-        fails |= template_release_date > max_template_release_date
+        fails |= template_release_date >= max_template_release_date
 
     return fails
 
