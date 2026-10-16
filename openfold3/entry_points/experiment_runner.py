@@ -28,17 +28,17 @@ import ml_collections as mlc
 import pytorch_lightning as pl
 import torch
 import wandb
-from lightning_fabric.utilities.rank_zero import _get_rank
-from pydantic import BaseModel
-from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
-from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger
 from lightning_fabric.plugins.environments.cluster_environment import (
     ClusterEnvironment,
 )
 from lightning_fabric.plugins.environments.lightning import LightningEnvironment
 from lightning_fabric.plugins.environments.mpi import MPIEnvironment
 from lightning_fabric.plugins.environments.slurm import SLURMEnvironment
+from lightning_fabric.utilities.rank_zero import _get_rank
+from pydantic import BaseModel
+from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
+from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.profilers import PyTorchProfiler
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 

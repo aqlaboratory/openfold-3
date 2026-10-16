@@ -128,9 +128,7 @@ class TestExplicitResolution:
 class TestTrainerIntegration:
     def test_knob_not_forwarded_to_pl_trainer(self, make_runner, no_slurm_env):
         """pl.Trainer must never see the cluster_environment kwarg."""
-        runner = make_runner(
-            accelerator="cpu", devices=1, cluster_environment="local"
-        )
+        runner = make_runner(accelerator="cpu", devices=1, cluster_environment="local")
         trainer = runner.trainer  # raises TypeError if the kwarg leaks through
         assert isinstance(
             trainer._accelerator_connector.cluster_environment,
@@ -141,6 +139,4 @@ class TestTrainerIntegration:
         self, make_runner, sbatch_env_without_srun
     ):
         runner = make_runner(accelerator="cpu", devices=8)
-        assert isinstance(
-            runner.strategy.cluster_environment, LightningEnvironment
-        )
+        assert isinstance(runner.strategy.cluster_environment, LightningEnvironment)
