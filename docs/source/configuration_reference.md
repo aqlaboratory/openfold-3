@@ -61,6 +61,7 @@ Configures the PyTorch Lightning trainer for distributed training and multi-GPU 
 - `deepspeed_config_path` *(Path | None)*: Path to DeepSpeed configuration file (default: `null`)
 - `distributed_timeout` *(timedelta | None)*: Timeout for distributed operations (default: `PT30M`)
 - `mpi_plugin` *(bool)*: Use MPI plugin (default: `false`)
+- `cluster_environment` *(str)*: How distributed ranks are launched and discovered - `auto`, `slurm`, `local`, or `mpi` (default: `auto`). `auto` lets Lightning detect the environment, except inside a SLURM allocation that was not launched via `srun` (e.g. `run_openfold` called directly from an sbatch script), where it falls back to Lightning's own subprocess launcher instead of waiting forever for ranks SLURM never starts. Set `local` to always ignore the scheduler, or `slurm` to force SLURM rank binding (launch with `srun --ntasks-per-node=<devices>`). Can be overridden at the command line with `run_openfold predict --cluster-environment ...`.
 
 **Example**:
 ```yaml

@@ -28,12 +28,17 @@ import ml_collections as mlc
 import pytorch_lightning as pl
 import torch
 import wandb
+from lightning_fabric.plugins.environments.cluster_environment import (
+    ClusterEnvironment,
+)
+from lightning_fabric.plugins.environments.lightning import LightningEnvironment
+from lightning_fabric.plugins.environments.mpi import MPIEnvironment
+from lightning_fabric.plugins.environments.slurm import SLURMEnvironment
 from lightning_fabric.utilities.rank_zero import _get_rank
 from pydantic import BaseModel
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.profilers import PyTorchProfiler
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
@@ -231,15 +236,49 @@ class ExperimentRunner(ABC):
     def is_rank_zero(self) -> bool:
         """Check if the current process is rank zero in an MPI environment."""
         if self.is_mpi:
-            return self.cluster_environment.global_rank() == 0
+            env = self.cluster_environment
+            assert env is not None  # is_mpi always resolves to MPIEnvironment
+            return env.global_rank() == 0
         else:
             _rank = _get_rank()
             return (_rank is None) or (_rank == 0)
 
     @property
-    def cluster_environment(self) -> MPIEnvironment | None:
-        """Return the MPI cluster environment if enabled."""
-        return MPIEnvironment() if self.is_mpi else None
+    def cluster_environment(self) -> ClusterEnvironment | None:
+        """Resolve the cluster environment from the config (issue #47).
+
+        ``None`` means Lightning auto-detects the environment. That detection
+        adopts ``SLURMEnvironment`` for any process inside a SLURM allocation,
+        including one the batch step runs directly (``sbatch`` without
+        ``srun``) -- where no sibling ranks are ever launched and distributed
+        init blocks forever at 0% GPU. ``SLURM_STEP_ID`` is only set for
+        srun-launched steps, so its absence identifies that case and ``auto``
+        falls back to Lightning's own subprocess launcher instead.
+        """
+        choice = self.pl_trainer_args.cluster_environment
+        if self.is_mpi:
+            # Legacy flag, equivalent to cluster_environment="mpi".
+            choice = "mpi"
+
+        if choice == "mpi":
+            return MPIEnvironment()
+        if choice == "slurm":
+            return SLURMEnvironment()
+        if choice == "local":
+            return LightningEnvironment()
+
+        # "auto"
+        if SLURMEnvironment.detect() and "SLURM_STEP_ID" not in os.environ:
+            logger.warning(
+                "Inside a SLURM allocation but not launched by srun: using the"
+                " local launcher instead of SLURM rank binding. Set"
+                " pl_trainer_args.cluster_environment to 'slurm' or 'local' to"
+                " silence this warning, and launch with"
+                " `srun --ntasks-per-node=<devices>` if SLURM should manage"
+                " the ranks."
+            )
+            return LightningEnvironment()
+        return None
 
     @cached_property
     def strategy(self) -> DDPStrategy | DeepSpeedStrategy | str:
@@ -324,7 +363,12 @@ class ExperimentRunner(ABC):
     def trainer(self) -> pl.Trainer:
         """Create and return the trainer instance."""
         trainer_args = self.pl_trainer_args.model_dump(
-            exclude={"deepspeed_config_path", "distributed_timeout", "mpi_plugin"}
+            exclude={
+                "deepspeed_config_path",
+                "distributed_timeout",
+                "mpi_plugin",
+                "cluster_environment",
+            }
         )
         trainer_args.update(
             {
@@ -337,6 +381,14 @@ class ExperimentRunner(ABC):
 
         if self.profiler_config.enabled:
             trainer_args["profiler"] = self._build_profiler()
+
+        # The non-distributed strategy ("auto") carries no cluster_environment,
+        # so an explicitly configured environment is passed via plugins.
+        if (
+            not self.is_distributed
+            and self.pl_trainer_args.cluster_environment != "auto"
+        ):
+            trainer_args["plugins"] = [self.cluster_environment]
 
         return pl.Trainer(**trainer_args)
 
