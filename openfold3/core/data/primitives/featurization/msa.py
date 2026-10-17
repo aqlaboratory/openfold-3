@@ -253,7 +253,7 @@ def create_msa_feature_precursor_of3(
         # Process each chain
         for chain_id in msa_array_collection.chain_id_to_rep_id:
             # Crop and vertically stack query, paired MSA and main MSA arrays
-            msa_array_vstack, _ = vstack_pad_msa_arrays(
+            msa_array_vstack, msa_array_vstack_mask = vstack_pad_msa_arrays(
                 msa_array_collection,
                 chain_id,
             )
@@ -264,7 +264,7 @@ def create_msa_feature_precursor_of3(
             map_msas_to_tokens(
                 msa_feature_precursor=msa_feature_precursor,
                 msa_array_vstack=msa_array_vstack,
-                msa_array_vstack_mask=None,
+                msa_array_vstack_mask=msa_array_vstack_mask,
                 profile=msa_array_collection.chain_id_to_profile[chain_id],
                 del_mean=msa_array_collection.chain_id_to_deletion_mean[chain_id],
                 msa_token_mapper=msa_token_mapper,
