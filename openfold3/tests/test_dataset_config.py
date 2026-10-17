@@ -13,10 +13,12 @@
 # limitations under the License.
 
 import textwrap
+from collections import UserDict
 from types import SimpleNamespace
 from unittest.mock import PropertyMock, patch
 
-import pytest  # noqa: F401  - used for pytest tmp fixture
+import pytest
+from pydantic import ValidationError
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import (
@@ -27,8 +29,14 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
 )
 from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
+from openfold3.projects.of3_all_atom.config.dataset_config_components import (
+    MSASettings,
+    SampleWeights,
+    TemplateSettings,
+)
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     DATASET_CONFIG_REGISTRY,
+    InferenceDatasetConfigKwargs,
     InferenceDatasetSpec,
     InferenceJobConfig,
     TrainingDatasetPaths,
@@ -283,6 +291,91 @@ class TestOF3DatasetConfigConstruction:
                 }
             )
 
+    @staticmethod
+    def _dataset_paths(tmp_path):
+        cache_file = tmp_path / "cache.json"
+        cache_file.write_text("{}")
+        return {
+            "alignments_directory": tmp_path,
+            "dataset_cache_file": cache_file,
+            "target_structures_directory": tmp_path,
+            "target_structure_file_format": "npz",
+            "reference_molecule_directory": tmp_path,
+            "template_structure_array_directory": tmp_path,
+            "template_file_format": "npz",
+        }
+
+    def test_partial_max_seq_counts_replaces_default_map(self, tmp_path):
+        # Keys of max_seq_counts select which MSA files are parsed
+        spec = TrainingDatasetSpec.model_validate(
+            {
+                "name": "train",
+                "mode": "train",
+                "dataset_class": "WeightedPDBDataset",
+                "config": {
+                    "dataset_paths": self._dataset_paths(tmp_path),
+                    "msa": {"max_seq_counts": {"uniprot_hits": 50000}},
+                },
+            }
+        )
+
+        assert spec.config.msa.max_seq_counts == {"uniprot_hits": 50000}
+
+    def test_partial_sample_weights_keep_defaults(self, tmp_path):
+        spec = TrainingDatasetSpec.model_validate(
+            {
+                "name": "train",
+                "mode": "train",
+                "dataset_class": "WeightedPDBDataset",
+                "config": {
+                    "dataset_paths": self._dataset_paths(tmp_path),
+                    "sample_weights": {"a_prot": 9.0},
+                },
+            }
+        )
+
+        assert spec.config.sample_weights == SampleWeights(a_prot=9.0)
+
+    def test_unknown_sample_weight_is_rejected(self, tmp_path):
+        with pytest.raises(ValidationError, match="a_protein"):
+            TrainingDatasetSpec.model_validate(
+                {
+                    "name": "train",
+                    "mode": "train",
+                    "dataset_class": "WeightedPDBDataset",
+                    "config": {
+                        "dataset_paths": self._dataset_paths(tmp_path),
+                        "sample_weights": {"a_protein": 9.0},
+                    },
+                }
+            )
+
+    def test_shared_config_does_not_leak_between_datasets(self, tmp_path):
+        shared_config = {
+            "dataset_paths": self._dataset_paths(tmp_path),
+            "template": {"n_templates": 2},
+        }
+        train = TrainingDatasetSpec.model_validate(
+            {
+                "name": "train",
+                "mode": "train",
+                "dataset_class": "WeightedPDBDataset",
+                "config": shared_config,
+            }
+        )
+        val = TrainingDatasetSpec.model_validate(
+            {
+                "name": "val",
+                "mode": "validation",
+                "dataset_class": "ValidationPDBDataset",
+                "config": shared_config,
+            }
+        )
+
+        assert train.config.template.take_top_k is False
+        assert val.config.template.take_top_k is True
+        assert shared_config["template"] == {"n_templates": 2}
+
     def test_dataset_config_with_no_template_paths(self, tmp_path):
         """Test that dataset configs work when template paths are None."""
         test_dummy_file = tmp_path / "test.json"
@@ -368,6 +461,71 @@ class TestOF3DatasetConfigConstruction:
 
 
 class TestInferenceConfigConstruction:
+    def test_partial_kwargs_keep_inference_defaults(self):
+        data = {"template": {"n_templates": 2}, "msa": {"max_rows": 128}}
+        kwargs = InferenceDatasetConfigKwargs.model_validate(data)
+
+        assert kwargs.template.n_templates == 2
+        assert kwargs.template.take_top_k is True
+        assert kwargs.msa.max_rows == 128
+        assert kwargs.msa.subsample_main is False
+        # The caller's dict is not modified
+        assert data == {"template": {"n_templates": 2}, "msa": {"max_rows": 128}}
+
+    def test_kwargs_can_override_inference_defaults(self):
+        kwargs = InferenceDatasetConfigKwargs.model_validate(
+            {"template": {"take_top_k": False}, "msa": {"subsample_main": True}}
+        )
+
+        assert kwargs.template.take_top_k is False
+        assert kwargs.msa.subsample_main is True
+
+    def test_partial_nested_settings_keep_defaults(self):
+        kwargs = InferenceDatasetConfigKwargs.model_validate(
+            {"template": {"distogram": {"max_bin": 40.0}}}
+        )
+
+        assert kwargs.template.take_top_k is True
+        assert kwargs.template.distogram.max_bin == 40.0
+        assert kwargs.template.distogram.min_bin == 3.25
+
+    def test_max_seq_counts_is_replaced_not_merged(self):
+        # Keys of max_seq_counts select which MSA files are parsed
+        kwargs = InferenceDatasetConfigKwargs.model_validate(
+            {"msa": {"max_seq_counts": {"custom_hits": 10}}}
+        )
+
+        assert kwargs.msa.max_seq_counts == {"custom_hits": 10}
+        assert kwargs.msa.subsample_main is False
+
+    def test_settings_instances_keep_inference_defaults(self):
+        kwargs = InferenceDatasetConfigKwargs(
+            template=TemplateSettings(n_templates=2),
+            msa=MSASettings(max_rows=128),
+        )
+
+        assert kwargs.template.n_templates == 2
+        assert kwargs.template.take_top_k is True
+        assert kwargs.msa.max_rows == 128
+        assert kwargs.msa.subsample_main is False
+
+        kwargs = InferenceDatasetConfigKwargs(
+            template=TemplateSettings(take_top_k=False)
+        )
+        assert kwargs.template.take_top_k is False
+
+    def test_mismatched_settings_model_is_rejected(self):
+        with pytest.raises(ValidationError):
+            InferenceDatasetConfigKwargs(template=MSASettings(max_rows=128))
+
+    def test_partial_kwargs_from_generic_mapping(self):
+        kwargs = InferenceDatasetConfigKwargs.model_validate(
+            UserDict({"template": UserDict({"n_templates": 2})})
+        )
+
+        assert kwargs.template.n_templates == 2
+        assert kwargs.template.take_top_k is True
+
     def test_inference_config_loading(self, tmp_path):
         inference_set = InferenceQuerySet.model_validate(
             {

@@ -622,6 +622,22 @@ class TestInferenceCommandLineSettings:
         expt_runner = InferenceExperimentRunner(expt_config, num_model_seeds=3)
         assert expt_runner.seeds == generate_seeds(7, 3)
 
+    def test_partial_dataset_config_kwargs_keep_inference_defaults(
+        self, dummy_ckpt_file
+    ):
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            dataset_config_kwargs={
+                "template": {"n_templates": 2},
+                "msa": {"max_rows": 128},
+            },
+        )
+        kwargs = expt_config.dataset_config_kwargs
+        assert kwargs.template.n_templates == 2
+        assert kwargs.template.take_top_k is True
+        assert kwargs.msa.max_rows == 128
+        assert kwargs.msa.subsample_main is False
+
     def test_output_override_controls_default_intermediate_paths(
         self, tmp_path, dummy_ckpt_file
     ):
