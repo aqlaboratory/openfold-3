@@ -34,6 +34,11 @@ try:
     import triton
     import triton.language as tl
 
+    from openfold3.core.kernels.triton.dot_precision import (
+        current_dot_precision,
+        tl_dot,
+    )
+
     _TRITON_AVAILABLE = True
 except ImportError:
     warnings.warn(
@@ -82,6 +87,7 @@ if _TRITON_AVAILABLE:
         offs_kv: tl.constexpr,
         offs_d: tl.constexpr,
         SEQ_LEN: tl.constexpr,
+        DOT_PRECISION: tl.constexpr,
         USE_EXP2: tl.constexpr = False,
     ):
         """Run the inner loop of the forward pass of the attention mechanism."""
@@ -144,7 +150,9 @@ if _TRITON_AVAILABLE:
                         other=0.0,
                     )
 
-            QK_block = tl.dot(Q_block, K_block) + res_mask_block
+            QK_block = (
+                tl_dot(Q_block, K_block, input_precision=DOT_PRECISION) + res_mask_block
+            )
             if HAS_PAIR_BIAS:
                 QK_block += pair_bias_block
 
@@ -171,7 +179,9 @@ if _TRITON_AVAILABLE:
 
             P_block = P_block.to(V_block.dtype)
             O_block = O_block * alpha[:, None]
-            O_block = tl.dot(P_block, V_block, O_block)
+            O_block = tl_dot(
+                P_block, V_block, acc=O_block, input_precision=DOT_PRECISION
+            )
 
             m_i = m_ij
 
@@ -239,6 +249,7 @@ if _TRITON_AVAILABLE:
         BLOCK_SIZE_Q: tl.constexpr,
         BLOCK_SIZE_KV: tl.constexpr,
         BLOCK_DIM: tl.constexpr,
+        DOT_PRECISION: tl.constexpr,
         USE_EXP2: tl.constexpr = False,
     ):
         """Run the forward pass of the attention mechanism."""
@@ -338,6 +349,7 @@ if _TRITON_AVAILABLE:
             offs_kv,
             offs_d,
             SEQ_LEN,
+            DOT_PRECISION,
             USE_EXP2,
         )
 
@@ -414,6 +426,7 @@ if _TRITON_AVAILABLE:
         BLOCK_SIZE_Q: tl.constexpr,
         BLOCK_SIZE_KV: tl.constexpr,
         BLOCK_DIM: tl.constexpr,
+        DOT_PRECISION: tl.constexpr,
         USE_EXP2: tl.constexpr = False,
     ):
         """Dynamic-shape forward: N_SEQ & SEQ_LEN runtime, EVEN_* off.
@@ -517,6 +530,7 @@ if _TRITON_AVAILABLE:
             offs_kv,
             offs_d,
             SEQ_LEN,
+            DOT_PRECISION,
             USE_EXP2,
         )
 
@@ -660,6 +674,7 @@ if _TRITON_AVAILABLE:
         BLOCK_SIZE_KV: tl.constexpr,
         PIPE_STAGES: tl.constexpr,
         HAS_PAIR_BIAS: tl.constexpr,
+        DOT_PRECISION: tl.constexpr,
         USE_EXP2: tl.constexpr = False,
     ):
         """dbias accumulated in registers and stored once (no atomic); dQ via
@@ -734,7 +749,10 @@ if _TRITON_AVAILABLE:
             ].broadcast_to((BLOCK_SIZE_Q, BLOCK_SIZE_KV))
 
             Q_scaled = Q_block * tl.full((1,), softmax_scale, dtype=Q_block.dtype)
-            QK_block = tl.dot(Q_scaled, K_T_block) + res_mask_block
+            QK_block = (
+                tl_dot(Q_scaled, K_T_block, input_precision=DOT_PRECISION)
+                + res_mask_block
+            )
             if HAS_PAIR_BIAS:
                 QK_block += pair_bias_block
 
@@ -748,14 +766,18 @@ if _TRITON_AVAILABLE:
             P_arg = tl.minimum(QK_block - M_block, 0.0)
             P_block = tl.math.exp2(P_arg) if USE_EXP2 else tl.math.exp(P_arg)
             P_block = tl.where(res_mask_block <= -1e3, P_block / SEQ_LEN, P_block)
-            dP_block = tl.dot(dO_block, V_T_block).to(tl.float32)
+            dP_block = tl_dot(dO_block, V_T_block, input_precision=DOT_PRECISION).to(
+                tl.float32
+            )
             dS_block = P_block * (dP_block - Di[:, None])
 
             if HAS_PAIR_BIAS:
                 dbias_block += dS_block
 
             dS_cast = dS_block.to(K_T_block.dtype)
-            dQ_block = softmax_scale * tl.dot(dS_cast, tl.trans(K_T_block))
+            dQ_block = softmax_scale * tl_dot(
+                dS_cast, tl.trans(K_T_block), input_precision=DOT_PRECISION
+            )
             tl.atomic_add(
                 dQ + msa_off + qd,
                 dQ_block,
@@ -815,6 +837,7 @@ if _TRITON_AVAILABLE:
         EVEN_DIM: tl.constexpr,
         BLOCK_SIZE_Q: tl.constexpr,
         BLOCK_SIZE_KV: tl.constexpr,
+        DOT_PRECISION: tl.constexpr,
         WRITE_BLLHS: tl.constexpr = False,
         USE_EXP2: tl.constexpr = False,
     ):
@@ -989,9 +1012,10 @@ if _TRITON_AVAILABLE:
             # Compute P^T = K (scale*Q)^T. Scale qT (not K) so the recompute matches the
             # forward's M rounding; dK below keeps its scale on the fp32 dot result.
             QK_T_block = (
-                tl.dot(
+                tl_dot(
                     K_block,
                     qT_block * tl.full((1,), softmax_scale, dtype=qT_block.dtype),
+                    input_precision=DOT_PRECISION,
                 )
                 + pair_bias_T_block
                 + res_mask_T_block
@@ -1014,13 +1038,19 @@ if _TRITON_AVAILABLE:
                 res_mask_T_block <= -1e3, P_T_block / SEQ_LEN, P_T_block
             )
 
-            dV_block += tl.dot(P_T_block.to(K_block.dtype), dO_block)
+            dV_block += tl_dot(
+                P_T_block.to(K_block.dtype), dO_block, input_precision=DOT_PRECISION
+            )
 
-            dpT_block = tl.dot(V_block, tl.trans(dO_block)).to(tl.float32)
+            dpT_block = tl_dot(
+                V_block, tl.trans(dO_block), input_precision=DOT_PRECISION
+            ).to(tl.float32)
             dS_T_block = P_T_block * (dpT_block - Di[None, :])
             dS_T_block = dS_T_block.to(K_block.dtype)
 
-            dK_block += softmax_scale * tl.dot(dS_T_block, tl.trans(qT_block))
+            dK_block += softmax_scale * tl_dot(
+                dS_T_block, tl.trans(qT_block), input_precision=DOT_PRECISION
+            )
 
             # Increment pointers
             curr_q += BLOCK_SIZE_Q
@@ -1165,6 +1195,9 @@ if _TRITON_AVAILABLE:
             # exp2 base-2 softmax: opt-in (default off), works for both fp32 and bf16.
             # Enable with env OF3_TRITON_EXP2=1.
             use_exp2 = os.environ.get("OF3_TRITON_EXP2") == "1"
+            dot_precision = current_dot_precision(
+                fp32_operands=Q.dtype == torch.float32
+            )
 
             # Default: specialized _attn_fwd (SEQ_LEN/EVEN_* constexpr via heuristics).
             # dynamic: _attn_fwd_dyn (SEQ_LEN/N_SEQ runtime) with EVEN_* passed off.
@@ -1219,6 +1252,7 @@ if _TRITON_AVAILABLE:
                 HAS_PAIR_BIAS=has_pair_bias,
                 BLOCK_SIZE_Q=block_size_q,
                 BLOCK_SIZE_KV=_oss_bkv,
+                DOT_PRECISION=dot_precision,
                 USE_EXP2=use_exp2,
                 num_warps=4,
                 num_stages=1,
@@ -1232,6 +1266,7 @@ if _TRITON_AVAILABLE:
             ctx.DIM = DIM
             ctx.has_pair_bias = has_pair_bias
             ctx.use_exp2 = use_exp2
+            ctx.dot_precision = dot_precision
 
             O = O.transpose(-2, -3).contiguous()
 
@@ -1336,6 +1371,7 @@ if _TRITON_AVAILABLE:
                 # MFMA tile 16 + waves_per_eu=2 (HIP only) for dk_dv.
                 **({"waves_per_eu": 2, "matrix_instr_nonkdim": 16} if is_hip() else {}),
                 WRITE_BLLHS=True,
+                DOT_PRECISION=ctx.dot_precision,
                 USE_EXP2=ctx.use_exp2,
             )
 
@@ -1391,6 +1427,7 @@ if _TRITON_AVAILABLE:
                 num_stages=1,
                 **({"waves_per_eu": 2, "matrix_instr_nonkdim": 16} if is_hip() else {}),
                 HAS_PAIR_BIAS=ctx.has_pair_bias,
+                DOT_PRECISION=ctx.dot_precision,
                 USE_EXP2=ctx.use_exp2,
             )
 
