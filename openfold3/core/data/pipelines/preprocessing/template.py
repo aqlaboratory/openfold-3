@@ -1719,6 +1719,7 @@ class TemplatePreprocessorSettings(BaseModel):
     structure_directory: Path | None = None
     structure_file_format: str = "cif"
     output_directory: Path | None = None
+    save_template_data: bool = False
 
     precache_directory: Path | None = None
     structure_array_directory: Path | None = None
@@ -2069,6 +2070,48 @@ class TemplatePreprocessor:
 
         self.inputs = inputs
 
+    def _resolve_reused_template_structures(self) -> None:
+        """Use the structures saved beside reused cache entries; warn if missing."""
+        if (
+            not isinstance(self.input_set, InferenceQuerySet)
+            or self.structure_directory is None
+            or self.structure_array_directory is not None
+        ):
+            return
+        can_switch = (
+            "structure_directory" in self.config._implicit_paths and not self.inputs
+        )
+        missing = []
+        for query in self.input_set.queries.values():
+            for chain in query.chains:
+                cache_entry = chain.template_alignment_file_path
+                if (
+                    chain.molecule_type not in self.moltypes
+                    or cache_entry is None
+                    or not _is_template_cache_entry(cache_entry)
+                    or not chain.template_entry_chain_ids
+                ):
+                    continue
+                pdb_id = chain.template_entry_chain_ids[0].split("_")[0]
+                file_name = f"{pdb_id}.{self.structure_file_format}"
+                saved = Path(cache_entry).parent.parent / "template_structures"
+                if (
+                    can_switch
+                    and not (self.structure_directory / file_name).exists()
+                    and (saved / file_name).exists()
+                ):
+                    # Featurization reads structure_directory from the shared settings
+                    self.structure_directory = self.config.structure_directory = saved
+                    can_switch = False
+                if not (self.structure_directory / file_name).exists():
+                    missing.append(str(self.structure_directory / file_name))
+        if missing:
+            logger.warning(
+                "Template structures for reused cache entries not found: %s. "
+                "Check template_preprocessor_settings.structure_directory.",
+                ", ".join(missing),
+            )
+
     def _update_dataset_cache(self) -> None:
         """Sets each chain's template_ids from its representative's cache entry.
 
@@ -2155,6 +2198,7 @@ class TemplatePreprocessor:
                 )
 
     def __call__(self) -> None:
+        self._resolve_reused_template_structures()
         # Preprocess template alignments into template cache entries
         if len(self.inputs) >= 1:
             self._ensure_output_directories()
