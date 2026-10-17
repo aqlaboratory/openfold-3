@@ -173,9 +173,17 @@ def train(
 )
 @click.option(
     "--use_tf32",
+    "--use_tf32",
     type=bool,
     default=True,
     help="Use tf32 precision",
+)
+@click.option(
+    "--unmasked",
+    "--unmasked",
+    type=bool,
+    default=None,
+    help=("Whether to use unmasking for multimer templates."),
 )
 def predict(
     query_json: Path,
@@ -188,6 +196,7 @@ def predict(
     use_templates: bool | None = None,
     output_dir: Path | None = None,
     use_tf32: bool = True,
+    unmasked: bool | None = None,
 ):
     """Perform inference on a set of queries defined in the query_json."""
     _configure_torch_backend()
@@ -233,6 +242,7 @@ def predict(
         use_msa_server,
         use_templates,
         output_dir,
+        unmasked,
     )
 
     # Load inference query set
