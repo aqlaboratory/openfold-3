@@ -30,11 +30,22 @@ TEMPLATE_ID = "1FOO_A"
 
 
 def make_cache_entry(
-    idx_map, *, index: int = 0, release_date: str = "2000-01-01"
+    idx_map,
+    *,
+    index: int = 0,
+    release_date: str = "2000-01-01",
+    cif_path: Path | None = None,
 ) -> TemplateCacheEntry:
-    """Build a TemplateCacheEntry from a query<->template residue index map."""
+    """Build a TemplateCacheEntry from a query<->template residue index map.
+
+    `cif_path` is the CIF-direct coordinate source, set by preprocessing when the
+    query pinned its own template CIF rather than an alignment.
+    """
     return TemplateCacheEntry(
-        index=index, release_date=release_date, idx_map=np.asarray(idx_map)
+        index=index,
+        release_date=release_date,
+        idx_map=np.asarray(idx_map),
+        cif_path=cif_path,
     )
 
 
