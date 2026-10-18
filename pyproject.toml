@@ -35,7 +35,7 @@ dependencies = [
     "torch", # ==2.5.1",
     "ml-collections",
     "pytorch-lightning >=2.1",
-    "biotite",
+    "biotite>=1.6,<2",
     "rdkit<2026", # aqlaboratory/openfold-3/issues/285 
     "pdbeccdutils",
     "kalign-python",
