@@ -25823,7 +25823,7 @@ packages:
   - torch
   - ml-collections
   - pytorch-lightning>=2.1
-  - biotite
+  - biotite>=1.6,<2
   - rdkit<2026
   - pdbeccdutils
   - kalign-python
