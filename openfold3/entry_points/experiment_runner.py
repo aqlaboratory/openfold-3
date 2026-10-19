@@ -28,12 +28,17 @@ import ml_collections as mlc
 import pytorch_lightning as pl
 import torch
 import wandb
+from lightning_fabric.plugins.environments.cluster_environment import (
+    ClusterEnvironment,
+)
+from lightning_fabric.plugins.environments.lightning import LightningEnvironment
+from lightning_fabric.plugins.environments.mpi import MPIEnvironment
+from lightning_fabric.plugins.environments.slurm import SLURMEnvironment
 from lightning_fabric.utilities.rank_zero import _get_rank
 from pydantic import BaseModel
 from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.plugins.environments import MPIEnvironment
 from pytorch_lightning.profilers import PyTorchProfiler
 from pytorch_lightning.strategies import DDPStrategy, DeepSpeedStrategy
 
@@ -57,6 +62,7 @@ from openfold3.core.utils.checkpoint_loading_utils import (
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
+    ClusterEnvironmentOption,
     ExperimentConfig,
     InferenceExperimentConfig,
     TrainingExperimentConfig,
@@ -231,15 +237,62 @@ class ExperimentRunner(ABC):
     def is_rank_zero(self) -> bool:
         """Check if the current process is rank zero in an MPI environment."""
         if self.is_mpi:
-            return self.cluster_environment.global_rank() == 0
+            env = self.cluster_environment
+            assert env is not None  # is_mpi always resolves to MPIEnvironment
+            return env.global_rank() == 0
         else:
             _rank = _get_rank()
             return (_rank is None) or (_rank == 0)
 
     @property
-    def cluster_environment(self) -> MPIEnvironment | None:
-        """Return the MPI cluster environment if enabled."""
-        return MPIEnvironment() if self.is_mpi else None
+    def cluster_environment(self) -> ClusterEnvironment | None:
+        """Cluster environment passed to Lightning.
+
+        Default (``auto``): SLURM manages the ranks only if this process was
+        launched by ``srun``; otherwise Lightning starts the ranks locally.
+        This holds for single- and multi-GPU runs alike. Returns
+        ``LightningEnvironment`` inside a SLURM allocation without srun, and
+        ``None`` (Lightning detects the environment) everywhere else.
+
+        To change it, set ``pl_trainer_args.cluster_environment`` in the
+        runner yaml or pass ``run_openfold predict --cluster-environment``:
+        ``local`` -> ``LightningEnvironment``, ``slurm`` ->
+        ``SLURMEnvironment``, ``mpi`` -> ``MPIEnvironment`` (also selected by
+        the legacy ``mpi_plugin`` flag).
+
+        Lightning's own detection adopts ``SLURMEnvironment`` for any process
+        inside a SLURM allocation, including ``sbatch`` without ``srun``, where
+        no sibling ranks are ever launched and distributed init blocks forever
+        (issue #47). ``SLURM_STEP_ID`` is only set for srun-launched steps, so
+        its absence identifies that case.
+        """
+        choice = self.pl_trainer_args.cluster_environment
+        if self.is_mpi:
+            # Legacy flag, equivalent to cluster_environment="mpi".
+            choice = ClusterEnvironmentOption.MPI
+
+        explicit_environments: dict[
+            ClusterEnvironmentOption, type[ClusterEnvironment]
+        ] = {
+            ClusterEnvironmentOption.SLURM: SLURMEnvironment,
+            ClusterEnvironmentOption.LOCAL: LightningEnvironment,
+            ClusterEnvironmentOption.MPI: MPIEnvironment,
+        }
+        if choice in explicit_environments:
+            return explicit_environments[choice]()
+
+        # ClusterEnvironmentOption.AUTO
+        if SLURMEnvironment.detect() and "SLURM_STEP_ID" not in os.environ:
+            logger.warning(
+                "Inside a SLURM allocation but not launched by srun: using the"
+                " local launcher instead of SLURM rank binding. Set"
+                " pl_trainer_args.cluster_environment to 'slurm' or 'local' to"
+                " silence this warning, and launch with"
+                " `srun --ntasks-per-node=<devices>` if SLURM should manage"
+                " the ranks."
+            )
+            return LightningEnvironment()
+        return None
 
     @cached_property
     def strategy(self) -> DDPStrategy | DeepSpeedStrategy | str:
@@ -324,7 +377,12 @@ class ExperimentRunner(ABC):
     def trainer(self) -> pl.Trainer:
         """Create and return the trainer instance."""
         trainer_args = self.pl_trainer_args.model_dump(
-            exclude={"deepspeed_config_path", "distributed_timeout", "mpi_plugin"}
+            exclude={
+                "deepspeed_config_path",
+                "distributed_timeout",
+                "mpi_plugin",
+                "cluster_environment",
+            }
         )
         trainer_args.update(
             {
@@ -337,6 +395,13 @@ class ExperimentRunner(ABC):
 
         if self.profiler_config.enabled:
             trainer_args["profiler"] = self._build_profiler()
+
+        # DDP/DeepSpeed strategies carry the cluster environment themselves; the
+        # plain "auto" strategy does not, so pass it as a plugin to make the
+        # resolution identical for single- and multi-GPU runs.
+        cluster_environment = self.cluster_environment
+        if isinstance(self.strategy, str) and cluster_environment is not None:
+            trainer_args["plugins"] = [cluster_environment]
 
         return pl.Trainer(**trainer_args)
 
