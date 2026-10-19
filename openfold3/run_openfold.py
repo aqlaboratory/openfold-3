@@ -58,6 +58,7 @@ def cli():
 )
 @click.option(
     "--use_tf32",
+    "--use-tf32",
     type=bool,
     default=False,
     help="Use tf32 precision",
@@ -173,13 +174,12 @@ def train(
 )
 @click.option(
     "--use_tf32",
-    "--use_tf32",
+    "--use-tf32",
     type=bool,
     default=True,
     help="Use tf32 precision",
 )
 @click.option(
-    "--unmasked",
     "--unmasked",
     type=bool,
     default=None,
