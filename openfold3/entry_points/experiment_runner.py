@@ -396,13 +396,12 @@ class ExperimentRunner(ABC):
         if self.profiler_config.enabled:
             trainer_args["profiler"] = self._build_profiler()
 
-        # The non-distributed strategy ("auto") carries no cluster_environment,
-        # so an explicitly configured environment is passed via plugins.
-        if (
-            not self.is_distributed
-            and self.pl_trainer_args.cluster_environment != "auto"
-        ):
-            trainer_args["plugins"] = [self.cluster_environment]
+        # DDP/DeepSpeed strategies carry the cluster environment themselves; the
+        # plain "auto" strategy does not, so pass it as a plugin to make the
+        # resolution identical for single- and multi-GPU runs.
+        cluster_environment = self.cluster_environment
+        if isinstance(self.strategy, str) and cluster_environment is not None:
+            trainer_args["plugins"] = [cluster_environment]
 
         return pl.Trainer(**trainer_args)
 

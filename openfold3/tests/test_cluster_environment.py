@@ -150,18 +150,72 @@ def test_invalid_value_rejected(make_runner):
         make_runner(cluster_environment="k8s")
 
 
-def test_knob_not_forwarded_to_pl_trainer(make_runner):
-    """pl.Trainer must never see the cluster_environment kwarg."""
-    with scrubbed_slurm_env({}):
-        runner = make_runner(accelerator="cpu", devices=1, cluster_environment="local")
-        trainer = runner.trainer  # raises TypeError if the kwarg leaks through
-        assert isinstance(
-            trainer._accelerator_connector.cluster_environment,
+# Allocations shaped to match the requested device count, so Lightning's own
+# SLURM validation (devices == ntasks-per-node) passes when it is consulted.
+SBATCH_1_TASK = {"SLURM_NTASKS": "1", "SLURM_JOB_NAME": "of3-job"}
+SRUN_1_TASK = {**SBATCH_1_TASK, "SLURM_STEP_ID": "0"}
+SBATCH_8_TASKS = {
+    "SLURM_NTASKS": "8",
+    "SLURM_NTASKS_PER_NODE": "8",
+    "SLURM_JOB_NAME": "of3-job",
+}
+# Per-task variables srun sets for every rank; Lightning reads them for DDP.
+SRUN_8_TASKS = {
+    **SBATCH_8_TASKS,
+    "SLURM_STEP_ID": "0",
+    "SLURM_NODEID": "0",
+    "SLURM_PROCID": "0",
+    "SLURM_LOCALID": "0",
+    "SLURM_NODELIST": "node001",
+}
+
+
+@pytest.mark.parametrize(
+    ("env", "devices", "pl_trainer_args", "expected"),
+    [
+        pytest.param({}, 1, {}, LightningEnvironment, id="1gpu-no-scheduler-local"),
+        pytest.param({}, 8, {}, LightningEnvironment, id="8gpu-no-scheduler-local"),
+        pytest.param(
+            SBATCH_1_TASK,
+            1,
+            {},
             LightningEnvironment,
-        )
-
-
-def test_distributed_strategy_carries_env(make_runner):
-    with scrubbed_slurm_env(SBATCH_WITHOUT_SRUN):
-        runner = make_runner(accelerator="cpu", devices=8)
-        assert isinstance(runner.strategy.cluster_environment, LightningEnvironment)
+            id="1gpu-sbatch-without-srun-local",
+        ),
+        pytest.param(
+            SBATCH_8_TASKS,
+            8,
+            {},
+            LightningEnvironment,
+            id="8gpu-sbatch-without-srun-local",
+        ),
+        pytest.param(SRUN_1_TASK, 1, {}, SLURMEnvironment, id="1gpu-srun-slurm"),
+        pytest.param(SRUN_8_TASKS, 8, {}, SLURMEnvironment, id="8gpu-srun-slurm"),
+        pytest.param(
+            SRUN_1_TASK,
+            1,
+            {"cluster_environment": "local"},
+            LightningEnvironment,
+            id="1gpu-explicit-local-overrides-srun",
+        ),
+        pytest.param(
+            SRUN_8_TASKS,
+            8,
+            {"cluster_environment": "local"},
+            LightningEnvironment,
+            id="8gpu-explicit-local-overrides-srun",
+        ),
+    ],
+)
+def test_trainer_cluster_environment(
+    make_runner, env, devices, pl_trainer_args, expected
+):
+    """The environment Lightning ends up with, after the strategy/plugins
+    wiring. Same answer for 1 and 8 devices in every situation. Building the
+    trainer also proves the knob is never forwarded to pl.Trainer as a kwarg
+    (that would raise TypeError)."""
+    with scrubbed_slurm_env(env):
+        trainer = make_runner(
+            accelerator="cpu", devices=devices, **pl_trainer_args
+        ).trainer
+        assert type(trainer._accelerator_connector.cluster_environment) is expected
