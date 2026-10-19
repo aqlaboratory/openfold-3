@@ -1,5 +1,56 @@
 # Weekly CI Summary
 
+## Week of 2026-10-13 – 2026-10-19
+
+**Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights. Scope changed mid-week: 10-13 (run #324) was tracked under the prior three-job scope (`test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`); from 10-14 (run #326) onward the scope expanded to five jobs, adding `test-pixi-cuda-brev (openfold3-cuda12)` and `test-pixi-cuda-brev (openfold3-cuda13)`. No off-schedule (`workflow_dispatch`) runs this week.
+
+### Days with coverage < full in-scope job count
+
+0 of 7 days — every night this week passed every job that was in scope at the time.
+
+| Date | Primary (03:17 UTC cron) | Secondary (04:17 UTC cron) |
+|---|---|---|
+| 2026-10-13 | 3/3 (pre-expansion scope) | SKIP (expected) |
+| 2026-10-14 | 5/5 | SKIP (expected) |
+| 2026-10-15 | 5/5 | SKIP (expected) |
+| 2026-10-16 | 5/5 | SKIP (expected) |
+| 2026-10-17 | 5/5 | SKIP (expected) |
+| 2026-10-18 | 5/5 | SKIP (expected) |
+| 2026-10-19 | 5/5 | SKIP (expected) |
+
+### Count per failure/non-pass class
+
+| Class | Count | Where |
+|---|---|---|
+| — | 0 | No non-passes recorded this week. `test-failures.md` and `aws-outage-failures.md` have no entries dated 2026-10-10 through 2026-10-19 — this is the first fully clean 7-night week in this log's history (last non-pass: 10-09, run #316, `aws-capacity` on both CUDA legs). |
+
+**Most frequent class: none — zero non-passes this week.**
+
+No `aws-capacity`, `gpu-unavailable`, `runner-offline`, `msa-hang`, `parameter-cache`, `build-push`, `code`, or `unclassified` non-passes, and no QUEUED jobs, this week.
+
+### Consecutive non-pass streak per job (as of 2026-10-19)
+
+| Job | Current streak | Detail |
+|---|---|---|
+| `test-pixi-amd (openfold3-rocm7)` | **0 — currently passing** | Clean every night since at least 10-06 (14 consecutive nights through 10-19 per this log; unaffected by the 10-09 CUDA-leg `aws-capacity` incident, being a self-hosted runner). |
+| `test-pixi-cuda (openfold3-cuda12)` | **0 — currently passing** | Last non-pass 10-09 (`aws-capacity`); clean every night since 10-10 (10 consecutive nights through 10-19). |
+| `test-pixi-cuda (openfold3-cuda13)` | **0 — currently passing** | Same pattern as cuda12 — last non-pass 10-09, clean every night since 10-10. |
+| `test-pixi-cuda-brev (openfold3-cuda12)` | **0 — currently passing** | Clean every night since introduction on 10-14, run #326 (6 consecutive nights through 10-19). |
+| `test-pixi-cuda-brev (openfold3-cuda13)` | **0 — currently passing** | Same as the cuda12 Brev leg — clean every night since introduction on 10-14 (6 consecutive nights). |
+
+All five tracked jobs closed the week on a clean streak; the CUDA/AMD legs' streak (10) is longer than the Brev legs' (6) only because Brev was introduced four nights later (10-14), not because of any Brev-side incident.
+
+### Brev vs. AWS two-week comparison
+
+Per the monitoring brief, a brev-vs-AWS pass-rate comparison (with a recommendation to retire the AWS `test-pixi-cuda` jobs if Brev's pass rate exceeds 95%) is due two weeks after the Brev jobs were added. Brev jobs added 2026-10-14 in PR #448 → two-week mark is **2026-10-28**. As of this week's close (2026-10-19), only 6 of those 14 days have elapsed — **not yet due**. Running tally for context: 6/6 nights tracked so far (10-14 through 10-19), both Brev legs (cuda12, cuda13) passing every night, in full agreement with their AWS `test-pixi-cuda` counterparts every time — 100% Brev pass rate to date, 0 divergences. Will compute and report the formal comparison (and the replace-AWS-workflow recommendation if the 95% bar is met) once the 2026-10-28 window closes.
+
+### Data-source notes
+
+- Built from `daily-status.md` entries for 2026-10-13 through 2026-10-18 (runs #324–#335); today's entry (run #336/#337, 10-19) was fetched live for this scan.
+- This session's `gh` CLI had an invalid `GH_TOKEN` (unauthenticated: "The token in GH_TOKEN is invalid"); all live data (workflow runs, job lists, job details) was instead fetched via the GitHub MCP server's Actions tools (`actions_list`, `actions_get`).
+
+---
+
 ## Week of 2026-10-06 – 2026-10-12
 
 **Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights, against the three tracked jobs: `test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`. One off-schedule (`workflow_dispatch`) run excluded from coverage stats per this log's established convention: run #313 ([37603411922](https://github.com/aqlaboratory/openfold-3/actions/runs/37603411922), 10-07, `jandom/2026-10/ci/fix-daily-tests-after-expandable-segments` @ `6dcb629`) — all three legs passed, pre-validating the fix that landed on `main` later that same day.
