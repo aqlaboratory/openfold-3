@@ -14,6 +14,8 @@
 
 """Primitives for aligning atom arrays."""
 
+from typing import Any
+
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
@@ -21,6 +23,35 @@ from biotite.structure import AtomArray
 from openfold3.core.data.primitives.structure.interface import (
     get_query_interface_atom_pair_idxs,
 )
+
+
+def superimpose_transform(
+    fixed: AtomArray[Any],
+    mobile: AtomArray[Any],
+    atom_mask: np.ndarray[Any, np.dtype[np.bool_]] | None = None,
+) -> Any:
+    """Computes the transformation superimposing `mobile` onto `fixed`.
+
+    Wraps `biotite.structure.superimpose`, which returns `(fitted, transformation)`
+    in biotite 1.x but only the transformation in biotite 2.x.
+
+    Args:
+        fixed (AtomArray):
+            AtomArray that serves as the reference for the superimposition.
+        mobile (AtomArray):
+            AtomArray that is superimposed onto `fixed`.
+        atom_mask (np.ndarray | None):
+            Boolean mask of the atoms considered for the superimposition. Defaults
+            to None, which considers all atoms.
+
+    Returns:
+        Any:
+            The biotite transformation object (`AffineTransformation` in biotite
+            1.x, `RigidTransformation` in biotite 2.x). Use its `apply` method to
+            transform structures.
+    """
+    result = struc.superimpose(fixed=fixed, mobile=mobile, atom_mask=atom_mask)
+    return result[1] if isinstance(result, tuple) else result
 
 
 # TODO add docstring and comments
@@ -159,7 +190,7 @@ def coalign_atom_arrays(
         resolved_mask = mobile_pocket_align_subset.occupancy > 0
 
         # Align
-        _, transformation = struc.superimpose(
+        transformation = superimpose_transform(
             fixed=fixed_pocket_align_subset,
             mobile=mobile_pocket_align_subset,
             atom_mask=resolved_mask,
