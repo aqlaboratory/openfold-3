@@ -1647,7 +1647,6 @@ openfold3/core/data/primitives/structure/alignment.py:0: error: Missing type arg
 openfold3/core/data/primitives/structure/alignment.py:0: error: Missing type arguments for generic type "AtomArray"  [type-arg]
 openfold3/core/data/primitives/structure/alignment.py:0: error: Missing type arguments for generic type "AtomArray"  [type-arg]
 openfold3/core/data/primitives/structure/alignment.py:0: error: Missing type arguments for generic type "AtomArray"  [type-arg]
-openfold3/core/data/primitives/structure/alignment.py:0: error: Need type annotation for "affine_transformation"  [var-annotated]
 openfold3/core/data/primitives/structure/alignment.py:0: error: No overload variant of "__getitem__" of "tuple" matches argument type "tuple[slice[None, None, None], int]"  [call-overload]
 openfold3/core/data/primitives/structure/alignment.py:0: error: Returning Any from function declared to return "AtomArray[Any]"  [no-any-return]
 openfold3/core/data/primitives/structure/alignment.py:0: note: Possible overload variants:

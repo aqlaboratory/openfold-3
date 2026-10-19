@@ -61,18 +61,18 @@ def extend_chain_map_via_alignment(
     chain_map: dict[str, str],
     transform_array: np.ndarray,
 ):
-    affine_transformation = struc.AffineTransformation(
-        center_translation=np.zeros(3),
-        rotation=transform_array[:3, :3],
-        target_translation=transform_array[:3, 3],
-    )
     unaligned_target_chain_ids = set(np.unique(target_atom_array.chain_id)) - set(
         chain_map.values()
     )
     unaligned_source_chain_ids = set(np.unique(source_atom_array.chain_id)) - set(
         chain_map.keys()
     )
-    target_atom_array_aligned = affine_transformation.apply(target_atom_array)
+    # transform_array is a homogeneous 4x4 matrix applied as x' = R x + t; with
+    # coordinates as rows this is x' = x R^T + t
+    rotation = transform_array[:3, :3]
+    translation = transform_array[:3, 3]
+    target_atom_array_aligned = target_atom_array.copy()
+    target_atom_array_aligned.coord = target_atom_array.coord @ rotation.T + translation
 
     chain_map_update = {}
     for source_chain_id in unaligned_source_chain_ids:

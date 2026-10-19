@@ -26,13 +26,28 @@ import numpy as np
 from biotite.structure import AtomArray
 
 import openfold3
-from openfold3.core.data.primitives.structure.alignment import coalign_atom_arrays
+from openfold3.core.data.primitives.structure.alignment import (
+    coalign_atom_arrays,
+    extend_chain_map_via_alignment,
+)
 
 MMCIFS_DIR = Path(openfold3.__file__).parent / "tests" / "test_data" / "mmcifs"
 
-# 90 degree rotation about z, applied as x' = R x + t
-ROTATION = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+# 120 degree rotation about (1, 1, 1), (x, y, z) -> (z, x, y), applied as
+# x' = R x + t. Unlike a rotation about a coordinate axis, a transposed rotation or a
+# dropped translation both misplace every 1kd8 chain enough to change its match.
+ROTATION = np.array([[0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
 TRANSLATION = np.array([10.0, -20.0, 30.0])
+
+# Homogeneous 4x4 matrix undoing the motion above: x = R^T x' - R^T t
+INVERSE_TRANSFORM = np.array(
+    [
+        [0.0, 1.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0, -30.0],
+        [1.0, 0.0, 0.0, -10.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+)
 
 
 def _load(pdb_id: str) -> AtomArray:
@@ -67,3 +82,28 @@ def test_coalign_atom_arrays_moves_ligand_into_fixed_frame():
     )
 
     np.testing.assert_allclose(aligned.coord, ligand.coord, atol=1e-3)
+
+
+def test_extend_chain_map_via_alignment_matches_chain_after_transform():
+    """The unmapped GT chain must match its moved predicted copy, not the unmoved
+    decoy copies, which would only win if the transform were not applied.
+
+    1kd8's chains A-D and F have identical backbone lengths, so every one of them is
+    a candidate. A single unmapped chain keeps the greedy matching order-free.
+    """
+    structure = _load("1kd8")
+    source = structure[struc.filter_amino_acids(structure)]
+
+    predicted = _moved(source)
+    predicted.chain_id = np.char.add("P", source.chain_id)
+    decoys = source.copy()
+    decoys.chain_id = np.char.add("Q", source.chain_id)
+
+    chain_map = extend_chain_map_via_alignment(
+        target_atom_array=predicted + decoys,
+        source_atom_array=source,
+        chain_map={"A": "PA", "B": "PB", "D": "PD", "E": "PE", "F": "PF"},
+        transform_array=INVERSE_TRANSFORM,
+    )
+
+    assert chain_map["C"] == "PC"
