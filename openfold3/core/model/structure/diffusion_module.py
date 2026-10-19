@@ -148,6 +148,7 @@ class DiffusionModule(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
     ) -> torch.Tensor:
@@ -181,6 +182,9 @@ class DiffusionModule(nn.Module):
                 Whether to use Triton triangle attention kernel
             use_lma:
                 Whether to use LMA
+            use_megafold_single_attention:
+                Whether to use MegaFold's EvoFlash-3D single attention
+                pair bias.
             use_high_precision_attention:
                 Whether to run attention in high precision
             _mask_trans:
@@ -223,6 +227,7 @@ class DiffusionModule(nn.Module):
             use_cueq_triangle_kernels=use_cueq_triangle_kernels,
             use_triton_triangle_kernels=use_triton_triangle_kernels,
             use_lma=use_lma,
+            use_megafold_single_attention=use_megafold_single_attention,
             use_high_precision_attention=use_high_precision_attention,
             _mask_trans=_mask_trans,
         )
@@ -302,6 +307,7 @@ class SampleDiffusion(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
     ) -> torch.Tensor:
@@ -335,6 +341,7 @@ class SampleDiffusion(nn.Module):
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
+                use_megafold_single_attention=use_megafold_single_attention,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
             )
@@ -359,6 +366,7 @@ class SampleDiffusion(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
     ) -> torch.Tensor:
@@ -386,6 +394,9 @@ class SampleDiffusion(nn.Module):
                 Whether to use Triton triangle attention kernel
             use_lma:
                 Whether to use LMA
+            use_megafold_single_attention:
+                Whether to use MegaFold's EvoFlash-3D single attention
+                pair bias.
             use_high_precision_attention:
                 Whether to run attention in high precision
             _mask_trans:
@@ -417,6 +428,7 @@ class SampleDiffusion(nn.Module):
             "use_cueq_triangle_kernels": use_cueq_triangle_kernels,
             "use_triton_triangle_kernels": use_triton_triangle_kernels,
             "use_lma": use_lma,
+            "use_megafold_single_attention": use_megafold_single_attention,
             "use_high_precision_attention": use_high_precision_attention,
             "_mask_trans": _mask_trans,
         }
