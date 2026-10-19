@@ -173,7 +173,7 @@ class MSAStack(nn.Module, ABC):
 
     def forward_offload(
         self,
-        input_tensors: Sequence[torch.Tensor],
+        input_tensors: list[torch.Tensor],
         msa_mask: torch.Tensor,
         pair_mask: torch.Tensor,
         chunk_size: int | None = None,

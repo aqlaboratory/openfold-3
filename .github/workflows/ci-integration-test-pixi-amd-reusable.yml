@@ -18,7 +18,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/openfold3-docker
   # Keep in step with DEFAULT_CHECKPOINT_NAME in openfold3/entry_points/parameters.py
-  # and with the same variable in ci-integration-test-pixi-cuda-reusable.yml.
+  # and with the same variable in ci-integration-test-aws-pixi-cuda.yml.
   OPENFOLD_DEFAULT_CKPT: of3-ob-2025-06-30-174k.pt
 
 # Unlike the NVIDIA path, the AMD GPU runner is a persistent self-hosted box

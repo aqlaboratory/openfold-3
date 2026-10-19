@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 import torch
@@ -476,88 +478,76 @@ def test_create_pocket_sampling_features_skips_conformers_without_reference_mole
     assert "pocket_sampling_conformer_rels" not in features
 
 
-def test_create_pocket_sampling_features_skips_conformers_when_ligand_ref_is_missing(
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        pocket_constraints,
-        "_resolve_ligand_reference_molecule",
-        lambda query, processed_reference_molecules, ligand_chain_id: None,
-    )
+def test_create_pocket_sampling_features_skips_conformers_when_ligand_ref_is_missing():
     query = _query_with_pocket_constraint()
     structure = structure_with_ref_mols_from_query(query)
 
-    features = create_pocket_sampling_features(
-        query=query,
-        atom_array=structure.atom_array,
-        processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(rdkit_num_conformers=1),
-    )
+    with patch.object(
+        pocket_constraints, "_resolve_ligand_reference_molecule", return_value=None
+    ):
+        features = create_pocket_sampling_features(
+            query=query,
+            atom_array=structure.atom_array,
+            processed_reference_molecules=structure.processed_reference_mols,
+            settings=PocketSamplingSettings(rdkit_num_conformers=1),
+        )
 
     assert "pocket_sampling_conformer_rels" not in features
 
 
-def test_create_pocket_sampling_features_skips_conformers_for_hydrogen_atom_order(
-    monkeypatch,
-):
-    monkeypatch.setattr(
+def test_create_pocket_sampling_features_skips_conformers_for_hydrogen_atom_order():
+    query = _query_with_pocket_constraint()
+    structure = structure_with_ref_mols_from_query(query)
+
+    with patch.object(
         pocket_constraints,
         "_atom_order_from_reference_molecule",
-        lambda processed_reference_molecule, ligand_atom_array: [
+        side_effect=lambda processed_reference_molecule, ligand_atom_array: [
             processed_reference_molecule.mol.GetNumAtoms()
         ],
-    )
-    query = _query_with_pocket_constraint()
-    structure = structure_with_ref_mols_from_query(query)
-
-    features = create_pocket_sampling_features(
-        query=query,
-        atom_array=structure.atom_array,
-        processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(rdkit_num_conformers=1),
-    )
+    ):
+        features = create_pocket_sampling_features(
+            query=query,
+            atom_array=structure.atom_array,
+            processed_reference_molecules=structure.processed_reference_mols,
+            settings=PocketSamplingSettings(rdkit_num_conformers=1),
+        )
 
     assert "pocket_sampling_conformer_rels" not in features
 
 
-def test_create_pocket_sampling_features_can_use_uff_conformer_optimization(
-    monkeypatch,
-):
+def test_create_pocket_sampling_features_can_use_uff_conformer_optimization():
     from rdkit.Chem import AllChem
 
-    monkeypatch.setattr(AllChem, "MMFFHasAllMoleculeParams", lambda _mol: False)
     query = _query_with_pocket_constraint()
     structure = structure_with_ref_mols_from_query(query)
 
-    features = create_pocket_sampling_features(
-        query=query,
-        atom_array=structure.atom_array,
-        processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(rdkit_num_conformers=1),
-    )
+    with patch.object(AllChem, "MMFFHasAllMoleculeParams", return_value=False):
+        features = create_pocket_sampling_features(
+            query=query,
+            atom_array=structure.atom_array,
+            processed_reference_molecules=structure.processed_reference_mols,
+            settings=PocketSamplingSettings(rdkit_num_conformers=1),
+        )
 
     assert features["pocket_sampling_conformer_rels"].shape[0] == 1
 
 
-def test_create_pocket_sampling_features_skips_conformers_on_generation_error(
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        pocket_constraints,
-        "_atom_order_from_reference_molecule",
-        lambda processed_reference_molecule, ligand_atom_array: (_ for _ in ()).throw(
-            ValueError("bad mapping")
-        ),
-    )
+def test_create_pocket_sampling_features_skips_conformers_on_generation_error():
     query = _query_with_pocket_constraint()
     structure = structure_with_ref_mols_from_query(query)
 
-    features = create_pocket_sampling_features(
-        query=query,
-        atom_array=structure.atom_array,
-        processed_reference_molecules=structure.processed_reference_mols,
-        settings=PocketSamplingSettings(rdkit_num_conformers=1),
-    )
+    with patch.object(
+        pocket_constraints,
+        "_atom_order_from_reference_molecule",
+        side_effect=ValueError("bad mapping"),
+    ):
+        features = create_pocket_sampling_features(
+            query=query,
+            atom_array=structure.atom_array,
+            processed_reference_molecules=structure.processed_reference_mols,
+            settings=PocketSamplingSettings(rdkit_num_conformers=1),
+        )
 
     assert "pocket_sampling_conformer_rels" not in features
 
@@ -730,7 +720,7 @@ def test_sample_diffusion_runs_second_pass_when_pocket_sampling_enabled():
     assert denoiser.calls == 3
 
 
-def test_sample_diffusion_applies_independent_rigid_ligand_jitter(monkeypatch):
+def test_sample_diffusion_applies_independent_rigid_ligand_jitter():
     batch = _pocket_sampling_batch_without_jitter()
     jitter_scale = 0.25
     batch["pocket_sampling_ligand_jitter"] = torch.tensor([jitter_scale])
@@ -742,23 +732,6 @@ def test_sample_diffusion_applies_independent_rigid_ligand_jitter(monkeypatch):
             return jitter_draw.to(device=device, dtype=dtype)
         return torch.zeros(shape, device=device, dtype=dtype)
 
-    monkeypatch.setattr(diffusion_module.torch, "randn", controlled_randn)
-    monkeypatch.setattr(
-        diffusion_module.torch,
-        "randn_like",
-        lambda value: torch.zeros_like(value),
-    )
-    monkeypatch.setattr(
-        diffusion_module,
-        "centre_random_augmentation",
-        lambda *, xl, atom_mask: xl,
-    )
-    monkeypatch.setattr(
-        diffusion_module,
-        "_build_pocket_sampling_seeds",
-        lambda **_kwargs: seed.clone(),
-    )
-
     sampler = SampleDiffusion(
         gamma_0=0.0,
         gamma_min=0.0,
@@ -766,7 +739,25 @@ def test_sample_diffusion_applies_independent_rigid_ligand_jitter(monkeypatch):
         step_scale=1.0,
         diffusion_module=_IdentityDenoiser(),
     )
-    with torch.no_grad():
+    with (
+        patch.object(diffusion_module.torch, "randn", side_effect=controlled_randn),
+        patch.object(
+            diffusion_module.torch,
+            "randn_like",
+            side_effect=lambda value: torch.zeros_like(value),
+        ),
+        patch.object(
+            diffusion_module,
+            "centre_random_augmentation",
+            side_effect=lambda *, xl, atom_mask: xl,
+        ),
+        patch.object(
+            diffusion_module,
+            "_build_pocket_sampling_seeds",
+            side_effect=lambda **_kwargs: seed.clone(),
+        ),
+        torch.no_grad(),
+    ):
         result = sampler(
             batch=batch,
             si_input=torch.zeros(1, 1, 1),

@@ -15,6 +15,7 @@
 import unittest
 
 import numpy as np
+import pytest
 import torch
 
 from openfold3.core.model.heads.head_modules import AuxiliaryHeadsAllAtom
@@ -228,6 +229,7 @@ class TestPairformerEmbedding(unittest.TestCase):
         expected_shape_pair = (batch_size, n_sample, n_token, n_token, c_z)
         np.testing.assert_array_equal(out_pair.shape, expected_shape_pair)
 
+    @torch.inference_mode()
     def test_pairformer_embedding_apply_per_sample_equal(self):
         batch_size = consts.batch_size
         n_sample = 5
@@ -284,6 +286,7 @@ class TestPairformerEmbedding(unittest.TestCase):
         torch.testing.assert_close(out_single, out_single_per_sample)
         torch.testing.assert_close(out_pair, out_pair_per_sample)
 
+    @torch.inference_mode()
     def test_pairformer_embedding_apply_per_sample_one_batch_dim_equal(self):
         n_sample = 5
         n_token = consts.n_res
@@ -337,6 +340,46 @@ class TestPairformerEmbedding(unittest.TestCase):
 
         torch.testing.assert_close(out_single, out_single_per_sample)
         torch.testing.assert_close(out_pair, out_pair_per_sample)
+
+
+@pytest.mark.parametrize("inplace_safe", [False, True])
+def test_pairformer_embedding_per_sample_offload(device, inplace_safe):
+    batch_size = 1
+    n_sample = 3
+    n_token = 12
+
+    config = OF3ProjectEntry().get_model_config_with_presets()
+    c_s_input = config.architecture.shared.c_s_input
+    c_s = config.architecture.shared.c_s
+    c_z = config.architecture.shared.c_z
+
+    pair_emb = PairformerEmbedding(**config.architecture.heads.pairformer_embedding)
+    initialize_model_weights(pair_emb)
+    pair_emb.to(device).eval()
+
+    inputs = (
+        torch.randn(batch_size, 1, n_token, c_s_input, device=device),
+        torch.randn(batch_size, 1, n_token, c_s, device=device),
+        torch.randn(batch_size, 1, n_token, n_token, c_z, device=device),
+        torch.randn(batch_size, n_sample, n_token, 3, device=device),
+        torch.ones(batch_size, 1, n_token, device=device),
+        torch.ones(batch_size, 1, n_token, n_token, device=device),
+    )
+
+    with torch.inference_mode():
+        expected = pair_emb(*inputs, chunk_size=4, apply_per_sample=True)
+        actual = pair_emb(
+            *inputs,
+            chunk_size=4,
+            apply_per_sample=True,
+            offload_inference=True,
+            inplace_safe=inplace_safe,
+        )
+
+    # Offloaded outputs are returned on the CPU
+    for a, e in zip(actual, expected, strict=True):
+        assert a.device == torch.device("cpu")
+        torch.testing.assert_close(a, e.cpu())
 
 
 class TestAuxiliaryHeadsAllAtom(unittest.TestCase):

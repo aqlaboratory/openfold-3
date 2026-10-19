@@ -30,9 +30,32 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}-pixi-cuda-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
       cancel-in-progress: true
-    uses: ./.github/workflows/ci-integration-test-pixi-cuda-reusable.yml
+    uses: ./.github/workflows/ci-integration-test-aws-pixi-cuda.yml
     with:
       pixi_env: ${{ matrix.pixi_env }}
+    secrets: inherit
+
+  # Runs alongside test-pixi-cuda on Brev while we compare the two; intended to
+  # replace it.
+  test-pixi-cuda-brev:
+    if: |
+      github.event_name != 'schedule' ||
+      (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - pixi_env: "openfold3-cuda12"
+          - pixi_env: "openfold3-cuda13"
+    concurrency:
+      group: ${{ github.workflow }}-pixi-cuda-brev-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/ci-integration-test-pixi-cuda-brev-reusable.yml
+    with:
+      pixi_env: ${{ matrix.pixi_env }}
+      brev_instance_type: g5.4xlarge
     secrets: inherit
 
   test-pixi-amd:
