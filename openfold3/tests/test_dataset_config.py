@@ -14,6 +14,7 @@
 
 import textwrap
 from collections import UserDict
+from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import PropertyMock, patch
 
@@ -32,6 +33,7 @@ from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSetting
 from openfold3.projects.of3_all_atom.config.dataset_config_components import (
     MSASettings,
     SampleWeights,
+    TemplateDistogramSettings,
     TemplateSettings,
 )
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
@@ -41,6 +43,7 @@ from openfold3.projects.of3_all_atom.config.dataset_configs import (
     InferenceJobConfig,
     TrainingDatasetPaths,
     TrainingDatasetSpec,
+    ValidationPDBConfig,
     WeightedPDBConfig,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
@@ -76,16 +79,16 @@ class TestOF3DatasetConfigConstruction:
                         interface_distance_threshold: 12.5
                         ligand_inclusion_distance: 4.5
                 dataset_paths:
-                    alignments_directory: None 
-                    alignment_array_directory: {tmp_path} 
-                    dataset_cache_file: {test_dummy_file} 
+                    alignments_directory: None
+                    alignment_array_directory: {tmp_path}
+                    dataset_cache_file: {test_dummy_file}
                     target_structure_file_format: npz
-                    target_structures_directory: {tmp_path} 
+                    target_structures_directory: {tmp_path}
                     reference_molecule_directory: {tmp_path}
-                    template_cache_directory: {tmp_path} 
-                    template_structures_directory: {tmp_path} 
+                    template_cache_directory: {tmp_path}
+                    template_structures_directory: {tmp_path}
                     template_file_format: cif
-                    ccd_file: None 
+                    ccd_file: None
         """)
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
@@ -147,20 +150,20 @@ class TestOF3DatasetConfigConstruction:
         test_yaml_str = textwrap.dedent(f"""\
             name: dataset1
             mode: train
-            dataset_class: ProteinMonomerDataset 
+            dataset_class: ProteinMonomerDataset
             weight: 0.5
             config:
                 dataset_paths:
                     alignments_directory: none
-                    alignment_array_directory: {tmp_path} 
-                    dataset_cache_file: {test_dummy_file} 
+                    alignment_array_directory: {tmp_path}
+                    dataset_cache_file: {test_dummy_file}
                     target_structure_file_format: npz
-                    target_structures_directory: {tmp_path} 
+                    target_structures_directory: {tmp_path}
                     reference_molecule_directory: {tmp_path}
-                    template_cache_directory: {tmp_path} 
-                    template_structures_directory: {tmp_path} 
+                    template_cache_directory: {tmp_path}
+                    template_structures_directory: {tmp_path}
                     template_file_format: cif
-                    ccd_file: None 
+                    ccd_file: None
         """)
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
@@ -206,20 +209,20 @@ class TestOF3DatasetConfigConstruction:
         test_yaml_str = textwrap.dedent(f"""\
             name: dataset1
             mode: train
-            dataset_class: DisorderedPDBDataset 
+            dataset_class: DisorderedPDBDataset
             weight: 0.02
             config:
                 dataset_paths:
                     alignments_directory: none
-                    alignment_array_directory: {tmp_path} 
-                    dataset_cache_file: {test_dummy_file} 
+                    alignment_array_directory: {tmp_path}
+                    dataset_cache_file: {test_dummy_file}
                     target_structure_file_format: npz
-                    target_structures_directory: {tmp_path} 
+                    target_structures_directory: {tmp_path}
                     reference_molecule_directory: {tmp_path}
-                    template_cache_directory: {tmp_path} 
-                    template_structure_array_directory: {tmp_path} 
+                    template_cache_directory: {tmp_path}
+                    template_structure_array_directory: {tmp_path}
                     template_file_format: npz
-                    ccd_file: None 
+                    ccd_file: None
         """)
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
@@ -305,8 +308,8 @@ class TestOF3DatasetConfigConstruction:
             "template_file_format": "npz",
         }
 
-    def test_partial_max_seq_counts_replaces_default_map(self, tmp_path):
-        # Keys of max_seq_counts select which MSA files are parsed
+    def test_dict_value_replaces_default(self, tmp_path):
+        max_seq_counts = {"uniprot_hits": 50000}
         spec = TrainingDatasetSpec.model_validate(
             {
                 "name": "train",
@@ -314,12 +317,12 @@ class TestOF3DatasetConfigConstruction:
                 "dataset_class": "WeightedPDBDataset",
                 "config": {
                     "dataset_paths": self._dataset_paths(tmp_path),
-                    "msa": {"max_seq_counts": {"uniprot_hits": 50000}},
+                    "msa": {"max_seq_counts": max_seq_counts},
                 },
             }
         )
 
-        assert spec.config.msa.max_seq_counts == {"uniprot_hits": 50000}
+        assert spec.config.msa.max_seq_counts == max_seq_counts
 
     def test_partial_sample_weights_keep_defaults(self, tmp_path):
         spec = TrainingDatasetSpec.model_validate(
@@ -351,10 +354,8 @@ class TestOF3DatasetConfigConstruction:
             )
 
     def test_shared_config_does_not_leak_between_datasets(self, tmp_path):
-        shared_config = {
-            "dataset_paths": self._dataset_paths(tmp_path),
-            "template": {"n_templates": 2},
-        }
+        msa = {"max_rows": 128}
+        shared_config = {"dataset_paths": self._dataset_paths(tmp_path), "msa": msa}
         train = TrainingDatasetSpec.model_validate(
             {
                 "name": "train",
@@ -372,9 +373,14 @@ class TestOF3DatasetConfigConstruction:
             }
         )
 
-        assert train.config.template.take_top_k is False
-        assert val.config.template.take_top_k is True
-        assert shared_config["template"] == {"n_templates": 2}
+        # The test relies on each dataset class declareing a different default
+        train_default = WeightedPDBConfig.model_fields["msa"].default.subsample_main
+        val_default = ValidationPDBConfig.model_fields["msa"].default.subsample_main
+        assert train_default != val_default
+
+        assert train.config.msa.subsample_main == train_default
+        assert val.config.msa.subsample_main == val_default
+        assert shared_config["msa"] == msa
 
     def test_dataset_config_with_no_template_paths(self, tmp_path):
         """Test that dataset configs work when template paths are None."""
@@ -461,70 +467,97 @@ class TestOF3DatasetConfigConstruction:
 
 
 class TestInferenceConfigConstruction:
+    inference_default_subsample_main = InferenceDatasetConfigKwargs.model_fields[
+        "msa"
+    ].default.subsample_main
+    class_default_subsample_main = MSASettings.model_fields["subsample_main"].default
+
+    def test_example_field_class_and_inference_defaults_differ(self):
+        # These tests use this as an example of the fields not matching. If this
+        # becomes not true they could pass without testing the behavior they're
+        # supposed to. In that case, pick a different field and update the tests.
+        assert (
+            self.inference_default_subsample_main != self.class_default_subsample_main
+        )
+
     def test_partial_kwargs_keep_inference_defaults(self):
-        data = {"template": {"n_templates": 2}, "msa": {"max_rows": 128}}
+        max_rows = MSASettings.model_fields["max_rows"].default + 1
+        n_templates = TemplateSettings.model_fields["n_templates"].default + 1
+        data = {"template": {"n_templates": n_templates}, "msa": {"max_rows": max_rows}}
+        copy = deepcopy(data)
         kwargs = InferenceDatasetConfigKwargs.model_validate(data)
 
-        assert kwargs.template.n_templates == 2
-        assert kwargs.template.take_top_k is True
-        assert kwargs.msa.max_rows == 128
-        assert kwargs.msa.subsample_main is False
-        # The caller's dict is not modified
-        assert data == {"template": {"n_templates": 2}, "msa": {"max_rows": 128}}
+        assert kwargs.template.n_templates == n_templates
+        assert kwargs.msa.max_rows == max_rows
+
+        assert kwargs.msa.subsample_main == self.inference_default_subsample_main
+
+        from_instances = InferenceDatasetConfigKwargs(
+            template=TemplateSettings(n_templates=n_templates),
+            msa=MSASettings(max_rows=max_rows),
+        )
+        assert kwargs == from_instances
+        assert data == copy  # input not modified
 
     def test_kwargs_can_override_inference_defaults(self):
-        kwargs = InferenceDatasetConfigKwargs.model_validate(
-            {"template": {"take_top_k": False}, "msa": {"subsample_main": True}}
+        # The opposite of the inference defaults, matching the class defaults.
+        # Checks that set fields count even when they equal the class default.
+        data = {"msa": {"subsample_main": self.class_default_subsample_main}}
+        copy = deepcopy(data)
+        kwargs = InferenceDatasetConfigKwargs.model_validate(data)
+
+        assert kwargs.msa.subsample_main == self.class_default_subsample_main
+
+        from_instances = InferenceDatasetConfigKwargs(
+            msa=MSASettings(subsample_main=self.class_default_subsample_main),
         )
+        assert kwargs == from_instances
+        assert data == copy  # input not modified
 
-        assert kwargs.template.take_top_k is False
-        assert kwargs.msa.subsample_main is True
+    def test_partial_nested_kwargs_keep_defaults(self):
+        max_bin = TemplateDistogramSettings.model_fields["max_bin"].default + 1
+        default_min_bin = TemplateDistogramSettings.model_fields["min_bin"].default
+        data = {"template": {"distogram": {"max_bin": max_bin}}}
+        copy = deepcopy(data)
+        kwargs = InferenceDatasetConfigKwargs.model_validate(data)
 
-    def test_partial_nested_settings_keep_defaults(self):
-        kwargs = InferenceDatasetConfigKwargs.model_validate(
-            {"template": {"distogram": {"max_bin": 40.0}}}
+        assert kwargs.template.distogram.max_bin == max_bin
+        assert kwargs.template.distogram.min_bin == default_min_bin
+
+        from_instances = InferenceDatasetConfigKwargs(
+            template=TemplateSettings(
+                distogram=TemplateDistogramSettings(max_bin=max_bin)
+            ),
         )
+        assert kwargs == from_instances
+        assert data == copy  # input not modified
 
-        assert kwargs.template.take_top_k is True
-        assert kwargs.template.distogram.max_bin == 40.0
-        assert kwargs.template.distogram.min_bin == 3.25
+    def test_dict_value_is_replaced_not_merged(self):
+        custom_max_seq_counts = {"custom_hits": 10}
+        data = {"msa": {"max_seq_counts": custom_max_seq_counts}}
+        kwargs = InferenceDatasetConfigKwargs.model_validate(data)
 
-    def test_max_seq_counts_is_replaced_not_merged(self):
-        # Keys of max_seq_counts select which MSA files are parsed
-        kwargs = InferenceDatasetConfigKwargs.model_validate(
-            {"msa": {"max_seq_counts": {"custom_hits": 10}}}
+        assert kwargs.msa.max_seq_counts == custom_max_seq_counts
+        assert kwargs.msa.subsample_main == self.inference_default_subsample_main
+
+        from_instances = InferenceDatasetConfigKwargs(
+            msa=MSASettings(max_seq_counts=custom_max_seq_counts)
         )
+        assert kwargs == from_instances
 
-        assert kwargs.msa.max_seq_counts == {"custom_hits": 10}
-        assert kwargs.msa.subsample_main is False
-
-    def test_settings_instances_keep_inference_defaults(self):
-        kwargs = InferenceDatasetConfigKwargs(
-            template=TemplateSettings(n_templates=2),
-            msa=MSASettings(max_rows=128),
-        )
-
-        assert kwargs.template.n_templates == 2
-        assert kwargs.template.take_top_k is True
-        assert kwargs.msa.max_rows == 128
-        assert kwargs.msa.subsample_main is False
-
-        kwargs = InferenceDatasetConfigKwargs(
-            template=TemplateSettings(take_top_k=False)
-        )
-        assert kwargs.template.take_top_k is False
-
-    def test_mismatched_settings_model_is_rejected(self):
+    def test_mismatched_model_is_rejected(self):
         with pytest.raises(ValidationError):
             InferenceDatasetConfigKwargs(template=MSASettings(max_rows=128))
 
-    def test_partial_kwargs_from_generic_mapping(self):
-        kwargs = InferenceDatasetConfigKwargs.model_validate(
-            UserDict({"template": UserDict({"n_templates": 2})})
+    def test_generic_mapping_matches_dict(self):
+        n_templates = 2
+        from_mapping = InferenceDatasetConfigKwargs.model_validate(
+            UserDict({"template": UserDict({"n_templates": n_templates})})
         )
-
-        assert kwargs.template.n_templates == 2
-        assert kwargs.template.take_top_k is True
+        from_dict = InferenceDatasetConfigKwargs.model_validate(
+            {"template": {"n_templates": n_templates}}
+        )
+        assert from_mapping == from_dict
 
     def test_inference_config_loading(self, tmp_path):
         inference_set = InferenceQuerySet.model_validate(

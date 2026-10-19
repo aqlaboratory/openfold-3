@@ -152,11 +152,13 @@ def _overlay_on_model(default: BaseModel, update: Any) -> Any:
     """
     if isinstance(update, type(default)):
         update = update.model_dump(exclude_unset=True)
+    # Pass through non-mapping data to be handled by Pydantic's normal validators
     if not isinstance(update, Mapping):
         return update
 
     merged = default.model_dump()
     for key, value in update.items():
+        # Keys not on the model are passed through for Pydantic's normal validators
         default_value = getattr(default, key, None)
         if isinstance(default_value, BaseModel):
             merged[key] = _overlay_on_model(default_value, value)
@@ -168,6 +170,7 @@ def _overlay_on_model(default: BaseModel, update: Any) -> Any:
 def _overlay_on_field_defaults(model_cls: type[BaseModel], data: Any) -> Any:
     """Overlay each model-valued field given in `data` on `model_cls`'s default
     for that field (see `_overlay_on_model`). The input is not modified."""
+    # Pass through non-mapping data to be handled by Pydantic's normal validators
     if not isinstance(data, Mapping):
         return data
 
