@@ -62,6 +62,7 @@ from openfold3.core.utils.checkpoint_loading_utils import (
 from openfold3.core.utils.precision_utils import OF3DeepSpeedPrecision
 from openfold3.core.utils.script_utils import set_ulimits
 from openfold3.entry_points.validator import (
+    ClusterEnvironmentOption,
     ExperimentConfig,
     InferenceExperimentConfig,
     TrainingExperimentConfig,
@@ -258,16 +259,19 @@ class ExperimentRunner(ABC):
         choice = self.pl_trainer_args.cluster_environment
         if self.is_mpi:
             # Legacy flag, equivalent to cluster_environment="mpi".
-            choice = "mpi"
+            choice = ClusterEnvironmentOption.MPI
 
-        if choice == "mpi":
-            return MPIEnvironment()
-        if choice == "slurm":
-            return SLURMEnvironment()
-        if choice == "local":
-            return LightningEnvironment()
+        explicit_environments: dict[
+            ClusterEnvironmentOption, type[ClusterEnvironment]
+        ] = {
+            ClusterEnvironmentOption.SLURM: SLURMEnvironment,
+            ClusterEnvironmentOption.LOCAL: LightningEnvironment,
+            ClusterEnvironmentOption.MPI: MPIEnvironment,
+        }
+        if choice in explicit_environments:
+            return explicit_environments[choice]()
 
-        # "auto"
+        # ClusterEnvironmentOption.AUTO
         if SLURMEnvironment.detect() and "SLURM_STEP_ID" not in os.environ:
             logger.warning(
                 "Inside a SLURM allocation but not launched by srun: using the"

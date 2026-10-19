@@ -18,6 +18,7 @@ import platform
 import random
 import warnings
 from datetime import timedelta
+from enum import StrEnum
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any, Literal
@@ -118,6 +119,15 @@ class DataModuleArgs(BaseModel):
     epoch_len: int = 4
 
 
+class ClusterEnvironmentOption(StrEnum):
+    """How distributed ranks are launched and discovered."""
+
+    AUTO = "auto"
+    SLURM = "slurm"
+    LOCAL = "local"
+    MPI = "mpi"
+
+
 class PlTrainerArgs(BaseModel):
     """Arguments to configure pl.Trainer, including settings for number of devices."""
 
@@ -144,7 +154,7 @@ class PlTrainerArgs(BaseModel):
     # runs this process directly (sbatch without srun) falls back to the local
     # launcher instead of hanging. "slurm"/"local"/"mpi" force the
     # corresponding Lightning ClusterEnvironment.
-    cluster_environment: Literal["auto", "slurm", "local", "mpi"] = "auto"
+    cluster_environment: ClusterEnvironmentOption = ClusterEnvironmentOption.AUTO
 
     use_distributed_sampler: bool = True
 
