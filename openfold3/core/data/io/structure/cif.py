@@ -295,6 +295,8 @@ def parse_RNA_monomer_cif_tmp(
         "pdbx_file": cif_file,
         "model": 1,
         "altloc": "first",
+        # Explicit, as biotite 2 changed the default to the label fields
+        "use_author_fields": True,
         "include_bonds": include_bonds,
         "extra_fields": extra_fields,
     }
