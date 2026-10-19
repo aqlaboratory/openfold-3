@@ -338,9 +338,9 @@ def _create_cif_file(
     try:
         # copy entity_id to label_entity_id so biotite uses it for the atom_site table
         atom_array.set_annotation("label_entity_id", atom_array.entity_id)
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
+        # Biotite writes bonds whenever atom_array.bonds is set; its include_bonds
+        # argument was a deprecated no-op (biotite>=1.6) and is removed in biotite 2
+        pdbx.set_structure(cif_file, atom_array, data_block=data_block)
     # This error sometimes happens in the PDB preprocessing
     except KeyError:
         logger.warning(
@@ -348,9 +348,7 @@ def _create_cif_file(
             "intra-residue COORDINATION bonds set to SINGLE."
         )
         atom_array = convert_intra_residue_dative_to_single(atom_array)
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
+        pdbx.set_structure(cif_file, atom_array, data_block=data_block)
 
     # Update and add additional metadata tables
     if make_ost_compatible:
