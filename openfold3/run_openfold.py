@@ -177,12 +177,11 @@ def train(
     type=click.Choice(["auto", "slurm", "local", "mpi"]),
     default=None,
     help=(
-        "How distributed ranks are launched and discovered. 'auto' lets"
-        " Lightning detect the environment, falling back to the local launcher"
-        " inside a SLURM allocation that was not launched via srun; 'local'"
-        " always uses Lightning's own launcher; 'slurm' forces SLURM rank"
-        " binding. If unset, the value from the runner yaml (or config"
-        " default) is used."
+        "How distributed ranks are launched. 'auto' (default): SLURM manages"
+        " the ranks only if launched with srun, otherwise OpenFold3 starts them"
+        " itself. 'local': always start them locally. 'slurm': always let SLURM"
+        " manage them (launch with srun). 'mpi': use MPI. If unset, the value"
+        " from the runner yaml (or the default) is used."
     ),
 )
 @click.option(

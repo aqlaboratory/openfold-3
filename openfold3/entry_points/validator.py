@@ -120,7 +120,16 @@ class DataModuleArgs(BaseModel):
 
 
 class ClusterEnvironmentOption(StrEnum):
-    """How distributed ranks are launched and discovered."""
+    """How distributed ranks are launched and discovered.
+
+    - ``auto`` (default): SLURM manages the ranks only if the process was
+      launched by ``srun``; otherwise Lightning starts them locally. Same for
+      single- and multi-GPU runs.
+    - ``local``: Lightning always starts the ranks, ignoring any scheduler.
+    - ``slurm``: SLURM always manages the ranks; launch with
+      ``srun --ntasks-per-node=<devices>``.
+    - ``mpi``: MPI manages the ranks (requires ``mpi4py``).
+    """
 
     AUTO = "auto"
     SLURM = "slurm"
@@ -149,11 +158,7 @@ class PlTrainerArgs(BaseModel):
     deepspeed_config_path: Path | None = None
     distributed_timeout: timedelta | None = default_pg_timeout
     mpi_plugin: bool = False
-    # How ranks are launched and discovered (issue #47). "auto" lets Lightning
-    # detect the environment, except that a SLURM allocation whose batch step
-    # runs this process directly (sbatch without srun) falls back to the local
-    # launcher instead of hanging. "slurm"/"local"/"mpi" force the
-    # corresponding Lightning ClusterEnvironment.
+    # See ClusterEnvironmentOption; overridable with --cluster-environment.
     cluster_environment: ClusterEnvironmentOption = ClusterEnvironmentOption.AUTO
 
     use_distributed_sampler: bool = True

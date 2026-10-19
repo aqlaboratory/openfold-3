@@ -246,15 +246,25 @@ class ExperimentRunner(ABC):
 
     @property
     def cluster_environment(self) -> ClusterEnvironment | None:
-        """Resolve the cluster environment from the config (issue #47).
+        """Cluster environment passed to Lightning.
 
-        ``None`` means Lightning auto-detects the environment. That detection
-        adopts ``SLURMEnvironment`` for any process inside a SLURM allocation,
-        including one the batch step runs directly (``sbatch`` without
-        ``srun``) -- where no sibling ranks are ever launched and distributed
-        init blocks forever at 0% GPU. ``SLURM_STEP_ID`` is only set for
-        srun-launched steps, so its absence identifies that case and ``auto``
-        falls back to Lightning's own subprocess launcher instead.
+        Default (``auto``): SLURM manages the ranks only if this process was
+        launched by ``srun``; otherwise Lightning starts the ranks locally.
+        This holds for single- and multi-GPU runs alike. Returns
+        ``LightningEnvironment`` inside a SLURM allocation without srun, and
+        ``None`` (Lightning detects the environment) everywhere else.
+
+        To change it, set ``pl_trainer_args.cluster_environment`` in the
+        runner yaml or pass ``run_openfold predict --cluster-environment``:
+        ``local`` -> ``LightningEnvironment``, ``slurm`` ->
+        ``SLURMEnvironment``, ``mpi`` -> ``MPIEnvironment`` (also selected by
+        the legacy ``mpi_plugin`` flag).
+
+        Lightning's own detection adopts ``SLURMEnvironment`` for any process
+        inside a SLURM allocation, including ``sbatch`` without ``srun``, where
+        no sibling ranks are ever launched and distributed init blocks forever
+        (issue #47). ``SLURM_STEP_ID`` is only set for srun-launched steps, so
+        its absence identifies that case.
         """
         choice = self.pl_trainer_args.cluster_environment
         if self.is_mpi:
