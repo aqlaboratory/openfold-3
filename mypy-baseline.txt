@@ -337,9 +337,6 @@ openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(*size
 openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(*size: int, names: Sequence[str | EllipsisType | None] | None, dtype: dtype | None = ..., layout: layout | None = ..., device: str | device | int | None = ..., pin_memory: bool | None = ..., requires_grad: bool | None = ...) -> Tensor
 openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(size: Sequence[int | SymInt], *, out: Tensor | None = ..., dtype: dtype | None = ..., layout: layout | None = ..., device: str | device | int | None = ..., pin_memory: bool | None = ..., requires_grad: bool | None = ...) -> Tensor
 openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(size: Size | list[int] | tuple[int, ...], *, names: Sequence[str | EllipsisType | None] | None, dtype: dtype | None = ..., layout: layout | None = ..., device: str | device | int | None = ..., pin_memory: bool | None = ..., requires_grad: bool | None = ...) -> Tensor
-openfold3/core/data/pipelines/featurization/template.py:0: error: Argument 2 to "create_template_distogram" has incompatible type "Tensor"; expected "ndarray[float, dtype[Any]]"  [arg-type]
-openfold3/core/data/pipelines/featurization/template.py:0: error: Argument 2 to "create_template_restype" has incompatible type "Tensor"; expected "ndarray[float, dtype[Any]]"  [arg-type]
-openfold3/core/data/pipelines/featurization/template.py:0: error: Argument 2 to "create_template_unit_vector" has incompatible type "Tensor"; expected "ndarray[float, dtype[Any]]"  [arg-type]
 openfold3/core/data/pipelines/featurization/template.py:0: error: callable? not callable  [misc]
 openfold3/core/data/pipelines/preprocessing/caches/RNA_monomer.py:0: error: Argument "check_filename_exists" to "list_bucket_entries" has incompatible type "str | None"; expected "str"  [arg-type]
 openfold3/core/data/pipelines/preprocessing/caches/RNA_monomer.py:0: error: Argument "profile" to "list_bucket_entries" has incompatible type "Any | None"; expected "str"  [arg-type]
@@ -855,16 +852,9 @@ openfold3/core/data/primitives/featurization/structure.py:0: error: Item "None" 
 openfold3/core/data/primitives/featurization/structure.py:0: error: Need type annotation for "chain_starts"  [var-annotated]
 openfold3/core/data/primitives/featurization/template.py:0: error: Argument "frame_atom_coords" to "OF3TemplateFeaturePrecursor" has incompatible type "ndarray[tuple[int, int, int, int], dtype[Any]]"; expected "ndarray[float, dtype[Any]]"  [arg-type]
 openfold3/core/data/primitives/featurization/template.py:0: error: Argument "pseudo_beta_atom_coords" to "OF3TemplateFeaturePrecursor" has incompatible type "ndarray[tuple[int, int, int], dtype[Any]]"; expected "ndarray[float, dtype[Any]]"  [arg-type]
-openfold3/core/data/primitives/featurization/template.py:0: error: Incompatible types in assignment (expression has type "Tensor", variable has type "ndarray[float, dtype[Any]]")  [assignment]
 openfold3/core/data/primitives/featurization/template.py:0: error: Need type annotation for "residue_starts"  [var-annotated]
 openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "str" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "str" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/primitives/permutation/mol_labels.py:0: error: "Atom" has no attribute "component_id"  [attr-defined]
 openfold3/core/data/primitives/permutation/mol_labels.py:0: error: "Atom" has no attribute "mol_sym_component_id"  [attr-defined]
