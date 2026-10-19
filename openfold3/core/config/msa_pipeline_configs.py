@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from enum import Enum
+from pathlib import Path
 from typing import Annotated
 
 from biotite.structure import AtomArray
@@ -34,16 +36,39 @@ class MsaChainDataTrain(BaseModel):
     alignment_representative_id: str | None
 
 
+class MsaKind(str, Enum):
+    """The kinds of MSA a chain can be given: main MSAs, stacked per chain, and
+    paired MSAs, whose rows are aligned across the chains of a complex."""
+
+    MAIN = "main"
+    PAIRED = "paired"
+
+    def __str__(self) -> str:
+        # Render as the value in messages, also on Python >= 3.12, where format()
+        # of a str mixin enum otherwise gives "MsaKind.MAIN"
+        return self.value
+
+
 class MsaChainDataInference(BaseModel):
     """Inference input for a single chain in the MSA sample processor pipeline."""
 
     molecule_type: MoleculeType
+    sequence: str | None = None
     paired_msa_file_paths: (
         Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)] | None
     ) = None
     main_msa_file_paths: (
         Annotated[list[FilePath | DirectoryPath], BeforeValidator(_ensure_list)] | None
     ) = None
+
+    def msa_file_paths(self, msa_kind: MsaKind) -> list[Path]:
+        """The MSA file paths given for `msa_kind`, or an empty list."""
+        paths = (
+            self.main_msa_file_paths
+            if msa_kind is MsaKind.MAIN
+            else self.paired_msa_file_paths
+        )
+        return paths or []
 
 
 class MsaSampleProcessorInputTrain(BaseModel):
@@ -84,10 +109,16 @@ class MsaSampleProcessorInputTrain(BaseModel):
         return cls(msa_chain_data=msa_chain_data)
 
 
+# Names a query in MSA messages when it has none. Queries loaded through an
+# InferenceQuerySet are always named after their key, but a Query can also be
+# built directly without a name.
+UNNAMED_QUERY = "<unnamed>"
+
+
 class MsaSampleProcessorInputInference(BaseModel):
     """Dict-based expanded view of inference_query_format.query containing MSA data."""
 
-    query_name: str | None = None
+    query_name: str
     msa_chain_data: dict[str, MsaChainDataInference]
     use_msas: bool
     use_paired_msas: bool
@@ -100,11 +131,12 @@ class MsaSampleProcessorInputInference(BaseModel):
             for chain_id in chain.chain_ids:
                 msa_chain_data[chain_id] = MsaChainDataInference(
                     molecule_type=chain.molecule_type,
+                    sequence=chain.sequence,
                     paired_msa_file_paths=chain.paired_msa_file_paths,
                     main_msa_file_paths=chain.main_msa_file_paths,
                 )
         return cls(
-            query_name=inference_query.query_name,
+            query_name=inference_query.query_name or UNNAMED_QUERY,
             msa_chain_data=msa_chain_data,
             use_msas=inference_query.use_msas,
             use_paired_msas=inference_query.use_paired_msas,

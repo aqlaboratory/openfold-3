@@ -86,6 +86,7 @@ dataset_config_kwargs:
       rfam_hits: 10000
       rnacentral_hits: 10000
       nt_hits: 10000
+      nucleotide_collection_hits: 10000
       concat_cfdb_uniref100_filtered: 10000000
       mmseqs_colabfold: 16384
       colabfold_main: 16384
@@ -102,6 +103,7 @@ dataset_config_kwargs:
       - rfam_hits
       - rnacentral_hits
       - nt_hits
+      - nucleotide_collection_hits
       - concat_cfdb_uniref100_filtered
       - mmseqs_colabfold
       - colabfold_main
@@ -166,6 +168,8 @@ template_preprocessor_settings:
   max_release_date: null
   min_release_date_diff: null
   max_templates: 20
+  cif_direct_min_score: 0.1
+  min_f_resolved: 0.1
   fetch_missing_structures: true
   create_precache: false
   preparse_structures: false
@@ -173,11 +177,13 @@ template_preprocessor_settings:
   n_processes: 1
   chunksize: 1
   preprocess_timeout: 60
-  structure_directory: <tmp-dir>/of3-of-<user>/template_data/template_structures
+  structure_directory: null
   structure_file_format: cif
-  output_directory: <tmp-dir>/of3-of-<user>/template_data
+  output_directory: null
   precache_directory: null
   structure_array_directory: null
-  cache_directory: <tmp-dir>/of3-of-<user>/template_data/template_cache
+  cache_directory: null
   log_directory: null
   ccd_file_path: null
+  template_alignment_directory: null  # train mode only
+  alignment_representatives_fasta: null  # train mode only

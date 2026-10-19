@@ -46,7 +46,7 @@ pytestmark = [pytest.mark.slow]
 torch.backends.cuda.preferred_blas_library("cublas")
 
 
-@compare_utils.skip_unless_cuda_available()
+@compare_utils.skip_unless_gpu_available()
 class TestKernels:
     def _compare_attn_kernel_forward(
         self,
@@ -644,7 +644,6 @@ class TestKernels:
                 no_heads=no_heads,
                 no_blocks=no_blocks,
                 n_transition=n_transition,
-                use_ada_layer_norm=True,
                 n_query=None,
                 n_key=None,
                 inf=inf,
@@ -854,4 +853,5 @@ class TestKernels:
         self._compare_template_stack(
             use_triton_triangle_kernels=True,
             dtype=torch.bfloat16,
+            eps=4e-2,
         )

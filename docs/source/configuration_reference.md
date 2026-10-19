@@ -9,6 +9,7 @@ The configuration file is organized into several main sections. Each section cor
 ## 2. Important Notes
 
 - **Selective Configuration**: Only specify the settings you want to override in your runner YAML file. All unspecified options will use their default values.
+- **Default Cache Configuration**: Placing a `runner.yml` in `$OPENFOLD_CACHE` (or `~/.openfold3/runner.yml`) automatically sets it as the baseline configuration for all inference runs. This is merged with any explicitly passed `--runner-yaml` file.
 - **Command-line Priority**: Command-line arguments take precedence and will override any values specified in the YAML file.
 - **Reference Implementation**: The full configuration file serves as a reference - create your own simplified runner YAML based on your specific needs. See `examples/example_runner_yamls/` for common usage examples.
 
@@ -60,6 +61,10 @@ Configures the PyTorch Lightning trainer for distributed training and multi-GPU 
 - `deepspeed_config_path` *(Path | None)*: Path to DeepSpeed configuration file (default: `null`)
 - `distributed_timeout` *(timedelta | None)*: Timeout for distributed operations (default: `PT30M`)
 - `mpi_plugin` *(bool)*: Use MPI plugin (default: `false`)
+- `cluster_environment` *(str)*: How distributed ranks are launched and discovered (default: `auto`).
+  - **Default (`auto`)**: ranks are managed by SLURM only when `run_openfold` was launched with `srun`. Otherwise, including `run_openfold` called directly from an sbatch script, OpenFold3 starts all `devices` ranks itself. This is the same for 1 GPU and for multiple GPUs.
+  - **Changing it**: set `local` to always start the ranks locally and ignore the scheduler, `slurm` to always let SLURM manage the ranks (launch with `srun --ntasks-per-node=<devices>`), or `mpi` to use MPI (requires `mpi4py`). Set it here or with `run_openfold predict --cluster-environment <value>`.
+  - **More**: Lightning's [cluster environments](https://github.com/Lightning-AI/pytorch-lightning/blob/2.6.5/docs/source-pytorch/extensions/plugins.rst#cluster-environments) and [SLURM guide](https://github.com/Lightning-AI/pytorch-lightning/blob/2.6.5/docs/source-pytorch/clouds/cluster_advanced.rst#run-on-a-slurm-managed-cluster).
 
 **Example**:
 ```yaml
@@ -107,6 +112,7 @@ model_update:
   - Must be a key in `OPENFOLD_MODEL_CHECKPOINT_REGISTRY`(https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/parameters.py#L29)
 - `cache_path` *(Path | None)*: Directory for storing cached model parameters
   - Default: `$HOME/.openfold3/`
+- `user_default_runner_yaml_path` *(Path | None)*: Path to the automatically loaded user-default `runner.yml`. Recorded in `experiment_config.json` for run traceability.
 
 ---
 
@@ -270,9 +276,9 @@ Configures the ColabFold MSA server integration.
 - `save_openfold_outputs` *(bool)*: Save OpenFold-formatted alignments (default: `true`)
 - `save_colabfold_outputs` *(bool)*: Save raw ColabFold server outputs (default: `true`)
 - `colabfold_output_dir` *(Path | None)*: Optional parent directory for raw ColabFold run records (default during inference when `msa_output_directory` is not set: `<output_dir>/msas/raw`)
-- `cleanup_msa_dir` *(bool)*: Delete temporary template preprocessing files after an MSA server run (default: `true`). The temporary MSA workspace is always removed.
+- `cleanup_msa_dir` *(bool)*: Remove the run-created template directory during cleanup (default: `true`). The MSA workspace is always removed, and explicit template output directories are preserved.
 
-When temporary MSA work is needed, each command uses a unique workspace under the OpenFold system temporary directory. This workspace is separate from `msa_output_directory` and is always removed during final cleanup.
+When temporary MSA work is needed, each command uses a unique workspace under its output directory. The workspace is removed after normal completion or a handled error.
 
 **Example**:
 ```yaml
@@ -298,8 +304,10 @@ Configures template structure preprocessing and filtering.
 - `min_align` *(float | None)*: Minimum alignment coverage (default: `null`)
 - `min_len` *(int | None)*: Minimum aligned residues (default: `null`)
 - `max_release_date` *(datetime | None)*: Maximum template release date (default: `null`)
-- `min_release_date_diff` *(int | None)*: Minimum days between query and template release (default: `null`)
+- `min_release_date_diff` *(int | None)*: Train mode only. Minimum days between a structure's release and its templates' release; inference queries have no release date, so use `max_release_date` there (default: `null`)
 - `max_templates` *(int)*: Maximum templates per chain (default: `20`)
+- `cif_direct_min_score` *(float)*: CIF-direct mode only. Minimum sequence identity × query coverage for a template chain to be used (default: `0.1`)
+- `min_f_resolved` *(float)*: Minimum fraction of resolved residues for a template to be valid; only used when template structure arrays and precache entries are computed separately from the template cache (default: `0.1`)
 - `fetch_missing_structures` *(bool)*: Fetch missing structures from PDB (default: `true`)
 - `create_precache` *(bool)*: Cache template structure data (default: `false`)
 - `preparse_structures` *(bool)*: Preparse structures into .npz files (default: `false`)
@@ -307,14 +315,16 @@ Configures template structure preprocessing and filtering.
 - `n_processes` *(int)*: Number of preprocessing processes (default: `1`)
 - `chunksize` *(int)*: Tasks per worker in multiprocessing (default: `1`)
 - `preprocess_timeout` *(int)*: Maximum preprocessing time in seconds (default: `60`)
-- `structure_directory` *(Path | None)*: Directory for template structures (default: `null`)
+- `structure_directory` *(Path | None)*: Directory for template structures. During inference, the implicit default is `<output_directory>/template_structures`.
 - `structure_file_format` *(str)*: File format of structures - `cif` or `pdb` (default: `cif`)
-- `output_directory` *(Path | None)*: Output directory for templates (default: `null`)
+- `output_directory` *(Path | None)*: Output directory for templates. During inference, the implicit default is `<output_dir>/openfold3_intermediates/template_data/<run-id>`.
 - `precache_directory` *(Path | None)*: Directory for template precache (default: `null`)
 - `structure_array_directory` *(Path | None)*: Directory for preparsed structures (default: `null`)
-- `cache_directory` *(Path | None)*: Directory for template cache (default: `null`)
+- `cache_directory` *(Path | None)*: Directory for template cache. During inference, the implicit default is `<output_directory>/template_cache`.
 - `log_directory` *(Path | None)*: Directory for logs (default: `null`)
 - `ccd_file_path` *(Path | None)*: Path to Chemical Component Dictionary file (default: `null`)
+- `template_alignment_directory` *(Path | None)*: Train mode only. Directory with one `<rep_id>/colabfold_template.m8` per alignment representative, the layout `align-msa-server` writes; template IDs must use label chain IDs (default: `null`)
+- `alignment_representatives_fasta` *(Path | None)*: Train mode only. FASTA mapping alignment representative IDs (headers) to their sequences, one line each (default: `null`)
 
 **Example**:
 ```yaml
@@ -323,6 +333,10 @@ template_preprocessor_settings:
   max_templates: 20
   fetch_missing_structures: true
 ```
+
+Explicit template paths override these inference defaults.
+
+When running [`preprocess_template_alignments_new_of3.py`](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/data_preprocessing/preprocess_template_alignments_new_of3.py), `mode` follows `--input_set_type`, and `--output_directory` replaces `output_directory`, `cache_directory` and `log_directory`. `precache_directory` and `structure_array_directory` are used when given. The settings used are saved as `template_preprocessor_settings.json` in the output directory.
 
 ---
 

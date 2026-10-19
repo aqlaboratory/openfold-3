@@ -29,7 +29,8 @@ These fields are parsed by the DataModule to create the appropriate Dataset clas
 """
 
 import warnings
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 from pydantic import (
     BaseModel,
@@ -204,11 +205,11 @@ class DatasetConfigRegistry:
     _registry = {}
 
     @classmethod
-    def register(cls, name: str, config: DefaultDatasetConfigSection) -> None:
+    def register(cls, name: str, config: type[DefaultDatasetConfigSection]) -> None:
         cls._registry[name] = config
 
     @classmethod
-    def get(cls, name: str) -> DefaultDatasetConfigSection:
+    def get(cls, name: str) -> type[DefaultDatasetConfigSection]:
         config_class = cls._registry.get(name)
         if not config_class:
             raise ValueError(
@@ -221,11 +222,15 @@ class DatasetConfigRegistry:
 DATASET_CONFIG_REGISTRY = DatasetConfigRegistry()
 
 
-def register_dataset_config(name: str) -> None:
+_ConfigT = TypeVar("_ConfigT", bound=type[DefaultDatasetConfigSection])
+
+
+def register_dataset_config(name: str) -> Callable[[_ConfigT], _ConfigT]:
     """Helper decorator function to label datasets."""
 
-    def _decorator(config_class):
+    def _decorator(config_class: _ConfigT) -> _ConfigT:
         DATASET_CONFIG_REGISTRY.register(name=name, config=config_class)
+        return config_class
 
     return _decorator
 

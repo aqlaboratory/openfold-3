@@ -19,6 +19,7 @@ procedures of different models.
 
 # TODO: organize this file so that we separate components for creating the metadata
 # cache for each dataset
+import itertools
 import json
 import logging
 import multiprocessing as mp
@@ -26,6 +27,7 @@ import os
 import sys
 import time
 import traceback
+from collections.abc import Iterable
 from functools import wraps
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -46,6 +48,7 @@ from openfold3.core.data.io.structure.atom_array import write_atomarray_to_npz
 from openfold3.core.data.io.structure.cif import (
     SkippedStructure,
     parse_mmcif,
+    parse_RNA_monomer_cif_tmp,
     parse_target_structure,
     write_structure,
 )
@@ -53,7 +56,6 @@ from openfold3.core.data.io.structure.mol import write_annotated_sdf
 from openfold3.core.data.io.structure.pdb import (
     parse_pdb_af2,
     parse_protein_monomer_pdb_tmp,
-    parse_RNA_monomer_pdb_tmp,
 )
 from openfold3.core.data.io.utils import encode_numpy_types
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
@@ -87,6 +89,7 @@ from openfold3.core.data.primitives.structure.cleanup import (
     remove_waters,
 )
 from openfold3.core.data.primitives.structure.component import (
+    AnnotatedMol,
     get_component_info,
     get_reference_molecule_metadata,
     mol_from_atomarray,
@@ -268,21 +271,52 @@ def extract_chain_and_interface_metadata_of3(
     return metadata_dict
 
 
+def _process_component(
+    mol_id: str,
+    mol: AnnotatedMol,
+    residue_count: int,
+    sdf_out_dir: Path,
+) -> dict:
+    """Creates conformer metadata and writes SDF for a single component.
+
+    Args:
+        mol_id: Component identifier (CCD code or "{pdb_id}_{entity_id}")
+        mol: RDKit Mol object for the component
+        residue_count: Number of residues in the component
+        sdf_out_dir: Directory to write the reference molecule SDF file to
+
+    Returns:
+        Dictionary containing the reference molecule metadata.
+    """
+    mol, conformer_strategy, fallback_source = resolve_and_format_fallback_conformer(
+        mol
+    )
+    metadata = get_reference_molecule_metadata(
+        mol, conformer_strategy, residue_count, fallback_source
+    )
+    write_annotated_sdf(mol, sdf_out_dir / f"{mol_id}.sdf")
+    return metadata
+
+
 def extract_component_data_of3(
     atom_array: AtomArray,
     ccd: CIFFile,
     pdb_id: str,
     sdf_out_dir: Path,
     skip_components: set | SharedSet | None = None,
-) -> tuple[dict, dict]:
+) -> tuple[dict, dict, set]:
     """Extracts component data from a structure.
 
-    This extraxts all "components" from a structure, which are standard residues,
+    This extracts all "components" from a structure, which are standard residues,
     standard ligands, and non-standard (multi-residue or any ligand that can not be
     represented by a single CCD code) ligands. For each unique component, an RDKit
     reference molecule is created alongside a fallback conformer that is either computed
     using RDKit's reference conformer generation (see AF3 SI 2.8), or taken from the
     "ideal" or "model" CCD coordinates.
+
+    Residue component failures are treated as hard errors. Ligand component failures
+    (either during mol creation or conformer generation) are caught and the affected
+    ligand chains are returned for removal from the structure.
 
     Args:
         atom_array:
@@ -306,11 +340,12 @@ def extract_component_data_of3(
                 - "conformer_gen_strategy": The strategy used to generate the conformer
                 - "fallback_conformer_pdb_id": The PDB ID of the fallback conformer
                 - "canonical_smiles": The canonical SMILES of the component
+            - A set of chain IDs whose ligands failed processing and should be
+                removed from the structure.
     """
     if skip_components is None:
         skip_components = set()
 
-    # Instantiate output dicts
     chain_to_component_id = {}
     reference_mol_metadata = {}
 
@@ -332,59 +367,65 @@ def extract_component_data_of3(
         for entity, rescount in non_std_ligands_to_rescount.items()
     }
 
-    all_ligands_to_chains = {**std_ligands_to_chains, **non_std_ligands_to_chains}
+    # --- Residue components (no try/except for hard fail) ---
+    processed_residue_ids = set()
+    for ccd_id in residue_components:
+        if ccd_id in skip_components:
+            continue
 
-    # Track which ligand chain corresponds to which ligand ID
-    for mol_id, chains in all_ligands_to_chains.items():
-        for chain in chains:
-            chain_to_component_id[chain] = mol_id
-
-    # Create a ccd_id: rdkit Mol mapping for all components, so that we can run
-    # conformer generation jointly
-    all_component_mols = {}
-
-    # Start with standard components
-    std_ligand_ccd_ids = list(std_ligands_to_chains.keys())
-    std_component_ccd_ids = std_ligand_ccd_ids + residue_components
-    std_component_ccd_ids = [
-        c for c in std_component_ccd_ids if c not in skip_components
-    ]
-
-    for ccd_id in std_component_ccd_ids:
         mol = mol_from_ccd_entry(ccd_id, ccd)
-        all_component_mols[ccd_id] = mol
-
-    # Add non-standard ligands
-    non_std_ligand_ids = list(non_std_ligands_to_chains.keys())
-    # (NOTE: non-std ligands are not shared between structures so this should not be
-    # strictly needed)
-    non_std_ligand_ids = [c for c in non_std_ligand_ids if c not in skip_components]
-
-    for mol_id in non_std_ligand_ids:
-        # Compute molecule by arbitrarily taking the first chain (all should be the same
-        # if entity ID is the same)
-        entity_id = int(mol_id.split("_")[-1])
-        entity_atom_array = atom_array[atom_array.entity_id == entity_id]
-        first_ligand = entity_atom_array[
-            entity_atom_array.chain_id == all_ligands_to_chains[mol_id][0]
-        ]
-        mol = mol_from_atomarray(first_ligand)
-        all_component_mols[mol_id] = mol
-
-    # Generate conformer metadata for all components and write SDF files with reference
-    # conformer coordinates
-    for mol_id, mol in all_component_mols.items():
-        residue_count = non_std_ligands_to_rescount.get(mol_id, 1)
-        mol, conformer_strategy = resolve_and_format_fallback_conformer(mol)
-        reference_mol_metadata[mol_id] = get_reference_molecule_metadata(
-            mol, conformer_strategy, residue_count
+        reference_mol_metadata[ccd_id] = _process_component(
+            ccd_id, mol, residue_count=1, sdf_out_dir=sdf_out_dir
         )
+        processed_residue_ids.add(ccd_id)
 
-        # Write SDF file
-        sdf_out_path = sdf_out_dir / f"{mol_id}.sdf"
-        write_annotated_sdf(mol, sdf_out_path)
+    # --- Ligand components (skip on failure) ---
+    all_ligands_to_chains = {**std_ligands_to_chains, **non_std_ligands_to_chains}
+    skipped_ligand_chains = set()
 
-    return chain_to_component_id, reference_mol_metadata
+    for mol_id, chains in all_ligands_to_chains.items():
+        # Per-structure chain mapping (not committed immediately in case of ligand
+        # failure below)
+        chain_to_component_id_update = {chain: mol_id for chain in chains}
+
+        # If mol was already processed before we only need the chain mapping
+        if mol_id in skip_components or mol_id in processed_residue_ids:
+            chain_to_component_id.update(chain_to_component_id_update)
+            continue
+
+        # Build conformer metadata
+        try:
+            # Create mol
+            if mol_id in std_ligands_to_chains:
+                mol = mol_from_ccd_entry(mol_id, ccd)
+                residue_count = 1
+            else:
+                # Build multi-residue ligand into a single mol (only taking first chain
+                # for entity as all should be the same)
+                entity_id = int(mol_id.split("_")[-1])
+                first_ligand = atom_array[
+                    (atom_array.entity_id == entity_id)
+                    & (atom_array.chain_id == chains[0])
+                ]
+                mol = mol_from_atomarray(first_ligand)
+                residue_count = non_std_ligands_to_rescount[mol_id]
+
+            # Generate conformer and metadata
+            reference_mol_metadata[mol_id] = _process_component(
+                mol_id, mol, residue_count, sdf_out_dir
+            )
+            # Update chain mapping only after successful processing
+            chain_to_component_id.update(chain_to_component_id_update)
+        except Exception:
+            logger.warning(
+                f"Skipping ligand '{mol_id}' (chains {chains}) due to "
+                f"failed component processing.",
+                exc_info=True,
+            )
+            skipped_ligand_chains.update(chains)
+            continue
+
+    return chain_to_component_id, reference_mol_metadata, skipped_ligand_chains
 
 
 def preprocess_structure_and_write_outputs_of3(
@@ -392,7 +433,7 @@ def preprocess_structure_and_write_outputs_of3(
     ccd: CIFFile,
     out_dir: Path,
     reference_mol_out_dir: Path,
-    output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
+    output_formats: Iterable[Literal["npz", "cif", "bcif", "pkl"]],
     max_polymer_chains: int | None = None,
     skip_components: set | SharedSet | None = None,
     random_seed: int | None = None,
@@ -482,7 +523,7 @@ def preprocess_structure_and_write_outputs_of3(
     # Log new chain-ID mapping (makes spot-checking from the logs easier)
     chain_starts = struc.get_chain_starts(atom_array)
     chain_to_pdb_chain = {
-        pdb_chain_id: new_chain_id
+        pdb_chain_id.item(): new_chain_id.item()
         for pdb_chain_id, new_chain_id in zip(
             atom_array.label_asym_id[chain_starts],
             atom_array.chain_id[chain_starts],
@@ -512,16 +553,31 @@ def preprocess_structure_and_write_outputs_of3(
             }
         }, {}
 
-    chain_int_metadata_dict = extract_chain_and_interface_metadata_of3(
-        atom_array, cif_data
+    chain_to_ligand_ids, ref_mol_metadata_dict, skipped_chains = (
+        extract_component_data_of3(
+            atom_array,
+            ccd,
+            pdb_id,
+            reference_mol_out_dir,
+            skip_components=skip_components,
+        )
     )
 
-    chain_to_ligand_ids, ref_mol_metadata_dict = extract_component_data_of3(
-        atom_array,
-        ccd,
-        pdb_id,
-        reference_mol_out_dir,
-        skip_components=skip_components,
+    # Remove chains whose ligands failed processing
+    if skipped_chains:
+        atom_array = atom_array[~np.isin(atom_array.chain_id, list(skipped_chains))]
+
+    if len(atom_array) == 0:
+        return {
+            pdb_id: {
+                "release_date": release_date,
+                "status": "skipped: no atoms left after removing failed ligands",
+            }
+        }, {}
+
+    # Extract metadata after ligand removal so it reflects the final structure
+    chain_int_metadata_dict = extract_chain_and_interface_metadata_of3(
+        atom_array, cif_data
     )
 
     # Add chain-to-ligand-ID mapping to metadata
@@ -558,6 +614,16 @@ def preprocess_structure_and_write_outputs_of3(
     return structure_metadata_dict, ref_mol_metadata_dict
 
 
+class _BatchWrapper:
+    """Wraps a callable to process a batch of items."""
+
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, batch):
+        return [self.func(item) for item in batch]
+
+
 class _OF3PreprocessingWrapper:
     """Wrapper class that fills in all the constant arguments and adds logging.
 
@@ -592,7 +658,7 @@ class _OF3PreprocessingWrapper:
         reference_mol_out_dir: Path,
         max_polymer_chains: int | None,
         skip_components: set | SharedSet | None,
-        output_formats: list[Literal["npz", "cif", "bcif", "pkl"]],
+        output_formats: Iterable[Literal["npz", "cif", "bcif", "pkl"]],
     ):
         self.ccd = ccd
         self.reference_mol_out_dir = reference_mol_out_dir
@@ -683,10 +749,13 @@ def preprocess_cif_dir_of3(
     max_polymer_chains: int | None = None,
     num_workers: int | None = None,
     chunksize: int = 20,
-    output_formats: list[Literal["npz", "cif", "bcif", "pkl"]] = False,
+    output_formats: Iterable[Literal["npz", "cif", "bcif", "pkl"]] = ("npz",),
     log_queue: mp.queues.Queue | None = None,
     log_level: int = logging.WARNING,
     early_stop: int | None = None,
+    maxtasksperchild: int | None = None,
+    max_pool_retries: int = 10,
+    stall_timeout: int = 600,
 ) -> None:
     """Preprocesses a directory of PDB files following the AlphaFold3 SI.
 
@@ -725,6 +794,14 @@ def preprocess_cif_dir_of3(
             The logging level to use for the workers. Default is WARNING.
         early_stop:
             Stop after processing this many CIFs. Only used for debugging.
+        maxtasksperchild:
+            Number of tasks a worker process handles before being replaced. Lower
+            values free memory more aggressively but add respawn overhead.
+        max_pool_retries:
+            Maximum number of times to restart the worker pool after a crash.
+        stall_timeout:
+            Seconds to wait for a result before assuming the pool is deadlocked
+            (e.g. from a killed worker) and restarting it.
     """
     logger.debug("Reading CCD file")
     ccd = CIFFile.read(ccd_path)
@@ -799,34 +876,121 @@ def preprocess_cif_dir_of3(
                 "Multiprocessing should be used with a logging queue specified."
             )
 
-        # Process all structures in parallel
-        with mp.Pool(
-            num_workers,
-            initializer=setup_worker_logging,
-            initargs=(log_queue, "openfold3", log_level, ["pdb_id"]),
-        ) as pool:
-            for i, (structure_metadata_dict, ref_mol_metadata_dict) in enumerate(
-                tqdm(
-                    pool.imap_unordered(
-                        wrapped_preprocessing_func,
-                        zip(cif_files, cif_output_dirs, strict=True),
-                        chunksize=chunksize,
-                    ),
-                    total=len(cif_files),
-                    desc="Processing structures",
-                    unit="structure",
-                )
-            ):
-                update_output_dicts(structure_metadata_dict, ref_mol_metadata_dict)
+        # Retry loop: if a worker is killed (e.g. OOM), detect the resulting
+        # deadlock via stall_timeout and restart the pool with remaining items.
+        all_items = list(zip(cif_files, cif_output_dirs, strict=True))
+        # Manual chunking so imap_unordered returns an IMapUnorderedIterator
+        # (supports .next(timeout)) instead of a plain generator (chunksize>1).
+        batched_func = _BatchWrapper(wrapped_preprocessing_func)
 
-                # Periodically save the output dict to avoid losing data in case of a
-                # crash
-                if i % 1000 == 0:
-                    with open(out_dir / "metadata.json", "w") as f:
-                        json.dump(output_dict, f, indent=4, default=encode_numpy_types)
+        retry_chunksize = chunksize
+        retry_num_workers = num_workers
+
+        for attempt in range(max_pool_retries):
+            remaining = [
+                (f, d)
+                for f, d in all_items
+                if f.stem not in output_dict["structure_data"]
+            ]
+            if not remaining:
+                break
+
+            # Sync processed_mol_ids with what actually made it into
+            # output_dict, so that retried structures re-emit metadata for
+            # molecules whose earlier results were lost in a pool crash.
+            processed_mol_ids.clear()
+            processed_mol_ids.update(output_dict["reference_molecule_data"].keys())
+
+            if attempt > 0:
+                retry_chunksize = max(1, retry_chunksize // 2)
+                retry_num_workers = max(1, retry_num_workers // 2)
+                logger.warning(
+                    f"Pool restart (attempt {attempt + 1}/{max_pool_retries}): "
+                    f"{len(remaining)}/{len(all_items)} structures remaining, "
+                    f"num_workers={retry_num_workers}, chunksize={retry_chunksize}"
+                )
+
+            try:
+                batches = list(itertools.batched(remaining, retry_chunksize))
+
+                with mp.Pool(
+                    retry_num_workers,
+                    initializer=setup_worker_logging,
+                    initargs=(log_queue, "openfold3", log_level, ["pdb_id"]),
+                    maxtasksperchild=maxtasksperchild,
+                ) as pool:
+                    result_iter = pool.imap_unordered(
+                        batched_func, batches, chunksize=1
+                    )
+                    i = 0
+                    with tqdm(
+                        total=len(remaining),
+                        desc="Processing structures",
+                        unit="structure",
+                    ) as pbar:
+                        while True:
+                            try:
+                                batch_results = result_iter.next(timeout=stall_timeout)
+                            except StopIteration:
+                                break
+                            except mp.TimeoutError:
+                                pool.terminate()
+                                raise RuntimeError(
+                                    f"No results received for "
+                                    f"{stall_timeout}s, pool is likely "
+                                    "deadlocked from a killed worker"
+                                ) from None
+
+                            for (
+                                structure_metadata_dict,
+                                ref_mol_metadata_dict,
+                            ) in batch_results:
+                                pbar.update(1)
+                                update_output_dicts(
+                                    structure_metadata_dict,
+                                    ref_mol_metadata_dict,
+                                )
+                                i += 1
+
+                            if i % 1000 == 0:
+                                with open(out_dir / "metadata.json", "w") as f:
+                                    json.dump(
+                                        output_dict,
+                                        f,
+                                        indent=4,
+                                        default=encode_numpy_types,
+                                    )
+            except Exception:
+                logger.exception("Worker pool crashed")
+                with open(out_dir / "metadata.json", "w") as f:
+                    json.dump(output_dict, f, indent=4, default=encode_numpy_types)
+                continue
+            else:
+                break  # Completed successfully
+        else:
+            logger.error(
+                f"Worker pool failed after {max_pool_retries} attempts. "
+                f"Results are incomplete."
+            )
 
     with open(out_dir / "metadata.json", "w") as f:
         json.dump(output_dict, f, indent=4, default=encode_numpy_types)
+
+    # Log summary
+    n_total = len(output_dict["structure_data"])
+    n_failed = 0
+    n_skipped = 0
+    for v in output_dict["structure_data"].values():
+        status = v.get("status", "") if isinstance(v, dict) else ""
+        if status == "failed":
+            n_failed += 1
+        elif status.startswith("skipped"):
+            n_skipped += 1
+    n_succeeded = n_total - n_failed - n_skipped
+    logger.info(
+        f"Preprocessing complete: {n_succeeded}/{n_total} succeeded, "
+        f"{n_skipped} skipped, {n_failed} failed."
+    )
 
 
 # ---- protein monomer preprocessing pipelines ----
@@ -920,18 +1084,22 @@ def preparse_monomer(
 def preparse_RNA_monomer(
     entry_id: str,
     data_directory: Path,
-    structure_filename: str,
+    structure_filename: str | None,
     structure_file_format: str,
     output_dir: Path,
 ):
-    ### to reduce run times only parse if the file does not exist
-    output_file = output_dir / f"{entry_id}/structure.npz"
+    # to reduce run times only parse if the file does not exist
+    output_file = output_dir / entry_id / "structure.npz"
     if output_file.exists():
         return
-    _, atom_array = parse_RNA_monomer_pdb_tmp(
-        data_directory / entry_id / f"{entry_id}.{structure_file_format}"
+
+    structure_stem = structure_filename if structure_filename is not None else entry_id
+    structure_path = (
+        data_directory / entry_id / f"{structure_stem}.{structure_file_format}"
     )
-    write_structure(atom_array, output_dir / f"{entry_id}/structure.npz")
+
+    _, atom_array = parse_RNA_monomer_cif_tmp(structure_path)
+    write_structure(atom_array, output_file)
 
 
 class _RNAMonomerPreprocessingWrapper:
@@ -942,7 +1110,7 @@ class _RNAMonomerPreprocessingWrapper:
         structure_file_format: str,
         output_dir: Path,
     ) -> None:
-        """Wrapper class for pre-parsing protein mononer files into .pkl."""
+        """Wrapper class for pre-parsing RNA monomer files into .npz."""
         self.data_directory = data_directory
         self.structure_filename = structure_filename
         self.structure_file_format = structure_file_format
@@ -1339,7 +1507,7 @@ def preprocess_disordered_structure_and_write_outputs_of3(
 
     # Sanitize atom arrays
     pred_atom_array = remove_hydrogens(pred_atom_array)
-    fix_arginine_naming(pred_atom_array)
+    pred_atom_array = fix_arginine_naming(pred_atom_array)
     gt_atom_array = canonicalize_atom_order(gt_atom_array, ccd)
     pred_atom_array = canonicalize_atom_order(pred_atom_array, ccd)
     pred_atom_array = remove_std_residue_terminal_atoms(pred_atom_array)
