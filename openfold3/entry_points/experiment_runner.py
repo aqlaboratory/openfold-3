@@ -634,7 +634,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         use_msa_server: bool | None = None,
         use_templates: bool | None = None,
         output_dir: Path | None = None,
-        unmasked: bool | None = False,
+        unmasked: bool | None = None,
     ):
         super().__init__(experiment_config)
 
@@ -693,7 +693,7 @@ class InferenceExperimentRunner(ExperimentRunner):
         output_dir: Path | None,
         use_msa_server: bool | None = None,
         use_templates: bool | None = None,
-        unmasked: bool | None = False,
+        unmasked: bool | None = None,
     ):
         """Updates configuration given command line args.
 
