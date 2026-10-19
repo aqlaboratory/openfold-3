@@ -35,7 +35,7 @@ dependencies = [
     "torch", # ==2.5.1",
     "ml-collections",
     "pytorch-lightning >=2.1",
-    "biotite",
+    "biotite>=1.6,<2",
     "rdkit<2026", # aqlaboratory/openfold-3/issues/285 
     "pdbeccdutils",
     "kalign-python",
@@ -169,6 +169,10 @@ extend-safe-fixes = ["UP006"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Without an explicit setting, tl.dot silently uses tf32 where supported.
+"triton.language.dot".msg = "use `tl_dot` from `openfold3.core.kernels.triton.dot_precision`, which requires `input_precision`."
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["E501"]
