@@ -120,6 +120,8 @@ class MSASettings(BaseModel):
 class TemplateSettings(BaseModel):
     """Settings for processing Template features."""
 
+    model_config = PydanticConfigDict(extra="forbid")
+
     n_templates: int = 4
     take_top_k: bool = False
     min_n_tokens_per_chain: int = 5

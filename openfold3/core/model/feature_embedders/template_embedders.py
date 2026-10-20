@@ -136,7 +136,9 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         self.linear_z = Linear(c_in, c_out, **linear_init_params.linear_z)
 
     def _embed_feats(self, batch: dict):
-        dtype = batch["template_pseudo_beta_coords"].dtype
+        # Needed when training with DeepSpeed so that the features are cast
+        # to the correct model precision prior to the linear layers
+        dtype = self.dgram_linear.weight.dtype
 
         # [*, N_token, N_token]
         multichain_pair_mask = (
@@ -153,7 +155,7 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         # Compute distogram on-the-fly from pseudo-beta coords. Apply the
         # per-template pair mask the data pipeline used to bake in.
         template_distogram = dgram_from_positions(
-            batch["template_pseudo_beta_coords"],
+            batch["template_pseudo_beta_coords"].to(torch.float32),
             min_bin=self.distogram.min_bin,
             max_bin=self.distogram.max_bin,
             num_bins=self.distogram.n_bins,
@@ -168,7 +170,7 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         # Compute unit vector between residue pairs in each residue's local
         # frame from N/CA/C atom coordinates, mask, and unbind into x/y/z.
         x, y, z = unit_vector_from_frame_atom_coords(
-            batch["template_frame_atom_coords"]
+            batch["template_frame_atom_coords"].to(torch.float32)
         )
         backbone_frame_2d = (
             batch["template_backbone_frame_mask"][..., None]
@@ -193,13 +195,13 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         )
 
         a = self.dgram_linear(template_distogram.to(dtype))
-        a = a + self.pseudo_beta_mask_linear(pseudo_beta_pair_mask)
-        a = a + self.aatype_linear_1(template_restype_ti.to(dtype=dtype))
-        a = a + self.aatype_linear_2(template_restype_tj.to(dtype=dtype))
-        a = a + self.x_linear(x)
-        a = a + self.y_linear(y)
-        a = a + self.z_linear(z)
-        a = a + self.backbone_mask_linear(backbone_frame_pair_mask)
+        a = a + self.pseudo_beta_mask_linear(pseudo_beta_pair_mask.to(dtype))
+        a = a + self.aatype_linear_1(template_restype_ti)
+        a = a + self.aatype_linear_2(template_restype_tj)
+        a = a + self.x_linear(x.to(dtype))
+        a = a + self.y_linear(y.to(dtype))
+        a = a + self.z_linear(z.to(dtype))
+        a = a + self.backbone_mask_linear(backbone_frame_pair_mask.to(dtype))
 
         return a
 

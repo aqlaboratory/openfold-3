@@ -60,25 +60,28 @@ def random_asym_ids(n_res, split_chains=True, min_chain_len=4):
     return np.array(asym_ids).astype(np.float32) + 1
 
 
-def random_template_feats(n_templ, n, batch_size=None):
-    b = []
-    if batch_size is not None:
-        b.append(batch_size)
-    batch = {
-        "template_mask": np.random.randint(0, 2, (*b, n_templ)),
-        "template_pseudo_beta_mask": np.random.randint(0, 2, (*b, n_templ, n)),
-        "template_pseudo_beta": np.random.rand(*b, n_templ, n, 3),
-        "template_restype": np.random.randint(0, 22, (*b, n_templ, n)),
-        "template_all_atom_mask": np.random.randint(0, 2, (*b, n_templ, n, 37)),
-        "template_all_atom_positions": np.random.rand(*b, n_templ, n, 37, 3) * 10,
-        "template_torsion_angles_sin_cos": np.random.rand(*b, n_templ, n, 7, 2),
-        "template_alt_torsion_angles_sin_cos": np.random.rand(*b, n_templ, n, 7, 2),
-        "template_torsion_angles_mask": np.random.rand(*b, n_templ, n, 7),
-    }
-    batch = {k: v.astype(np.float32) for k, v in batch.items()}
-    batch["template_restype"] = batch["template_restype"].astype(np.int64)
+def random_template_features(
+    batch_size: int, n_templ: int, n_token: int
+) -> dict[str, torch.Tensor]:
+    """Random template features in the layout produced by the data pipeline"""
 
-    return batch
+    def random_mask(*shape):
+        return (torch.rand(shape) > 0.2).float()
+
+    return {
+        "template_restype": torch.randint(
+            0,
+            len(STANDARD_RESIDUES_WITH_GAP_3),
+            (batch_size, n_templ, n_token),
+            dtype=torch.int32,
+        ),
+        "template_pseudo_beta_mask": random_mask(batch_size, n_templ, n_token),
+        "template_backbone_frame_mask": random_mask(batch_size, n_templ, n_token),
+        "template_pseudo_beta_coords": torch.randn((batch_size, n_templ, n_token, 3))
+        * 10,
+        "template_frame_atom_coords": torch.randn((batch_size, n_templ, n_token, 3, 3))
+        * 10,
+    }
 
 
 def random_extra_msa_feats(n_extra, n, batch_size=None):
@@ -244,19 +247,7 @@ def random_of3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         "profile": torch.ones((batch_size, n_token, 32)).float(),
         "deletion_mean": torch.ones((batch_size, n_token)).float(),
         # Template features
-        "template_restype": torch.zeros(
-            (batch_size, n_templ, n_token), dtype=torch.int32
-        ),
-        "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)).float(),
-        "template_backbone_frame_mask": torch.ones(
-            (batch_size, n_templ, n_token)
-        ).float(),
-        "template_pseudo_beta_coords": torch.zeros(
-            (batch_size, n_templ, n_token, 3)
-        ).float(),
-        "template_frame_atom_coords": torch.zeros(
-            (batch_size, n_templ, n_token, 3, 3)
-        ).float(),
+        **random_template_features(batch_size, n_templ, n_token),
         # Bond features
         "token_bonds": torch.ones((batch_size, n_token, n_token)).int(),
         # Additional features
