@@ -387,6 +387,15 @@ class ExperimentConfig(BaseModel):
     memory_snapshot: MemorySnapshotConfig = MemorySnapshotConfig()
     profiler: ProfilerConfig = ProfilerConfig()
 
+    @model_validator(mode="after")
+    def check_single_profiler(self) -> Self:
+        trainer_extra = self.pl_trainer_args.model_extra or {}
+        if self.profiler.enabled and trainer_extra.get("profiler") is not None:
+            raise ValueError(
+                "Set either profiler.enabled or pl_trainer_args.profiler, not both."
+            )
+        return self
+
 
 class TrainingExperimentConfig(ExperimentConfig):
     """Training experiment config"""
