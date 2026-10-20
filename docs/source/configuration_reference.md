@@ -62,7 +62,7 @@ Any [`pl.Trainer` argument](https://lightning.ai/docs/pytorch/stable/common/trai
 - `enable_progress_bar` *(bool)*: Show the progress bar (default: `true`)
 - `accumulate_grad_batches` *(int)*: Number of batches to accumulate gradients over (default: `1`)
 - `gradient_clip_val`, `gradient_clip_algorithm`: Set during training from the model config's `settings.gradient_clipping`; setting a different value here is an error
-- `use_distributed_sampler` *(bool)*: Training always uses OpenFold3's own distributed sampler (default: `true`)
+- `use_distributed_sampler` *(bool)*: Split prediction data across devices; must be `true` for training (default: `true`)
 - `deepspeed_config_path` *(Path | None)*: Path to DeepSpeed configuration file (default: `null`)
 - `distributed_timeout` *(timedelta | None)*: Timeout for distributed operations (default: `PT30M`)
 - `mpi_plugin` *(bool)*: Use MPI plugin (default: `false`)

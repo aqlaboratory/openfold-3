@@ -166,6 +166,7 @@ class PlTrainerArgs(BaseModel):
     accumulate_grad_batches: int = 1
     gradient_clip_val: int | float | None = None
     gradient_clip_algorithm: str | None = None
+    use_distributed_sampler: bool = True
 
     # Extra arguments that are not passed directly to pl.Trainer
     deepspeed_config_path: Path | None = None
@@ -173,19 +174,6 @@ class PlTrainerArgs(BaseModel):
     mpi_plugin: bool = False
     # See ClusterEnvironmentOption; overridable with --cluster-environment.
     cluster_environment: ClusterEnvironmentOption = ClusterEnvironmentOption.AUTO
-
-    use_distributed_sampler: bool = True
-
-    @model_validator(mode="after")
-    def validate_distributed_sampler_settings(self):
-        if self.use_distributed_sampler is False:
-            warnings.warn(
-                "pl_trainer_args.use_distributed_sampler is set to False. "
-                "Note that this arg is currently being ignored as we always use "
-                "the OF3DistributedSampler for training.",
-                stacklevel=2,
-            )
-        return self
 
     @model_validator(mode="after")
     def reject_runner_managed_args(self) -> Self:
@@ -430,6 +418,17 @@ class TrainingExperimentConfig(ExperimentConfig):
         if data_seed is None:
             self.data_module_args.data_seed = model_seed
 
+        return self
+
+    @model_validator(mode="after")
+    def check_distributed_sampler(self) -> Self:
+        """Training always uses OF3DistributedSampler, so turning off the
+        distributed sampler would only apply to validation."""
+        if not self.pl_trainer_args.use_distributed_sampler:
+            raise ValueError(
+                "pl_trainer_args.use_distributed_sampler: false is not supported "
+                "for training."
+            )
         return self
 
     @model_validator(mode="after")

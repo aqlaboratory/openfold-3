@@ -686,6 +686,18 @@ class TestPlTrainerArgsPassthrough:
         dumped = runner.experiment_config.model_dump_json()
         TrainingExperimentRunner(TrainingExperimentConfig.model_validate_json(dumped))
 
+    def test_training_without_distributed_sampler_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match="use_distributed_sampler"):
+            self._training_config(tmp_path, {"use_distributed_sampler": False})
+
+    def test_inference_without_distributed_sampler_passed_through(
+        self, dummy_ckpt_file
+    ):
+        kwargs = self._trainer_kwargs(
+            dummy_ckpt_file, {"use_distributed_sampler": False}
+        )
+        assert kwargs["use_distributed_sampler"] is False
+
 
 class DummyWandbExperiment:
     def __init__(self, directory):
