@@ -172,6 +172,19 @@ def train(
     help="Output directory for writing results",
 )
 @click.option(
+    "--cluster-environment",
+    "--cluster_environment",
+    type=click.Choice(["auto", "slurm", "local", "mpi"]),
+    default=None,
+    help=(
+        "How distributed ranks are launched. 'auto' (default): SLURM manages"
+        " the ranks only if launched with srun, otherwise OpenFold3 starts them"
+        " itself. 'local': always start them locally. 'slurm': always let SLURM"
+        " manage them (launch with srun). 'mpi': use MPI. If unset, the value"
+        " from the runner yaml (or the default) is used."
+    ),
+)
+@click.option(
     "--use_tf32",
     type=bool,
     default=True,
@@ -187,6 +200,7 @@ def predict(
     use_msa_server: bool | None = None,
     use_templates: bool | None = None,
     output_dir: Path | None = None,
+    cluster_environment: str | None = None,
     use_tf32: bool = True,
 ):
     """Perform inference on a set of queries defined in the query_json."""
@@ -219,6 +233,12 @@ def predict(
 
     if runner_yaml:
         config_utils.deep_update(runner_args, config_utils.load_yaml(runner_yaml))
+
+    if cluster_environment is not None:
+        config_utils.deep_update(
+            runner_args,
+            {"pl_trainer_args": {"cluster_environment": cluster_environment}},
+        )
 
     expt_config = InferenceExperimentConfig(
         inference_ckpt_path=inference_ckpt_path,

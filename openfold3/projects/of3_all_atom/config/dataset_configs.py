@@ -29,7 +29,7 @@ These fields are parsed by the DataModule to create the appropriate Dataset clas
 """
 
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, TypeVar
 
 from pydantic import (
@@ -41,12 +41,10 @@ from pydantic import (
     model_validator,
 )
 from pydantic import ConfigDict as PydanticConfigDict
-from pydantic_core import PydanticUndefined
 
 from openfold3.core.config.config_utils import (
     DirectoryPathOrNone,
     FilePathOrNone,
-    deep_update,
 )
 from openfold3.core.config.pocket_sampling_config import PocketSamplingSettings
 from openfold3.core.data.framework.data_module import DatasetMode, DatasetSpec
@@ -59,6 +57,7 @@ from openfold3.projects.of3_all_atom.config.dataset_config_components import (
     CropWeights,
     LossConfig,
     MSASettings,
+    SampleWeights,
     TemplateSettings,
     TokenCropSettings,
 )
@@ -142,6 +141,49 @@ class TrainingDatasetPaths(BaseModel):
         return self
 
 
+def _overlay_on_model(default: BaseModel, update: Any) -> Any:
+    """Return `default`'s fields overlaid with the fields given in `update`.
+
+    `update` may be a mapping or an instance of `default`'s type, in which case
+    only the fields pydantic records as set count. Anything else is returned
+    unchanged for normal validation to accept or reject. Recursion only
+    descends into fields whose default is itself a model. Any other value,
+    including a dict, replaces the default whole.
+    """
+    if isinstance(update, type(default)):
+        update = update.model_dump(exclude_unset=True)
+    # Pass through non-mapping data to be handled by Pydantic's normal validators
+    if not isinstance(update, Mapping):
+        return update
+
+    merged = default.model_dump()
+    for key, value in update.items():
+        # Keys not on the model are passed through for Pydantic's normal validators
+        default_value = getattr(default, key, None)
+        if isinstance(default_value, BaseModel):
+            merged[key] = _overlay_on_model(default_value, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _overlay_on_field_defaults(model_cls: type[BaseModel], data: Any) -> Any:
+    """Overlay each model-valued field given in `data` on `model_cls`'s default
+    for that field (see `_overlay_on_model`). The input is not modified."""
+    # Pass through non-mapping data to be handled by Pydantic's normal validators
+    if not isinstance(data, Mapping):
+        return data
+
+    data = dict(data)
+    for field_name, field_info in model_cls.model_fields.items():
+        if field_name not in data:
+            continue
+        default = field_info.get_default(call_default_factory=True)
+        if isinstance(default, BaseModel):
+            data[field_name] = _overlay_on_model(default, data[field_name])
+    return data
+
+
 class DefaultDatasetConfigSection(BaseModel):
     """Base configuration settings for all atom datasets.
 
@@ -172,33 +214,11 @@ class DefaultDatasetConfigSection(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def merge_partial_update_with_defaults(cls, data: dict) -> dict:
-        """
-        Intercepts the user dataset config updates. If a field is provided in `data`
-        but the class also has a default set for it, merge the data into the default
-        instead of replacing it. This allows partial updates to nested config sections.
-        """
-        if not isinstance(data, dict):
-            return data
-
-        for field_name, field_info in cls.model_fields.items():
-            # Apply for nested updates
-            if field_name in data and isinstance(data[field_name], dict):
-                # Get default value
-                default_val = None
-                if field_info.default_factory is not None:
-                    default_val = field_info.default_factory()
-                elif field_info.default is not PydanticUndefined:
-                    default_val = field_info.default
-
-                if isinstance(default_val, BaseModel):
-                    default_dict = default_val.model_dump()
-
-                    # Merge and update default values with user provided data
-                    merged = deep_update(default_dict, data[field_name])
-                    data[field_name] = merged
-
-        return data
+    def merge_partial_update_with_defaults(cls, data: Any) -> Any:
+        """Apply partial nested sections on top of this class's defaults rather
+        than replacing them, so that e.g. `crop: {token_crop: {enabled: false}}`
+        keeps the dataset's other crop settings."""
+        return _overlay_on_field_defaults(cls, data)
 
 
 class DatasetConfigRegistry:
@@ -243,13 +263,7 @@ class WeightedPDBConfig(DefaultDatasetConfigSection):
     crop: CropSettings = CropSettings(
         chain_crop=ChainCropSettings(enabled=True),
     )
-    sample_weights: dict = {
-        "a_prot": 3.0,
-        "a_nuc": 3.0,
-        "a_ligand": 1.0,
-        "w_chain": 0.5,
-        "w_interface": 1.0,
-    }
+    sample_weights: SampleWeights = SampleWeights()
 
 
 @register_dataset_config("ProteinMonomerDataset")
@@ -310,13 +324,7 @@ class DisorderedPDBConfig(DefaultDatasetConfigSection):
     crop: CropSettings = CropSettings(
         chain_crop=ChainCropSettings(enabled=True),
     )
-    sample_weights: dict = {
-        "a_prot": 3.0,
-        "a_nuc": 3.0,
-        "a_ligand": 1.0,
-        "w_chain": 0.5,
-        "w_interface": 1.0,
-    }
+    sample_weights: SampleWeights = SampleWeights()
     disable_non_protein_diffusion_weights: bool = True
     loss: LossConfig = LossConfig(
         loss_weights={
@@ -378,6 +386,14 @@ class InferenceDatasetConfigKwargs(BaseModel):
     msa: MSASettings = MSASettings(subsample_main=False)
     template: TemplateSettings = TemplateSettings(take_top_k=True)
     pocket_sampling: PocketSamplingSettings = PocketSamplingSettings()
+
+    @model_validator(mode="before")
+    @classmethod
+    def overlay_partial_settings_on_defaults(cls, data: Any) -> Any:
+        """Apply partial settings on top of the inference defaults above rather
+        than on the settings classes' own defaults, so that e.g.
+        `template: {n_templates: 2}` keeps `take_top_k=True`."""
+        return _overlay_on_field_defaults(cls, data)
 
 
 class InferenceJobConfig(BaseModel):

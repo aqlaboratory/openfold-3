@@ -1,6 +1,7 @@
 """Tests for ``openfold3.core.data.tools.utils``."""
 
 import getpass
+import os
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -41,14 +42,15 @@ class TestGetOf3Tmpdir:
         assert result.name == f"of3-of-{getpass.getuser()}"
         assert result.is_dir()
 
-    def test_respects_tmpdir_env(self, tmp_path, monkeypatch):
+    def test_respects_tmpdir_env(self, tmp_path):
         custom_tmp = tmp_path / "custom_tmp"
         custom_tmp.mkdir()
-        monkeypatch.setenv("TMPDIR", str(custom_tmp))
-        # Force tempfile to re-evaluate TMPDIR
-        tempfile.tempdir = None
-
-        result = get_of3_tmpdir("subdir")
+        # Clearing the cached tempdir forces tempfile to re-evaluate TMPDIR
+        with (
+            patch.dict(os.environ, {"TMPDIR": str(custom_tmp)}),
+            patch.object(tempfile, "tempdir", None),
+        ):
+            result = get_of3_tmpdir("subdir")
 
         assert str(result).startswith(str(custom_tmp))
 

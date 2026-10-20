@@ -590,22 +590,20 @@ def _assert_coords_match(
         )
 
 
-def _raise_conformer_generation_error(*args, **kwargs):
-    raise ConformerGenerationError("mocked")
-
-
-def _mock_conformer_generation_failure(monkeypatch):
-    """Patch multistrategy_compute_conformer to always raise."""
-    monkeypatch.setattr(
-        "openfold3.core.data.primitives.structure.conformer"
-        ".multistrategy_compute_conformer",
-        _raise_conformer_generation_error,
-    )
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def conformer_generation_failure():
+    """Patch multistrategy_compute_conformer to always raise."""
+    with patch(
+        "openfold3.core.data.primitives.structure.conformer"
+        ".multistrategy_compute_conformer",
+        side_effect=ConformerGenerationError("mocked"),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -643,10 +641,9 @@ def test_rdkit_conformer_source(gly_mol):
     assert all(_get_used_atom_mask(mol))
 
 
-def test_ccd_ideal_fallback_source(monkeypatch, gly_mol):
+@pytest.mark.usefixtures("conformer_generation_failure")
+def test_ccd_ideal_fallback_source(gly_mol):
     """Falls back to CCD Ideal conformer when RDKit generation fails."""
-    _mock_conformer_generation_failure(monkeypatch)
-
     mol, strategy, source = resolve_and_format_fallback_conformer(gly_mol)
 
     assert source == "ccd-ideal"
@@ -658,10 +655,9 @@ def test_ccd_ideal_fallback_source(monkeypatch, gly_mol):
     assert all(_get_used_atom_mask(mol))
 
 
-def test_ccd_model_fallback_source(monkeypatch, gly_mol_ideal_missing):
+@pytest.mark.usefixtures("conformer_generation_failure")
+def test_ccd_model_fallback_source(gly_mol_ideal_missing):
     """Falls back to CCD Model conformer when Ideal is missing and RDKit fails."""
-    _mock_conformer_generation_failure(monkeypatch)
-
     mol, strategy, source = resolve_and_format_fallback_conformer(gly_mol_ideal_missing)
 
     assert source == "ccd-model"
@@ -676,10 +672,9 @@ def test_ccd_model_fallback_source(monkeypatch, gly_mol_ideal_missing):
     assert mol.GetProp("model_pdb_id") == "1EJG"
 
 
-def test_allnan_fallback_source(monkeypatch, gly_mol):
+@pytest.mark.usefixtures("conformer_generation_failure")
+def test_allnan_fallback_source(gly_mol):
     """Falls back to all-NaN conformer when no stored conformers exist."""
-    _mock_conformer_generation_failure(monkeypatch)
-
     # Remove all conformers to simulate a mol with no stored fallback
     gly_mol.RemoveAllConformers()
 
@@ -696,10 +691,9 @@ def test_allnan_fallback_source(monkeypatch, gly_mol):
     assert not any(_get_used_atom_mask(mol))
 
 
-def test_unexpected_conformer_name_raises(monkeypatch, gly_mol):
+@pytest.mark.usefixtures("conformer_generation_failure")
+def test_unexpected_conformer_name_raises(gly_mol):
     """Raises ValueError when conformer has an unrecognized name."""
-    _mock_conformer_generation_failure(monkeypatch)
-
     gly_mol.RemoveAllConformers()
     bad_conf = Chem.Conformer(gly_mol.GetNumAtoms())
     bad_conf.SetProp("name", "Unknown")

@@ -30,9 +30,14 @@ import torch
 from openfold3.core.utils.rigid_utils import quat_to_rot
 
 
-def sample_rotations(shape, dtype: torch.dtype, device: torch.device) -> torch.Tensor:
+def sample_rotations(
+    shape,
+    dtype: torch.dtype,
+    device: torch.device,
+    generator: torch.Generator | None = None,
+) -> torch.Tensor:
     """Sample random quaternions"""
-    q = torch.randn(*shape, 4, dtype=dtype, device=device)
+    q = torch.randn(*shape, 4, dtype=dtype, device=device, generator=generator)
     q = q / torch.linalg.norm(q, dim=-1, keepdim=True)
 
     rots = quat_to_rot(q)
@@ -41,7 +46,10 @@ def sample_rotations(shape, dtype: torch.dtype, device: torch.device) -> torch.T
 
 
 def centre_random_augmentation(
-    xl: torch.Tensor, atom_mask: torch.Tensor, scale_trans: float = 1.0
+    xl: torch.Tensor,
+    atom_mask: torch.Tensor,
+    scale_trans: float = 1.0,
+    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     """
     Implements AF3 Algorithm 19.
@@ -53,13 +61,19 @@ def centre_random_augmentation(
             [*, N_atom] Atom mask
         scale_trans:
             Translation scaling factor
+        generator:
+            RNG source for the rotation and translation; defaults to the ambient torch
+            RNG. When given it must live on the same device as ``xl``, which is
+            stricter than the global RNG it replaces.
     Returns:
         Updated atom position with random global rotation and translation
     """
-    rots = sample_rotations(shape=xl.shape[:-2], dtype=xl.dtype, device=xl.device)
+    rots = sample_rotations(
+        shape=xl.shape[:-2], dtype=xl.dtype, device=xl.device, generator=generator
+    )
 
     trans = scale_trans * torch.randn(
-        (*xl.shape[:-2], 3), dtype=xl.dtype, device=xl.device
+        (*xl.shape[:-2], 3), dtype=xl.dtype, device=xl.device, generator=generator
     )
 
     mean_xl = torch.sum(

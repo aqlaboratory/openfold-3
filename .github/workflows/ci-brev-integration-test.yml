@@ -1,0 +1,31 @@
+name: Run integration tests on Brev
+
+on:
+  workflow_dispatch:
+    inputs:
+      brev_instance_type:
+        description: 'Brev instance type or comma-separated fallback chain (see `brev search`)'
+        required: true
+        type: string
+        default: 'g5.4xlarge'
+      pixi_env:
+        description: 'Pixi environment'
+        required: true
+        type: choice
+        options:
+          - openfold3-cuda12
+          - openfold3-cuda13
+
+jobs:
+  test-pixi-cuda-brev:
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.pixi_env }}
+      cancel-in-progress: true
+    uses: ./.github/workflows/ci-integration-test-pixi-cuda-brev-reusable.yml
+    with:
+      pixi_env: ${{ inputs.pixi_env }}
+      brev_instance_type: ${{ inputs.brev_instance_type }}
+    secrets: inherit
