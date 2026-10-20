@@ -28,6 +28,7 @@ from unittest.mock import patch
 import ml_collections as mlc
 import pytest
 from click.testing import CliRunner
+from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
 import openfold3.core.model.primitives.initialization as initialization
@@ -35,6 +36,7 @@ from openfold3 import run_openfold, setup_openfold
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import DataModuleConfig
 from openfold3.core.data.pipelines.preprocessing import template as template_module
+from openfold3.core.utils.callbacks import SecondsPerIterationProgressBar
 from openfold3.entry_points.experiment_runner import (
     InferenceExperimentRunner,
     TrainingExperimentRunner,
@@ -50,7 +52,9 @@ from openfold3.entry_points.parameters import (
     CheckpointEntry,
 )
 from openfold3.entry_points.validator import (
+    CheckpointConfig,
     InferenceExperimentConfig,
+    LoggingConfig,
     PlTrainerArgs,
     TrainingExperimentConfig,
     TrainingExperimentSettings,
@@ -425,6 +429,115 @@ class TestAcceleratorWillUseMps:
             assert _accelerator_will_use_mps(accelerator) is mps_available
 
 
+TEST_CHECKPOINT_FILENAME = "of3-{epoch}"  # differs from the CheckpointConfig default
+
+
+class TestTrainerCallbackFlags:
+    """enable_progress_bar and enable_checkpointing control the callbacks
+    OpenFold3 adds."""
+
+    @staticmethod
+    def _training_runner(
+        output_dir: Path, pl_trainer_args: dict[str, object]
+    ) -> TrainingExperimentRunner:
+        expt_config = TrainingExperimentConfig(
+            dataset_paths={},
+            dataset_configs={},
+            experiment_settings=TrainingExperimentSettings(output_dir=output_dir),
+            pl_trainer_args=PlTrainerArgs.model_validate(
+                {"accelerator": "cpu", **pl_trainer_args}
+            ),
+            checkpoint_config=CheckpointConfig(filename=TEST_CHECKPOINT_FILENAME),
+        )
+        return TrainingExperimentRunner(expt_config)
+
+    @pytest.mark.parametrize(
+        "pl_trainer_args, expect_progress_bar",
+        [
+            ({}, True),
+            ({"enable_progress_bar": True}, True),
+            ({"enable_progress_bar": False}, False),
+        ],
+    )
+    def test_inference_progress_bar(
+        self, dummy_ckpt_file, pl_trainer_args, expect_progress_bar
+    ):
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            pl_trainer_args=PlTrainerArgs.model_validate(pl_trainer_args),
+        )
+        callbacks = InferenceExperimentRunner(expt_config).callbacks
+        has_progress_bar = any(
+            isinstance(c, SecondsPerIterationProgressBar) for c in callbacks
+        )
+        assert has_progress_bar == expect_progress_bar
+
+    @pytest.mark.parametrize(
+        "pl_trainer_args, expect_checkpoint, expect_progress_bar",
+        [
+            ({}, True, True),
+            ({"enable_checkpointing": True}, True, True),
+            ({"enable_checkpointing": False}, False, True),
+            ({"enable_progress_bar": False}, True, False),
+        ],
+    )
+    def test_training_trainer_callbacks(
+        self, tmp_path, pl_trainer_args, expect_checkpoint, expect_progress_bar
+    ):
+        runner = self._training_runner(tmp_path, pl_trainer_args)
+        checkpoints = [c for c in runner.callbacks if isinstance(c, ModelCheckpoint)]
+        if expect_checkpoint:
+            assert len(checkpoints) == 1
+            assert checkpoints[0].filename == TEST_CHECKPOINT_FILENAME
+        else:
+            assert checkpoints == []
+        has_progress_bar = any(
+            isinstance(c, SecondsPerIterationProgressBar) for c in runner.callbacks
+        )
+        assert has_progress_bar == expect_progress_bar
+
+        # Lightning accepts the callbacks together with the flags
+        trainer = runner.trainer
+        if not expect_checkpoint:
+            assert trainer.checkpoint_callbacks == []
+
+    @pytest.mark.parametrize(
+        "experiment_settings, match",
+        [
+            ({"restart_checkpoint_path": "last"}, "explicit checkpoint file"),
+            ({"preemption_safe_resume": True}, "preemption_safe_resume requires"),
+        ],
+    )
+    def test_resume_without_checkpointing_rejected(
+        self, tmp_path, experiment_settings, match
+    ):
+        with pytest.raises(ValueError, match=match):
+            TrainingExperimentConfig(
+                dataset_paths={},
+                dataset_configs={},
+                experiment_settings=TrainingExperimentSettings(
+                    output_dir=tmp_path, **experiment_settings
+                ),
+                pl_trainer_args=PlTrainerArgs(enable_checkpointing=False),
+                logging_config=LoggingConfig(
+                    wandb_config=WandbConfig(project="p", id="run")
+                ),
+            )
+
+    def test_explicit_restart_without_checkpointing_accepted(self, tmp_path):
+        ckpt = tmp_path / "restart.ckpt"
+        ckpt.touch()
+        expt_config = TrainingExperimentConfig(
+            dataset_paths={},
+            dataset_configs={},
+            experiment_settings=TrainingExperimentSettings(
+                output_dir=tmp_path, restart_checkpoint_path=str(ckpt)
+            ),
+            pl_trainer_args=PlTrainerArgs(enable_checkpointing=False),
+        )
+        assert expt_config.experiment_settings.restart_checkpoint_path == str(ckpt)
+
+
 class TestPlTrainerArgsPassthrough:
     """pl_trainer_args reach pl.Trainer, with OpenFold3's defaults applied."""
 
@@ -451,6 +564,8 @@ class TestPlTrainerArgsPassthrough:
             "devices": 1,
             "log_every_n_steps": 1,
             "enable_model_summary": False,
+            "enable_progress_bar": True,
+            "enable_checkpointing": True,
             "accumulate_grad_batches": 1,
             "gradient_clip_val": None,
             "gradient_clip_algorithm": None,

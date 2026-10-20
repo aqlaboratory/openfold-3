@@ -28,6 +28,7 @@ from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
+from typing_extensions import Self
 
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
@@ -154,6 +155,8 @@ class PlTrainerArgs(BaseModel):
     devices: int = 1  # number of GPUs per node
     log_every_n_steps: int = 1
     enable_model_summary: bool = False
+    enable_progress_bar: bool = True
+    enable_checkpointing: bool = True
     accumulate_grad_batches: int = 1
     gradient_clip_val: int | float | None = None
     gradient_clip_algorithm: str | None = None
@@ -402,6 +405,28 @@ class TrainingExperimentConfig(ExperimentConfig):
         if data_seed is None:
             self.data_module_args.data_seed = model_seed
 
+        return self
+
+    @model_validator(mode="after")
+    def check_resume_needs_checkpointing(self) -> Self:
+        """Lightning only finds the "last" checkpoint through its checkpoint
+        callbacks, which are disabled with checkpointing. Without them it warns
+        and starts from scratch."""
+        if self.pl_trainer_args.enable_checkpointing:
+            return self
+        settings = self.experiment_settings
+        if settings.preemption_safe_resume:
+            raise ValueError(
+                "experiment_settings.preemption_safe_resume requires "
+                "pl_trainer_args.enable_checkpointing to be true."
+            )
+        if settings.restart_checkpoint_path == "last":
+            raise ValueError(
+                'experiment_settings.restart_checkpoint_path: "last" requires '
+                "pl_trainer_args.enable_checkpointing to be true; to resume "
+                "without saving new checkpoints, set restart_checkpoint_path to "
+                "an explicit checkpoint file."
+            )
         return self
 
     @model_validator(mode="after")

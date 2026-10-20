@@ -57,7 +57,9 @@ Any [`pl.Trainer` argument](https://lightning.ai/docs/pytorch/stable/common/trai
 - `num_nodes` *(int)*: Number of compute nodes (default: `1`)
 - `devices` *(int)*: Number of GPUs per node (default: `1`)
 - `log_every_n_steps` *(int)*: Logging frequency in steps (default: `1`)
+- `enable_checkpointing` *(bool)*: Save checkpoints during training, as configured in `checkpoint_config` (default: `true`)
 - `enable_model_summary` *(bool)*: Enable model summary (default: `false`)
+- `enable_progress_bar` *(bool)*: Show the progress bar (default: `true`)
 - `accumulate_grad_batches` *(int)*: Number of batches to accumulate gradients over (default: `1`)
 - `gradient_clip_val`, `gradient_clip_algorithm`: Set during training from the model config's `settings.gradient_clipping`
 - `use_distributed_sampler` *(bool)*: Training always uses OpenFold3's own distributed sampler (default: `true`)
@@ -68,8 +70,6 @@ Any [`pl.Trainer` argument](https://lightning.ai/docs/pytorch/stable/common/trai
   - **Default (`auto`)**: ranks are managed by SLURM only when `run_openfold` was launched with `srun`. Otherwise, including `run_openfold` called directly from an sbatch script, OpenFold3 starts all `devices` ranks itself. This is the same for 1 GPU and for multiple GPUs.
   - **Changing it**: set `local` to always start the ranks locally and ignore the scheduler, `slurm` to always let SLURM manage the ranks (launch with `srun --ntasks-per-node=<devices>`), or `mpi` to use MPI (requires `mpi4py`). Set it here or with `run_openfold predict --cluster-environment <value>`.
   - **More**: Lightning's [cluster environments](https://github.com/Lightning-AI/pytorch-lightning/blob/2.6.5/docs/source-pytorch/extensions/plugins.rst#cluster-environments) and [SLURM guide](https://github.com/Lightning-AI/pytorch-lightning/blob/2.6.5/docs/source-pytorch/clouds/cluster_advanced.rst#run-on-a-slurm-managed-cluster).
-
-Arguments not listed above are passed to `pl.Trainer` unchanged, and Lightning validates them. Some conflict with what OpenFold3 sets; for example, `enable_progress_bar: false` fails because OpenFold3 always adds its own progress bar.
 
 **Example**:
 ```yaml
