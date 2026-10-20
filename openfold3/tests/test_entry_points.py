@@ -604,6 +604,14 @@ class TestPlTrainerArgsPassthrough:
         with pytest.raises(ValueError, match="cannot be set"):
             PlTrainerArgs(**{name: None})
 
+    def test_profiler_conflict_rejected(self, dummy_ckpt_file):
+        with pytest.raises(ValueError, match="not both"):
+            InferenceExperimentConfig(
+                inference_ckpt_path=dummy_ckpt_file,
+                pl_trainer_args={"profiler": "simple"},
+                profiler={"enabled": True},
+            )
+
 
 class DummyWandbExperiment:
     def __init__(self, directory):

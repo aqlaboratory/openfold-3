@@ -48,7 +48,7 @@ Configures the PyTorch Lightning trainer for distributed training and multi-GPU 
 
 **Pydantic Model**: [`PlTrainerArgs`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L121)
 
-Any [`pl.Trainer` argument](https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api) can be set here and is passed through to `pl.Trainer`. The options below are the ones OpenFold3 adds, uses itself, or gives a different default from Lightning's. OpenFold3 sets `default_root_dir` (to `experiment_settings.output_dir`), `strategy`, `callbacks` and `logger` itself, so setting them here is an error, and it replaces `profiler` when the top-level `profiler.enabled` is `true`.
+Any [`pl.Trainer` argument](https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api) can be set here and is passed through to `pl.Trainer`. The options below are the ones OpenFold3 adds, uses itself, or gives a different default from Lightning's. OpenFold3 sets `default_root_dir` (to `experiment_settings.output_dir`), `strategy`, `callbacks` and `logger` itself, so setting them here is an error. `profiler` cannot be set here when the top-level `profiler.enabled` is `true`.
 
 **OpenFold3 Defaults and Options**:
 - `max_epochs` *(int)*: Maximum number of training epochs (default: `1000` always, even when `max_steps` is set)
