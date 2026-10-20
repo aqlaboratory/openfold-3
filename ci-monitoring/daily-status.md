@@ -1093,3 +1093,33 @@ Expected skip on the secondary slot (intended for other repos, not `aqlaboratory
 Brev vs. AWS agreement so far: 6/6 nights tracked (10-14 through 10-19) — both legs passing on both providers every run tracked to date under the five-job scope. Two-week mark (brev jobs added 2026-10-14 in PR #448) falls on 2026-10-28 — 6 days tracked so far this stretch toward it; still too early to report the comparison today (8 days remain).
 
 ---
+
+## 2026-10-20
+
+### Run #338 — primary nightly (schedule `17 3 * * *`, main @ `7bebb7a` — merge PR #459 "fix: configurable cluster environment; stop SLURM autodetection hangs" (new since run #336/337's `0d25195`), [39364702695](https://github.com/aqlaboratory/openfold-3/actions/runs/39364702695))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 40 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 36 min | |
+| test-pixi-cuda-brev (openfold3-cuda12) | **FAILED** | 0 min | `unclassified` — `start-brev-runner` / "Create Brev runner" step: `Skipping: instance type "g5.4xlarge" is not a recognized type; run 'brev search' to see available types` → `Warning: Only created 0/1 instances` → `subprocess.CalledProcessError: Command '[... 'brev', 'create', 'runner-a5ccc9cw', '--type', 'g5.4xlarge', ...]' returned non-zero exit status 1.` |
+| test-pixi-cuda-brev (openfold3-cuda13) | **FAILED** | 0 min | `unclassified` — same signature: `Skipping: instance type "g5.4xlarge" is not a recognized type; run 'brev search' to see available types` → `Warning: Only created 0/1 instances` → `subprocess.CalledProcessError: Command '[... 'brev', 'create', 'runner-mkn0lc8h', '--type', 'g5.4xlarge', ...]' returned non-zero exit status 1.` |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 52 min | |
+
+**2026-10-20: 3/5 passed · 0 skipped · 0 queued · 2 need attention**
+
+First non-pass for either Brev leg since their introduction on 2026-10-14 (run #326), breaking a 6-consecutive-night clean streak. Both Brev legs failed identically and immediately (under 15s) at the `start-brev-runner` / "Create Brev runner" step: Brev's own CLI (`brev create ... --type g5.4xlarge`) rejected `g5.4xlarge` as "not a recognized type," i.e. Brev's instance-type catalog no longer offers (or has renamed) the type this workflow requests — not a capacity exhaustion (no `InsufficientInstanceCapacity`-style message), not an AWS issue at all (the two AWS `test-pixi-cuda` legs provisioned and ran normally on pool 1 in `us-east-2`), and not a GPU-busy or runner-offline condition either. Doesn't match any of this log's six defined signatures (`aws-capacity`, `gpu-unavailable`, `runner-offline`, `msa-hang`, `parameter-cache`, `build-push`, `code`), so recorded as `unclassified` per this log's explicit fallback rule rather than guessed at. See `test-failures.md` for full detail. **Flagged for a human:** confirm whether Brev deprecated/renamed the `g5.4xlarge` SKU (run `brev search` against the `OMSF-Brev` org) and update the `brev_instance_type` input in `.github/workflows/ci-integration-test-pixi-cuda-brev-reusable.yml` accordingly; until fixed, the Brev legs will fail every night regardless of code changes. AMD leg and both AWS CUDA legs unaffected.
+
+### Run #339 — secondary nightly (schedule `17 4 * * *`, main @ `7bebb7a`, [39369835149](https://github.com/aqlaboratory/openfold-3/actions/runs/39369835149))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-cuda-brev | **SKIPPED** | — | same guard; job named plain `test-pixi-cuda-brev`, confirming it never expanded |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #338, per this log's established convention).
+
+Brev vs. AWS agreement: 6/7 nights fully agreeing (10-14 through 10-19); tonight (10-20) is the first divergence — both Brev legs failed (`unclassified`, Brev-side instance-type rejection, see above) while both AWS `test-pixi-cuda` legs passed. Running Brev leg-tally toward the two-week comparison (brev jobs added 2026-10-14 in PR #448; two-week mark 2026-10-28): 12/14 brev job-runs passed to date (6 nights × 2 legs clean, tonight's 2 legs failed) = 85.7% so far, with 8 days of the two-week window remaining — too early to apply the brief's 95%-pass-rate replace-AWS threshold, and today's result is a reminder the comparison should exclude/annotate infra-only non-passes (an unrelated Brev catalog issue) rather than count them against Brev's reliability at face value when the formal report is due.
+
+---

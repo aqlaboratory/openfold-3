@@ -557,3 +557,55 @@ openfold3/tests/test_cuda_allocator.py::test_matches_snapshot
 | `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | **success** | 112618559356 | 42 min |
 
 ---
+
+## 2026-10-20
+
+**Cause:** `unclassified` — both Brev legs failed at `start-brev-runner` / "Create Brev runner" because Brev's own CLI rejected the requested instance type: `Skipping: instance type "g5.4xlarge" is not a recognized type; run 'brev search' to see available types`. Not a capacity-exhaustion message (no `InsufficientInstanceCapacity`), not an AWS issue (both AWS `test-pixi-cuda` legs on the same run provisioned via `start-aws-runner` and passed normally), not GPU-busy, and not a runner going offline mid-queue — doesn't match any of this log's six defined signatures (`aws-capacity`, `gpu-unavailable`, `runner-offline`, `msa-hang`, `parameter-cache`, `build-push`, `code`). First non-pass for either Brev leg since their introduction 2026-10-14 (run #326), breaking a 6-night clean streak. The failure is in Brev's own instance-type catalog/provisioning, not in OF3 code or the test suite — `test-openfold-docker-pixi` never ran on either leg (both `skipped`, cascading from the `start-brev-runner` failure).
+
+- **Run ID:** [39364702695](https://github.com/aqlaboratory/openfold-3/actions/runs/39364702695) (run #338, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `7bebb7ac676d9ceb1510ac87d99f9803abf01f19` (PR #459, merged since run #336/337's `0d25195`)
+- **Time:** 2026-10-20T03:31:03Z – 03:31:33Z (both Brev legs failed within ~15–20s of starting)
+
+### Failed Jobs
+
+| Job | Status | Job ID | Failed step |
+|-----|--------|--------|--------------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / start-brev-runner` | **failure** | 118438752342 | Create Brev runner |
+| `test-pixi-cuda-brev (openfold3-cuda13) / start-brev-runner` | **failure** | 118438752477 | Create Brev runner |
+
+### Error (both legs, identical signature)
+
+```
+Attempting to create 1 instance(s) with 1 parallel attempts
+Instance types to try: g5.4xlarge
+
+Trying g5.4xlarge for 1 instance(s)...
+Skipping: instance type "g5.4xlarge" is not a recognized type; run 'brev search' to see available types
+
+Type g5.4xlarge had failures, trying next type...
+
+Warning: Only created 0/1 instances
+could only create 0/1 instances
+subprocess.CalledProcessError: Command '['brev', 'create', '<runner-id>', '--type', 'g5.4xlarge', '--startup-script', '@/tmp/<tmpfile>.sh', '--timeout', '900', '--jupyter=false']' returned non-zero exit status 1.
+```
+
+(`start-brev-runner` input `brev_instance_type: g5.4xlarge`, same value used successfully every prior night since 10-14 — this appears to be a change on Brev's side, not a workflow-config regression that just happened to surface tonight.)
+
+### Cascading skip
+
+- `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` (job ID: 118438852796) — **skipped**, no runner available
+- `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` (job ID: 118438894773) — **skipped**, no runner available
+
+### Passing Jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | 118439677412 | 40 min |
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 118439697678 | 36 min |
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | **success** | 118438752790 | 52 min |
+
+### Assessment
+
+**Flagged for a human:** confirm whether Brev deprecated or renamed the `g5.4xlarge` SKU under the `OMSF-Brev` org (`brev search` would list current types) and update the `brev_instance_type` input in `.github/workflows/ci-integration-test-pixi-cuda-brev-reusable.yml` to match. Until fixed, both Brev legs will fail every night regardless of code changes on `main` — this is an infrastructure/config issue, not a regression to bisect. Also relevant to the pending two-week Brev-vs-AWS pass-rate comparison (due 2026-10-28, per the monitoring brief): this failure should be weighed as a Brev-catalog/config issue rather than counted at face value against Brev's underlying reliability when that report is written.
+
+---
