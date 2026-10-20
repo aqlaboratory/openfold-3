@@ -326,7 +326,9 @@ class ExperimentRunner(ABC):
     @cached_property
     def callbacks(self):
         """Set up and return the list of callbacks."""
-        _callbacks = [SecondsPerIterationProgressBar()]
+        _callbacks: list[pl.Callback] = []
+        if self.pl_trainer_args.enable_progress_bar:
+            _callbacks.append(SecondsPerIterationProgressBar())
 
         if self.memory_snapshot.enabled:
             _callbacks.append(
@@ -658,7 +660,7 @@ class TrainingExperimentRunner(ExperimentRunner):
         _callbacks.append(RankSpecificSeedCallback(base_seed=self.seed))
 
         _checkpoint = self.checkpoint_config
-        if _checkpoint is not None:
+        if _checkpoint is not None and self.pl_trainer_args.enable_checkpointing:
             _callbacks.append(ModelCheckpoint(**_checkpoint.model_dump()))
 
         if self.model_config.settings.debug.log_iteration_time:
