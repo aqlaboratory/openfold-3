@@ -3625,7 +3625,6 @@ openfold3/entry_points/validator.py:0: error: Function is missing a return type 
 openfold3/entry_points/validator.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/entry_points/validator.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/entry_points/validator.py:0: error: Function is missing a return type annotation  [no-untyped-def]
-openfold3/entry_points/validator.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/entry_points/validator.py:0: error: Function is missing a type annotation  [no-untyped-def]
 openfold3/entry_points/validator.py:0: error: Function is missing a type annotation  [no-untyped-def]
 openfold3/entry_points/validator.py:0: error: Invalid index type "str | None" for "dict[str, CheckpointEntry]"; expected type "str"  [index]
