@@ -329,12 +329,16 @@ class OpenFold3(nn.Module):
         batch: dict,
         si_input: torch.Tensor,
         si_trunk: torch.Tensor,
-        zij_trunk: torch.Tensor,
+        output: dict,
         inplace_safe: bool = False,
-    ) -> dict:
+        release_zij_trunk: bool = False,
+    ) -> None:
         """
         Mini diffusion rollout described in section 4.1.
         Implements Algorithm 1 lines 15-18.
+
+        Fills ``output`` in place. It is also the only owner of the trunk pair,
+        so the pair can be dropped from it without leaving a local behind.
 
         Args:
             batch:
@@ -343,14 +347,15 @@ class OpenFold3(nn.Module):
                 [*, N_token, C_s_input] Single (input) representation
             si_trunk:
                 [*, N_token, C_s] Single representation output from model trunk
-            zij_trunk:
-                [*, N_token, N_token, C_z] Pair representation output from model trunk
+            output:
+                Output dictionary, holding ``"si_trunk"`` and ``"zij_trunk"``
+                ([*, N_token, N_token, C_z])
             inplace_safe:
                 Whether inplace operations can be performed
-
-        Returns:
-            Output dictionary containing the predicted trunk embeddings,
-            all-atom positions, and confidence/distogram head logits
+            release_zij_trunk:
+                Drop ``output["zij_trunk"]`` once the confidence heads have
+                cloned it, so it is not resident through the confidence
+                Pairformer. Inference only; training and validation keep it.
         """
         mode_mem_settings = self._get_mode_mem_settings()
 
@@ -399,7 +404,7 @@ class OpenFold3(nn.Module):
                 batch=batch,
                 si_input=si_input,
                 si_trunk=si_trunk,
-                zij_trunk=zij_trunk,
+                zij_trunk=output["zij_trunk"],
                 noise_schedule=noise_schedule,
                 no_rollout_samples=no_rollout_samples,
                 use_conditioning=True,
@@ -410,11 +415,7 @@ class OpenFold3(nn.Module):
 
             self.clear_autocast_cache()
 
-        output = {
-            "si_trunk": si_trunk,
-            "zij_trunk": zij_trunk,
-            "atom_positions_predicted": atom_positions_predicted,
-        }
+        output["atom_positions_predicted"] = atom_positions_predicted
 
         cast_dtype = torch.float32 if self.training else si_trunk.dtype
         with torch.amp.autocast(
@@ -427,6 +428,7 @@ class OpenFold3(nn.Module):
                     si_input=si_input,
                     output=output,
                     use_zij_trunk_embedding=use_trunk_embedding,
+                    release_zij_trunk=release_zij_trunk,
                     chunk_size=mode_mem_settings.chunk_size,
                     use_deepspeed_evo_attention=mode_mem_settings.use_deepspeed_evo_attention,
                     use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
@@ -670,7 +672,19 @@ class OpenFold3(nn.Module):
         # Expand sampling dimension for rollout and diffusion
         si_input = si_input.unsqueeze(1)
         si_trunk = si_trunk.unsqueeze(1)
-        zij_trunk = zij_trunk.unsqueeze(1)
+        # The trunk pair lives in `output` from here on, so releasing it is a
+        # plain dict pop and `forward` never holds a local reference to it.
+        output["si_trunk"] = si_trunk
+        output["zij_trunk"] = zij_trunk.unsqueeze(1)
+        del zij_trunk
+
+        # The rollout conditions the diffusion samples on the pair, so it can
+        # only be dropped once the confidence heads have cloned it.
+        release_zij_trunk = (
+            not self.training
+            and "ground_truth" not in batch
+            and self.settings.memory.eval.release_trunk_pair
+        )
 
         # Expand sampling dimension for batch features
         # Exclude ref_space_uid_to_perm feature since this
@@ -679,16 +693,14 @@ class OpenFold3(nn.Module):
         batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
         batch["ref_space_uid_to_perm"] = ref_space_uid_to_perm
 
-        # Mini rollout
-        rollout_output = self._rollout(
+        self._rollout(
             batch=batch,
             si_input=si_input,
             si_trunk=si_trunk,
-            zij_trunk=zij_trunk,
+            output=output,
             inplace_safe=inplace_safe,
+            release_zij_trunk=release_zij_trunk,
         )
-
-        output.update(rollout_output)
 
         # Apply permutation alignment for training and validation
         if "ground_truth" in batch:
@@ -717,7 +729,7 @@ class OpenFold3(nn.Module):
                         batch=batch,
                         si_input=si_input,
                         si_trunk=si_trunk,
-                        zij_trunk=zij_trunk,
+                        zij_trunk=output["zij_trunk"],
                     )
 
                     output.update(diffusion_output)
@@ -726,6 +738,7 @@ class OpenFold3(nn.Module):
         # due to different sizes of msa/all-atom tensors used between steps
         # Clear the cache between steps if unallocated reserved mem is high
         if self.settings.clear_cache_between_steps:
-            empty_device_cache(zij_trunk.device)
+            # zij_trunk may already be released on the inference path.
+            empty_device_cache(si_trunk.device)
 
         return batch, output
