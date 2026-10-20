@@ -138,17 +138,21 @@ class ClusterEnvironmentOption(StrEnum):
 
 
 class PlTrainerArgs(BaseModel):
-    """Arguments to configure pl.Trainer, including settings for number of devices."""
+    """Arguments to configure pl.Trainer, including settings for number of devices.
+
+    Only arguments that OpenFold3 reads or rewrites, or whose default differs
+    from pl.Trainer's, are declared here. Any other pl.Trainer argument is
+    passed through to pl.Trainer unchanged.
+    """
 
     model_config = PydanticConfigDict(extra="allow")
-    max_epochs: int = 1000  # pl_trainer default
+    # pl.Trainer defaults to 1000 only if max_steps and max_time are unset
+    max_epochs: int = 1000
     accelerator: str = "gpu"
     precision: int | str = "32-true"
     num_nodes: int = 1
     devices: int = 1  # number of GPUs per node
-    profiler: str | None = None
     log_every_n_steps: int = 1
-    enable_checkpointing: bool = True
     enable_model_summary: bool = False
     accumulate_grad_batches: int = 1
     gradient_clip_val: int | float | None = None
