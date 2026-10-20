@@ -51,6 +51,7 @@ from openfold3.entry_points.parameters import (
 )
 from openfold3.entry_points.validator import (
     InferenceExperimentConfig,
+    PlTrainerArgs,
     TrainingExperimentConfig,
     TrainingExperimentSettings,
     WandbConfig,
@@ -422,6 +423,64 @@ class TestAcceleratorWillUseMps:
             return_value=mps_available,
         ):
             assert _accelerator_will_use_mps(accelerator) is mps_available
+
+
+class TestPlTrainerArgsPassthrough:
+    """pl_trainer_args reach pl.Trainer, with OpenFold3's defaults applied."""
+
+    @staticmethod
+    def _trainer_kwargs(
+        ckpt: Path, pl_trainer_args: dict[str, object]
+    ) -> dict[str, object]:
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=ckpt,
+            pl_trainer_args=PlTrainerArgs.model_validate(pl_trainer_args),
+        )
+        with patch("pytorch_lightning.Trainer") as mock_trainer:
+            _ = InferenceExperimentRunner(expt_config).trainer
+        mock_trainer.assert_called_once()
+        return dict(mock_trainer.call_args.kwargs)
+
+    def test_openfold3_defaults(self, dummy_ckpt_file):
+        kwargs = self._trainer_kwargs(dummy_ckpt_file, {})
+        expected = {
+            "max_epochs": 1000,
+            "accelerator": "gpu",
+            "precision": "32-true",
+            "num_nodes": 1,
+            "devices": 1,
+            "log_every_n_steps": 1,
+            "enable_model_summary": False,
+            "accumulate_grad_batches": 1,
+            "gradient_clip_val": None,
+            "gradient_clip_algorithm": None,
+            "use_distributed_sampler": True,
+        }
+        assert {k: kwargs[k] for k in expected} == expected
+
+    def test_openfold3_only_settings_not_passed(self, dummy_ckpt_file):
+        kwargs = self._trainer_kwargs(dummy_ckpt_file, {})
+        for name in (
+            "deepspeed_config_path",
+            "distributed_timeout",
+            "mpi_plugin",
+            "cluster_environment",
+        ):
+            assert name not in kwargs
+
+    @pytest.mark.parametrize(
+        "pl_trainer_args",
+        [
+            {"num_sanity_val_steps": 0},
+            {"deterministic": True},
+            {"enable_checkpointing": False},
+            {"profiler": "simple"},
+            {"max_epochs": -1, "log_every_n_steps": 50},
+        ],
+    )
+    def test_user_values_passed_through(self, dummy_ckpt_file, pl_trainer_args):
+        kwargs = self._trainer_kwargs(dummy_ckpt_file, pl_trainer_args)
+        assert {k: kwargs[k] for k in pl_trainer_args} == pl_trainer_args
 
 
 class DummyWandbExperiment:

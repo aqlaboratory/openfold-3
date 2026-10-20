@@ -48,16 +48,19 @@ Configures the PyTorch Lightning trainer for distributed training and multi-GPU 
 
 **Pydantic Model**: [`PlTrainerArgs`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L121)
 
-**All Options**:
-- `max_epochs` *(int)*: Maximum number of training epochs (default: `1000`)
+Any [`pl.Trainer` argument](https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api) can be set here and is passed through to `pl.Trainer`. The options below are the ones OpenFold3 adds, uses itself, or gives a different default from Lightning's. OpenFold3 sets `default_root_dir` (to `experiment_settings.output_dir`), `strategy`, `callbacks` and `logger` itself, overriding any values given here, and replaces `profiler` when the top-level `profiler.enabled` is `true`.
+
+**OpenFold3 Defaults and Options**:
+- `max_epochs` *(int)*: Maximum number of training epochs (default: `1000` always, even when `max_steps` is set)
 - `accelerator` *(str)*: Device type - `gpu` or `cpu` (default: `gpu`)
 - `precision` *(int | str)*: Numerical precision - `32-true`, `16-mixed`, etc. (default: `32-true`)
 - `num_nodes` *(int)*: Number of compute nodes (default: `1`)
 - `devices` *(int)*: Number of GPUs per node (default: `1`)
-- `profiler` *(str | None)*: Profiler to use (default: `null`)
 - `log_every_n_steps` *(int)*: Logging frequency in steps (default: `1`)
-- `enable_checkpointing` *(bool)*: Enable checkpointing (default: `true`)
 - `enable_model_summary` *(bool)*: Enable model summary (default: `false`)
+- `accumulate_grad_batches` *(int)*: Number of batches to accumulate gradients over (default: `1`)
+- `gradient_clip_val`, `gradient_clip_algorithm`: Set during training from the model config's `settings.gradient_clipping`
+- `use_distributed_sampler` *(bool)*: Training always uses OpenFold3's own distributed sampler (default: `true`)
 - `deepspeed_config_path` *(Path | None)*: Path to DeepSpeed configuration file (default: `null`)
 - `distributed_timeout` *(timedelta | None)*: Timeout for distributed operations (default: `PT30M`)
 - `mpi_plugin` *(bool)*: Use MPI plugin (default: `false`)
@@ -65,6 +68,8 @@ Configures the PyTorch Lightning trainer for distributed training and multi-GPU 
   - **Default (`auto`)**: ranks are managed by SLURM only when `run_openfold` was launched with `srun`. Otherwise, including `run_openfold` called directly from an sbatch script, OpenFold3 starts all `devices` ranks itself. This is the same for 1 GPU and for multiple GPUs.
   - **Changing it**: set `local` to always start the ranks locally and ignore the scheduler, `slurm` to always let SLURM manage the ranks (launch with `srun --ntasks-per-node=<devices>`), or `mpi` to use MPI (requires `mpi4py`). Set it here or with `run_openfold predict --cluster-environment <value>`.
   - **More**: Lightning's [cluster environments](https://github.com/Lightning-AI/pytorch-lightning/blob/2.6.5/docs/source-pytorch/extensions/plugins.rst#cluster-environments) and [SLURM guide](https://github.com/Lightning-AI/pytorch-lightning/blob/2.6.5/docs/source-pytorch/clouds/cluster_advanced.rst#run-on-a-slurm-managed-cluster).
+
+Arguments not listed above are passed to `pl.Trainer` unchanged, and Lightning validates them. Some conflict with what OpenFold3 sets; for example, `enable_progress_bar: false` fails because OpenFold3 always adds its own progress bar.
 
 **Example**:
 ```yaml
