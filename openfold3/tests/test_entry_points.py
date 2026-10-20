@@ -597,6 +597,13 @@ class TestPlTrainerArgsPassthrough:
         kwargs = self._trainer_kwargs(dummy_ckpt_file, pl_trainer_args)
         assert {k: kwargs[k] for k in pl_trainer_args} == pl_trainer_args
 
+    @pytest.mark.parametrize(
+        "name", ["default_root_dir", "strategy", "callbacks", "logger"]
+    )
+    def test_runner_managed_args_rejected(self, name):
+        with pytest.raises(ValueError, match="cannot be set"):
+            PlTrainerArgs(**{name: None})
+
 
 class DummyWandbExperiment:
     def __init__(self, directory):

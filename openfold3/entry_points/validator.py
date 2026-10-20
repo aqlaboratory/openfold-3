@@ -138,6 +138,12 @@ class ClusterEnvironmentOption(StrEnum):
     MPI = "mpi"
 
 
+# pl.Trainer arguments that ExperimentRunner.trainer always sets itself
+RUNNER_MANAGED_TRAINER_ARGS = frozenset(
+    {"default_root_dir", "strategy", "callbacks", "logger"}
+)
+
+
 class PlTrainerArgs(BaseModel):
     """Arguments to configure pl.Trainer, including settings for number of devices.
 
@@ -178,6 +184,16 @@ class PlTrainerArgs(BaseModel):
                 "Note that this arg is currently being ignored as we always use "
                 "the OF3DistributedSampler for training.",
                 stacklevel=2,
+            )
+        return self
+
+    @model_validator(mode="after")
+    def reject_runner_managed_args(self) -> Self:
+        managed = sorted(RUNNER_MANAGED_TRAINER_ARGS & set(self.model_extra or {}))
+        if managed:
+            raise ValueError(
+                f"pl_trainer_args {managed} cannot be set: OpenFold3 sets these "
+                f"pl.Trainer arguments itself."
             )
         return self
 
