@@ -479,12 +479,33 @@ class TrainingExperimentRunner(ExperimentRunner):
         if self.do_manual_ckpt_loading:
             self.manual_load_checkpoint()
 
+    def _set_trainer_gradient_clipping(
+        self, clip_val: float | None, algorithm: str | None
+    ) -> None:
+        """Set pl_trainer_args gradient clipping, erroring on conflicting settings."""
+        gradient_clip_val = self.pl_trainer_args.gradient_clip_val
+        gradient_clip_algorithm = self.pl_trainer_args.gradient_clip_algorithm
+        val_conflicts = gradient_clip_val not in (None, clip_val)
+        algorithm_conflicts = gradient_clip_algorithm not in (None, algorithm)
+        if val_conflicts or algorithm_conflicts:
+            raise ValueError(
+                f"pl_trainer_args ({gradient_clip_val=}, {gradient_clip_algorithm=}) "
+                f"conflicts with the settings implied by the model config's "
+                f"settings.gradient_clipping ({clip_val=}, {algorithm=}). Configure "
+                f"gradient clipping with "
+                f"model_update.custom.settings.gradient_clipping instead."
+            )
+        self.pl_trainer_args.gradient_clip_val = clip_val
+        self.pl_trainer_args.gradient_clip_algorithm = algorithm
+
     def update_trainer_config(self):
         """
         Update trainer configuration based on model settings.
         This handles gradient clipping and accumulation settings.
         """
         if self.model_config.settings.gradient_clipping.per_sample_clipping:
+            self._set_trainer_gradient_clipping(None, None)
+
             # The training step with per-sample gradient clipping handles this
             # internally PL does not support manual optimization with
             # accumulate_grad_batches
@@ -516,8 +537,7 @@ class TrainingExperimentRunner(ExperimentRunner):
             clip_val = self.model_config.settings.gradient_clipping.clip_val
 
             # If DeepSpeed is enabled, these values will be passed to the DS config
-            self.pl_trainer_args.gradient_clip_val = clip_val
-            self.pl_trainer_args.gradient_clip_algorithm = "norm"
+            self._set_trainer_gradient_clipping(clip_val, "norm")
 
         # Update distributed sync seed used in the model
         # Currently used to sync the number of recycles across ranks

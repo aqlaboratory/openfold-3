@@ -541,6 +541,14 @@ class TestTrainerCallbackFlags:
 class TestPlTrainerArgsPassthrough:
     """pl_trainer_args reach pl.Trainer, with OpenFold3's defaults applied."""
 
+    # Non-default clip val so we're sure the value is coming from the test
+    _CLIP_VAL = (
+        OF3ProjectEntry()
+        .get_model_config_with_update(ModelUpdate(presets=["train"]))
+        .settings.gradient_clipping.clip_val
+        + 1
+    )
+
     @staticmethod
     def _trainer_kwargs(
         ckpt: Path, pl_trainer_args: dict[str, object]
@@ -553,6 +561,27 @@ class TestPlTrainerArgsPassthrough:
             _ = InferenceExperimentRunner(expt_config).trainer
         mock_trainer.assert_called_once()
         return dict(mock_trainer.call_args.kwargs)
+
+    @staticmethod
+    def _training_config(
+        output_dir: Path,
+        pl_trainer_args: dict[str, object],
+        gradient_clipping: dict[str, object] | None = None,
+    ) -> TrainingExperimentConfig:
+        """Training config on CPU; gradient_clipping overrides the train
+        preset's model settings."""
+        custom = {}
+        if gradient_clipping is not None:
+            custom = {"settings": {"gradient_clipping": gradient_clipping}}
+        return TrainingExperimentConfig(
+            dataset_paths={},
+            dataset_configs={},
+            experiment_settings=TrainingExperimentSettings(output_dir=output_dir),
+            pl_trainer_args=PlTrainerArgs.model_validate(
+                {"accelerator": "cpu", **pl_trainer_args}
+            ),
+            model_update=ModelUpdate(presets=["train"], custom=custom),
+        )
 
     def test_openfold3_defaults(self, dummy_ckpt_file):
         kwargs = self._trainer_kwargs(dummy_ckpt_file, {})
@@ -611,6 +640,51 @@ class TestPlTrainerArgsPassthrough:
                 pl_trainer_args={"profiler": "simple"},
                 profiler={"enabled": True},
             )
+
+    @pytest.mark.parametrize(
+        "per_sample_clipping, pl_trainer_args, conflicts",
+        [
+            (True, {"gradient_clip_val": _CLIP_VAL}, True),
+            (True, {"gradient_clip_algorithm": "norm"}, True),
+            (
+                False,
+                {"gradient_clip_val": _CLIP_VAL, "gradient_clip_algorithm": "norm"},
+                False,
+            ),
+            (False, {"gradient_clip_val": _CLIP_VAL + 1}, True),
+            (False, {"gradient_clip_algorithm": "value"}, True),
+        ],
+    )
+    def test_training_gradient_clipping_conflict(
+        self, tmp_path, per_sample_clipping, pl_trainer_args, conflicts
+    ):
+        expt_config = self._training_config(
+            tmp_path,
+            pl_trainer_args,
+            {"per_sample_clipping": per_sample_clipping, "clip_val": self._CLIP_VAL},
+        )
+        if conflicts:
+            with pytest.raises(ValueError, match="conflicts with the settings implied"):
+                TrainingExperimentRunner(expt_config)
+        else:
+            TrainingExperimentRunner(expt_config)
+
+    @pytest.mark.parametrize("per_sample_clipping", [True, False])
+    def test_dumped_training_config_reloads(self, tmp_path, per_sample_clipping):
+        """The config dumped after the runner rewrites gradient clipping (as in
+        the wandb runner.json) can be loaded again."""
+        runner = TrainingExperimentRunner(
+            self._training_config(
+                tmp_path,
+                {},
+                {
+                    "per_sample_clipping": per_sample_clipping,
+                    "clip_val": self._CLIP_VAL,
+                },
+            )
+        )
+        dumped = runner.experiment_config.model_dump_json()
+        TrainingExperimentRunner(TrainingExperimentConfig.model_validate_json(dumped))
 
 
 class DummyWandbExperiment:
