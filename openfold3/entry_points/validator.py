@@ -158,7 +158,12 @@ class PlTrainerArgs(BaseModel):
     accelerator: str = "gpu"
     precision: int | str = "32-true"
     num_nodes: int = 1
-    devices: int = 1  # number of GPUs per node
+    # Devices per node. pl.Trainer also accepts "auto", -1, device id lists and
+    # strings such as "0,1", but the runner needs the device count for
+    # world_size and the strategy. Supporting these additional options would
+    # mean resolving it the same way as Lightning's private methods or removing
+    # the OF3 custom calculation.
+    devices: int = 1
     log_every_n_steps: int = 1
     enable_model_summary: bool = False
     enable_progress_bar: bool = True
@@ -174,6 +179,15 @@ class PlTrainerArgs(BaseModel):
     mpi_plugin: bool = False
     # See ClusterEnvironmentOption; overridable with --cluster-environment.
     cluster_environment: ClusterEnvironmentOption = ClusterEnvironmentOption.AUTO
+
+    @field_validator("devices")
+    @classmethod
+    def check_devices_positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError(
+                "pl_trainer_args.devices must be a positive number of devices per node."
+            )
+        return value
 
     @model_validator(mode="after")
     def reject_runner_managed_args(self) -> Self:

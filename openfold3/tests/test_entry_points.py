@@ -698,6 +698,21 @@ class TestPlTrainerArgsPassthrough:
         )
         assert kwargs["use_distributed_sampler"] is False
 
+    @pytest.mark.parametrize("devices", [-1, 0])
+    def test_non_positive_devices_rejected(self, devices):
+        with pytest.raises(ValueError, match="positive number of devices"):
+            PlTrainerArgs(devices=devices)
+
+    @pytest.mark.parametrize("devices", ["auto", [0, 1]])
+    def test_non_int_devices_rejected(self, devices):
+        with pytest.raises(ValueError, match="devices"):
+            PlTrainerArgs.model_validate({"devices": devices})
+
+    @pytest.mark.parametrize("devices", [1, 8])
+    def test_positive_devices_passed_through(self, dummy_ckpt_file, devices):
+        kwargs = self._trainer_kwargs(dummy_ckpt_file, {"devices": devices})
+        assert kwargs["devices"] == devices
+
 
 class DummyWandbExperiment:
     def __init__(self, directory):

@@ -55,7 +55,7 @@ Any [`pl.Trainer` argument](https://lightning.ai/docs/pytorch/stable/common/trai
 - `accelerator` *(str)*: Device type - `gpu` or `cpu` (default: `gpu`)
 - `precision` *(int | str)*: Numerical precision - `32-true`, `16-mixed`, etc. (default: `32-true`)
 - `num_nodes` *(int)*: Number of compute nodes (default: `1`)
-- `devices` *(int)*: Number of GPUs per node (default: `1`)
+- `devices` *(int)*: Number of GPUs per node; must be positive (default: `1`)
 - `log_every_n_steps` *(int)*: Logging frequency in steps (default: `1`)
 - `enable_checkpointing` *(bool)*: Save checkpoints during training, as configured in `checkpoint_config` (default: `true`)
 - `enable_model_summary` *(bool)*: Enable model summary (default: `false`)
