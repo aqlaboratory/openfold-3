@@ -609,3 +609,61 @@ subprocess.CalledProcessError: Command '['brev', 'create', '<runner-id>', '--typ
 **Flagged for a human:** confirm whether Brev deprecated or renamed the `g5.4xlarge` SKU under the `OMSF-Brev` org (`brev search` would list current types) and update the `brev_instance_type` input in `.github/workflows/ci-integration-test-pixi-cuda-brev-reusable.yml` to match. Until fixed, both Brev legs will fail every night regardless of code changes on `main` — this is an infrastructure/config issue, not a regression to bisect. Also relevant to the pending two-week Brev-vs-AWS pass-rate comparison (due 2026-10-28, per the monitoring brief): this failure should be weighed as a Brev-catalog/config issue rather than counted at face value against Brev's underlying reliability when that report is written.
 
 ---
+
+## 2026-10-21
+
+**Cause:** Two unrelated non-passes the same night, first time this log has recorded all five tracked jobs non-passing simultaneously. (1) `code` — recurring `api.colabfold.com` MSA-submission read-timeout (same signature as 08-09, 08-11, 08-12, 09-08, and 09-19) hit all three non-Brev tracked jobs. (2) `unclassified` — both Brev legs failed a second consecutive night at `start-brev-runner` with the same "`g5.4xlarge` is not a recognized type" error first seen 10-20 (run #338), still unresolved.
+
+- **Run ID:** [39539067117](https://github.com/aqlaboratory/openfold-3/actions/runs/39539067117)
+- **Run #:** 340 (primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `b2b9f932c050f22568dcb843ef388f1dd8aceec9` (PR #467, dependabot bump of `prefix-dev/setup-pixi` 0.11.0→0.11.2, merged since run #338/339's `7bebb7a`)
+- **Time:** 2026-10-21T03:31:44Z – 04:00:55Z
+
+### ColabFold timeout (`code`) — all three non-Brev legs, identical signature
+
+| Job | Job ID | Failed step | Duration |
+|-----|--------|--------------|----------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | 119022380282 | Run integration test | 14 min (03:37:06–03:46:05) |
+| `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` | 119023227800 | Run integration test | 20 min (03:34:38–03:55:04) |
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | 119023278489 | Run integration test | 16 min (03:34:49–03:50:51) |
+
+```
+FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.
+```
+
+All three jobs show 6 retries against the ColabFold server (`openfold3/core/data/tools/colabfold_msa_server.py:279`/`283`, raised from `download()` at `colabfold_msa_server.py:269`), each read-timing-out, before pytest recorded the failure — identical to the pattern on 09-19. Both AWS CUDA legs' `start-aws-runner` and all four CUDA/Brev legs' parameter-cache steps succeeded; the failure is isolated to the ColabFold network call inside "Run integration test."
+
+### Brev instance-type rejection (`unclassified`) — both Brev legs, second consecutive night
+
+| Job | Job ID | Failed step |
+|-----|--------|--------------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / start-brev-runner` | 119022380639 | Create Brev runner |
+| `test-pixi-cuda-brev (openfold3-cuda13) / start-brev-runner` | 119022380796 | Create Brev runner |
+
+```
+Trying g5.4xlarge for 1 instance(s)...
+Skipping: instance type "g5.4xlarge" is not a recognized type; run 'brev search' to see available types
+
+Type g5.4xlarge had failures, trying next type...
+
+Warning: Only created 0/1 instances
+could only create 0/1 instances
+subprocess.CalledProcessError: Command '['brev', 'create', 'runner-t8pcglck', '--type', 'g5.4xlarge', '--startup-script', '@/tmp/tmpwony48s8.sh', '--timeout', '900', '--jupyter=false']' returned non-zero exit status 1.
+```
+
+Identical signature to run #338 (10-20) — the `brev_instance_type: g5.4xlarge` input in `.github/workflows/ci-integration-test-pixi-cuda-brev-reusable.yml` is still rejected by Brev's own CLI, two nights running. Cascading `test-openfold-docker-pixi` skip on both legs (no runner provisioned, jobs never expanded).
+
+### Cascading skip
+
+- `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` (job ID: 119022486605) — **skipped**, no runner available
+- `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` (job ID: 119022513755) — **skipped**, no runner available
+
+### Passing Jobs
+
+None. First night in this log where all five tracked jobs (three non-Brev + two Brev) are simultaneously non-passing.
+
+### Assessment
+
+**Still flagged for a human:** the Brev `g5.4xlarge` catalog issue has not been fixed since yesterday's entry — confirm the correct instance-type SKU via `brev search` against the `OMSF-Brev` org and update the workflow input. The ColabFold timeout is an external-service flake per this log's established pattern, not expected to need a code change; recommend watching the next clean night to confirm, same as every prior ColabFold-timeout entry.
+
+---

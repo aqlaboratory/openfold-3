@@ -1123,3 +1123,33 @@ Expected skip on the secondary slot (intended for other repos, not `aqlaboratory
 Brev vs. AWS agreement: 6/7 nights fully agreeing (10-14 through 10-19); tonight (10-20) is the first divergence — both Brev legs failed (`unclassified`, Brev-side instance-type rejection, see above) while both AWS `test-pixi-cuda` legs passed. Running Brev leg-tally toward the two-week comparison (brev jobs added 2026-10-14 in PR #448; two-week mark 2026-10-28): 12/14 brev job-runs passed to date (6 nights × 2 legs clean, tonight's 2 legs failed) = 85.7% so far, with 8 days of the two-week window remaining — too early to apply the brief's 95%-pass-rate replace-AWS threshold, and today's result is a reminder the comparison should exclude/annotate infra-only non-passes (an unrelated Brev catalog issue) rather than count them against Brev's reliability at face value when the formal report is due.
 
 ---
+
+## 2026-10-21
+
+### Run #340 — primary nightly (schedule `17 3 * * *`, main @ `b2b9f93` — merge PR #467 "chore(deps): bump prefix-dev/setup-pixi" (dependabot, new since run #338/339's `7bebb7a`), [39539067117](https://github.com/aqlaboratory/openfold-3/actions/runs/39539067117))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 20 min | code — `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` (6 retries exhausted) |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 16 min | code — same signature: `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` |
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | 14 min | code — same signature: `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` |
+| test-pixi-cuda-brev (openfold3-cuda12) | **FAILED** | 0 min | unclassified — `start-brev-runner` / "Create Brev runner" step, same signature as run #338 (10-20), second consecutive night: `Skipping: instance type "g5.4xlarge" is not a recognized type; run 'brev search' to see available types` → `subprocess.CalledProcessError: ... 'brev', 'create', ..., '--type', 'g5.4xlarge', ...` |
+| test-pixi-cuda-brev (openfold3-cuda13) | **FAILED** | 0 min | unclassified — identical signature, second consecutive night |
+
+**2026-10-21: 0/5 passed · 0 skipped · 0 queued · 5 need attention**
+
+First night in this log where all five tracked jobs are simultaneously non-passing (previously the worst was 0/3 under the three-job scope, on 09-17 and 09-19). Two unrelated causes converged: (1) `api.colabfold.com` (the ColabFold MSA-submission endpoint) read-timed-out on all three non-Brev legs' `msa-no_templates-ubiquitin` inference test, each after 6 retries — the same recurring external-service signature seen on 08-09, 08-11, 08-12, 09-08, and 09-19, classified `code` per this log's rules even though the trigger is an external API outage, not an OF3 regression; (2) both Brev legs failed a second consecutive night at `start-brev-runner` with the identical "instance type `g5.4xlarge` is not a recognized type" error first seen on 10-20 (run #338) — still `unclassified`, still unresolved, still flagged for a human to fix the `brev_instance_type` input or confirm the SKU rename with Brev. Both AWS CUDA legs' `start-aws-runner` succeeded on pool 1 in `us-east-2` with no `aws-capacity` signature — tonight's CUDA failures are purely the ColabFold `code` issue, independent of the AWS-capacity history earlier this month. See `test-failures.md` for full detail.
+
+### Run #341 — secondary nightly (schedule `17 4 * * *`, main @ `b2b9f93`, [39544412270](https://github.com/aqlaboratory/openfold-3/actions/runs/39544412270))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-cuda-brev | **SKIPPED** | — | same guard; job named plain `test-pixi-cuda-brev`, confirming it never expanded |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #340, per this log's established convention).
+
+Brev vs. AWS agreement: second consecutive divergence (10-20, 10-21) — both Brev legs failed on `unclassified` instance-type rejection both nights while the AWS `test-pixi-cuda` legs ran clean both nights (tonight's AWS legs failing only on the unrelated `code`/ColabFold issue that also hit the AMD leg). Running Brev leg-tally toward the two-week comparison (brev jobs added 2026-10-14 in PR #448; two-week mark 2026-10-28): 12/16 brev job-runs passed to date (6 clean nights × 2 legs, then 2 consecutive nights of 2 failures each) = 75.0% so far, with 7 days of the two-week window remaining. The brief's 95%-pass-rate bar for recommending AWS-workflow retirement looks increasingly unlikely to be met by 10-28 unless the Brev-side `g5.4xlarge` catalog issue is fixed and the legs return to a clean streak soon — but since both failures to date trace to a Brev-catalog/config problem rather than underlying instance reliability, the final report should still weigh that distinction rather than count it at face value, per the 10-20 entry's note.
+
+---
