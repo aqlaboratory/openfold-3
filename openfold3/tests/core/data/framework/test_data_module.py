@@ -26,7 +26,7 @@ def test_transfer_batch_to_device_passes_atom_arrays_through():
 
     batch = data_module.transfer_batch_to_device(batch, torch.device("cpu"), 0)
 
-    # biotite>=2 AtomArrays are Sequences of Atoms, which will be misinterpreted 
+    # biotite>=2 AtomArrays are Sequences of Atoms, which will be misinterpreted
     # as a Sequence of Tensors by PyTorch's default collate function.
     # This test ensures that the atom array is not changed by PLT.
     assert batch["atom_array"][0] is atom_array
