@@ -43,13 +43,9 @@ from openfold3.tests.utils.data_utils import (
 pytestmark = [pytest.mark.slow]
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(autouse=True)
 def _tf32_matmul():
-    """Needed to do backward for cuEq kernels with FP32.
-
-    Scoped to this module so that it does not change the precision for tests in
-    other modules.
-    """
+    """Needed to do backward for cuEq kernels with FP32."""
     with matmul_precision("high"):
         yield
 
