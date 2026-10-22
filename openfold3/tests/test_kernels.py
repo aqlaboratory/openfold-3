@@ -31,6 +31,7 @@ from openfold3.core.model.layers.triangular_multiplicative_update import (
 )
 from openfold3.core.model.primitives.attention import Attention
 from openfold3.core.model.primitives.initialization import lecun_normal_init_
+from openfold3.core.utils.precision_utils import matmul_precision
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.tests.config import consts
@@ -39,11 +40,18 @@ from openfold3.tests.utils.data_utils import (
     random_attention_inputs,
 )
 
-# Needed to do backward for cuEq kernels with FP32
-torch.backends.cuda.matmul.allow_tf32 = True
 pytestmark = [pytest.mark.slow]
 
-torch.backends.cuda.preferred_blas_library("cublas")
+
+@pytest.fixture(scope="module", autouse=True)
+def _tf32_matmul():
+    """Needed to do backward for cuEq kernels with FP32.
+
+    Scoped to this module so that it does not change the precision for tests in
+    other modules.
+    """
+    with matmul_precision("high"):
+        yield
 
 
 @pytest.mark.usefixtures("seeded_rng")

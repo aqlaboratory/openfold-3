@@ -55,7 +55,7 @@ jobs:
     uses: ./.github/workflows/ci-integration-test-pixi-cuda-brev-reusable.yml
     with:
       pixi_env: ${{ matrix.pixi_env }}
-      brev_instance_type: g5.4xlarge
+      brev_instance_type: g5.4xlarge,g6.4xlarge
     secrets: inherit
 
   test-pixi-amd:

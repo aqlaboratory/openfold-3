@@ -615,6 +615,17 @@ class DataModule(pl.LightningDataModule):
         """
         return self.generate_dataloader(DatasetMode.prediction)
 
+    def transfer_batch_to_device(
+        self, batch: dict[str, Any], device: torch.device, dataloader_idx: int
+    ) -> dict[str, Any]:
+        # Keep atom arrays on the CPU, untouched. Since biotite 2, AtomArray is a
+        # Sequence, which Lightning would otherwise try to rebuild atom by atom.
+        atom_arrays = batch.pop("atom_array", None)
+        batch = super().transfer_batch_to_device(batch, device, dataloader_idx)
+        if atom_arrays is not None:
+            batch["atom_array"] = atom_arrays
+        return batch
+
     def state_dict(self):
         state = {
             "next_dataset_indices": self.next_dataset_indices,
