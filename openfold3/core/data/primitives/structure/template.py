@@ -38,6 +38,9 @@ from openfold3.core.data.primitives.structure.cleanup import (
     remove_waters,
 )
 from openfold3.core.data.primitives.structure.metadata import get_cif_block
+from openfold3.core.data.primitives.structure.template_paths import (
+    resolve_template_structure_path,
+)
 from openfold3.core.data.primitives.structure.unresolved import (
     add_unresolved_atoms,
 )
@@ -270,7 +273,11 @@ def sample_templates(
                 index=template_cache_entry[template_id]["index"],
                 release_date=template_cache_entry[template_id]["release_date"],
                 idx_map=template_cache_entry[template_id]["idx_map"],
-                # TODO: this will never read cif_path from the cache
+                cif_path=(
+                    Path(template_cache_entry[template_id]["cif_path"])
+                    if "cif_path" in template_cache_entry[template_id]
+                    else None
+                ),
             )
             for template_id in sampled_template_ids
         }
@@ -403,19 +410,27 @@ def parse_template_structure(
 
     # Parse and clean the raw template structure file from directory
     elif template_structures_directory is not None:
+        template_structure_path = resolve_template_structure_path(
+            template_structures_directory,
+            pdb_id,
+            f"{pdb_id}.{template_file_format}",
+        )
+        cache_key = str(template_structure_path)
         # Check cache first to avoid re-parsing the same CIF file for different chains
-        if pdb_id in cif_assembly_cache:
-            cif_file, atom_array_template_assembly = cif_assembly_cache[pdb_id]
-            logger.info(f"[CACHE HIT] Using cached assembly for {pdb_id}")
-        else:
-            result = parse_mmcif(
-                template_structures_directory / Path(f"{pdb_id}.{template_file_format}")
+        if cache_key in cif_assembly_cache:
+            cif_file, atom_array_template_assembly = cif_assembly_cache[cache_key]
+            logger.info(
+                f"[CACHE HIT] Using cached assembly for {template_structure_path}"
             )
+        else:
+            result = parse_mmcif(template_structure_path)
             if isinstance(result, SkippedStructure):
                 return None
             cif_file, atom_array_template_assembly = result
-            cif_assembly_cache[pdb_id] = (cif_file, atom_array_template_assembly)
-            logger.info(f"[CACHE MISS] Parsed and cached assembly for {pdb_id}")
+            cif_assembly_cache[cache_key] = (cif_file, atom_array_template_assembly)
+            logger.info(
+                f"[CACHE MISS] Parsed and cached assembly for {template_structure_path}"
+            )
 
         # Clean up the template atom array and subset to the chosen template chain
         atom_array_template_chain = clean_template_atom_array(
