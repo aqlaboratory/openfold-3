@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import random
 import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from unittest.mock import patch
 
 import biotite.setup_ccd
 import numpy as np
@@ -37,6 +39,25 @@ _DEVICES = [
 def device(request) -> str:
     """Yield 'cpu' or 'cuda'; CUDA tests are auto-skipped when no GPU."""
     return request.param
+
+
+# ---------------------------------------------------------------------------
+# Environment isolation: no test leaks os.environ changes into later tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _restore_environ():
+    """Undo any os.environ changes a test makes, including ones by code under test.
+
+    ``setup_openfold.run_setup`` exports ``OPENFOLD_CACHE`` so the rest of a CLI run
+    resolves parameters from the chosen cache. In a test session that outlives the
+    test: later tests then resolve ``get_default_checkpoint_dir()`` to a deleted
+    tmp_path, or to a dummy checkpoint seeded there, and fail far from the cause --
+    under ``pytest -n auto`` only on whichever worker ran the leaking test.
+    """
+    with patch.dict(os.environ):
+        yield
 
 
 # ---------------------------------------------------------------------------
