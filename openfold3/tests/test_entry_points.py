@@ -761,9 +761,17 @@ class TestInferenceCommandLineSettings:
 
         assert list(isolated_tmp.glob("of3-of-*")) == []
 
-    @pytest.mark.parametrize("cleanup_enabled", [False, True])
+    @pytest.mark.parametrize(
+        ("cleanup_msa_dir", "save_template_data", "kept"),
+        [
+            pytest.param(True, False, False, id="cleanup->removed"),
+            pytest.param(True, True, True, id="cleanup+save->kept"),
+            pytest.param(False, False, True, id="no_cleanup->kept"),
+            pytest.param(False, True, True, id="no_cleanup+save->kept"),
+        ],
+    )
     def test_cleanup_respects_template_cleanup_setting(
-        self, tmp_path, dummy_ckpt_file, cleanup_enabled
+        self, tmp_path, dummy_ckpt_file, cleanup_msa_dir, save_template_data, kept
     ):
         expt_config = InferenceExperimentConfig(
             inference_ckpt_path=dummy_ckpt_file,
@@ -772,7 +780,10 @@ class TestInferenceCommandLineSettings:
                 "use_msa_server": False,
                 "use_templates": True,
             },
-            msa_computation_settings={"cleanup_msa_dir": cleanup_enabled},
+            msa_computation_settings={"cleanup_msa_dir": cleanup_msa_dir},
+            template_preprocessor_settings=(
+                {"save_template_data": True} if save_template_data else {}
+            ),
         )
         runner = InferenceExperimentRunner(expt_config)
         template_output = _reserve_template_output(expt_config)
@@ -781,10 +792,7 @@ class TestInferenceCommandLineSettings:
 
         runner.cleanup_intermediates()
 
-        if cleanup_enabled:
-            assert not template_output.exists()
-        else:
-            assert artifact.is_file()
+        assert artifact.is_file() == kept
 
     def test_template_directory_reservation_rejects_existing_path(
         self,

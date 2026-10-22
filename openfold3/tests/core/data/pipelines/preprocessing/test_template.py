@@ -989,3 +989,23 @@ def test_requeued_query_set_keeps_cached_templates(tmp_path):
     # Only the raw source needs preprocessing; the cached entry must not be
     # re-parsed as an alignment.
     assert len(preprocessor.inputs) == 1
+
+
+def test_reused_query_set_finds_saved_template_structures(tmp_path, caplog):
+    """A rerun finds the saved template structures or warns (issue #428)."""
+    query_set = _two_source_query_set(tmp_path, ["q_colabfold"])
+    runs = [
+        TemplatePreprocessorSettings(
+            output_directory=tmp_path / name, fetch_missing_structures=False
+        )
+        for name in ("run_1", "run_2", "run_3")
+    ]
+    saved = tmp_path / "run_1" / "template_structures"
+    shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, saved / TEMPLATE_CIF)
+    TemplatePreprocessor(input_set=query_set, config=runs[0])()
+    TemplatePreprocessor(input_set=query_set, config=runs[1])()
+    assert runs[1].structure_directory == saved
+
+    (saved / TEMPLATE_CIF).unlink()
+    TemplatePreprocessor(input_set=query_set, config=runs[2])()
+    assert TEMPLATE_CIF in caplog.text
