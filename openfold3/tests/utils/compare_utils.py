@@ -38,6 +38,20 @@ def _no_skip(reason: str):
     return pytest.mark.skipif(False, reason=reason)
 
 
+def _requires_gpu(skip_mark):
+    """Apply ``skip_mark`` together with the ``gpu`` marker.
+
+    CPU CI skips every GPU-gated test and the GPU CI job selects ``-m "slow or gpu"``,
+    so a gated test without the marker would run nowhere. Works on functions and
+    classes, like a mark.
+    """
+
+    def apply(obj):
+        return pytest.mark.gpu(skip_mark(obj))
+
+    return apply
+
+
 @functools.lru_cache(maxsize=1)
 def _ds4s_build_blocker() -> str | None:
     """Return why the evoformer_attn op cannot be JIT built, or None if it can.
@@ -85,7 +99,7 @@ def skip_unless_ds4s_installed():
     else:
         blocker = _ds4s_build_blocker()
 
-    return pytest.mark.skipif(blocker is not None, reason=blocker or "")
+    return _requires_gpu(pytest.mark.skipif(blocker is not None, reason=blocker or ""))
 
 
 def skip_unless_evo_attn_available():
@@ -98,7 +112,9 @@ def skip_unless_evo_attn_available():
     """
     is_rocm = torch.cuda.is_available() and torch.version.hip is not None
     if is_rocm:
-        return _no_skip("ROCm uses Triton triangle kernels; DeepSpeed not required")
+        return _requires_gpu(
+            _no_skip("ROCm uses Triton triangle kernels; DeepSpeed not required")
+        )
     return skip_unless_ds4s_installed()
 
 
@@ -109,7 +125,9 @@ def skip_unless_cueq_installed():
         reason = "Requires CUDA (cuequivariance is installed but no GPU available)"
     else:
         reason = "cuequivariance not available"
-    return pytest.mark.skipif(not is_cuequivariance_available(), reason=reason)
+    return _requires_gpu(
+        pytest.mark.skipif(not is_cuequivariance_available(), reason=reason)
+    )
 
 
 def skip_unless_triton_installed():
@@ -151,9 +169,11 @@ def skip_unless_accelerator_available(*required: str):
     wanted = required or ACCELERATORS
     current = current_accelerator()
     if current in wanted:
-        return _no_skip(f"Running on {current}")
-    return pytest.mark.skipif(
-        True, reason=f"Requires {' or '.join(wanted)}; found {current or 'cpu'}"
+        return _requires_gpu(_no_skip(f"Running on {current}"))
+    return _requires_gpu(
+        pytest.mark.skipif(
+            True, reason=f"Requires {' or '.join(wanted)}; found {current or 'cpu'}"
+        )
     )
 
 

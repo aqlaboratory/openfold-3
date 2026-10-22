@@ -26,9 +26,12 @@ _DEVICES = [
     pytest.param(
         "cuda",
         id="cuda",
-        marks=pytest.mark.skipif(
-            not torch.cuda.is_available(), reason="CUDA not available"
-        ),
+        marks=[
+            pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="CUDA not available"
+            ),
+            pytest.mark.gpu,
+        ],
     ),
 ]
 
