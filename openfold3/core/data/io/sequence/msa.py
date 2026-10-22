@@ -15,14 +15,13 @@
 """This module contains IO functions for reading and writing MSA files."""
 
 import os
-import string
 import warnings
-from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import partial
 from pathlib import Path
+from typing import TypeVar
 
 import numpy as np
 
@@ -84,22 +83,34 @@ def standardize_filepaths(input_path: Path | list[Path]) -> list[Path]:
         )
 
 
-def _msa_list_to_np(msa: Sequence[str]) -> np.array:
-    """Converts a list of sequences to a numpy array.
+_T = TypeVar("_T")
 
-    Args:
-        msa (Sequence[str]):
-            list of ALIGNED sequences of equal length.
 
-    Returns:
-        np.array:
-            2D num.seq.-by-seq.len. numpy array
+def _code_points(text: str) -> np.ndarray:
+    """Returns the Unicode code points of a string as an integer array.
+
+    ASCII text, which covers MSA files in practice, uses one byte per character.
     """
-    sequence_length = len(msa[0])
-    msa_array = np.empty((len(msa), sequence_length), dtype="<U1")
-    for i, sequence in enumerate(msa):
-        msa_array[i] = list(sequence)
-    return msa_array
+    if text.isascii():
+        return np.frombuffer(text.encode("ascii"), dtype=np.uint8)
+    return np.frombuffer(text.encode("utf-32-le"), dtype="<u4")
+
+
+def _to_msa(codes: np.ndarray) -> np.ndarray:
+    """Converts a 2D array of code points to a "<U1" array."""
+    return codes.astype("<u4", copy=False).view("<U1")
+
+
+def _rows_to_parse(rows: Sequence[_T], max_seq_count: int | None) -> list[_T]:
+    """Returns the rows a parser needs to apply max_seq_count.
+
+    At least one row is kept so that the MSA width is known; the parsers apply the
+    exact limit with truncate(), including 0. A negative limit keeps every row, so
+    that truncate() drops rows from the end.
+    """
+    if max_seq_count is None or max_seq_count < 0:
+        return list(rows)
+    return list(rows[: max(max_seq_count, 1)])
 
 
 def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaArray:
@@ -119,25 +130,27 @@ def parse_a3m(msa_string: str, max_seq_count: int | None = None) -> MsaArray:
     """
 
     sequences, metadata = parse_fasta(msa_string)
-    deletion_matrix = []
-    for msa_sequence in sequences:
-        deletion_vec = []
-        deletion_count = 0
-        for j in msa_sequence:
-            if j.islower():
-                deletion_count += 1
-            else:
-                deletion_vec.append(deletion_count)
-                deletion_count = 0
-        deletion_matrix.append(deletion_vec)
+    sequences = _rows_to_parse(sequences, max_seq_count)
+    metadata = _rows_to_parse(metadata, max_seq_count)
+    if not sequences:
+        raise ValueError("The a3m file contains no sequences.")
 
-    # Make the MSA matrix out of aligned (deletion-free) sequences.
-    deletion_table = str.maketrans("", "", string.ascii_lowercase)
-    msa = [s.translate(deletion_table) for s in sequences]
+    # Lowercase residues are insertions relative to the query. They are removed
+    # from the MSA and counted as deletions before the next aligned column.
+    codes = _code_points("".join(sequences))
+    is_insertion = (codes >= ord("a")) & (codes <= ord("z"))
+    columns = np.flatnonzero(~is_insertion)
 
-    # Embed in numpy array
-    msa = _msa_list_to_np(msa)
-    deletion_matrix = np.array(deletion_matrix)
+    lengths = np.array([len(sequence) for sequence in sequences])
+    row_starts = np.cumsum(lengths) - lengths
+    widths = np.diff(np.searchsorted(columns, np.append(row_starts, len(codes))))
+    if np.any(widths != widths[0]):
+        raise ValueError("Aligned sequences in the a3m file differ in length.")
+    columns = columns.reshape(len(sequences), widths[0])
+
+    # Every character between two aligned residues of a row is an insertion
+    deletion_matrix = np.diff(columns, axis=1, prepend=(row_starts - 1)[:, None]) - 1
+    msa = _to_msa(codes[columns])
 
     parsed_msa = MsaArray.from_parsed(
         msa=msa, deletion_matrix=deletion_matrix, metadata=metadata
@@ -174,55 +187,49 @@ def parse_stockholm(
     if gap_symbols is None:
         gap_symbols = set(["-", "."])
 
-    # Parse each line into header: sequence dictionary
-    name_to_sequence = OrderedDict()
+    # Collect the pieces of each sequence, which can be split over several blocks
+    name_to_pieces: dict[str, list[str]] = {}
     for line in msa_string.splitlines():
         line = line.strip()
         if not line or line.startswith(("#", "//")):
             continue
         name, sequence = line.split()
-        if name not in name_to_sequence:
-            # Add header to dictionary
-            name_to_sequence[name] = ""
-        # Extend sequence
-        name_to_sequence[name] += sequence
+        name_to_pieces.setdefault(name, []).append(sequence)
 
-    msa = []
-    deletion_matrix = []
+    names = _rows_to_parse(list(name_to_pieces), max_seq_count)
+    if not names:
+        raise ValueError("The stockholm file contains no sequences.")
+    if len({sum(map(len, name_to_pieces[name])) for name in names}) > 1:
+        raise ValueError("Sequences in the stockholm file differ in length.")
+    # Free the pieces of each sequence as soon as they are joined
+    joined = "".join("".join(name_to_pieces.pop(name)) for name in names)
+    del name_to_pieces
+    codes = _code_points(joined).reshape(len(names), -1)
+    del joined
 
-    # Iterate over the header: sequence dictionary
-    query = ""
-    keep_columns = []
-    for seq_index, sequence in enumerate(name_to_sequence.values()):
-        if seq_index == 0:
-            # Gather the columns with gaps from the query
-            query = sequence
-            keep_columns = [i for i, res in enumerate(query) if res not in gap_symbols]
+    is_gap = np.zeros(codes.shape, dtype=bool)
+    for symbol in gap_symbols:
+        if len(symbol) == 1:
+            is_gap |= codes == ord(symbol)
 
-        # Remove the columns with gaps in the query from all sequences.
-        aligned_sequence = "".join([sequence[c] for c in keep_columns])
-
-        msa.append(aligned_sequence)
-
-        # Count the number of deletions w.r.t. query.
-        deletion_vec = []
-        deletion_count = 0
-        for seq_res, query_res in zip(sequence, query, strict=True):
-            if seq_res not in gap_symbols or query_res not in gap_symbols:
-                if query_res in gap_symbols:
-                    deletion_count += 1
-                else:
-                    deletion_vec.append(deletion_count)
-                    deletion_count = 0
-        deletion_matrix.append(deletion_vec)
-
-    # Embed in numpy array
-    msa = _msa_list_to_np(msa)
-    deletion_matrix = np.array(deletion_matrix)
-    metadata = list(name_to_sequence.keys())
+    # Remove the columns with gaps in the query from all sequences. A residue in
+    # such a column is a deletion before the next kept column, so sum them over
+    # each run of columns that ends at a kept column. Blocks of rows keep the
+    # int64 temporary small.
+    keep_columns = np.flatnonzero(~is_gap[0])
+    run_starts = np.concatenate(([0], keep_columns[:-1] + 1))[: len(keep_columns)]
+    # Residues after the last kept column are dropped
+    end = keep_columns[-1] + 1 if len(keep_columns) else 0
+    deletion_matrix = np.empty((len(names), len(keep_columns)), dtype=np.int64)
+    for start in range(0, len(names), 1024):
+        rows = slice(start, start + 1024)
+        deletion_matrix[rows] = np.add.reduceat(
+            ~is_gap[rows, :end] & is_gap[0, :end], run_starts, axis=1, dtype=np.int64
+        )
+    msa = _to_msa(codes[:, keep_columns])
 
     parsed_msa = MsaArray.from_parsed(
-        msa=msa, deletion_matrix=deletion_matrix, metadata=metadata
+        msa=msa, deletion_matrix=deletion_matrix, metadata=names
     )
 
     # Crop the MSA
