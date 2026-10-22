@@ -34,6 +34,7 @@ import pytest
 import torch
 
 import openfold3
+from openfold3.core.data.primitives.structure.alignment import superimpose_transform
 from openfold3.core.metrics.alignment import (
     MAX_PERMUTED_CHAINS,
     Structure,
@@ -273,7 +274,7 @@ def test_best_ca_rmsd_agrees_with_biotite_superimposition(
     shared = np.intersect1d(pred.res_id, ref.res_id)
     pred = pred[np.isin(pred.res_id, shared)]
     ref = ref[np.isin(ref.res_id, shared)]
-    fitted, _ = struc.superimpose(fixed=ref, mobile=pred)
+    fitted = superimpose_transform(fixed=ref, mobile=pred).apply(pred)
     expected = float(struc.rmsd(ref, fitted))
 
     measured = best_ca_rmsd(

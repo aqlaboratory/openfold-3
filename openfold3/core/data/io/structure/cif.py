@@ -295,6 +295,8 @@ def parse_RNA_monomer_cif_tmp(
         "pdbx_file": cif_file,
         "model": 1,
         "altloc": "first",
+        # Explicit, as biotite 2 changed the default to the label fields
+        "use_author_fields": True,
         "include_bonds": include_bonds,
         "extra_fields": extra_fields,
     }
@@ -324,7 +326,6 @@ def _create_cif_file(
     suffix: str,
     atom_array: AtomArray,
     data_block: str,
-    include_bonds: bool,
     make_ost_compatible: bool = True,
 ):
     """Helper function to create and populate CIF or BCIF files."""
@@ -338,9 +339,8 @@ def _create_cif_file(
     try:
         # copy entity_id to label_entity_id so biotite uses it for the atom_site table
         atom_array.set_annotation("label_entity_id", atom_array.entity_id)
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
+        # Biotite writes bonds whenever atom_array.bonds is set
+        pdbx.set_structure(cif_file, atom_array, data_block=data_block)
     # This error sometimes happens in the PDB preprocessing
     except KeyError:
         logger.warning(
@@ -348,9 +348,7 @@ def _create_cif_file(
             "intra-residue COORDINATION bonds set to SINGLE."
         )
         atom_array = convert_intra_residue_dative_to_single(atom_array)
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
+        pdbx.set_structure(cif_file, atom_array, data_block=data_block)
 
     # Update and add additional metadata tables
     if make_ost_compatible:
@@ -368,13 +366,13 @@ def write_structure(
     atom_array: AtomArray,
     output_path: Path | str,
     data_block: str = None,
-    include_bonds: bool = True,
     make_ost_compatible: bool = True,
 ) -> None:
     """Write a structure file from an AtomArray
 
     The resulting CIF file will only contain the atom_site records and bond information
-    by default, not any other mmCIF metadata.
+    by default, not any other mmCIF metadata. Bonds are written whenever
+    atom_array.bonds is set.
 
     Args:
         atom_array:
@@ -385,9 +383,6 @@ def write_structure(
         data_block:
             Name of the data block in the CIF/BCIF file. Defaults to None. Ignored if
             the format is not cif or bcif.
-        include_bonds:
-            Whether to include bond information. Defaults to True. Ignored if the format
-            is pkl in which the entire BondList is written to the file.
     """
     if isinstance(output_path, str):
         output_path = Path(output_path)
@@ -409,7 +404,6 @@ def write_structure(
                 suffix=".cif",
                 atom_array=atom_array,
                 data_block=data_block,
-                include_bonds=include_bonds,
                 make_ost_compatible=make_ost_compatible,
             )
 
@@ -421,7 +415,6 @@ def write_structure(
                 suffix=suffix,
                 atom_array=atom_array,
                 data_block=data_block,
-                include_bonds=include_bonds,
                 make_ost_compatible=make_ost_compatible,
             )
 
