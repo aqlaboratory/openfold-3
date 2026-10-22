@@ -136,8 +136,11 @@ class TemplatePairEmbedderAllAtom(nn.Module):
         self.linear_z = Linear(c_in, c_out, **linear_init_params.linear_z)
 
     def _embed_feats(self, batch: dict):
-        # Needed when training with DeepSpeed so that the features are cast
-        # to the correct model precision prior to the linear layers
+        # DDP bf16-mixed (the default training framework) keeps fp32 weights and
+        # autocast handles input casting automatically. DeepSpeed bf16 holds the
+        # weights in bf16 with no autocast, so compute the distogram / unit
+        # vector features in fp32 and convert to the weight dtype prior to the
+        # linear layers.
         dtype = self.dgram_linear.weight.dtype
 
         # [*, N_token, N_token]

@@ -156,6 +156,8 @@ class TestMSAModuleEmbedder:
 class TestTemplateFeatureConstruction:
     def test_dgram_from_positions_bins_pairwise_distances(self):
         min_bin, max_bin, n_bins = 3.25, 50.75, 39  # 1.25 A wide bins
+        # Points on the x-axis, so pairwise distances are differences in x:
+        # 4 (0,1), 6 (1,2), 10 (0,2), 50 (2,3), 60 (0,3)
         positions = torch.tensor(
             [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [10.0, 0.0, 0.0], [60.0, 0.0, 0.0]]
         )
