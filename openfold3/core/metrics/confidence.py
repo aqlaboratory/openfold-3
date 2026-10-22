@@ -137,12 +137,17 @@ def compute_ptm(
     bin_centers = get_bin_centers(bin_min, bin_max, no_bins, device, dtype)
     bin_weight = 1.0 / (1.0 + (bin_centers / d0) ** 2)
 
-    # Subset to token mask
-    logits = logits[:, mask_i, ...]
-    logits = logits[..., mask_i, :]
+    # Subset to token mask; skip the copy when all tokens are kept
+    if not mask_i.all():
+        idx = mask_i.nonzero().squeeze(-1)
+        logits = logits[:, idx[:, None], idx[None, :]]
     has_frame = has_frame[:, mask_i].bool()
     probs = torch.softmax(logits, dim=-1)
-    ptm_ij = torch.sum(probs * bin_weight, dim=-1)
+    # Weight in place when not building a graph
+    if torch.is_grad_enabled() and probs.requires_grad:
+        ptm_ij = torch.sum(probs * bin_weight, dim=-1)
+    else:
+        ptm_ij = torch.sum(probs.mul_(bin_weight), dim=-1)
 
     # Subset tokens j to different chain from i if interface=True
     if interface:

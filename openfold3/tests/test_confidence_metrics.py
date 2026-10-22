@@ -189,6 +189,78 @@ class TestConfidenceMetrics(unittest.TestCase):
         expected = w[0]  # bin0 (high-weight) used by (2,1)
         self.assertTrue(torch.allclose(iptm, expected.expand_as(iptm)))
 
+    def _ptm_case(self):
+        """Logits over three chains, with a partial token mask."""
+        g = torch.Generator().manual_seed(0)
+        S, N, B = 3, 12, 64
+        logits = torch.randn(S, N, N, B, generator=g)
+        asym_id = torch.tensor([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2])
+        has_frame = torch.rand(S, N, generator=g) > 0.25
+        mask = torch.zeros(N, dtype=torch.bool)
+        mask[[0, 1, 4, 5, 6, 9]] = True
+        return logits, has_frame, mask, asym_id
+
+    def _ptm(self, **kw):
+        return compute_ptm(bin_min=0.0, bin_max=32.0, no_bins=64, **kw)
+
+    def test_compute_ptm_mask_matches_manual_subset(self):
+        """Masking inside compute_ptm must equal subsetting the logits first."""
+        logits, has_frame, mask, asym_id = self._ptm_case()
+        idx = mask.nonzero().squeeze(-1)
+
+        for interface in (False, True):
+            masked = self._ptm(
+                logits=logits,
+                has_frame=has_frame,
+                mask_i=mask,
+                asym_id=asym_id,
+                interface=interface,
+            )
+            subset = self._ptm(
+                logits=logits[:, idx][..., idx, :],
+                has_frame=has_frame[:, idx],
+                mask_i=torch.ones(idx.numel(), dtype=torch.bool),
+                asym_id=asym_id[idx],
+                interface=interface,
+            )
+            self.assertTrue(torch.equal(masked, subset), f"interface={interface}")
+
+    def test_compute_ptm_mask_grad_matches_manual_subset(self):
+        """The masked path must give the same gradient as subsetting first."""
+        logits, has_frame, mask, asym_id = self._ptm_case()
+        idx = mask.nonzero().squeeze(-1)
+
+        for interface in (False, True):
+            full = logits.clone().requires_grad_(True)
+            with torch.enable_grad():
+                self._ptm(
+                    logits=full,
+                    has_frame=has_frame,
+                    mask_i=mask,
+                    asym_id=asym_id,
+                    interface=interface,
+                ).sum().backward()
+            block = full.grad[:, idx][..., idx, :]
+
+            sub = logits[:, idx][..., idx, :].requires_grad_(True)
+            with torch.enable_grad():
+                self._ptm(
+                    logits=sub,
+                    has_frame=has_frame[:, idx],
+                    mask_i=torch.ones(idx.numel(), dtype=torch.bool),
+                    asym_id=asym_id[idx],
+                    interface=interface,
+                ).sum().backward()
+
+            self.assertTrue(
+                torch.equal(block, sub.grad), f"block interface={interface}"
+            )
+            masked_out = full.grad.clone()
+            masked_out[:, idx.unsqueeze(1), idx] = 0
+            self.assertTrue(
+                torch.count_nonzero(masked_out) == 0, f"leak interface={interface}"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
