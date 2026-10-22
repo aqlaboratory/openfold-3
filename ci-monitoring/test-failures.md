@@ -667,3 +667,64 @@ None. First night in this log where all five tracked jobs (three non-Brev + two 
 **Still flagged for a human:** the Brev `g5.4xlarge` catalog issue has not been fixed since yesterday's entry — confirm the correct instance-type SKU via `brev search` against the `OMSF-Brev` org and update the workflow input. The ColabFold timeout is an external-service flake per this log's established pattern, not expected to need a code change; recommend watching the next clean night to confirm, same as every prior ColabFold-timeout entry.
 
 ---
+
+## 2026-10-22
+
+**Cause:** Three unrelated non-passes the same night. (1) `code` — recurring `api.colabfold.com` MSA-submission read-timeout (same signature as 09-19, 10-21, and others) hit `test-pixi-cuda (openfold3-cuda13)` and `test-pixi-amd (openfold3-rocm7)`, on two different tests. (2) matrix fail-fast — `test-pixi-cuda (openfold3-cuda12)` was cancelled when its cuda13 sibling failed. (3) `unclassified` — `test-pixi-cuda-brev (openfold3-cuda12)` ran to its 60-minute job timeout and was killed, with a suspicious silent gap before cancellation that does not quite match this log's `msa-hang` signature. Both Brev legs provisioned a runner successfully tonight for the first time since 10-19 — PR #469 (today's head commit) added `g6.4xlarge` as a fallback instance type, which appears to have resolved the 10-20/10-21 "`g5.4xlarge` is not a recognized type" rejection.
+
+- **Run ID:** [39717308935](https://github.com/aqlaboratory/openfold-3/actions/runs/39717308935)
+- **Run #:** 342 (primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `e242b404e0a4c811a4bbe5b29a0ab39a2f3edb82` (PR #469, "adds g6.4xlarge to allowed instance types for brev integration tests", merged since run #340/341's `b2b9f93`)
+- **Time:** 2026-10-22T03:31:30Z – 04:45:08Z
+
+### ColabFold timeout (`code`) — two legs, two different tests, same server signature
+
+| Job | Job ID | Failed step | Duration |
+|-----|--------|--------------|----------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | 119622406560 | Run integration test | 23 min (03:31:49–03:54:21) |
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | 119623170212 | Run integration test | 33 min (03:38:12–04:06:53) |
+
+```
+FAILED openfold3/tests/inference/test_pocket_constraints.py::test_pocket_constraint_localizes_ligand - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.
+FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.
+```
+
+Both failures are `requests.exceptions.ConnectionError` read-timeouts against `api.colabfold.com`, same host and error class as every prior ColabFold entry in this log (08-09, 08-11, 08-12, 09-08, 09-19, 10-21), but on two different tests this time (`test_pocket_constraint_localizes_ligand` on AMD vs. `test_inference_writes_outputs[msa-no_templates-ubiquitin]` on cuda13) — consistent with a broader ColabFold-side degradation tonight rather than one specific query being slow.
+
+### Matrix fail-fast cancellation — `test-pixi-cuda (openfold3-cuda12)`
+
+| Job | Job ID | Cancelled step | Duration |
+|-----|--------|--------------|----------|
+| `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` | 119623131888 | Run integration test | 41 min (03:39:19–04:14:11) |
+
+```
+openfold3/tests/test_cuda_allocator.py::test_matches_snapshot PASSED
+##[error]The operation was canceled.
+```
+
+`test-pixi-cuda`'s `strategy:` block (`.github/workflows/integration-test.yml`) carries no `fail-fast: false` override, so GitHub's default matrix fail-fast cancelled this leg once its cuda13 sibling failed (above) at 04:07:05Z — cancellation landed here at 04:14:11Z, ~7 minutes later, consistent with this log's historical fail-fast propagation delay (runs #268, #273). Not a timeout-minutes cap (only 41 of 60 minutes elapsed) and not superseded by a newer run (`list_workflow_runs` shows no other `workflow_dispatch`/`main` run in this concurrency group tonight).
+
+### Timeout-cap cancellation, near-miss on `msa-hang` (`unclassified`) — `test-pixi-cuda-brev (openfold3-cuda12)`
+
+| Job | Job ID | Cancelled step | Duration |
+|-----|--------|--------------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | 119624255440 | Run integration test | 60 min (03:58:48–04:37:59) |
+
+```
+openfold3/tests/test_cuda_allocator.py::test_matches_snapshot PASSED
+##[error]The operation was canceled.
+```
+
+(identical last pytest line to the fail-fast case above, but on this job the gap before cancellation is ~8 minutes — 04:29:56Z to 04:37:59Z — and the job's total runtime (60m23s) exceeds `timeout-minutes: 60`, i.e. GitHub's own cap killed it, not fail-fast.) This log's `msa-hang` signature requires the last pytest line to be a hanging `test_inference_writes_outputs[msa-...]` nodeid, or a `TimeoutError: MSA server` line. Neither appears: the last printed nodeid is the same completed `test_cuda_allocator.py::test_matches_snapshot`, and whatever test ran next (if any did) never printed its own nodeid before the cap fired — pytest's `-vvv` normally flushes a test's nodeid immediately on start (confirmed from the same log's earlier lines), so its total absence here is itself unusual. Recording `unclassified` per this log's "don't guess" rule. **Flagged for a human:** check `openfold3/tests/test_cuda_allocator.py`'s position in the collected test order relative to `openfold3/tests/inference/test_inference_full.py` (MSA-dependent) to confirm whether an MSA-server call was in fact in flight when the cap hit.
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 119624327964 | 59 min |
+
+### Assessment
+
+The ColabFold timeouts are an external-service flake per this log's established pattern (08-09 through 10-21) — no code change expected; watch for the next clean night. The cuda12 AWS cancellation is fully explained by matrix fail-fast and needs no action. **Still flagged for a human:** the `test-pixi-cuda-brev (openfold3-cuda12)` cap-kill, which doesn't cleanly fit any defined signature — worth a second look once the next Brev `msa-hang`-shaped cancellation (if any) gives more log detail to compare against. Separately, good news: PR #469's `g6.4xlarge` fallback appears to have fixed the two-night Brev `g5.4xlarge` catalog rejection (10-20, 10-21) — both Brev legs provisioned a runner cleanly tonight.
+
+---
