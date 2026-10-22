@@ -57,3 +57,15 @@ def test_non_gpu_gate_does_not_mark_gpu(gate):
 def test_device_fixture_marks_only_cuda_gpu(request, device):
     has_gpu_mark = request.node.get_closest_marker("gpu") is not None
     assert has_gpu_mark == (device == "cuda")
+
+
+def test_deepspeed_gate_always_skips():
+    """DeepSpeed is being deprecated, so its tests are off everywhere."""
+
+    @compare_utils.skip_unless_ds4s_installed()
+    def test_fn():
+        pass
+
+    (skipif,) = [m for m in test_fn.pytestmark if m.name == "skipif"]
+    assert skipif.args == (True,)
+    assert "deprecat" in skipif.kwargs["reason"].lower()

@@ -52,54 +52,15 @@ def _requires_gpu(skip_mark):
     return apply
 
 
-@functools.lru_cache(maxsize=1)
-def _ds4s_build_blocker() -> str | None:
-    """Return why the evoformer_attn op cannot be JIT built, or None if it can.
-
-    Importing DeepSpeed is not enough: the op is compiled on first use, which
-    needs CUTLASS headers (via ``$CUTLASS_PATH``), a CUDA toolchain matching
-    torch, and ninja.  Without them ``jit_load`` raises at test runtime rather
-    than the test being skipped.  Probing shells out to nvcc, so the result is
-    cached — this runs at collection time for every decorated test.
-    """
-    try:
-        from deepspeed.ops.op_builder import EvoformerAttnBuilder
-
-        if not EvoformerAttnBuilder().is_compatible(verbose=False):
-            return (
-                "DeepSpeed cannot build the evoformer_attn op: set $CUTLASS_PATH "
-                "and ensure a CUDA toolchain matching torch is installed"
-            )
-
-        from torch.utils.cpp_extension import verify_ninja_availability
-
-        verify_ninja_availability()
-    except Exception as e:  # noqa: BLE001 - probing runs nvcc; never fail collection
-        return f"DeepSpeed evoformer_attn build probe failed: {e}"
-
-    return None
-
-
 def skip_unless_ds4s_installed():
-    deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-    ds4s_is_installed = (
-        deepspeed_is_installed
-        and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
+    """Skip DeepSpeed evoformer_attn tests unconditionally.
+
+    DeepSpeed is being deprecated, so these tests are off on every platform rather
+    than probing whether the op can be JIT built.
+    """
+    return _requires_gpu(
+        pytest.mark.skipif(True, reason="DeepSpeed is being deprecated in OpenFold3")
     )
-    is_rocm = torch.cuda.is_available() and torch.version.hip is not None
-
-    if not ds4s_is_installed:
-        blocker = "Requires DeepSpeed with version ≥ 0.10.4"
-    elif not torch.cuda.is_available():
-        # Checked before probing: the probe shells out to nvcc, and decorator
-        # order cannot spare us that — every guard is called at import time.
-        blocker = "Requires GPU (DeepSpeed evoformer_attn is CUDA-only)"
-    elif is_rocm:
-        blocker = "DeepSpeed evoformer_attn is not supported on ROCm/HIP"
-    else:
-        blocker = _ds4s_build_blocker()
-
-    return _requires_gpu(pytest.mark.skipif(blocker is not None, reason=blocker or ""))
 
 
 def skip_unless_evo_attn_available():
