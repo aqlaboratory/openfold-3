@@ -281,13 +281,9 @@ class InferenceDataset(Dataset):
 
         # Featurization
         template_features = featurize_template_structures_of3(
-            atom_array=atom_array,
             template_slice_collection=template_slice_collection,
             n_templates=self.template_settings.n_templates,
             n_tokens=n_tokens,
-            min_bin=self.template_settings.distogram.min_bin,
-            max_bin=self.template_settings.distogram.max_bin,
-            n_bins=self.template_settings.distogram.n_bins,
         )
 
         return template_features
