@@ -732,6 +732,9 @@ class TestInferenceCommandLineSettings:
                     str(minimal_query_json),
                     "--inference-ckpt-path",
                     str(dummy_ckpt_file),
+                    # TF32 is a process global setting that this test does not need
+                    "--use_tf32",
+                    "False",
                 ],
             )
 
