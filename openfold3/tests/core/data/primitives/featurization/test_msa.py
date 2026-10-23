@@ -14,12 +14,12 @@
 
 """Tests for create_msa_feature_precursor_of3.
 
-These specifically cover msa_mask correctness when chains in the same assembly
-have unequal MSA depths and therefore require per-chain row padding. See
-vstack_pad_msa_arrays and map_msas_to_tokens: the padding mask computed by
-MsaArray.pad must be propagated all the way into MsaFeaturePrecursorOF3.msa_mask,
-or the fabricated all-gap padding rows added to shallower chains get silently
-reported as valid MSA rows.
+These cover msa_mask and msa contents when chains in the same assembly have
+unequal MSA depths and therefore require per-chain row padding (see
+vstack_pad_msa_arrays). By design, the per-chain padding mask is *not*
+propagated into the main msa_mask: padded rows are filled with gaps and stay
+unmasked, following the AF3 procedure. Only tokens excluded by the token mask
+are masked out.
 """
 
 import numpy as np
@@ -106,14 +106,13 @@ def _build_msa_array_collection(
     )
 
 
-def test_msa_mask_zeroed_for_padded_rows_of_shallower_chain():
-    """Regression test: rows added to pad a shallower chain up to the assembly's
-    max MSA depth must be masked as invalid (0), not as valid (1).
+def test_padded_rows_of_shallower_chain_are_gaps_and_stay_unmasked():
+    """Rows added to pad a shallower chain up to the assembly's max MSA depth
+    are filled with gaps and remain unmasked (1) in msa_mask.
 
     Chain A has a deep MSA (query + 2 main = 3 rows), chain B is shallow (query
-    only = 1 row). Chain B gets bottom-padded with 2 fabricated all-gap rows to
-    reach the assembly-wide depth of 3. Those 2 rows must read 0 in msa_mask for
-    chain B's own token columns.
+    only = 1 row). Chain B gets bottom-padded with 2 all-gap rows to reach the
+    assembly-wide depth of 3.
     """
     atom_array = _build_two_chain_atom_array()
     collection = _build_msa_array_collection(chain_a_main_rows=2, chain_b_main_rows=0)
@@ -125,17 +124,17 @@ def test_msa_mask_zeroed_for_padded_rows_of_shallower_chain():
     # Token columns: chain A occupies [0, 1], chain B occupies [2, 3].
     chain_a_cols, chain_b_cols = slice(0, 2), slice(2, 4)
 
-    # Chain A has no padding: every row is real, mask is all-valid.
+    # Chain A has no padding: every row is a real alignment row.
     np.testing.assert_array_equal(
-        precursor.msa_mask[:, chain_a_cols], np.ones((3, N_RES_PER_CHAIN))
+        precursor.msa[:, chain_a_cols], np.full((3, N_RES_PER_CHAIN), "A")
     )
 
-    # Chain B: only row 0 (the query row) is real; rows 1-2 are fabricated
-    # padding and must be masked out.
-    expected_chain_b_mask = np.array([[1, 1], [0, 0], [0, 0]])
-    np.testing.assert_array_equal(
-        precursor.msa_mask[:, chain_b_cols], expected_chain_b_mask
-    )
+    # Chain B: row 0 is the query, rows 1-2 are gap padding.
+    expected_chain_b_msa = np.array([["A", "A"], ["-", "-"], ["-", "-"]])
+    np.testing.assert_array_equal(precursor.msa[:, chain_b_cols], expected_chain_b_msa)
+
+    # The padding is not masked out: msa_mask is all-valid for both chains.
+    np.testing.assert_array_equal(precursor.msa_mask, np.ones((3, 2 * N_RES_PER_CHAIN)))
 
 
 def test_msa_mask_all_valid_when_chain_depths_are_equal():
