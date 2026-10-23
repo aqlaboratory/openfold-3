@@ -264,3 +264,33 @@ Note: a validation run (#313, `workflow_dispatch` on `jandom/2026-10/ci/fix-dail
   - `test-pixi-amd (openfold3-rocm7)` — test-openfold-docker-pixi-amd (job 113657668956), 58 min
 
 Note: third AWS-capacity night of this exact signature in the last nine days (#299 10-01, #314 10-08, #316 10-09) — worth flagging the `g5.4xlarge` instance type/region choice to a human; a fallback instance type or additional region/AZ may be warranted. Main advanced to a large `public-main` → `internal-main` merge since the last primary nightly; the CUDA legs still haven't exercised it due to capacity, though AMD's clean pass on the same commit is a good sign.
+
+---
+
+### 2026-10-23 — Run [39895507300](https://github.com/aqlaboratory/openfold-3/actions/runs/39895507300) (run #345)
+
+- **Branch:** main @ `a83cb11` (merge PR #465 "fix/biotite-2-unpin", Jennifer Wei — new since run #316/10-09's unlisted intermediate commits; most recent prior AWS-capacity entry in this file)
+- **Scan date:** 2026-10-23
+- **Time:** 2026-10-23T03:31:54Z – 03:34:34Z UTC
+- **Error:** `Failed to launch in us-east-2a: An error occurred (InsufficientInstanceCapacity) when calling the RunInstances operation (reached max retries: 4): We currently do not have sufficient g5.4xlarge capacity in the Availability Zone you requested (us-east-2a)...` (same across `us-east-2b`/`c` and `us-west-2a`/`b`/`c`), plus `Failed to launch in us-west-2d: An error occurred (Unsupported) ... Your requested instance type (g5.4xlarge) is not supported in your requested Availability Zone (us-west-2d)` → `ValueError: Failed to launch in any available Availability Zone` → `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2`
+- **Root cause:** AWS could not provision `g5.4xlarge` GPU EC2 instances across all six capacity pools (3x us-east-2, 3x us-west-2, the sixth — `us-west-2d` — unsupported for this instance type) — both CUDA legs' `start-aws-runner` steps failed identically; corresponding `stop-aws-runner` failed as a cascading consequence (no instance to stop), and the `test-openfold-docker-pixi` test job never ran (both legs: `skipped`). Same signature as runs #252 (09-10), #282 (09-22), #284 (09-24), #291 (09-27), #295 (09-29), #299 (10-01), #314 (10-08), and #316 (10-09) — first recurrence in two weeks.
+- **Failed jobs (start-aws-runner):**
+  - `test-pixi-cuda (openfold3-cuda12)` — start-aws-runner (job 120224904297)
+  - `test-pixi-cuda (openfold3-cuda13)` — start-aws-runner (job 120224904298)
+- **Cascading failures (stop-aws-runner — no instance to stop):**
+  - `test-pixi-cuda (openfold3-cuda12)` — stop-aws-runner (job 120225450223)
+  - `test-pixi-cuda (openfold3-cuda13)` — stop-aws-runner (job 120225483501)
+- **Skipped (no runner available):**
+  - `test-pixi-cuda (openfold3-cuda12)` — test-openfold-docker-pixi (job 120225451262), conclusion `skipped`
+  - `test-pixi-cuda (openfold3-cuda13)` — test-openfold-docker-pixi (job 120225484401), conclusion `skipped`
+- **Passing (Brev CUDA runners, unaffected):**
+  - `test-pixi-cuda-brev (openfold3-cuda12)` — test-openfold-docker-pixi (job 120226765349), 41 min
+  - `test-pixi-cuda-brev (openfold3-cuda13)` — test-openfold-docker-pixi (job 120226719635), 39 min
+
+Note: first `aws-capacity` night since #316 (10-09) — a 14-night clean streak for the AWS CUDA legs ends here. Both Brev legs passed clean on the same commit and same ~40-minute window, reinforcing that the Brev comparison jobs (PR #448, added 10-14) draw from a separate capacity pool than the AWS `g5.4xlarge` runners.
+
+**Runner-offline candidate (not an AWS failure — recorded here per this file's `runner-offline` scope):**
+
+- `test-pixi-amd (openfold3-rocm7)` — test-openfold-docker-pixi-amd (job 120224903978), event `schedule`, started 2026-10-23T03:31:52Z, status `queued`, zero steps recorded as of scan time 2026-10-23T07:12Z (queued 3h40m+, past this file's/`daily-status.md`'s 2h `QUEUED` threshold).
+- Required label: `[self-hosted, amd-gpu]` (`.github/workflows/ci-integration-test-pixi-amd-reusable.yml`).
+- Could not confirm the runner's live status: `GET /repos/aqlaboratory/openfold-3/actions/runners` returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this execution environment — same limitation noted in `weekly-summary.md`'s data-source notes (first hit there on 09-10's analogous AMD `QUEUED` case). **Flagged for a human:** check Settings → Actions → Runners directly and restart/re-register the AMD box if it's offline.

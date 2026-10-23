@@ -1183,3 +1183,31 @@ Expected skip on the secondary slot (intended for other repos, not `aqlaboratory
 Brev vs. AWS agreement: the 10-20/10-21 divergence (both Brev legs failing on the `g5.4xlarge` catalog issue) appears resolved by PR #469 — tonight one of two Brev legs passed clean and the other ran to its own 60-minute cap (not a repeat of the instance-type rejection). Running Brev leg-tally toward the two-week comparison (brev jobs added 2026-10-14 in PR #448; two-week mark 2026-10-28): 13/18 brev job-runs passed to date (6 clean nights × 2 legs = 12, then 2 nights × 2 legs failed = 0, tonight 1 of 2 legs passed) = 72.2%, with 6 days of the two-week window remaining. Still too early to apply the monitoring brief's 95%-pass-rate replace-AWS threshold, and — per the 10-20/10-21 notes' precedent for infra-only non-passes — tonight's cap-kill on `test-pixi-cuda-brev (openfold3-cuda12)` should be investigated before the 10-28 report counts it at face value against Brev's reliability, since it's not yet clear whether it reflects genuine Brev-instance slowness/variance or something else (e.g. the `msa-hang`-like gap noted above).
 
 ---
+
+## 2026-10-23
+
+### Run #345 — primary nightly (schedule `17 3 * * *`, main @ `a83cb11` — merge PR #465 "fix/biotite-2-unpin" (Jennifer Wei, new since run #342/343's `e242b404`), [39895507300](https://github.com/aqlaboratory/openfold-3/actions/runs/39895507300))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 2 min | aws-capacity — `start-aws-runner`: `Failed to launch in us-east-2a/b/c: ... InsufficientInstanceCapacity ... g5.4xlarge` then `us-west-2a/b/c` identically, plus the standing `us-west-2d` `Unsupported`-AZ rejection → `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 3 min | aws-capacity — identical signature: `Failed to launch in us-east-2a/b/c` then `us-west-2a/b/c`, all `InsufficientInstanceCapacity` for `g5.4xlarge` (plus `us-west-2d` `Unsupported`) → `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 41 min | |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 39 min | |
+| test-pixi-amd (openfold3-rocm7) | **QUEUED** | — (3h40m+ as of scan) | started (job `120224903978`) 2026-10-23T03:31:52Z with zero steps recorded; still queued at scan time (07:12Z), past this log's 2h `QUEUED` threshold. Required runner label: `[self-hosted, amd-gpu]` (`.github/workflows/ci-integration-test-pixi-amd-reusable.yml`). Candidate `runner-offline`, unconfirmed — `GET /repos/aqlaboratory/openfold-3/actions/runners` returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this execution environment, so the runner's live online/offline state could not be checked directly (same limitation flagged in `weekly-summary.md`'s data-source notes) |
+
+**2026-10-23: 2/5 passed · 0 skipped · 1 queued · 2 need attention**
+
+First `aws-capacity` night since 2026-10-09 (run #316) — both AWS `test-pixi-cuda` legs failed identically on `g5.4xlarge` `InsufficientInstanceCapacity` across all three `us-east-2` AZs, then all three `us-west-2` AZs, plus the standing `us-west-2d` `Unsupported`-AZ rejection, via the same `start-aws-runner` → `stop-aws-runner` cascade seen in every prior `aws-capacity` entry in this log (09-09, 09-10, 09-24, 09-27, 09-29, 10-01, 10-08, 10-09); full detail in `aws-outage-failures.md`. Both Brev legs ran clean on the same commit (`a83cb11`, PR #465 "biotite 2 unpin," new since 10-22's `e242b404`) in 39–41 minutes — since the AWS-capacity outage that took out both AWS CUDA legs didn't touch Brev's underlying provider/region, tonight's split (2/2 AWS failed, 2/2 Brev passed) is further evidence Brev isn't sharing AWS's `g5.4xlarge` capacity pool. Most notably, `test-pixi-amd (openfold3-rocm7)` never got a runner at all: it has sat `QUEUED` since 03:31:52Z with no steps ever recorded, and is still queued as of this scan (07:12Z, 3h40m+) — well past this log's 2h `QUEUED` threshold. This is a candidate `runner-offline`, but it's unconfirmed: the `/actions/runners` endpoint needed to check the self-hosted `amd-gpu` runner's live status is blocked in this execution environment (`403`, same limitation noted in `weekly-summary.md`). **Flagged for a human:** check the self-hosted AMD runner's status directly under Settings → Actions → Runners and restart/re-register it if offline; also worth re-running `test-pixi-amd` manually once the runner is confirmed up, since tonight's result otherwise leaves this leg completely untested. Running Brev leg-tally toward the two-week comparison (brev jobs added 2026-10-14 in PR #448; two-week mark 2026-10-28, 5 days remaining): 15/20 brev job-runs passed to date (72.2% → 75.0% with tonight's 2/2 clean legs).
+
+### Run #346 — secondary nightly (schedule `17 4 * * *`, main @ `a83cb11`, [39900676696](https://github.com/aqlaboratory/openfold-3/actions/runs/39900676696))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-cuda-brev | **SKIPPED** | — | same guard; job named plain `test-pixi-cuda-brev`, confirming it never expanded |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #345, per this log's established convention).
+
+---
