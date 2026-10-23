@@ -18,7 +18,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from openfold3.core.data.primitives.structure.template import sample_templates
+from openfold3.core.data.primitives.structure.template import (
+    TemplateCacheEntry,
+    sample_templates,
+)
 from openfold3.tests.utils.template_helpers import (
     TEMPLATE_ID,
     make_cache_entry,
@@ -109,3 +112,30 @@ def test_sample_templates_cache_directory_gate(
         {k: dataclasses.asdict(v) for k, v in actual.items()},
         {k: dataclasses.asdict(v) for k, v in expected.items()},
     )
+
+
+def test_sample_templates_preserves_direct_cif_path(tmp_path):
+    direct_cif_path = tmp_path / "3mb6.cif.gz"
+    cache_npz = write_cache_npz(
+        tmp_path / "chainA.npz",
+        {
+            TEMPLATE_ID: TemplateCacheEntry(
+                index=0,
+                release_date="2000-01-01",
+                idx_map=np.asarray([[1, 1], [2, 2]]),
+                cif_path=direct_cif_path,
+            )
+        },
+    )
+
+    actual = sample_templates(
+        assembly_data=_assembly_data(cache_npz),
+        template_cache_directory=tmp_path,
+        n_templates=1,
+        take_top_k=True,
+        chain_id="A",
+        template_structure_array_directory=None,
+        template_file_format="cif",
+    )
+
+    assert actual[TEMPLATE_ID].cif_path == direct_cif_path
