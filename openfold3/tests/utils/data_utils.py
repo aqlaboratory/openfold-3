@@ -139,20 +139,24 @@ def random_attention_inputs(
     inf=1e9,
     dtype=torch.float32,
     requires_grad=False,
+    bias_scale=0.1,
 ):
-    q = torch.rand(
+    q = torch.randn(
         batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad
     ).cuda()
-    kv = torch.rand(
+    kv = torch.randn(
         batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad
     ).cuda()
 
     mask = torch.randint(
         0, 2, (batch_size, n_seq, 1, 1, n), dtype=dtype, requires_grad=False
     ).cuda()
-    z_bias = torch.rand(
-        batch_size, 1, no_heads, n, n, dtype=dtype, requires_grad=requires_grad
-    ).cuda()
+    z_bias = (
+        bias_scale
+        * torch.randn(
+            batch_size, 1, no_heads, n, n, dtype=dtype, requires_grad=requires_grad
+        ).cuda()
+    )
     mask_bias = inf * (mask - 1)
 
     biases = [mask_bias, z_bias]
@@ -256,6 +260,7 @@ def random_of3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         # Additional features
         "token_mask": token_mask.unsqueeze(0).repeat((batch_size, 1)),
         "atom_mask": atom_mask.unsqueeze(0).repeat((batch_size, 1)),
+        "cyclic_mask": torch.zeros((batch_size, n_token), dtype=torch.bool),
         "start_atom_index": start_atom_index.unsqueeze(0).repeat((batch_size, 1)).int(),
         "num_atoms_per_token": num_atoms_per_token.unsqueeze(0)
         .repeat((batch_size, 1))
@@ -317,3 +322,31 @@ def create_atomarray_with_bondlist(
     atom_array.bonds = bondlist
 
     return atom_array
+
+
+def atomized_single_atom_batch(n_token: int) -> dict:
+    """Batch of ``n_token`` single-atom, atomized tokens for loss tests.
+
+    Every token is atomized with exactly one atom, so the representative-atom
+    and atom masks are all-true and their counts scale directly with
+    ``n_token``.
+    """
+    return {
+        "token_mask": torch.ones((1, n_token)),
+        "atom_mask": torch.ones((1, n_token)),
+        "restype": torch.nn.functional.one_hot(
+            torch.zeros(1, n_token).long(), 32
+        ).float(),
+        "num_atoms_per_token": torch.ones((1, n_token)),
+        "start_atom_index": torch.arange(n_token).unsqueeze(0).float(),
+        "asym_id": torch.zeros((1, n_token)),
+        "is_protein": torch.zeros((1, n_token)),
+        "is_rna": torch.zeros((1, n_token)),
+        "is_dna": torch.zeros((1, n_token)),
+        "is_atomized": torch.ones((1, n_token)),
+        "ground_truth": {
+            "atom_resolved_mask": torch.ones((1, n_token)),
+            "atom_positions": torch.randn((1, n_token, 3)),
+        },
+        "loss_weights": {"distogram": torch.Tensor([1.0])},
+    }

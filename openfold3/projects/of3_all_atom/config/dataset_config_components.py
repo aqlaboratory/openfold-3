@@ -24,6 +24,7 @@ The main sections of the dataset configuration are:
 from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator
+from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import _convert_molecule_type
 from openfold3.core.data.resources.residues import MoleculeType
@@ -83,12 +84,14 @@ class MSASettings(BaseModel):
         "bfd_uniclust_hits": 10000000,
         "bfd_uniref_hits": 10000000,
         "cfdb_uniref30": 10000000,
+        "cfdb_hits": 10000000,
         "mgnify_hits": 5000,
         "rfam_hits": 10000,
         "rnacentral_hits": 10000,
         "nt_hits": 10000,
+        "nucleotide_collection_hits": 10000,
         "concat_cfdb_uniref100_filtered": 10000000,
-        "mmseqs_colabfold": 16384,
+        "mmseqs_colabfold": 10000000,
         "colabfold_main": 16384,
         "colabfold_paired": 8192,
     }
@@ -98,17 +101,19 @@ class MSASettings(BaseModel):
         "bfd_uniclust_hits",
         "bfd_uniref_hits",
         "cfdb_uniref30",
+        "cfdb_hits",
         "mgnify_hits",
         "rfam_hits",
         "rnacentral_hits",
         "nt_hits",
+        "nucleotide_collection_hits",
         "concat_cfdb_uniref100_filtered",
         "mmseqs_colabfold",
         "colabfold_main",
         "dummy",  # aln containing only query; used for MSA-free inference
     ]
     subsample_main: bool = True
-    keep_subsampled_order: bool = False
+    keep_subsampled_order: bool = True
     paired_msa_order: list = ["colabfold_paired"]
 
 
@@ -180,3 +185,16 @@ class LossConfig(BaseModel):
         "pae",
     ]
     loss_weights: LossWeights = LossWeights()
+
+
+class SampleWeights(BaseModel):
+    """Datapoint sampling weights for the weighted PDB datasets (AF3 SI section
+    2.5.1, Algorithm 1)."""
+
+    model_config = PydanticConfigDict(extra="forbid")
+
+    a_prot: float = 3.0
+    a_nuc: float = 3.0
+    a_ligand: float = 1.0
+    w_chain: float = 0.5
+    w_interface: float = 1.0

@@ -30,7 +30,10 @@ from openfold3.core.utils.atom_attention_block_utils import (
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
+    aggregate_atom_feat_to_tokens_segmented,
     broadcast_token_feat_to_atoms,
+    broadcast_token_feat_to_atoms_by_index,
+    segmented_reduce_supported,
 )
 from openfold3.core.utils.checkpointing import checkpoint_section
 
@@ -282,7 +285,6 @@ class AtomAttentionEncoder(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        use_ada_layer_norm: bool,
         c_s: int | None = None,
         c_z: int | None = None,
         blocks_per_ckpt: int | None = None,
@@ -315,8 +317,6 @@ class AtomAttentionEncoder(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
-            use_ada_layer_norm:
-                Whether to apply AdaLN-Zero conditioning
             c_s:
                 Single representation channel dimension (optional)
             c_z:
@@ -382,7 +382,6 @@ class AtomAttentionEncoder(nn.Module):
             no_heads=no_heads,
             no_blocks=no_blocks,
             n_transition=n_transition,
-            use_ada_layer_norm=use_ada_layer_norm,
             n_query=self.n_query,
             n_key=self.n_key,
             blocks_per_ckpt=blocks_per_ckpt,
@@ -542,20 +541,35 @@ class AtomAttentionEncoder(nn.Module):
 
         ql = ql * atom_mask.unsqueeze(-1)
 
-        agg_args = (
-            batch["token_mask"],
-            batch["atom_to_token_index"],
-            atom_mask,
-            self.linear_q(ql),
-            -2,
-            "mean",
-        )
-        ai = checkpoint_section(
-            fn=aggregate_atom_feat_to_tokens,
-            args=agg_args,
-            apply_ckpt=self.ckpt_intermediate_steps,
-            use_reentrant=self.use_reentrant,
-        )
+        if (
+            not self.training
+            and not torch.is_grad_enabled()
+            and segmented_reduce_supported(atom_mask.device)
+        ):
+            ai = checkpoint_section(
+                fn=aggregate_atom_feat_to_tokens_segmented,
+                args=(
+                    batch["num_atoms_per_token"],
+                    atom_mask,
+                    self.linear_q(ql),
+                ),
+                apply_ckpt=self.ckpt_intermediate_steps,
+                use_reentrant=self.use_reentrant,
+            )
+        else:
+            ai = checkpoint_section(
+                fn=aggregate_atom_feat_to_tokens,
+                args=(
+                    batch["token_mask"],
+                    batch["atom_to_token_index"],
+                    atom_mask,
+                    self.linear_q(ql),
+                    -2,
+                    "mean",
+                ),
+                apply_ckpt=self.ckpt_intermediate_steps,
+                use_reentrant=self.use_reentrant,
+            )
 
         return ai, ql, cl, plm
 
@@ -576,7 +590,6 @@ class AtomAttentionDecoder(nn.Module):
         n_transition: int,
         n_query: int,
         n_key: int,
-        use_ada_layer_norm: bool,
         blocks_per_ckpt: int | None = None,
         inf: float = 1e9,
         linear_init_params: ConfigDict = lin_init.atom_att_dec_init,
@@ -602,8 +615,6 @@ class AtomAttentionDecoder(nn.Module):
                 Number of queries (block height)
             n_key:
                 Number of keys (block width)
-            use_ada_layer_norm:
-                Whether to apply AdaLN-Zero conditioning
             blocks_per_ckpt:
                 Number of blocks per checkpoint. If set, checkpointing will
                 be used to save memory.
@@ -630,7 +641,6 @@ class AtomAttentionDecoder(nn.Module):
             no_heads=no_heads,
             no_blocks=no_blocks,
             n_transition=n_transition,
-            use_ada_layer_norm=use_ada_layer_norm,
             n_query=n_query,
             n_key=n_key,
             blocks_per_ckpt=blocks_per_ckpt,
@@ -672,13 +682,20 @@ class AtomAttentionDecoder(nn.Module):
             rl_update:
                 [*, N_atom, 3] Atom position updates
         """
-        # Broadcast per-token activations to atoms
+        # Broadcast per-token activations to atoms.
+        # Gather via the precomputed ``atom_to_token_index`` rather than
+        # repeating by ``num_atoms_per_token``: the count-based path syncs
+        # device->host 3x per call (measured: 2 inside ``repeat_interleave``
+        # with tensor repeats, 1 in the final ``reshape`` using a 0-dim CUDA
+        # int32 as a shape dimension). This runs once per rollout step (200 per
+        # sample), and a value-dependent output shape cannot be CUDA-graph
+        # captured.
         # [*, N_atom, c_atom]
-        ql = ql + broadcast_token_feat_to_atoms(
+        ql = ql + broadcast_token_feat_to_atoms_by_index(
             token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
+            atom_to_token_index=batch["atom_to_token_index"],
+            atom_mask=batch["atom_mask"],
             token_feat=self.linear_q_in(ai),
-            token_dim=-2,
         )
 
         # Atom transformer

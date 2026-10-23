@@ -14,6 +14,8 @@
 
 """Primitives for aligning atom arrays."""
 
+from typing import Any
+
 import biotite.structure as struc
 import numpy as np
 from biotite.structure import AtomArray
@@ -23,6 +25,35 @@ from openfold3.core.data.primitives.structure.interface import (
 )
 
 
+def superimpose_transform(
+    fixed: AtomArray[Any],
+    mobile: AtomArray[Any],
+    atom_mask: np.ndarray[Any, np.dtype[np.bool_]] | None = None,
+) -> Any:
+    """Computes the transformation superimposing `mobile` onto `fixed`.
+
+    Wraps `biotite.structure.superimpose`, which returns `(fitted, transformation)`
+    in biotite 1.x but only the transformation in biotite 2.x.
+
+    Args:
+        fixed (AtomArray):
+            AtomArray that serves as the reference for the superimposition.
+        mobile (AtomArray):
+            AtomArray that is superimposed onto `fixed`.
+        atom_mask (np.ndarray | None):
+            Boolean mask of the atoms considered for the superimposition. Defaults
+            to None, which considers all atoms.
+
+    Returns:
+        Any:
+            The biotite transformation object (`AffineTransformation` in biotite
+            1.x, `RigidTransformation` in biotite 2.x). Use its `apply` method to
+            transform structures.
+    """
+    result = struc.superimpose(fixed=fixed, mobile=mobile, atom_mask=atom_mask)
+    return result[1] if isinstance(result, tuple) else result
+
+
 # TODO add docstring and comments
 def extend_chain_map_via_alignment(
     target_atom_array: AtomArray,
@@ -30,18 +61,18 @@ def extend_chain_map_via_alignment(
     chain_map: dict[str, str],
     transform_array: np.ndarray,
 ):
-    affine_transformation = struc.AffineTransformation(
-        center_translation=np.zeros(3),
-        rotation=transform_array[:3, :3],
-        target_translation=transform_array[:3, 3],
-    )
     unaligned_target_chain_ids = set(np.unique(target_atom_array.chain_id)) - set(
         chain_map.values()
     )
     unaligned_source_chain_ids = set(np.unique(source_atom_array.chain_id)) - set(
         chain_map.keys()
     )
-    target_atom_array_aligned = affine_transformation.apply(target_atom_array)
+    # transform_array is a homogeneous 4x4 matrix applied as x' = R x + t; with
+    # coordinates as rows this is x' = x R^T + t
+    rotation = transform_array[:3, :3]
+    translation = transform_array[:3, 3]
+    target_atom_array_aligned = target_atom_array.copy()
+    target_atom_array_aligned.coord = target_atom_array.coord @ rotation.T + translation
 
     chain_map_update = {}
     for source_chain_id in unaligned_source_chain_ids:
@@ -129,13 +160,22 @@ def coalign_atom_arrays(
         mobile_pocket_residue_start_atoms = mobile_pocket_atoms[
             struc.get_residue_starts(mobile_pocket_atoms)
         ]
+        # Build set of (chain_id, res_id) pairs for pair-wise matching
+        pocket_keys = set(
+            zip(
+                mobile_pocket_residue_start_atoms.chain_id,
+                mobile_pocket_residue_start_atoms.res_id,
+            )
+        )
         mobile_pocket_residues = mobile[
-            np.isin(mobile.res_id, mobile_pocket_residue_start_atoms.res_id)
-            & np.isin(mobile.chain_id, mobile_pocket_residue_start_atoms.chain_id)
+            np.array(
+                [(c, r) in pocket_keys for c, r in zip(mobile.chain_id, mobile.res_id)]
+            )
         ]
         fixed_pocket_residues = fixed[
-            np.isin(fixed.res_id, mobile_pocket_residue_start_atoms.res_id)
-            & np.isin(fixed.chain_id, mobile_pocket_residue_start_atoms.chain_id)
+            np.array(
+                [(c, r) in pocket_keys for c, r in zip(fixed.chain_id, fixed.res_id)]
+            )
         ]
 
         # Get subset of mobile and fixed atoms in the pocket to be aligned
@@ -147,10 +187,10 @@ def coalign_atom_arrays(
         ]
 
         # Get resolved mask
-        resolved_mask = mobile_pocket_align_subset.occupancy == 1.0
+        resolved_mask = mobile_pocket_align_subset.occupancy > 0
 
         # Align
-        _, transformation = struc.superimpose(
+        transformation = superimpose_transform(
             fixed=fixed_pocket_align_subset,
             mobile=mobile_pocket_align_subset,
             atom_mask=resolved_mask,

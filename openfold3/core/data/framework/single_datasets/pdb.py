@@ -36,6 +36,9 @@ from openfold3.core.data.pipelines.featurization.loss_weights import (
     set_loss_weights_for_disordered_set,
 )
 from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.projects.of3_all_atom.config.dataset_config_components import (
+    SampleWeights,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +59,7 @@ class DatapointCollection:
     n_ligand: list[int]
     type: list[str]
     n_clust: list[int]
-    metadata = pd.DataFrame()
+    metadata: pd.DataFrame = dataclasses.field(default_factory=pd.DataFrame)
 
     @classmethod
     def create_empty(cls):
@@ -140,19 +143,19 @@ class DatapointCollection:
             }
         )
 
-    def create_datapoint_cache(self, sample_weights) -> pd.DataFrame:
+    def create_datapoint_cache(self, sample_weights: SampleWeights) -> pd.DataFrame:
         """Creates the datapoint_cache with chain/interface probabilities."""
         datapoint_type_weight = {
-            DatapointType.CHAIN: sample_weights["w_chain"],
-            DatapointType.INTERFACE: sample_weights["w_interface"],
+            DatapointType.CHAIN: sample_weights.w_chain,
+            DatapointType.INTERFACE: sample_weights.w_interface,
         }
 
         def calculate_datapoint_probability(row):
             """Algorithm 1. from Section 2.5.1 of the AF3 SI."""
             return (datapoint_type_weight[row["type"]] / row["n_clust"]) * (
-                sample_weights["a_prot"] * row["n_prot"]
-                + sample_weights["a_nuc"] * row["n_nuc"]
-                + sample_weights["a_ligand"] * row["n_ligand"]
+                sample_weights.a_prot * row["n_prot"]
+                + sample_weights.a_nuc * row["n_nuc"]
+                + sample_weights.a_ligand * row["n_ligand"]
             )
 
         self.metadata["datapoint_probabilities"] = self.metadata.apply(

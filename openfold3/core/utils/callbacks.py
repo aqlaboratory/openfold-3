@@ -29,27 +29,188 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
+class SecondsPerIterationProgressBar(pl.callbacks.TQDMProgressBar):
+    """Progress bar that displays s/it instead of it/s.
+
+    Lightning hardcodes {rate_noinv_fmt} in BAR_FORMAT which forces it/s.
+    Overriding with {rate_inv_fmt} to always show s/it.
+    """
+
+    BAR_FORMAT = (
+        "{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, "
+        "{rate_inv_fmt}{postfix}]"
+    )
+
+
+class MemorySnapshot(pl.Callback):
+    """
+    Records memory history and dumps a snapshot pickle.
+    The pickle can be visualized at https://pytorch.org/memory_viz
+
+    Args:
+        output_path: Path to save the .pickle snapshot file.
+        start_step: Step (batch_idx) at which to start recording and dump a single-step
+            snapshot. Set to `None` to disable step-based snapshotting (useful
+            when only dump_on_oom is needed). Defaults to 0.
+        dump_on_oom: If True, attaches an OOM observer that dumps the snapshot
+            on out-of-memory. History is reset each step to keep the snapshot
+            small.
+        stacks: Stack trace mode for record_memory_history. Defaults to "all".
+    """
+
+    def __init__(
+        self,
+        output_path: str = "memory_snapshot.pickle",
+        start_step: int | None = 0,
+        dump_on_oom: bool = False,
+        stacks: str = "all",
+    ):
+        super().__init__()
+        self.output_path = output_path
+        self.start_step = start_step
+        self.dump_on_oom = dump_on_oom
+        self.stacks = stacks
+        self._oom_dumped = False
+        self._setup_done = False
+        self._global_rank = 0
+
+    def _tagged_path(self, suffix: str) -> str:
+        """Build output path with rank and suffix before the extension."""
+        p = Path(self.output_path)
+        return str(p.with_stem(f"{p.stem}{suffix}_rank{self._global_rank}"))
+
+    def _oom_observer(self, device, alloc, device_allocated, device_free):
+        if self._oom_dumped:
+            return
+
+        self._oom_dumped = True
+        oom_path = self._tagged_path("_oom")
+        logger.error(
+            f"MemorySnapshot: OOM on rank {self._global_rank} (tried to allocate "
+            f"{alloc / 1024**3:.2f} GiB, {device_free / 1024**3:.2f} GiB free). "
+            f"Dumping snapshot to {oom_path}"
+        )
+        torch.cuda.memory._dump_snapshot(oom_path)
+
+    @property
+    def step_recording_enabled(self):
+        return self.start_step is not None
+
+    def setup(self, trainer, pl_module, stage=None):
+        # Only attach oom observer once
+        if self._setup_done:
+            return
+
+        self._setup_done = True
+        self._global_rank = trainer.global_rank
+
+        if self.dump_on_oom:
+            torch.cuda.memory._record_memory_history(stacks=self.stacks)
+            if trainer.is_global_zero:
+                logger.info("MemorySnapshot: Enabling OOM observer")
+            torch._C._cuda_attach_out_of_memory_observer(self._oom_observer)
+
+    def _on_batch_start(self, batch_idx: int):
+        record_step = self.step_recording_enabled and batch_idx == self.start_step
+        if self.dump_on_oom or record_step:
+            # Reset history so the snapshot only contains the current step
+            torch.cuda.memory._record_memory_history(enabled=None)
+            torch.cuda.memory._record_memory_history(stacks=self.stacks)
+
+    def _on_batch_end(self, batch_idx: int):
+        record_step = self.step_recording_enabled and batch_idx == self.start_step
+        if not record_step:
+            return
+
+        output_path = self._tagged_path("")
+        logger.info(f"MemorySnapshot: Dumping snapshot to {output_path}")
+        torch.cuda.memory._dump_snapshot(output_path)
+
+        if not self.dump_on_oom:
+            torch.cuda.memory._record_memory_history(enabled=None)
+
+    def on_train_batch_start(self, trainer, pl_module, batch, batch_idx, **kwargs):
+        self._on_batch_start(batch_idx=batch_idx)
+
+    def on_train_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, **kwargs
+    ):
+        self._on_batch_end(batch_idx=batch_idx)
+
+    def on_validation_batch_start(self, trainer, pl_module, batch, batch_idx, **kwargs):
+        self._on_batch_start(batch_idx=batch_idx)
+
+    def on_validation_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, **kwargs
+    ):
+        self._on_batch_end(batch_idx=batch_idx)
+
+    def on_predict_batch_start(self, trainer, pl_module, batch, batch_idx, **kwargs):
+        self._on_batch_start(batch_idx=batch_idx)
+
+    def on_predict_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, **kwargs
+    ):
+        self._on_batch_end(batch_idx=batch_idx)
+
+    def on_test_batch_start(self, trainer, pl_module, batch, batch_idx, **kwargs):
+        self._on_batch_start(batch_idx=batch_idx)
+
+    def on_test_batch_end(
+        self, trainer, pl_module, outputs, batch, batch_idx, **kwargs
+    ):
+        self._on_batch_end(batch_idx=batch_idx)
+
+
 class PredictTimer(pl.Callback):
-    def __init__(self, output_dir: Path):
+    def __init__(self, output_dir: Path | None):
         super().__init__()
         self.output_dir = output_dir
 
         # For recording runtime per batch
         self.batch_start_time = None
 
-    def on_predict_batch_start(
-        self, trainer, pl_module, batch, batch_idx, dataloader_idx: int = 0
-    ):
+    def _get_start_time(self, sync=True):
+        if sync and torch.cuda.is_available():
+            torch.cuda.synchronize()
+
         self.batch_start_time = time.perf_counter()
 
-    def _get_runtime(self):
+    def _get_runtime(self, sync=True):
         """Record the runtime for the current batch."""
-        if torch.cuda.is_available():
+        if sync and torch.cuda.is_available():
             torch.cuda.synchronize()
 
         batch_end_time = time.perf_counter()
 
         return batch_end_time - self.batch_start_time
+
+    def on_train_batch_start(
+        self, trainer, pl_module, batch, batch_idx, dataloader_idx: int = 0
+    ):
+        self._get_start_time()
+
+    def on_train_batch_end(
+        self,
+        trainer,
+        pl_module,
+        outputs,
+        batch,
+        batch_idx,
+        dataloader_idx=0,
+    ):
+        # Get batch runtime
+        runtime = self._get_runtime()
+
+        if pl_module.logger is not None:
+            pl_module.logger.log_metrics(
+                {"seconds_per_iteration": runtime}, step=pl_module.global_step
+            )
+
+    def on_predict_batch_start(
+        self, trainer, pl_module, batch, batch_idx, dataloader_idx: int = 0
+    ):
+        self._get_start_time()
 
     def on_predict_batch_end(
         self,

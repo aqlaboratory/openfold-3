@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +17,8 @@ import logging
 from typing import NamedTuple
 
 import torch
+
+from openfold3.core.utils.device_utils import autocast_device_type
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +64,7 @@ def get_optimal_rotation_matrix(
     original_dtype = H.dtype
 
     # This is necessary for bf16/fp16 training
-    with torch.amp.autocast("cuda", dtype=torch.float32):
+    with torch.amp.autocast(autocast_device_type(H), dtype=torch.float32):
         try:
             U, _, Vt = torch.linalg.svd(H.float())
 

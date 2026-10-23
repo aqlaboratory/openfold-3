@@ -23,8 +23,8 @@ from ml_collections import ConfigDict
 
 import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.attention_pair_bias import (
-    AttentionPairBias,
     CrossAttentionPairBias,
+    DiffusionAttentionPairBias,
 )
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
 from openfold3.core.model.primitives import LayerNorm
@@ -45,7 +45,6 @@ class DiffusionTransformerBlock(nn.Module):
         c_hidden: int,
         no_heads: int,
         n_transition: int,
-        use_ada_layer_norm: bool,
         n_query: int | None,
         n_key: int | None,
         inf: float = 1e9,
@@ -63,8 +62,6 @@ class DiffusionTransformerBlock(nn.Module):
                 Number of attention heads
             n_transition:
                 Dimension multiplication factor used in transition layer
-            use_ada_layer_norm:
-                Whether to apply AdaLN-Zero conditioning
             n_query:
                 Number of queries (block height). If provided, inputs are split into
                 q/k blocks of n_query and n_key prior to attention.
@@ -80,7 +77,7 @@ class DiffusionTransformerBlock(nn.Module):
         self.use_cross_attention = n_query is not None
 
         if not self.use_cross_attention:
-            self.attention_pair_bias = AttentionPairBias(
+            self.attention_pair_bias = DiffusionAttentionPairBias(
                 c_q=c_a,
                 c_k=c_a,
                 c_v=c_a,
@@ -88,7 +85,6 @@ class DiffusionTransformerBlock(nn.Module):
                 c_z=c_z,
                 c_hidden=c_hidden,
                 no_heads=no_heads,
-                use_ada_layer_norm=use_ada_layer_norm,
                 gating=True,
                 inf=inf,
                 linear_init_params=linear_init_params.att_pair_bias,
@@ -102,7 +98,6 @@ class DiffusionTransformerBlock(nn.Module):
                 c_z=c_z,
                 c_hidden=c_hidden,
                 no_heads=no_heads,
-                use_ada_layer_norm=use_ada_layer_norm,
                 n_query=n_query,
                 n_key=n_key,
                 gating=True,
@@ -142,6 +137,8 @@ class DiffusionTransformerBlock(nn.Module):
                 [*, N] Mask for token-level embedding
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
+            use_cueq_triangle_kernels:
+                Whether to use cuEq triangle kernels
             use_triton_triangle_kernels:
                 Whether to use Triton triangle attention kernel
             use_lma:
@@ -202,7 +199,6 @@ class DiffusionTransformer(nn.Module):
         no_heads: int,
         no_blocks: int,
         n_transition: int,
-        use_ada_layer_norm: bool,
         n_query: int | None,
         n_key: int | None,
         inf: float,
@@ -224,8 +220,6 @@ class DiffusionTransformer(nn.Module):
                 Number of attention heads
             n_transition:
                 Dimension multiplication factor used in transition layer
-            use_ada_layer_norm:
-                Whether to apply AdaLN-Zero conditioning
             n_query:
                 Number of queries (block height). If provided, inputs are split into
                 q/k blocks of n_query and n_key prior to attention.
@@ -248,10 +242,8 @@ class DiffusionTransformer(nn.Module):
 
         self.blocks_per_ckpt = blocks_per_ckpt
         self.use_reentrant = use_reentrant
-        self.use_cross_attention = n_query is not None
 
-        if self.use_cross_attention:
-            self.layer_norm_z = LayerNorm(c_z, create_offset=False)
+        self.layer_norm_z = LayerNorm(c_z, create_offset=False)
 
         self.blocks = nn.ModuleList(
             [
@@ -262,7 +254,6 @@ class DiffusionTransformer(nn.Module):
                     c_hidden=c_hidden,
                     no_heads=no_heads,
                     n_transition=n_transition,
-                    use_ada_layer_norm=use_ada_layer_norm,
                     n_query=n_query,
                     n_key=n_key,
                     inf=inf,
@@ -309,8 +300,7 @@ class DiffusionTransformer(nn.Module):
                 Whether to mask the output of the transition layer
         """
         # Single layer norm for atom attention enc/dec diffusion transformer
-        if self.use_cross_attention:
-            z = self.layer_norm_z(z)
+        z = self.layer_norm_z(z)
 
         blocks = [
             partial(

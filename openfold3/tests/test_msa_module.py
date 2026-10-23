@@ -1,4 +1,5 @@
 # Copyright 2026 AlQuraishi Laboratory
+# Copyright 2026 Outpace Bio, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -73,6 +74,39 @@ class TestMSAModule(unittest.TestCase):
         z = ms(m, z, chunk_size=4, msa_mask=msa_mask, pair_mask=pair_mask)
 
         self.assertTrue(z.shape == shape_z_before)
+
+    def test_clear_cache_between_blocks_threaded_to_all_blocks(self):
+        """clear_cache_between_blocks must propagate to every block in the stack."""
+        no_blocks = 3
+        common_kwargs = dict(
+            c_m=consts.c_m,
+            c_z=consts.c_z,
+            c_hidden_msa_att=12,
+            c_hidden_opm=17,
+            c_hidden_mul=19,
+            c_hidden_pair_att=14,
+            no_heads_msa=3,
+            no_heads_pair=7,
+            no_blocks=no_blocks,
+            transition_type="swiglu",
+            transition_n=2,
+            msa_dropout=0.15,
+            pair_dropout=0.25,
+            opm_first=True,
+            fuse_projection_weights=False,
+            blocks_per_ckpt=None,
+            inf=1e9,
+            eps=1e-10,
+        )
+
+        ms_on = MSAModuleStack(clear_cache_between_blocks=True, **common_kwargs)
+        self.assertEqual(len(ms_on.blocks), no_blocks)
+        for block in ms_on.blocks:
+            self.assertTrue(block.clear_cache_between_blocks)
+
+        ms_off = MSAModuleStack(clear_cache_between_blocks=False, **common_kwargs)
+        for block in ms_off.blocks:
+            self.assertFalse(block.clear_cache_between_blocks)
 
 
 class TestMSAModuleTransition(unittest.TestCase):

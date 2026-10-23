@@ -189,10 +189,10 @@ class TestTemplateEmbedders:
 
         assert emb.shape == (batch_size, n_templ, n_token, n_token, c_t)
 
-    def test_template_module_offload(self, template_batch, seeded_rng):
+    def test_template_module_offload(self, template_batch, seeded_rng, device):
         batch_size = template_batch["batch_size"]
         n_token = template_batch["n_token"]
-        batch = template_batch["batch"]
+        batch = {k: v.to(device) for k, v in template_batch["batch"].items()}
 
         proj_entry = OF3ProjectEntry()
         of3_config = proj_entry.get_model_config_with_presets()
@@ -200,10 +200,10 @@ class TestTemplateEmbedders:
         c_in = of3_config.architecture.template.template_pair_embedder.c_in
 
         embedder = TemplateEmbedderAllAtom(of3_config.architecture.template)
-        embedder.eval()
+        embedder.to(device).eval()
 
-        z = torch.ones((batch_size, n_token, n_token, c_in))
-        pair_mask = torch.ones((batch_size, n_token, n_token))
+        z = torch.ones((batch_size, n_token, n_token, c_in), device=device)
+        pair_mask = torch.ones((batch_size, n_token, n_token), device=device)
 
         with torch.no_grad():
             t_no_offload = embedder(
@@ -237,17 +237,17 @@ class TestMSAModuleStack:
             "pair_mask": torch.ones(batch_size, n_token, n_token),
         }
 
-    def test_msa_module_stack_offload(self, msa_inputs):
-        m = msa_inputs["m"]
-        z = msa_inputs["z"]
-        msa_mask = msa_inputs["msa_mask"]
-        pair_mask = msa_inputs["pair_mask"]
+    def test_msa_module_stack_offload(self, msa_inputs, device):
+        m = msa_inputs["m"].to(device)
+        z = msa_inputs["z"].to(device)
+        msa_mask = msa_inputs["msa_mask"].to(device)
+        pair_mask = msa_inputs["pair_mask"].to(device)
 
         proj_entry = OF3ProjectEntry()
         of3_config = proj_entry.get_model_config_with_presets()
 
         stack = MSAModuleStack(**of3_config.architecture.msa.msa_module)
-        stack.eval()
+        stack.to(device).eval()
 
         with torch.no_grad():
             z_no_offload = stack(m=m, z=z, msa_mask=msa_mask, pair_mask=pair_mask)

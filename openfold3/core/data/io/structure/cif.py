@@ -20,9 +20,11 @@ import pickle
 from pathlib import Path
 from typing import Literal, NamedTuple
 
+import numpy as np
 from biotite.structure import AtomArray, get_chain_count
 from biotite.structure.io import pdb, pdbx, save_structure
 
+from openfold3.core.data.io.s3 import open_local_or_s3
 from openfold3.core.data.io.structure.atom_array import (
     read_atomarray_from_npz,
     write_atomarray_to_npz,
@@ -33,6 +35,8 @@ from openfold3.core.data.primitives.quality_control.logging_utils import (
 from openfold3.core.data.primitives.structure.cleanup import (
     convert_intra_residue_dative_to_single,
     get_polymer_mask,
+    remove_hydrogens,
+    remove_std_residue_terminal_atoms,
 )
 from openfold3.core.data.primitives.structure.labels import (
     assign_entity_ids,
@@ -49,6 +53,7 @@ from openfold3.core.data.primitives.structure.metadata import (
     writer_add_struct_asym,
     writer_update_atom_site,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +190,7 @@ def parse_mmcif(
     }
 
     # Check if the CIF file contains bioassembly information
-    if expand_bioassembly & ("pdbx_struct_assembly_gen" not in cif_data):
+    if expand_bioassembly and ("pdbx_struct_assembly_gen" not in cif_data):
         logger.warning(
             "No bioassembly information found in the CIF file, "
             "falling back to parsing the asymmetric unit."
@@ -254,11 +259,73 @@ def parse_mmcif(
     return ParsedStructure(cif_file, atom_array)
 
 
+# TODO: refactor with PDB reader below as it currently only supports monomers
+def parse_RNA_monomer_cif_tmp(
+    file_path: Path | str,
+    include_bonds: bool = True,
+    extra_fields: list | None = None,
+    s3_profile: str | None = None,
+):
+    """Temporary function to parse a RNA monomer from a cif file.
+
+    Args:
+        file_path (Path | str): _description_
+        include_bonds (bool, optional): _description_. Defaults to True.
+        extra_fields (list | None, optional): _description_. Defaults to None.
+
+    Returns:
+        ParsedStructure : _description_
+    """
+
+    ## no label fields in cif files
+    with open_local_or_s3(file_path, profile=s3_profile) as f:
+        cif_file = pdbx.CIFFile.read(f)
+
+    extra_fields_preset = [
+        "occupancy",
+        "charge",
+    ]
+
+    if extra_fields:
+        extra_fields = extra_fields_preset + extra_fields
+    else:
+        extra_fields = extra_fields_preset
+
+    parser_args = {
+        "pdbx_file": cif_file,
+        "model": 1,
+        "altloc": "first",
+        # Explicit, as biotite 2 changed the default to the label fields
+        "use_author_fields": True,
+        "include_bonds": include_bonds,
+        "extra_fields": extra_fields,
+    }
+    atom_array = pdbx.get_structure(
+        **parser_args,
+    )
+
+    ## manually assign th entity and molecule type ids;
+    ## monomers are all "single chain", so should have the same entity id,
+    ## everything is a single asym, and sym id should be 1(identity)
+    chain_ids = np.array([1] * len(atom_array), dtype=int)
+    molecule_type_ids = np.array([MoleculeType.RNA] * len(atom_array), dtype=int)
+    entity_ids = np.array([1] * len(atom_array), dtype=int)
+
+    atom_array.set_annotation("chain_id", chain_ids)
+    atom_array.set_annotation("molecule_type_id", molecule_type_ids)
+    atom_array.set_annotation("entity_id", entity_ids)
+
+    # Clean up structure
+    atom_array = remove_hydrogens(atom_array)
+    atom_array = remove_std_residue_terminal_atoms(atom_array)
+
+    return ParsedStructure(cif_file, atom_array)
+
+
 def _create_cif_file(
     suffix: str,
     atom_array: AtomArray,
     data_block: str,
-    include_bonds: bool,
     make_ost_compatible: bool = True,
 ):
     """Helper function to create and populate CIF or BCIF files."""
@@ -272,9 +339,8 @@ def _create_cif_file(
     try:
         # copy entity_id to label_entity_id so biotite uses it for the atom_site table
         atom_array.set_annotation("label_entity_id", atom_array.entity_id)
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
+        # Biotite writes bonds whenever atom_array.bonds is set
+        pdbx.set_structure(cif_file, atom_array, data_block=data_block)
     # This error sometimes happens in the PDB preprocessing
     except KeyError:
         logger.warning(
@@ -282,9 +348,7 @@ def _create_cif_file(
             "intra-residue COORDINATION bonds set to SINGLE."
         )
         atom_array = convert_intra_residue_dative_to_single(atom_array)
-        pdbx.set_structure(
-            cif_file, atom_array, data_block=data_block, include_bonds=include_bonds
-        )
+        pdbx.set_structure(cif_file, atom_array, data_block=data_block)
 
     # Update and add additional metadata tables
     if make_ost_compatible:
@@ -302,13 +366,13 @@ def write_structure(
     atom_array: AtomArray,
     output_path: Path | str,
     data_block: str = None,
-    include_bonds: bool = True,
     make_ost_compatible: bool = True,
 ) -> None:
     """Write a structure file from an AtomArray
 
     The resulting CIF file will only contain the atom_site records and bond information
-    by default, not any other mmCIF metadata.
+    by default, not any other mmCIF metadata. Bonds are written whenever
+    atom_array.bonds is set.
 
     Args:
         atom_array:
@@ -319,9 +383,6 @@ def write_structure(
         data_block:
             Name of the data block in the CIF/BCIF file. Defaults to None. Ignored if
             the format is not cif or bcif.
-        include_bonds:
-            Whether to include bond information. Defaults to True. Ignored if the format
-            is pkl in which the entire BondList is written to the file.
     """
     if isinstance(output_path, str):
         output_path = Path(output_path)
@@ -343,7 +404,6 @@ def write_structure(
                 suffix=".cif",
                 atom_array=atom_array,
                 data_block=data_block,
-                include_bonds=include_bonds,
                 make_ost_compatible=make_ost_compatible,
             )
 
@@ -355,7 +415,6 @@ def write_structure(
                 suffix=suffix,
                 atom_array=atom_array,
                 data_block=data_block,
-                include_bonds=include_bonds,
                 make_ost_compatible=make_ost_compatible,
             )
 
@@ -371,7 +430,8 @@ def write_structure(
 
         case _:
             raise NotImplementedError(
-                "Only .cif, .bcif, and .pkl formats are supported"
+                "Only .npz, .pkl, .cif, .bcif, and .pdb formats are currently "
+                "supported."
             )
 
 

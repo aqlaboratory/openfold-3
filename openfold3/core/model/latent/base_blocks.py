@@ -21,7 +21,6 @@ the EvoformerStack, ExtraMSAStack, and MSAModule.
 """
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
 
 import torch
 import torch.nn as nn
@@ -38,8 +37,8 @@ from openfold3.core.model.layers.triangular_multiplicative_update import (
     TriangleMultiplicationIncoming,
     TriangleMultiplicationOutgoing,
 )
+from openfold3.core.model.memory import move_and_free
 from openfold3.core.model.primitives import DropoutRowwise
-from openfold3.core.model.utils import assert_sole_holder
 from openfold3.core.utils.tensor_utils import add
 
 
@@ -161,7 +160,7 @@ class MSABlock(nn.Module, ABC):
 
     def _compute_opm(
         self,
-        input_tensors: Sequence[torch.Tensor],
+        input_tensors: list[torch.Tensor],
         msa_mask: torch.Tensor,
         chunk_size: int | None = None,
         inplace_safe: bool = False,
@@ -176,8 +175,7 @@ class MSABlock(nn.Module, ABC):
         if _offload_inference and inplace_safe:
             # m: GPU, z: CPU
             del m, z
-            assert_sole_holder(input_tensors[1], in_container=True)
-            input_tensors[1] = input_tensors[1].cpu()
+            move_and_free(input_tensors, 1, "cpu")
             m, z = input_tensors
 
         opm = self.outer_product_mean(
@@ -187,8 +185,7 @@ class MSABlock(nn.Module, ABC):
         if _offload_inference and inplace_safe:
             # m: GPU, z: GPU
             del m, z
-            assert_sole_holder(input_tensors[0], in_container=True)
-            input_tensors[1] = input_tensors[1].to(opm.device)
+            move_and_free(input_tensors, 1, opm.device)
             m, z = input_tensors
 
         z = add(z, opm, inplace=inplace_safe)
@@ -213,7 +210,7 @@ class MSABlock(nn.Module, ABC):
         _mask_trans: bool = True,
         _attn_chunk_size: int | None = None,
         _offload_inference: bool = False,
-        _offloadable_inputs: Sequence[torch.Tensor] | None = None,
+        _offloadable_inputs: list[torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         pass
 
@@ -394,6 +391,7 @@ class PairBlock(nn.Module):
                 self.tri_att_end(
                     z,
                     mask=pair_mask.transpose(-1, -2),
+                    transpose_bias=True,
                     chunk_size=_attn_chunk_size,
                     use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                     use_cueq_triangle_kernels=use_cueq_triangle_kernels,

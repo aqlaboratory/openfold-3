@@ -16,13 +16,43 @@
 
 import contextlib
 import logging
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import NamedTuple
 
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
+
+
+class SeqMoltype(NamedTuple):
+    """A sequence paired with its molecule type."""
+
+    sequence: str
+    moltype: str
+
+
+def _iter_fasta_records(
+    input_path: Path,
+) -> Generator[tuple[str, str, int], None, None]:
+    """Yields (header, sequence, line_number) tuples from a FASTA file.
+
+    The header is returned without the leading ``>`` and stripped of whitespace.
+    """
+    line_count = 0
+    with open(input_path) as file, contextlib.suppress(StopIteration):
+        while True:
+            header = next(file)
+            line_count += 1
+            assert header.startswith(">"), f"Invalid FASTA format on line {line_count}"
+            header = header.lstrip(">").strip()
+
+            seq = next(file).strip()
+            line_count += 1
+            assert not seq.startswith(">"), f"Invalid FASTA format on line {line_count}"
+
+            yield header, seq, line_count
 
 
 def get_chain_id_to_seq_from_fasta(input_path: Path) -> dict[str, str]:
@@ -43,28 +73,53 @@ def get_chain_id_to_seq_from_fasta(input_path: Path) -> dict[str, str]:
         Dictionary mapping chain IDs to sequences.
     """
     chain_to_sequence = {}
-    line_count = 0
-
-    with open(input_path) as file, contextlib.suppress(StopIteration):
-        while True:
-            chain = next(file)
-            line_count += 1
-            assert chain.startswith(">"), f"Invalid FASTA format on line {line_count}"
-            chain = chain.replace(">", "").strip()
-
-            seq = next(file).strip()
-            line_count += 1
-            assert not seq.startswith(">"), f"Invalid FASTA format on line {line_count}"
-
-            if chain in chain_to_sequence:
-                logger.warning(
-                    f"Duplicate header {chain} in line {line_count - 1}, skipping."
-                )
-                continue
-            else:
-                chain_to_sequence[chain] = seq
+    for chain, seq, line_count in _iter_fasta_records(input_path):
+        if chain in chain_to_sequence:
+            logger.warning(
+                f"Duplicate header {chain} in line {line_count - 1}, skipping."
+            )
+            continue
+        chain_to_sequence[chain] = seq
 
     return chain_to_sequence
+
+
+def parse_representatives_fasta(
+    input_path: Path,
+) -> dict[str, SeqMoltype]:
+    """Reads a representatives FASTA with moltype-annotated headers.
+
+    The input FASTA should follow the format:
+    >{msa_id}|{moltype}
+    {sequence}
+
+    where moltype is ``"protein"`` or ``"rna"``.
+
+    Args:
+        input_path:
+            Path to the representatives FASTA file.
+
+    Returns:
+        Dictionary mapping msa_id to SeqMoltype entries.
+    """
+    id_to_seq_moltype: dict[str, SeqMoltype] = {}
+    for header, seq, line_count in _iter_fasta_records(input_path):
+        parts = header.split("|", maxsplit=1)
+        assert len(parts) == 2, (
+            f"Expected '{{msa_id}}|{{moltype}}' header format "
+            f"on line {line_count}, got: '{header}'"
+        )
+        msa_id, moltype = parts[0], parts[1].lower()
+
+        if msa_id in id_to_seq_moltype:
+            logger.warning(
+                f"Duplicate msa_id {msa_id} on line {line_count - 1}, skipping."
+            )
+            continue
+
+        id_to_seq_moltype[msa_id] = SeqMoltype(seq, moltype)
+
+    return id_to_seq_moltype
 
 
 def consolidate_preprocessed_fastas(preprocessed_dir: Path) -> dict[str, str]:

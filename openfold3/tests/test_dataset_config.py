@@ -13,8 +13,13 @@
 # limitations under the License.
 
 import textwrap
+from collections import UserDict
+from copy import deepcopy
+from types import SimpleNamespace
+from unittest.mock import PropertyMock, patch
 
-import pytest  # noqa: F401  - used for pytest tmp fixture
+import pytest
+from pydantic import ValidationError
 
 from openfold3.core.config import config_utils
 from openfold3.core.data.framework.data_module import (
@@ -25,15 +30,30 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
 )
 from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
+from openfold3.projects.of3_all_atom.config.dataset_config_components import (
+    MSASettings,
+    SampleWeights,
+    TemplateDistogramSettings,
+    TemplateSettings,
+)
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
+    DATASET_CONFIG_REGISTRY,
+    InferenceDatasetConfigKwargs,
     InferenceDatasetSpec,
     InferenceJobConfig,
     TrainingDatasetPaths,
     TrainingDatasetSpec,
+    ValidationPDBConfig,
+    WeightedPDBConfig,
 )
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
+
+
+def test_register_dataset_config_returns_decorated_class():
+    assert isinstance(WeightedPDBConfig, type)
+    assert DATASET_CONFIG_REGISTRY.get("WeightedPDBDataset") is WeightedPDBConfig
 
 
 class TestOF3DatasetConfigConstruction:
@@ -59,16 +79,16 @@ class TestOF3DatasetConfigConstruction:
                         interface_distance_threshold: 12.5
                         ligand_inclusion_distance: 4.5
                 dataset_paths:
-                    alignments_directory: None 
-                    alignment_array_directory: {tmp_path} 
-                    dataset_cache_file: {test_dummy_file} 
+                    alignments_directory: None
+                    alignment_array_directory: {tmp_path}
+                    dataset_cache_file: {test_dummy_file}
                     target_structure_file_format: npz
-                    target_structures_directory: {tmp_path} 
+                    target_structures_directory: {tmp_path}
                     reference_molecule_directory: {tmp_path}
-                    template_cache_directory: {tmp_path} 
-                    template_structures_directory: {tmp_path} 
+                    template_cache_directory: {tmp_path}
+                    template_structures_directory: {tmp_path}
                     template_file_format: cif
-                    ccd_file: None 
+                    ccd_file: None
         """)
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
@@ -130,20 +150,20 @@ class TestOF3DatasetConfigConstruction:
         test_yaml_str = textwrap.dedent(f"""\
             name: dataset1
             mode: train
-            dataset_class: ProteinMonomerDataset 
+            dataset_class: ProteinMonomerDataset
             weight: 0.5
             config:
                 dataset_paths:
                     alignments_directory: none
-                    alignment_array_directory: {tmp_path} 
-                    dataset_cache_file: {test_dummy_file} 
+                    alignment_array_directory: {tmp_path}
+                    dataset_cache_file: {test_dummy_file}
                     target_structure_file_format: npz
-                    target_structures_directory: {tmp_path} 
+                    target_structures_directory: {tmp_path}
                     reference_molecule_directory: {tmp_path}
-                    template_cache_directory: {tmp_path} 
-                    template_structures_directory: {tmp_path} 
+                    template_cache_directory: {tmp_path}
+                    template_structures_directory: {tmp_path}
                     template_file_format: cif
-                    ccd_file: None 
+                    ccd_file: None
         """)
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
@@ -189,20 +209,20 @@ class TestOF3DatasetConfigConstruction:
         test_yaml_str = textwrap.dedent(f"""\
             name: dataset1
             mode: train
-            dataset_class: DisorderedPDBDataset 
+            dataset_class: DisorderedPDBDataset
             weight: 0.02
             config:
                 dataset_paths:
                     alignments_directory: none
-                    alignment_array_directory: {tmp_path} 
-                    dataset_cache_file: {test_dummy_file} 
+                    alignment_array_directory: {tmp_path}
+                    dataset_cache_file: {test_dummy_file}
                     target_structure_file_format: npz
-                    target_structures_directory: {tmp_path} 
+                    target_structures_directory: {tmp_path}
                     reference_molecule_directory: {tmp_path}
-                    template_cache_directory: {tmp_path} 
-                    template_structure_array_directory: {tmp_path} 
+                    template_cache_directory: {tmp_path}
+                    template_structure_array_directory: {tmp_path}
                     template_file_format: npz
-                    ccd_file: None 
+                    ccd_file: None
         """)
         test_yaml_file = tmp_path / "runner.yml"
         test_yaml_file.write_text(test_yaml_str)
@@ -273,6 +293,94 @@ class TestOF3DatasetConfigConstruction:
                     "reference_molecule_directory": tmp_path,
                 }
             )
+
+    @staticmethod
+    def _dataset_paths(tmp_path):
+        cache_file = tmp_path / "cache.json"
+        cache_file.write_text("{}")
+        return {
+            "alignments_directory": tmp_path,
+            "dataset_cache_file": cache_file,
+            "target_structures_directory": tmp_path,
+            "target_structure_file_format": "npz",
+            "reference_molecule_directory": tmp_path,
+            "template_structure_array_directory": tmp_path,
+            "template_file_format": "npz",
+        }
+
+    def test_dict_value_replaces_default(self, tmp_path):
+        max_seq_counts = {"uniprot_hits": 50000}
+        spec = TrainingDatasetSpec.model_validate(
+            {
+                "name": "train",
+                "mode": "train",
+                "dataset_class": "WeightedPDBDataset",
+                "config": {
+                    "dataset_paths": self._dataset_paths(tmp_path),
+                    "msa": {"max_seq_counts": max_seq_counts},
+                },
+            }
+        )
+
+        assert spec.config.msa.max_seq_counts == max_seq_counts
+
+    def test_partial_sample_weights_keep_defaults(self, tmp_path):
+        spec = TrainingDatasetSpec.model_validate(
+            {
+                "name": "train",
+                "mode": "train",
+                "dataset_class": "WeightedPDBDataset",
+                "config": {
+                    "dataset_paths": self._dataset_paths(tmp_path),
+                    "sample_weights": {"a_prot": 9.0},
+                },
+            }
+        )
+
+        assert spec.config.sample_weights == SampleWeights(a_prot=9.0)
+
+    def test_unknown_sample_weight_is_rejected(self, tmp_path):
+        with pytest.raises(ValidationError, match="a_protein"):
+            TrainingDatasetSpec.model_validate(
+                {
+                    "name": "train",
+                    "mode": "train",
+                    "dataset_class": "WeightedPDBDataset",
+                    "config": {
+                        "dataset_paths": self._dataset_paths(tmp_path),
+                        "sample_weights": {"a_protein": 9.0},
+                    },
+                }
+            )
+
+    def test_shared_config_does_not_leak_between_datasets(self, tmp_path):
+        msa = {"max_rows": 128}
+        shared_config = {"dataset_paths": self._dataset_paths(tmp_path), "msa": msa}
+        train = TrainingDatasetSpec.model_validate(
+            {
+                "name": "train",
+                "mode": "train",
+                "dataset_class": "WeightedPDBDataset",
+                "config": shared_config,
+            }
+        )
+        val = TrainingDatasetSpec.model_validate(
+            {
+                "name": "val",
+                "mode": "validation",
+                "dataset_class": "ValidationPDBDataset",
+                "config": shared_config,
+            }
+        )
+
+        # The test relies on each dataset class declareing a different default
+        train_default = WeightedPDBConfig.model_fields["msa"].default.subsample_main
+        val_default = ValidationPDBConfig.model_fields["msa"].default.subsample_main
+        assert train_default != val_default
+
+        assert train.config.msa.subsample_main == train_default
+        assert val.config.msa.subsample_main == val_default
+        assert shared_config["msa"] == msa
 
     def test_dataset_config_with_no_template_paths(self, tmp_path):
         """Test that dataset configs work when template paths are None."""
@@ -359,6 +467,98 @@ class TestOF3DatasetConfigConstruction:
 
 
 class TestInferenceConfigConstruction:
+    inference_default_subsample_main = InferenceDatasetConfigKwargs.model_fields[
+        "msa"
+    ].default.subsample_main
+    class_default_subsample_main = MSASettings.model_fields["subsample_main"].default
+
+    def test_example_field_class_and_inference_defaults_differ(self):
+        # These tests use this as an example of the fields not matching. If this
+        # becomes not true they could pass without testing the behavior they're
+        # supposed to. In that case, pick a different field and update the tests.
+        assert (
+            self.inference_default_subsample_main != self.class_default_subsample_main
+        )
+
+    def test_partial_kwargs_keep_inference_defaults(self):
+        max_rows = MSASettings.model_fields["max_rows"].default + 1
+        n_templates = TemplateSettings.model_fields["n_templates"].default + 1
+        data = {"template": {"n_templates": n_templates}, "msa": {"max_rows": max_rows}}
+        copy = deepcopy(data)
+        kwargs = InferenceDatasetConfigKwargs.model_validate(data)
+
+        assert kwargs.template.n_templates == n_templates
+        assert kwargs.msa.max_rows == max_rows
+
+        assert kwargs.msa.subsample_main == self.inference_default_subsample_main
+
+        from_instances = InferenceDatasetConfigKwargs(
+            template=TemplateSettings(n_templates=n_templates),
+            msa=MSASettings(max_rows=max_rows),
+        )
+        assert kwargs == from_instances
+        assert data == copy  # input not modified
+
+    def test_kwargs_can_override_inference_defaults(self):
+        # The opposite of the inference defaults, matching the class defaults.
+        # Checks that set fields count even when they equal the class default.
+        data = {"msa": {"subsample_main": self.class_default_subsample_main}}
+        copy = deepcopy(data)
+        kwargs = InferenceDatasetConfigKwargs.model_validate(data)
+
+        assert kwargs.msa.subsample_main == self.class_default_subsample_main
+
+        from_instances = InferenceDatasetConfigKwargs(
+            msa=MSASettings(subsample_main=self.class_default_subsample_main),
+        )
+        assert kwargs == from_instances
+        assert data == copy  # input not modified
+
+    def test_partial_nested_kwargs_keep_defaults(self):
+        max_bin = TemplateDistogramSettings.model_fields["max_bin"].default + 1
+        default_min_bin = TemplateDistogramSettings.model_fields["min_bin"].default
+        data = {"template": {"distogram": {"max_bin": max_bin}}}
+        copy = deepcopy(data)
+        kwargs = InferenceDatasetConfigKwargs.model_validate(data)
+
+        assert kwargs.template.distogram.max_bin == max_bin
+        assert kwargs.template.distogram.min_bin == default_min_bin
+
+        from_instances = InferenceDatasetConfigKwargs(
+            template=TemplateSettings(
+                distogram=TemplateDistogramSettings(max_bin=max_bin)
+            ),
+        )
+        assert kwargs == from_instances
+        assert data == copy  # input not modified
+
+    def test_dict_value_is_replaced_not_merged(self):
+        custom_max_seq_counts = {"custom_hits": 10}
+        data = {"msa": {"max_seq_counts": custom_max_seq_counts}}
+        kwargs = InferenceDatasetConfigKwargs.model_validate(data)
+
+        assert kwargs.msa.max_seq_counts == custom_max_seq_counts
+        assert kwargs.msa.subsample_main == self.inference_default_subsample_main
+
+        from_instances = InferenceDatasetConfigKwargs(
+            msa=MSASettings(max_seq_counts=custom_max_seq_counts)
+        )
+        assert kwargs == from_instances
+
+    def test_mismatched_model_is_rejected(self):
+        with pytest.raises(ValidationError):
+            InferenceDatasetConfigKwargs(template=MSASettings(max_rows=128))
+
+    def test_generic_mapping_matches_dict(self):
+        n_templates = 2
+        from_mapping = InferenceDatasetConfigKwargs.model_validate(
+            UserDict({"template": UserDict({"n_templates": n_templates})})
+        )
+        from_dict = InferenceDatasetConfigKwargs.model_validate(
+            {"template": {"n_templates": n_templates}}
+        )
+        assert from_mapping == from_dict
+
     def test_inference_config_loading(self, tmp_path):
         inference_set = InferenceQuerySet.model_validate(
             {
@@ -409,6 +609,7 @@ class TestInferenceConfigConstruction:
             use_templates=False,
             msa_computation_settings=MsaComputationSettings(),
         )
+        assert data_module.prepare_data_per_node is False
 
         data_module.prepare_data()
         data_module.setup()
@@ -420,3 +621,42 @@ class TestInferenceConfigConstruction:
         assert len(dataloader) == 1
         it = iter(dataloader)
         next(it)  # this is currently causing a segfault in Py3.13
+
+    def test_setup_broadcasts_query_and_template_settings(self):
+        rank_zero_query_set = object()
+        rank_zero_template_settings = object()
+        data_module = object.__new__(InferenceDataModule)
+        data_module.use_templates = True
+        data_module.inference_config = SimpleNamespace(
+            query_set=object(),
+            template_preprocessor_settings=object(),
+        )
+
+        def broadcast_rank_zero_state(state, src):
+            assert src == 0
+            state[:] = [rank_zero_query_set, rank_zero_template_settings]
+
+        with (
+            patch.object(
+                InferenceDataModule,
+                "world_size",
+                new_callable=PropertyMock,
+                return_value=2,
+            ),
+            patch(
+                "openfold3.core.data.framework.data_module.dist.get_rank",
+                return_value=1,
+            ),
+            patch(
+                "openfold3.core.data.framework.data_module.dist.broadcast_object_list",
+                side_effect=broadcast_rank_zero_state,
+            ),
+            patch("openfold3.core.data.framework.data_module.DataModule.setup"),
+        ):
+            data_module.setup()
+
+        assert data_module.inference_config.query_set is rank_zero_query_set
+        assert (
+            data_module.inference_config.template_preprocessor_settings
+            is rank_zero_template_settings
+        )
