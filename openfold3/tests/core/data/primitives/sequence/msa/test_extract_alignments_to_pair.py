@@ -107,6 +107,12 @@ def test_does_not_crash_with_multiple_pairable_sources():
     assert "repA" in result
 
 
+# The source names used below ("uniprot_hits", "uniprot") match the default
+# msas_to_pair config. Sources listed in msas_to_pair are assumed to be UniProt
+# alignments whose headers carry species information, so every non-query row
+# counts as a real, pairable hit. extract_alignments_to_pair doesn't parse
+# species itself; it only decides which rows to pass on to the species-based
+# pairing step that runs afterwards.
 @pytest.mark.parametrize(
     "second_source_rows, expected_metadata",
     [
