@@ -472,13 +472,9 @@ def test_train_mode_outputs_give_training_template_features(train_preprocessor_r
         ccd=None,
     )
     template_features = featurize_template_structures_of3(
-        atom_array=atom_array,
         template_slice_collection=template_slices,
         n_templates=4,
         n_tokens=len(np.unique(atom_array.token_id)),
-        min_bin=3.25,
-        max_bin=50.75,
-        n_bins=39,
     )
 
     actual = _residues_covered_per_template(template_features, atom_array)

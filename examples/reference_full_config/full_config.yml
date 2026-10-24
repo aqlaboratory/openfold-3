@@ -112,10 +112,6 @@ dataset_config_kwargs:
   template:
     n_templates: 4
     take_top_k: true
-    distogram:
-      min_bin: 3.25
-      max_bin: 50.75
-      n_bins: 39
   # constraints for pocket diffusion sampling
   pocket_sampling:
     enabled: True
