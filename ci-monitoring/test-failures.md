@@ -728,3 +728,40 @@ openfold3/tests/test_cuda_allocator.py::test_matches_snapshot PASSED
 The ColabFold timeouts are an external-service flake per this log's established pattern (08-09 through 10-21) — no code change expected; watch for the next clean night. The cuda12 AWS cancellation is fully explained by matrix fail-fast and needs no action. **Still flagged for a human:** the `test-pixi-cuda-brev (openfold3-cuda12)` cap-kill, which doesn't cleanly fit any defined signature — worth a second look once the next Brev `msa-hang`-shaped cancellation (if any) gives more log detail to compare against. Separately, good news: PR #469's `g6.4xlarge` fallback appears to have fixed the two-night Brev `g5.4xlarge` catalog rejection (10-20, 10-21) — both Brev legs provisioned a runner cleanly tonight.
 
 ---
+
+---
+
+## 2026-10-24
+
+**Cause:** One non-pass class, one leg. `test-pixi-cuda (openfold3-cuda13)`'s own `start-aws-runner` succeeded (launched an instance in `us-east-2` on the second AZ retry), but the leg was cancelled by matrix fail-fast once its cuda12 sibling hit `aws-capacity` (full detail in `aws-outage-failures.md`) — the downstream `test-openfold-docker-pixi` step never started. Recorded here, not in `aws-outage-failures.md`, because the aws-capacity signature itself belongs to cuda12 only; cuda13's own non-pass is the fail-fast cascade, consistent with this log's established split (09-16, 09-17, 09-19, 10-22).
+
+- **Run ID:** [40058531049](https://github.com/aqlaboratory/openfold-3/actions/runs/40058531049)
+- **Run #:** 347 (primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `a83cb119f58a86306f9d66ca528ef2a0fffad250` (unchanged since run #345/346's `a83cb11`, 10-23)
+- **Time:** 2026-10-24T03:29:51Z – 03:38:44Z
+
+### Matrix fail-fast cancellation — `test-pixi-cuda (openfold3-cuda13)`
+
+| Job | Job ID | Cancelled step | Duration |
+|-----|--------|--------------|----------|
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | 120767336406 | (never started — cancelled at dispatch) | 0 min (03:32:25–03:32:25) |
+
+```
+Launched in us-east-2
+##[error]The operation was canceled.
+```
+
+`test-pixi-cuda`'s `strategy:` block (`.github/workflows/integration-test.yml`) carries no `fail-fast: false` override, so GitHub's default matrix fail-fast cancelled this leg's downstream test job the moment its cuda12 sibling's `start-aws-runner` failed at 03:31:45Z. Unlike every prior fail-fast cancellation in this log (runs #254, #266, #268, #273, #279, #340, #342 — all of which were cancelled mid-test, 5–7 minutes after the sibling's failure, or taken out before a runner was even provisioned), this is the first case where the cancelled leg's own infrastructure step (`start-aws-runner`) had already fully succeeded — `runner-o095hzqq` launched in `us-east-2` and the step reported `Launched in us-east-2` with every step conclusion `success` — before the job's overall `conclusion` still came back `cancelled` and the test step was killed before it could start. Not a timeout-minutes cap (the leg ran only ~2.5 minutes), not superseded by a newer run (no other run in this concurrency group tonight), not manual. The corresponding `stop-aws-runner` for this leg ran and succeeded normally (120767335401), tearing down the instance that had just been provisioned for a test that never ran.
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | 120768228526 | 37 min |
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 120768202969 | 34 min |
+
+### Assessment
+
+The fail-fast cancellation needs no code-side action — it's a direct consequence of cuda12's `aws-capacity` outage (see `aws-outage-failures.md`), and cuda13 would almost certainly have passed (its own runner had already launched cleanly). Both Brev legs passed clean on the unchanged commit, unaffected by the AWS capacity pool exhaustion. The AMD runner situation (now 2 consecutive dark nights, `test-pixi-amd (openfold3-rocm7)` queued since 2026-10-23T03:31:52Z with no runner ever picking it up) is tracked in `aws-outage-failures.md`'s `runner-offline` section, not here, but is the most urgent open item from tonight's scan.
+
+---

@@ -294,3 +294,31 @@ Note: first `aws-capacity` night since #316 (10-09) — a 14-night clean streak 
 - `test-pixi-amd (openfold3-rocm7)` — test-openfold-docker-pixi-amd (job 120224903978), event `schedule`, started 2026-10-23T03:31:52Z, status `queued`, zero steps recorded as of scan time 2026-10-23T07:12Z (queued 3h40m+, past this file's/`daily-status.md`'s 2h `QUEUED` threshold).
 - Required label: `[self-hosted, amd-gpu]` (`.github/workflows/ci-integration-test-pixi-amd-reusable.yml`).
 - Could not confirm the runner's live status: `GET /repos/aqlaboratory/openfold-3/actions/runners` returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this execution environment — same limitation noted in `weekly-summary.md`'s data-source notes (first hit there on 09-10's analogous AMD `QUEUED` case). **Flagged for a human:** check Settings → Actions → Runners directly and restart/re-register the AMD box if it's offline.
+
+---
+
+### 2026-10-24 — Run [40058531049](https://github.com/aqlaboratory/openfold-3/actions/runs/40058531049) (run #347)
+
+- **Branch:** main @ `a83cb11` (unchanged since run #345/10-23's `a83cb11`)
+- **Scan date:** 2026-10-24
+- **Time:** 2026-10-24T03:30:43Z – 03:31:45Z UTC
+- **Error:** `Failed to launch in us-east-2a: An error occurred (InsufficientInstanceCapacity) when calling the RunInstances operation (reached max retries: 4): We currently do not have sufficient g5.4xlarge capacity in the Availability Zone you requested (us-east-2a)...` (same across `us-east-2b`/`c` and `us-west-2a`/`b`/`c`), plus `Failed to launch in us-west-2d: An error occurred (Unsupported) ... Your requested instance type (g5.4xlarge) is not supported in your requested Availability Zone (us-west-2d)` → `ValueError: Failed to launch in any available Availability Zone` → `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2`
+- **Root cause:** AWS could not provision `g5.4xlarge` GPU EC2 instances across all six capacity pools (3x us-east-2, 3x us-west-2, the sixth — `us-west-2d` — unsupported for this instance type) on the `test-pixi-cuda (openfold3-cuda12)` leg's `start-aws-runner` step; the corresponding `stop-aws-runner` failed as a cascading consequence (`TypeError: StopAWS.__init__() missing 1 required positional argument: 'instance_mapping'` — no instance was ever created to tear down), and the `test-openfold-docker-pixi` test job was `skipped`. Same signature as runs #252 (09-10), #282 (09-22), #284 (09-24), #291 (09-27), #295 (09-29), #299 (10-01), #314 (10-08), #316 (10-09), and #345 (10-23, first recurrence in two weeks) — second consecutive night. Note: the sibling leg, `test-pixi-cuda (openfold3-cuda13)`, did **not** hit this signature itself — its own `start-aws-runner` succeeded (launched in `us-east-2` on the second AZ retry) and it was instead taken out by matrix fail-fast once cuda12 failed; see `test-failures.md` for that leg's detail, it is not double-counted here.
+- **Failed jobs (start-aws-runner):**
+  - `test-pixi-cuda (openfold3-cuda12)` — start-aws-runner (job 120766780998)
+- **Cascading failures (stop-aws-runner — no instance to stop):**
+  - `test-pixi-cuda (openfold3-cuda12)` — stop-aws-runner (job 120767194934)
+- **Skipped (no runner available):**
+  - `test-pixi-cuda (openfold3-cuda12)` — test-openfold-docker-pixi (job 120767195817), conclusion `skipped`
+- **Passing (Brev CUDA runners, unaffected):**
+  - `test-pixi-cuda-brev (openfold3-cuda12)` — test-openfold-docker-pixi (job 120768228526), 37 min
+  - `test-pixi-cuda-brev (openfold3-cuda13)` — test-openfold-docker-pixi (job 120768202969), 34 min
+
+Note: second consecutive `aws-capacity` night (10-23, 10-24) after a 14-night clean streak before that. Both Brev legs again passed clean on the same commit, unaffected by the AWS capacity pool exhaustion.
+
+**Runner-offline candidate (not an AWS failure — recorded here per this file's `runner-offline` scope):**
+
+- `test-pixi-amd (openfold3-rocm7)` — test-openfold-docker-pixi-amd (job 120766781180), event `schedule`, started 2026-10-24T03:29:52Z, status `queued`, zero steps recorded as of scan time ~2026-10-24T07:12Z (queued 3h42m+, past this file's/`daily-status.md`'s 2h `QUEUED` threshold).
+- Required label: `[self-hosted, amd-gpu]` (`.github/workflows/ci-integration-test-pixi-amd-reusable.yml`).
+- **Second consecutive night.** Yesterday's (10-23) AMD job (job 120224903978) never picked up a runner either: it sat `queued` from 2026-10-23T03:31:52Z all the way to 2026-10-24T03:29:52Z — nearly 24 full hours — and was only terminated (`conclusion: cancelled`) at that moment because tonight's run opened a new job in the same `cancel-in-progress: true` concurrency group, not because anything about the stale job itself resolved. AMD test coverage has now been completely dark for over 24 hours across two nightly runs.
+- Could not confirm the runner's live status directly: `GET /repos/aqlaboratory/openfold-3/actions/runners` returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this execution environment — same limitation noted on 10-23 and in `weekly-summary.md`'s data-source notes. **Flagged for a human, now urgently given the 24h+ dark streak:** check Settings → Actions → Runners directly for the self-hosted `amd-gpu` box and restart/re-register it.

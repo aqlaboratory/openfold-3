@@ -1211,3 +1211,31 @@ First `aws-capacity` night since 2026-10-09 (run #316) — both AWS `test-pixi-c
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #345, per this log's established convention).
 
 ---
+
+## 2026-10-24
+
+### Run #347 — primary nightly (schedule `17 3 * * *`, main @ `a83cb11` (unchanged since run #345/346's `a83cb11`, 10-23 — no new merges to main since yesterday's primary nightly), [40058531049](https://github.com/aqlaboratory/openfold-3/actions/runs/40058531049))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 2 min | aws-capacity — `start-aws-runner`: `Failed to launch in us-east-2a/b/c: ... InsufficientInstanceCapacity ... g5.4xlarge` then identically across `us-west-2a/b/c`, plus the standing `us-west-2d` `Unsupported`-AZ rejection → `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+| test-pixi-cuda (openfold3-cuda13) | **CANCELLED** | 9 min | matrix fail-fast, tied to cuda12's aws-capacity failure above — cuda12's `start-aws-runner` failed at 03:31:45Z; cuda13's own `start-aws-runner` had actually just succeeded (launched `runner-o095hzqq` in `us-east-2` after 2 AZ retries, "Launched in us-east-2", all steps reporting `success`) but the job's own `conclusion` still reports `cancelled` once the sibling's failure propagated through the matrix; the downstream `test-openfold-docker-pixi` step was cancelled immediately at 03:32:25Z, before it ever started — not a timeout-minutes cap, not superseded by a newer run (no other run in this concurrency group tonight), not manual |
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 50 min | |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 48 min | |
+| test-pixi-amd (openfold3-rocm7) | **QUEUED** | — (3h42m+ as of scan) | started 2026-10-24T03:29:52Z with zero steps recorded; still queued at scan time (~07:12Z). Required runner label: `[self-hosted, amd-gpu]` (`.github/workflows/ci-integration-test-pixi-amd-reusable.yml`). Candidate `runner-offline`, unconfirmed — `GET /repos/aqlaboratory/openfold-3/actions/runners` still returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this execution environment, same limitation as every prior occurrence in this log. **Second consecutive night with zero AMD coverage:** yesterday's (10-23) AMD job (job 120224903978) sat queued for the full 24 hours and was never picked up by a runner at all — it was only auto-cancelled at 2026-10-24T03:29:52Z, the instant tonight's run opened a new job in the same `cancel-in-progress: true` concurrency group. A runner that hasn't claimed a job in over 24 hours across two consecutive nightly runs is strong circumstantial evidence the self-hosted `amd-gpu` box is actually offline, even though the `/actions/runners` endpoint can't confirm it directly from here. |
+
+**2026-10-24: 2/5 passed · 0 skipped · 1 queued · 2 need attention**
+
+First `aws-capacity` night since run #345 (10-23, which itself broke a 14-night clean streak) — second consecutive night of AWS `g5.4xlarge` capacity exhaustion, though tonight only cuda12 hit it directly; cuda13 is the first case in this log where a leg's own `start-aws-runner` fully succeeded (provisioned an instance in `us-east-2` on the second AZ retry) only for the leg to still be marked `cancelled` once its sibling failed — see `test-failures.md` for full detail on the fail-fast mechanics. Both Brev legs ran clean on the same commit (`a83cb11`, unchanged since 10-23) in 48–50 minutes, same pattern as 10-23: the AWS capacity outage doesn't touch Brev's provider/region. The AMD runner situation is now the most pressing item in this log: `test-pixi-amd (openfold3-rocm7)` has gone two full nights (10-23, 10-24) without executing a single test — not a transient 2h blip but an apparently-stuck self-hosted runner. **Flagged for a human, now urgently:** check Settings → Actions → Runners for the `amd-gpu` self-hosted box directly and restart/re-register it — AMD coverage has been completely dark for over 24 hours. Running Brev leg-tally toward the two-week comparison (brev jobs added 2026-10-14 in PR #448; two-week mark 2026-10-28, 4 days remaining): 17/22 brev job-runs passed to date (75.0% → 77.3% with tonight's 2/2 clean legs).
+
+### Run #348 — secondary nightly (schedule `17 4 * * *`, main @ `a83cb11`, [40062442244](https://github.com/aqlaboratory/openfold-3/actions/runs/40062442244))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-cuda-brev | **SKIPPED** | — | same guard; job named plain `test-pixi-cuda-brev`, confirming it never expanded |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #347, per this log's established convention).
+
+Brev vs. AWS agreement: AWS `test-pixi-cuda` failed/cancelled both legs tonight (one direct `aws-capacity`, one fail-fast cascade) while both Brev legs passed clean — same split as 10-23. Running Brev leg-tally toward the two-week comparison (brev jobs added 2026-10-14 in PR #448; two-week mark 2026-10-28, 4 days remaining): 17/22 brev job-runs passed to date (77.3%), up from 75.0% after 10-23. Still below the monitoring brief's 95%-pass-rate bar for recommending AWS-workflow retirement, and — per this log's running notes since 10-20 — the two non-passes behind that gap (10-20, 10-21) were a Brev-catalog/config issue (fixed by PR #469 on 10-22), not underlying instance unreliability, so the final 10-28 report should weigh that distinction rather than count it at face value.
