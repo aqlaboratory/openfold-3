@@ -1239,3 +1239,29 @@ First `aws-capacity` night since run #345 (10-23, which itself broke a 14-night 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #347, per this log's established convention).
 
 Brev vs. AWS agreement: AWS `test-pixi-cuda` failed/cancelled both legs tonight (one direct `aws-capacity`, one fail-fast cascade) while both Brev legs passed clean — same split as 10-23. Running Brev leg-tally toward the two-week comparison (brev jobs added 2026-10-14 in PR #448; two-week mark 2026-10-28, 4 days remaining): 17/22 brev job-runs passed to date (77.3%), up from 75.0% after 10-23. Still below the monitoring brief's 95%-pass-rate bar for recommending AWS-workflow retirement, and — per this log's running notes since 10-20 — the two non-passes behind that gap (10-20, 10-21) were a Brev-catalog/config issue (fixed by PR #469 on 10-22), not underlying instance unreliability, so the final 10-28 report should weigh that distinction rather than count it at face value.
+
+## 2026-10-25
+
+### Run #349 — primary nightly (schedule `17 3 * * *`, main @ `4597b944` — new merge since 10-24's `a83cb11` (PR #462, feature-dict-mem-refactor), [40158569484](https://github.com/aqlaboratory/openfold-3/actions/runs/40158569484))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 40 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 42 min | |
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 46 min | |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 43 min | |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 43 min | runner `omsf-amd-aupcloud` picked the job up immediately (queued 0 min) — recovered after sitting dark for the prior two nights (10-23, 10-24) |
+
+**2026-10-25: 5/5 passed · 0 skipped · 0 queued · 0 need attention**
+
+First fully clean night since 10-22, breaking the two-night `aws-capacity` streak (10-23, 10-24): both AWS CUDA legs launched and passed cleanly this time (no capacity exhaustion in `start-aws-runner`), and the AMD self-hosted runner — dark for the two prior nights per `aws-outage-failures.md`'s `runner-offline` entries — picked up tonight's job the instant it was queued, with no human intervention recorded in this log between 10-24's scan and tonight's run. No new entries required in `aws-outage-failures.md` or `test-failures.md` tonight. Running Brev leg-tally toward the two-week comparison (brev jobs added 2026-10-14 in PR #448; two-week mark 2026-10-28, 3 days remaining): 19/24 brev job-runs passed to date (79.2%), up from 77.3% after 10-24. Still below the monitoring brief's 95%-pass-rate bar for recommending AWS-workflow retirement; per this log's running notes since 10-20, the non-passes behind that gap predate the 10-22 Brev-catalog fix (PR #469) and 10-23/10-24's AWS-side (not Brev-side) capacity outage — the 10-28 report should weigh that distinction rather than count it at face value.
+
+### Run #350 — secondary nightly (schedule `17 4 * * *`, main @ `4597b944`, [40162032591](https://github.com/aqlaboratory/openfold-3/actions/runs/40162032591))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-cuda-brev | **SKIPPED** | — | same guard; job named plain `test-pixi-cuda-brev`, confirming it never expanded |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #349, per this log's established convention).
