@@ -31,7 +31,7 @@ from collections.abc import Iterable, Iterator
 from functools import wraps
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 import biotite.structure as struc
 import biotite.structure.io as strucio
@@ -614,8 +614,11 @@ def preprocess_structure_and_write_outputs_of3(
     return structure_metadata_dict, ref_mol_metadata_dict
 
 
+T = TypeVar("T")
+
+
 # TODO: replace with itertools.batched once the minimum Python version is >= 3.12
-def _batched(iterable: Iterable, n: int) -> Iterator[tuple]:
+def _batched(iterable: Iterable[T], n: int) -> Iterator[tuple[T, ...]]:
     """Backport of itertools.batched (Python >= 3.12): yields tuples of n items,
     the last one possibly shorter."""
     if n < 1:
