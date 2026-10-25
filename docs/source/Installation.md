@@ -60,7 +60,7 @@ For more information, including rationale, tips and tricks, see [Modern Conda En
 
 ### Installation via pip
 
-0. [Optional] Create a fresh environment with python. Python versions 3.10 - 3.13 are supported
+0. [Optional] Create a fresh environment with python. Python versions 3.11 - 3.14 are supported
 
 ```bash
 conda create -n openfold3 python=3.13 
