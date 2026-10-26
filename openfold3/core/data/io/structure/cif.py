@@ -85,8 +85,11 @@ def _load_ciffile(file_path: Path | str) -> pdbx.CIFFile:
         cif_class = pdbx.CIFFile
     elif file_path.suffix == ".bcif":
         cif_class = pdbx.BinaryCIFFile
+    elif file_path.suffixes == [".cif", ".gz"]:
+        with gzip.open(file_path, "rt") as f:
+            return pdbx.CIFFile.read(f)
     else:
-        raise ValueError("File must be in mmCIF or binary mmCIF format")
+        raise ValueError("File must be in mmCIF, gzipped mmCIF, or binary mmCIF format")
 
     return cif_class.read(file_path)
 

@@ -18,6 +18,7 @@ Train-mode tests live in test_template_train.py.
 """
 
 import getpass
+import gzip
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +36,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorInputInference,
     TemplatePreprocessorSettings,
     TemplateStructurePreprocessor,
+    _get_cif_entry_id_and_filename,
     build_template_cache_key,
     collate_data_logs,
     data_log_to_tsv,
@@ -53,6 +55,25 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
     Query,
 )
+
+
+@pytest.mark.parametrize(
+    ("filename", "entry_id", "normalized_filename"),
+    [
+        ("3juh.cif", "3juh", "3juh.cif"),
+        ("3mb6.cif.gz", "3mb6", "3mb6.cif.gz"),
+    ],
+)
+def test_get_cif_entry_id_and_filename(filename, entry_id, normalized_filename):
+    assert _get_cif_entry_id_and_filename(Path(filename)) == (
+        entry_id,
+        normalized_filename,
+    )
+
+
+def test_get_cif_entry_id_and_filename_rejects_unsupported_suffix():
+    with pytest.raises(ValueError, match="must end in '.cif' or '.cif.gz'"):
+        _get_cif_entry_id_and_filename(Path("3mb6.pdb"))
 
 
 def _make_template(
@@ -893,6 +914,42 @@ def _two_source_query_set(tmp_path: Path, order: list[str]) -> InferenceQuerySet
             for name in order
         }
     )
+
+
+def test_cif_direct_mixed_suffixes_use_provided_paths(tmp_path):
+    """CIF-direct mode parses mixed plain and compressed input paths successfully."""
+    plain_path = tmp_path / "2q2k.cif"
+    compressed_path = tmp_path / "2q2k_copy.cif.gz"
+    shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, plain_path)
+    with plain_path.open("rb") as source, gzip.open(compressed_path, "wb") as target:
+        shutil.copyfileobj(source, target)
+
+    query_sequence = get_asym_id_to_canonical_seq_dict(_load_ciffile(plain_path))["B"]
+    query_set = InferenceQuerySet(
+        queries={
+            "mixed_suffixes": Query(
+                chains=[
+                    Chain(
+                        molecule_type="protein",
+                        chain_ids=["A"],
+                        sequence=query_sequence,
+                        template_cif_paths=[plain_path, compressed_path],
+                    )
+                ]
+            )
+        }
+    )
+    config = TemplatePreprocessorSettings(
+        output_directory=tmp_path / "intermediate",
+        fetch_missing_structures=False,
+        n_processes=1,
+    )
+
+    TemplatePreprocessor(query_set, config)()
+
+    chain = query_set.queries["mixed_suffixes"].chains[0]
+    assert chain.template_alignment_file_path is not None
+    assert chain.template_entry_chain_ids == ["2q2k_B", "2q2k_copy_B"]
 
 
 @pytest.mark.parametrize(

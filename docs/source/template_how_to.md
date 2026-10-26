@@ -92,6 +92,18 @@ Note that since `m8` files do not provide actual alignments, we only use them to
 
 For alignment-based templates, template structures currently can only be provided in `cif` format. An upcoming release will add support for parsing templates from `pdb` files.
 
+Template structures may be stored in a flat directory or in two-character shard
+directories ([PDB standard](https://ftp.ebi.ac.uk/pub/databases/pdb/data/structures/divided/mmCIF/)). Template lookup checks the flat directory first, then checks the directory
+named by the two-character slice `pdb_id[-3:-1]`. For example, `4md7.cif` is looked up
+as `4md7.cif` in the configured directory and then as `md/4md7.cif`:
+
+```yaml
+structure_directory: /path/to/pdb/database/mmCIF/
+structure_file_format: cif
+```
+
+> Supported `structure_file_format`: `cif`, `cif.gz`, and `bcif`.
+
 **Note:** For {ref}`CIF direct mode <23-cif-direct-templates>`, template CIF files are specified directly in the query JSON without separate structure directories.
 
 (2-specifying-template-information-in-the-inference-query-file)=
@@ -176,7 +188,7 @@ entry3_A     MK----DDARGQGKFT
 (23-cif-direct-templates)=
 ### 2.3. CIF Direct Templates (No Alignments Required)
 
-OpenFold3 supports providing template structures directly as CIF files without requiring pre-computed template alignments. This is particularly useful for:
+OpenFold3 supports providing template structures directly as CIF files, including gzip-compressed `.cif.gz` files, without requiring pre-computed template alignments. Compressed CIF files can be supplied directly; manual decompression is not required. This is particularly useful for:
 - Stateless inference environments (e.g., NVIDIA Inference Microservices)
 - Quick predictions when you have specific template structures
 - Simplified workflows without external alignment tools
@@ -205,7 +217,7 @@ Specify `template_cif_paths` instead of `template_alignment_file_path` in your q
                     "chain_ids": ["A", "B"],
                     "sequence": "XRMKQLEDKVEELLSKNYHLENEVARLKKLVGER",
                     "template_cif_paths": [
-                        "templates/1dgc.cif",
+                        "templates/1dgc.cif.gz",
                         "templates/1ysa.cif",
                         "templates/1zta.cif"
                     ]
@@ -234,7 +246,7 @@ Only chains with a score (sequence identity × coverage) above this threshold wi
 #### Important Notes
 
 - The `template_cif_paths` field is **mutually exclusive** with `template_alignment_file_path` - you must use one or the other, not both
-- Template structures must be in CIF format
+- Template structures must be in CIF format; gzip-compressed `.cif.gz` files are supported
 - Currently supported for protein chains only
 - For multi-chain CIF files, the system automatically selects the best matching chain per file
 
@@ -249,7 +261,7 @@ For high-throughput use cases with alignment-based templates, where a large numb
 
 A recommended workflow for providing template data for very large datasets is the following:
 1. Compute {ref}`template alignments <311-precomputed-template-alignments>`.
-2. [Download the PDB](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/snakemake_msa/download_of3_databases.py) or other template structure dataset locally.
+2. [Download the PDB](https://ftp.ebi.ac.uk/pub/databases/pdb/data/structures/divided/mmCIF/) or other template structure dataset locally.
 3. Precompute the {ref}`template precache <312-template-precache>` from template structures to speed up template cache precomputation.
 4. Precompute the {ref}`template cache <313-template-cache>` from template alignments and the template precache.
 5. Preparse the {ref}`template structures <32-template-structure-preprocessing>` into template structure arrays.
