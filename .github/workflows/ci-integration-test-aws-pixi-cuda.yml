@@ -269,7 +269,7 @@ jobs:
         if: ${{ always() && inputs.coverage }}
         uses: actions/upload-artifact@v7
         with:
-          name: coverage-report-integration-${{ inputs.pixi_env }}
+          name: coverage-report-integration-aws-${{ inputs.pixi_env }}
           path: |
             coverage.xml
             .coverage
@@ -292,7 +292,7 @@ jobs:
           root = ET.parse("coverage.xml").getroot()
           covered = int(root.get("lines-covered"))
           valid = int(root.get("lines-valid"))
-          print("## Coverage — full suite on GPU")
+          print("## Coverage — full suite on GPU (AWS)")
           print()
           print(f"**{float(root.get('line-rate')) * 100:.1f}%** ({covered:,} / {valid:,} lines)")
           print()

@@ -22,6 +22,13 @@ on:
         description: 'Brev instance type, or a comma-separated fallback chain. Find values with `brev search`.'
         required: true
         type: string
+      coverage:
+        description: >-
+          Measure coverage on this run: the whole suite, without `-x`. See the
+          same input in ci-integration-test-aws-pixi-cuda.yml for why.
+        required: false
+        type: boolean
+        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -56,7 +63,9 @@ jobs:
     runs-on: ${{ fromJSON(needs.start-brev-runner.outputs.instances) }}
     needs:
       - start-brev-runner
-    timeout-minutes: 60
+    # The plain run already takes ~40 min; the coverage run adds the rest of the
+    # suite and the tracing overhead on the serialised slow tests.
+    timeout-minutes: ${{ inputs.coverage && 90 || 60 }}
     permissions:
       contents: read
       packages: write
@@ -131,13 +140,70 @@ jobs:
 
       - name: Run integration test
         run: |
-          docker run --rm --gpus all \
-            --shm-size=8g \
+          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }}"
+          run_pytest() {
+            docker run --rm --gpus all \
+              --shm-size=8g \
+              -v ${{ github.workspace }}:/opt/openfold3 \
+              -v ~/.openfold3:/root/.openfold3 \
+              "$image" pytest "$@" -o faulthandler_timeout=900
+          }
+
+          if [ "${{ inputs.coverage }}" != "true" ]; then
+            run_pytest -x openfold3/tests/ -m "slow or gpu" -vvv -s
+            exit
+          fi
+
+          # Same invocation as the AWS workflow; see the comment there.
+          run_pytest openfold3/tests/ -vvv -n auto --dist loadgroup \
+            --cov=openfold3 --cov-report=xml --cov-report=term
+
+      - name: Reclaim workspace ownership
+        # The container runs as root, so coverage.xml and .coverage land in the
+        # bind-mounted workspace owned by root and the runner user cannot read
+        # them to upload.
+        if: ${{ always() && inputs.coverage }}
+        run: |
+          docker run --rm \
             -v ${{ github.workspace }}:/opt/openfold3 \
-            -v ~/.openfold3:/root/.openfold3 \
+            --entrypoint chown \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
-            pytest -x openfold3/tests/ -m "slow or gpu" -vvv -s \
-              -o faulthandler_timeout=900
+            -R "$(id -u):$(id -g)" /opt/openfold3
+
+      - name: Upload coverage report
+        if: ${{ always() && inputs.coverage }}
+        uses: actions/upload-artifact@v7
+        with:
+          # Distinct from the AWS job's name: both run in the same workflow run
+          # and artifact names must be unique within it.
+          name: coverage-report-integration-brev-${{ inputs.pixi_env }}
+          path: |
+            coverage.xml
+            .coverage
+          include-hidden-files: true
+          retention-days: 30
+
+      - name: Publish coverage summary
+        if: ${{ always() && inputs.coverage }}
+        run: |
+          if [ ! -f coverage.xml ]; then
+            echo "No coverage.xml produced -- the test run likely died early." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("coverage.xml").getroot()
+          covered = int(root.get("lines-covered"))
+          valid = int(root.get("lines-valid"))
+          print("## Coverage — full suite on GPU (Brev)")
+          print()
+          print(f"**{float(root.get('line-rate')) * 100:.1f}%** ({covered:,} / {valid:,} lines)")
+          print()
+          print("Whole suite in one pass on a GPU runner, so this covers the")
+          print("accelerator paths the CPU-only PR tier has to skip.")
+          PY
 
   stop-brev-runner:
     runs-on: ubuntu-latest
