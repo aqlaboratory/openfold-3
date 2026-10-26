@@ -1,6 +1,7 @@
 """Regression tests for paired MSA row ranking"""
 
 import math
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pytest
@@ -14,6 +15,21 @@ from openfold3.core.data.primitives.sequence.msa import (
 @pytest.fixture(params=[0, 1, 2])
 def seed(request):
     return request.param
+
+
+@pytest.fixture
+def product_dtypes():
+    """Records the dtype of every array passed to `np.prod` during a test."""
+    recorded = []
+    original_prod = np.prod
+
+    def record_dtype(array, *args, **kwargs):
+        dtype = kwargs.get("dtype")
+        recorded.append(np.dtype(dtype if dtype is not None else array.dtype))
+        return original_prod(array, *args, **kwargs)
+
+    with patch.object(np, "prod", Mock(side_effect=record_dtype)):
+        yield recorded
 
 
 @pytest.fixture(
@@ -33,7 +49,7 @@ def seed(request):
         pytest.param((8, 20_000, tuple(range(9))), id="mixed-pairing-blocks"),
     ]
 )
-def paired_row_case(request, seed, monkeypatch):
+def paired_row_case(request, seed):
     n_chains, max_row_id, unpaired_counts = request.param
     rng = np.random.default_rng(seed)
     n_rows = 12_000
@@ -61,22 +77,11 @@ def paired_row_case(request, seed, monkeypatch):
         # the sorter does not promise stable ties.
         expected_order[positions] = positions[np.argsort(keys.astype(dtype))]
 
-    product_dtypes = []
-    original_prod = np.prod
-
-    def track_product_dtype(array, *args, **kwargs):
-        dtype = kwargs.get("dtype")
-        product_dtypes.append(np.dtype(dtype if dtype is not None else array.dtype))
-        return original_prod(array, *args, **kwargs)
-
-    monkeypatch.setattr(np, "prod", track_product_dtype)
-    return row_ids, per_chain, species, expected_order, expected_dtypes, product_dtypes
+    return row_ids, per_chain, species, expected_order, expected_dtypes
 
 
-def test_sort_paired_rows_uses_exact_product_order(paired_row_case):
-    row_ids, per_chain, species, expected_order, expected_dtypes, product_dtypes = (
-        paired_row_case
-    )
+def test_sort_paired_rows_uses_exact_product_order(paired_row_case, product_dtypes):
+    row_ids, per_chain, species, expected_order, expected_dtypes = paired_row_case
     sorted_rows, sorted_species = sort_by_row_id_product(per_chain, species.copy())
     np.testing.assert_array_equal(sorted_species, species[expected_order])
     for chain_idx, chain_id in enumerate(per_chain):
@@ -86,10 +91,10 @@ def test_sort_paired_rows_uses_exact_product_order(paired_row_case):
     assert product_dtypes == expected_dtypes
 
 
-def test_subsample_paired_rows_uses_exact_product_order(paired_row_case):
-    row_ids, per_chain, species, expected_order, expected_dtypes, product_dtypes = (
-        paired_row_case
-    )
+def test_subsample_paired_rows_uses_exact_product_order(
+    paired_row_case, product_dtypes
+):
+    row_ids, per_chain, species, expected_order, expected_dtypes = paired_row_case
     max_rows_paired = 8191
     rows_out, species_out, n_rows_actual = sort_subsample_paired_row_ids(
         per_chain, species.copy(), max_rows_paired
