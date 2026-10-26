@@ -27,11 +27,11 @@ import os
 import sys
 import time
 import traceback
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from functools import wraps
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
 import biotite.structure as struc
 import biotite.structure.io as strucio
@@ -614,20 +614,6 @@ def preprocess_structure_and_write_outputs_of3(
     return structure_metadata_dict, ref_mol_metadata_dict
 
 
-T = TypeVar("T")
-
-
-# TODO: replace with itertools.batched once the minimum Python version is >= 3.12
-def _batched(iterable: Iterable[T], n: int) -> Iterator[tuple[T, ...]]:
-    """Backport of itertools.batched (Python >= 3.12): yields tuples of n items,
-    the last one possibly shorter."""
-    if n < 1:
-        raise ValueError("n must be at least one")
-    iterator = iter(iterable)
-    while batch := tuple(itertools.islice(iterator, n)):
-        yield batch
-
-
 class _BatchWrapper:
     """Wraps a callable to process a batch of items."""
 
@@ -925,7 +911,7 @@ def preprocess_cif_dir_of3(
                 )
 
             try:
-                batches = list(_batched(remaining, retry_chunksize))
+                batches = list(itertools.batched(remaining, retry_chunksize))
 
                 with mp.Pool(
                     retry_num_workers,
