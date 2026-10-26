@@ -1,19 +1,10 @@
 """Guards the conftest fixture that restores os.environ after every test.
 
-The two tests below must run in order in the same process: the first leaks a
-variable the way ``setup_openfold.run_setup`` leaks ``OPENFOLD_CACHE``, the second
-checks it is gone. Under ``pytest -n`` they may land on different workers, in which
-case the second passes without exercising anything.
+The restore itself is ``unittest.mock.patch.dict``; what can silently break is the
+fixture no longer wrapping every test (renamed, moved, or no longer autouse). Check
+that directly, so the result does not depend on test order or xdist scheduling.
 """
 
-import os
 
-_CANARY = "_OPENFOLD_TEST_ENVIRON_CANARY"
-
-
-def test_leak_environ_variable():
-    os.environ[_CANARY] = "leaked"
-
-
-def test_environ_variable_did_not_leak():
-    assert _CANARY not in os.environ
+def test_restore_environ_fixture_wraps_every_test(request):
+    assert "_restore_environ" in request.fixturenames
