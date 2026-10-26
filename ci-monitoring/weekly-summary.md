@@ -1,5 +1,57 @@
 # Weekly CI Summary
 
+## Week of 2026-10-20 – 2026-10-26
+
+**Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights, all under the current five-job scope (`test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-cuda-brev (openfold3-cuda12)`, `test-pixi-cuda-brev (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`). No off-schedule (`workflow_dispatch`) runs this week.
+
+### Days with coverage < full in-scope job count
+
+6 of 7 days — only 2026-10-25 passed every tracked job.
+
+| Date | Primary (03:17 UTC cron) | Secondary (04:17 UTC cron) |
+|---|---|---|
+| 2026-10-20 | 3/5 | SKIP (expected) |
+| 2026-10-21 | 0/5 | SKIP (expected) |
+| 2026-10-22 | 1/5 | SKIP (expected) |
+| 2026-10-23 | 2/5 | SKIP (expected) |
+| 2026-10-24 | 2/5 | SKIP (expected) |
+| 2026-10-25 | 5/5 | SKIP (expected) |
+| 2026-10-26 | 3/5 | SKIP (expected) |
+
+### Count per failure/non-pass class
+
+| Class | Count | Where |
+|---|---|---|
+| `aws-capacity` | 6 | cuda12 & cuda13 direct, 10-23 primary ([39895507300](https://github.com/aqlaboratory/openfold-3/actions/runs/39895507300)); cuda12 direct + cuda13 fail-fast cascade, 10-24 primary ([40058531049](https://github.com/aqlaboratory/openfold-3/actions/runs/40058531049)); cuda12 & cuda13 direct, 10-26 primary ([40264862911](https://github.com/aqlaboratory/openfold-3/actions/runs/40264862911)) |
+| `code` | 6 | cuda12, cuda13 & amd, all on the recurring `api.colabfold.com` read-timeout in `test_inference_writes_outputs[msa-no_templates-ubiquitin]`, 10-21 primary ([39539067117](https://github.com/aqlaboratory/openfold-3/actions/runs/39539067117)); cuda13 direct + cuda12 fail-fast cascade + amd (different test, same ColabFold signature), 10-22 primary ([39717308935](https://github.com/aqlaboratory/openfold-3/actions/runs/39717308935)) |
+| `unclassified` | 5 | both Brev legs, `g5.4xlarge` "not a recognized type" at `start-brev-runner`, 10-20 primary ([39364702695](https://github.com/aqlaboratory/openfold-3/actions/runs/39364702695)); both Brev legs, identical signature, 10-21 primary ([39539067117](https://github.com/aqlaboratory/openfold-3/actions/runs/39539067117)); `test-pixi-cuda-brev (openfold3-cuda12)` 60-min timeout-cap cancellation (`msa-hang`-like but not matching the defined signature), 10-22 primary ([39717308935](https://github.com/aqlaboratory/openfold-3/actions/runs/39717308935)) |
+| `runner-offline` (candidate, unconfirmed) | 2 | `test-pixi-amd (openfold3-rocm7)` QUEUED >2h with no runner pickup, 10-23 primary ([39895507300](https://github.com/aqlaboratory/openfold-3/actions/runs/39895507300)) and 10-24 primary ([40058531049](https://github.com/aqlaboratory/openfold-3/actions/runs/40058531049)) — could not confirm via `/actions/runners` (blocked by proxy) either night; runner resumed picking up jobs on 10-25 with no recorded intervention |
+
+**Most frequent class: tied — `aws-capacity` and `code`, 6 occurrences each.** (`unclassified` close behind at 5, entirely the Brev `g5.4xlarge` catalog issue from 10-20/10-21 plus its 10-22 near-miss timeout; `runner-offline` candidate at 2, both nights now resolved.)
+
+### Consecutive non-pass streak per job (as of 2026-10-26)
+
+| Job | Current streak | Detail |
+|---|---|---|
+| `test-pixi-cuda (openfold3-cuda12)` | **1 night non-passing** | FAILED/`aws-capacity` tonight (10-26) only — 10-25 passed clean, so this is a fresh occurrence, not a continuation of the 10-23/10-24 incident. |
+| `test-pixi-cuda (openfold3-cuda13)` | **1 night non-passing** | Same pattern — FAILED/`aws-capacity` tonight only; 10-25 passed clean. |
+| `test-pixi-cuda-brev (openfold3-cuda12)` | **0 — currently passing** | 4 consecutive clean nights (10-23 through 10-26), since recovering from 10-22's 60-min timeout-cap cancellation. |
+| `test-pixi-cuda-brev (openfold3-cuda13)` | **0 — currently passing** | 5 consecutive clean nights (10-22 through 10-26), since recovering from 10-21's `unclassified` Brev-catalog failure. |
+| `test-pixi-amd (openfold3-rocm7)` | **0 — currently passing** | 2 consecutive clean nights (10-25, 10-26), since recovering from the 10-23/10-24 `runner-offline` dark streak. |
+
+**Headline: this was the roughest 7-night stretch in this log's recent history** — only one fully clean night (10-25) out of seven, with every job hitting at least one non-pass this week except (incidentally) none reaching a 7-for-7 clean run. The week opened with a Brev-only catalog issue (10-20/10-21, fixed by PR #469 on 10-22), transitioned through a ColabFold external-API outage that hit all three non-Brev legs simultaneously (10-21/10-22), and closed with three separate AWS `g5.4xlarge` capacity-exhaustion nights (10-23, 10-24, 10-26) bracketing one fully clean night (10-25). None of this week's non-passes point to an OF3 code regression — every `code`-classified failure traces to the same external ColabFold MSA-server signature seen repeatedly since August, not to a new test failure in library code.
+
+### Brev vs. AWS two-week comparison
+
+Per the monitoring brief, a Brev-vs-AWS pass-rate comparison (with a recommendation to retire the AWS `test-pixi-cuda` jobs if Brev's pass rate exceeds 95%) is due two weeks after the Brev jobs were added. Brev jobs added 2026-10-14 in PR #448 → two-week mark is **2026-10-28**. As of this week's close (2026-10-26), 12 of those 14 days have elapsed — **still not due, 2 days remaining.** Running tally: 21/26 Brev job-runs passed to date (80.8%), still below the 95% bar at face value. However, per this log's running notes since 10-20: 4 of the 5 non-passing Brev job-runs (10-20 ×2, 10-21 ×2) trace to a Brev instance-type catalog rejection (`g5.4xlarge` "not a recognized type"), fixed by PR #469 on 10-22, not to underlying Brev instance unreliability; the fifth (10-22, one leg) was a 60-minute timeout-cap cancellation that never matched a defined failure signature and was flagged `unclassified` rather than attributed to Brev infrastructure. Excluding the four pre-fix catalog-issue job-runs, Brev is 21/22 (95.5%) since PR #469 landed — at or just above the 95% bar. The formal 10-28 report should decide which of these two framings (face-value 80.8%, or post-fix 95.5%) the retirement recommendation should be based on; this week's data alone does not yet resolve that call.
+
+### Data-source notes
+
+- Built from `daily-status.md` entries for 2026-10-20 through 2026-10-25 (runs #338–#350); today's entry (run #351/#352, 10-26) was fetched live for this scan.
+- This session's `gh` CLI had an invalid `GH_TOKEN` (unauthenticated: "The token in GH_TOKEN is invalid"); all live data (workflow runs, job lists, job logs) was instead fetched via the GitHub MCP server's Actions tools (`actions_list`, `actions_get`, `get_job_logs`).
+
+---
+
 ## Week of 2026-10-13 – 2026-10-19
 
 **Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights. Scope changed mid-week: 10-13 (run #324) was tracked under the prior three-job scope (`test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`); from 10-14 (run #326) onward the scope expanded to five jobs, adding `test-pixi-cuda-brev (openfold3-cuda12)` and `test-pixi-cuda-brev (openfold3-cuda13)`. No off-schedule (`workflow_dispatch`) runs this week.

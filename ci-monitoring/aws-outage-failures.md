@@ -322,3 +322,27 @@ Note: second consecutive `aws-capacity` night (10-23, 10-24) after a 14-night cl
 - Required label: `[self-hosted, amd-gpu]` (`.github/workflows/ci-integration-test-pixi-amd-reusable.yml`).
 - **Second consecutive night.** Yesterday's (10-23) AMD job (job 120224903978) never picked up a runner either: it sat `queued` from 2026-10-23T03:31:52Z all the way to 2026-10-24T03:29:52Z — nearly 24 full hours — and was only terminated (`conclusion: cancelled`) at that moment because tonight's run opened a new job in the same `cancel-in-progress: true` concurrency group, not because anything about the stale job itself resolved. AMD test coverage has now been completely dark for over 24 hours across two nightly runs.
 - Could not confirm the runner's live status directly: `GET /repos/aqlaboratory/openfold-3/actions/runners` returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this execution environment — same limitation noted on 10-23 and in `weekly-summary.md`'s data-source notes. **Flagged for a human, now urgently given the 24h+ dark streak:** check Settings → Actions → Runners directly for the self-hosted `amd-gpu` box and restart/re-register it.
+
+---
+
+### 2026-10-26 — Run [40264862911](https://github.com/aqlaboratory/openfold-3/actions/runs/40264862911) (run #351)
+
+- **Branch:** main @ `f87904d` (merge PR #478 "Mark `test_shape_large_bf16_train` test as slow", new since run #349/10-25's `4597b944`)
+- **Scan date:** 2026-10-26
+- **Time:** 2026-10-26T03:36:02Z – 03:37:45Z UTC
+- **Error:** `Failed to launch in us-east-2a: An error occurred (InsufficientInstanceCapacity) when calling the RunInstances operation (reached max retries: 4): We currently do not have sufficient g5.4xlarge capacity in the Availability Zone you requested (us-east-2a)...` (same across `us-east-2b`/`c` and `us-west-2a`/`b`/`c`), plus `Failed to launch in us-west-2d: An error occurred (Unsupported) ... Your requested instance type (g5.4xlarge) is not supported in your requested Availability Zone (us-west-2d)` → `ValueError: Failed to launch in any available Availability Zone` → `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2`
+- **Root cause:** AWS could not provision `g5.4xlarge` GPU EC2 instances across all six capacity pools (3x us-east-2, 3x us-west-2, the sixth — `us-west-2d` — unsupported for this instance type) — both CUDA legs' `start-aws-runner` steps failed identically and independently tonight (not a fail-fast cascade: cuda13's own launch attempt failed on its own merits across all six AZs, unlike 10-24); the corresponding `stop-aws-runner` steps failed as the same cascading consequence seen in every prior occurrence (`TypeError: StopAWS.__init__() missing 1 required positional argument: 'instance_mapping'` — no instance was ever created to tear down), and the `test-openfold-docker-pixi` test job never ran for either leg (`skipped`). Same signature as runs #252 (09-10), #282 (09-22), #284 (09-24), #291 (09-27), #295 (09-29), #299 (10-01), #314 (10-08), #316 (10-09), #345 (10-23), and #347 (10-24, cuda12 leg only) — third occurrence in the last four nights.
+- **Failed jobs (start-aws-runner):**
+  - `test-pixi-cuda (openfold3-cuda12)` — start-aws-runner (job 121384934940)
+  - `test-pixi-cuda (openfold3-cuda13)` — start-aws-runner (job 121384934841)
+- **Cascading failures (stop-aws-runner — no instance to stop):**
+  - `test-pixi-cuda (openfold3-cuda12)` — stop-aws-runner (job 121385386421)
+  - `test-pixi-cuda (openfold3-cuda13)` — stop-aws-runner (job 121385377787)
+- **Skipped (no runner available):**
+  - `test-pixi-cuda (openfold3-cuda12)` — test-openfold-docker-pixi (job 121385387580), conclusion `skipped`
+  - `test-pixi-cuda (openfold3-cuda13)` — test-openfold-docker-pixi (job 121385378790), conclusion `skipped`
+- **Passing (Brev CUDA runners, unaffected):**
+  - `test-pixi-cuda-brev (openfold3-cuda12)` — test-openfold-docker-pixi (job 121386761152), 42 min
+  - `test-pixi-cuda-brev (openfold3-cuda13)` — test-openfold-docker-pixi (job 121386823279), 39 min
+
+Note: third `aws-capacity` night in the last four (10-23, 10-24, 10-26) — tonight both legs hit the capacity wall directly and independently, the same pattern as 10-23 (unlike 10-24, where only cuda12 hit it directly and cuda13 was a fail-fast cascade). Both Brev legs passed clean on the new commit (`f87904d`, PR #478 — a test-marker-only change, no functional impact) in 39–42 minutes, reinforcing that Brev draws from a separate capacity pool than the AWS `g5.4xlarge` runners. No `runner-offline` entry tonight — `test-pixi-amd (openfold3-rocm7)` passed clean, its second consecutive clean night after the 10-23/10-24 dark streak.

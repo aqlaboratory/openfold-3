@@ -1265,3 +1265,31 @@ First fully clean night since 10-22, breaking the two-night `aws-capacity` strea
 | test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #349, per this log's established convention).
+
+---
+
+## 2026-10-26
+
+### Run #351 — primary nightly (schedule `17 3 * * *`, main @ `f87904d` — merge PR #478 "Mark `test_shape_large_bf16_train` test as slow" (new since run #349/10-25's `4597b944`), [40264862911](https://github.com/aqlaboratory/openfold-3/actions/runs/40264862911))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 2 min | aws-capacity — `start-aws-runner`: `Failed to launch in us-east-2a/b/c: ... InsufficientInstanceCapacity ... g5.4xlarge` then identically across `us-west-2a/b/c`, plus the standing `us-west-2d` `Unsupported`-AZ rejection → `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 2 min | aws-capacity — identical signature, hit directly and independently of cuda12 (not a fail-fast cascade tonight — unlike 10-24, both legs' own `start-aws-runner` failed on their own merits): `Failed to launch in us-east-2a/b/c` then `us-west-2a/b/c`, all `InsufficientInstanceCapacity` for `g5.4xlarge` (plus `us-west-2d` `Unsupported`) → `##[error]No capacity for g5.4xlarge in any zone of us-east-2 or us-west-2` |
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 42 min | |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 39 min | |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 40 min | runner `omsf-amd-aupcloud` picked the job up immediately (queued 0 min) — second consecutive clean night (10-25, 10-26) after the 10-23/10-24 dark streak |
+
+**2026-10-26: 3/5 passed · 0 skipped · 0 queued · 2 need attention**
+
+Third `aws-capacity` night in the last four (10-23, 10-24, 10-26) — tonight both AWS CUDA legs hit `g5.4xlarge` `InsufficientInstanceCapacity` directly and independently (unlike 10-24, where only cuda12 hit it directly and cuda13 was taken out by fail-fast after its own runner had already launched); full detail in `aws-outage-failures.md`. Both `stop-aws-runner` steps failed as the same cascading consequence seen in every prior occurrence of this signature (`TypeError: StopAWS.__init__() missing 1 required positional argument: 'instance_mapping'` — no instance was ever created to tear down). Both Brev legs ran clean on the new commit (`f87904d`, PR #478 — a test-marker-only change, no functional impact) in 39–42 minutes, same pattern as every prior `aws-capacity` night: the outage doesn't touch Brev's provider/region. The AMD self-hosted runner picked up tonight's job immediately, its second consecutive clean night after the 10-23/10-24 two-night dark streak. No new entry required in `test-failures.md` tonight (both non-passes are `aws-capacity`, scoped to `aws-outage-failures.md`). Running Brev leg-tally toward the two-week comparison (brev jobs added 2026-10-14 in PR #448; two-week mark 2026-10-28, 2 days remaining): 21/26 brev job-runs passed to date (80.8%), up from 79.2% after 10-25. Still below the monitoring brief's 95%-pass-rate bar for recommending AWS-workflow retirement; per this log's running notes since 10-20, the two non-passes behind most of that gap (10-20, 10-21, 4 job-runs) predate the 10-22 Brev-catalog fix (PR #469), so the 10-28 report should weigh that distinction rather than count it at face value — excluding those pre-fix job-runs, Brev is 21/22 (95.5%) since the fix.
+
+### Run #352 — secondary nightly (schedule `17 4 * * *`, main @ `f87904d`, [40269664282](https://github.com/aqlaboratory/openfold-3/actions/runs/40269664282))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-cuda-brev | **SKIPPED** | — | same guard; job named plain `test-pixi-cuda-brev`, confirming it never expanded |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #351, per this log's established convention).
