@@ -60,25 +60,28 @@ def random_asym_ids(n_res, split_chains=True, min_chain_len=4):
     return np.array(asym_ids).astype(np.float32) + 1
 
 
-def random_template_feats(n_templ, n, batch_size=None):
-    b = []
-    if batch_size is not None:
-        b.append(batch_size)
-    batch = {
-        "template_mask": np.random.randint(0, 2, (*b, n_templ)),
-        "template_pseudo_beta_mask": np.random.randint(0, 2, (*b, n_templ, n)),
-        "template_pseudo_beta": np.random.rand(*b, n_templ, n, 3),
-        "template_aatype": np.random.randint(0, 22, (*b, n_templ, n)),
-        "template_all_atom_mask": np.random.randint(0, 2, (*b, n_templ, n, 37)),
-        "template_all_atom_positions": np.random.rand(*b, n_templ, n, 37, 3) * 10,
-        "template_torsion_angles_sin_cos": np.random.rand(*b, n_templ, n, 7, 2),
-        "template_alt_torsion_angles_sin_cos": np.random.rand(*b, n_templ, n, 7, 2),
-        "template_torsion_angles_mask": np.random.rand(*b, n_templ, n, 7),
-    }
-    batch = {k: v.astype(np.float32) for k, v in batch.items()}
-    batch["template_aatype"] = batch["template_aatype"].astype(np.int64)
+def random_template_features(
+    batch_size: int, n_templ: int, n_token: int
+) -> dict[str, torch.Tensor]:
+    """Random template features in the layout produced by the data pipeline"""
 
-    return batch
+    def random_mask(*shape):
+        return (torch.rand(shape) > 0.2).float()
+
+    return {
+        "template_restype": torch.randint(
+            0,
+            len(STANDARD_RESIDUES_WITH_GAP_3),
+            (batch_size, n_templ, n_token),
+            dtype=torch.int32,
+        ),
+        "template_pseudo_beta_mask": random_mask(batch_size, n_templ, n_token),
+        "template_backbone_frame_mask": random_mask(batch_size, n_templ, n_token),
+        "template_pseudo_beta_coords": torch.randn((batch_size, n_templ, n_token, 3))
+        * 10,
+        "template_frame_atom_coords": torch.randn((batch_size, n_templ, n_token, 3, 3))
+        * 10,
+    }
 
 
 def random_extra_msa_feats(n_extra, n, batch_size=None):
@@ -139,20 +142,24 @@ def random_attention_inputs(
     inf=1e9,
     dtype=torch.float32,
     requires_grad=False,
+    bias_scale=0.1,
 ):
-    q = torch.rand(
+    q = torch.randn(
         batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad
     ).cuda()
-    kv = torch.rand(
+    kv = torch.randn(
         batch_size, n_seq, n, c_hidden, dtype=dtype, requires_grad=requires_grad
     ).cuda()
 
     mask = torch.randint(
         0, 2, (batch_size, n_seq, 1, 1, n), dtype=dtype, requires_grad=False
     ).cuda()
-    z_bias = torch.rand(
-        batch_size, 1, no_heads, n, n, dtype=dtype, requires_grad=requires_grad
-    ).cuda()
+    z_bias = (
+        bias_scale
+        * torch.randn(
+            batch_size, 1, no_heads, n, n, dtype=dtype, requires_grad=requires_grad
+        ).cuda()
+    )
     mask_bias = inf * (mask - 1)
 
     biases = [mask_bias, z_bias]
@@ -234,23 +241,13 @@ def random_of3_features(batch_size, n_token, n_msa, n_templ, is_eval=False):
         "ref_atom_name_chars": torch.ones((batch_size, n_atom, 4, 64)).int(),
         "ref_space_uid": atom_to_token_index.unsqueeze(0).repeat((batch_size, 1)),
         # MSA features
-        "msa": torch.ones((batch_size, n_msa, n_token, 32)).int(),
+        "msa": torch.zeros((batch_size, n_msa, n_token), dtype=torch.uint8),
         "has_deletion": torch.ones((batch_size, n_msa, n_token)).float(),
         "deletion_value": torch.ones((batch_size, n_msa, n_token)).float(),
         "profile": torch.ones((batch_size, n_token, 32)).float(),
         "deletion_mean": torch.ones((batch_size, n_token)).float(),
         # Template features
-        "template_restype": torch.ones((batch_size, n_templ, n_token, 32)).int(),
-        "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)).float(),
-        "template_backbone_frame_mask": torch.ones(
-            (batch_size, n_templ, n_token)
-        ).float(),
-        "template_distogram": torch.ones(
-            (batch_size, n_templ, n_token, n_token, 39)
-        ).float(),
-        "template_unit_vector": torch.ones(
-            (batch_size, n_templ, n_token, n_token, 3)
-        ).float(),
+        **random_template_features(batch_size, n_templ, n_token),
         # Bond features
         "token_bonds": torch.ones((batch_size, n_token, n_token)).int(),
         # Additional features
@@ -318,3 +315,31 @@ def create_atomarray_with_bondlist(
     atom_array.bonds = bondlist
 
     return atom_array
+
+
+def atomized_single_atom_batch(n_token: int) -> dict:
+    """Batch of ``n_token`` single-atom, atomized tokens for loss tests.
+
+    Every token is atomized with exactly one atom, so the representative-atom
+    and atom masks are all-true and their counts scale directly with
+    ``n_token``.
+    """
+    return {
+        "token_mask": torch.ones((1, n_token)),
+        "atom_mask": torch.ones((1, n_token)),
+        "restype": torch.nn.functional.one_hot(
+            torch.zeros(1, n_token).long(), 32
+        ).float(),
+        "num_atoms_per_token": torch.ones((1, n_token)),
+        "start_atom_index": torch.arange(n_token).unsqueeze(0).float(),
+        "asym_id": torch.zeros((1, n_token)),
+        "is_protein": torch.zeros((1, n_token)),
+        "is_rna": torch.zeros((1, n_token)),
+        "is_dna": torch.zeros((1, n_token)),
+        "is_atomized": torch.ones((1, n_token)),
+        "ground_truth": {
+            "atom_resolved_mask": torch.ones((1, n_token)),
+            "atom_positions": torch.randn((1, n_token, 3)),
+        },
+        "loss_weights": {"distogram": torch.Tensor([1.0])},
+    }

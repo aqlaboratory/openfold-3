@@ -148,8 +148,8 @@ def compute_renamed_ground_truth(
 
 
 def loss_masked_batch_mean(
-    loss: torch.tensor,
-    weight: torch.tensor,
+    loss: torch.Tensor,
+    weight: torch.Tensor,
     apply_weight: bool,
     eps: float = 1e-10,
 ) -> torch.Tensor:
@@ -175,4 +175,4 @@ def loss_masked_batch_mean(
     if apply_weight:
         loss = loss * weight
 
-    return torch.sum(loss * mask) / (torch.sum(mask) + eps)
+    return torch.sum(loss * mask) / (torch.sum(mask, dtype=torch.float32) + eps)

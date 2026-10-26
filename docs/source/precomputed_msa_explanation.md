@@ -36,8 +36,8 @@ As shown in the figure above, paired MSAs are only provided for protein chains t
 
 Users can alter the way MSAs are processed in the OF3 inference pipeline by modifying the [`MSASettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py#L32) class via the `runner.yml` as outlined in the {ref}`Precomputed MSA How-To Guide <5-modifying-msa-settings-for-custom-precomputed-msas>`.
 
-The 3 main settings to update when using custom precomputed MSAs are:
-1. *max_seq_counts*: A dictionary specifying how many sequences to read from each MSA file with the associated name. MSA files whose names are not provided in this dictionary *will not be parsed*. For example, if one wants `uniparc_hits.a3m` MSA files to be parsed, the following field should be specified:
+The main settings to update when using custom precomputed MSAs are:
+1. *max_seq_counts*: A dictionary specifying how many sequences to read from each MSA file with the associated name. `.sto` and `.a3m` files whose names are not provided in this dictionary *will not be parsed*; arrays in preparsed `.npz` files are read regardless. A count of `0` disables the alignment of that name, in `.sto`, `.a3m` and `.npz` files alike. For example, to use `custom_database_hits.a3m` MSA files, two changes are needed. First, for the files to be parsed, the following field should be specified:
 
 ```
 dataset_config_kwargs:
@@ -48,19 +48,24 @@ dataset_config_kwargs:
       custom_database_hits: 10000
 ```
 
-where up to the first 10000 sequences will be read from each `uniparc_hits.a3m` file.
+where up to the first 10000 sequences will be read from each `custom_database_hits.a3m` file. Second, for the parsed alignments to become part of the main MSA, `custom_database_hits` must also be added to `aln_order` (see *aln_order* below). For preparsed `.npz` files, only this second change is needed.
 
 2. *msas_to_pair*: The list of MSA filenames that contain species information that can be used for online pairing. See the {ref}`Online MSA Pairing <3-online-msa-pairing>` section for details.
 
-3. *aln_order*: The order in which to vertically concatenate MSA files for each chain for main MSA features. MSA files whose names are not provided in this list *will not be used*. For example, if one has MSA files named `mgnify_hits`, `uniprot_hits` and `uniparc_hits` and want to vertically concatenate them for each chain in this order, they should update the `runner.yml` as follows:
+3. *aln_order*: The order in which to vertically concatenate MSA files for each chain for main MSA features. MSA files whose names are not provided in this list *will not be used*. For example, if one has MSA files named `uniprot_hits`, `mgnify_hits` and `custom_database_hits` and want to vertically concatenate them for each chain in this order, they should update the `runner.yml` as follows:
 
 ```
 dataset_config_kwargs:
-    aln_order:   
+  msa:
+    aln_order:
       - uniprot_hits
       - mgnify_hits
       - custom_database_hits
 ```
+
+4. *paired_msa_order*: The same as *aln_order*, for {ref}`pre-paired MSAs <4-specifying-paths-in-the-inference-query-file>`.
+
+Files that the settings above do not select are ignored with a warning, and a chain left without any MSA these settings use is an error; see {ref}`Troubleshooting <6-troubleshooting-precomputed-msas>`.
 
 For details on the rest of the settings, see the [`MSASettings`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/projects/of3_all_atom/config/dataset_config_components.py#L32) class docstring.
 
@@ -113,7 +118,7 @@ The OF3 pairing code prioritizes sequences that can be paired with as many chain
 
 Large-scale prediction jobs using OF3 are often done on highly redundant datasets. For example, you may be interested in co-folding a target protein of interest with a library of candidate small molecule drugs, or an antigen of interest with thousands of different antibodies. In these scenarios, the sequence of the target protein does not change across samples and hence, the main MSA for the corresponding chain also remains the same.
 
-In order to reduce the disk space necessary when running predictions, we support reusing the same MSA files for identical chains across different samples. During inference, you can just specify the path to the same MSA files for identical chains in different queries (see the {ref}`How-To Guide <2-precomputed-msa-directory-structure-and-file-name-conventions>` for details on how to do this). For example, given a protein target and 3 different small molecule binders to screen:
+In order to reduce the disk space necessary when running predictions, we support reusing the same MSA files for identical chains across different samples. Within a single query, chains with identical sequences always share one MSA, see {ref}`Chains with Identical Sequences <21-chains-with-identical-sequences>`. During inference, you can just specify the path to the same MSA files for identical chains in different queries (see the {ref}`How-To Guide <2-precomputed-msa-directory-structure-and-file-name-conventions>` for details on how to do this). For example, given a protein target and 3 different small molecule binders to screen:
 
 <details>
 <summary>Same MSA paths example ...</summary>

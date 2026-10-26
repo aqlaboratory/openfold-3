@@ -1,0 +1,8 @@
+# Force Lightning's local subprocess launcher, ignoring any SLURM environment
+# variables that leak into the job (issue #47). Use when submitting through a
+# scheduler or wrapper you don't control and the run hangs at
+# "Initializing distributed" or fails with a devices/ntasks mismatch.
+pl_trainer_args:
+  devices: 8
+  num_nodes: 1
+  cluster_environment: local

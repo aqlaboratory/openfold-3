@@ -38,54 +38,29 @@ def _no_skip(reason: str):
     return pytest.mark.skipif(False, reason=reason)
 
 
-@functools.lru_cache(maxsize=1)
-def _ds4s_build_blocker() -> str | None:
-    """Return why the evoformer_attn op cannot be JIT built, or None if it can.
+def _requires_gpu(skip_mark):
+    """Apply ``skip_mark`` together with the ``gpu`` marker.
 
-    Importing DeepSpeed is not enough: the op is compiled on first use, which
-    needs CUTLASS headers (via ``$CUTLASS_PATH``), a CUDA toolchain matching
-    torch, and ninja.  Without them ``jit_load`` raises at test runtime rather
-    than the test being skipped.  Probing shells out to nvcc, so the result is
-    cached — this runs at collection time for every decorated test.
+    CPU CI skips every GPU-gated test and the GPU CI job selects ``-m "slow or gpu"``,
+    so a gated test without the marker would run nowhere. Works on functions and
+    classes, like a mark.
     """
-    try:
-        from deepspeed.ops.op_builder import EvoformerAttnBuilder
 
-        if not EvoformerAttnBuilder().is_compatible(verbose=False):
-            return (
-                "DeepSpeed cannot build the evoformer_attn op: set $CUTLASS_PATH "
-                "and ensure a CUDA toolchain matching torch is installed"
-            )
+    def apply(obj):
+        return pytest.mark.gpu(skip_mark(obj))
 
-        from torch.utils.cpp_extension import verify_ninja_availability
-
-        verify_ninja_availability()
-    except Exception as e:  # noqa: BLE001 - probing runs nvcc; never fail collection
-        return f"DeepSpeed evoformer_attn build probe failed: {e}"
-
-    return None
+    return apply
 
 
 def skip_unless_ds4s_installed():
-    deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-    ds4s_is_installed = (
-        deepspeed_is_installed
-        and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
+    """Skip DeepSpeed evoformer_attn tests unconditionally.
+
+    DeepSpeed is being deprecated, so these tests are off on every platform rather
+    than probing whether the op can be JIT built.
+    """
+    return _requires_gpu(
+        pytest.mark.skipif(True, reason="DeepSpeed is being deprecated in OpenFold3")
     )
-    is_rocm = torch.cuda.is_available() and torch.version.hip is not None
-
-    if not ds4s_is_installed:
-        blocker = "Requires DeepSpeed with version ≥ 0.10.4"
-    elif not torch.cuda.is_available():
-        # Checked before probing: the probe shells out to nvcc, and decorator
-        # order cannot spare us that — every guard is called at import time.
-        blocker = "Requires GPU (DeepSpeed evoformer_attn is CUDA-only)"
-    elif is_rocm:
-        blocker = "DeepSpeed evoformer_attn is not supported on ROCm/HIP"
-    else:
-        blocker = _ds4s_build_blocker()
-
-    return pytest.mark.skipif(blocker is not None, reason=blocker or "")
 
 
 def skip_unless_evo_attn_available():
@@ -98,7 +73,9 @@ def skip_unless_evo_attn_available():
     """
     is_rocm = torch.cuda.is_available() and torch.version.hip is not None
     if is_rocm:
-        return _no_skip("ROCm uses Triton triangle kernels; DeepSpeed not required")
+        return _requires_gpu(
+            _no_skip("ROCm uses Triton triangle kernels; DeepSpeed not required")
+        )
     return skip_unless_ds4s_installed()
 
 
@@ -109,7 +86,9 @@ def skip_unless_cueq_installed():
         reason = "Requires CUDA (cuequivariance is installed but no GPU available)"
     else:
         reason = "cuequivariance not available"
-    return pytest.mark.skipif(not is_cuequivariance_available(), reason=reason)
+    return _requires_gpu(
+        pytest.mark.skipif(not is_cuequivariance_available(), reason=reason)
+    )
 
 
 def skip_unless_triton_installed():
@@ -139,7 +118,7 @@ def skip_unless_accelerator_available(*required: str):
     With no arguments any accelerator will do, so a test runs wherever torch has one.
     Pass one or more names from :data:`ACCELERATORS` to demand a specific backend —
     ``skip_unless_accelerator_available("cuda", "rocm")`` for tests needing real GPU
-    kernels, which is exactly what :func:`skip_unless_cuda_available` asks for. Names
+    kernels, which is exactly what :func:`skip_unless_gpu_available` asks for. Names
     are validated eagerly so a typo fails at import rather than skipping forever.
     """
     unknown = sorted(set(required) - set(ACCELERATORS))
@@ -151,20 +130,21 @@ def skip_unless_accelerator_available(*required: str):
     wanted = required or ACCELERATORS
     current = current_accelerator()
     if current in wanted:
-        return _no_skip(f"Running on {current}")
-    return pytest.mark.skipif(
-        True, reason=f"Requires {' or '.join(wanted)}; found {current or 'cpu'}"
+        return _requires_gpu(_no_skip(f"Running on {current}"))
+    return _requires_gpu(
+        pytest.mark.skipif(
+            True, reason=f"Requires {' or '.join(wanted)}; found {current or 'cpu'}"
+        )
     )
 
 
-def skip_unless_cuda_available():
-    """Skip unless a GPU is available.
+def skip_unless_gpu_available():
+    """Skip unless a CUDA or ROCm GPU is available.
 
-    ROCm counts: torch reports HIP devices through the ``torch.cuda`` API, so this has
-    always passed on AMD. Use :func:`skip_unless_accelerator_available` directly for
-    tests that can also run on MPS.
+    Use :func:`skip_unless_accelerator_available` directly for tests that can also run
+    on MPS.
     """
-    return skip_unless_accelerator_available("cuda")
+    return skip_unless_accelerator_available("cuda", "rocm")
 
 
 def _assert_abs_diff_small_base(compare_func, expected, actual, eps):
@@ -182,3 +162,66 @@ def assert_max_abs_diff_small(expected, actual, eps):
 
 def assert_mean_abs_diff_small(expected, actual, eps):
     _assert_abs_diff_small_base(torch.mean, expected, actual, eps)
+
+
+#: fp32 unit roundoff, 2**-24.
+FP32_EPS = 2.0**-24
+
+
+def summation_order_atol(reference: torch.Tensor, n_terms: int, scale=None) -> float:
+    """Bound on the difference between two fp32 summation orders.
+
+    Summing ``n_terms`` values in any order differs from the exact sum by at
+    most ``gamma(n-1) * sum|x|`` (Higham, *Accuracy and Stability of Numerical
+    Algorithms*, eq. 3.4), where ``gamma(n) = n*u / (1 - n*u)``. Two different
+    orders are independent, so they differ from each other by at most twice
+    that. For a mean of ``n_terms`` values the count divides out, leaving
+    ``2 * gamma(n-1) * mean|x|``, and the final division contributes at most
+    ``2*u * |mean x|``.
+
+    Both terms need ``mean|x|`` -- the magnitude of the *summed terms*. That is
+    not recoverable from the reduced output, so by default this uses
+    ``max|reference|`` as a proxy. That proxy is tight when the terms are of
+    comparable magnitude to their mean, which holds for the atom-to-token
+    reduction here (measured: the observed difference sits 10-30x below the
+    resulting bound). It is *not* valid under heavy cancellation, where terms of
+    large magnitude average to something small -- there ``max|reference|``
+    under-states ``mean|x|`` and the bound is too tight. Pass ``scale``
+    explicitly in that case.
+
+    Args:
+        reference: Aggregated output, used for its magnitude scale.
+        n_terms: Number of summed terms per output element.
+        scale: Optional ``max`` over output elements of ``mean|x|`` for the
+            summed terms. Supply it whenever the terms can cancel.
+    """
+    if scale is None:
+        scale = reference.abs().max().item()
+    n = max(n_terms - 1, 0)
+    gamma = n * FP32_EPS / (1.0 - n * FP32_EPS)
+    return 2.0 * float(scale) * (gamma + FP32_EPS)
+
+
+def assert_summation_order_close(actual, reference, n_terms, msg="", scale=None):
+    """Assert two fp32 reductions of the same values differ only by rounding order.
+
+    ``torch.testing.assert_close`` cannot state this bound. It compares element
+    pairs against ``atol + rtol * |expected|``, which scales with the *output*
+    magnitude, whereas rounding-order error scales with the magnitude of the
+    *summed terms* and with the number of terms. A flat ``atol`` has to be
+    guessed and is wrong somewhere; this is derived from the reduction shape.
+
+    Args:
+        actual: Reduction under test.
+        reference: Reduction to compare against.
+        n_terms: Number of summed terms per output element.
+        msg: Prefix for the failure message.
+        scale: Optional term-magnitude scale; see ``summation_order_atol``.
+    """
+    bound = summation_order_atol(reference, n_terms, scale=scale)
+    diff = (actual.float() - reference.float()).abs().max().item()
+    if diff > bound:
+        raise AssertionError(
+            f"{msg + ': ' if msg else ''}summation-order difference {diff:.3e} "
+            f"exceeds the fp32 bound {bound:.3e} for {n_terms} terms per token"
+        )
