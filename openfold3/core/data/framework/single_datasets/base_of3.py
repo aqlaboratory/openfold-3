@@ -299,13 +299,9 @@ class BaseOF3Dataset(SingleDataset, ABC):
         )
 
         template_features = featurize_template_structures_of3(
-            atom_array=atom_array,
             template_slice_collection=template_slice_collection,
             n_templates=self.template.n_templates,
             n_tokens=self.n_tokens,
-            min_bin=self.template.distogram.min_bin,
-            max_bin=self.template.distogram.max_bin,
-            n_bins=self.template.distogram.n_bins,
         )
 
         return template_features

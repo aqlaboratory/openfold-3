@@ -544,11 +544,7 @@ openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(*size
 openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(*size: int, names: Sequence[str | EllipsisType | None] | None, dtype: dtype | None = ..., layout: layout | None = ..., device: str | device | int | None = ..., pin_memory: bool | None = ..., requires_grad: bool | None = ...) -> Tensor
 openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(size: Sequence[int | SymInt], *, out: Tensor | None = ..., dtype: dtype | None = ..., layout: layout | None = ..., device: str | device | int | None = ..., pin_memory: bool | None = ..., requires_grad: bool | None = ...) -> Tensor
 openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(size: Size | list[int] | tuple[int, ...], *, names: Sequence[str | EllipsisType | None] | None, dtype: dtype | None = ..., layout: layout | None = ..., device: str | device | int | None = ..., pin_memory: bool | None = ..., requires_grad: bool | None = ...) -> Tensor
-openfold3/core/data/pipelines/featurization/template.py:0: error: Argument 2 to "create_template_distogram" has incompatible type "Tensor"; expected "ndarray[float, dtype[Any]]"  [arg-type]
-openfold3/core/data/pipelines/featurization/template.py:0: error: Argument 2 to "create_template_restype" has incompatible type "Tensor"; expected "ndarray[float, dtype[Any]]"  [arg-type]
-openfold3/core/data/pipelines/featurization/template.py:0: error: Argument 2 to "create_template_unit_vector" has incompatible type "Tensor"; expected "ndarray[float, dtype[Any]]"  [arg-type]
 openfold3/core/data/pipelines/featurization/template.py:0: error: Function is missing a type annotation  [no-untyped-def]
-openfold3/core/data/pipelines/featurization/template.py:0: error: Missing type arguments for generic type "AtomArray"  [type-arg]
 openfold3/core/data/pipelines/featurization/template.py:0: error: Untyped decorator makes function "featurize_template_structures_of3" untyped  [untyped-decorator]
 openfold3/core/data/pipelines/featurization/template.py:0: error: callable? not callable  [misc]
 openfold3/core/data/pipelines/preprocessing/caches/RNA_monomer.py:0: error: Argument "check_filename_exists" to "list_bucket_entries" has incompatible type "str | None"; expected "str"  [arg-type]
@@ -1204,20 +1200,9 @@ openfold3/core/data/primitives/featurization/structure.py:0: error: Returning An
 openfold3/core/data/primitives/featurization/structure.py:0: error: Returning Any from function declared to return "ndarray[tuple[Any, ...], dtype[Any]]"  [no-any-return]
 openfold3/core/data/primitives/featurization/template.py:0: error: Argument "frame_atom_coords" to "OF3TemplateFeaturePrecursor" has incompatible type "ndarray[tuple[int, int, int, int], dtype[Any]]"; expected "ndarray[float, dtype[Any]]"  [arg-type]
 openfold3/core/data/primitives/featurization/template.py:0: error: Argument "pseudo_beta_atom_coords" to "OF3TemplateFeaturePrecursor" has incompatible type "ndarray[tuple[int, int, int], dtype[Any]]"; expected "ndarray[float, dtype[Any]]"  [arg-type]
-openfold3/core/data/primitives/featurization/template.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
-openfold3/core/data/primitives/featurization/template.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
-openfold3/core/data/primitives/featurization/template.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
-openfold3/core/data/primitives/featurization/template.py:0: error: Incompatible types in assignment (expression has type "Tensor", variable has type "ndarray[float, dtype[Any]]")  [assignment]
 openfold3/core/data/primitives/featurization/template.py:0: error: Need type annotation for "residue_starts"  [var-annotated]
-openfold3/core/data/primitives/featurization/template.py:0: error: Returning Any from function declared to return "Tensor"  [no-any-return]
 openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "str" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "str" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/primitives/permutation/mol_labels.py:0: error: "Atom" has no attribute "component_id"  [attr-defined]
 openfold3/core/data/primitives/permutation/mol_labels.py:0: error: "Atom" has no attribute "mol_sym_component_id"  [attr-defined]
@@ -2638,6 +2623,9 @@ openfold3/core/model/feature_embedders/input_embedders.py:0: error: Unsupported 
 openfold3/core/model/feature_embedders/input_embedders.py:0: error: callable? not callable  [misc]
 openfold3/core/model/feature_embedders/input_embedders.py:0: note: Perhaps you meant "typing.Callable" instead of "callable"?
 openfold3/core/model/feature_embedders/input_embedders.py:0: note: Right operand is of type "Tensor | Module"
+openfold3/core/model/feature_embedders/template_embedders.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
+openfold3/core/model/feature_embedders/template_embedders.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
+openfold3/core/model/feature_embedders/template_embedders.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
 openfold3/core/model/feature_embedders/template_embedders.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/core/model/feature_embedders/template_embedders.py:0: error: Function is missing a type annotation  [no-untyped-def]
 openfold3/core/model/feature_embedders/template_embedders.py:0: error: Missing type arguments for generic type "dict"  [type-arg]
