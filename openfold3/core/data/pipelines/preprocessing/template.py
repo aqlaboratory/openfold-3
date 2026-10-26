@@ -2186,115 +2186,98 @@ class TemplatePreprocessor:
         elif isinstance(self.input_set, InferenceQuerySet):
             self._update_inference_query_set()
 
-    def _parse_templates_from_cif_files(
-        self,
-        input_data: TemplatePreprocessorInputInference,
-    ) -> dict[int, TemplateData]:
-        """Parse templates from CIF files in CIF-direct mode.
+    def _build_pinned_cif_cache_entry(
+        self, input_data: TemplatePreprocessorInputInference
+    ) -> dict[str, dict[str, Any]]:
+        """Builds the cache entry rows for the CIF files a query pinned (CIF-direct).
 
-        Args:
-            input_data: Input data containing CIF file paths
+        Each pinned file is its own template: its chains are aligned to the query and
+        the best one, or the one the query names, is kept. The file is recorded as the
+        entry's `cif_path`, so its coordinates are the ones featurized. The entry ID is
+        only the file's stem and need not be a PDB ID, so nothing is looked up by it:
+        the structure directory, precache and structure arrays are neither read nor
+        written, and nothing is fetched.
 
         Returns:
-            Dictionary mapping indices to TemplateData objects
+            dict[str, dict[str, Any]]:
+                Template ID to serialized `TemplateCacheEntry`, best alignment first.
+                Empty if no pinned file yields a template.
         """
         if self.create_logs:
             worker_logger = logging.getLogger(f"template_preprocess_{os.getpid()}")
-            worker_logger.info(
-                "CIF-direct mode: "
-                f"Processing {len(input_data.template_cif_paths)} CIF files"
-            )
 
-        templates = {}
         parser = CifDirectParser(
-            max_sequences=None,
-            min_score_threshold=self.cif_direct_min_score,
+            max_sequences=None, min_score_threshold=self.cif_direct_min_score
         )
-
-        if self.create_logs:
-            worker_logger = logging.getLogger(f"template_preprocess_{os.getpid()}")
-            worker_logger.info(
-                f"Processing {len(input_data.template_cif_paths)} CIF files "
-                "in CIF-direct mode..."
-            )
-
-        for idx, cif_path in enumerate(input_data.template_cif_paths):
+        cif_paths = input_data.template_cif_paths or []
+        chain_ids = input_data.template_cif_chain_ids or [None] * len(cif_paths)
+        hits = []
+        for cif_path, chain_id in zip(cif_paths, chain_ids, strict=True):
             try:
-                if not cif_path.exists():
-                    if self.create_logs:
-                        worker_logger.warning(f"CIF file not found: {cif_path}")
-                    continue
-
-                entry_id = cif_path.stem
-
-                specified_chain_id = None
-                if input_data.template_cif_chain_ids is not None:
-                    specified_chain_id = input_data.template_cif_chain_ids[idx]
-
-                if self.precache_directory is not None:
-                    precache_file = self.precache_directory / f"{entry_id}.npz"
-                    if precache_file.exists():
-                        precache_entry = np.load(precache_file, allow_pickle=True)
-                        chain_id_seq_map = precache_entry["chain_id_seq_map"].item()
-                    else:
-                        cif_file = _load_ciffile(cif_path)
-                        chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
-                else:
-                    cif_file = _load_ciffile(cif_path)
-                    chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
-
-                cif_templates = parser(
+                cif_file = _load_ciffile(cif_path)
+                parsed = parser(
                     cif_file_path=cif_path,
                     query_seq_str=input_data.query_seq_str,
-                    chain_id_seq_map=chain_id_seq_map,
-                    entry_id=entry_id,
-                    specified_chain_id=specified_chain_id,
+                    chain_id_seq_map=get_asym_id_to_canonical_seq_dict(cif_file),
+                    specified_chain_id=chain_id,
                 )
-
-                if cif_templates:
-                    template = cif_templates[0]
-                    template = template._replace(index=idx, cif_path=cif_path)
-                    templates[idx] = template
-
-                    if self.create_logs:
-                        worker_logger.info(
-                            f"Selected chain {template.chain_id} from {entry_id} "
-                            f"(seq_id={template.seq_id:.3f}, "
-                            f"q_cov={template.q_cov:.3f})"
-                        )
-
+                # Deposited entries have a release date; models and in-house
+                # structures often do not
+                cif_block = get_cif_block(cif_file)
+                release_date = (
+                    get_release_date(cif_block)
+                    if "pdbx_audit_revision_history" in cif_block
+                    else None
+                )
             except Exception as e:
+                msg = f"Skipping pinned template {cif_path}: {e}"
+                logger.warning(msg)
                 if self.create_logs:
-                    worker_logger.warning(f"Failed to process CIF file {cif_path}: {e}")
+                    worker_logger.warning(msg)
                 continue
+            if parsed:
+                hits.append((parsed[0], release_date, cif_path))
 
-        if templates:
-            templates_list = list(templates.values())
-            templates_list.sort(
-                key=lambda t: t.seq_id * (t.q_cov if t.q_cov is not None else 0.0),
-                reverse=True,
-            )
-            templates = {i: t._replace(index=i) for i, t in enumerate(templates_list)}
+        # Best alignment first, the order templates are sampled in
+        hits.sort(key=lambda hit: hit[0].seq_id * (hit[0].q_cov or 0.0), reverse=True)
 
-            if self.create_logs:
-                worker_logger.info(f"Parsed {len(templates)} templates from CIF files")
-            for t in templates_list[:5]:
+        template_cache_entry: dict[str, dict[str, Any]] = {}
+        for index, (template, release_date, cif_path) in enumerate(hits):
+            template_id = f"{template.entry_id}_{template.chain_id}"
+            if fails_template_sequence_checks(
+                template, self.max_seq_id, self.min_align, self.min_len
+            ):
+                if self.create_logs:
+                    worker_logger.info(f"{template_id} does not pass sequence checks.")
+                continue
+            # A file without a release date has nothing to check
+            if release_date is not None and fails_template_release_date_checks(
+                template_release_date=release_date,
+                query_release_date=None,
+                max_template_release_date=self.max_release_date,
+                min_release_date_diff=None,
+            ):
                 if self.create_logs:
                     worker_logger.info(
-                        f"  - {t.entry_id}_{t.chain_id}: "
-                        f"seq_id={t.seq_id:.3f}, q_cov={t.q_cov:.3f}"
+                        f"{template_id} does not pass release date checks."
                     )
+                continue
+            idx_map = template.build_residue_idx_map()
+            if idx_map.shape[0] == 0:
+                if self.create_logs:
+                    worker_logger.info(f"{template_id} has no aligned residue pairs.")
+                continue
 
-            if self.create_logs:
-                worker_logger.info(
-                    f"Parsed {len(templates)} templates from CIF files, "
-                    f"sorted by alignment quality"
-                )
-        else:
-            if self.create_logs:
-                worker_logger.info("No templates parsed from CIF files")
+            template_cache_entry[template_id] = TemplateCacheEntry(
+                index=index,
+                release_date=release_date,
+                idx_map=idx_map,
+                cif_path=cif_path,
+            ).to_dict()
+            if len(template_cache_entry) == self.max_templates:
+                break
 
-        return templates
+        return template_cache_entry
 
     def preprocess_templates(
         self,
@@ -2383,29 +2366,26 @@ class TemplatePreprocessor:
                     f"Creating new cache entry {template_cache_entry_file}."
                 )
 
-            # Parse templates based on mode
-            if isinstance(input_data, TemplatePreprocessorInputInference):
-                if input_data.aln_path is not None:
-                    templates = parse_template_alignment(
-                        input_data.aln_path,
-                        input_data.query_seq_str,
-                        self.max_sequences_parse,
-                    )
-                elif input_data.template_cif_paths is not None:
-                    templates = self._parse_templates_from_cif_files(input_data)
-                else:
-                    return
-            else:
+            # A pinned CIF is its own template structure, while alignment hits are
+            # looked up by entry ID
+            if (
+                isinstance(input_data, TemplatePreprocessorInputInference)
+                and input_data.template_cif_paths is not None
+            ):
+                template_cache_entry = self._build_pinned_cif_cache_entry(input_data)
+            elif input_data.aln_path is not None:
                 templates = parse_template_alignment(
                     input_data.aln_path,
                     input_data.query_seq_str,
                     self.max_sequences_parse,
                 )
-            if self.create_logs:
-                worker_logger.info(f"Parsed {len(templates)} templates...")
-            template_cache_entry = self._build_cache_entry_from_hits(
-                input_data, templates, cache_key
-            )
+                if self.create_logs:
+                    worker_logger.info(f"Parsed {len(templates)} templates...")
+                template_cache_entry = self._build_cache_entry_from_hits(
+                    input_data, templates, cache_key
+                )
+            else:
+                return
 
             # 6. Save template cache entry and update shared dict of template IDs
             if len(template_cache_entry) > 0:
@@ -2679,13 +2659,8 @@ class TemplatePreprocessor:
                         " residue pairs."
                     )
                 continue
-            # `cif_path` is only set in CIF-direct mode and is dropped by `to_dict`
-            # when absent
             cache_entry = TemplateCacheEntry(
-                index=template.index,
-                release_date=release_date,
-                idx_map=idx_map,
-                cif_path=template.cif_path,
+                index=template.index, release_date=release_date, idx_map=idx_map
             )
             template_cache_entry[f"{template.entry_id}_{chain_id_matched}"] = (
                 cache_entry.to_dict()

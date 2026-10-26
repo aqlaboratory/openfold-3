@@ -259,16 +259,20 @@ def test_cif_direct_parser_below_threshold_returns_empty():
 
 
 def _make_bare_preprocessor(cif_direct_min_score: float = 0.1) -> TemplatePreprocessor:
-    """Build a TemplatePreprocessor with only the fields _parse_templates_from_cif_files reads."""
+    """Build a TemplatePreprocessor with only the fields _build_pinned_cif_cache_entry reads."""
     pre = object.__new__(TemplatePreprocessor)
     pre.create_logs = False
     pre.cif_direct_min_score = cif_direct_min_score
-    pre.precache_directory = None
+    pre.max_seq_id = None
+    pre.min_align = None
+    pre.min_len = None
+    pre.max_release_date = None
+    pre.max_templates = 20
     return pre
 
 
-def test_parse_templates_from_cif_files_auto_select():
-    """_parse_templates_from_cif_files returns one TemplateData per CIF, indexed and tagged with cif_path."""
+def test_build_pinned_cif_cache_entry_auto_select():
+    """One entry per pinned CIF, for its best chain, recording the file as cif_path."""
     cif_path = MMCIFS_DIR / "2q2k.cif"
     query_seq_str = _load_chain_id_seq_map(cif_path)["B"]
 
@@ -278,19 +282,18 @@ def test_parse_templates_from_cif_files_auto_select():
         template_cif_paths=[cif_path],
     )
 
-    templates = pre._parse_templates_from_cif_files(input_data)
+    cache_entry = pre._build_pinned_cif_cache_entry(input_data)
 
-    assert len(templates) == 1
-    template = templates[0]
-    assert template.index == 0
-    assert template.entry_id == "2q2k"
-    assert template.chain_id in {"B", "C"}
-    assert template.cif_path == cif_path
-    assert template.seq_id == pytest.approx(1.0)
-    assert template.q_cov == pytest.approx(1.0)
+    assert len(cache_entry) == 1
+    ((template_id, entry),) = cache_entry.items()
+    assert template_id in {"2q2k_B", "2q2k_C"}
+    assert entry["index"] == 0
+    assert entry["cif_path"] == str(cif_path)
+    # Chains B and C are identical to the query, so every residue aligns
+    assert entry["idx_map"].shape[0] == len(query_seq_str)
 
 
-def test_parse_templates_from_cif_files_specified_chain_ids():
+def test_build_pinned_cif_cache_entry_specified_chain_ids():
     """When template_cif_chain_ids is provided, only the specified chain is used."""
     cif_path = MMCIFS_DIR / "2q2k.cif"
     query_seq_str = _load_chain_id_seq_map(cif_path)["B"]
@@ -302,13 +305,12 @@ def test_parse_templates_from_cif_files_specified_chain_ids():
         template_cif_chain_ids=["C"],
     )
 
-    templates = pre._parse_templates_from_cif_files(input_data)
+    cache_entry = pre._build_pinned_cif_cache_entry(input_data)
 
-    assert len(templates) == 1
-    assert templates[0].chain_id == "C"
+    assert list(cache_entry) == ["2q2k_C"]
 
 
-def test_parse_templates_from_cif_files_missing_cif_skipped():
+def test_build_pinned_cif_cache_entry_missing_cif_skipped():
     """Missing CIF paths are skipped rather than raising."""
     pre = _make_bare_preprocessor(cif_direct_min_score=0.1)
     input_data = TemplatePreprocessorInputInference(
@@ -316,9 +318,9 @@ def test_parse_templates_from_cif_files_missing_cif_skipped():
         template_cif_paths=[Path("/nonexistent/path/does_not_exist.cif")],
     )
 
-    templates = pre._parse_templates_from_cif_files(input_data)
+    cache_entry = pre._build_pinned_cif_cache_entry(input_data)
 
-    assert templates == {}
+    assert cache_entry == {}
 
 
 def _template_with_alignment(query_aln: str, template_aln: str) -> TemplateData:
