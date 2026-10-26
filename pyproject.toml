@@ -263,7 +263,8 @@ testpaths = ["openfold3/tests"]
 python_files = ["test_*.py"]
 markers = [
     "inference_verification: Tests to verify installation on inference example",
-    "slow: Large size test"
+    "slow: Large size test",
+    "gpu: Needs a GPU; selected by the GPU CI job alongside slow tests",
 ]
 
 # Exclude directories during collection
