@@ -203,10 +203,14 @@ We provide a one-stop binary that sets up openfold and runs integration tests.
 Usage: setup_openfold [OPTIONS]
 
 Options:
-  --non-interactive  Non-interactively run setup using all default config
-                     values.
-  --config FILE      Path to a JSON file containing an OpenFoldSetupConfig.
-  --help             Show this message and exit.
+  --non-interactive          Non-interactively run setup using all default
+                             config values.
+  --config FILE              Path to a JSON file containing an
+                             OpenFoldSetupConfig.
+  --skip-biotite-ccd-update  Do not update Biotite's CCD. Use on read-only
+                             installs; overrides update_biotite_ccd in
+                             --config.
+  --help                     Show this message and exit.
 ```
 
 This script will:
@@ -214,10 +218,19 @@ This script will:
 - Setup a directory for OpenFold3 model parameters [default: `~/.openfold3`]
     - Writes the path to `$OPENFOLD_CACHE/ckpt_root` 
 - Download the model parameters, if the parameter file does not already exist. You will have the option to download one set of parameters or all parameters. See {doc}`parameters_reference` for more information on available parameters. 
-- Download and setup the [Chemical Component Dictionary (CCD)](https://www.wwpdb.org/data/ccd) with [Biotite](https://www.biotite-python.org/latest/apidoc/biotite.structure.info.get_ccd.html)
+- Download and setup the [Chemical Component Dictionary (CCD)](https://www.wwpdb.org/data/ccd) with [Biotite](https://www.biotite-python.org/latest/apidoc/biotite.structure.info.get_ccd.html), if Biotite's copy is out of date. Skip this step with `--skip-biotite-ccd-update` (see below).
 - Optionally run an inference integration test on two samples, without MSA alignments (~5 min on A100)
     - N.B. To run the integration tests, `pytest` must be installed. 
 
+**Read-only installs**
+
+The CCD update writes into Biotite's own package directory (`site-packages/biotite/structure/info/`), so it fails with a `PermissionError` when OpenFold3 is installed somewhere you cannot write to, such as a shared HPC module, a root-owned virtual environment, or a container. In that case, skip the update:
+
+```bash
+setup_openfold --non-interactive --skip-biotite-ccd-update
+```
+
+or set `"update_biotite_ccd": false` in the JSON file passed to `--config`. Everything else in setup runs as usual. Without the update, ligands given as CCD codes released after Biotite's bundled CCD may fail to resolve; ask whoever maintains the install to run `setup_openfold` once with write access to refresh it.
 
 **Downloading the model parameters manually**
 
