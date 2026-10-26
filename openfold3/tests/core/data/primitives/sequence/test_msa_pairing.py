@@ -1,6 +1,7 @@
 """Regression tests for paired MSA row ranking"""
 
 import math
+from dataclasses import dataclass
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -10,6 +11,48 @@ from openfold3.core.data.primitives.sequence.msa import (
     sort_by_row_id_product,
     sort_subsample_paired_row_ids,
 )
+
+
+@dataclass(frozen=True)
+class PairedRowCase:
+    """Inputs defining one paired-row ranking case.
+
+    Attributes:
+        n_chains (int):
+            Number of chains (columns) in the synthetic row IDs.
+        max_row_id (int):
+            Exclusive upper bound for the sampled row IDs.
+        unpaired_counts (tuple[int, ...]):
+            Number of trailing -1 entries each pairing block gets.
+    """
+
+    n_chains: int
+    max_row_id: int
+    unpaired_counts: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class PairedRowCaseData:
+    """Generated inputs for a case plus the expected ranking.
+
+    Attributes:
+        row_ids (np.ndarray):
+            The (n_rows, n_chains) row IDs the case is built from.
+        per_chain (dict[str, np.ndarray]):
+            Per-chain views passed to the sorter.
+        species (np.ndarray):
+            Row tags tracking which rows survive sorting and truncation.
+        expected_order (np.ndarray):
+            Expected sort order from the Python-integer oracle.
+        expected_dtypes (list[np.dtype]):
+            Expected np.prod dtype per pairing block.
+    """
+
+    row_ids: np.ndarray
+    per_chain: dict[str, np.ndarray]
+    species: np.ndarray
+    expected_order: np.ndarray
+    expected_dtypes: list[np.dtype]
 
 
 @pytest.fixture(params=[0, 1, 2])
@@ -37,20 +80,57 @@ def product_dtypes():
         # Cover int64-safe products, rare and widespread overflow, and overflow
         # that changes ordering without changing the retained set. Partial rows
         # exercise odd/even -1 counts and mixed safe/overflowing pairing blocks.
-        pytest.param((3, 2000, (0,)), id="int64-safe"),
-        pytest.param((4, 60_000, (0,)), id="four-chains-rare-overflow"),
-        pytest.param((5, 7000, (0,)), id="five-chains-rare-overflow"),
-        pytest.param((6, 20_000, (0,)), id="issue-reproducer"),
-        pytest.param((6, 2000, (0,)), id="six-chains-near-overflow"),
-        pytest.param((8, 300, (0,)), id="eight-chains-order-only-overflow"),
-        pytest.param((6, 20_000, (1,)), id="partial-odd-unpaired"),
-        pytest.param((8, 20_000, (2,)), id="partial-even-unpaired"),
-        pytest.param((7, 2000, (1,)), id="partial-near-overflow"),
-        pytest.param((8, 20_000, tuple(range(9))), id="mixed-pairing-blocks"),
+        pytest.param(
+            PairedRowCase(n_chains=3, max_row_id=2000, unpaired_counts=(0,)),
+            id="int64-safe",
+        ),
+        pytest.param(
+            PairedRowCase(n_chains=4, max_row_id=60_000, unpaired_counts=(0,)),
+            id="four-chains-rare-overflow",
+        ),
+        pytest.param(
+            PairedRowCase(n_chains=5, max_row_id=7000, unpaired_counts=(0,)),
+            id="five-chains-rare-overflow",
+        ),
+        pytest.param(
+            PairedRowCase(n_chains=6, max_row_id=20_000, unpaired_counts=(0,)),
+            id="issue-reproducer",
+        ),
+        pytest.param(
+            PairedRowCase(n_chains=6, max_row_id=2000, unpaired_counts=(0,)),
+            id="six-chains-near-overflow",
+        ),
+        pytest.param(
+            PairedRowCase(n_chains=8, max_row_id=300, unpaired_counts=(0,)),
+            id="eight-chains-order-only-overflow",
+        ),
+        pytest.param(
+            PairedRowCase(n_chains=6, max_row_id=20_000, unpaired_counts=(1,)),
+            id="partial-odd-unpaired",
+        ),
+        pytest.param(
+            PairedRowCase(n_chains=8, max_row_id=20_000, unpaired_counts=(2,)),
+            id="partial-even-unpaired",
+        ),
+        pytest.param(
+            PairedRowCase(n_chains=7, max_row_id=2000, unpaired_counts=(1,)),
+            id="partial-near-overflow",
+        ),
+        pytest.param(
+            PairedRowCase(
+                n_chains=8, max_row_id=20_000, unpaired_counts=tuple(range(9))
+            ),
+            id="mixed-pairing-blocks",
+        ),
     ]
 )
-def paired_row_case(request, seed):
-    n_chains, max_row_id, unpaired_counts = request.param
+def paired_row_case(request, seed) -> PairedRowCaseData:
+    case = request.param
+    n_chains, max_row_id, unpaired_counts = (
+        case.n_chains,
+        case.max_row_id,
+        case.unpaired_counts,
+    )
     rng = np.random.default_rng(seed)
     n_rows = 12_000
     row_ids = rng.integers(1, max_row_id, size=(n_rows, n_chains), dtype=np.int64)
@@ -77,37 +157,47 @@ def paired_row_case(request, seed):
         # the sorter does not promise stable ties.
         expected_order[positions] = positions[np.argsort(keys.astype(dtype))]
 
-    return row_ids, per_chain, species, expected_order, expected_dtypes
+    return PairedRowCaseData(
+        row_ids=row_ids,
+        per_chain=per_chain,
+        species=species,
+        expected_order=expected_order,
+        expected_dtypes=expected_dtypes,
+    )
 
 
-def test_sort_paired_rows_uses_exact_product_order(paired_row_case, product_dtypes):
-    row_ids, per_chain, species, expected_order, expected_dtypes = paired_row_case
-    sorted_rows, sorted_species = sort_by_row_id_product(per_chain, species.copy())
-    np.testing.assert_array_equal(sorted_species, species[expected_order])
-    for chain_idx, chain_id in enumerate(per_chain):
+def test_sort_paired_rows_uses_exact_product_order(
+    paired_row_case: PairedRowCaseData, product_dtypes
+):
+    case = paired_row_case
+    sorted_rows, sorted_species = sort_by_row_id_product(
+        case.per_chain, case.species.copy()
+    )
+    np.testing.assert_array_equal(sorted_species, case.species[case.expected_order])
+    for chain_idx, chain_id in enumerate(case.per_chain):
         np.testing.assert_array_equal(
-            sorted_rows[chain_id], row_ids[expected_order, chain_idx]
+            sorted_rows[chain_id], case.row_ids[case.expected_order, chain_idx]
         )
-    assert product_dtypes == expected_dtypes
+    assert product_dtypes == case.expected_dtypes
 
 
 def test_subsample_paired_rows_uses_exact_product_order(
-    paired_row_case, product_dtypes
+    paired_row_case: PairedRowCaseData, product_dtypes
 ):
-    row_ids, per_chain, species, expected_order, expected_dtypes = paired_row_case
+    case = paired_row_case
     max_rows_paired = 8191
     rows_out, species_out, n_rows_actual = sort_subsample_paired_row_ids(
-        per_chain, species.copy(), max_rows_paired
+        case.per_chain, case.species.copy(), max_rows_paired
     )
     assert n_rows_actual == max_rows_paired
-    expected_kept = expected_order[:max_rows_paired]
+    expected_kept = case.expected_order[:max_rows_paired]
     assert set(species_out[:, 0]) == set(expected_kept)
-    np.testing.assert_array_equal(species_out, species[expected_kept])
-    for chain_idx, chain_id in enumerate(per_chain):
+    np.testing.assert_array_equal(species_out, case.species[expected_kept])
+    for chain_idx, chain_id in enumerate(case.per_chain):
         np.testing.assert_array_equal(
-            rows_out[chain_id], row_ids[expected_kept, chain_idx]
+            rows_out[chain_id], case.row_ids[expected_kept, chain_idx]
         )
-    assert product_dtypes == expected_dtypes
+    assert product_dtypes == case.expected_dtypes
 
 
 @pytest.mark.benchmark(group="paired-msa-ranking")
