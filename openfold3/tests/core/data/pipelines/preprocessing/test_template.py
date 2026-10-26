@@ -20,6 +20,7 @@ Train-mode tests live in test_template_train.py.
 import getpass
 import shutil
 from datetime import datetime
+from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from unittest.mock import patch
 
@@ -989,3 +990,76 @@ def test_requeued_query_set_keeps_cached_templates(tmp_path):
     # Only the raw source needs preprocessing; the cached entry must not be
     # re-parsed as an alignment.
     assert len(preprocessor.inputs) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tier F: cache entry build vs reuse (integration, runs __call__)
+# ---------------------------------------------------------------------------
+
+
+def _offline_settings(
+    tmp_path: Path, *, stage_deposited: bool = True, **overrides
+) -> TemplatePreprocessorSettings:
+    """Predict-mode settings that never fetch: structures come from a local directory.
+
+    With `stage_deposited`, the deposited 2q2k entry is pre-seeded there.
+    """
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir(exist_ok=True)
+    if stage_deposited:
+        shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, structure_dir / TEMPLATE_CIF)
+    return TemplatePreprocessorSettings(
+        mode="predict",
+        output_directory=tmp_path / "template_data",
+        structure_directory=structure_dir,
+        fetch_missing_structures=False,
+        n_processes=1,
+        **overrides,
+    )
+
+
+def test_existing_cache_entry_is_reused_rather_than_rebuilt(tmp_path):
+    """A second run over the same template source reads the entry the first wrote.
+
+    The query set is rebuilt from scratch for the second run, so unlike a requeued one
+    it reaches preprocessing and finds the cache entry file already on disk. Parsing
+    the alignment again is made to fail, so only the reuse path can produce the
+    expected templates.
+    """
+    settings = _offline_settings(tmp_path)
+    run_1_qs = _two_source_query_set(tmp_path, ["q_colabfold"])
+    TemplatePreprocessor(input_set=run_1_qs, config=settings)()
+
+    run_2_qs = _two_source_query_set(tmp_path, ["q_colabfold"])
+    # In-process workers, so they see the patch
+    with (
+        patch.object(template_module.mp, "Pool", ThreadPool),
+        patch.object(
+            template_module,
+            "parse_template_alignment",
+            side_effect=AssertionError("the existing cache entry was rebuilt"),
+        ),
+    ):
+        TemplatePreprocessor(input_set=run_2_qs, config=settings)()
+
+    run_1_chain = run_1_qs.queries["q_colabfold"].chains[0]
+    run_2_chain = run_2_qs.queries["q_colabfold"].chains[0]
+    assert run_2_chain.template_alignment_file_path == (
+        run_1_chain.template_alignment_file_path
+    )
+    assert run_2_chain.template_entry_chain_ids == ["2q2k_C"]
+
+
+def test_template_hit_twice_is_recorded_once(tmp_path):
+    """A template the alignment hits twice yields one template ID.
+
+    The cache entry is keyed by template ID, so it holds the template once; the IDs
+    written back to the chain must agree with it, as they do when the entry is reused.
+    """
+    iqs = _two_source_query_set(tmp_path, ["q_colabfold"])
+    aln_path = Path(iqs.queries["q_colabfold"].chains[0].template_alignment_file_path)
+    aln_path.write_text(aln_path.read_text() * 2)
+
+    TemplatePreprocessor(input_set=iqs, config=_offline_settings(tmp_path))()
+
+    assert iqs.queries["q_colabfold"].chains[0].template_entry_chain_ids == ["2q2k_C"]

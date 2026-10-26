@@ -23,7 +23,7 @@ import traceback
 from datetime import date, datetime
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -2361,9 +2361,6 @@ class TemplatePreprocessor:
         # by entry ID, and cannot index by sequence hash due to the way filtering is
         # done
         cache_key = input_data.cache_key
-        # Train-mode entries are shared by all chains of a representative: capping at
-        # max_templates happens per structure in _update_dataset_cache instead.
-        is_train = isinstance(input_data, TemplatePreprocessorInputTrain)
         # skip template preprocessing for chain if already done. Keyed on sequence +
         # template source, so a second chain only short-circuits when it would produce
         # exactly the same cache entry
@@ -2406,255 +2403,16 @@ class TemplatePreprocessor:
                 )
             if self.create_logs:
                 worker_logger.info(f"Parsed {len(templates)} templates...")
-            template_cache_entry = {}
-            template_ids = []
-            for _, template in templates.items():
-                # A. Sequence checks
-                if fails_template_sequence_checks(
-                    template, self.max_seq_id, self.min_align, self.min_len
-                ):
-                    if self.create_logs:
-                        worker_logger.info(
-                            f"{template.entry_id} {template.chain_id} does not pass"
-                            " sequence checks."
-                        )
-                    continue
-
-                # B. Get which files are available
-                template_structure_file = (
-                    self.structure_directory
-                    / f"{template.entry_id}.{self.structure_file_format}"
-                )
-                structure_available = template_structure_file.exists()
-                if self.precache_directory is not None:
-                    precache_entry_file = (
-                        self.precache_directory / f"{template.entry_id}.npz"
-                    )
-                    precache_entry_available = precache_entry_file.exists()
-                else:
-                    precache_entry_file = None
-                    precache_entry_available = False
-                if self.structure_array_directory is not None:
-                    template_structure_array_subdirectory = (
-                        self.structure_array_directory / template.entry_id
-                    )
-                    structure_arrays_available = (
-                        template_structure_array_subdirectory.exists()
-                        and any(template_structure_array_subdirectory.iterdir())
-                    )
-                else:
-                    template_structure_array_subdirectory = None
-                    structure_arrays_available = False
-                if self.create_logs:
-                    worker_logger.info(
-                        f"Data availability for {template.entry_id} "
-                        f"{template.chain_id}:\n"
-                        f"  Structure file: {structure_available} - "
-                        f"{template_structure_file}\n"
-                        f"  Precache entry: {precache_entry_available} - "
-                        f"{precache_entry_file}\n"
-                        f"  Structure arrays: {structure_arrays_available} - "
-                        f"{template_structure_array_subdirectory}"
-                    )
-
-                # C. Fetch template structure if needed
-                # We need
-                # - either the raw template structure
-                # - or the precache entry and the structure arrays both
-                if (not structure_available) & (not precache_entry_available):
-                    if not self.fetch_missing_structures:
-                        if self.create_logs:
-                            worker_logger.info(
-                                f"Template structure for {template.entry_id} is "
-                                "missing, but fetching is disabled. Please either "
-                                "provide the missing template structure or set "
-                                "`template_preprocessor_settings.fetch_missing_structures=True`.",
-                            )
-                        continue
-                    else:
-                        if self.create_logs:
-                            worker_logger.info(
-                                "Structure not available, fetching"
-                                f" {template.entry_id}."
-                            )
-                        try:
-                            fetch(
-                                pdb_ids=template.entry_id,
-                                format="cif",
-                                target_path=self.structure_directory,
-                            )
-                        except RequestError as _:
-                            msg = (
-                                f" {template.entry_id} is not a valid PDB ID."
-                                " Skipping this template."
-                            )
-                            if self.create_logs:
-                                worker_logger.info(msg)
-                            else:
-                                print(msg)
-                            continue
-
-                # D. Load template structure
-                # i. from precache if available
-                if precache_entry_available:
-                    if self.create_logs:
-                        worker_logger.info(
-                            f"Loading precache entry {precache_entry_file}."
-                        )
-
-                    with np.load(
-                        precache_entry_file, allow_pickle=True
-                    ) as precache_entry:
-                        chain_id_seq_map = precache_entry["chain_id_seq_map"].item()
-                        release_date = precache_entry["release_date"].item()
-
-                # ii. from raw structure if not precached
-                else:
-                    # Preprocess into per-chain arrays if prompted
-                    if self.preparse_structures & (not structure_arrays_available):
-                        if self.create_logs:
-                            worker_logger.info(
-                                f"Loading structure {template_structure_file} and"
-                                " preparsing."
-                            )
-                        cif_file, _ = preprocess_template_structure_for_template(
-                            template_structure_file,
-                            template_structure_array_subdirectory,
-                            self.ccd,
-                            self.moltypes,
-                        )
-                    else:
-                        if self.create_logs:
-                            worker_logger.info(
-                                f"Loading structure {template_structure_file}."
-                            )
-                        cif_file = _load_ciffile(template_structure_file)
-
-                    chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
-                    release_date = get_release_date(get_cif_block(cif_file)).strftime(
-                        "%Y-%m-%d"
-                    )
-
-                    if self.create_precache:
-                        if self.create_logs:
-                            worker_logger.info(
-                                f"Saving new precache entry {precache_entry_file}."
-                            )
-                        np.savez_compressed(
-                            precache_entry_file,
-                            **{
-                                "release_date": release_date,
-                                "chain_id_seq_map": chain_id_seq_map,
-                            },
-                        )
-
-                # E. Realign with the sequence from the template structure file if the
-                # template aligment did not contain the sequence.
-                if not all(
-                    [
-                        template.seq,
-                        template.query_aln_pos is not None,
-                        template.aln_pos is not None,
-                        template.q_cov,
-                    ]
-                ):
-                    if self.create_logs:
-                        worker_logger.info(
-                            "Residue-wise template alignment missing for"
-                            f" {template.entry_id} {template.chain_id}. Realigning."
-                        )
-                    template_sequence = chain_id_seq_map.get(template.chain_id)
-                    if template_sequence is None:
-                        # Usually an author chain ID that was never remapped, e.g. raw
-                        # ColabFold hits
-                        msg = (
-                            f"Skipping template {template.entry_id}_{template.chain_id}"
-                            f" for {cache_key}: chain {template.entry_id}_"
-                            f"{template.chain_id} not found in its structure (chains:"
-                            f" {sorted(chain_id_seq_map)}). Template IDs must use"
-                            " label chain IDs; remap author chain IDs first."
-                        )
-                        logger.warning(msg)
-                        if self.create_logs:
-                            worker_logger.warning(msg)
-                        continue
-                    parser = A3mParser(max_sequences=None)
-                    realigned = parser(
-                        f">query_X/1-{len(input_data.query_seq_str)}\n{input_data.query_seq_str}\n>{template.entry_id}_{template.chain_id}/{1}-{len(template_sequence)}\n{template_sequence}\n",
-                        input_data.query_seq_str,
-                        realign=True,
-                    )[1]
-                    # The realignment holds only this hit (row 1); keep its rank in the
-                    # original alignment, which orders the cache entry's templates.
-                    template = realigned._replace(index=template.index)
-
-                # F. Apply release date checks
-                if not isinstance(release_date, datetime):
-                    release_date = datetime.strptime(release_date, "%Y-%m-%d")
-                # min_release_date_diff needs the query's release date: applied per
-                # structure in _update_dataset_cache, and not used in predict mode.
-                if fails_template_release_date_checks(
-                    template_release_date=release_date,
-                    query_release_date=None,
-                    max_template_release_date=self.max_release_date,
-                    min_release_date_diff=None,
-                ):
-                    if self.create_logs:
-                        worker_logger.info(
-                            f"{template.entry_id} {template.chain_id} does not pass"
-                            " release date checks."
-                        )
-                    continue
-
-                # G. Match template sequence from alignment to template sequence in
-                # structure and attempt to remap chain ID if needed
-                chain_id_matched = match_template_seq_from_aln_to_struc(
-                    template, chain_id_seq_map
-                )
-                if chain_id_matched is None:
-                    if self.create_logs:
-                        worker_logger.info(
-                            f"{template.entry_id} {template.chain_id} sequence could"
-                            " not be matched between alignment and structure."
-                        )
-                    continue
-
-                # H. Add to cache entry
-                idx_map = template.build_residue_idx_map()
-                if idx_map.shape[0] == 0:
-                    if self.create_logs:
-                        worker_logger.info(
-                            f"{template.entry_id} {template.chain_id} has no aligned"
-                            " residue pairs."
-                        )
-                    continue
-                # `cif_path` is only set in CIF-direct mode and is dropped by `to_dict`
-                # when absent
-                cache_entry = TemplateCacheEntry(
-                    index=template.index,
-                    release_date=release_date,
-                    idx_map=idx_map,
-                    cif_path=template.cif_path,
-                )
-                template_cache_entry[f"{template.entry_id}_{chain_id_matched}"] = (
-                    cache_entry.to_dict()
-                )
-                template_ids.append(f"{template.entry_id}_{chain_id_matched}")
-                if self.create_logs:
-                    worker_logger.info(
-                        f"{template.entry_id} {template.chain_id} added to cache."
-                    )
-
-                # I. Break if max templates reached
-                if not is_train and len(template_cache_entry) == self.max_templates:
-                    break
+            template_cache_entry = self._build_cache_entry_from_hits(
+                input_data, templates, cache_key
+            )
 
             # 6. Save template cache entry and update shared dict of template IDs
             if len(template_cache_entry) > 0:
                 if self.create_logs:
                     worker_logger.info(f"Found {len(template_cache_entry)} hits.")
                 np.savez_compressed(template_cache_entry_file, **template_cache_entry)
-                self.template_ids_by_cache_key[cache_key] = template_ids
+                self.template_ids_by_cache_key[cache_key] = list(template_cache_entry)
             else:
                 if self.create_logs:
                     worker_logger.info("Found no hits.")
@@ -2681,6 +2439,267 @@ class TemplatePreprocessor:
             )
             if self.create_logs:
                 worker_logger.info(f"Found {template_cache_entry.keys()} hits.")
+
+    def _build_cache_entry_from_hits(
+        self,
+        input_data: TemplatePreprocessorInputTrain | TemplatePreprocessorInputInference,
+        templates: dict[int, TemplateData],
+        cache_key: str | None,
+    ) -> dict[str, dict[str, Any]]:
+        """Filters parsed template hits down to the rows of one cache entry.
+
+        Each hit is checked against its template structure, looked up by entry ID in
+        the precache or the structure directory (and fetched if missing and allowed),
+        then realigned if needed and mapped onto query residues.
+
+        Returns:
+            dict[str, dict[str, Any]]:
+                Template ID to serialized `TemplateCacheEntry`, in hit order. Empty if
+                no hit passes.
+        """
+        if self.create_logs:
+            worker_logger = logging.getLogger(f"template_preprocess_{os.getpid()}")
+
+        # Train-mode entries are shared by all chains of a representative: capping at
+        # max_templates happens per structure in _update_dataset_cache instead.
+        is_train = isinstance(input_data, TemplatePreprocessorInputTrain)
+        template_cache_entry = {}
+        for _, template in templates.items():
+            # A. Sequence checks
+            if fails_template_sequence_checks(
+                template, self.max_seq_id, self.min_align, self.min_len
+            ):
+                if self.create_logs:
+                    worker_logger.info(
+                        f"{template.entry_id} {template.chain_id} does not pass"
+                        " sequence checks."
+                    )
+                continue
+
+            # B. Get which files are available
+            template_structure_file = (
+                self.structure_directory
+                / f"{template.entry_id}.{self.structure_file_format}"
+            )
+            structure_available = template_structure_file.exists()
+            if self.precache_directory is not None:
+                precache_entry_file = (
+                    self.precache_directory / f"{template.entry_id}.npz"
+                )
+                precache_entry_available = precache_entry_file.exists()
+            else:
+                precache_entry_file = None
+                precache_entry_available = False
+            if self.structure_array_directory is not None:
+                template_structure_array_subdirectory = (
+                    self.structure_array_directory / template.entry_id
+                )
+                structure_arrays_available = (
+                    template_structure_array_subdirectory.exists()
+                    and any(template_structure_array_subdirectory.iterdir())
+                )
+            else:
+                template_structure_array_subdirectory = None
+                structure_arrays_available = False
+            if self.create_logs:
+                worker_logger.info(
+                    f"Data availability for {template.entry_id} "
+                    f"{template.chain_id}:\n"
+                    f"  Structure file: {structure_available} - "
+                    f"{template_structure_file}\n"
+                    f"  Precache entry: {precache_entry_available} - "
+                    f"{precache_entry_file}\n"
+                    f"  Structure arrays: {structure_arrays_available} - "
+                    f"{template_structure_array_subdirectory}"
+                )
+
+            # C. Fetch template structure if needed
+            # We need
+            # - either the raw template structure
+            # - or the precache entry and the structure arrays both
+            if (not structure_available) & (not precache_entry_available):
+                if not self.fetch_missing_structures:
+                    if self.create_logs:
+                        worker_logger.info(
+                            f"Template structure for {template.entry_id} is "
+                            "missing, but fetching is disabled. Please either "
+                            "provide the missing template structure or set "
+                            "`template_preprocessor_settings.fetch_missing_structures=True`.",
+                        )
+                    continue
+                else:
+                    if self.create_logs:
+                        worker_logger.info(
+                            f"Structure not available, fetching {template.entry_id}."
+                        )
+                    try:
+                        fetch(
+                            pdb_ids=template.entry_id,
+                            format="cif",
+                            target_path=self.structure_directory,
+                        )
+                    except RequestError as _:
+                        msg = (
+                            f" {template.entry_id} is not a valid PDB ID."
+                            " Skipping this template."
+                        )
+                        if self.create_logs:
+                            worker_logger.info(msg)
+                        else:
+                            print(msg)
+                        continue
+
+            # D. Load template structure
+            # i. from precache if available
+            if precache_entry_available:
+                if self.create_logs:
+                    worker_logger.info(f"Loading precache entry {precache_entry_file}.")
+
+                with np.load(precache_entry_file, allow_pickle=True) as precache_entry:
+                    chain_id_seq_map = precache_entry["chain_id_seq_map"].item()
+                    release_date = precache_entry["release_date"].item()
+
+            # ii. from raw structure if not precached
+            else:
+                # Preprocess into per-chain arrays if prompted
+                if self.preparse_structures & (not structure_arrays_available):
+                    if self.create_logs:
+                        worker_logger.info(
+                            f"Loading structure {template_structure_file} and"
+                            " preparsing."
+                        )
+                    cif_file, _ = preprocess_template_structure_for_template(
+                        template_structure_file,
+                        template_structure_array_subdirectory,
+                        self.ccd,
+                        self.moltypes,
+                    )
+                else:
+                    if self.create_logs:
+                        worker_logger.info(
+                            f"Loading structure {template_structure_file}."
+                        )
+                    cif_file = _load_ciffile(template_structure_file)
+
+                chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
+                release_date = get_release_date(get_cif_block(cif_file)).strftime(
+                    "%Y-%m-%d"
+                )
+
+                if self.create_precache:
+                    if self.create_logs:
+                        worker_logger.info(
+                            f"Saving new precache entry {precache_entry_file}."
+                        )
+                    np.savez_compressed(
+                        precache_entry_file,
+                        **{
+                            "release_date": release_date,
+                            "chain_id_seq_map": chain_id_seq_map,
+                        },
+                    )
+
+            # E. Realign with the sequence from the template structure file if the
+            # template aligment did not contain the sequence.
+            if not all(
+                [
+                    template.seq,
+                    template.query_aln_pos is not None,
+                    template.aln_pos is not None,
+                    template.q_cov,
+                ]
+            ):
+                if self.create_logs:
+                    worker_logger.info(
+                        "Residue-wise template alignment missing for"
+                        f" {template.entry_id} {template.chain_id}. Realigning."
+                    )
+                template_sequence = chain_id_seq_map.get(template.chain_id)
+                if template_sequence is None:
+                    # Usually an author chain ID that was never remapped, e.g. raw
+                    # ColabFold hits
+                    msg = (
+                        f"Skipping template {template.entry_id}_{template.chain_id}"
+                        f" for {cache_key}: chain {template.entry_id}_"
+                        f"{template.chain_id} not found in its structure (chains:"
+                        f" {sorted(chain_id_seq_map)}). Template IDs must use"
+                        " label chain IDs; remap author chain IDs first."
+                    )
+                    logger.warning(msg)
+                    if self.create_logs:
+                        worker_logger.warning(msg)
+                    continue
+                parser = A3mParser(max_sequences=None)
+                realigned = parser(
+                    f">query_X/1-{len(input_data.query_seq_str)}\n{input_data.query_seq_str}\n>{template.entry_id}_{template.chain_id}/{1}-{len(template_sequence)}\n{template_sequence}\n",
+                    input_data.query_seq_str,
+                    realign=True,
+                )[1]
+                # The realignment holds only this hit (row 1); keep its rank in the
+                # original alignment, which orders the cache entry's templates.
+                template = realigned._replace(index=template.index)
+
+            # F. Apply release date checks
+            if not isinstance(release_date, datetime):
+                release_date = datetime.strptime(release_date, "%Y-%m-%d")
+            # min_release_date_diff needs the query's release date: applied per
+            # structure in _update_dataset_cache, and not used in predict mode.
+            if fails_template_release_date_checks(
+                template_release_date=release_date,
+                query_release_date=None,
+                max_template_release_date=self.max_release_date,
+                min_release_date_diff=None,
+            ):
+                if self.create_logs:
+                    worker_logger.info(
+                        f"{template.entry_id} {template.chain_id} does not pass"
+                        " release date checks."
+                    )
+                continue
+
+            # G. Match template sequence from alignment to template sequence in
+            # structure and attempt to remap chain ID if needed
+            chain_id_matched = match_template_seq_from_aln_to_struc(
+                template, chain_id_seq_map
+            )
+            if chain_id_matched is None:
+                if self.create_logs:
+                    worker_logger.info(
+                        f"{template.entry_id} {template.chain_id} sequence could"
+                        " not be matched between alignment and structure."
+                    )
+                continue
+
+            # H. Add to cache entry
+            idx_map = template.build_residue_idx_map()
+            if idx_map.shape[0] == 0:
+                if self.create_logs:
+                    worker_logger.info(
+                        f"{template.entry_id} {template.chain_id} has no aligned"
+                        " residue pairs."
+                    )
+                continue
+            # `cif_path` is only set in CIF-direct mode and is dropped by `to_dict`
+            # when absent
+            cache_entry = TemplateCacheEntry(
+                index=template.index,
+                release_date=release_date,
+                idx_map=idx_map,
+                cif_path=template.cif_path,
+            )
+            template_cache_entry[f"{template.entry_id}_{chain_id_matched}"] = (
+                cache_entry.to_dict()
+            )
+            if self.create_logs:
+                worker_logger.info(
+                    f"{template.entry_id} {template.chain_id} added to cache."
+                )
+
+            # I. Break if max templates reached
+            if not is_train and len(template_cache_entry) == self.max_templates:
+                break
+
+        return template_cache_entry
 
 
 class TemplatePrecachePreprocessor:
