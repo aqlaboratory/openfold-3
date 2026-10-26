@@ -15,8 +15,6 @@ license = { text = "Apache-2.0" }
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -27,7 +25,7 @@ urls.Documentation = "https://openfold-3.readthedocs.io/en/latest/"
 urls.Repository = "https://github.com/aqlaboratory/openfold-3"
 urls.Issues = "https://github.com/aqlaboratory/openfold-3/issues"
 
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "numpy",
     "scipy",
@@ -164,6 +162,11 @@ ignore = [
     "E741",
     "SIM108",
     "B905",  # explicit strict= for zip
+    # PEP 695 `type X = ...` / `class C[T]` syntax: unlike TypeAlias, a `type`
+    # alias is a TypeAliasType at runtime and breaks isinstance(x, Alias)
+    "UP040",
+    "UP046",
+    "UP047",
 ]
 extend-safe-fixes = ["UP006"]
 
@@ -187,7 +190,7 @@ files = ["openfold3", "scripts"]
 # runs. Pinning it (rather than following the active interpreter) keeps the
 # baseline from drifting on an unrelated `pixi update`; bump it deliberately,
 # together with a `typecheck-sync`, when the environments move to a new Python.
-# Note this means the `requires-python = ">=3.10"` floor above is not type-checked.
+# Note this means the `requires-python = ">=3.12"` floor above is not type-checked.
 python_version = "3.14"
 # The baseline is recorded on, and enforced by, linux-64 CI. Without pinning the
 # platform, `sys.platform` branches (device selection, MPS vs CUDA fallbacks) are

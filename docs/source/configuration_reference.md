@@ -192,10 +192,6 @@ Controls template structure processing.
 - `n_templates` *(int)*: Number of templates to use (default: `4`)
 - `take_top_k` *(bool)*: Use top K templates by quality (default: `true`)
 - `min_n_tokens_per_chain` *(int)*: Minimum number of tokens a chain has to have for it to get template features (default: `5`)
-- `distogram` *(TemplateDistogramSettings)*: Distogram binning settings
-  - `min_bin` *(float)*: Minimum distance bin (default: `3.25`)
-  - `max_bin` *(float)*: Maximum distance bin (default: `50.75`)
-  - `n_bins` *(int)*: Number of bins (default: `39`)
 
 **Example**:
 ```yaml
