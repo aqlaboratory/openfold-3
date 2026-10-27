@@ -550,7 +550,7 @@ class TestPlTrainerArgsPassthrough:
     )
 
     @staticmethod
-    def _trainer_kwargs(
+    def _pl_trainer_kwargs(
         ckpt: Path, pl_trainer_args: dict[str, object]
     ) -> dict[str, object]:
         expt_config = InferenceExperimentConfig(
@@ -584,7 +584,7 @@ class TestPlTrainerArgsPassthrough:
         )
 
     def test_openfold3_defaults(self, dummy_ckpt_file):
-        kwargs = self._trainer_kwargs(dummy_ckpt_file, {})
+        kwargs = self._pl_trainer_kwargs(dummy_ckpt_file, {})
         expected = {
             "max_epochs": 1000,
             "accelerator": "gpu",
@@ -603,7 +603,7 @@ class TestPlTrainerArgsPassthrough:
         assert {k: kwargs[k] for k in expected} == expected
 
     def test_openfold3_only_settings_not_passed(self, dummy_ckpt_file):
-        kwargs = self._trainer_kwargs(dummy_ckpt_file, {})
+        kwargs = self._pl_trainer_kwargs(dummy_ckpt_file, {})
         for name in (
             "deepspeed_config_path",
             "distributed_timeout",
@@ -623,7 +623,7 @@ class TestPlTrainerArgsPassthrough:
         ],
     )
     def test_user_values_passed_through(self, dummy_ckpt_file, pl_trainer_args):
-        kwargs = self._trainer_kwargs(dummy_ckpt_file, pl_trainer_args)
+        kwargs = self._pl_trainer_kwargs(dummy_ckpt_file, pl_trainer_args)
         assert {k: kwargs[k] for k in pl_trainer_args} == pl_trainer_args
 
     @pytest.mark.parametrize(
@@ -693,7 +693,7 @@ class TestPlTrainerArgsPassthrough:
     def test_inference_without_distributed_sampler_passed_through(
         self, dummy_ckpt_file
     ):
-        kwargs = self._trainer_kwargs(
+        kwargs = self._pl_trainer_kwargs(
             dummy_ckpt_file, {"use_distributed_sampler": False}
         )
         assert kwargs["use_distributed_sampler"] is False
@@ -710,7 +710,7 @@ class TestPlTrainerArgsPassthrough:
 
     @pytest.mark.parametrize("devices", [1, 8])
     def test_positive_devices_passed_through(self, dummy_ckpt_file, devices):
-        kwargs = self._trainer_kwargs(dummy_ckpt_file, {"devices": devices})
+        kwargs = self._pl_trainer_kwargs(dummy_ckpt_file, {"devices": devices})
         assert kwargs["devices"] == devices
 
 
