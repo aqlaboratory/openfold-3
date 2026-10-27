@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["${{ needs.python-floor.outputs.version }}", "3.x"]
+        python-version: ["${{ needs.python-floor.outputs.version }}", "3.14"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
