@@ -869,8 +869,7 @@ def get_token_frame_atoms(
         torch.sum(eps + (x_start[..., None, :] - x[..., None, :, :]) ** 2, dim=-1)
         ** 0.5
     )
-    pair_mask = pair_mask.to(d.dtype)
-    d = d * pair_mask + inf * (1 - pair_mask)
+    d = torch.where(pair_mask, d, inf)
 
     # Find indices of two closest atoms for start atoms
     # [*, N_token]
