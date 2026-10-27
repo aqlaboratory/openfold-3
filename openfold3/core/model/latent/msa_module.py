@@ -21,8 +21,6 @@ Note that this does not include the MSA sampling, which is handled in the
 MSAModuleEmbedder.
 """
 
-from collections.abc import Sequence
-
 import torch
 from ml_collections import ConfigDict
 
@@ -30,7 +28,7 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.latent.base_blocks import MSABlock
 from openfold3.core.model.latent.base_stacks import MSAStack
 from openfold3.core.model.layers.msa import MSAPairWeightedAveraging
-from openfold3.core.model.utils import assert_sole_holder
+from openfold3.core.model.memory import move_and_free
 from openfold3.core.utils.device_utils import empty_device_cache
 from openfold3.core.utils.tensor_utils import add
 
@@ -162,7 +160,7 @@ class MSAModuleBlock(MSABlock):
         _mask_trans: bool = True,
         _attn_chunk_size: int | None = None,
         _offload_inference: bool = False,
-        _offloadable_inputs: Sequence[torch.Tensor] | None = None,
+        _offloadable_inputs: list[torch.Tensor] | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         msa_trans_mask = msa_mask if _mask_trans else None
 
@@ -170,9 +168,11 @@ class MSAModuleBlock(MSABlock):
             _attn_chunk_size = chunk_size
 
         if _offload_inference and inplace_safe:
+            assert _offloadable_inputs is not None
             input_tensors = _offloadable_inputs
             del _offloadable_inputs
         else:
+            assert m is not None and z is not None
             input_tensors = [m, z]
 
         m, z = input_tensors
@@ -205,12 +205,11 @@ class MSAModuleBlock(MSABlock):
             if _offload_inference and inplace_safe:
                 # m: GPU, z: CPU
                 # Read the device before dropping the reference — this holds a
-                # torch.device, not the tensor, so assert_sole_holder still sees
-                # the container as the only holder.
+                # torch.device, not the tensor, so the container stays the only
+                # holder of z's memory.
                 accel_device = z.device
                 del m, z
-                assert_sole_holder(input_tensors[1], in_container=True)
-                input_tensors[1] = input_tensors[1].cpu()
+                move_and_free(input_tensors, 1, "cpu")
                 empty_device_cache(accel_device)
                 m, z = input_tensors
             elif self.clear_cache_between_blocks:
@@ -244,9 +243,8 @@ class MSAModuleBlock(MSABlock):
         if _offload_inference and inplace_safe:
             # m: CPU, z: GPU
             del m, z
-            assert_sole_holder(input_tensors[0], in_container=True)
             device = input_tensors[0].device
-            input_tensors[0] = input_tensors[0].cpu()
+            move_and_free(input_tensors, 0, "cpu")
             input_tensors[1] = input_tensors[1].to(device)
             m, z = input_tensors
         elif self.clear_cache_between_blocks:
@@ -272,9 +270,7 @@ class MSAModuleBlock(MSABlock):
 
         if _offload_inference and inplace_safe:
             # m: GPU, z: GPU
-            device = z.device
-            assert_sole_holder(input_tensors[0], in_container=True)
-            input_tensors[0] = input_tensors[0].to(device)
+            move_and_free(input_tensors, 0, z.device)
             m, _ = input_tensors
         else:
             m = input_tensors[0]

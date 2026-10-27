@@ -15,6 +15,7 @@
 import re
 import unittest
 
+import pytest
 import torch
 
 from openfold3.core.model.latent.evoformer import EvoformerStack
@@ -144,6 +145,56 @@ class TestEvoformerStack(unittest.TestCase):
         self.assertTrue(m.shape == shape_m_before)
         self.assertTrue(z.shape == shape_z_before)
         self.assertTrue(s.shape == (batch_size, n_res, c_s))
+
+
+@pytest.mark.parametrize("opm_first", [False, True])
+def test_evoformer_stack_offload(device, opm_first):
+    batch_size = consts.batch_size
+    n_seq = consts.n_seq
+    n_res = consts.n_res
+    c_m = consts.c_m
+    c_z = consts.c_z
+
+    es = EvoformerStack(
+        c_m=c_m,
+        c_z=c_z,
+        c_hidden_msa_att=12,
+        c_hidden_opm=17,
+        c_hidden_mul=19,
+        c_hidden_pair_att=14,
+        c_s=consts.c_s,
+        no_heads_msa=3,
+        no_heads_pair=7,
+        no_blocks=2,
+        transition_type="relu",
+        transition_n=2,
+        msa_dropout=0.15,
+        pair_dropout=0.25,
+        no_column_attention=False,
+        opm_first=opm_first,
+        fuse_projection_weights=False,
+        blocks_per_ckpt=None,
+        inf=1e9,
+        eps=1e-10,
+    )
+    es.to(device).eval()
+
+    m = torch.rand((batch_size, n_seq, n_res, c_m), device=device)
+    z = torch.rand((batch_size, n_res, n_res, c_z), device=device)
+    msa_mask = torch.randint(0, 2, (batch_size, n_seq, n_res), device=device).float()
+    pair_mask = torch.randint(0, 2, (batch_size, n_res, n_res), device=device).float()
+
+    with torch.no_grad():
+        expected = es(m, z, msa_mask=msa_mask, pair_mask=pair_mask)
+        # forward_offload replaces the container's tensors, so give it copies
+        actual = es.forward_offload(
+            input_tensors=[m.clone(), z.clone()],
+            msa_mask=msa_mask,
+            pair_mask=pair_mask,
+        )
+
+    for e, a in zip(expected, actual, strict=True):
+        torch.testing.assert_close(a, e)
 
 
 class TestMSATransition(unittest.TestCase):

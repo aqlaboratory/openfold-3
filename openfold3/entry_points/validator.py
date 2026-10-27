@@ -18,6 +18,7 @@ import platform
 import random
 import warnings
 from datetime import timedelta
+from enum import StrEnum
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any, Literal
@@ -118,6 +119,24 @@ class DataModuleArgs(BaseModel):
     epoch_len: int = 4
 
 
+class ClusterEnvironmentOption(StrEnum):
+    """How distributed ranks are launched and discovered.
+
+    - ``auto`` (default): SLURM manages the ranks only if the process was
+      launched by ``srun``; otherwise Lightning starts them locally. Same for
+      single- and multi-GPU runs.
+    - ``local``: Lightning always starts the ranks, ignoring any scheduler.
+    - ``slurm``: SLURM always manages the ranks; launch with
+      ``srun --ntasks-per-node=<devices>``.
+    - ``mpi``: MPI manages the ranks (requires ``mpi4py``).
+    """
+
+    AUTO = "auto"
+    SLURM = "slurm"
+    LOCAL = "local"
+    MPI = "mpi"
+
+
 class PlTrainerArgs(BaseModel):
     """Arguments to configure pl.Trainer, including settings for number of devices."""
 
@@ -139,6 +158,8 @@ class PlTrainerArgs(BaseModel):
     deepspeed_config_path: Path | None = None
     distributed_timeout: timedelta | None = default_pg_timeout
     mpi_plugin: bool = False
+    # See ClusterEnvironmentOption; overridable with --cluster-environment.
+    cluster_environment: ClusterEnvironmentOption = ClusterEnvironmentOption.AUTO
 
     use_distributed_sampler: bool = True
 

@@ -1,0 +1,82 @@
+name: Python version compatibility
+
+# Checks that openfold3 works on the minimum Python in `requires-python`, which
+# the pixi CI (latest Python only) never exercises. See issue #479.
+
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-floor:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.floor.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+      - name: Read the minimum Python version from pyproject.toml
+        id: floor
+        run: |
+          python - >> "$GITHUB_OUTPUT" <<'EOF'
+          import re, tomllib
+          with open("pyproject.toml", "rb") as f:
+              spec = tomllib.load(f)["project"]["requires-python"]
+          print(f"version={re.fullmatch(r'>=\s*(\d+\.\d+)', spec).group(1)}")
+          EOF
+
+  # Static: no stdlib API or syntax newer than the minimum Python, in any code
+  # path, including ones the tests never reach
+  vermin:
+    needs: python-floor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+      - run: pip install vermin
+      # --exclude long: vermin mistakes torch.long for the Python 2 builtin
+      - run: >
+          vermin -q --no-tips --violations --eval-annotations
+          --backport typing_extensions --exclude long
+          -t=${{ needs.python-floor.outputs.version }}-
+          openfold3/ scripts/
+
+  # Runtime: the wheel installs (dependencies resolve) and every module
+  # imports, on the minimum and the latest Python
+  install-and-import:
+    needs: python-floor
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["${{ needs.python-floor.outputs.version }}", "3.x"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build the wheel
+        run: |
+          pip install build
+          python -m build --wheel
+      - name: Install the wheel
+        run: |
+          # CPU torch, to skip the multi-GB CUDA download
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install dist/*.whl pytest
+      # From outside the checkout, so the installed wheel is what gets imported
+      - name: Import every module
+        working-directory: ${{ runner.temp }}
+        run: |
+          python -c "import openfold3; print(openfold3.__file__)"
+          run_openfold --help
+          # A path, not --pyargs, so conftest registers --skip-ccd-update in time
+          TESTS=$(python -c "import openfold3.tests as t, os; print(os.path.dirname(t.__file__))")
+          python -m pytest -q -rsx -p no:cacheprovider --skip-ccd-update \
+            "$TESTS/test_import_all_modules.py"

@@ -15,8 +15,12 @@ cutlass/
 # (and the generate-pdb-subset/download-pdb-subset pixi tasks, which run from here)
 /datasets/
 
-# User-specific claude settings
-.claude/
+# User-specific claude settings; only the published OF3 skills (of3-*) are tracked.
+# Personal skills belong in ~/.claude/skills/.
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/of3-*/
 
 # User-specific pre-commit settings
 .pre-commit-config.yaml

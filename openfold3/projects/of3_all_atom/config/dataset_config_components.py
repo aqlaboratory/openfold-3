@@ -24,6 +24,7 @@ The main sections of the dataset configuration are:
 from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator
+from pydantic import ConfigDict as PydanticConfigDict
 
 from openfold3.core.config.config_utils import _convert_molecule_type
 from openfold3.core.data.resources.residues import MoleculeType
@@ -116,19 +117,14 @@ class MSASettings(BaseModel):
     paired_msa_order: list = ["colabfold_paired"]
 
 
-class TemplateDistogramSettings(BaseModel):
-    min_bin: float = 3.25
-    max_bin: float = 50.75
-    n_bins: int = 39
-
-
 class TemplateSettings(BaseModel):
     """Settings for processing Template features."""
+
+    model_config = PydanticConfigDict(extra="forbid")
 
     n_templates: int = 4
     take_top_k: bool = False
     min_n_tokens_per_chain: int = 5
-    distogram: TemplateDistogramSettings = TemplateDistogramSettings()
 
 
 class CropWeights(BaseModel):
@@ -184,3 +180,16 @@ class LossConfig(BaseModel):
         "pae",
     ]
     loss_weights: LossWeights = LossWeights()
+
+
+class SampleWeights(BaseModel):
+    """Datapoint sampling weights for the weighted PDB datasets (AF3 SI section
+    2.5.1, Algorithm 1)."""
+
+    model_config = PydanticConfigDict(extra="forbid")
+
+    a_prot: float = 3.0
+    a_nuc: float = 3.0
+    a_ligand: float = 1.0
+    w_chain: float = 0.5
+    w_interface: float = 1.0

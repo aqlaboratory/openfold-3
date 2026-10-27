@@ -56,6 +56,13 @@ from openfold3.entry_points.validator import (
     WandbConfig,
     generate_seeds,
 )
+from openfold3.projects.of3_all_atom.config.dataset_config_components import (
+    MSASettings,
+    TemplateSettings,
+)
+from openfold3.projects.of3_all_atom.config.dataset_configs import (
+    InferenceDatasetConfigKwargs,
+)
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     InferenceQuerySet,
 )
@@ -622,6 +629,33 @@ class TestInferenceCommandLineSettings:
         expt_runner = InferenceExperimentRunner(expt_config, num_model_seeds=3)
         assert expt_runner.seeds == generate_seeds(7, 3)
 
+    def test_partial_dataset_config_kwargs_keep_inference_defaults(
+        self, dummy_ckpt_file
+    ):
+        inference_default_subsample_main = InferenceDatasetConfigKwargs.model_fields[
+            "msa"
+        ].default.subsample_main
+        class_default_subsample_main = MSASettings.model_fields[
+            "subsample_main"
+        ].default
+        # The point is to test a field where these differ. If they no longer do, pick a different field
+        assert inference_default_subsample_main != class_default_subsample_main
+        max_rows = MSASettings.model_fields["max_rows"].default + 1
+        n_templates = TemplateSettings.model_fields["n_templates"].default + 1
+        expt_config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            dataset_config_kwargs={
+                "template": {"n_templates": n_templates},
+                "msa": {"max_rows": max_rows},
+            },
+        )
+        kwargs = expt_config.dataset_config_kwargs
+        assert kwargs.template.n_templates == n_templates
+        assert kwargs.msa.max_rows == max_rows
+
+        # The inference instance default
+        assert kwargs.msa.subsample_main == inference_default_subsample_main
+
     def test_output_override_controls_default_intermediate_paths(
         self, tmp_path, dummy_ckpt_file
     ):
@@ -698,6 +732,9 @@ class TestInferenceCommandLineSettings:
                     str(minimal_query_json),
                     "--inference-ckpt-path",
                     str(dummy_ckpt_file),
+                    # TF32 is a process global setting that this test does not need
+                    "--use_tf32",
+                    "False",
                 ],
             )
 

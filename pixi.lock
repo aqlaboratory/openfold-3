@@ -291,7 +291,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/aws-checksums-0.2.10-h8b1a151_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/awscli-2.35.14-py314h9e666f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/awscrt-0.32.2-py314h7d485c0_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-1.7.1-py314hdff1159_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-2.0.0-py314h26df278_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/biotraj-1.2.2-py314h42812f9_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-1.2.0-hed03a55_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-bin-1.2.0-hb03c661_1.conda
@@ -562,7 +562,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/aws-checksums-0.2.10-h8b1a151_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/awscli-2.35.14-py314h9e666f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/awscrt-0.32.2-py314h7d485c0_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-1.7.1-py314hdff1159_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-2.0.0-py314h26df278_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/biotraj-1.2.2-py314h42812f9_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-1.2.0-hed03a55_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-bin-1.2.0-hb03c661_1.conda
@@ -861,7 +861,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/aws-checksums-0.2.10-h8b1a151_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/awscli-2.35.14-py314h9e666f3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/awscrt-0.32.2-py314h7d485c0_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-1.7.1-py314hdff1159_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-2.0.0-py314h26df278_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/biotraj-1.2.2-py314h42812f9_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-1.2.0-hed03a55_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-bin-1.2.0-hb03c661_1.conda
@@ -1160,7 +1160,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/aws-checksums-0.2.10-h6f28e42_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/awscli-2.35.14-py314h9dd9068_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/awscrt-0.32.2-py314h7a62d6b_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-1.7.1-py314h162827c_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-2.0.0-py314h4f44b47_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotraj-1.2.2-py314he6363bd_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/brotli-1.2.0-hd651790_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/brotli-bin-1.2.0-he30d5cf_1.conda
@@ -1429,7 +1429,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/aws-checksums-0.2.10-h6f28e42_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/awscli-2.35.14-py314h9dd9068_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/awscrt-0.32.2-py314h7a62d6b_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-1.7.1-py314h162827c_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-2.0.0-py314h4f44b47_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotraj-1.2.2-py314he6363bd_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/brotli-1.2.0-hd651790_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/brotli-bin-1.2.0-he30d5cf_1.conda
@@ -1727,7 +1727,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/aws-checksums-0.2.10-h6f28e42_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/awscli-2.35.14-py314h9dd9068_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/awscrt-0.32.2-py314h7a62d6b_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-1.7.1-py314h162827c_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-2.0.0-py314h4f44b47_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotraj-1.2.2-py314he6363bd_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/brotli-1.2.0-hd651790_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/brotli-bin-1.2.0-he30d5cf_1.conda
@@ -2145,7 +2145,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-64/aws-checksums-0.2.10-h31279ed_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/awscli-2.35.14-py314h99aeb3b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/awscrt-0.32.2-py314ha5ce235_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-64/biotite-1.7.1-py314hbb69444_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-64/biotite-2.0.0-py314h0258ca0_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/biotraj-1.2.2-py314h2f9fc56_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/brotli-1.2.0-hf139dec_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-64/brotli-bin-1.2.0-h8616949_1.conda
@@ -2405,7 +2405,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/aws-checksums-0.2.10-h3e7f9b5_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/awscli-2.35.14-py314hcec6336_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/awscrt-0.32.2-py314h33cfc57_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/biotite-1.7.1-py314h99627d6_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/biotite-2.0.0-py314hf088a33_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/biotraj-1.2.2-py314he609de1_2.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/brotli-1.2.0-h7d5ae5b_1.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/brotli-bin-1.2.0-hc919400_1.conda
@@ -2552,7 +2552,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils-2.45.1-default_h4852527_102.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_impl_linux-64-2.45.1-default_hfdba357_102.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_linux-64-2.45.1-default_h4852527_102.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-1.7.1-py314hdff1159_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-2.0.0-py314h26df278_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/biotraj-1.2.2-py314h42812f9_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-1.2.0-hed03a55_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-bin-1.2.0-hb03c661_1.conda
@@ -2909,7 +2909,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/binutils-2.45.1-default_hf1166c9_102.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/binutils_impl_linux-aarch64-2.45.1-default_h5f4c503_102.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/binutils_linux-aarch64-2.45.1-default_hf1166c9_102.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-1.7.1-py314h162827c_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-2.0.0-py314h4f44b47_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotraj-1.2.2-py314he6363bd_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/brotli-1.2.0-hd651790_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/brotli-bin-1.2.0-he30d5cf_1.conda
@@ -3385,9 +3385,9 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/33/40/79b0c64d44d6c166c0964ec1d803d067f4a145cca23e23925fd351d0e642/nvidia_cusolver_cu12-11.7.5.82-py3-none-manylinux_2_27_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/35/7a/987e583882f985fe4d7323774889ec58049171828b58c2217e7f79cdf44e/sphinxcontrib_devhelp-2.0.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/36/a8/3fb9a4319efa3b26f5be0e90e6d8918df43fa7c7e977d26390f589501d82/sentry_sdk-2.64.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/3b/4c/4612522b75d4eb77c7f355074fed68af13b6219bca232bb6b0e2a4f15fba/biotite-2.0.0-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3b/52/94aecda69df65ba1079a8b7dbe84632af5614dc0ed2c733185f6431874e3/nvidia_cudnn_cu12-9.20.0.48-py3-none-manylinux_2_27_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3c/dd/018ce05c532a22007ac58d4f45232514cd9d6dd0ee1dc374e309db830983/sphinx_basic_ng-1.0.0b2-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/3e/dc/cfbc0d38bded4f481d46be88c7ce00c0cd6f9455fb7d728484b2006ff4fe/biotite-1.7.1-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/41/3c/a36c2450754618e62008bf7435ccb0f88053e07592e6028a34776213d877/markupsafe-3.0.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/42/d7/1ec15b46af6af88f19b8e5ffea08fa375d433c998b8a7639e76935c14f1f/markdown_it_py-3.0.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl
@@ -3669,7 +3669,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/63/65/37648c0c158dc222aba51c089eb3bdfa238e621674dc42d48706e639204f/psutil-7.2.2-cp36-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/64/eb/c2295044b8f3b3b08860e2f6a912b702fc92568a167259df5dddb78f325e/nvidia_cuda_nvrtc_cu12-12.9.86-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl
-      - pypi: https://files.pythonhosted.org/packages/67/8b/66ef1cda70d5b4f5d71c959b19f5bc22dde7e428f53a748f7f64ed02b6ae/biotite-1.7.1-cp314-cp314-manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/68/e4/075052d42872cf8162da53f14447a4b8abc004c3750e4b724ee502428da0/cuda_bindings-12.9.7-cp314-cp314-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/69/8d/6918122b2fef6d42f8b3b198a95f4444be56563fd371f4ca076b1cd122f4/lmdb-2.2.1-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/6a/d9/4a4a628c812750363786afc3d33492709a5cd64b215469c16b0f6c7bb811/numpy-2.5.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
@@ -3712,6 +3711,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ab/8a/18d4ff2c7bd83f30d6924bd4ad97abf418488c3f908dea228d6f0961ad68/ml_collections-1.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ae/e9/e35cf11c8a136e757b956f5f0efdcaa50aecde85ea055f1898dfc68262f3/pandas-3.0.3-cp314-cp314-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl
+      - pypi: https://files.pythonhosted.org/packages/b0/fa/9bd67e7f389c193a0bfdff4601360a057e147ded09b125422a863270311a/biotite-2.0.0-cp314-cp314-manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/b1/9d/8b2c807dbef61a5197c047afe99823787eb66f63daf9fb2432f91d6f0462/pillow-12.3.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b4/78/351b5c8cdbd9a6b4fb0d6ee73fb176dcdc1b6b6ad47c2ffff5ae8ca4a1f7/nvidia_cuda_cupti_cu12-12.9.79-py3-none-manylinux_2_25_aarch64.whl
@@ -3782,7 +3782,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils-2.45.1-default_h4852527_102.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_impl_linux-64-2.45.1-default_hfdba357_102.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_linux-64-2.45.1-default_h4852527_102.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-1.7.1-py314hdff1159_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-2.0.0-py314h26df278_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/biotraj-1.2.2-py314h42812f9_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-1.2.0-hed03a55_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-bin-1.2.0-hb03c661_1.conda
@@ -4141,7 +4141,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/binutils-2.45.1-default_hf1166c9_102.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/binutils_impl_linux-aarch64-2.45.1-default_h5f4c503_102.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/binutils_linux-aarch64-2.45.1-default_hf1166c9_102.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-1.7.1-py314h162827c_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-2.0.0-py314h4f44b47_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotraj-1.2.2-py314he6363bd_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/brotli-1.2.0-hd651790_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/brotli-bin-1.2.0-he30d5cf_1.conda
@@ -4621,10 +4621,10 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/34/7d/2661f2fb3ac4302f3a246f5fc030213ac60c1fe0bce84f9783dbd831dbb7/nvidia_cusparselt_cu13-0.8.1-py3-none-manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/35/7a/987e583882f985fe4d7323774889ec58049171828b58c2217e7f79cdf44e/sphinxcontrib_devhelp-2.0.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/36/a8/3fb9a4319efa3b26f5be0e90e6d8918df43fa7c7e977d26390f589501d82/sentry_sdk-2.64.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/3b/4c/4612522b75d4eb77c7f355074fed68af13b6219bca232bb6b0e2a4f15fba/biotite-2.0.0-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3b/cd/154ca20c38269e05eff77c1464e6c1da89f50a6390b565e9d82e06bc11e1/nvidia_cublas-13.1.1.3-py3-none-manylinux_2_27_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3c/35/a9bf80a609e74e3b000fef598933235c908fcefcef9026042b8e6dfde2a9/nvidia_nvshmem_cu13-3.4.5-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3c/dd/018ce05c532a22007ac58d4f45232514cd9d6dd0ee1dc374e309db830983/sphinx_basic_ng-1.0.0b2-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/3e/dc/cfbc0d38bded4f481d46be88c7ce00c0cd6f9455fb7d728484b2006ff4fe/biotite-1.7.1-cp314-cp314-manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/3f/70/4f193de89a48b71714e74602ee14d04e4019ad36a5a9f20c425776e72cd6/nvidia_cufile-1.15.1.6-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/41/3c/a36c2450754618e62008bf7435ccb0f88053e07592e6028a34776213d877/markupsafe-3.0.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/42/d7/1ec15b46af6af88f19b8e5ffea08fa375d433c998b8a7639e76935c14f1f/markdown_it_py-3.0.0-py3-none-any.whl
@@ -4906,7 +4906,6 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/62/cc/1bd9a0f1545fa57a45f98597a78ef6b39ae1fac1afb3e14c70cb8b02455e/deepspeed-0.19.2.tar.gz
       - pypi: https://files.pythonhosted.org/packages/63/65/37648c0c158dc222aba51c089eb3bdfa238e621674dc42d48706e639204f/psutil-7.2.2-cp36-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/67/8b/66ef1cda70d5b4f5d71c959b19f5bc22dde7e428f53a748f7f64ed02b6ae/biotite-1.7.1-cp314-cp314-manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/69/8d/6918122b2fef6d42f8b3b198a95f4444be56563fd371f4ca076b1cd122f4/lmdb-2.2.1-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/6a/d9/4a4a628c812750363786afc3d33492709a5cd64b215469c16b0f6c7bb811/numpy-2.5.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/6f/02/613a7534a41d0122f37d1e0c64aa8ac78bfb831f8c92f6db057a311abb3c/ast_serialize-0.6.0-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl
@@ -4951,6 +4950,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ab/8a/18d4ff2c7bd83f30d6924bd4ad97abf418488c3f908dea228d6f0961ad68/ml_collections-1.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ae/e9/e35cf11c8a136e757b956f5f0efdcaa50aecde85ea055f1898dfc68262f3/pandas-3.0.3-cp314-cp314-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl
+      - pypi: https://files.pythonhosted.org/packages/b0/fa/9bd67e7f389c193a0bfdff4601360a057e147ded09b125422a863270311a/biotite-2.0.0-cp314-cp314-manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/b1/81/bff68ce829999c1e4209c761bbf903b1c06ec570416ddb25020864ad5907/cuda_bindings-13.3.1-cp314-cp314-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/b1/9d/8b2c807dbef61a5197c047afe99823787eb66f63daf9fb2432f91d6f0462/pillow-12.3.0-cp314-cp314-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl
       - pypi: https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl
@@ -6249,7 +6249,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils-2.45.1-default_h4852527_102.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_impl_linux-64-2.45.1-default_hfdba357_102.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/binutils_linux-64-2.45.1-default_h4852527_102.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-1.7.1-py314hdff1159_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-2.0.0-py314h26df278_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/biotraj-1.2.2-py314h42812f9_2.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-1.2.0-hed03a55_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/brotli-bin-1.2.0-hb03c661_1.conda
@@ -7192,20 +7192,19 @@ packages:
   run_exports: {}
   size: 3314508
   timestamp: 1774882194746
-- conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-1.7.1-py314hdff1159_0.conda
-  sha256: 5b145fd7867a539f3b86d8a2930ae36f1554d4047326ef57d6d0a1e2b6302cdd
-  md5: 20cc8de876e38e96d6e53133c4d27c6b
+- conda: https://conda.anaconda.org/conda-forge/linux-64/biotite-2.0.0-py314h26df278_0.conda
+  sha256: f0baf03efa73b079a1becdc2bd3a22d374ece6c6932a56832b8fd0f64092a2d1
+  md5: 9d5d561c403745aa202e36784397ffa4
   depends:
   - python
   - biotraj >=1.0,<2.0
   - requests >=2.12
-  - numpy >=1.26,<2.4
-  - msgpack-python
+  - numpy >=2.1
+  - msgpack-python >=0.5.6
   - networkx >=2.0
+  - packaging >=24
   - __glibc >=2.17,<3.0.a0
-  - libstdcxx >=14
-  - libgcc >=14
-  - numpy >=1.23,<3
+  - libgcc >=15
   - python_abi 3.14.* *_cp314
   constrains:
   - __glibc >=2.17
@@ -7214,8 +7213,8 @@ packages:
   purls:
   - pkg:pypi/biotite?source=hash-mapping
   run_exports: {}
-  size: 58985162
-  timestamp: 1782310635783
+  size: 58105259
+  timestamp: 1792439184071
 - conda: https://conda.anaconda.org/conda-forge/linux-64/biotraj-1.2.2-py314h42812f9_2.conda
   sha256: 2ca9cb1fb2f35b6066b543fe9d6a59219eac12c1a82a7d1ba89b8301fc1491ee
   md5: 1fed0515b9bf438f2e8d5dde9d052981
@@ -10739,7 +10738,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/mypy?source=compressed-mapping
+  - pkg:pypi/mypy?source=hash-mapping
   run_exports: {}
   size: 23233304
   timestamp: 1783986175097
@@ -12727,20 +12726,19 @@ packages:
   run_exports: {}
   size: 3350516
   timestamp: 1774882227233
-- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-1.7.1-py314h162827c_0.conda
-  sha256: 752b1bd1763e2f1e57e4b22365afec58a064c2c3c3acfab5dbc195b3a241fb9f
-  md5: dee6ed4c72047df6148252cd13fe0572
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotite-2.0.0-py314h4f44b47_0.conda
+  sha256: 31ba4fb17e642d2a46d8821a226e4bf12109b05e52dc82125dcc0df85c7f0905
+  md5: 29666a5f2aae3687e51287f0fb80ac94
   depends:
   - python
   - biotraj >=1.0,<2.0
   - requests >=2.12
-  - numpy >=1.26,<2.4
-  - msgpack-python
+  - numpy >=2.1
+  - msgpack-python >=0.5.6
   - networkx >=2.0
-  - libgcc >=14
-  - libstdcxx >=14
+  - packaging >=24
+  - libgcc >=15
   - python_abi 3.14.* *_cp314
-  - numpy >=1.23,<3
   constrains:
   - __glibc >=2.17
   license: BSD-3-Clause
@@ -12748,8 +12746,8 @@ packages:
   purls:
   - pkg:pypi/biotite?source=hash-mapping
   run_exports: {}
-  size: 58942965
-  timestamp: 1782310627801
+  size: 58077903
+  timestamp: 1792439182427
 - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/biotraj-1.2.2-py314he6363bd_2.conda
   sha256: 17b72edebc4278e757a6bbf868f37543281d1e07c258bc9530f8346294835989
   md5: f531baad0317ed9fa2aa771a5f6a5db7
@@ -18141,7 +18139,7 @@ packages:
   license: Apache-2.0
   license_family: APACHE
   purls:
-  - pkg:pypi/distlib?source=compressed-mapping
+  - pkg:pypi/distlib?source=hash-mapping
   run_exports: {}
   size: 303705
   timestamp: 1781320269259
@@ -19265,7 +19263,7 @@ packages:
   license: MIT
   license_family: MIT
   purls:
-  - pkg:pypi/pytest?source=compressed-mapping
+  - pkg:pypi/pytest?source=hash-mapping
   run_exports: {}
   size: 306724
   timestamp: 1782127176429
@@ -20480,20 +20478,19 @@ packages:
   run_exports: {}
   size: 3316981
   timestamp: 1774883088315
-- conda: https://conda.anaconda.org/conda-forge/osx-64/biotite-1.7.1-py314hbb69444_0.conda
-  sha256: 8375a9d5e34440c433f3bab256b7e1a24b31cebd87add332324eab685ef7edc5
-  md5: 6d73b05989f5f8522ef0e8cbf113ea64
+- conda: https://conda.anaconda.org/conda-forge/osx-64/biotite-2.0.0-py314h0258ca0_0.conda
+  sha256: d10ae825b35a826951b37f6c40b7a1932f999dd3c38b070d6288f9de76acd88f
+  md5: 10df4278b1f3307092f3aab35401613d
   depends:
   - python
   - biotraj >=1.0,<2.0
   - requests >=2.12
-  - numpy >=1.26,<2.4
-  - msgpack-python
+  - numpy >=2.1
+  - msgpack-python >=0.5.6
   - networkx >=2.0
+  - packaging >=24
   - __osx >=11.0
-  - libcxx >=19
   - python_abi 3.14.* *_cp314
-  - numpy >=1.23,<3
   constrains:
   - __osx >=11.0
   license: BSD-3-Clause
@@ -20501,8 +20498,8 @@ packages:
   purls:
   - pkg:pypi/biotite?source=hash-mapping
   run_exports: {}
-  size: 58836298
-  timestamp: 1782310784852
+  size: 58135056
+  timestamp: 1792439301904
 - conda: https://conda.anaconda.org/conda-forge/osx-64/biotraj-1.2.2-py314h2f9fc56_2.conda
   sha256: e57820e02e64de6fbe57edf06f0791c511a54bc9a10b50e0127bfe76af919a64
   md5: e9696cf88cf61086df9fe5e2155f05e6
@@ -23346,20 +23343,19 @@ packages:
   run_exports: {}
   size: 3292507
   timestamp: 1774882551047
-- conda: https://conda.anaconda.org/conda-forge/osx-arm64/biotite-1.7.1-py314h99627d6_0.conda
-  sha256: 72ee56cff21044d4ad881718449a8090ed8986eaab54b99937131d1368c04b20
-  md5: fc8c71d734776e3b79293fd9497425ca
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/biotite-2.0.0-py314hf088a33_0.conda
+  sha256: efe3c74d907a8d663e8da599d2cc1f1f44f608f9013ebc333ee61301f3f6f968
+  md5: 8fd89a0d654355ea2f9b8e2b84bbdf32
   depends:
   - python
   - biotraj >=1.0,<2.0
   - requests >=2.12
-  - numpy >=1.26,<2.4
-  - msgpack-python
+  - numpy >=2.1
+  - msgpack-python >=0.5.6
   - networkx >=2.0
-  - libcxx >=19
+  - packaging >=24
   - __osx >=11.0
   - python_abi 3.14.* *_cp314
-  - numpy >=1.23,<3
   constrains:
   - __osx >=11.0
   license: BSD-3-Clause
@@ -23367,8 +23363,8 @@ packages:
   purls:
   - pkg:pypi/biotite?source=hash-mapping
   run_exports: {}
-  size: 58776876
-  timestamp: 1782310650036
+  size: 58019247
+  timestamp: 1792439220396
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/biotraj-1.2.2-py314he609de1_2.conda
   sha256: b064a73145451ae618225398aa63426fd48a4997d00ccaaf7fa817fed464e9f5
   md5: 76c64b40aebe41304af9ffbdc7ed8f47
@@ -25823,7 +25819,7 @@ packages:
   - torch
   - ml-collections
   - pytorch-lightning>=2.1
-  - biotite
+  - biotite>=1.6
   - rdkit<2026
   - pdbeccdutils
   - kalign-python
@@ -25858,7 +25854,7 @@ packages:
   - cuequivariance-torch>=0.8 ; extra == 'cuequivariance'
   - torch>=2.7 ; extra == 'cuequivariance'
   - deepspeed>=0.18.7 ; extra == 'deepspeed'
-  requires_python: '>=3.10'
+  requires_python: '>=3.12'
 - pypi: https://download-r2.pytorch.org/whl/cu129/torch-2.12.1%2Bcu129-cp314-cp314-manylinux_2_28_aarch64.whl
   name: torch
   version: 2.12.1+cu129
@@ -26605,6 +26601,24 @@ packages:
   version: 1.8.0
   sha256: 778a11b15673f6f1df23d9586f83c4846c471a8af693a22e066508b77d201ec8
   requires_python: '>=3.9'
+- pypi: https://files.pythonhosted.org/packages/3b/4c/4612522b75d4eb77c7f355074fed68af13b6219bca232bb6b0e2a4f15fba/biotite-2.0.0-cp314-cp314-manylinux_2_28_x86_64.whl
+  name: biotite
+  version: 2.0.0
+  sha256: 36f8d3fb0f85691abe81e29a1f0af2c72d5bf29908b01c333d81fe4cecfc1a73
+  requires_dist:
+  - numpy>=2.1
+  - biotraj>=1.0,<2.0
+  - requests>=2.12
+  - msgpack>=0.5.6
+  - networkx>=2.0
+  - packaging>=24.0
+  - pytest ; extra == 'test'
+  - pytest-codspeed ; extra == 'test'
+  - ruff==0.9.7 ; extra == 'lint'
+  - numpydoc==1.8.0 ; extra == 'lint'
+  - pyright==1.1.409 ; extra == 'lint'
+  - taplo==0.9.3 ; extra == 'lint'
+  requires_python: '>=3.12'
 - pypi: https://files.pythonhosted.org/packages/3b/52/94aecda69df65ba1079a8b7dbe84632af5614dc0ed2c733185f6431874e3/nvidia_cudnn_cu12-9.20.0.48-py3-none-manylinux_2_27_x86_64.whl
   name: nvidia-cudnn-cu12
   version: 9.20.0.48
@@ -26636,24 +26650,6 @@ packages:
   - sphinx-inline-tabs ; extra == 'docs'
   - ipython ; extra == 'docs'
   requires_python: '>=3.7'
-- pypi: https://files.pythonhosted.org/packages/3e/dc/cfbc0d38bded4f481d46be88c7ce00c0cd6f9455fb7d728484b2006ff4fe/biotite-1.7.1-cp314-cp314-manylinux_2_28_x86_64.whl
-  name: biotite
-  version: 1.7.1
-  sha256: d34184f23facc4a35bc0ac7914162f6fc5b6c68bf7fbf3187c1966cf53ce9918
-  requires_dist:
-  - numpy>=1.25
-  - biotraj>=1.0,<2.0
-  - requests>=2.12
-  - msgpack>=0.5.6
-  - networkx>=2.0
-  - packaging>=24.0
-  - pytest ; extra == 'test'
-  - pytest-codspeed ; extra == 'test'
-  - ruff==0.9.7 ; extra == 'lint'
-  - numpydoc==1.8.0 ; extra == 'lint'
-  - pyright==1.1.409 ; extra == 'lint'
-  - taplo==0.9.3 ; extra == 'lint'
-  requires_python: '>=3.12'
 - pypi: https://files.pythonhosted.org/packages/3f/70/4f193de89a48b71714e74602ee14d04e4019ad36a5a9f20c425776e72cd6/nvidia_cufile-1.15.1.6-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl
   name: nvidia-cufile
   version: 1.15.1.6
@@ -27284,24 +27280,6 @@ packages:
   version: 12.9.86
   sha256: 096d4de6bda726415dfaf3198d4f5c522b8e70139c97feef5cd2ca6d4cd9cead
   requires_python: '>=3'
-- pypi: https://files.pythonhosted.org/packages/67/8b/66ef1cda70d5b4f5d71c959b19f5bc22dde7e428f53a748f7f64ed02b6ae/biotite-1.7.1-cp314-cp314-manylinux_2_28_aarch64.whl
-  name: biotite
-  version: 1.7.1
-  sha256: d47443b507c6968cb6823ec0cc0bdca1baed6d11ce08bcc015b8a5409d943bf9
-  requires_dist:
-  - numpy>=1.25
-  - biotraj>=1.0,<2.0
-  - requests>=2.12
-  - msgpack>=0.5.6
-  - networkx>=2.0
-  - packaging>=24.0
-  - pytest ; extra == 'test'
-  - pytest-codspeed ; extra == 'test'
-  - ruff==0.9.7 ; extra == 'lint'
-  - numpydoc==1.8.0 ; extra == 'lint'
-  - pyright==1.1.409 ; extra == 'lint'
-  - taplo==0.9.3 ; extra == 'lint'
-  requires_python: '>=3.12'
 - pypi: https://files.pythonhosted.org/packages/67/f4/58e4e91b6919367c7aafb8e36fce9aad1a3047e536bf7e2fd560927d3a4c/nvidia_nccl_cu13-2.29.7-py3-none-manylinux_2_18_x86_64.whl
   name: nvidia-nccl-cu13
   version: 2.29.7
@@ -28342,6 +28320,24 @@ packages:
   requires_dist:
   - numpy
   - pillow
+- pypi: https://files.pythonhosted.org/packages/b0/fa/9bd67e7f389c193a0bfdff4601360a057e147ded09b125422a863270311a/biotite-2.0.0-cp314-cp314-manylinux_2_28_aarch64.whl
+  name: biotite
+  version: 2.0.0
+  sha256: d88da6b9b418a598aaee12bc1be808ac0803d6374c3dd2223325598bc7dbbfea
+  requires_dist:
+  - numpy>=2.1
+  - biotraj>=1.0,<2.0
+  - requests>=2.12
+  - msgpack>=0.5.6
+  - networkx>=2.0
+  - packaging>=24.0
+  - pytest ; extra == 'test'
+  - pytest-codspeed ; extra == 'test'
+  - ruff==0.9.7 ; extra == 'lint'
+  - numpydoc==1.8.0 ; extra == 'lint'
+  - pyright==1.1.409 ; extra == 'lint'
+  - taplo==0.9.3 ; extra == 'lint'
+  requires_python: '>=3.12'
 - pypi: https://files.pythonhosted.org/packages/b1/81/bff68ce829999c1e4209c761bbf903b1c06ec570416ddb25020864ad5907/cuda_bindings-13.3.1-cp314-cp314-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl
   name: cuda-bindings
   version: 13.3.1

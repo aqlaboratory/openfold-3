@@ -15,8 +15,6 @@ license = { text = "Apache-2.0" }
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -27,7 +25,7 @@ urls.Documentation = "https://openfold-3.readthedocs.io/en/latest/"
 urls.Repository = "https://github.com/aqlaboratory/openfold-3"
 urls.Issues = "https://github.com/aqlaboratory/openfold-3/issues"
 
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "numpy",
     "scipy",
@@ -35,7 +33,7 @@ dependencies = [
     "torch", # ==2.5.1",
     "ml-collections",
     "pytorch-lightning >=2.1",
-    "biotite",
+    "biotite>=1.6",
     "rdkit<2026", # aqlaboratory/openfold-3/issues/285 
     "pdbeccdutils",
     "kalign-python",
@@ -164,11 +162,20 @@ ignore = [
     "E741",
     "SIM108",
     "B905",  # explicit strict= for zip
+    # PEP 695 `type X = ...` / `class C[T]` syntax: unlike TypeAlias, a `type`
+    # alias is a TypeAliasType at runtime and breaks isinstance(x, Alias)
+    "UP040",
+    "UP046",
+    "UP047",
 ]
 extend-safe-fixes = ["UP006"]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Without an explicit setting, tl.dot silently uses tf32 where supported.
+"triton.language.dot".msg = "use `tl_dot` from `openfold3.core.kernels.triton.dot_precision`, which requires `input_precision`."
 
 [tool.ruff.lint.per-file-ignores]
 "**/tests/**" = ["E501"]
@@ -183,7 +190,7 @@ files = ["openfold3", "scripts"]
 # runs. Pinning it (rather than following the active interpreter) keeps the
 # baseline from drifting on an unrelated `pixi update`; bump it deliberately,
 # together with a `typecheck-sync`, when the environments move to a new Python.
-# Note this means the `requires-python = ">=3.10"` floor above is not type-checked.
+# Note this means the `requires-python = ">=3.12"` floor above is not type-checked.
 python_version = "3.14"
 # The baseline is recorded on, and enforced by, linux-64 CI. Without pinning the
 # platform, `sys.platform` branches (device selection, MPS vs CUDA fallbacks) are
@@ -212,10 +219,36 @@ pretty = false
 # latter is a no-op for every other module, since `follow_imports` stays at its
 # default of "normal" outside this override.
 follow_imports_for_stubs = true
+# Every check in --strict, for openfold3 except its tests (see the override
+# below). Existing violations are recorded in mypy-baseline.txt, so these apply
+# in full to new files, and to new code in existing ones.
+strict = true
+# Name modules by their path from the project root. scripts/ has no __init__.py,
+# so otherwise each script is a top-level module named after its file, and the
+# "scripts.*" override below could not match them.
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = ["rdkit.*", "gemmi.*"]
 follow_imports = "skip"
+
+# Tests and scripts are exempt from strict: `strict` itself can only be set
+# globally, so this lists every per-module flag it enables, set back to mypy's
+# default.
+[[tool.mypy.overrides]]
+module = ["openfold3.tests.*", "scripts.*"]
+disallow_any_generics = false
+disallow_subclassing_any = false
+disallow_untyped_calls = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+disallow_untyped_decorators = false
+warn_unused_ignores = false
+warn_return_any = false
+no_implicit_reexport = false
+strict_equality = false
+extra_checks = false
 
 [tool.mypy-baseline]
 # Keep the baseline sorted so its diffs stay reviewable.
@@ -230,7 +263,8 @@ testpaths = ["openfold3/tests"]
 python_files = ["test_*.py"]
 markers = [
     "inference_verification: Tests to verify installation on inference example",
-    "slow: Large size test"
+    "slow: Large size test",
+    "gpu: Needs a GPU; selected by the GPU CI job alongside slow tests",
 ]
 
 # Exclude directories during collection

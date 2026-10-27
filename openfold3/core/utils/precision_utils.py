@@ -46,8 +46,8 @@ class OF3DeepSpeedPrecision(DeepSpeedPrecision):
     def convert_input(self, data: Any) -> Any:
         """
         Converts input data to the desired precision.
-        The ground truth and reference conformer features will not be cast
-        to a lower precision in order to avoid truncating atom coordinates.
+        The ground truth, reference conformer and template features will not be
+        cast to a lower precision in order to avoid truncating atom coordinates.
 
         Args:
             data: Input feature dictionary
@@ -57,7 +57,9 @@ class OF3DeepSpeedPrecision(DeepSpeedPrecision):
         """
         ground_truth = data.pop("ground_truth", None)
         loss_weights = data.pop("loss_weights", None)
-        ref_conformer_feats = {k: v for k, v in data.items() if k.startswith("ref_")}
+        full_precision_feats = {
+            k: v for k, v in data.items() if k.startswith(("ref_", "template_"))
+        }
 
         data = apply_to_collection(
             data,
@@ -66,7 +68,7 @@ class OF3DeepSpeedPrecision(DeepSpeedPrecision):
             dst_type=self._desired_dtype,
         )
 
-        data.update(ref_conformer_feats)
+        data.update(full_precision_feats)
 
         if ground_truth is not None:
             data["ground_truth"] = ground_truth

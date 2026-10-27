@@ -27,6 +27,22 @@ def _linear_offsets(pos):
     return pos[..., None] - pos[..., None, :]
 
 
+def _diagonal(n, on_diagonal, off_diagonal):
+    """[n, n] matrix of off_diagonal with on_diagonal on its diagonal."""
+    return torch.full((n, n), off_diagonal).fill_diagonal_(on_diagonal)
+
+
+def _assert_one_hot(t):
+    """Assert that a tensor is one-hot encoded along the last dimension."""
+    # hide from pytest traceback
+    __tracebackhide__ = True
+    assert ((t == 0) | (t == 1)).all(), "Tensor contains values other than 0 and 1"
+    if t.ndim > 1:
+        assert (t.sum(dim=-1) == 1).all(), (
+            "One-hot encoding does not have exactly one 1 per row"
+        )
+
+
 def _chain_layout(chain_lengths, cyclic_flags):
     """Build (pos, asym_id, cyclic_mask) for consecutive chains of given lengths."""
     asym_id = torch.tensor(
@@ -71,26 +87,112 @@ class TestCyclicOffset:
         off = cyclic_offset(idx)
         assert (off.diagonal() == 0).all()
 
-    def test_antisymmetry(self):
-        # Cyclic offset is antisymmetric: off[i,j] == -off[j,i].
-        # Equivalently, the magnitudes are symmetric.
-        idx = torch.arange(6)
-        off = cyclic_offset(idx)
-        assert torch.equal(off.abs(), off.T.abs())
+    def test_simple_example(self):
+        # The example shown in the `cyclic_offset` docstring
 
-    def test_max_distance_at_midpoint(self):
+        off = cyclic_offset(torch.arange(6))
+        expected = torch.tensor(
+            [
+                [0, -1, -2, -3, 2, 1],
+                [1, 0, -1, -2, -3, 2],
+                [2, 1, 0, -1, -2, -3],
+                [3, 2, 1, 0, -1, -2],
+                [-2, 3, 2, 1, 0, -1],
+                [-1, -2, 3, 2, 1, 0],
+            ],
+            dtype=torch.int32,
+        )
+        assert torch.equal(off, expected)
+
+    @pytest.mark.parametrize("n", range(1, 17))
+    def test_antisymmetry(self, n):
+        off = cyclic_offset(torch.arange(n))
+        assert torch.equal(off, -off.T)
+
+    @pytest.mark.parametrize("n", range(2, 17, 2))
+    def test_antipode_keeps_the_sign_of_the_linear_offset(self, n):
+        # In an even ring, residues n // 2 apart are that far apart either way
+        # round. To preserve antisymmetry, they keep the sign of the linear
+        # offset.
+        idx = torch.arange(n)
+        linear = idx[:, None] - idx[None, :]
+        antipodal = linear.abs() == n // 2
+
+        off = cyclic_offset(idx)
+
+        assert antipodal.sum() == n
+        assert torch.equal(off[antipodal], linear[antipodal].to(off.dtype))
+
+    @pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+    def test_returns_int32_on_input_device(self, dtype):
+        idx = torch.arange(7, dtype=dtype)
+        off = cyclic_offset(idx)
+        assert off.dtype == torch.int32
+        assert off.device == idx.device
+
+    @pytest.mark.parametrize("n", [2, 10, 16])
+    def test_max_offset_of_even_ring(self, n):
         # For an even-length chain the maximum offset magnitude is peptide_length // 2.
-        n = 10
         idx = torch.arange(n)
         off = cyclic_offset(idx)
         assert int(off.abs().max()) == n // 2
 
-    def test_odd_length(self):
+    @pytest.mark.parametrize("n", [3, 5, 7, 11])
+    def test_max_offset_of_odd_ring(self, n):
         # For an odd-length chain all entries are <= (n-1)//2 away from 0.
-        n = 7
         idx = torch.arange(n)
         off = cyclic_offset(idx)
-        assert int(off.abs().max()) <= (n - 1) // 2 + 1
+        assert int(off.abs().max()) == (n - 1) // 2
+
+    @pytest.mark.parametrize("n", range(1, 17))
+    def test_congruent_to_linear(self, n):
+        idx = torch.arange(n)
+        linear = idx[:, None] - idx[None, :]
+
+        off = cyclic_offset(idx)
+
+        assert torch.equal((off - linear) % n, torch.zeros_like(linear))
+
+    @pytest.mark.parametrize("n", range(1, 17))
+    def test_shortest_way_around_the_ring(self, n):
+        idx = torch.arange(n)
+        linear = idx[:, None] - idx[None, :]
+        forward = linear % n
+        shortest = torch.minimum(forward, n - forward)
+
+        off = cyclic_offset(idx)
+
+        assert torch.equal(off.abs(), shortest.to(off.dtype))
+
+    # In a ring of 2 tail is also the antipode of head, so it keeps the sign of
+    # the linear offset and off[0, 1] == -1.
+    @pytest.mark.parametrize("n", range(3, 17))
+    def test_head_and_tail_are_adjacent(self, n):
+        off = cyclic_offset(torch.arange(n))
+        assert off[0, n - 1] == 1
+        assert off[n - 1, 0] == -1
+
+    def test_uses_residue_index_values(self):
+        # Inference residue indices start at 1; only differences matter.
+        assert torch.equal(
+            cyclic_offset(torch.arange(1, 8)), cyclic_offset(torch.arange(7))
+        )
+
+    @pytest.mark.parametrize(
+        "residue_index",
+        [torch.tensor([0, 1, 1, 1, 2, 3, 4]), torch.tensor([0, 1, 1, 1, 1, 1, 2, 3])],
+    )
+    def test_tokens_of_one_residue_are_zero_apart(self, residue_index):
+        # An atomized residue contributes several tokens with the same residue index;
+        # the ring still has one position per residue, so the tokens get the
+        # offsets of their residues.
+        n_residues = int(residue_index.max()) + 1
+        per_residue = cyclic_offset(torch.arange(n_residues))
+
+        off = cyclic_offset(residue_index)
+
+        assert torch.equal(off, per_residue[residue_index][:, residue_index])
+        assert torch.equal(off, -off.T)
 
     def test_output_shape(self):
         n = 5
@@ -215,6 +317,10 @@ class TestApplyCyclicOffsets:
 class TestRelposComplex:
     MAX_IDX = 32
     MAX_CHAIN = 2
+    # The last bin of rel_pos/rel_token and of rel_chain is for pairs on
+    # different chains/residues and different entities, respectively
+    POS_SENTINEL = 2 * MAX_IDX + 1
+    CHAIN_SENTINEL = 2 * MAX_CHAIN + 1
 
     def _relpos(self, batch):
         return relpos_complex(batch, self.MAX_IDX, self.MAX_CHAIN)
@@ -227,76 +333,179 @@ class TestRelposComplex:
         expected_last = (2 * self.MAX_IDX + 2) * 2 + 1 + (2 * self.MAX_CHAIN + 2)
         assert out.shape == (1, n, n, expected_last)
 
-    def test_cyclic_changes_encoding_vs_linear(self):
-        # A cyclic chain should produce different rel-pos encodings than a linear one.
+    def _bins(self, out):
+        """Decode relpos_complex output into a [*, N_token, N_token] tensor per encoding.
+
+        Each one-hot encoding becomes the index of its hot bin, and same_entity its
+        0/1 flag. Fails unless every encoding holds only 0s and 1s and every
+        one-hot encoding has exactly one 1 per token pair.
+
+        This basically undoes the one-hot encoding coming out of relpos_complex,
+        making it easier to assert on while validating it.
+        """
+        idx_bins = 2 * self.MAX_IDX + 2
+        chain_bins = 2 * self.MAX_CHAIN + 2
+        # relpos_complex returns
+        # torch.cat([rel_pos, rel_token, same_entity, rel_chain], dim=-1), so the last dim holds, in order:
+        #     rel_pos      residue offset, idx_bins
+        #     rel_token    token offset within a residue, idx_bins
+        #     same_entity  1 flag
+        #     rel_chain    chain-copy (sym_id) offset, chain_bins
+        # torch.split raises if the widths don't add up to the output width.
+        rel_pos, rel_token, same_entity, rel_chain = torch.split(
+            out, (idx_bins, idx_bins, 1, chain_bins), dim=-1
+        )
+        _assert_one_hot(rel_pos)
+        _assert_one_hot(rel_token)
+        _assert_one_hot(rel_chain)
+        assert ((same_entity == 0) | (same_entity == 1)).all()
+        return {
+            "rel_pos": rel_pos.argmax(dim=-1),
+            "rel_token": rel_token.argmax(dim=-1),
+            "same_entity": same_entity[..., 0],
+            "rel_chain": rel_chain.argmax(dim=-1),
+        }
+
+    def _assert_bins(self, out, expected):
+        """Assert that every encoding of relpos_complex output has the expected bins."""
+        bins = self._bins(out)
+        assert bins.keys() == expected.keys()
+        for name, expected_bins in expected.items():
+            assert torch.equal(bins[name], expected_bins), name
+
+    def test_cyclic_wraps_only_the_residue_offset(self):
         n = 10
-        linear_batch = _make_batch(n, [1] * n, [False] * n)
-        cyclic_batch = _make_batch(n, [1] * n, [True] * n)
-        linear_out = self._relpos(linear_batch)
-        cyclic_out = self._relpos(cyclic_batch)
-        assert not torch.equal(linear_out, cyclic_out)
-
-    def test_cyclic_self_pairs_get_center_bin(self):
-        # Self-pairs always have offset=0, which clamps to MAX_IDX → one-hot at bin MAX_IDX.
-        n = 8
         batch = _make_batch(n, [1] * n, [True] * n)
-        out = self._relpos(batch)
-        rel_pos_slice = out[0, :, :, : 2 * self.MAX_IDX + 2]
-        diag = torch.stack([rel_pos_slice[i, i] for i in range(n)])
-        assert (diag[:, self.MAX_IDX] == 1.0).all()
-        assert (diag[:, self.MAX_IDX] == diag.sum(dim=-1)).all()
+        residue_index = batch["residue_index"][0]
 
-    def test_non_cyclic_chain_unchanged_in_multimer(self):
-        # In a multimer where only chain 2 is cyclic, chain 1's encoding should
-        # be identical to an all-linear batch.
+        out = self._relpos(batch)
+
+        self._assert_bins(
+            out,
+            {
+                "rel_pos": (cyclic_offset(residue_index) + self.MAX_IDX).unsqueeze(0),
+                # Distinct residues, so only self pairs share a residue
+                "rel_token": _diagonal(n, self.MAX_IDX, self.POS_SENTINEL).unsqueeze(0),
+                # Only one entity, so all pairs share the same entity
+                "same_entity": torch.ones(1, n, n),
+                # One chain, one sym_id: no chain-copy offset
+                "rel_chain": torch.full((1, n, n), self.MAX_CHAIN),
+            },
+        )
+
+    def test_cyclic_chain_with_atomized_residue(self):
+        # Residue 2 is atomized into five tokens, which are 0 apart in the
+        # residue offset; the ring has three residues. A previous bug cyclized
+        # the token offset. The input is constructed with the second residue
+        # spanning more than half of the chain's tokens to guard against that.
+        residue_index = torch.tensor([1, 2, 2, 2, 2, 2, 3])
+        n = len(residue_index)
+        batch = _make_batch(n, [1] * n, [True] * n)
+        batch["residue_index"] = residue_index.unsqueeze(0)
+
+        out = self._relpos(batch)
+
+        residue_offset = torch.empty((n, n), dtype=torch.int32)
+        residue_offset[0] = torch.tensor([0, -1, -1, -1, -1, -1, 1])
+        residue_offset[1:6] = torch.tensor([1, 0, 0, 0, 0, 0, -1])
+        residue_offset[6] = torch.tensor([-1, 1, 1, 1, 1, 1, 0])
+
+        # Token offsets only within a residue: residue 2's five tokens, and each
+        # of the other residues' single token with itself
+        rel_token = torch.full((n, n), self.POS_SENTINEL)
+        rel_token[0, 0] = self.MAX_IDX
+        rel_token[6, 6] = self.MAX_IDX
+        rel_token[1:6, 1:6] = self.MAX_IDX + torch.tensor(
+            [
+                [0, -1, -2, -3, -4],
+                [1, 0, -1, -2, -3],
+                [2, 1, 0, -1, -2],
+                [3, 2, 1, 0, -1],
+                [4, 3, 2, 1, 0],
+            ]
+        )
+        self._assert_bins(
+            out,
+            {
+                "rel_pos": (residue_offset + self.MAX_IDX).unsqueeze(0),
+                "rel_token": rel_token.unsqueeze(0),
+                "same_entity": torch.ones(1, n, n),
+                "rel_chain": torch.full((1, n, n), self.MAX_CHAIN),
+            },
+        )
+
+    def test_multimer_with_one_cyclic_chain(self):
+        # Only chain 2 is cyclic, so chain 1 keeps its linear residue offsets.
         n_lin = 6
         n_cyc = 6
         n = n_lin + n_cyc
         asym_ids = [1] * n_lin + [2] * n_cyc
-        cyclic_mask_mixed = [False] * n_lin + [True] * n_cyc
-        cyclic_mask_none = [False] * n
+        cyclic_mask = [False] * n_lin + [True] * n_cyc
+        batch = _make_batch(n, asym_ids, cyclic_mask)
+        residue_index = batch["residue_index"][0]
+        asym_id = batch["asym_id"][0]
 
-        mixed_batch = _make_batch(n, asym_ids, cyclic_mask_mixed)
-        linear_batch = _make_batch(n, asym_ids, cyclic_mask_none)
+        out = self._relpos(batch)
 
-        mixed_out = self._relpos(mixed_batch)
-        linear_out = self._relpos(linear_batch)
+        lin, cyc = slice(0, n_lin), slice(n_lin, n)
+        rel_pos = torch.full((n, n), self.POS_SENTINEL)
+        rel_pos[lin, lin] = _linear_offsets(residue_index[lin]) + self.MAX_IDX
+        rel_pos[cyc, cyc] = cyclic_offset(residue_index[cyc]) + self.MAX_IDX
+        # Each chain is its own entity here
+        same_chain = asym_id[:, None] == asym_id[None, :]
+        self._assert_bins(
+            out,
+            {
+                "rel_pos": rel_pos.unsqueeze(0),
+                "rel_token": _diagonal(n, self.MAX_IDX, self.POS_SENTINEL).unsqueeze(0),
+                "same_entity": same_chain.unsqueeze(0),
+                "rel_chain": torch.where(
+                    same_chain, self.MAX_CHAIN, self.CHAIN_SENTINEL
+                ).unsqueeze(0),
+            },
+        )
 
-        # Chain 1 rows/cols (indices 0..n_lin-1) should be unchanged.
-        ch1_mixed = mixed_out[0, :n_lin, :n_lin, :]
-        ch1_linear = linear_out[0, :n_lin, :n_lin, :]
-        assert torch.equal(ch1_mixed, ch1_linear)
-
-    def test_cross_chain_pairs_unaffected_by_cyclic(self):
-        # Cross-chain token pairs should use the "different chain" sentinel regardless
-        # of whether either chain is cyclic (same_chain=False → clipped to sentinel).
+    @pytest.mark.parametrize("cyclic_a", [True, False])
+    @pytest.mark.parametrize("cyclic_b", [True, False])
+    def test_cross_chain_pairs_unaffected_by_cyclic(self, cyclic_a, cyclic_b):
+        # Cross-chain token pairs should get the "different chain" sentinel
+        # regardless of whether either chain is cyclic.
         n_a = 5
         n_b = 5
         n = n_a + n_b
         asym_ids = [1] * n_a + [2] * n_b
-        cyclic_mask = [True] * n_a + [False] * n_b
+        cyclic_mask = [cyclic_a] * n_a + [cyclic_b] * n_b
 
         batch = _make_batch(n, asym_ids, cyclic_mask)
-        out = self._relpos(batch)
+        bins = self._bins(self._relpos(batch))
 
-        # The cross-chain rel_pos block uses the sentinel bin (2*MAX_IDX+1).
-        # After one-hot encoding each row sums to 1; check the sentinel column.
-        rel_pos_slice = out[0, :n_a, n_a:, : 2 * self.MAX_IDX + 2]
-        sentinel_col = 2 * self.MAX_IDX + 1
-        assert (rel_pos_slice[..., sentinel_col] == 1).all()
+        # The chains are different entities here
+        for rows, cols in [
+            (slice(0, n_a), slice(n_a, n)),
+            (slice(n_a, n), slice(0, n_a)),
+        ]:
+            assert (bins["rel_pos"][..., rows, cols] == self.POS_SENTINEL).all()
+            assert (bins["rel_token"][..., rows, cols] == self.POS_SENTINEL).all()
+            assert (bins["same_entity"][..., rows, cols] == 0).all()
+            assert (bins["rel_chain"][..., rows, cols] == self.CHAIN_SENTINEL).all()
 
-    def test_no_cyclic_mask_does_not_raise(self):
-        # cyclic_mask all-False should run without error and match linear baseline.
+    def test_all_false_cyclic_mask_is_linear(self):
         n = 8
         batch_false = _make_batch(n, [1] * n, [False] * n)
-        batch_zeros = _make_batch(n, [1] * n, [False] * n)
-        batch_zeros["cyclic_mask"] = torch.zeros(1, n, dtype=torch.bool)
         out_false = self._relpos(batch_false)
-        out_zeros = self._relpos(batch_zeros)
-        assert torch.equal(out_false, out_zeros)
+        residue_index = batch_false["residue_index"][0]
+        self._assert_bins(
+            out_false,
+            {
+                "rel_pos": (_linear_offsets(residue_index) + self.MAX_IDX).unsqueeze(0),
+                "rel_token": _diagonal(n, self.MAX_IDX, self.POS_SENTINEL).unsqueeze(0),
+                "same_entity": torch.ones(1, n, n),
+                "rel_chain": torch.full((1, n, n), self.MAX_CHAIN),
+            },
+        )
 
-    def test_cyclic_mask_none_does_not_raise(self):
-        # cyclic_mask=None should run without error and match linear baseline.
+    def test_cyclic_mask_none_matches_all_false(self):
+        # The feature is optional; absent means every chain is linear.
         n = 8
         batch_false = _make_batch(n, [1] * n, [False] * n)
         batch_none = _make_batch(n, [1] * n, [False] * n)
