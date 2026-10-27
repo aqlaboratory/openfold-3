@@ -28,9 +28,12 @@ _DEVICES = [
     pytest.param(
         "cuda",
         id="cuda",
-        marks=pytest.mark.skipif(
-            not torch.cuda.is_available(), reason="CUDA not available"
-        ),
+        marks=[
+            pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="CUDA not available"
+            ),
+            pytest.mark.gpu,
+        ],
     ),
 ]
 
@@ -89,6 +92,37 @@ def _cuda_deterministic(request):
     torch.backends.cudnn.deterministic = orig_deterministic
     torch.backends.cudnn.benchmark = orig_benchmark
     torch.use_deterministic_algorithms(orig_det_algos)
+
+
+_DEFAULT_MATMUL_PRECISION = "highest"
+
+
+def _reset_matmul_precision_or_fail(changed: str) -> None:
+    precision = torch.get_float32_matmul_precision()
+    if precision == _DEFAULT_MATMUL_PRECISION:
+        return
+    torch.set_float32_matmul_precision(_DEFAULT_MATMUL_PRECISION)
+    pytest.fail(
+        f"fp32 matmul precision was {precision!r} instead of "
+        f"{_DEFAULT_MATMUL_PRECISION!r}. It was changed {changed}. "
+        f"Tests should not alter global state."
+    )
+
+
+@pytest.fixture(autouse=True)
+def _check_matmul_precision():
+    """Fail on changes to torch's fp32 matmul precision that outlive a test.
+
+    The setting is process global, so such a change would change the behavior
+    of every test that runs after it. A test that needs a different precision
+    should set it in a function-scoped fixture or a context manager such as
+    ``openfold3.core.utils.precision_utils.matmul_precision``.
+    """
+    _reset_matmul_precision_or_fail(
+        "before this test started (e.g. at import time or by a module-scoped fixture)"
+    )
+    yield
+    _reset_matmul_precision_or_fail("by this test")
 
 
 # ---------------------------------------------------------------------------

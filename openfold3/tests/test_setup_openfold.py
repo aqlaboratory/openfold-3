@@ -1,11 +1,14 @@
+import json
 from unittest.mock import patch
 
 import pytest
+from click.testing import CliRunner
 
 from openfold3.setup_openfold import (
     OpenFoldSetupConfig,
     _prompt_for_config,
     _pytest_is_installed,
+    main,
     run_setup,
     setup_biotite_ccd,
 )
@@ -108,3 +111,92 @@ def test_missing_pytest_warns_without_losing_the_downloads(
 
     warned = run_integration_tests and not pytest_installed
     assert ("openfold3[dev]" in caplog.text) == warned
+
+
+def _run_setup_with_mocked_downloads(config: OpenFoldSetupConfig, **ccd_kwargs):
+    """Run ``run_setup`` offline, returning the mocked ``setup_biotite_ccd``."""
+    with (
+        patch("openfold3.setup_openfold._download_parameters"),
+        patch("openfold3.setup_openfold.setup_biotite_ccd", **ccd_kwargs) as ccd,
+    ):
+        run_setup(config)
+    return ccd
+
+
+def test_biotite_ccd_is_updated_by_default(tmp_path):
+    config = OpenFoldSetupConfig(
+        openfold_cache=tmp_path / "cache", param_directory=tmp_path / "params"
+    )
+    assert config.update_biotite_ccd
+
+    ccd = _run_setup_with_mocked_downloads(config)
+    assert ccd.called
+
+
+def test_biotite_ccd_update_can_be_skipped(tmp_path, caplog):
+    config = OpenFoldSetupConfig(
+        openfold_cache=tmp_path / "cache",
+        param_directory=tmp_path / "params",
+        update_biotite_ccd=False,
+    )
+
+    ccd = _run_setup_with_mocked_downloads(config)
+    assert not ccd.called
+    assert "Skipping Biotite CCD update" in caplog.text
+
+
+def test_unwritable_biotite_ccd_points_at_skip_flag(tmp_path):
+    """Read-only installs (shared HPC modules, containers) cannot update the CCD."""
+    config = OpenFoldSetupConfig(
+        openfold_cache=tmp_path / "cache", param_directory=tmp_path / "params"
+    )
+
+    with pytest.raises(PermissionError, match="--skip-biotite-ccd-update"):
+        _run_setup_with_mocked_downloads(
+            config, side_effect=PermissionError("read-only")
+        )
+
+
+def _invoke_main(args: list[str], home) -> tuple[dict, bool]:
+    """Invoke the ``setup_openfold`` CLI offline with ``home`` as the home directory.
+
+    Returns the saved ``setup_config.json`` and whether the CCD update ran.
+    """
+    with (
+        patch.dict("os.environ", {"HOME": str(home)}),
+        patch("openfold3.setup_openfold._download_parameters"),
+        patch("openfold3.setup_openfold.setup_biotite_ccd") as ccd,
+    ):
+        CliRunner().invoke(main, args, catch_exceptions=False)
+    saved = json.loads((home / ".openfold3" / "setup_config.json").read_text())
+    return saved, ccd.called
+
+
+@pytest.mark.parametrize(
+    ("skip_flag", "expect_update"),
+    [
+        pytest.param(False, True, id="default"),
+        pytest.param(True, False, id="skip-flag"),
+    ],
+)
+def test_cli_skip_flag_with_non_interactive(tmp_path, skip_flag, expect_update):
+    args = ["--non-interactive"] + (["--skip-biotite-ccd-update"] if skip_flag else [])
+    saved, ccd_ran = _invoke_main(args, tmp_path)
+    assert ccd_ran == expect_update
+    assert saved["update_biotite_ccd"] == expect_update
+
+
+def test_cli_skip_flag_overrides_config_file(tmp_path):
+    config_path = tmp_path / "setup_config.json"
+    config_path.write_text(
+        OpenFoldSetupConfig(
+            openfold_cache=tmp_path / ".openfold3",
+            param_directory=tmp_path / "params",
+            update_biotite_ccd=True,
+        ).model_dump_json()
+    )
+    saved, ccd_ran = _invoke_main(
+        ["--config", str(config_path), "--skip-biotite-ccd-update"], tmp_path
+    )
+    assert not ccd_ran
+    assert not saved["update_biotite_ccd"]

@@ -25854,7 +25854,7 @@ packages:
   - cuequivariance-torch>=0.8 ; extra == 'cuequivariance'
   - torch>=2.7 ; extra == 'cuequivariance'
   - deepspeed>=0.18.7 ; extra == 'deepspeed'
-  requires_python: '>=3.10'
+  requires_python: '>=3.12'
 - pypi: https://download-r2.pytorch.org/whl/cu129/torch-2.12.1%2Bcu129-cp314-cp314-manylinux_2_28_aarch64.whl
   name: torch
   version: 2.12.1+cu129
