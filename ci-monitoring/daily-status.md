@@ -1293,3 +1293,31 @@ Third `aws-capacity` night in the last four (10-23, 10-24, 10-26) — tonight bo
 | test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #351, per this log's established convention).
+
+---
+
+## 2026-10-27
+
+### Run #353 — primary nightly (schedule `17 3 * * *`, main @ `244136c8` — merge PR #346 "test: add msa_mask/padding tests for create_msa_feature_precursor_of3" (new since run #351/10-26's `f87904d`), [40444773458](https://github.com/aqlaboratory/openfold-3/actions/runs/40444773458))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda (openfold3-cuda12) | **PASSED** | 52 min | |
+| test-pixi-cuda (openfold3-cuda13) | **PASSED** | 46 min | |
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 52 min | |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 45 min | |
+| test-pixi-amd (openfold3-rocm7) | **CANCELLED** | 61 min | superseded by a newer run (concurrency) — not the `timeout-minutes: 60` cap (the "Run integration test" step ran 03:45:24–04:33:17, 47m53s, under the cap) and not a manual cancellation. `##[error]The operation was canceled.` fired at 04:33:17Z, ~3 minutes after tonight's secondary-slot run (#354, created 04:30:14Z) opened its own (`if:`-guard-skipped) `test-pixi-amd` job entry in the identical `${{ github.workflow }}-pixi-amd-${{ github.ref }}-openfold3-rocm7` `cancel-in-progress: true` concurrency group — same mechanism flagged on 10-23/10-24 for a *queued* AMD job cancelled the instant the next run opened the group, but this is the first time in this log that mechanism has cancelled an AMD job that was actively mid-test rather than sitting queued. The last test before cancellation, `test_shape_large_eval[dtype=torch.float32]`, had already `PASSED` at 04:31:54Z; the next test (`of3_all_atom`) had only just started when the cancellation hit 1m23s later — no `msa-...` test node ID or `TimeoutError: MSA server` string anywhere near the cut, so this does not match this log's `msa-hang` signature. Recorded `unclassified` per this log's rule (none of the seven defined signatures fit); see `test-failures.md` for full detail. |
+
+**2026-10-27: 4/5 passed · 0 skipped · 0 queued · 1 need attention**
+
+Both AWS `test-pixi-cuda` legs and both Brev `test-pixi-cuda-brev` legs passed clean tonight — no `aws-capacity` recurrence after three such nights in the prior four (10-23, 10-24, 10-26). The sole non-pass, `test-pixi-amd`, is a new variant of the secondary-slot concurrency-cancellation pattern first seen 10-23/10-24: there the stale AMD job was sitting `queued` (never started) when the next run's same-named job entry cancelled it; tonight the AMD job had actually started, run most of the suite, and was mid-test when the identical cancellation mechanism fired. Worth a human's attention on two fronts: (1) whether `test-pixi-amd`'s concurrency group should exclude the (always-skipped) secondary schedule slot entirely, since it now has a second, more disruptive failure mode attributable to it, and (2) confirming no code regression was missed — the suite was over an hour in and apparently healthy (all visible tests `PASSED`) at the moment of cancellation. Running Brev leg-tally toward the two-week comparison (brev jobs added 2026-10-14 in PR #448; two-week mark 2026-10-28, **1 day remaining**): 23/28 brev job-runs passed to date (82.1%), up from 80.8% after 10-26. Still below the monitoring brief's 95%-pass-rate bar at face value; per this log's running notes since 10-20, most of the gap (4 job-runs, 10-20/10-21) predates the 10-22 Brev-catalog fix (PR #469) — excluding those, Brev is 23/24 (95.8%) since the fix. Tomorrow's (10-28) scan is the formal two-week mark and should resolve which framing the retirement recommendation uses.
+
+### Run #354 — secondary nightly (schedule `17 4 * * *`, main @ `244136c8`, [40450085233](https://github.com/aqlaboratory/openfold-3/actions/runs/40450085233))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-cuda-brev | **SKIPPED** | — | same guard; job named plain `test-pixi-cuda-brev`, confirming it never expanded |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #353, per this log's established convention). This run's `test-pixi-amd` job entry (created 04:30:14Z, immediately skipped) is itself the concurrency-cancellation trigger for run #353's still-running AMD job — see that run's notes above.

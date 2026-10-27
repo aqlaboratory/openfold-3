@@ -765,3 +765,39 @@ Launched in us-east-2
 The fail-fast cancellation needs no code-side action — it's a direct consequence of cuda12's `aws-capacity` outage (see `aws-outage-failures.md`), and cuda13 would almost certainly have passed (its own runner had already launched cleanly). Both Brev legs passed clean on the unchanged commit, unaffected by the AWS capacity pool exhaustion. The AMD runner situation (now 2 consecutive dark nights, `test-pixi-amd (openfold3-rocm7)` queued since 2026-10-23T03:31:52Z with no runner ever picking it up) is tracked in `aws-outage-failures.md`'s `runner-offline` section, not here, but is the most urgent open item from tonight's scan.
 
 ---
+
+## 2026-10-27
+
+**Cause:** `unclassified` — `test-pixi-amd (openfold3-rocm7)` was cancelled by the secondary nightly slot's concurrency group, not by any of this log's seven defined signatures (`aws-capacity`, `gpu-unavailable`, `runner-offline`, `msa-hang`, `parameter-cache`, `build-push`, `code`). Both AWS `test-pixi-cuda` legs and both Brev `test-pixi-cuda-brev` legs passed clean — this is the only non-pass tonight.
+
+- **Run ID:** [40444773458](https://github.com/aqlaboratory/openfold-3/actions/runs/40444773458) (run #353, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `244136c8f3a281c0a157ac5112e2120437da2b17` (PR #346 "test: add msa_mask/padding tests for create_msa_feature_precursor_of3", new since run #351/10-26's `f87904d`)
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 121993316747)
+- **Time:** 2026-10-27T03:32:56Z – 04:33:29Z (cancelled at 04:33:17Z)
+
+### Cancellation detail
+
+```
+openfold3/tests/test_of3_model.py::TestOF3Model::test_shape_large_eval[dtype=torch.float32]  ... PASSED
+Using default model settings for of3_all_atom
+##[error]The operation was canceled.
+```
+
+The `Run integration test` step started at 03:45:24Z and was cancelled at 04:33:17Z — 47m53s elapsed, well under the reusable workflow's `timeout-minutes: 60` cap (`.github/workflows/ci-integration-test-pixi-amd-reusable.yml:30`), so this is **not** a timeout-cap cancellation. The last completed test, `test_shape_large_eval[dtype=torch.float32]`, had `PASSED` 1m23s before the cancellation, and the next test (`of3_all_atom`) had only just logged its setup line — no `test_inference_writes_outputs[msa-...]` node ID and no `TimeoutError: MSA server` string anywhere near the cut, so this does not match this log's `msa-hang` signature either. Not manual (no human action in this window).
+
+The cancellation lands **~3 minutes after** tonight's secondary-slot run (#354, [40450085233](https://github.com/aqlaboratory/openfold-3/actions/runs/40450085233), created 2026-10-27T04:30:14Z) opened its own `test-pixi-amd` job entry — which `created_at`/`completed_at` both read 2026-10-27T04:30:1[45]Z, i.e. it was itself immediately skipped by the `if:` guard (`vars.RUN_NIGHTLY`/`NIGHTLY_CRON`, same guard documented throughout `daily-status.md`). Both jobs share the identical concurrency group `${{ github.workflow }}-pixi-amd-${{ github.head_ref || github.ref }}-openfold3-rocm7` with `cancel-in-progress: true` (`.github/workflows/integration-test.yml`). This is the same mechanism already documented in this log for 10-23/10-24 (where the secondary slot's job entry cancelled a *queued, never-started* AMD job the instant it was created) — but this is the **first occurrence where the mechanism cancelled a job that was actively mid-test**, 48 minutes into an apparently-healthy run, rather than one sitting idle in the queue. GitHub Actions evaluates a job's concurrency group before evaluating its own `if:` condition, so a job that will itself be skipped can still cancel an unrelated in-progress job sharing its group — a workflow-design side effect of the two-cron-schedule setup (`17 3 * * *` for this repo, `17 4 * * *` for others, both registered on every job per the top-of-file comment), not a code or infrastructure fault.
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | 121994143960 | 52 min |
+| `test-pixi-cuda (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 121994077991 | 46 min |
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | 121995191817 | 52 min |
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 121995260074 | 45 min |
+
+### Assessment
+
+No code regression indicated — the AMD suite was healthy (every visible test `PASSED`) right up to the cancellation, and the cause is fully explained by the concurrency-group/`if:`-guard interaction. **Flagged for a human:** consider scoping `test-pixi-amd`'s (and the other jobs') concurrency `group:` key to exclude the always-skipped secondary cron slot (e.g. keying on `github.event.schedule` too, or dropping the registration of the non-matching cron entirely on jobs gated by the per-repo `if:` guard), since this mechanism has now disrupted AMD coverage twice in a row in two different ways (a stale queued job on 10-23/10-24, an actively-running job tonight) and will keep doing so every night the primary job's runtime happens to straddle 04:30 UTC.
+
+---
