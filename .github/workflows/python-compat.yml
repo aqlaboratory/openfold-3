@@ -3,7 +3,11 @@ name: Python version compatibility
 # Checks that openfold3 works on the minimum Python in `requires-python`, which
 # the pixi CI (latest Python only) never exercises. See issue #479.
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
