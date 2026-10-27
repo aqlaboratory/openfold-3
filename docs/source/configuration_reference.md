@@ -310,6 +310,7 @@ Configures template structure preprocessing and filtering.
 - `preparse_structures` *(bool)*: Preparse structures into .npz files (default: `false`)
 - `create_logs` *(bool)*: Create preprocessing logs (default: `false`)
 - `n_processes` *(int)*: Number of preprocessing processes (default: `1`)
+- `worker_pool` *(str)*: Run the `n_processes` workers as separate processes (`process`) or as threads in the calling process (`thread`); threads start faster and are easier to debug, processes run in parallel (default: `process`)
 - `chunksize` *(int)*: Tasks per worker in multiprocessing (default: `1`)
 - `preprocess_timeout` *(int)*: Maximum preprocessing time in seconds (default: `60`)
 - `structure_directory` *(Path | None)*: Directory for template structures. During inference, the implicit default is `<output_directory>/template_structures`.

@@ -18,6 +18,7 @@ Train-mode tests live in test_template_train.py.
 """
 
 import getpass
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -576,11 +577,13 @@ def test_standalone_template_consumers_create_output_when_called(
             settings = TemplatePreprocessorSettings(
                 structure_directory=structure_directory,
                 create_precache=True,
+                worker_pool="thread",
             )
         else:
             settings = TemplatePreprocessorSettings(
                 structure_directory=structure_directory,
                 preparse_structures=True,
+                worker_pool="thread",
             )
     output_directory = getattr(settings, output_field)
     preprocessor = preprocessor_cls(settings)
@@ -588,11 +591,8 @@ def test_standalone_template_consumers_create_output_when_called(
     assert output_directory is not None
     assert not output_directory.exists()
 
-    with patch(
-        "openfold3.core.data.pipelines.preprocessing.template.mp.Pool"
-    ) as pool_cls:
-        pool_cls.return_value.__enter__.return_value.imap_unordered.return_value = []
-        preprocessor()
+    # The placeholder structure fails to preprocess, which workers report and skip
+    preprocessor()
 
     assert output_directory.is_dir()
 
@@ -922,6 +922,7 @@ def test_template_sources_do_not_collide_across_queries(tmp_path, order):
         structure_directory=structure_dir,
         fetch_missing_structures=False,
         n_processes=1,
+        worker_pool="thread",
     )
 
     TemplatePreprocessor(input_set=iqs, config=settings)()
@@ -938,6 +939,37 @@ def test_template_sources_do_not_collide_across_queries(tmp_path, order):
     assert (
         custom.template_alignment_file_path != colabfold.template_alignment_file_path
     ), "both queries were pointed at the same template cache entry"
+
+
+def test_workers_run_in_separate_processes(tmp_path):
+    """Preprocessing in real worker processes gives the same templates.
+
+    The tests around this one run their workers as threads, which start faster. This
+    one uses processes, the default, so the preprocessor and its inputs must still
+    pickle, and the results must still come back from the workers.
+    """
+    iqs = _two_source_query_set(tmp_path, ["q_custom", "q_colabfold"])
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir()
+    shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, structure_dir / TEMPLATE_CIF)
+    settings = TemplatePreprocessorSettings(
+        mode="predict",
+        output_directory=tmp_path / "template_data",
+        structure_directory=structure_dir,
+        fetch_missing_structures=False,
+        n_processes=2,
+        worker_pool="process",
+        create_logs=True,
+    )
+
+    TemplatePreprocessor(input_set=iqs, config=settings)()
+
+    assert iqs.queries["q_custom"].chains[0].template_entry_chain_ids == ["2q2k_B"]
+    assert iqs.queries["q_colabfold"].chains[0].template_entry_chain_ids == ["2q2k_C"]
+    # Each worker writes its log under its own process ID
+    worker_pids = {int(log.stem) for log in settings.log_directory.glob("*.log")}
+    assert worker_pids, "no worker wrote a log"
+    assert os.getpid() not in worker_pids, "the workers ran in the test process"
 
 
 def test_requeued_query_set_keeps_cached_templates(tmp_path):
@@ -959,6 +991,7 @@ def test_requeued_query_set_keeps_cached_templates(tmp_path):
         structure_directory=structure_dir,
         fetch_missing_structures=False,
         n_processes=1,
+        worker_pool="thread",
     )
 
     TemplatePreprocessor(input_set=run_1_qs, config=settings)()
