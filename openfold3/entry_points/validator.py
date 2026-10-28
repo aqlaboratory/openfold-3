@@ -21,14 +21,13 @@ from datetime import timedelta
 from enum import StrEnum
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
 from packaging.specifiers import SpecifierSet
 from packaging.version import Version
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic import ConfigDict as PydanticConfigDict
-from typing_extensions import Self
 
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorSettings,
