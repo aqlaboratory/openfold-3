@@ -52,7 +52,7 @@ dependencies = [
 ]
 
 optional-dependencies.dev = [
-    "pytest",
+    "pytest<9.2",  # until pytest-benchmark/issues/321 is resolved
     "pytest-xdist",
     "pytest-cov",
     "pytest-benchmark",
