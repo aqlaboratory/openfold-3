@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import unittest
+from unittest import mock
 
 import torch
 
@@ -165,6 +166,114 @@ class TestDiffusionConditioning(unittest.TestCase):
 
         self.assertTrue(si.shape == (batch_size, 1, n_token, c_s))
         self.assertTrue(zij.shape == (batch_size, 1, n_token, n_token, c_z))
+
+
+class TestEmbedZijChunking(unittest.TestCase):
+    """The row-chunked pair conditioning must match the eager one."""
+
+    N_TOKEN = consts.n_res
+    # Two chains, the second cyclic, so row slices cross a chain boundary and
+    # land inside a cyclic chain that has to build its offsets the long way.
+    ASYM_IDS = [1] * 11 + [2] * 11
+    CYCLIC_MASK = [False] * 11 + [True] * 11
+
+    def _make_dc(self, tune_chunk_size):
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
+        diff_cond_config = config.architecture.diffusion_module.diffusion_conditioning
+        diff_cond_config.update(
+            {"c_s": consts.c_s, "c_s_input": consts.c_s + 65, "c_z": consts.c_z}
+        )
+        return DiffusionConditioning(
+            **{**diff_cond_config, "tune_chunk_size": tune_chunk_size}
+        )
+
+    def _make_batch(self):
+        batch_size = consts.batch_size
+        n_token = self.N_TOKEN
+        return {
+            "token_index": torch.arange(n_token)[None, :].repeat(batch_size, 1),
+            "residue_index": torch.arange(n_token)[None, :].repeat(batch_size, 1),
+            "sym_id": torch.ones(batch_size, n_token, dtype=torch.int32),
+            "asym_id": torch.tensor(self.ASYM_IDS, dtype=torch.int32)
+            .unsqueeze(0)
+            .repeat(batch_size, 1),
+            "entity_id": torch.tensor(self.ASYM_IDS, dtype=torch.int32)
+            .unsqueeze(0)
+            .repeat(batch_size, 1),
+            "cyclic_mask": torch.tensor(self.CYCLIC_MASK, dtype=torch.bool)
+            .unsqueeze(0)
+            .repeat(batch_size, 1),
+        }
+
+    def test_chunked_matches_eager(self):
+        dc = self._make_dc(tune_chunk_size=False)
+        dc.eval()
+        batch = self._make_batch()
+        zij_trunk = torch.rand(
+            consts.batch_size, self.N_TOKEN, self.N_TOKEN, consts.c_z
+        )
+
+        # The chunked path is gated on inference, so no_grad is required for it
+        # to be taken at all.
+        with torch.no_grad():
+            expected = dc._embed_zij(batch=batch, zij_trunk=zij_trunk)
+
+            # Both chunk sizes divide N_TOKEN unevenly, so the last chunk of
+            # each is short.
+            for chunk_size in (3, 5, 7):
+                assert self.N_TOKEN % chunk_size != 0, chunk_size
+                with self.subTest(chunk_size=chunk_size):
+                    actual = dc._embed_zij(
+                        batch=batch, zij_trunk=zij_trunk, chunk_size=chunk_size
+                    )
+                    torch.testing.assert_close(actual, expected)
+
+    def test_chunked_is_skipped_under_grad(self):
+        # The eager path is the fallback: training needs the graph, and the
+        # chunked path writes into a preallocated buffer that would not carry it.
+        dc = self._make_dc(tune_chunk_size=False)
+        batch = self._make_batch()
+        zij_trunk = torch.rand(
+            consts.batch_size, self.N_TOKEN, self.N_TOKEN, consts.c_z
+        )
+
+        # Counting calls is the only reliable observable here: an index write
+        # into torch.empty still yields requires_grad=True, so that flag cannot
+        # distinguish the two branches.
+        with mock.patch.object(
+            dc, "_embed_zij_chunked", wraps=dc._embed_zij_chunked
+        ) as chunked:
+            dc._embed_zij(batch=batch, zij_trunk=zij_trunk, chunk_size=5)
+        assert chunked.call_count == 0
+
+        # And it does run at inference, so the zero above is the gate talking.
+        dc.eval()
+        with (
+            torch.no_grad(),
+            mock.patch.object(
+                dc, "_embed_zij_chunked", wraps=dc._embed_zij_chunked
+            ) as chunked,
+        ):
+            dc._embed_zij(batch=batch, zij_trunk=zij_trunk, chunk_size=5)
+        assert chunked.call_count == 1
+
+    def test_chunk_size_tuner_is_used_and_keeps_the_result(self):
+        dc = self._make_dc(tune_chunk_size=True)
+        dc.eval()
+        batch = self._make_batch()
+        zij_trunk = torch.rand(
+            consts.batch_size, self.N_TOKEN, self.N_TOKEN, consts.c_z
+        )
+
+        with torch.no_grad():
+            expected = dc._embed_zij(batch=batch, zij_trunk=zij_trunk)
+            actual = dc._embed_zij(batch=batch, zij_trunk=zij_trunk, chunk_size=8)
+
+        torch.testing.assert_close(actual, expected)
+        assert len(dc.chunk_size_tuner.cached_chunk_sizes) == 1
+        _, max_chunk_size, _ = dc.chunk_size_tuner.cached_chunk_sizes[0]
+        assert max_chunk_size == 8
 
 
 if __name__ == "__main__":

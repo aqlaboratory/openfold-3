@@ -108,7 +108,10 @@ def apply_cyclic_offsets(
 
 
 def relpos_complex(
-    batch: dict, max_relative_idx: int, max_relative_chain: int
+    batch: dict,
+    max_relative_idx: int,
+    max_relative_chain: int,
+    row_slice: slice | None = None,
 ) -> torch.Tensor:
     """
     Args:
@@ -118,18 +121,37 @@ def relpos_complex(
             Maximum relative position and token indices clipped
         max_relative_chain:
             Maximum relative chain indices clipped
+        row_slice:
+            Optional slice over the first spatial dimension (rows of the pair
+            tensor). When given, returns ``[*, chunk, N_token, C]`` instead of
+            ``[*, N_token, N_token, C]``, so the full ``[N, N, C]`` tensor is
+            never materialized. Used by the chunked diffusion conditioning
+            path.
 
     Returns:
-        [*, N_token, N_token, C_z] Relative position embedding
+        [*, N_token, N_token, C_z] Relative position embedding, or
+        [*, chunk, N_token, C_z] when ``row_slice`` is given
     """
     res_idx = batch["residue_index"]
     asym_id = batch["asym_id"]
     cyclic_mask = batch.get("cyclic_mask")
     entity_id = batch["entity_id"]
-    same_chain = asym_id[..., None] == asym_id[..., None, :]
 
-    same_res = res_idx[..., None] == res_idx[..., None, :]
-    same_entity = entity_id[..., None] == entity_id[..., None, :]
+    if row_slice is None:
+        same_chain = asym_id[..., None] == asym_id[..., None, :]
+        same_res = res_idx[..., None] == res_idx[..., None, :]
+        same_entity = entity_id[..., None] == entity_id[..., None, :]
+    else:
+        same_chain = asym_id[..., row_slice, None] == asym_id[..., None, :]
+        same_res = res_idx[..., row_slice, None] == res_idx[..., None, :]
+        same_entity = entity_id[..., row_slice, None] == entity_id[..., None, :]
+
+    # Only a row-sliced build can skip the full [N, N] offset, so the eager path
+    # does not pay for the device sync this costs. ``bool`` forces the sync here
+    # once rather than inside each of the three ``relpos`` calls.
+    has_cyclic = (
+        row_slice is not None and cyclic_mask is not None and bool(cyclic_mask.any())
+    )
 
     def relpos(
         pos: torch.Tensor,
@@ -155,10 +177,20 @@ def relpos_complex(
             rel_pos:
                 [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
         """
-        offset = pos[..., None] - pos[..., None, :]
-        offset = apply_cyclic_offsets(
-            offset=offset, pos=pos, cyclic_mask=cyclic_mask, asym_id=asym_id
-        )
+        # ``rel_token`` / ``rel_chain`` pass cyclic_mask=None, so they can always
+        # take the row-sliced path; only the residue offset can be cyclic.
+        needs_cyclic = cyclic_mask is not None and has_cyclic
+        if row_slice is not None and not needs_cyclic:
+            offset = pos[..., row_slice, None] - pos[..., None, :]
+        else:
+            # Cyclic wrapping needs every row of the chain; build the full
+            # [N, N] offset, wrap it, then slice.
+            offset = pos[..., None] - pos[..., None, :]
+            offset = apply_cyclic_offsets(
+                offset=offset, pos=pos, cyclic_mask=cyclic_mask, asym_id=asym_id
+            )
+            if row_slice is not None:
+                offset = offset[..., row_slice, :]
 
         clipped_offset = torch.clamp(offset + rel_clip_idx, min=0, max=2 * rel_clip_idx)
         final_offset = torch.where(
