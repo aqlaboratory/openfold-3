@@ -3702,8 +3702,6 @@ openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return type annotation  [no-untyped-def]
-openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return type annotation  [no-untyped-def]
-openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a type annotation  [no-untyped-def]
@@ -3751,7 +3749,6 @@ openfold3/projects/of3_all_atom/runner.py:0: note: Consider using "Mapping" inst
 openfold3/projects/of3_all_atom/runner.py:0: note: Consider using "Mapping" instead, which is covariant in the value type
 openfold3/projects/of3_all_atom/runner.py:0: note: Consider using "Mapping" instead, which is covariant in the value type
 openfold3/projects/of3_all_atom/runner.py:0: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
-openfold3/projects/of3_all_atom/runner.py:0: note: Use "-> None" if function does not return a value
 openfold3/projects/of3_all_atom/runner.py:0: note: Use "-> None" if function does not return a value
 openfold3/projects/of3_all_atom/runner.py:0: note: Use "-> None" if function does not return a value
 openfold3/projects/of3_all_atom/runner.py:0: note: Use "-> None" if function does not return a value

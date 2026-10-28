@@ -21,6 +21,7 @@ import getpass
 import os
 import shutil
 from datetime import datetime
+from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1022,3 +1023,60 @@ def test_requeued_query_set_keeps_cached_templates(tmp_path):
     # Only the raw source needs preprocessing; the cached entry must not be
     # re-parsed as an alignment.
     assert len(preprocessor.inputs) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tier F: worker logs (integration, runs __call__)
+# ---------------------------------------------------------------------------
+
+
+def _log_settings(tmp_path: Path, *, create_logs: bool) -> TemplatePreprocessorSettings:
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir()
+    shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, structure_dir / TEMPLATE_CIF)
+    return TemplatePreprocessorSettings(
+        mode="predict",
+        output_directory=tmp_path / "template_data",
+        # Pre-seeded structures + no fetching keeps this offline.
+        structure_directory=structure_dir,
+        fetch_missing_structures=False,
+        n_processes=1,
+        create_logs=create_logs,
+    )
+
+
+def test_worker_messages_are_written_to_per_process_logs(tmp_path):
+    """With `create_logs`, a worker writes its messages to `<log_directory>/<pid>.log`."""
+    iqs = _two_source_query_set(tmp_path, ["q_custom"])
+    settings = _log_settings(tmp_path, create_logs=True)
+
+    TemplatePreprocessor(input_set=iqs, config=settings)()
+
+    log_text = "".join(log.read_text() for log in settings.log_directory.glob("*.log"))
+    assert "CIF-direct mode" in log_text
+    assert "2q2k B added to cache." in log_text
+
+
+def test_worker_messages_are_dropped_without_create_logs(tmp_path, caplog):
+    """Without `create_logs`, worker messages reach no handler at all.
+
+    Workers log unconditionally, to a stand-in that drops everything when logs are
+    off; none of it may leak to the root logger, even when that would show it.
+    """
+    iqs = _two_source_query_set(tmp_path, ["q_custom", "q_colabfold"])
+    settings = _log_settings(tmp_path, create_logs=False)
+
+    # In-process workers, so caplog would see their records
+    with (
+        caplog.at_level("DEBUG"),
+        patch.object(template_module.mp, "Pool", ThreadPool),
+    ):
+        TemplatePreprocessor(input_set=iqs, config=settings)()
+
+    assert iqs.queries["q_custom"].chains[0].template_entry_chain_ids == ["2q2k_B"]
+    worker_records = [
+        record
+        for record in caplog.records
+        if record.name.startswith("template_preprocess")
+    ]
+    assert worker_records == []
