@@ -1,9 +1,8 @@
 name: Reusable Docker Test for running heavy test loads on Brev (Pixi)
 
-# Brev counterpart of ci-integration-test-aws-pixi-cuda.yml. The test job
-# is the same; only the runner lifecycle differs. Brev picks the machine image
-# (Ubuntu with Docker and the NVIDIA Container Toolkit) and the disk size comes
-# with the instance type, so there is no AMI lookup or root device size here.
+# Brev picks the machine image (Ubuntu with Docker and the NVIDIA Container
+# Toolkit) and the disk size comes with the instance type, so there is no AMI
+# lookup or root device size here.
 
 on:
   # Can only be called by another workflow, not directly by the user
