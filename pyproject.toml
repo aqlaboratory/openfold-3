@@ -58,7 +58,7 @@ optional-dependencies.dev = [
     "pytest-benchmark",
     "pytest-regressions",
     "pytest-vcr",
-    "ruff",
+    "ruff==0.16.0",  # keep in sync with pixi.toml
     "mypy",
     "mypy-baseline",
     "pre-commit",
@@ -90,7 +90,7 @@ validate-openfold3-rocm="openfold3.entry_points.validate_rocm:main"
 [dependency-groups]
 test = [
     "pytest",
-    "ruff",
+    "ruff==0.16.0",  # keep in sync with pixi.toml
     "awscli",
     "aria2",
     "pytest-xdist",
