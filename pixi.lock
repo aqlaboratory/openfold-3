@@ -25835,7 +25835,7 @@ packages:
   - tqdm
   - typing-extensions
   - lmdb
-  - pytest ; extra == 'dev'
+  - pytest<9.2 ; extra == 'dev'
   - pytest-xdist ; extra == 'dev'
   - pytest-cov ; extra == 'dev'
   - pytest-benchmark ; extra == 'dev'
