@@ -25841,7 +25841,7 @@ packages:
   - pytest-benchmark ; extra == 'dev'
   - pytest-regressions ; extra == 'dev'
   - pytest-vcr ; extra == 'dev'
-  - ruff ; extra == 'dev'
+  - ruff==0.16.0 ; extra == 'dev'
   - mypy ; extra == 'dev'
   - mypy-baseline ; extra == 'dev'
   - pre-commit ; extra == 'dev'

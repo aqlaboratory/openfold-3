@@ -248,7 +248,7 @@ pytest-vcr = "*"
 
 # --- Dev and documentation optionals
 # We do not put on a feature to avoid combinatorial explosion.
-ruff = "*"
+ruff = "==0.16.0"  # keep in sync with pyproject.toml (used by the lint CI workflow)
 mypy = "*"
 sphinx = "*"
 myst-parser = "*"
