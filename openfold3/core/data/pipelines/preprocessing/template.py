@@ -22,6 +22,7 @@ import re
 import traceback
 from datetime import date, datetime
 from functools import wraps
+from multiprocessing.pool import Pool, ThreadPool
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -1558,6 +1559,19 @@ def _is_template_cache_entry(path: Path | str | None) -> bool:
     return path is not None and Path(path).suffix == ".npz"
 
 
+def _make_worker_pool(
+    worker_pool: Literal["process", "thread"], n_processes: int
+) -> Pool:
+    """Creates the pool that template preprocessing runs its workers in.
+
+    Process workers run in parallel. Thread workers run in the calling process, which
+    spares process startup and keeps them within reach of debuggers and tests.
+    """
+    if worker_pool == "thread":
+        return ThreadPool(n_processes)
+    return mp.Pool(n_processes)
+
+
 # New template preprocessing pipelines
 # TODO: replace old versions from above with these new ones
 class TemplatePreprocessorInputTrain(BaseModel):
@@ -1661,6 +1675,10 @@ class TemplatePreprocessorSettings(BaseModel):
             files for faster subsequent online template processing.
         n_processes (int):
             Number of processes to use template preprocessing.
+        worker_pool (Literal["process", "thread"]):
+            Whether the `n_processes` workers are separate processes or threads in the
+            calling process. Threads avoid process startup, which suits tests and
+            debugging; processes parallelize the work. Defaults to "process".
         chunksize (int):
             Number of tasks per worker in multiprocessing.
         preprocess_timeout (int):
@@ -1713,6 +1731,7 @@ class TemplatePreprocessorSettings(BaseModel):
     preparse_structures: bool = False
     create_logs: bool = False
     n_processes: int = 1
+    worker_pool: Literal["process", "thread"] = "process"
     chunksize: int = 1
     preprocess_timeout: int = 60
 
@@ -1878,6 +1897,7 @@ class TemplatePreprocessor:
         self.preparse_structures = config.preparse_structures
         self.create_logs = config.create_logs
         self.n_processes = config.n_processes
+        self.worker_pool = config.worker_pool
         self.chunksize = config.chunksize
         self.preprocess_timeout = config.preprocess_timeout
 
@@ -2167,7 +2187,7 @@ class TemplatePreprocessor:
             manager = mp.Manager()
             self.processed_cache_keys = manager.dict()
             self.template_ids_by_cache_key = manager.dict()
-            with mp.Pool(self.n_processes) as pool:
+            with _make_worker_pool(self.worker_pool, self.n_processes) as pool:
                 for _ in tqdm(
                     pool.imap_unordered(
                         self.preprocess_templates,
@@ -2671,6 +2691,7 @@ class TemplatePrecachePreprocessor:
     ) -> None:
         self.moltypes = config.moltypes
         self.n_processes = config.n_processes
+        self.worker_pool = config.worker_pool
         self.chunksize = config.chunksize
         self.preprocess_timeout = config.preprocess_timeout
 
@@ -2711,7 +2732,7 @@ class TemplatePrecachePreprocessor:
         if self.precache_directory is None:
             raise RuntimeError("Precache output path was not configured")
         self.precache_directory.mkdir(parents=True, exist_ok=True)
-        with mp.Pool(self.n_processes) as pool:
+        with _make_worker_pool(self.worker_pool, self.n_processes) as pool:
             for _ in tqdm(
                 pool.imap_unordered(
                     self._preprocess_template_precache_entry,
@@ -2862,6 +2883,7 @@ class TemplateStructurePreprocessor:
         self.moltypes = config.moltypes
 
         self.n_processes = config.n_processes
+        self.worker_pool = config.worker_pool
         self.chunksize = config.chunksize
 
         self.structure_directory = config.structure_directory
@@ -2895,7 +2917,7 @@ class TemplateStructurePreprocessor:
         if self.structure_array_directory is None:
             raise RuntimeError("Structure array output path was not configured")
         self.structure_array_directory.mkdir(parents=True, exist_ok=True)
-        with mp.Pool(self.n_processes) as pool:
+        with _make_worker_pool(self.worker_pool, self.n_processes) as pool:
             for _ in tqdm(
                 pool.imap_unordered(
                     self._preprocess_template_structure_for_template,

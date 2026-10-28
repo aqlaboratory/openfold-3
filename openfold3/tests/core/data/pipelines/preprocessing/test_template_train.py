@@ -24,7 +24,6 @@ import gzip
 import logging
 import shutil
 from datetime import date, datetime
-from multiprocessing.dummy import Pool as ThreadPool
 from pathlib import Path
 from unittest.mock import patch
 
@@ -39,7 +38,6 @@ from openfold3.core.data.io.structure.cif import parse_mmcif
 from openfold3.core.data.pipelines.featurization.template import (
     featurize_template_structures_of3,
 )
-from openfold3.core.data.pipelines.preprocessing import template as template_module
 from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessor,
     TemplatePreprocessorSettings,
@@ -182,6 +180,8 @@ def _train_settings_kwargs(tmp_path: Path) -> dict:
         "fetch_missing_structures": False,
         "preparse_structures": True,
         "n_processes": 1,
+        # In-process workers: faster to start, and caplog sees their records
+        "worker_pool": "thread",
     }
 
 
@@ -567,11 +567,10 @@ def test_template_chain_missing_from_structure_warns(tmp_path, caplog):
     light = aln_dir / "1fdl_A" / "colabfold_template.m8"
     light.write_text(light.read_text().replace("_A\t", "_L\t"))  # undo the remap
 
-    # In-process workers, so caplog sees their records
-    with patch.object(template_module.mp, "Pool", ThreadPool):
-        cache, _ = _run_train_template_preprocessor(
-            tmp_path, template_alignment_directory=aln_dir
-        )
+    # Workers run as threads (see _train_settings_kwargs), so caplog sees their records
+    cache, _ = _run_train_template_preprocessor(
+        tmp_path, template_alignment_directory=aln_dir
+    )
 
     # The light chain's hits are unusable; the other chains are unaffected.
     template_ids = _train_template_ids(cache)
