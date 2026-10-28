@@ -21,8 +21,8 @@ import getpass
 import os
 import shutil
 from datetime import datetime
-from multiprocessing.pool import ThreadPool
 from pathlib import Path
+from typing import Literal
 from unittest.mock import patch
 
 import pytest
@@ -1030,7 +1030,12 @@ def test_requeued_query_set_keeps_cached_templates(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _log_settings(tmp_path: Path, *, create_logs: bool) -> TemplatePreprocessorSettings:
+def _log_settings(
+    tmp_path: Path,
+    *,
+    create_logs: bool,
+    worker_pool: Literal["process", "thread"] = "process",
+) -> TemplatePreprocessorSettings:
     structure_dir = tmp_path / "template_structures"
     structure_dir.mkdir()
     shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, structure_dir / TEMPLATE_CIF)
@@ -1041,6 +1046,7 @@ def _log_settings(tmp_path: Path, *, create_logs: bool) -> TemplatePreprocessorS
         structure_directory=structure_dir,
         fetch_missing_structures=False,
         n_processes=1,
+        worker_pool=worker_pool,
         create_logs=create_logs,
     )
 
@@ -1064,13 +1070,10 @@ def test_worker_messages_are_dropped_without_create_logs(tmp_path, caplog):
     off; none of it may leak to the root logger, even when that would show it.
     """
     iqs = _two_source_query_set(tmp_path, ["q_custom", "q_colabfold"])
-    settings = _log_settings(tmp_path, create_logs=False)
+    # Thread workers, so caplog would see their records
+    settings = _log_settings(tmp_path, create_logs=False, worker_pool="thread")
 
-    # In-process workers, so caplog would see their records
-    with (
-        caplog.at_level("DEBUG"),
-        patch.object(template_module.mp, "Pool", ThreadPool),
-    ):
+    with caplog.at_level("DEBUG"):
         TemplatePreprocessor(input_set=iqs, config=settings)()
 
     assert iqs.queries["q_custom"].chains[0].template_entry_chain_ids == ["2q2k_B"]
