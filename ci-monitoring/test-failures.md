@@ -801,3 +801,33 @@ The cancellation lands **~3 minutes after** tonight's secondary-slot run (#354, 
 No code regression indicated — the AMD suite was healthy (every visible test `PASSED`) right up to the cancellation, and the cause is fully explained by the concurrency-group/`if:`-guard interaction. **Flagged for a human:** consider scoping `test-pixi-amd`'s (and the other jobs') concurrency `group:` key to exclude the always-skipped secondary cron slot (e.g. keying on `github.event.schedule` too, or dropping the registration of the non-matching cron entirely on jobs gated by the per-repo `if:` guard), since this mechanism has now disrupted AMD coverage twice in a row in two different ways (a stale queued job on 10-23/10-24, an actively-running job tonight) and will keep doing so every night the primary job's runtime happens to straddle 04:30 UTC.
 
 ---
+
+## 2026-10-28
+
+**Cause:** `unclassified (log unavailable)` × 3 — tonight's scan could not fetch any job log. Every `actions/jobs/<id>/logs` call 302-redirects to `productionresultssa0.blob.core.windows.net`, and this session's egress proxy rejected the `CONNECT` tunnel to that host with `403` (policy denial, confirmed three times via `/__agentproxy/status`'s `recentRelayFailures` — not an expired-URL or 404 case). Per this log's/`daily-status.md`'s explicit rule, every non-pass tonight is recorded `unclassified (log unavailable)` rather than guessed from the job conclusion. This includes the two AWS `start-aws-runner` failures, which on every prior occurrence of this exact shape (runs #252, #282, #284, #291, #295, #299, #314, #316, #345, #347, #351) turned out to be `aws-capacity` — tonight's could be the same, or could be something else; it cannot be confirmed, so (per this file's/`aws-outage-failures.md`'s split) they are **not** filed under `aws-outage-failures.md` and instead sit here, flagged for re-classification once log access works again.
+
+- **Run ID:** [40626451630](https://github.com/aqlaboratory/openfold-3/actions/runs/40626451630) (run #355, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `ddcaaa99c31917d5370dfa41d9431bce13664a56` (PR #489 "Pin ruff version", new since run #353/10-27's `244136c8`)
+
+### Failed jobs
+
+| Job | Job ID | Time | Notes |
+|-----|--------|------|-------|
+| `test-pixi-cuda (openfold3-cuda12) / start-aws-runner` | 122612406771 | 03:24:00–03:25:45 (1m45s) | log unavailable — cannot confirm `aws-capacity` tonight |
+| `test-pixi-cuda (openfold3-cuda13) / start-aws-runner` | 122612406669 | 03:24:00–03:25:43 (1m43s) | log unavailable — same shape as cuda12 |
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | 122612406772 | 03:23:59–03:24:06 (7s) | log unavailable — 7s runtime is far too short for the suite to have started; looks like an early-stage failure (image pull / runner registration), not a `code` failure, but unconfirmed |
+
+Cascading/incidental, not separately classified: both `test-pixi-cuda` legs' `stop-aws-runner` steps also failed (jobs 122612956565, 122612967995) — consistent with every prior `aws-capacity` night's cascading `StopAWS.__init__()` `TypeError` (no instance was ever created to tear down), but unconfirmed tonight for the same log-access reason. `test-pixi-cuda-brev (openfold3-cuda13)`'s cleanup `stop-brev-runner` step (job 122626868292, 04:11:41–04:22:09) also failed — this one is new (no precedent in this log) and does not affect that leg's `test-openfold-docker-pixi` PASSED result, but is worth a human's eye once logs are reachable in case it left a Brev instance running.
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | — | 48 min |
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | — | 42 min |
+
+### Assessment
+
+No log-based classification possible tonight — this is purely an access limitation in this execution environment (egress proxy policy blocks `*.blob.core.windows.net`, where GitHub now redirects `actions/jobs/<id>/logs` and `actions/runs/<id>/logs`), not a statement about the underlying failures. **Flagged for a human:** pull the three failed jobs' raw logs directly from the Actions UI (or a session/proxy without this block) to retro-classify them, especially the two AWS legs — if they're `aws-capacity` as their shape suggests, they belong in `aws-outage-failures.md` instead. Both Brev legs passed clean on tonight's commit (a lint-tooling-only change), unaffected by whichever of AWS/AMD/log-access issue is behind the other three.
+
+---

@@ -1321,3 +1321,35 @@ Both AWS `test-pixi-cuda` legs and both Brev `test-pixi-cuda-brev` legs passed c
 | test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #353, per this log's established convention). This run's `test-pixi-amd` job entry (created 04:30:14Z, immediately skipped) is itself the concurrency-cancellation trigger for run #353's still-running AMD job — see that run's notes above.
+
+---
+
+## 2026-10-28
+
+**Log access note:** this scan could not fetch any job logs. Every `actions/jobs/<id>/logs` request redirects to `productionresultssa0.blob.core.windows.net`, and this session's egress proxy answered `403` to the `CONNECT` tunnel for that host (policy denial — confirmed via `/__agentproxy/status`'s `recentRelayFailures`, three identical rejections). Per this log's explicit fallback for an unavailable log, every non-pass below is recorded `unclassified (log unavailable)` rather than guessed from the job conclusion alone — a first for this log; every prior night's logs were reachable. `gh variable list` (to confirm `NIGHTLY_CRON`) hit the same pre-existing `actions/variables` proxy restriction noted since 10-23/`weekly-summary.md`, unrelated to tonight's new blob-storage block.
+
+### Run #355 — primary nightly (schedule `17 3 * * *`, main @ `ddcaaa99` — merge PR #489 "Pin ruff version" (new since run #353/10-27's `244136c8`), [40626451630](https://github.com/aqlaboratory/openfold-3/actions/runs/40626451630))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda (openfold3-cuda12) | **FAILED** | 2 min | `start-aws-runner` failed 03:24:00–03:25:45. `unclassified (log unavailable)` — cannot confirm `aws-capacity` signature tonight; see log-access note above. |
+| test-pixi-cuda (openfold3-cuda13) | **FAILED** | 2 min | `start-aws-runner` failed 03:24:00–03:25:43, same pattern as cuda12. `unclassified (log unavailable)`. |
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 48 min | `test-openfold-docker-pixi` 03:29:58–04:17:51 (47m53s). Cleanup `stop-brev-runner` succeeded (04:17:54–04:23:57). |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 42 min | `test-openfold-docker-pixi` 03:30:02–04:11:38 (41m36s). Note: this leg's `stop-brev-runner` cleanup step itself **failed** (04:11:41–04:22:09, job 122626868292) — doesn't change the test job's PASSED state, but worth a human's eye once logs are reachable again (teardown failure could leave a Brev instance running/billing). |
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | <1 min | `test-openfold-docker-pixi-amd` failed in 7s (03:23:59–03:24:06) — far too fast to have run any test; looks like an early-stage failure (image pull, runner registration, or similar) rather than a test failure, but `unclassified (log unavailable)` since the log can't be confirmed tonight. |
+
+**2026-10-28: 2/5 passed · 0 skipped · 0 queued · 3 need attention**
+
+First night this log could not retrieve any job logs (proxy policy block on `productionresultssa0.blob.core.windows.net`, detailed above) — all three non-passes are recorded `unclassified (log unavailable)` rather than classified from log content, including the two AWS `start-aws-runner` failures that, on every prior occurrence of a same-shaped failure in this log, turned out to be `aws-capacity`. They are **not** entered in `aws-outage-failures.md` tonight precisely because that can't be confirmed from the conclusion alone; all three live in `test-failures.md` instead, flagged for re-classification once log access is restored (either a future session with working proxy access, or a human pulling the raw logs from the Actions UI). Both Brev legs (`test-pixi-cuda-brev`) passed clean on tonight's commit (`ddcaaa99`, PR #489 — a lint-tooling version pin, no functional impact), unaffected by whatever is behind the AWS/AMD non-passes.
+
+This is also the formal two-week mark for the Brev-vs-AWS comparison (`test-pixi-cuda-brev` jobs added 2026-10-14 in PR #448). Including tonight's two passes, the running tally is **25/30 brev job-runs passed (83.3%)** since 10-14 — still below the monitoring brief's 95%-pass-rate bar at face value. All 5 non-passes in that denominator are the 10-20/10-21 `g5.4xlarge`-catalog-rejection streak (4 job-runs, fixed by PR #469 on 10-22) plus the single 10-22 `test-pixi-cuda-brev (openfold3-cuda12)` cap-kill (`unclassified`, 1 job-run) that this log flagged at the time as possibly infra-variance rather than a Brev-specific defect. Excluding only the pre-fix 10-20/10-21 job-runs (not reflective of Brev's current reliability — the catalog issue they hit was fixed two weeks ago and hasn't recurred since): **25/26 (96.2%)**, above the 95% bar. Recommendation: on the post-fix framing, which this log's running notes since 10-20 have consistently argued is the more representative one, **Brev's two-week track record clears the bar — the AWS-hosted `test-pixi-cuda` workflows look ready to be replaced by their Brev equivalents.** Flagging for a human decision rather than acting unilaterally, since (a) the face-value number doesn't clear the bar and the exclusion is a judgment call, (b) tonight's two AWS failures are themselves unclassified pending log access and could independently be adding to the case for Brev, and (c) retiring a workflow is a repo-structure change outside this log's scope.
+
+### Run #356 — secondary nightly (schedule `17 4 * * *`, main @ `ddcaaa99`, [40632031014](https://github.com/aqlaboratory/openfold-3/actions/runs/40632031014))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion (job named plain `test-pixi-cuda`, no matrix suffix) |
+| test-pixi-cuda-brev | **SKIPPED** | — | same guard; job named plain `test-pixi-cuda-brev`, confirming it never expanded |
+| test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #355, per this log's established convention).
