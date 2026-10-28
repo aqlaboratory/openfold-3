@@ -63,9 +63,10 @@ class TemplateCacheEntry:
             The PDB+chain ID of the template structure.
         index (int):
             The row index of the template hit in the hmmsearch+hmmalign alignment.
-        release_date (datetime | str):
+        release_date (datetime | str | None):
             The release date of the template structure. The legacy training pipeline
-            writes a "%Y-%m-%d" string, the inference pipeline a datetime.
+            writes a "%Y-%m-%d" string, the inference pipeline a datetime. None for a
+            pinned CIF that carries none, e.g. a model.
         idx_map (np.ndarray[int]):
             Dictionary mapping tokens that fall into the crop to corresponding residue
             indices in the matching alignment.
@@ -73,7 +74,7 @@ class TemplateCacheEntry:
             Original CIF file path for CIF-direct mode."""
 
     index: int
-    release_date: datetime | str
+    release_date: datetime | str | None
     idx_map: np.ndarray[int]
     cif_path: Path | None = None
 
@@ -91,6 +92,22 @@ class TemplateCacheEntry:
         if self.cif_path is not None:
             data["cif_path"] = str(self.cif_path)
         return data
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TemplateCacheEntry":
+        """Rebuilds an entry from the plain dict stored in the cache npz.
+
+        The inverse of `to_dict`. `cif_path` is absent for alignment-derived entries
+        and must survive the round trip for CIF-direct ones, since it is the only
+        record of where those coordinates came from.
+        """
+        cif_path = data.get("cif_path")
+        return cls(
+            index=data["index"],
+            release_date=data["release_date"],
+            idx_map=data["idx_map"],
+            cif_path=Path(cif_path) if cif_path is not None else None,
+        )
 
 
 @dataclasses.dataclass(frozen=False)
@@ -201,39 +218,10 @@ def sample_templates(
 
     template_ids = np.array(template_ids)
 
-    # Subset the template IDs to only those that have a pre-parsed structure array
-    # Some arrays may be missing due to preprocessing errors
-    # TODO: add logging for this
-    if template_structure_array_directory is not None:
-        template_array_paths = []
-        for template_id in template_ids:
-            template_pdb_id = template_id.split("_")[0]
-            template_struct_path = (
-                template_structure_array_directory
-                / f"{template_pdb_id}/{template_id}.{template_file_format}"
-            )
-
-            if not template_struct_path.exists():
-                logger.warning(f"Template path does not exist: {template_struct_path}")
-
-            template_array_paths.append(template_struct_path)
-
-        template_ids = template_ids[
-            np.array([p.exists() for p in template_array_paths]).astype(bool)
-        ]
-
-    l = len(template_ids)
-    if l == 0:
-        return {}
-
-    # Sample actual number of templates to use
-    if take_top_k:
-        k = np.min([l, n_templates])
-    else:
-        k = np.min([np.random.randint(0, l + 1), n_templates])
-
-    if k > 0 and template_cache_directory is not None:
-        # Load template cache entry numpy file
+    # Load template cache entry numpy file. Done before the structure array filter
+    # below, which needs to know which templates are pinned CIFs
+    template_cache_entry: dict[str, TemplateCacheEntry] = {}
+    if template_cache_directory is not None:
         # From the representative ID during training
         if "alignment_representative_id" in chain_data:
             if use_roda_monomer_format:
@@ -252,11 +240,47 @@ def sample_templates(
             template_cache_path = chain_data["cache_entry_file_path"]
 
         with np.load(template_cache_path, allow_pickle=True) as template_cache_npz:
-            # Unpack into dict
             template_cache_entry = {
-                key: value.item() for key, value in template_cache_npz.items()
+                key: TemplateCacheEntry.from_dict(value.item())
+                for key, value in template_cache_npz.items()
             }
 
+    # Subset the template IDs to only those that have a pre-parsed structure array
+    # Some arrays may be missing due to preprocessing errors. Pinned CIFs (CIF-direct)
+    # never have one: their coordinates are read from the pinned file
+    # TODO: add logging for this
+    if template_structure_array_directory is not None:
+        has_structure = []
+        for template_id in template_ids:
+            entry = template_cache_entry.get(template_id)
+            if entry is not None and entry.cif_path is not None:
+                has_structure.append(True)
+                continue
+
+            template_pdb_id = template_id.split("_")[0]
+            template_struct_path = (
+                template_structure_array_directory
+                / f"{template_pdb_id}/{template_id}.{template_file_format}"
+            )
+
+            if not template_struct_path.exists():
+                logger.warning(f"Template path does not exist: {template_struct_path}")
+
+            has_structure.append(template_struct_path.exists())
+
+        template_ids = template_ids[np.array(has_structure, dtype=bool)]
+
+    l = len(template_ids)
+    if l == 0:
+        return {}
+
+    # Sample actual number of templates to use
+    if take_top_k:
+        k = np.min([l, n_templates])
+    else:
+        k = np.min([np.random.randint(0, l + 1), n_templates])
+
+    if k > 0 and template_cache_directory is not None:
         # Randomly sample k templates (core PDB training sets) or take top k templates
         # (distillation, inference sets)
         if take_top_k:
@@ -264,14 +288,8 @@ def sample_templates(
         else:
             sampled_template_ids = np.random.choice(template_ids, k, replace=False)
 
-        # Wrap each subdict in a TemplateCacheEntry
         return {
-            template_id: TemplateCacheEntry(
-                index=template_cache_entry[template_id]["index"],
-                release_date=template_cache_entry[template_id]["release_date"],
-                idx_map=template_cache_entry[template_id]["idx_map"],
-                # TODO: this will never read cif_path from the cache
-            )
+            template_id: template_cache_entry[template_id]
             for template_id in sampled_template_ids
         }
 
@@ -356,15 +374,37 @@ def parse_template_structure(
         AtomArray:
             The cleaned up template atom array for the given chain.
     """
-    # Parse template IDs
-    pdb_id, chain_id = template_pdb_chain_id.split("_")
+    # Parse template IDs. Split from the right: preprocessing builds these as
+    # f"{entry_id}_{chain_id}", and in CIF-direct mode the entry ID is a filename stem,
+    # which may itself contain underscores.
+    pdb_id, chain_id = template_pdb_chain_id.rsplit("_", 1)
 
     # Initialize cache if not provided
     if cif_assembly_cache is None:
         cif_assembly_cache = {}
 
+    # CIF-direct mode: use the provided CIF path directly. This is checked first
+    # because it names one specific file the query pinned, whereas the directories
+    # below are looked up by PDB ID and would silently substitute the deposited entry.
+    if cif_path is not None:
+        cache_key = str(cif_path)
+        if cache_key in cif_assembly_cache:
+            cif_file, atom_array_template_assembly = cif_assembly_cache[cache_key]
+            logger.info(f"[CACHE HIT] Using cached CIF-direct assembly for {cif_path}")
+        else:
+            result = parse_mmcif(cif_path)
+            if isinstance(result, SkippedStructure):
+                return None
+            cif_file, atom_array_template_assembly = result
+            cif_assembly_cache[cache_key] = (cif_file, atom_array_template_assembly)
+            logger.info(f"[CIF-DIRECT] Parsed {cif_path}")
+
+        atom_array_template_chain = clean_template_atom_array(
+            atom_array_template_assembly, cif_file, chain_id, ccd
+        )
+
     # Parse the pre-parsed template structure array
-    if template_structure_array_directory is not None:
+    elif template_structure_array_directory is not None:
         template_structure_array_file = (
             template_structure_array_directory
             / f"{pdb_id}/{pdb_id}_{chain_id}.{template_file_format}"
@@ -382,24 +422,6 @@ def parse_template_structure(
                 f"Invalid template structure array format: {template_file_format}. "
                 "Only pickle or npz formats are supported."
             )
-
-    # CIF-direct mode: use the provided CIF path directly
-    elif cif_path is not None:
-        cache_key = str(cif_path)
-        if cache_key in cif_assembly_cache:
-            cif_file, atom_array_template_assembly = cif_assembly_cache[cache_key]
-            logger.info(f"[CACHE HIT] Using cached CIF-direct assembly for {cif_path}")
-        else:
-            result = parse_mmcif(cif_path)
-            if isinstance(result, SkippedStructure):
-                return None
-            cif_file, atom_array_template_assembly = result
-            cif_assembly_cache[cache_key] = (cif_file, atom_array_template_assembly)
-            logger.info(f"[CIF-DIRECT] Parsed {cif_path}")
-
-        atom_array_template_chain = clean_template_atom_array(
-            atom_array_template_assembly, cif_file, chain_id, ccd
-        )
 
     # Parse and clean the raw template structure file from directory
     elif template_structures_directory is not None:

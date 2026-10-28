@@ -20,10 +20,13 @@ Train-mode tests live in test_template_train.py.
 import getpass
 import shutil
 from datetime import datetime
+from multiprocessing.pool import ThreadPool
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 import pytest
+from biotite.structure.io import pdbx
 
 import openfold3
 from openfold3.core.data.io.sequence.template import TemplateData
@@ -989,3 +992,246 @@ def test_requeued_query_set_keeps_cached_templates(tmp_path):
     # Only the raw source needs preprocessing; the cached entry must not be
     # re-parsed as an alignment.
     assert len(preprocessor.inputs) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tier F: cache entry build vs reuse (integration, runs __call__)
+# ---------------------------------------------------------------------------
+
+
+def _offline_settings(
+    tmp_path: Path, *, stage_deposited: bool = True, **overrides
+) -> TemplatePreprocessorSettings:
+    """Predict-mode settings that never fetch: structures come from a local directory.
+
+    With `stage_deposited`, the deposited 2q2k entry is pre-seeded there.
+    """
+    structure_dir = tmp_path / "template_structures"
+    structure_dir.mkdir(exist_ok=True)
+    if stage_deposited:
+        shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, structure_dir / TEMPLATE_CIF)
+    return TemplatePreprocessorSettings(
+        mode="predict",
+        output_directory=tmp_path / "template_data",
+        structure_directory=structure_dir,
+        fetch_missing_structures=False,
+        n_processes=1,
+        **overrides,
+    )
+
+
+def test_existing_cache_entry_is_reused_rather_than_rebuilt(tmp_path):
+    """A second run over the same template source reads the entry the first wrote.
+
+    The query set is rebuilt from scratch for the second run, so unlike a requeued one
+    it reaches preprocessing and finds the cache entry file already on disk. Parsing
+    the alignment again is made to fail, so only the reuse path can produce the
+    expected templates.
+    """
+    settings = _offline_settings(tmp_path)
+    run_1_qs = _two_source_query_set(tmp_path, ["q_colabfold"])
+    TemplatePreprocessor(input_set=run_1_qs, config=settings)()
+
+    run_2_qs = _two_source_query_set(tmp_path, ["q_colabfold"])
+    # In-process workers, so they see the patch
+    with (
+        patch.object(template_module.mp, "Pool", ThreadPool),
+        patch.object(
+            template_module,
+            "parse_template_alignment",
+            side_effect=AssertionError("the existing cache entry was rebuilt"),
+        ),
+    ):
+        TemplatePreprocessor(input_set=run_2_qs, config=settings)()
+
+    run_1_chain = run_1_qs.queries["q_colabfold"].chains[0]
+    run_2_chain = run_2_qs.queries["q_colabfold"].chains[0]
+    assert run_2_chain.template_alignment_file_path == (
+        run_1_chain.template_alignment_file_path
+    )
+    assert run_2_chain.template_entry_chain_ids == ["2q2k_C"]
+
+
+def test_template_hit_twice_is_recorded_once(tmp_path):
+    """A template the alignment hits twice yields one template ID.
+
+    The cache entry is keyed by template ID, so it holds the template once; the IDs
+    written back to the chain must agree with it, as they do when the entry is reused.
+    """
+    iqs = _two_source_query_set(tmp_path, ["q_colabfold"])
+    aln_path = Path(iqs.queries["q_colabfold"].chains[0].template_alignment_file_path)
+    aln_path.write_text(aln_path.read_text() * 2)
+
+    TemplatePreprocessor(input_set=iqs, config=_offline_settings(tmp_path))()
+
+    assert iqs.queries["q_colabfold"].chains[0].template_entry_chain_ids == ["2q2k_C"]
+
+
+# ---------------------------------------------------------------------------
+# Tier G: CIF-direct templates come from the pinned file (integration, runs __call__)
+# ---------------------------------------------------------------------------
+
+
+def _cif_direct_query_set(cif_path: Path, chain_id: str = "B") -> InferenceQuerySet:
+    """One query whose only template source is the CIF at `cif_path`."""
+    seq = get_asym_id_to_canonical_seq_dict(_load_ciffile(cif_path))[chain_id]
+    return InferenceQuerySet(
+        queries={
+            "q_custom": Query(
+                chains=[
+                    Chain(
+                        molecule_type=MoleculeType.PROTEIN,
+                        chain_ids=["A"],
+                        sequence=seq,
+                        template_cif_paths=[cif_path],
+                        template_cif_chain_ids=[chain_id],
+                    )
+                ]
+            )
+        }
+    )
+
+
+def _preprocess_pinned(cif_path: Path, settings: TemplatePreprocessorSettings) -> Chain:
+    """Preprocesses a query that pins `cif_path`, returning its chain."""
+    iqs = _cif_direct_query_set(cif_path)
+    TemplatePreprocessor(input_set=iqs, config=settings)()
+    return iqs.queries["q_custom"].chains[0]
+
+
+def _pinned_copy(destination: Path, *, dated: bool = True) -> Path:
+    """Copies 2q2k to `destination`, as deposited or without its release date.
+
+    Undated, it stands in for a model or an in-house structure: the same coordinates
+    and entities, without the revision history the PDB adds on deposition.
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if dated:
+        shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, destination)
+    else:
+        cif = pdbx.CIFFile.read(str(MMCIFS_DIR / TEMPLATE_CIF))
+        del cif.block["pdbx_audit_revision_history"]
+        cif.write(str(destination))
+    return destination
+
+
+def test_cif_direct_template_does_not_need_the_structure_directory(tmp_path):
+    """A pinned CIF is a complete coordinate source on its own.
+
+    The query supplies `template_cif_paths`, so preprocessing has the coordinates in
+    hand. It nevertheless looked the template up as `<structure_directory>/<stem>.cif`
+    and, finding nothing there with fetching off, dropped the template entirely.
+
+    Regression test for https://github.com/aqlaboratory/openfold-3/issues/406
+    """
+    chain = _preprocess_pinned(
+        _pinned_copy(tmp_path / TEMPLATE_CIF),
+        _offline_settings(tmp_path, stage_deposited=False),
+    )
+
+    assert chain.template_entry_chain_ids == ["2q2k_B"], (
+        "the pinned CIF was ignored because no copy was staged under its PDB ID"
+    )
+
+
+def test_cif_direct_template_filename_need_not_be_a_pdb_id(tmp_path):
+    """A pinned CIF stays usable when its filename is not a PDB ID.
+
+    Identical coordinates and sequence to the case above, and the deposited entry is
+    staged; only the pinned file's name differs. Looked up by filename stem, such a
+    name resolved to nothing (and, with fetching enabled, to a failed RCSB download),
+    so the query silently ran template-free.
+
+    Regression test for https://github.com/aqlaboratory/openfold-3/issues/406
+    """
+    chain = _preprocess_pinned(
+        _pinned_copy(tmp_path / "2q2k_notpdb.cif"), _offline_settings(tmp_path)
+    )
+
+    assert chain.template_entry_chain_ids == ["2q2k_notpdb_B"], (
+        "a valid template was dropped because its filename is not a PDB ID"
+    )
+
+
+def test_cif_direct_template_ignores_a_precache_entry_of_the_same_name(tmp_path):
+    """A pinned CIF is aligned against its own sequences, not a precache entry's.
+
+    The precache is shared and keyed by entry ID, which for a pinned file is only its
+    stem. Here it holds a "2q2k" whose chain B differs from the pinned file's, as for
+    a mutant or a redesign named after its parent entry. Aligning against that instead
+    of the file dropped a template identical to the query.
+
+    Regression test for https://github.com/aqlaboratory/openfold-3/issues/406
+    """
+    precache_dir = tmp_path / "template_precache"
+    precache_dir.mkdir()
+    np.savez_compressed(
+        precache_dir / "2q2k.npz",
+        release_date="2000-01-01",
+        chain_id_seq_map={"B": "G" * 70},
+    )
+
+    chain = _preprocess_pinned(
+        _pinned_copy(tmp_path / TEMPLATE_CIF),
+        _offline_settings(tmp_path, precache_directory=precache_dir),
+    )
+
+    assert chain.template_entry_chain_ids == ["2q2k_B"], (
+        "the pinned CIF was aligned against a precache entry sharing its name"
+    )
+
+
+def test_cif_direct_template_is_not_written_to_shared_stores(tmp_path):
+    """Pinned files are never precached or preparsed into structure arrays.
+
+    Both stores are keyed by entry ID and shared by every query run against the same
+    template directory, so a pinned file written there under its stem would stand in
+    for the deposited entry of that name, and vice versa.
+    """
+    settings = _offline_settings(
+        tmp_path, create_precache=True, preparse_structures=True
+    )
+
+    chain = _preprocess_pinned(_pinned_copy(tmp_path / TEMPLATE_CIF), settings)
+
+    assert chain.template_entry_chain_ids == ["2q2k_B"]
+    assert not any(settings.precache_directory.iterdir())
+    assert not any(settings.structure_array_directory.iterdir())
+
+
+@pytest.mark.parametrize(
+    "file_name",
+    [
+        pytest.param(TEMPLATE_CIF, id="named_as_a_deposited_entry"),
+        pytest.param("inhouse_model.cif", id="custom_name"),
+    ],
+)
+def test_cif_direct_template_without_a_release_date_is_kept(tmp_path, file_name):
+    """A pinned CIF with no release date is not dropped by the release date check.
+
+    Models and in-house structures usually lack the revision history a deposited
+    entry has, so there is nothing to hold against `max_release_date`. Reading it
+    anyway raised and dropped every template of the chain, or, for a file named as a
+    deposited entry, checked the deposited entry's date instead.
+
+    Regression test for https://github.com/aqlaboratory/openfold-3/issues/406
+    """
+    pinned = _pinned_copy(tmp_path / "pinned" / file_name, dated=False)
+    settings = _offline_settings(tmp_path, max_release_date=datetime(2000, 1, 1))
+
+    chain = _preprocess_pinned(pinned, settings)
+
+    assert chain.template_entry_chain_ids == [f"{pinned.stem}_B"]
+
+
+def test_cif_direct_template_release_date_is_still_checked(tmp_path):
+    """A pinned CIF that does have a release date is held to `max_release_date`.
+
+    The control for the test above: 2q2k was released in 2008.
+    """
+    pinned = _pinned_copy(tmp_path / "pinned" / TEMPLATE_CIF)
+    settings = _offline_settings(tmp_path, max_release_date=datetime(2000, 1, 1))
+
+    chain = _preprocess_pinned(pinned, settings)
+
+    assert chain.template_entry_chain_ids == []
