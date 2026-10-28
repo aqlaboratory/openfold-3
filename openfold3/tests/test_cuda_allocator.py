@@ -38,6 +38,7 @@ from openfold3.tests.utils.cuda_memory import CudaMemoryMetrics, MiB
 
 pytestmark = [
     pytest.mark.slow,
+    pytest.mark.gpu,
     pytest.mark.platform_dependent_snapshot,
     pytest.mark.skipif(
         not torch.cuda.is_available() or torch.version.hip is not None,

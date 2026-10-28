@@ -179,7 +179,6 @@ openfold3/core/data/framework/single_datasets/pdb.py:0: error: Argument 1 to "ap
 openfold3/core/data/framework/single_datasets/pdb.py:0: error: Call to untyped function "create_empty" of "DatapointCollection" in typed context  [no-untyped-call]
 openfold3/core/data/framework/single_datasets/pdb.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/core/data/framework/single_datasets/pdb.py:0: error: Function is missing a type annotation  [no-untyped-def]
-openfold3/core/data/framework/single_datasets/pdb.py:0: error: Function is missing a type annotation for one or more parameters  [no-untyped-def]
 openfold3/core/data/framework/single_datasets/pdb.py:0: error: Incompatible types in assignment (expression has type "list[MoleculeType]", variable has type "str | tuple[str, str]")  [assignment]
 openfold3/core/data/framework/single_datasets/pdb.py:0: error: Invalid type comment or annotation  [valid-type]
 openfold3/core/data/framework/single_datasets/pdb.py:0: error: Missing type arguments for generic type "dict"  [type-arg]
@@ -545,11 +544,7 @@ openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(*size
 openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(*size: int, names: Sequence[str | EllipsisType | None] | None, dtype: dtype | None = ..., layout: layout | None = ..., device: str | device | int | None = ..., pin_memory: bool | None = ..., requires_grad: bool | None = ...) -> Tensor
 openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(size: Sequence[int | SymInt], *, out: Tensor | None = ..., dtype: dtype | None = ..., layout: layout | None = ..., device: str | device | int | None = ..., pin_memory: bool | None = ..., requires_grad: bool | None = ...) -> Tensor
 openfold3/core/data/pipelines/featurization/structure.py:0: note: def ones(size: Size | list[int] | tuple[int, ...], *, names: Sequence[str | EllipsisType | None] | None, dtype: dtype | None = ..., layout: layout | None = ..., device: str | device | int | None = ..., pin_memory: bool | None = ..., requires_grad: bool | None = ...) -> Tensor
-openfold3/core/data/pipelines/featurization/template.py:0: error: Argument 2 to "create_template_distogram" has incompatible type "Tensor"; expected "ndarray[float, dtype[Any]]"  [arg-type]
-openfold3/core/data/pipelines/featurization/template.py:0: error: Argument 2 to "create_template_restype" has incompatible type "Tensor"; expected "ndarray[float, dtype[Any]]"  [arg-type]
-openfold3/core/data/pipelines/featurization/template.py:0: error: Argument 2 to "create_template_unit_vector" has incompatible type "Tensor"; expected "ndarray[float, dtype[Any]]"  [arg-type]
 openfold3/core/data/pipelines/featurization/template.py:0: error: Function is missing a type annotation  [no-untyped-def]
-openfold3/core/data/pipelines/featurization/template.py:0: error: Missing type arguments for generic type "AtomArray"  [type-arg]
 openfold3/core/data/pipelines/featurization/template.py:0: error: Untyped decorator makes function "featurize_template_structures_of3" untyped  [untyped-decorator]
 openfold3/core/data/pipelines/featurization/template.py:0: error: callable? not callable  [misc]
 openfold3/core/data/pipelines/preprocessing/caches/RNA_monomer.py:0: error: Argument "check_filename_exists" to "list_bucket_entries" has incompatible type "str | None"; expected "str"  [arg-type]
@@ -776,7 +771,6 @@ openfold3/core/data/pipelines/preprocessing/template.py:0: error: Need type anno
 openfold3/core/data/pipelines/preprocessing/template.py:0: error: Need type annotation for "parts" (hint: "parts: list[<type>] = ...")  [var-annotated]
 openfold3/core/data/pipelines/preprocessing/template.py:0: error: Need type annotation for "processed_cache_keys" (hint: "processed_cache_keys: dict[<type>, <type>] = ...")  [var-annotated]
 openfold3/core/data/pipelines/preprocessing/template.py:0: error: Need type annotation for "template_ids_by_cache_key" (hint: "template_ids_by_cache_key: dict[<type>, <type>] = ...")  [var-annotated]
-openfold3/core/data/pipelines/preprocessing/template.py:0: error: No overload variant of "fetch" matches argument types "str", "str", "Path | None"  [call-overload]
 openfold3/core/data/pipelines/preprocessing/template.py:0: error: Type argument "int" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/pipelines/preprocessing/template.py:0: error: Type argument "int" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/pipelines/preprocessing/template.py:0: error: Type argument "int" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
@@ -814,11 +808,6 @@ openfold3/core/data/pipelines/preprocessing/template.py:0: note: Left operand is
 openfold3/core/data/pipelines/preprocessing/template.py:0: note: Left operand is of type "int | bool | str | Any"
 openfold3/core/data/pipelines/preprocessing/template.py:0: note: Left operand is of type "int | bool | str | Any"
 openfold3/core/data/pipelines/preprocessing/template.py:0: note: Left operand is of type "int | bool | str | Any"
-openfold3/core/data/pipelines/preprocessing/template.py:0: note: Possible overload variants:
-openfold3/core/data/pipelines/preprocessing/template.py:0: note: def fetch(pdb_ids: Iterable[str], format: Literal['pdb', 'pdbx', 'cif', 'mmcif', 'bcif', 'fasta'], target_path: None = ..., overwrite: bool = ..., verbose: bool = ..., gzip: bool = ...) -> list[StringIO | BytesIO]
-openfold3/core/data/pipelines/preprocessing/template.py:0: note: def fetch(pdb_ids: Iterable[str], format: Literal['pdb', 'pdbx', 'cif', 'mmcif', 'bcif', 'fasta'], target_path: str, overwrite: bool = ..., verbose: bool = ..., gzip: bool = ...) -> list[str]
-openfold3/core/data/pipelines/preprocessing/template.py:0: note: def fetch(pdb_ids: str, format: Literal['pdb', 'pdbx', 'cif', 'mmcif', 'bcif', 'fasta'], target_path: None = ..., overwrite: bool = ..., verbose: bool = ..., gzip: bool = ...) -> StringIO | BytesIO
-openfold3/core/data/pipelines/preprocessing/template.py:0: note: def fetch(pdb_ids: str, format: Literal['pdb', 'pdbx', 'cif', 'mmcif', 'bcif', 'fasta'], target_path: str, overwrite: bool = ..., verbose: bool = ..., gzip: bool = ...) -> str
 openfold3/core/data/pipelines/preprocessing/utils.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/core/data/pipelines/preprocessing/utils.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/core/data/pipelines/preprocessing/utils.py:0: error: Function is missing a type annotation  [no-untyped-def]
@@ -1211,20 +1200,9 @@ openfold3/core/data/primitives/featurization/structure.py:0: error: Returning An
 openfold3/core/data/primitives/featurization/structure.py:0: error: Returning Any from function declared to return "ndarray[tuple[Any, ...], dtype[Any]]"  [no-any-return]
 openfold3/core/data/primitives/featurization/template.py:0: error: Argument "frame_atom_coords" to "OF3TemplateFeaturePrecursor" has incompatible type "ndarray[tuple[int, int, int, int], dtype[Any]]"; expected "ndarray[float, dtype[Any]]"  [arg-type]
 openfold3/core/data/primitives/featurization/template.py:0: error: Argument "pseudo_beta_atom_coords" to "OF3TemplateFeaturePrecursor" has incompatible type "ndarray[tuple[int, int, int], dtype[Any]]"; expected "ndarray[float, dtype[Any]]"  [arg-type]
-openfold3/core/data/primitives/featurization/template.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
-openfold3/core/data/primitives/featurization/template.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
-openfold3/core/data/primitives/featurization/template.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
-openfold3/core/data/primitives/featurization/template.py:0: error: Incompatible types in assignment (expression has type "Tensor", variable has type "ndarray[float, dtype[Any]]")  [assignment]
 openfold3/core/data/primitives/featurization/template.py:0: error: Need type annotation for "residue_starts"  [var-annotated]
-openfold3/core/data/primitives/featurization/template.py:0: error: Returning Any from function declared to return "Tensor"  [no-any-return]
 openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "float" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
-openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "str" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/primitives/featurization/template.py:0: error: Type argument "str" of "ndarray" must be a subtype of "tuple[int, ...]"  [type-var]
 openfold3/core/data/primitives/permutation/mol_labels.py:0: error: "Atom" has no attribute "component_id"  [attr-defined]
 openfold3/core/data/primitives/permutation/mol_labels.py:0: error: "Atom" has no attribute "mol_sym_component_id"  [attr-defined]
@@ -1489,11 +1467,9 @@ openfold3/core/data/primitives/sequence/msa.py:0: error: Argument "msa" to "MsaA
 openfold3/core/data/primitives/sequence/msa.py:0: error: Argument "msa" to "MsaArray" has incompatible type "ndarray[tuple[Any, str], dtype[Any]]"; expected "ndarray[str, dtype[Any]]"  [arg-type]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Argument 1 to "__call__" of "_ConstructorEmpty" has incompatible type "str"; expected "SupportsIndex | Sequence[SupportsIndex]"  [arg-type]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Argument 1 to "__call__" of "_ConstructorEmpty" has incompatible type "str"; expected "SupportsIndex | Sequence[SupportsIndex]"  [arg-type]
-openfold3/core/data/primitives/sequence/msa.py:0: error: Argument 1 to "__call__" of "_ConstructorEmpty" has incompatible type "str"; expected "SupportsIndex | Sequence[SupportsIndex]"  [arg-type]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Argument 1 to "_make_padding_mask" of "MsaArray" has incompatible type "ndarray[str, dtype[Any]]"; expected "ndarray[tuple[Any, ...], dtype[Any]]"  [arg-type]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Argument 1 to "full" has incompatible type "str"; expected "SupportsIndex | Sequence[SupportsIndex]"  [arg-type]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Argument 1 to "map_str_array_to_idx_array" has incompatible type "ndarray[tuple[Any, ...], dtype[Any]]"; expected "ndarray[str, dtype[Any]]"  [arg-type]
-openfold3/core/data/primitives/sequence/msa.py:0: error: Argument 1 to "subset" of "MsaArray" has incompatible type "ndarray[tuple[Any, ...], dtype[bool]]"; expected "ndarray[bool, dtype[Any]]"  [arg-type]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Argument 2 to "_num_encode_species" has incompatible type "ndarray[tuple[Any, ...], dtype[Any]]"; expected "ndarray[str, dtype[Any]]"  [arg-type]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Argument 3 to "_make_padding_mask" of "MsaArray" has incompatible type "str"; expected "int"  [arg-type]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Argument 3 to "_make_padding_mask" of "MsaArray" has incompatible type "str"; expected "int"  [arg-type]
@@ -1594,7 +1570,6 @@ openfold3/core/data/primitives/sequence/msa.py:0: error: Value of type "int" is 
 openfold3/core/data/primitives/sequence/msa.py:0: error: Value of type variable "_AnyShapeT" of "__call__" of "_ConstructorEmpty" cannot be "tuple[Any, str]"  [type-var]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Value of type variable "_AnyShapeT" of "full" cannot be "tuple[Any, str]"  [type-var]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Value of type variable "_ScalarT" of "__call__" of "_ConstructorEmpty" cannot be "bool"  [type-var]
-openfold3/core/data/primitives/sequence/msa.py:0: error: Value of type variable "_ScalarT" of "__call__" of "_ConstructorEmpty" cannot be "bool"  [type-var]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Value of type variable "_ScalarT" of "__call__" of "_ConstructorEmpty" cannot be "int"  [type-var]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Value of type variable "_ScalarT" of "__call__" of "_ConstructorEmpty" cannot be "int"  [type-var]
 openfold3/core/data/primitives/sequence/msa.py:0: error: Value of type variable "_ScalarT" of "full" cannot be "int"  [type-var]
@@ -1648,7 +1623,6 @@ openfold3/core/data/primitives/structure/alignment.py:0: error: Missing type arg
 openfold3/core/data/primitives/structure/alignment.py:0: error: Missing type arguments for generic type "AtomArray"  [type-arg]
 openfold3/core/data/primitives/structure/alignment.py:0: error: Missing type arguments for generic type "AtomArray"  [type-arg]
 openfold3/core/data/primitives/structure/alignment.py:0: error: Missing type arguments for generic type "AtomArray"  [type-arg]
-openfold3/core/data/primitives/structure/alignment.py:0: error: Need type annotation for "affine_transformation"  [var-annotated]
 openfold3/core/data/primitives/structure/alignment.py:0: error: No overload variant of "__getitem__" of "tuple" matches argument type "tuple[slice[None, None, None], int]"  [call-overload]
 openfold3/core/data/primitives/structure/alignment.py:0: error: Returning Any from function declared to return "AtomArray[Any]"  [no-any-return]
 openfold3/core/data/primitives/structure/alignment.py:0: note: Possible overload variants:
@@ -1798,6 +1772,10 @@ openfold3/core/data/primitives/structure/cropping.py:0: error: "list" expects 1 
 openfold3/core/data/primitives/structure/cropping.py:0: error: "list" expects 1 type argument, but 2 given  [type-arg]
 openfold3/core/data/primitives/structure/cropping.py:0: error: "list" expects 1 type argument, but 2 given  [type-arg]
 openfold3/core/data/primitives/structure/cropping.py:0: error: Argument "query_atom_array" to "get_query_interface_atom_pair_idxs" has incompatible type "Atom"; expected "AtomArray[Any]"  [arg-type]
+openfold3/core/data/primitives/structure/cropping.py:0: error: Argument 1 has incompatible type "AtomArray[Any]"; expected "Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str]"  [arg-type]
+openfold3/core/data/primitives/structure/cropping.py:0: error: Argument 1 has incompatible type "AtomArray[Any]"; expected "Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str]"  [arg-type]
+openfold3/core/data/primitives/structure/cropping.py:0: error: Argument 1 has incompatible type "AtomArray[Any]"; expected "Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str]"  [arg-type]
+openfold3/core/data/primitives/structure/cropping.py:0: error: Argument 1 has incompatible type "AtomArray[Any]"; expected "Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str]"  [arg-type]
 openfold3/core/data/primitives/structure/cropping.py:0: error: Argument 1 to "len" has incompatible type "Atom"; expected "Sized"  [arg-type]
 openfold3/core/data/primitives/structure/cropping.py:0: error: Incompatible types in assignment (expression has type "Atom", variable has type "AtomArray[Any]")  [assignment]
 openfold3/core/data/primitives/structure/cropping.py:0: error: Incompatible types in assignment (expression has type "ndarray[tuple[Any, ...], dtype[Any]]", variable has type "dict[str, float]")  [assignment]
@@ -1822,10 +1800,6 @@ openfold3/core/data/primitives/structure/cropping.py:0: error: Missing type argu
 openfold3/core/data/primitives/structure/cropping.py:0: error: Missing type arguments for generic type "AtomArray"  [type-arg]
 openfold3/core/data/primitives/structure/cropping.py:0: error: Missing type arguments for generic type "AtomArray"  [type-arg]
 openfold3/core/data/primitives/structure/cropping.py:0: error: Missing type arguments for generic type "dict"  [type-arg]
-openfold3/core/data/primitives/structure/cropping.py:0: error: No overload variant matches argument type "AtomArray[Any]"  [call-overload]
-openfold3/core/data/primitives/structure/cropping.py:0: error: No overload variant matches argument type "AtomArray[Any]"  [call-overload]
-openfold3/core/data/primitives/structure/cropping.py:0: error: No overload variant matches argument type "AtomArray[Any]"  [call-overload]
-openfold3/core/data/primitives/structure/cropping.py:0: error: No overload variant matches argument type "AtomArray[Any]"  [call-overload]
 openfold3/core/data/primitives/structure/cropping.py:0: error: No overload variant matches argument types "ndarray[tuple[Any, ...], dtype[Any]]", "dict[str, float]"  [call-overload]
 openfold3/core/data/primitives/structure/cropping.py:0: error: Returning Any from function declared to return "AtomArray[Any]"  [no-any-return]
 openfold3/core/data/primitives/structure/cropping.py:0: error: Returning Any from function declared to return "AtomArray[Any]"  [no-any-return]
@@ -1834,29 +1808,9 @@ openfold3/core/data/primitives/structure/cropping.py:0: error: Untyped decorator
 openfold3/core/data/primitives/structure/cropping.py:0: error: Value of type "Atom" is not indexable  [index]
 openfold3/core/data/primitives/structure/cropping.py:0: error: callable? not callable  [misc]
 openfold3/core/data/primitives/structure/cropping.py:0: note: Possible overload variants:
-openfold3/core/data/primitives/structure/cropping.py:0: note: Possible overload variants:
-openfold3/core/data/primitives/structure/cropping.py:0: note: Possible overload variants:
-openfold3/core/data/primitives/structure/cropping.py:0: note: Possible overload variants:
-openfold3/core/data/primitives/structure/cropping.py:0: note: Possible overload variants:
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str], size: None = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> Any
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str], size: None = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> Any
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str], size: None = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> Any
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str], size: None = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> Any
 openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str], size: None = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> Any
 openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str], size: SupportsIndex | Sequence[SupportsIndex] = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> ndarray[tuple[Any, ...], dtype[Any]]
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str], size: SupportsIndex | Sequence[SupportsIndex] = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> ndarray[tuple[Any, ...], dtype[Any]]
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str], size: SupportsIndex | Sequence[SupportsIndex] = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> ndarray[tuple[Any, ...], dtype[Any]]
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str], size: SupportsIndex | Sequence[SupportsIndex] = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> ndarray[tuple[Any, ...], dtype[Any]]
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: Buffer | _SupportsArray[dtype[Any]] | _NestedSequence[_SupportsArray[dtype[Any]]] | complex | bytes | str | _NestedSequence[complex | bytes | str], size: SupportsIndex | Sequence[SupportsIndex] = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> ndarray[tuple[Any, ...], dtype[Any]]
 openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: int, size: None = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> int
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: int, size: None = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> int
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: int, size: None = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> int
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: int, size: None = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> int
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: int, size: None = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> int
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: int, size: SupportsIndex | Sequence[SupportsIndex] = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> ndarray[tuple[Any, ...], dtype[signedinteger[_32Bit | _64Bit]]]
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: int, size: SupportsIndex | Sequence[SupportsIndex] = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> ndarray[tuple[Any, ...], dtype[signedinteger[_32Bit | _64Bit]]]
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: int, size: SupportsIndex | Sequence[SupportsIndex] = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> ndarray[tuple[Any, ...], dtype[signedinteger[_32Bit | _64Bit]]]
-openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: int, size: SupportsIndex | Sequence[SupportsIndex] = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> ndarray[tuple[Any, ...], dtype[signedinteger[_32Bit | _64Bit]]]
 openfold3/core/data/primitives/structure/cropping.py:0: note: def choice(self, a: int, size: SupportsIndex | Sequence[SupportsIndex] = ..., replace: bool = ..., p: _SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]] | _NestedSequence[_SupportsArray[dtype[numpy.bool[builtins.bool] | integer[Any] | floating[Any]]]] | float | _NestedSequence[float] | None = ...) -> ndarray[tuple[Any, ...], dtype[signedinteger[_32Bit | _64Bit]]]
 openfold3/core/data/primitives/structure/interface.py:0: error: "AtomArray[Any]" has no attribute "token_center_atom"  [attr-defined]
 openfold3/core/data/primitives/structure/interface.py:0: error: "AtomArray[Any]" has no attribute "token_center_atom"  [attr-defined]
@@ -2666,6 +2620,9 @@ openfold3/core/model/feature_embedders/input_embedders.py:0: error: Unsupported 
 openfold3/core/model/feature_embedders/input_embedders.py:0: error: callable? not callable  [misc]
 openfold3/core/model/feature_embedders/input_embedders.py:0: note: Perhaps you meant "typing.Callable" instead of "callable"?
 openfold3/core/model/feature_embedders/input_embedders.py:0: note: Right operand is of type "Tensor | Module"
+openfold3/core/model/feature_embedders/template_embedders.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
+openfold3/core/model/feature_embedders/template_embedders.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
+openfold3/core/model/feature_embedders/template_embedders.py:0: error: Call to untyped function "from_array" of "Vec3Array" in typed context  [no-untyped-call]
 openfold3/core/model/feature_embedders/template_embedders.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/core/model/feature_embedders/template_embedders.py:0: error: Function is missing a type annotation  [no-untyped-def]
 openfold3/core/model/feature_embedders/template_embedders.py:0: error: Missing type arguments for generic type "dict"  [type-arg]
@@ -3672,12 +3629,8 @@ openfold3/projects/of3_all_atom/config/dataset_configs.py:0: error: Function is 
 openfold3/projects/of3_all_atom/config/dataset_configs.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/config/dataset_configs.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/config/dataset_configs.py:0: error: Incompatible types in assignment (expression has type "type[DefaultDatasetConfigSection]", variable has type "BaseModel")  [assignment]
-openfold3/projects/of3_all_atom/config/dataset_configs.py:0: error: Missing type arguments for generic type "dict"  [type-arg]
-openfold3/projects/of3_all_atom/config/dataset_configs.py:0: error: Missing type arguments for generic type "dict"  [type-arg]
-openfold3/projects/of3_all_atom/config/dataset_configs.py:0: error: Missing type arguments for generic type "dict"  [type-arg]
 openfold3/projects/of3_all_atom/config/dataset_configs.py:0: error: Need type annotation for "_registry" (hint: "_registry: dict[<type>, <type>] = ...")  [var-annotated]
 openfold3/projects/of3_all_atom/config/dataset_configs.py:0: error: Returning Any from function declared to return "type[DefaultDatasetConfigSection]"  [no-any-return]
-openfold3/projects/of3_all_atom/config/dataset_configs.py:0: error: Too few arguments  [call-arg]
 openfold3/projects/of3_all_atom/config/inference_query_format.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/config/inference_query_format.py:0: error: Function is missing a type annotation for one or more parameters  [no-untyped-def]
 openfold3/projects/of3_all_atom/model.py:0: error: Call to untyped function "AuxiliaryHeadsAllAtom" in typed context  [no-untyped-call]
@@ -3749,8 +3702,6 @@ openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return type annotation  [no-untyped-def]
-openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return type annotation  [no-untyped-def]
-openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a return type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a type annotation  [no-untyped-def]
 openfold3/projects/of3_all_atom/runner.py:0: error: Function is missing a type annotation  [no-untyped-def]
@@ -3803,7 +3754,6 @@ openfold3/projects/of3_all_atom/runner.py:0: note: Use "-> None" if function doe
 openfold3/projects/of3_all_atom/runner.py:0: note: Use "-> None" if function does not return a value
 openfold3/projects/of3_all_atom/runner.py:0: note: Use "-> None" if function does not return a value
 openfold3/projects/of3_all_atom/runner.py:0: note: Use "-> None" if function does not return a value
-openfold3/projects/of3_all_atom/runner.py:0: note: Use "-> None" if function does not return a value
 openfold3/projects/of3_all_atom/runner.py:0: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
 openfold3/run_openfold.py:0: error: Call to untyped function "_enable_tf32" in typed context  [no-untyped-call]
 openfold3/run_openfold.py:0: error: Call to untyped function "_enable_tf32" in typed context  [no-untyped-call]
@@ -3831,6 +3781,14 @@ openfold3/tests/core/data/pipelines/featurization/test_msa.py:0: error: Argument
 openfold3/tests/core/data/pipelines/preprocessing/test_template.py:0: error: Argument "molecule_type" to "Chain" has incompatible type "str"; expected "MoleculeType"  [arg-type]
 openfold3/tests/core/data/pipelines/preprocessing/test_template.py:0: error: Argument after ** must be a mapping, not "object"  [arg-type]
 openfold3/tests/core/data/primitives/caches/test_lmdb.py:0: error: Need type annotation for "_dict"  [var-annotated]
+openfold3/tests/core/data/primitives/featurization/test_msa.py:0: error: Argument "deletion_matrix" to "MsaArray" has incompatible type "ndarray[tuple[int, int], dtype[float64]]"; expected "ndarray[int, dtype[Any]]"  [arg-type]
+openfold3/tests/core/data/primitives/featurization/test_msa.py:0: error: Argument "msa" to "MsaArray" has incompatible type "ndarray[tuple[int, int], dtype[Any]]"; expected "ndarray[str, dtype[Any]]"  [arg-type]
+openfold3/tests/core/data/primitives/featurization/test_msa.py:0: error: Dict entry 0 has incompatible type "str": "ndarray[tuple[int, int], dtype[float64]]"; expected "str": "MsaArray"  [dict-item]
+openfold3/tests/core/data/primitives/featurization/test_msa.py:0: error: Dict entry 0 has incompatible type "str": "ndarray[tuple[int], dtype[float64]]"; expected "str": "MsaArray"  [dict-item]
+openfold3/tests/core/data/primitives/featurization/test_msa.py:0: error: Dict entry 1 has incompatible type "str": "ndarray[tuple[int, int], dtype[float64]]"; expected "str": "MsaArray"  [dict-item]
+openfold3/tests/core/data/primitives/featurization/test_msa.py:0: error: Dict entry 1 has incompatible type "str": "ndarray[tuple[int], dtype[float64]]"; expected "str": "MsaArray"  [dict-item]
+openfold3/tests/core/data/primitives/sequence/msa/test_extract_alignments_to_pair.py:0: error: Argument "deletion_matrix" to "MsaArray" has incompatible type "ndarray[tuple[Any, ...], dtype[Any]]"; expected "ndarray[int, dtype[Any]]"  [arg-type]
+openfold3/tests/core/data/primitives/sequence/msa/test_extract_alignments_to_pair.py:0: error: Argument "msa" to "MsaArray" has incompatible type "ndarray[tuple[Any, ...], dtype[Any]]"; expected "ndarray[str, dtype[Any]]"  [arg-type]
 openfold3/tests/core/data/primitives/sequence/test_msa_array.py:0: error: Argument "deletion_matrix" to "MsaArray" has incompatible type "list[list[int]] | None"; expected "ndarray[int, dtype[Any]]"  [arg-type]
 openfold3/tests/core/data/primitives/sequence/test_msa_array.py:0: error: Argument "msa" to "MsaArray" has incompatible type "ndarray[tuple[Any, ...], dtype[Any]]"; expected "ndarray[str, dtype[Any]]"  [arg-type]
 openfold3/tests/core/data/primitives/sequence/test_msa_array.py:0: error: Incompatible types in assignment (expression has type "ndarray[tuple[()], dtype[Any]]", variable has type "list[list[int]] | None")  [assignment]

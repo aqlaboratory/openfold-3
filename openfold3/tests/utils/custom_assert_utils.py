@@ -15,6 +15,7 @@
 """Module for any added custom assert functions."""
 
 import numpy as np
+import torch
 from biotite.structure import AtomArray
 from rdkit import Chem
 
@@ -139,3 +140,28 @@ def assert_ref_mols_equal(
             assert np.array_equal(perm_1, perm_2), (
                 "Reference molecules have different permutations."
             )
+
+
+def assert_close_nondegenerate(actual, expected, *, atol, rtol):
+    """Assert ``actual`` matches ``expected`` and that the test is meaningful.
+
+    On top of an elementwise ``torch.testing.assert_close``, this checks:
+      - ``actual`` and ``expected`` are all finite
+      - ``expected`` is not close to zero everywhere (which suggests the test
+        accidentally multiplied everything by zero, e.g. with a zero-initialized
+        linear layer).
+      - ``actual`` and ``expected`` are not within 1e-9 of each other everywhere
+        (which suggests the test didn't actually exercise different code paths).
+        This is disabled if atol and rtol are tighter than this bound, since in
+        that case the close agreement is expected.
+    """
+    assert torch.isfinite(expected).all(), "Expected tensor has non-finite values"
+    assert torch.isfinite(actual).all(), "Actual tensor has non-finite values"
+    assert not torch.allclose(
+        expected, torch.zeros_like(expected), atol=atol, rtol=rtol
+    ), f"Expected tensor is ~= 0 everywhere (within atol={atol} and rtol={rtol})"
+    if atol > 1e-9 or rtol > 1e-9:
+        assert not torch.allclose(actual, expected, atol=1e-9, rtol=1e-9), (
+            "Actual and expected tensors are within 1e-9. Is test degenerate?"
+        )
+    torch.testing.assert_close(actual, expected, atol=atol, rtol=rtol)

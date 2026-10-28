@@ -126,7 +126,6 @@ class OF3OutputWriter(BasePredictionWriter):
         write_structure(
             atom_array,
             output_file,
-            include_bonds=True,
             make_ost_compatible=make_ost_compatible,
         )
 

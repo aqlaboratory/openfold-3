@@ -137,9 +137,9 @@ data_module_args:
 ```
 
 ---
-### 3.6 Checkpoint Confiugration (`checkpoint_config`)
+### 3.6 Checkpoint Configuration (`checkpoint_config`)
 
-Configures Checkpoint writing settings, which are passed to [pl.ModelCheckpoint callback](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.ModelCheckpoint.html). 
+Configures Checkpoint writing settings, which are passed to [pl.ModelCheckpoint callback](https://lightning.ai/docs/pytorch/stable/api/lightning.pytorch.callbacks.ModelCheckpoint.html).
 
 ---
 ### 3.7. Dataset Config Kwargs (`dataset_config_kwargs`)
@@ -164,6 +164,7 @@ Controls how MSAs are parsed and processed into features.
 - `max_rows_paired` *(int)*: Maximum rows for paired MSAs (default: `8191`)
 - `max_rows` *(int)*: Maximum total MSA rows (default: `16384`)
 - `subsample_with_bands` *(bool)*: Use MMSeqs2-style subsampling (default: `false`, not currently supported)
+- `subsample_main` *(bool)*: Apply per-chain main MSA subsampling (default: `false`)
 - `min_chains_paired_partial` *(int)*: Minimum chains for partial pairing (default: `2`)
 - `pairing_mask_keys` *(list[str])*: Masks to apply during pairing (default: `["shared_by_two", "less_than_600"]`)
 - `moltypes` *(list[MoleculeType])*: Molecule types to process (default: `[0, 1]` for protein and RNA)
@@ -189,12 +190,8 @@ Controls template structure processing.
 
 **All Options**:
 - `n_templates` *(int)*: Number of templates to use (default: `4`)
-- `take_top_k` *(bool)*: Use top K templates by quality (default: `false`)
-- `min_n_tokens_per_chain` *(int)*: Minimum number of tokens a chain has to have for it to get template features (default: `4`)
-- `distogram` *(TemplateDistogramSettings)*: Distogram binning settings
-  - `min_bin` *(float)*: Minimum distance bin (default: `3.25`)
-  - `max_bin` *(float)*: Maximum distance bin (default: `50.75`)
-  - `n_bins` *(int)*: Number of bins (default: `39`)
+- `take_top_k` *(bool)*: Use top K templates by quality (default: `true`)
+- `min_n_tokens_per_chain` *(int)*: Minimum number of tokens a chain has to have for it to get template features (default: `5`)
 
 **Example**:
 ```yaml
@@ -313,6 +310,7 @@ Configures template structure preprocessing and filtering.
 - `preparse_structures` *(bool)*: Preparse structures into .npz files (default: `false`)
 - `create_logs` *(bool)*: Create preprocessing logs (default: `false`)
 - `n_processes` *(int)*: Number of preprocessing processes (default: `1`)
+- `worker_pool` *(str)*: Run the `n_processes` workers as separate processes (`process`) or as threads in the calling process (`thread`); threads start faster and are easier to debug, processes run in parallel (default: `process`)
 - `chunksize` *(int)*: Tasks per worker in multiprocessing (default: `1`)
 - `preprocess_timeout` *(int)*: Maximum preprocessing time in seconds (default: `60`)
 - `structure_directory` *(Path | None)*: Directory for template structures. During inference, the implicit default is `<output_directory>/template_structures`.

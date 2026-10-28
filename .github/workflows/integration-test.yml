@@ -4,7 +4,7 @@ on:
   schedule:
     # GitHub-hosted schedulers see heavy contention on the hour; offsetting by
     # 17 minutes reduces queue delay and avoids colliding with other
-    # AWS-runner-launching workflows that fire on :00.
+    # brev-runner-launching workflows that fire on :00.
     #
     # `on.schedule` cron entries can't be conditioned on `github.repository`
     # (no expression context is available there), so both times are
@@ -14,29 +14,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-pixi-cuda:
-    if: |
-      github.event_name != 'schedule' ||
-      (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)
-    permissions:
-      id-token: write
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        include:
-          - pixi_env: "openfold3-cuda12"
-          - pixi_env: "openfold3-cuda13"
-    concurrency:
-      group: ${{ github.workflow }}-pixi-cuda-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
-      cancel-in-progress: true
-    uses: ./.github/workflows/ci-integration-test-aws-pixi-cuda.yml
-    with:
-      pixi_env: ${{ matrix.pixi_env }}
-    secrets: inherit
-
-  # Runs alongside test-pixi-cuda on Brev while we compare the two; intended to
-  # replace it.
   test-pixi-cuda-brev:
     if: |
       github.event_name != 'schedule' ||
@@ -55,7 +32,7 @@ jobs:
     uses: ./.github/workflows/ci-integration-test-pixi-cuda-brev-reusable.yml
     with:
       pixi_env: ${{ matrix.pixi_env }}
-      brev_instance_type: g5.4xlarge
+      brev_instance_type: g5.4xlarge,g6.4xlarge
     secrets: inherit
 
   test-pixi-amd:

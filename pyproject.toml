@@ -15,8 +15,6 @@ license = { text = "Apache-2.0" }
 classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: POSIX :: Linux",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -27,7 +25,7 @@ urls.Documentation = "https://openfold-3.readthedocs.io/en/latest/"
 urls.Repository = "https://github.com/aqlaboratory/openfold-3"
 urls.Issues = "https://github.com/aqlaboratory/openfold-3/issues"
 
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "numpy",
     "scipy",
@@ -35,8 +33,8 @@ dependencies = [
     "torch", # ==2.5.1",
     "ml-collections",
     "pytorch-lightning >=2.1",
-    "biotite>=1.6,<2",
-    "rdkit<2026", # aqlaboratory/openfold-3/issues/285 
+    "biotite>=1.6",
+    "rdkit",
     "pdbeccdutils",
     "kalign-python",
     "requests",
@@ -54,13 +52,13 @@ dependencies = [
 ]
 
 optional-dependencies.dev = [
-    "pytest",
+    "pytest<9.2",  # until pytest-benchmark/issues/321 is resolved
     "pytest-xdist",
     "pytest-cov",
     "pytest-benchmark",
     "pytest-regressions",
     "pytest-vcr",
-    "ruff",
+    "ruff==0.16.0",  # keep in sync with pixi.toml
     "mypy",
     "mypy-baseline",
     "pre-commit",
@@ -92,7 +90,7 @@ validate-openfold3-rocm="openfold3.entry_points.validate_rocm:main"
 [dependency-groups]
 test = [
     "pytest",
-    "ruff",
+    "ruff==0.16.0",  # keep in sync with pixi.toml
     "awscli",
     "aria2",
     "pytest-xdist",
@@ -105,7 +103,7 @@ test = [
 
 
 [tool.setuptools_scm]
-fallback_version = "0.5.0"
+fallback_version = "0.5.1"
 
 [tool.setuptools]
 include-package-data = true
@@ -164,6 +162,11 @@ ignore = [
     "E741",
     "SIM108",
     "B905",  # explicit strict= for zip
+    # PEP 695 `type X = ...` / `class C[T]` syntax: unlike TypeAlias, a `type`
+    # alias is a TypeAliasType at runtime and breaks isinstance(x, Alias)
+    "UP040",
+    "UP046",
+    "UP047",
 ]
 extend-safe-fixes = ["UP006"]
 
@@ -187,7 +190,7 @@ files = ["openfold3", "scripts"]
 # runs. Pinning it (rather than following the active interpreter) keeps the
 # baseline from drifting on an unrelated `pixi update`; bump it deliberately,
 # together with a `typecheck-sync`, when the environments move to a new Python.
-# Note this means the `requires-python = ">=3.10"` floor above is not type-checked.
+# Note this means the `requires-python = ">=3.12"` floor above is not type-checked.
 python_version = "3.14"
 # The baseline is recorded on, and enforced by, linux-64 CI. Without pinning the
 # platform, `sys.platform` branches (device selection, MPS vs CUDA fallbacks) are
@@ -260,7 +263,8 @@ testpaths = ["openfold3/tests"]
 python_files = ["test_*.py"]
 markers = [
     "inference_verification: Tests to verify installation on inference example",
-    "slow: Large size test"
+    "slow: Large size test",
+    "gpu: Needs a GPU; selected by the GPU CI job alongside slow tests",
 ]
 
 # Exclude directories during collection
