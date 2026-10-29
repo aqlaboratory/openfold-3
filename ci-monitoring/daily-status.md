@@ -1353,3 +1353,32 @@ This is also the formal two-week mark for the Brev-vs-AWS comparison (`test-pixi
 | test-pixi-amd | **SKIPPED** | — | same guard; job named plain `test-pixi-amd`, confirming it never expanded |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #355, per this log's established convention).
+
+---
+
+## 2026-10-29
+
+**Scope change, effective tonight:** PR #493 "Remove aws GPU workflows" (merged 2026-10-28 ~10:27 UTC main `aaa9fb46`, after run #355/#356's scan but before tonight's) deleted the `test-pixi-cuda` (AWS) job and its reusable workflow (`ci-integration-test-aws-pixi-cuda.yml`) entirely from `integration-test.yml`. This is not a skip or a failure — tonight's run has no `test-pixi-cuda` job entry of any kind (confirmed against the full job list: 7/7 jobs accounted for, all `test-pixi-amd`/`test-pixi-cuda-brev` start/test/stop). This is the exact move this log's running Brev-vs-AWS comparison (tracked since `test-pixi-cuda-brev` was added 2026-10-14, PR #448) had been building toward, and the one the 10-28 entry explicitly recommended that same day. The file header above still describes the five-job scope that applied 2026-10-14 through 2026-10-28; as of tonight the live scope is three jobs (`test-pixi-cuda-brev` cuda12/cuda13 + `test-pixi-amd`). Per this routine's append-only rule the header itself is left as-is; this note is the record of the change. The two retired jobs are marked **RETIRED** below (none of this log's five defined states — PASSED/FAILED/CANCELLED/SKIPPED/QUEUED — fit "removed from the workflow"), and are excluded from tonight's coverage denominator.
+
+### Run #357 — primary nightly (schedule `17 3 * * *`, main @ `fb656973` — on top of PR #493 "Remove aws GPU workflows" and PR #490 "refactor(templates): make the preprocessing worker pool configurable", new since run #355/10-28's `ddcaaa99`, [40811962445](https://github.com/aqlaboratory/openfold-3/actions/runs/40811962445))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda (openfold3-cuda12) | **RETIRED** | — | Job removed from `integration-test.yml` by PR #493, merged 2026-10-28. No job entry in tonight's run. |
+| test-pixi-cuda (openfold3-cuda13) | **RETIRED** | — | Same — removed by PR #493. |
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 50 min | `test-openfold-docker-pixi` 03:31:05–04:20:51 (49m46s). |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 43 min | `test-openfold-docker-pixi` 03:30:52–04:13:47 (42m55s). |
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | <1 min | `test-openfold-docker-pixi-amd` failed in 8s (03:24:30–03:24:38), in the `Run actions/checkout@v7` step's workspace-clean sub-step: `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'`. Matches none of this log's seven defined signatures — no pytest ran (checkout itself never completed), no AWS/Brev runner-start step involved, no MSA/timeout text. Recorded `unclassified`; full detail in `test-failures.md`. |
+
+**2026-10-29: 2/3 passed · 0 skipped · 0 queued · 1 need attention** (scope now 3 jobs, not 5 — see scope-change note above; both AWS `test-pixi-cuda` legs are RETIRED, not FAILED/SKIPPED, and are not counted in this denominator)
+
+**Two-week Brev-vs-AWS comparison — closed out tonight.** `test-pixi-cuda-brev` was added 2026-10-14 (PR #448); the formal two-week mark landed 2026-10-28, and that night's entry above computed a running tally of 25/30 brev job-runs passed (83.3% face value; 25/26 = 96.2% excluding the pre-PR#469-fix 10-20/10-21 catalog-rejection streak) and recommended retiring the AWS `test-pixi-cuda` jobs on the post-fix framing. Tonight's two Brev passes extend that tally to **27/32 (84.4% face value) / 27/28 (96.4% excluding the pre-fix streak)** — both framings now comfortably at or above the 95% bar once the fixed-and-resolved 10-20/10-21 incident is excluded. A human had already acted on the 10-28 recommendation before tonight's run: PR #493 merged 2026-10-28 ~10:27 UTC, deleting the AWS `test-pixi-cuda` jobs outright. This closes the comparison this log has tracked nightly since 10-14 — no further action needed, and this log's per-day Brev tally bookkeeping ends here since there is no longer an AWS counterpart to compare against.
+
+### Run #358 — secondary nightly (schedule `17 4 * * *`, main @ `fb656973`, [40817507618](https://github.com/aqlaboratory/openfold-3/actions/runs/40817507618))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+No `test-pixi-cuda` job entry tonight (consistent with its removal from the workflow — the guard-skip entry that showed up on every prior secondary slot is also gone, since the job no longer exists to be gated). Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #357, per this log's established convention).

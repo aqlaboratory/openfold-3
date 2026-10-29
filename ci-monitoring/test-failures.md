@@ -831,3 +831,39 @@ Cascading/incidental, not separately classified: both `test-pixi-cuda` legs' `st
 No log-based classification possible tonight — this is purely an access limitation in this execution environment (egress proxy policy blocks `*.blob.core.windows.net`, where GitHub now redirects `actions/jobs/<id>/logs` and `actions/runs/<id>/logs`), not a statement about the underlying failures. **Flagged for a human:** pull the three failed jobs' raw logs directly from the Actions UI (or a session/proxy without this block) to retro-classify them, especially the two AWS legs — if they're `aws-capacity` as their shape suggests, they belong in `aws-outage-failures.md` instead. Both Brev legs passed clean on tonight's commit (a lint-tooling-only change), unaffected by whichever of AWS/AMD/log-access issue is behind the other three.
 
 ---
+
+## 2026-10-29
+
+**Cause:** `unclassified` — `test-pixi-amd (openfold3-rocm7)` failed in its `Run actions/checkout@v7` step, 8 seconds into the job, before any test or build step ran. Matches none of this log's seven defined signatures (`aws-capacity`, `gpu-unavailable`, `runner-offline`, `msa-hang`, `parameter-cache`, `build-push`, `code`). First night under the new three-job scope — PR #493 removed the AWS `test-pixi-cuda` job entirely (see `daily-status.md`'s 2026-10-29 scope-change note); both `test-pixi-cuda-brev` legs passed clean.
+
+- **Run ID:** [40811962445](https://github.com/aqlaboratory/openfold-3/actions/runs/40811962445) (run #357, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `fb656973bc96a8de210e49d14000563fc4fc51a9` (on top of PR #493 "Remove aws GPU workflows" and PR #490 "refactor(templates): make the preprocessing worker pool configurable", new since run #355/10-28's `ddcaaa99`)
+- **Failed Job:** `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` (job ID: 123244115160), runner `omsf-amd-aupcloud`
+- **Time:** 2026-10-29T03:24:30Z – 03:24:38Z (8s)
+
+### Failure detail
+
+```
+Syncing repository: aqlaboratory/openfold-3
+Working directory is '/home/jan/actions-runner/_work/openfold-3/openfold-3'
+Adding repository directory to the temporary git global config as a safe directory
+Deleting the contents of '/home/jan/actions-runner/_work/openfold-3/openfold-3'
+##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'
+```
+
+`actions/checkout@v7`'s `clean: true` step tried to delete the existing workspace contents before re-cloning and hit a permission-denied error on a single leftover file, `.pytest_cache/.gitignore`, owned by a UID the Actions runner user (`jan`) cannot unlink — most likely written by a previous test run's Docker container running as a different (possibly root/container-internal) UID against the bind-mounted workspace. Checkout never completed, so no build, no image pull of substance, and no pytest ran at all. The subsequent "Reclaim workspace ownership" step (`docker run ... --entrypoint chown ...`) also failed, but as an unrelated secondary effect: it tried to `docker run` the test image tag before that tag had ever been pushed (`Build and push test image` is a later, skipped step), so it failed with `unauthorized` pulling a nonexistent manifest — not itself diagnostic of the real cause.
+
+This is a self-hosted-runner workspace/permissions issue, not an OF3 code defect, an AWS/Brev infra outage, or any of this log's other six defined signatures, so it is recorded `unclassified` per this log's rule rather than guessed into one of them.
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | 123246131966 | 50 min |
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 123246071185 | 43 min |
+
+### Assessment
+
+No code regression indicated — both Brev legs passed clean on tonight's commit, and the AMD failure never reached any test code. **Flagged for a human:** the self-hosted AMD runner (`omsf-amd-aupcloud`) has a workspace file (`.pytest_cache/.gitignore`) that the runner's own user can't delete, which will block every future `test-pixi-amd` run on this runner until it's cleared manually (e.g. `sudo rm -rf` on the runner host, or fixing whatever container UID mapping wrote the file in the first place) or `actions/checkout`'s `clean` behavior is changed to tolerate it.
+
+---
