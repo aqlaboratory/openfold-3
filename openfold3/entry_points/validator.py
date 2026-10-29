@@ -21,7 +21,7 @@ from datetime import timedelta
 from enum import StrEnum
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Self
 
 from lightning_fabric.plugins.collectives.torch_collective import default_pg_timeout
 from packaging.specifiers import SpecifierSet
@@ -137,22 +137,40 @@ class ClusterEnvironmentOption(StrEnum):
     MPI = "mpi"
 
 
+# pl.Trainer arguments that ExperimentRunner.trainer always sets itself
+RUNNER_MANAGED_TRAINER_ARGS = frozenset(
+    {"default_root_dir", "strategy", "callbacks", "logger"}
+)
+
+
 class PlTrainerArgs(BaseModel):
-    """Arguments to configure pl.Trainer, including settings for number of devices."""
+    """Arguments to configure pl.Trainer, including settings for number of devices.
+
+    Only arguments that OpenFold3 reads or rewrites, or whose default differs
+    from pl.Trainer's, are declared here. Any other pl.Trainer argument is
+    passed through to pl.Trainer unchanged.
+    """
 
     model_config = PydanticConfigDict(extra="allow")
-    max_epochs: int = 1000  # pl_trainer default
+    # pl.Trainer defaults to 1000 only if max_steps and max_time are unset
+    max_epochs: int = 1000
     accelerator: str = "gpu"
     precision: int | str = "32-true"
     num_nodes: int = 1
-    devices: int = 1  # number of GPUs per node
-    profiler: str | None = None
+    # Devices per node. pl.Trainer also accepts "auto", -1, device id lists and
+    # strings such as "0,1", but the runner needs the device count for
+    # world_size and the strategy. Supporting these additional options would
+    # mean resolving it the same way as Lightning's private methods or removing
+    # the OF3 custom calculation.
+    devices: int = 1
     log_every_n_steps: int = 1
-    enable_checkpointing: bool = True
     enable_model_summary: bool = False
+    enable_progress_bar: bool = True
+    enable_checkpointing: bool = True
     accumulate_grad_batches: int = 1
     gradient_clip_val: int | float | None = None
     gradient_clip_algorithm: str | None = None
+    use_distributed_sampler: bool = True
 
     # Extra arguments that are not passed directly to pl.Trainer
     deepspeed_config_path: Path | None = None
@@ -161,16 +179,22 @@ class PlTrainerArgs(BaseModel):
     # See ClusterEnvironmentOption; overridable with --cluster-environment.
     cluster_environment: ClusterEnvironmentOption = ClusterEnvironmentOption.AUTO
 
-    use_distributed_sampler: bool = True
+    @field_validator("devices")
+    @classmethod
+    def check_devices_positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError(
+                "pl_trainer_args.devices must be a positive number of devices per node."
+            )
+        return value
 
     @model_validator(mode="after")
-    def validate_distributed_sampler_settings(self):
-        if self.use_distributed_sampler is False:
-            warnings.warn(
-                "pl_trainer_args.use_distributed_sampler is set to False. "
-                "Note that this arg is currently being ignored as we always use "
-                "the OF3DistributedSampler for training.",
-                stacklevel=2,
+    def reject_runner_managed_args(self) -> Self:
+        managed = sorted(RUNNER_MANAGED_TRAINER_ARGS & set(self.model_extra or {}))
+        if managed:
+            raise ValueError(
+                f"pl_trainer_args {managed} cannot be set: OpenFold3 sets these "
+                f"pl.Trainer arguments itself."
             )
         return self
 
@@ -364,6 +388,15 @@ class ExperimentConfig(BaseModel):
     memory_snapshot: MemorySnapshotConfig = MemorySnapshotConfig()
     profiler: ProfilerConfig = ProfilerConfig()
 
+    @model_validator(mode="after")
+    def check_single_profiler(self) -> Self:
+        trainer_extra = self.pl_trainer_args.model_extra or {}
+        if self.profiler.enabled and trainer_extra.get("profiler") is not None:
+            raise ValueError(
+                "Set either profiler.enabled or pl_trainer_args.profiler, not both."
+            )
+        return self
+
 
 class TrainingExperimentConfig(ExperimentConfig):
     """Training experiment config"""
@@ -398,6 +431,39 @@ class TrainingExperimentConfig(ExperimentConfig):
         if data_seed is None:
             self.data_module_args.data_seed = model_seed
 
+        return self
+
+    @model_validator(mode="after")
+    def check_distributed_sampler(self) -> Self:
+        """Training always uses OF3DistributedSampler, so turning off the
+        distributed sampler would only apply to validation."""
+        if not self.pl_trainer_args.use_distributed_sampler:
+            raise ValueError(
+                "pl_trainer_args.use_distributed_sampler: false is not supported "
+                "for training."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def check_resume_needs_checkpointing(self) -> Self:
+        """Lightning only finds the "last" checkpoint through its checkpoint
+        callbacks, which are disabled with checkpointing. Without them it warns
+        and starts from scratch."""
+        if self.pl_trainer_args.enable_checkpointing:
+            return self
+        settings = self.experiment_settings
+        if settings.preemption_safe_resume:
+            raise ValueError(
+                "experiment_settings.preemption_safe_resume requires "
+                "pl_trainer_args.enable_checkpointing to be true."
+            )
+        if settings.restart_checkpoint_path == "last":
+            raise ValueError(
+                'experiment_settings.restart_checkpoint_path: "last" requires '
+                "pl_trainer_args.enable_checkpointing to be true; to resume "
+                "without saving new checkpoints, set restart_checkpoint_path to "
+                "an explicit checkpoint file."
+            )
         return self
 
     @model_validator(mode="after")
