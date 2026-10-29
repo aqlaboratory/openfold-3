@@ -478,36 +478,47 @@ def assign_molecule_type_ids(atom_array: AtomArray, cif_file: pdbx.CIFFile) -> N
             AtomArray containing the structure to assign molecule types to.
     """
     # Get chemical component-to-type mapping
-    # All type values are mapped to upper case to ensure case-insensitive matching
     chem_comp_ids = cif_file.block["chem_comp"]["id"].as_array()
     chem_comp_types = cif_file.block["chem_comp"]["type"].as_array()
-    try:
-        chem_comp_id_to_type = {
-            k: CHEM_COMP_TYPE_TO_MOLECULE_TYPE[v.upper()]
-            for k, v in zip(chem_comp_ids, chem_comp_types, strict=True)
-        }
-    except KeyError:
-        missing_types = chem_comp_types[
-            ~np.isin(
-                chem_comp_types, np.array(list(CHEM_COMP_TYPE_TO_MOLECULE_TYPE.keys()))
-            )
-        ]
 
-        logger.error(
-            "Found chemical component types that are missing from the "
-            "component type-to-molecule type map. Mapping the following "
-            f'types to "OTHER" i.e. MoleculeType.LIGAND: {missing_types}'
+    chem_comp_id_to_raw_type = {
+        k: v for k, v in zip(chem_comp_ids, chem_comp_types, strict=True)
+    }
+
+    referenced_comp_ids = np.unique(atom_array.res_name)
+
+    missing_comp_ids = sorted(set(referenced_comp_ids) - set(chem_comp_id_to_raw_type))
+
+    if missing_comp_ids:
+        raise ValueError(
+            "Found chemical components referenced by the structure "
+            "that are missing from the _chem_comp table: "
+            f"{missing_comp_ids}"
         )
-        chem_comp_id_to_type = {
-            k: CHEM_COMP_TYPE_TO_MOLECULE_TYPE.get(
-                v.upper(), CHEM_COMP_TYPE_TO_MOLECULE_TYPE["OTHER"]
-            )
-            for k, v in zip(chem_comp_ids, chem_comp_types, strict=True)
-        }
+
+    invalid_types = [
+        (comp_id, chem_comp_id_to_raw_type[comp_id])
+        for comp_id in referenced_comp_ids
+        if chem_comp_id_to_raw_type[comp_id].upper()
+        not in CHEM_COMP_TYPE_TO_MOLECULE_TYPE
+    ]
+
+    if invalid_types:
+        raise ValueError(
+            "Found chemical components with unrecognized _chem_comp.type "
+            f"values: {invalid_types}"
+        )
+
+    chem_comp_id_to_type = {
+        comp_id: CHEM_COMP_TYPE_TO_MOLECULE_TYPE[
+            chem_comp_id_to_raw_type[comp_id].upper()
+        ]
+        for comp_id in referenced_comp_ids
+    }
 
     @np.vectorize
     def get_mol_types(key: str) -> MoleculeType:
-        return chem_comp_id_to_type.get(key, MoleculeType.LIGAND)
+        return chem_comp_id_to_type[key]
 
     chain_start_idxs = struc.get_chain_starts(atom_array, add_exclusive_stop=True)
 
