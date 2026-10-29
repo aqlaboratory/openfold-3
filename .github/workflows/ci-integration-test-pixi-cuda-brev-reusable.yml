@@ -87,6 +87,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build and push test image
+        id: build
         uses: docker/build-push-action@v7.4.0
         with:
           context: .
@@ -97,9 +98,9 @@ jobs:
             PIXI_ENV=${{ inputs.pixi_env }}
             BASE_IMAGE=${{ inputs.base_image }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }},mode=max
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.event.pull_request.head.sha || github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}-${{ hashFiles('pixi.lock') }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}-${{ hashFiles('pixi.lock') }},mode=max
 
       - name: Create parameter cache directory
         run: mkdir -p ~/.openfold3
@@ -134,7 +135,7 @@ jobs:
             --shm-size=8g \
             -v ${{ github.workspace }}:/opt/openfold3 \
             -v ~/.openfold3:/root/.openfold3 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} \
             pytest -x openfold3/tests/ -m "slow or gpu" -vvv -s \
               -o faulthandler_timeout=900
 
