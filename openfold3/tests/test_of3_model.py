@@ -159,6 +159,38 @@ class TestOF3Model:
             use_deepspeed_evo_attention=False,
         )
 
+    def test_inference_releases_trunk_pair(self):
+        """The trunk pair is dropped before the confidence Pairformer.
+
+        Runs the inference path with both the release and the between-step
+        cache clear enabled, so it also covers the device used for that clear
+        after the pair is gone.
+        """
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+
+        config = OF3ProjectEntry().get_model_config_with_presets()
+        config.settings.memory.eval.release_trunk_pair = True
+        config.settings.clear_cache_between_steps = True
+        config.settings.memory.eval.use_deepspeed_evo_attention = False
+        config.settings.memory.eval.use_triton_triangle_kernels = False
+        config.architecture.pairformer.no_blocks = 4
+        config.architecture.diffusion_module.diffusion_transformer.no_blocks = 4
+
+        of3 = OpenFold3AllAtom(config).to(device=device, dtype=torch.float32)
+        of3.eval()
+
+        # Inference batches carry no ground truth
+        batch = random_of3_features(
+            batch_size=consts.batch_size, n_token=18, n_msa=10, n_templ=3, is_eval=True
+        )
+        batch.pop("ground_truth")
+        batch = tensor_tree_map(lambda t: t.to(device=torch.device(device)), batch)
+
+        with torch.no_grad():
+            _, outputs = of3(batch=batch)
+
+        assert "zij_trunk" not in outputs
+
     def test_shape_small_chunk_size_one(self):
         batch_size = consts.batch_size
         n_token = 18
