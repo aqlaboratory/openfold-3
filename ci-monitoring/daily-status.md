@@ -1382,3 +1382,28 @@ Expected skip on the secondary slot (intended for other repos, not `aqlaboratory
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 No `test-pixi-cuda` job entry tonight (consistent with its removal from the workflow — the guard-skip entry that showed up on every prior secondary slot is also gone, since the job no longer exists to be gated). Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #357, per this log's established convention).
+
+---
+
+## 2026-10-30
+
+### Run #359 — primary nightly (schedule `17 3 * * *`, main @ `ac128070` — merge PR #486 "fix: don't reassign used ground-truth copies in greedy permutation", on top of PR #498 "ci: run the test image by digest, not by a shared tag", PR #495 (templates test worker config) and PR #476 (AMD `pl_trainer_args` passthrough), new since run #357/10-29's `fb656973`, [40997176233](https://github.com/aqlaboratory/openfold-3/actions/runs/40997176233))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **CANCELLED** | 60 min | `test-openfold-docker-pixi` hit the 60-min `timeout-minutes` cap, 03:30:11–04:30:30 (60m19s). Last pytest line before cancellation: `test_templates.py::test_template_lowers_rmsd[1y57]` started with no PASSED/FAILED recorded after it — superficially `msa-hang`-shaped (cap-kill + no-verdict test) but doesn't match the defined signature, which requires a `test_inference_writes_outputs[msa-...]` case, not `test_template_lowers_rmsd`. Recorded `unclassified`; full detail in `test-failures.md`. |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 24 min | `test-openfold-docker-pixi` 03:29:57–03:53:58 (24m01s). |
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | <1 min | `test-openfold-docker-pixi-amd` failed in 7s (03:24:13–03:24:20), in `Run actions/checkout@v7`'s workspace-clean sub-step: `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'`. Identical signature to 10-29's AMD failure, same runner (`omsf-amd-aupcloud`), same file — the 10-29 entry's prediction that this would block every subsequent run until manually cleared has held. Matches none of this log's seven defined signatures; recorded `unclassified`. |
+
+**2026-10-30: 1/3 passed · 0 skipped · 0 queued · 2 need attention**
+
+Second consecutive night the AMD self-hosted runner has failed on the exact same `EACCES` unlink of `.pytest_cache/.gitignore` — this now needs a human to clear it on the runner host itself; this log cannot. The cuda12 Brev cancellation is new — first cap-hit since 10-22 — and looks unrelated to the AMD issue (different job, different machine, different cause); the run was mid-way through a template-RMSD test, not blocked on an external MSA-server call, so it is recorded `unclassified` rather than guessed as `msa-hang`. Tonight's commit (`ac128070`, PR #486 — ground-truth permutation reuse fix) is unlikely to be the cause of either non-pass: the one job that ran to completion (cuda13 Brev) passed clean on the same commit.
+
+### Run #360 — secondary nightly (schedule `17 4 * * *`, main @ `ac128070`, [41002627203](https://github.com/aqlaboratory/openfold-3/actions/runs/41002627203))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #359, per this log's established convention).

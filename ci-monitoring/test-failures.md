@@ -867,3 +867,29 @@ This is a self-hosted-runner workspace/permissions issue, not an OF3 code defect
 No code regression indicated — both Brev legs passed clean on tonight's commit, and the AMD failure never reached any test code. **Flagged for a human:** the self-hosted AMD runner (`omsf-amd-aupcloud`) has a workspace file (`.pytest_cache/.gitignore`) that the runner's own user can't delete, which will block every future `test-pixi-amd` run on this runner until it's cleared manually (e.g. `sudo rm -rf` on the runner host, or fixing whatever container UID mapping wrote the file in the first place) or `actions/checkout`'s `clean` behavior is changed to tolerate it.
 
 ---
+
+## 2026-10-30
+
+**Cause:** `unclassified` × 2 — two unrelated non-passes tonight, neither matching this log's seven defined signatures.
+
+- **Run ID:** [40997176233](https://github.com/aqlaboratory/openfold-3/actions/runs/40997176233) (run #359, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `ac128070c79cbd48b2cb7dbbdcc81be7233ff51f` (merge PR #486 "fix: don't reassign used ground-truth copies in greedy permutation", on top of PR #498 "ci: run the test image by digest, not by a shared tag", PR #495 and PR #476, new since run #357/10-29's `fb656973`)
+
+### Failed/cancelled jobs
+
+| Job | Job ID | Time | Notes |
+|-----|--------|------|-------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | 123874699790 | 03:30:11–04:30:30 (60m19s) | **CANCELLED** at the 60-min `timeout-minutes` cap. Last pytest line before cancellation: `openfold3/tests/inference/test_templates.py::test_template_lowers_rmsd[1y57]` collected/started, no `PASSED`/`FAILED` ever recorded after it. Does not match the defined `msa-hang` signature (that requires a `test_inference_writes_outputs[msa-...]` case, not `test_template_lowers_rmsd`), so recorded `unclassified` rather than guessed. First cap-hit on this leg since 10-22. |
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | 123872894870 | 03:24:13–03:24:20 (7s) | **FAILED** in `Run actions/checkout@v7`'s workspace-clean sub-step: `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'`. Identical to 10-29's failure — same runner (`omsf-amd-aupcloud`), same file. The 10-29 entry's prediction that this would block every subsequent run until manually cleared has held. Checkout never completed; no test or build step ran. |
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 123874622635 | 24 min |
+
+### Assessment
+
+No code regression indicated — the one job that ran to completion (cuda13 Brev) passed clean on tonight's commit (`ac128070`, PR #486). **Flagged for a human:** (1) the AMD self-hosted runner `omsf-amd-aupcloud` has now failed two consecutive nights (10-29, 10-30) on the identical `EACCES` unlink of `.pytest_cache/.gitignore` — this needs a manual `sudo rm -rf`/ownership fix on the runner host itself, this log cannot clear it; (2) the cuda12 Brev leg's 60-minute cap-hit is the first since 10-22 and happened mid-way through a template-RMSD test, not an MSA-server call — worth a look in case it's a new hang rather than one-off infra variance, but there isn't enough evidence tonight to classify it further.
+
+---
