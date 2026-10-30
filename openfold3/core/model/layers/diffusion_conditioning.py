@@ -130,15 +130,18 @@ class DiffusionConditioning(nn.Module):
         if tune_chunk_size:
             self.chunk_size_tuner = ChunkSizeTuner()
 
-    def _embed_trunk_inputs(
+    def _embed_zij(
         self,
         batch: dict,
-        t: torch.Tensor,
-        si_input: torch.Tensor,
-        si_trunk: torch.Tensor,
         zij_trunk: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        # Pair conditioning
+        chunk_size: int | None = None,
+    ) -> torch.Tensor:
+        """``LN(cat(zij_trunk, relpos_complex)) -> linear_z`` for the pair."""
+        if chunk_size is not None and not torch.is_grad_enabled():
+            return self._embed_zij_chunked(
+                batch=batch, zij_trunk=zij_trunk, chunk_size=chunk_size
+            )
+
         relpos_zij = relpos_complex(
             batch=batch,
             max_relative_idx=self.max_relative_idx,
@@ -146,7 +149,74 @@ class DiffusionConditioning(nn.Module):
         ).to(dtype=zij_trunk.dtype)
 
         zij = torch.cat([zij_trunk, relpos_zij], dim=-1)
-        zij = self.linear_z(self.layer_norm_z(zij))
+        return self.linear_z(self.layer_norm_z(zij))
+
+    def _embed_zij_rows(
+        self,
+        batch: dict,
+        zij_trunk: torch.Tensor,
+        chunk_size: int,
+    ) -> torch.Tensor:
+        """Build ``_embed_zij`` a chunk of pair rows at a time.
+
+        ``layer_norm_z`` normalizes over channels only, so row slicing is exact.
+        Neither the full ``[N, N, C_relpos]`` nor the ``[N, N, C_z + C_relpos]``
+        concat is ever materialized.
+        """
+        n_token = zij_trunk.shape[-3]
+        out = torch.empty(
+            *zij_trunk.shape[:-1],
+            self.c_z,
+            dtype=zij_trunk.dtype,
+            device=zij_trunk.device,
+        )
+        for i in range(0, n_token, chunk_size):
+            row_slice = slice(i, min(i + chunk_size, n_token))
+            relpos_chunk = relpos_complex(
+                batch=batch,
+                max_relative_idx=self.max_relative_idx,
+                max_relative_chain=self.max_relative_chain,
+                row_slice=row_slice,
+            ).to(dtype=zij_trunk.dtype)
+            cat_chunk = torch.cat(
+                [zij_trunk[..., row_slice, :, :], relpos_chunk], dim=-1
+            )
+            del relpos_chunk
+            out[..., row_slice, :, :] = self.linear_z(self.layer_norm_z(cat_chunk))
+            del cat_chunk
+
+        return out
+
+    def _embed_zij_chunked(
+        self,
+        batch: dict,
+        zij_trunk: torch.Tensor,
+        chunk_size: int,
+    ) -> torch.Tensor:
+        if self.chunk_size_tuner is not None:
+            # No clone: this path only reads zij_trunk, and copying the full
+            # pair here would cost more than the chunking saves.
+            chunk_size = self.chunk_size_tuner.tune_chunk_size(
+                representative_fn=self._embed_zij_rows,
+                args=(batch, zij_trunk),
+                max_chunk_size=chunk_size,
+            )
+
+        return self._embed_zij_rows(
+            batch=batch, zij_trunk=zij_trunk, chunk_size=chunk_size
+        )
+
+    def _embed_trunk_inputs(
+        self,
+        batch: dict,
+        t: torch.Tensor,
+        si_input: torch.Tensor,
+        si_trunk: torch.Tensor,
+        zij_trunk: torch.Tensor,
+        chunk_size: int | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Pair conditioning
+        zij = self._embed_zij(batch=batch, zij_trunk=zij_trunk, chunk_size=chunk_size)
 
         # Single conditioning
         si = torch.cat([si_trunk, si_input], dim=-1)
@@ -230,8 +300,10 @@ class DiffusionConditioning(nn.Module):
             use_conditioning:
                 Whether to condition with the trunk representations
             chunk_size:
-                Inference-time subbatch size. Acts as a minimum if
-                self.tune_chunk_size is True
+                Inference-time subbatch size. Acts as a maximum if
+                self.tune_chunk_size is True. Also caps the row chunk of the
+                ``_embed_zij`` pair conditioning, which otherwise materializes
+                the full ``[N, N, C_z + C_relpos]`` concat.
         Returns:
             si:
                 [*, N_token, c_s] Conditioned single representation
@@ -245,7 +317,12 @@ class DiffusionConditioning(nn.Module):
             zij_trunk = zij_trunk * 0
 
         si, zij = self._embed_trunk_inputs(
-            batch=batch, t=t, si_input=si_input, si_trunk=si_trunk, zij_trunk=zij_trunk
+            batch=batch,
+            t=t,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            zij_trunk=zij_trunk,
+            chunk_size=chunk_size,
         )
 
         if chunk_size is not None:
