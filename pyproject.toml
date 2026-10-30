@@ -75,6 +75,11 @@ optional-dependencies.cuequivariance = [
     "cuequivariance-torch>=0.8",
     "torch>=2.7",
 ]
+optional-dependencies.triton = [
+    # Vendor-neutral Triton triangle-attention kernel (runs on ROCm and CUDA).
+    # Not yet on PyPI; see https://github.com/AMDResearch/geometric-nn-ops
+    "geometric-nn-ops-torch @ git+https://github.com/AMDResearch/geometric-nn-ops.git",
+]
 optional-dependencies.deepspeed = [
     "deepspeed>=0.18.7",
 ]

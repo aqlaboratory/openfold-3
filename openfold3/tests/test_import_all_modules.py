@@ -33,6 +33,7 @@ OPTIONAL_DEPENDENCIES = {
     "cuequivariance_ops_torch",
     "cuequivariance_torch",
     "deepspeed",
+    "geometric_nn_ops_torch",
     "mpi4py",
     "triton",
 }

@@ -308,9 +308,14 @@ model_update:
 
 #### 🔴 AMD ROCm Inference with Triton Kernels
 
-On AMD GPUs, OpenFold3 can use native Triton kernels for the Evoformer attention and TriangleMultiplicativeUpdate layers instead of the default CUDA-specific kernels.
+On AMD GPUs, OpenFold3 can use native Triton kernels for the Evoformer attention and TriangleMultiplicativeUpdate layers instead of the default CUDA-specific kernels. The triangle-attention kernel is provided by [AMDResearch/geometric-nn-ops](https://github.com/AMDResearch/geometric-nn-ops), a vendor-neutral Triton kernel package that runs on both AMD ROCm and NVIDIA CUDA.
 
-First, install PyTorch for ROCm and openfold3 (see [Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md)).
+First, install PyTorch for ROCm and openfold3 (see [Installation](https://github.com/aqlaboratory/openfold-3/blob/main/docs/source/Installation.md)), then install the kernel package with the `triton` extra:
+
+```bash
+pip install openfold3[triton]
+```
+
 Then enable the Triton kernels in your `runner.yml` using the provided [`triton.yml`](https://github.com/aqlaboratory/openfold-3/blob/main/examples/example_runner_yamls/triton.yml) example:
 
 ```yaml
