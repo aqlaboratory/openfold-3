@@ -1407,3 +1407,28 @@ Second consecutive night the AMD self-hosted runner has failed on the exact same
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #359, per this log's established convention).
+
+---
+
+## 2026-10-31
+
+### Run #361 — primary nightly (schedule `17 3 * * *`, main @ `ab517c1b` — PR #488 "fix: keep CCD stereochemistry for polymer residues built from a sequence", new since run #359/360's `ac128070`, [41163871779](https://github.com/aqlaboratory/openfold-3/actions/runs/41163871779))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 25 min | `test-openfold-docker-pixi` 03:25:37–03:50:30 (24m53s). |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 24 min | `test-openfold-docker-pixi` 03:25:53–03:49:40 (23m47s). |
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | <1 min | `test-openfold-docker-pixi-amd` failed in 6s (03:19:30–03:19:36), in `Run actions/checkout@v7`'s workspace-clean sub-step: `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'`. Identical signature to 10-29 and 10-30's AMD failures, same runner (`omsf-amd-aupcloud`), same file — third consecutive night. Matches none of this log's seven defined signatures; recorded `unclassified`. |
+
+**2026-10-31: 2/3 passed · 0 skipped · 0 queued · 1 need attention**
+
+Third consecutive night the AMD self-hosted runner (`omsf-amd-aupcloud`) has failed on the exact same `EACCES` unlink of `.pytest_cache/.gitignore` during `actions/checkout`'s workspace-clean step — still needs a human to clear it on the runner host itself (`sudo rm -rf` or a container-UID-mapping fix); this log cannot. Both Brev CUDA legs (cuda12, cuda13) passed clean on tonight's commit (`ab517c1b`, PR #488 — CCD stereochemistry fix for polymer residues), so no code regression indicated.
+
+### Run #362 — secondary nightly (schedule `17 4 * * *`, main @ `ab517c1b`, [41168069261](https://github.com/aqlaboratory/openfold-3/actions/runs/41168069261))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #361, per this log's established convention).

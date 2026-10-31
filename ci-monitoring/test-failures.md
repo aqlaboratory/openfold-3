@@ -893,3 +893,29 @@ No code regression indicated — both Brev legs passed clean on tonight's commit
 No code regression indicated — the one job that ran to completion (cuda13 Brev) passed clean on tonight's commit (`ac128070`, PR #486). **Flagged for a human:** (1) the AMD self-hosted runner `omsf-amd-aupcloud` has now failed two consecutive nights (10-29, 10-30) on the identical `EACCES` unlink of `.pytest_cache/.gitignore` — this needs a manual `sudo rm -rf`/ownership fix on the runner host itself, this log cannot clear it; (2) the cuda12 Brev leg's 60-minute cap-hit is the first since 10-22 and happened mid-way through a template-RMSD test, not an MSA-server call — worth a look in case it's a new hang rather than one-off infra variance, but there isn't enough evidence tonight to classify it further.
 
 ---
+
+## 2026-10-31
+
+**Cause:** `unclassified` × 1 — the AMD self-hosted runner's recurring workspace-permission fault; both Brev CUDA legs passed clean.
+
+- **Run ID:** [41163871779](https://github.com/aqlaboratory/openfold-3/actions/runs/41163871779) (run #361, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `ab517c1bb4c09e604277b8c26a4328e372acaa2c` (PR #488 "fix: keep CCD stereochemistry for polymer residues built from a sequence", new since run #359/10-30's `ac128070`)
+
+### Failed/cancelled jobs
+
+| Job | Job ID | Time | Notes |
+|-----|--------|------|-------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | 124427110665 | 03:19:30–03:19:36 (6s) | **FAILED** in `Run actions/checkout@v7`'s workspace-clean sub-step: `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'`. Identical to 10-29's and 10-30's failures — same runner (`omsf-amd-aupcloud`), same file. Third consecutive night. Checkout never completed; no test or build step ran. |
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | 124428480992 | 25 min |
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 124428541159 | 24 min |
+
+### Assessment
+
+No code regression indicated — both Brev CUDA legs passed clean on tonight's commit (`ab517c1b`, PR #488 — CCD stereochemistry fix for polymer residues built from a sequence). **Flagged for a human:** the AMD self-hosted runner `omsf-amd-aupcloud` has now failed three consecutive nights (10-29, 10-30, 10-31) on the identical `EACCES` unlink of `.pytest_cache/.gitignore` during `actions/checkout`'s workspace-clean step — this needs a manual `sudo rm -rf`/ownership fix on the runner host itself (or a change to `actions/checkout`'s `clean` behavior to tolerate the stray file); this log cannot clear it, and the issue has now blocked every `test-pixi-amd` run since it first appeared.
+
+---
