@@ -1942,7 +1942,6 @@ openfold3/core/data/primitives/structure/metadata.py:0: error: Value of type "CI
 openfold3/core/data/primitives/structure/metadata.py:0: error: Value of type "CIFFile | None" is not indexable  [index]
 openfold3/core/data/primitives/structure/metadata.py:0: error: Value of type "CIFFile | None" is not indexable  [index]
 openfold3/core/data/primitives/structure/metadata.py:0: note: Perhaps you need a type annotation for "atom_id_to_charge"? Suggestion: "dict[str, float]"
-openfold3/core/data/primitives/structure/query.py:0: error: "AtomArray[Any]" has no attribute "molecule_type_id"  [attr-defined]
 openfold3/core/data/primitives/structure/query.py:0: error: Argument "atom_array" to "StructureWithReferenceMolecules" has incompatible type "AtomArray[Any] | None"; expected "AtomArray[Any]"  [arg-type]
 openfold3/core/data/primitives/structure/query.py:0: error: Argument "atom_array" to "StructureWithReferenceMolecules" has incompatible type "AtomArray[int] | None"; expected "AtomArray[Any]"  [arg-type]
 openfold3/core/data/primitives/structure/query.py:0: error: Argument "in_crop_mask" to "ProcessedReferenceMolecule" has incompatible type "ndarray[tuple[Any, ...], dtype[Any]]"; expected "ndarray[bool, dtype[Any]]"  [arg-type]
