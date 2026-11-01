@@ -306,6 +306,24 @@ model_update:
 
 ---
 
+#### ⚡ CUDA Graph for the Diffusion Rollout
+On NVIDIA GPUs, the diffusion rollout can capture one denoising step in a CUDA graph and replay it for every step, which removes most of the kernel launch overhead of the 200 steps. Outputs are the same as without it. The gain is largest on small and medium inputs, where the rollout is launch-bound.
+
+```yaml
+model_update:
+  presets:
+    - predict
+  custom:
+    settings:
+      memory:
+        eval:
+          use_cuda_graph_diffusion: true
+```
+
+The step is captured once per prediction, before the first denoising step. Queries with cyclic chains, and runs with DeepSpeed evo attention in the rollout, run the eager rollout.
+
+---
+
 #### 🔴 AMD ROCm Inference with Triton Kernels
 
 On AMD GPUs, OpenFold3 can use native Triton kernels for the Evoformer attention and TriangleMultiplicativeUpdate layers instead of the default CUDA-specific kernels.

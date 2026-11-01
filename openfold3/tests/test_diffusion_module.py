@@ -13,9 +13,11 @@
 # limitations under the License.
 
 import unittest
+from unittest import mock
 
 import torch
 
+from openfold3.core.model.structure import diffusion_module
 from openfold3.core.model.structure.diffusion_module import (
     DiffusionModule,
     SampleDiffusion,
@@ -24,6 +26,7 @@ from openfold3.core.model.structure.diffusion_module import (
 from openfold3.core.utils.tensor_utils import tensor_tree_map
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.tests.config import consts
+from openfold3.tests.utils import compare_utils
 from openfold3.tests.utils.data_utils import random_of3_features
 
 
@@ -166,6 +169,120 @@ class TestSampleDiffusion(unittest.TestCase):
             )
 
         self.assertTrue(xl.shape == (batch_size, no_rollout_samples, n_atom, 3))
+
+
+def _sample_diffusion_inputs(device, n_token=consts.n_res, no_rollout_steps=4):
+    """A randomly initialised SampleDiffusion with matching inputs on ``device``."""
+    batch_size = 1
+
+    proj_entry = OF3ProjectEntry()
+    config = proj_entry.get_model_config_with_presets()
+    c_s_input = config.architecture.shared.c_s_input
+    c_s = config.architecture.shared.c_s
+    c_z = config.architecture.shared.c_z
+
+    dm = DiffusionModule(config=config.architecture.diffusion_module)
+    sd = SampleDiffusion(**config.architecture.sample_diffusion, diffusion_module=dm)
+    # Some output projections are zero-initialised, which would hide the
+    # denoiser from the comparison; use small random weights everywhere.
+    generator = torch.Generator().manual_seed(0)
+    with torch.no_grad():
+        for p in sd.parameters():
+            p.copy_(0.05 * torch.randn(p.shape, generator=generator))
+    sd = sd.to(device).eval()
+
+    batch = random_of3_features(
+        batch_size=batch_size,
+        n_token=n_token,
+        n_msa=consts.n_seq,
+        n_templ=consts.n_templ,
+        is_eval=True,
+    )
+    batch = tensor_tree_map(lambda t: t.unsqueeze(1).to(device), batch)
+
+    inputs = {
+        "batch": batch,
+        "si_input": torch.rand((batch_size, 1, n_token, c_s_input), device=device),
+        "si_trunk": torch.rand((batch_size, 1, n_token, c_s), device=device),
+        "zij_trunk": torch.rand((batch_size, 1, n_token, n_token, c_z), device=device),
+        "noise_schedule": create_noise_schedule(
+            no_rollout_steps=no_rollout_steps,
+            **config.architecture.noise_schedule,
+            dtype=torch.float32,
+            device=device,
+        ),
+        "no_rollout_samples": 3,
+        "use_conditioning": True,
+    }
+    return sd, inputs
+
+
+def _rollout(sd, inputs, seed, **kwargs):
+    torch.manual_seed(seed)
+    with torch.no_grad():
+        return sd(**inputs, **kwargs)
+
+
+class TestSampleDiffusionCudaGraph(unittest.TestCase):
+    def test_unsupported_reasons(self):
+        x = torch.zeros(1)
+        self.assertIn("cpu", diffusion_module._cuda_graph_unsupported_reason(x, False))
+        with torch.enable_grad():
+            if torch.cuda.is_available():
+                x_cuda = x.cuda()
+                self.assertIn(
+                    "autograd",
+                    diffusion_module._cuda_graph_unsupported_reason(x_cuda, False),
+                )
+
+    def test_cpu_falls_back_to_eager(self):
+        """On CPU the flag is ignored and the rollout is the eager one."""
+        sd, inputs = _sample_diffusion_inputs("cpu", no_rollout_steps=2)
+        with mock.patch.object(diffusion_module, "_DiffusionStepGraph") as graph:
+            out_graph = _rollout(sd, inputs, seed=0, use_cuda_graph=True)
+        graph.assert_not_called()
+        out_eager = _rollout(sd, inputs, seed=0)
+        self.assertTrue(torch.equal(out_graph, out_eager))
+
+    def test_cyclic_chains_fall_back_to_eager(self):
+        sd, inputs = _sample_diffusion_inputs("cpu", no_rollout_steps=2)
+        batch = inputs["batch"]
+        self.assertIsNotNone(diffusion_module._cuda_graph_batch(batch))
+        batch["cyclic_mask"] = torch.zeros_like(batch["token_mask"], dtype=torch.bool)
+        graph_batch = diffusion_module._cuda_graph_batch(batch)
+        self.assertNotIn("cyclic_mask", graph_batch)
+        self.assertIn("token_atom_index", graph_batch)
+        batch["cyclic_mask"][..., :4] = True
+        self.assertIsNone(diffusion_module._cuda_graph_batch(batch))
+
+    @compare_utils.skip_unless_gpu_available()
+    def test_graph_matches_eager(self):
+        """The graphed rollout gives the same coordinates as the eager rollout."""
+        sd, inputs = _sample_diffusion_inputs("cuda", no_rollout_steps=8)
+        out_eager = _rollout(sd, inputs, seed=0)
+        with mock.patch.object(
+            diffusion_module,
+            "_DiffusionStepGraph",
+            wraps=diffusion_module._DiffusionStepGraph,
+        ) as graph:
+            out_graph = _rollout(sd, inputs, seed=0, use_cuda_graph=True)
+            # A new rollout captures again, and follows its own noise.
+            out_graph_seed1 = _rollout(sd, inputs, seed=1, use_cuda_graph=True)
+        self.assertEqual(graph.call_count, 2)
+        self.assertTrue(torch.equal(out_graph, out_eager))
+        self.assertTrue(torch.equal(out_graph_seed1, _rollout(sd, inputs, seed=1)))
+        self.assertFalse(torch.equal(out_graph_seed1, out_graph))
+
+    @compare_utils.skip_unless_gpu_available()
+    def test_graph_matches_eager_with_chunk_tuning(self):
+        """Chunk size tuning runs in the eager warm-up, outside the capture."""
+        sd, inputs = _sample_diffusion_inputs("cuda", no_rollout_steps=4)
+        tuner = sd.diffusion_module.diffusion_conditioning.chunk_size_tuner
+        self.assertIsNotNone(tuner)
+        out_graph = _rollout(sd, inputs, seed=0, use_cuda_graph=True, chunk_size=4)
+        self.assertEqual(len(tuner.cached_chunk_sizes), 1)
+        out_eager = _rollout(sd, inputs, seed=0, chunk_size=4)
+        self.assertTrue(torch.equal(out_graph, out_eager))
 
 
 if __name__ == "__main__":

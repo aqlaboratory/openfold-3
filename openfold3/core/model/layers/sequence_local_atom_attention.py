@@ -30,6 +30,7 @@ from openfold3.core.utils.atom_attention_block_utils import (
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
+    aggregate_atom_feat_to_tokens_gathered,
     aggregate_atom_feat_to_tokens_segmented,
     broadcast_token_feat_to_atoms,
     broadcast_token_feat_to_atoms_by_index,
@@ -245,12 +246,23 @@ class NoisyPositionEmbedder(nn.Module):
         # Broadcast trunk single representation into atom single conditioning
         # [*, N_atom, c_atom]
         si_trunk = self.linear_s(self.layer_norm_s(si_trunk))
-        si_trunk = broadcast_token_feat_to_atoms(
-            token_mask=batch["token_mask"],
-            num_atoms_per_token=batch["num_atoms_per_token"],
-            token_feat=si_trunk,
-            token_dim=-2,
-        )
+        if "token_atom_index" in batch:
+            # Set by SampleDiffusion for CUDA graph capture. Gather through
+            # ``atom_to_token_index`` like the decoder does: the count-based
+            # broadcast syncs the device, so it cannot be captured.
+            si_trunk = broadcast_token_feat_to_atoms_by_index(
+                token_mask=batch["token_mask"],
+                atom_to_token_index=batch["atom_to_token_index"],
+                atom_mask=batch["atom_mask"],
+                token_feat=si_trunk,
+            )
+        else:
+            si_trunk = broadcast_token_feat_to_atoms(
+                token_mask=batch["token_mask"],
+                num_atoms_per_token=batch["num_atoms_per_token"],
+                token_feat=si_trunk,
+                token_dim=-2,
+            )
         cl = cl + si_trunk
 
         # Broadcast trunk pair representation into atom pair conditioning
@@ -541,7 +553,20 @@ class AtomAttentionEncoder(nn.Module):
 
         ql = ql * atom_mask.unsqueeze(-1)
 
-        if (
+        if "token_atom_index" in batch:
+            # Set by SampleDiffusion for CUDA graph capture; same result as the
+            # segmented path below.
+            ai = checkpoint_section(
+                fn=aggregate_atom_feat_to_tokens_gathered,
+                args=(
+                    batch["token_atom_index"],
+                    atom_mask,
+                    self.linear_q(ql),
+                ),
+                apply_ckpt=self.ckpt_intermediate_steps,
+                use_reentrant=self.use_reentrant,
+            )
+        elif (
             not self.training
             and not torch.is_grad_enabled()
             and segmented_reduce_supported(atom_mask.device)

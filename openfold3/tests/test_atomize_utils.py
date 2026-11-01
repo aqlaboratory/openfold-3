@@ -22,6 +22,7 @@ from openfold3.core.data.primitives.featurization.structure import (
 )
 from openfold3.core.utils.atomize_utils import (
     aggregate_atom_feat_to_tokens,
+    aggregate_atom_feat_to_tokens_gathered,
     aggregate_atom_feat_to_tokens_segmented,
     broadcast_token_feat_to_atoms,
     broadcast_token_feat_to_atoms_by_index,
@@ -29,8 +30,12 @@ from openfold3.core.utils.atomize_utils import (
     get_token_center_atoms,
     get_token_frame_atoms,
     get_token_representative_atoms,
+    token_atom_gather_index,
 )
-from openfold3.tests.utils.compare_utils import assert_summation_order_close
+from openfold3.tests.utils.compare_utils import (
+    assert_summation_order_close,
+    skip_unless_gpu_available,
+)
 
 
 def example1():
@@ -504,6 +509,43 @@ class TestSegmentedAggregateAtomFeatToTokens(unittest.TestCase):
                     reference,
                 )
             )
+
+
+class TestGatheredAggregateAtomFeatToTokens(unittest.TestCase):
+    """``aggregate_atom_feat_to_tokens_gathered`` is the segmented path, bitwise."""
+
+    def test_gather_index(self):
+        lengths = torch.tensor([[3, 1, 2]])
+        index = token_atom_gather_index(lengths, n_atom=7)
+        expected = torch.tensor([[[0, 1, 2], [3, 7, 7], [4, 5, 7]]])
+        self.assertTrue(torch.equal(index, expected))
+
+    def _assert_matches_segmented(self, device):
+        generator = torch.Generator().manual_seed(0)
+        # [batch, 1, N_token] lengths up to 23 atoms, padded atom dim, some
+        # masked atoms, a sample dim on the features.
+        lengths = torch.randint(1, 24, (2, 1, 40), generator=generator)
+        n_atom = int(lengths.sum(dim=-1).max()) + 5
+        atom_mask = (torch.rand(2, 1, n_atom, generator=generator) > 0.1).float()
+        atom_feat = torch.randn(2, 3, n_atom, 16, generator=generator)
+        lengths, atom_mask, atom_feat = (
+            x.to(device) for x in (lengths, atom_mask, atom_feat)
+        )
+
+        expected = aggregate_atom_feat_to_tokens_segmented(
+            lengths, atom_mask, atom_feat
+        )
+        actual = aggregate_atom_feat_to_tokens_gathered(
+            token_atom_gather_index(lengths, n_atom=n_atom), atom_mask, atom_feat
+        )
+        self.assertTrue(torch.equal(actual, expected))
+
+    def test_matches_segmented_path(self):
+        self._assert_matches_segmented("cpu")
+
+    @skip_unless_gpu_available()
+    def test_matches_segmented_path_cuda(self):
+        self._assert_matches_segmented("cuda")
 
 
 class TestGetTokenAtomIndex(unittest.TestCase):

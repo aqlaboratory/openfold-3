@@ -20,6 +20,7 @@ Supplementary Information.
 """
 
 import logging
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -44,6 +45,7 @@ from openfold3.core.model.structure.pocket_constraints import (
     _feature_mask,
     _pocket_sampling_enabled,
 )
+from openfold3.core.utils.atomize_utils import token_atom_gather_index
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +255,107 @@ class DiffusionModule(nn.Module):
         return xl_out
 
 
+# One capture stream per device, reused by every rollout. cuBLAS workspaces are
+# cached per stream, so a new stream per rollout grew memory on every prediction.
+_CAPTURE_STREAMS: dict[torch.device, torch.cuda.Stream] = {}
+
+
+def _capture_stream(device: torch.device) -> torch.cuda.Stream:
+    if device not in _CAPTURE_STREAMS:
+        _CAPTURE_STREAMS[device] = torch.cuda.Stream(device=device)  # type: ignore[no-untyped-call]
+    return _CAPTURE_STREAMS[device]
+
+
+class _DiffusionStepGraph:
+    """A ``DiffusionModule`` call captured once and replayed with a CUDA graph.
+
+    Within one rollout only the noisy positions and the noise level change from
+    step to step. Everything else (features, trunk representations, flags) is
+    captured by reference, so only ``xl_noisy`` and ``t`` are copied into static
+    buffers before each replay. The random augmentation and noise stay outside
+    the graph, in the eager loop, so the RNG stream is unchanged.
+
+    The graph reads the captured tensors by address: it is only valid while they
+    are alive and unmodified, i.e. for the rollout it was built in.
+    """
+
+    def __init__(
+        self,
+        diffusion_module: DiffusionModule,
+        step_kwargs: dict[str, Any],
+        xl_noisy: torch.Tensor,
+        t: torch.Tensor,
+    ):
+        self._device = xl_noisy.device
+        self._step_kwargs = step_kwargs
+        self._static_xl_noisy = xl_noisy.clone()
+        self._static_t = t.clone()
+
+        with torch.cuda.device(self._device):
+            # Warm up on a side stream, as recommended for graph capture. This
+            # runs the one-off work that cannot be captured (chunk size tuning,
+            # lazily built caches) and is discarded: every step is served by the
+            # graph. The same stream, on the inputs' device, is used to capture.
+            stream = _capture_stream(self._device)
+            stream.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(stream):
+                diffusion_module(
+                    xl_noisy=self._static_xl_noisy, t=self._static_t, **step_kwargs
+                )
+            torch.cuda.current_stream().wait_stream(stream)
+
+            self._graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(self._graph, stream=stream):
+                self._static_out: torch.Tensor = diffusion_module(
+                    xl_noisy=self._static_xl_noisy, t=self._static_t, **step_kwargs
+                )
+
+    def __call__(self, xl_noisy: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+        self._static_xl_noisy.copy_(xl_noisy)
+        self._static_t.copy_(t)
+        with torch.cuda.device(self._device):
+            self._graph.replay()
+        # The next replay overwrites this buffer; the rollout consumes it first.
+        return self._static_out
+
+
+def _cuda_graph_unsupported_reason(
+    xl: torch.Tensor, use_deepspeed_evo_attention: bool
+) -> str | None:
+    """Why the diffusion step cannot be graphed here, or None if it can."""
+    if xl.device.type != "cuda":
+        return f"device is {xl.device.type}, not cuda"
+    if torch.is_grad_enabled():
+        return "autograd is enabled"
+    if torch.compiler.is_compiling():
+        return "running under torch.compile"
+    if torch.cuda.is_current_stream_capturing():
+        return "already inside a CUDA graph capture"
+    if use_deepspeed_evo_attention:
+        # The DS4Sci kernel launches on the legacy default stream.
+        return "DeepSpeed evo attention cannot be captured"
+    return None
+
+
+def _cuda_graph_batch(batch: dict[str, Any]) -> dict[str, Any] | None:
+    """The features the graphed step reads, or None if it cannot be graphed.
+
+    Precomputes, once per rollout, the data-dependent parts of the step that
+    would otherwise sync the device on every step.
+    """
+    cyclic_mask = batch.get("cyclic_mask")
+    if cyclic_mask is not None and cyclic_mask.any():
+        # Cyclic relative positions are built with data-dependent indexing.
+        return None
+    # Without cyclic chains, an absent mask gives the same relative positions,
+    # and the check above is not repeated on every step.
+    graph_batch = {k: v for k, v in batch.items() if k != "cyclic_mask"}
+    graph_batch["token_atom_index"] = token_atom_gather_index(
+        batch["num_atoms_per_token"], n_atom=batch["atom_mask"].shape[-1]
+    )
+    return graph_batch
+
+
 class SampleDiffusion(nn.Module):
     """
     Implements AF3 Algorithm 18.
@@ -304,14 +407,41 @@ class SampleDiffusion(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        step_graph: list[_DiffusionStepGraph] | None = None,
     ) -> torch.Tensor:
-        """Run the standard OF3 denoising loop from a chosen schedule index."""
+        """Run the standard OF3 denoising loop from a chosen schedule index.
+
+        If ``step_graph`` is a list, the denoising step is served by a CUDA graph
+        held in it, captured on the first step if the list is empty. ``batch``
+        must then come from ``_cuda_graph_batch``.
+        """
+        step_kwargs = {
+            "batch": batch,
+            "token_mask": batch["token_mask"],
+            "atom_mask": atom_mask,
+            "si_input": si_input,
+            "si_trunk": si_trunk,
+            "zij_trunk": zij_trunk,
+            "use_conditioning": use_conditioning,
+            "chunk_size": chunk_size,
+            "use_deepspeed_evo_attention": use_deepspeed_evo_attention,
+            "use_cueq_triangle_kernels": use_cueq_triangle_kernels,
+            "use_triton_triangle_kernels": use_triton_triangle_kernels,
+            "use_lma": use_lma,
+            "use_high_precision_attention": use_high_precision_attention,
+            "_mask_trans": _mask_trans,
+        }
+
+        # Same comparison as `c_tau > gamma_min` per step, read back once so the
+        # loop does not sync the device on every step.
+        use_gamma = (noise_schedule[1:] > self.gamma_min).tolist()
+
         for tau, c_tau in enumerate(noise_schedule[1:]):
             if tau < start_step:
                 continue
             xl = centre_random_augmentation(xl=xl, atom_mask=atom_mask)
 
-            gamma = self.gamma_0 if c_tau > self.gamma_min else 0
+            gamma = self.gamma_0 if use_gamma[tau] else 0
             t = noise_schedule[tau] * (gamma + 1)
             noise = (
                 self.noise_scale
@@ -319,25 +449,20 @@ class SampleDiffusion(nn.Module):
                 * torch.randn_like(xl)
             )
             xl_noisy = xl + noise
+            t = t.to(xl_noisy.device)
 
-            xl_denoised = self.diffusion_module(
-                batch=batch,
-                xl_noisy=xl_noisy,
-                token_mask=batch["token_mask"],
-                atom_mask=atom_mask,
-                t=t.to(xl_noisy.device),
-                si_input=si_input,
-                si_trunk=si_trunk,
-                zij_trunk=zij_trunk,
-                use_conditioning=use_conditioning,
-                chunk_size=chunk_size,
-                use_deepspeed_evo_attention=use_deepspeed_evo_attention,
-                use_cueq_triangle_kernels=use_cueq_triangle_kernels,
-                use_triton_triangle_kernels=use_triton_triangle_kernels,
-                use_lma=use_lma,
-                use_high_precision_attention=use_high_precision_attention,
-                _mask_trans=_mask_trans,
-            )
+            if step_graph is None:
+                xl_denoised = self.diffusion_module(
+                    xl_noisy=xl_noisy, t=t, **step_kwargs
+                )
+            else:
+                if not step_graph:
+                    step_graph.append(
+                        _DiffusionStepGraph(
+                            self.diffusion_module, step_kwargs, xl_noisy=xl_noisy, t=t
+                        )
+                    )
+                xl_denoised = step_graph[0](xl_noisy, t)
 
             delta = (xl_noisy - xl_denoised) / t
             dt = c_tau - t
@@ -361,6 +486,7 @@ class SampleDiffusion(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        use_cuda_graph: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -390,6 +516,11 @@ class SampleDiffusion(nn.Module):
                 Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
+            use_cuda_graph:
+                Capture the denoising step in a CUDA graph on the first step and
+                replay it for the rest of the rollout. Falls back to the eager
+                step where capture is not supported (CPU, autograd, compile,
+                DeepSpeed evo attention, cyclic chains).
         Returns:
             [*, N_atom, 3] Sampled atom positions
         """
@@ -420,6 +551,20 @@ class SampleDiffusion(nn.Module):
             "use_high_precision_attention": use_high_precision_attention,
             "_mask_trans": _mask_trans,
         }
+
+        if use_cuda_graph:
+            reason = _cuda_graph_unsupported_reason(
+                xl, use_deepspeed_evo_attention=use_deepspeed_evo_attention
+            )
+            graph_batch = _cuda_graph_batch(batch) if reason is None else None
+            if graph_batch is not None:
+                rollout_kwargs["batch"] = graph_batch
+                # Shared by both rollouts of pocket sampling; dropped on return.
+                rollout_kwargs["step_graph"] = []
+            else:
+                logger.debug(
+                    "Diffusion CUDA graph not used: %s", reason or "cyclic chains"
+                )
 
         pocket_sampling_enabled = _pocket_sampling_enabled(batch)
         if pocket_sampling_enabled and batch_dim != 1:
