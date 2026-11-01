@@ -919,3 +919,29 @@ No code regression indicated — the one job that ran to completion (cuda13 Brev
 No code regression indicated — both Brev CUDA legs passed clean on tonight's commit (`ab517c1b`, PR #488 — CCD stereochemistry fix for polymer residues built from a sequence). **Flagged for a human:** the AMD self-hosted runner `omsf-amd-aupcloud` has now failed three consecutive nights (10-29, 10-30, 10-31) on the identical `EACCES` unlink of `.pytest_cache/.gitignore` during `actions/checkout`'s workspace-clean step — this needs a manual `sudo rm -rf`/ownership fix on the runner host itself (or a change to `actions/checkout`'s `clean` behavior to tolerate the stray file); this log cannot clear it, and the issue has now blocked every `test-pixi-amd` run since it first appeared.
 
 ---
+
+## 2026-11-01
+
+**Cause:** `unclassified` × 1 — the AMD self-hosted runner's recurring workspace-permission fault, fourth consecutive night; both Brev CUDA legs passed clean.
+
+- **Run ID:** [41268908942](https://github.com/aqlaboratory/openfold-3/actions/runs/41268908942) (run #363, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `ab517c1bb4c09e604277b8c26a4328e372acaa2c` (unchanged since run #361/10-31)
+
+### Failed/cancelled jobs
+
+| Job | Job ID | Time | Notes |
+|-----|--------|------|-------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | 124737415475 | 03:22:21–03:22:26 (5s) | **FAILED** in `Run actions/checkout@v7`'s workspace-clean sub-step: `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'`. Identical to 10-29/10-30/10-31's failures — same runner (`omsf-amd-aupcloud`), same file. Fourth consecutive night. Checkout never completed; no test or build step ran. The subsequent "Run docker run ... --entrypoint chown" step also failed (`docker: invalid reference format`), but as an unrelated secondary effect of the test image tag never having been built (that step is gated behind the skipped build step) — not itself diagnostic. |
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | 124738573280 | 23 min |
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 124738528722 | 22 min |
+
+### Assessment
+
+No code regression indicated — both Brev CUDA legs passed clean on tonight's commit (`ab517c1b`, unchanged since 10-31). **Flagged for a human:** (1) the AMD self-hosted runner `omsf-amd-aupcloud` has now failed four consecutive nights (10-29 through 11-01) on the identical `EACCES` unlink of `.pytest_cache/.gitignore` — this needs a manual `sudo rm -rf`/ownership fix on the runner host itself, this log cannot clear it; (2) both Brev legs' `stop-brev-runner` cleanup jobs (job IDs 124743078224, 124743240181) failed tonight with `Command '['brev', 'ls', '--json']' returned non-zero exit status 1` / "Failed to remove instances check your provider console" — this runs after the test job completes and does not affect either leg's PASSED result, but may leave Brev instances running; worth a check of the Brev console for orphaned instances. This is a new signature, not seen on 10-29/10-30/10-31, and matches none of this log's seven defined classes, so it is noted here rather than classified.
+
+---

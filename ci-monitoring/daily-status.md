@@ -1432,3 +1432,28 @@ Third consecutive night the AMD self-hosted runner (`omsf-amd-aupcloud`) has fai
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #361, per this log's established convention).
+
+---
+
+## 2026-11-01
+
+### Run #363 — primary nightly (schedule `17 3 * * *`, main @ `ab517c1b` (unchanged since 10-31's run #361), [41268908942](https://github.com/aqlaboratory/openfold-3/actions/runs/41268908942))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 23 min | `test-openfold-docker-pixi` 03:29:40–03:52:34 (22m54s). |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 22 min | `test-openfold-docker-pixi` 03:29:28–03:51:39 (22m11s). |
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | <1 min | `test-openfold-docker-pixi-amd` failed in 5s (03:22:21–03:22:26), in `Run actions/checkout@v7`'s workspace-clean sub-step: `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'`. Identical signature to 10-29/10-30/10-31, same runner (`omsf-amd-aupcloud`), same file — fourth consecutive night. Matches none of this log's seven defined signatures; recorded `unclassified`. |
+
+**2026-11-01: 2/3 passed · 0 skipped · 0 queued · 1 need attention**
+
+Fourth consecutive night the AMD self-hosted runner (`omsf-amd-aupcloud`) has failed on the exact same `EACCES` unlink of `.pytest_cache/.gitignore` during `actions/checkout`'s workspace-clean step — still needs a human to clear it on the runner host itself; this log cannot. Both Brev CUDA legs passed clean on tonight's commit (`ab517c1b`, unchanged since 10-31), so no code regression indicated. Separately, both Brev legs' `stop-brev-runner` cleanup jobs failed tonight (`Command '['brev', 'ls', '--json']' returned non-zero exit status 1` / "Failed to remove instances check your provider console") — this is a post-test infra teardown step, not the `test-openfold-docker-pixi` test job itself (which had already completed successfully on both legs before this step ran), so it does not change either leg's PASSED state above and is not scored in the coverage line; flagging in case leaked Brev instances need manual cleanup.
+
+### Run #364 — secondary nightly (schedule `17 4 * * *`, main @ `ab517c1b`, [41272665399](https://github.com/aqlaboratory/openfold-3/actions/runs/41272665399))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #363, per this log's established convention).
