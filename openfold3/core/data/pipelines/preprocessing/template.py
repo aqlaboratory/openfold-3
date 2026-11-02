@@ -20,6 +20,7 @@ import os
 import random
 import re
 import traceback
+from dataclasses import dataclass
 from datetime import date, datetime
 from functools import wraps
 from multiprocessing.pool import Pool, ThreadPool
@@ -114,7 +115,13 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 logger = logging.getLogger(__name__)
 
 
-def _get_cif_entry_id_and_filename(cif_path: Path) -> tuple[str, str]:
+@dataclass(frozen=True)
+class CifEntry:
+    entry_id: str
+    filename: str
+
+
+def _get_cif_entry_id_and_filename(cif_path: Path) -> CifEntry:
     """Return the entry ID and filename for a direct CIF input.
 
     ``Path.stem`` only removes the final suffix, so using it for a compressed CIF
@@ -122,9 +129,9 @@ def _get_cif_entry_id_and_filename(cif_path: Path) -> tuple[str, str]:
     inputs support exactly the two filename forms handled here.
     """
     if cif_path.name.endswith(".cif.gz"):
-        return cif_path.name.removesuffix(".cif.gz"), cif_path.name
+        return CifEntry(cif_path.name.removesuffix(".cif.gz"), cif_path.name)
     if cif_path.name.endswith(".cif"):
-        return cif_path.name.removesuffix(".cif"), cif_path.name
+        return CifEntry(cif_path.name.removesuffix(".cif"), cif_path.name)
     raise ValueError(f"CIF-direct input must end in '.cif' or '.cif.gz': {cif_path}")
 
 
@@ -2277,7 +2284,7 @@ class TemplatePreprocessor:
                     worker_logger.warning(f"CIF file not found: {cif_path}")
                     continue
 
-                entry_id, _ = _get_cif_entry_id_and_filename(cif_path)
+                entry_id = _get_cif_entry_id_and_filename(cif_path).entry_id
 
                 specified_chain_id = None
                 if input_data.template_cif_chain_ids is not None:
