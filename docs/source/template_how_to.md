@@ -261,10 +261,11 @@ For high-throughput use cases with alignment-based templates, where a large numb
 
 A recommended workflow for providing template data for very large datasets is the following:
 1. Compute {ref}`template alignments <311-precomputed-template-alignments>`.
-2. [Download the PDB](https://ftp.ebi.ac.uk/pub/databases/pdb/data/structures/divided/mmCIF/) or other template structure dataset locally.
-3. Precompute the {ref}`template precache <312-template-precache>` from template structures to speed up template cache precomputation.
-4. Precompute the {ref}`template cache <313-template-cache>` from template alignments and the template precache.
-5. Preparse the {ref}`template structures <32-template-structure-preprocessing>` into template structure arrays.
+2. [Download the default Jackhmmer and HHblits alignment databases](https://github.com/aqlaboratory/openfold-3/blob/main/scripts/snakemake_msa/download_of3_databases.py) 
+3. [Download the PDB](https://ftp.ebi.ac.uk/pub/databases/pdb/data/structures/divided/mmCIF/) or other template structure dataset locally.
+4. Precompute the {ref}`template precache <312-template-precache>` from template structures to speed up template cache precomputation.
+5. Precompute the {ref}`template cache <313-template-cache>` from template alignments and the template precache.
+6. Preparse the {ref}`template structures <32-template-structure-preprocessing>` into template structure arrays.
 
 This workflow produces a set of *template cache entries* and *preparsed template structures* for on-the-fly data processing that happens concurrently with the model forward pass. Each of these steps are detailed below.
 
