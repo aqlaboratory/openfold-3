@@ -84,3 +84,7 @@ so both have the same dominant `O(A * K)` storage at the same `K`.
 Ball-query does not support the diffusion loss `chunk_size` path directly. If
 `chunk_size` is non-null, the diffusion loss automatically uses the chunked
 dense smooth lDDT calculation. Set `chunk_size: null` to run ball-query.
+
+The 51-structure protein–RNA study, including per-`K` accuracy, runtime, and
+memory tables on RTX 4090 and H800, is in
+{doc}`Smooth lDDT ball query <smooth_lddt_ball_query>`.

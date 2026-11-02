@@ -93,4 +93,5 @@ configuration_reference
 precomputed_msa_explanation
 template_explanation
 understanding_dataset_caches
+smooth_lddt_ball_query
 ```
