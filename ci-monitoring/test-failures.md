@@ -945,3 +945,29 @@ No code regression indicated — both Brev CUDA legs passed clean on tonight's c
 No code regression indicated — both Brev CUDA legs passed clean on tonight's commit (`ab517c1b`, unchanged since 10-31). **Flagged for a human:** (1) the AMD self-hosted runner `omsf-amd-aupcloud` has now failed four consecutive nights (10-29 through 11-01) on the identical `EACCES` unlink of `.pytest_cache/.gitignore` — this needs a manual `sudo rm -rf`/ownership fix on the runner host itself, this log cannot clear it; (2) both Brev legs' `stop-brev-runner` cleanup jobs (job IDs 124743078224, 124743240181) failed tonight with `Command '['brev', 'ls', '--json']' returned non-zero exit status 1` / "Failed to remove instances check your provider console" — this runs after the test job completes and does not affect either leg's PASSED result, but may leave Brev instances running; worth a check of the Brev console for orphaned instances. This is a new signature, not seen on 10-29/10-30/10-31, and matches none of this log's seven defined classes, so it is noted here rather than classified.
 
 ---
+
+## 2026-11-02
+
+**Cause:** `unclassified` × 1 — the AMD self-hosted runner's recurring workspace-permission fault, fifth consecutive night; both Brev CUDA legs passed clean.
+
+- **Run ID:** [41382737555](https://github.com/aqlaboratory/openfold-3/actions/runs/41382737555) (run #365, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `ab517c1bb4c09e604277b8c26a4328e372acaa2c` (unchanged since run #361/10-31)
+
+### Failed/cancelled jobs
+
+| Job | Job ID | Time | Notes |
+|-----|--------|------|-------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | 125076854941 | 03:22:24–03:22:31 (7s) | **FAILED** in `Run actions/checkout@v7`'s workspace-clean sub-step: `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'`. Identical to 10-29/10-30/10-31/11-01's failures — same runner (`omsf-amd-aupcloud`), same file. Fifth consecutive night. Checkout never completed; no test or build step ran. The subsequent "Run docker run ... --entrypoint chown" step also failed (`docker: invalid reference format`), an unrelated secondary effect of the test image never having been built (gated behind the skipped build step) — not itself diagnostic. |
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | 125078642249 | 23 min |
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 125078571579 | 22 min |
+
+### Assessment
+
+No code regression indicated — both Brev CUDA legs passed clean on tonight's commit (`ab517c1b`, unchanged since 10-31). **Flagged for a human:** (1) the AMD self-hosted runner `omsf-amd-aupcloud` has now failed five consecutive nights (10-29 through 11-02) on the identical `EACCES` unlink of `.pytest_cache/.gitignore` — this needs a manual `sudo rm -rf`/ownership fix on the runner host itself, this log cannot clear it; (2) the cuda13 Brev leg's `stop-brev-runner` cleanup job (job 125085096942) failed tonight with `Failed to remove instances check your provider console: Brev instances were not deleted: runner-5ylpwt09` — this runs after the test job completes and does not affect the leg's PASSED result, but may leave a Brev instance running; worth a check of the Brev console for an orphaned `runner-5ylpwt09` instance. cuda12's `stop-brev-runner` succeeded tonight.
+
+---
