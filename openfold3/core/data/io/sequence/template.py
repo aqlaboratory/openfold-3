@@ -30,6 +30,7 @@ import pandas as pd
 from openfold3.core.data.io.sequence.fasta import parse_fasta
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.core.data.tools.kalign import run_kalign
+from openfold3.core.data.primitives.structure.template_paths import TemplateEntry
 
 logger = logging.getLogger(__name__)
 
@@ -973,7 +974,7 @@ class CifDirectParser(TemplateParser):
             for the best matching chain, or empty dict if no valid chains found
         """
         if entry_id is None:
-            entry_id = cif_file_path.stem
+            entry_id = TemplateEntry.from_cif_path(cif_file_path).entry_id
 
         candidate_chains = []
 

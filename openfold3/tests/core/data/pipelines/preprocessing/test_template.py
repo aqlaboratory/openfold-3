@@ -33,7 +33,6 @@ from openfold3.core.data.io.sequence.template import TemplateData
 from openfold3.core.data.io.structure.cif import _load_ciffile
 from openfold3.core.data.pipelines.preprocessing import template as template_module
 from openfold3.core.data.pipelines.preprocessing.template import (
-    CifEntry,
     TemplatePrecachePreprocessor,
     TemplatePreprocessor,
     TemplatePreprocessorInputInference,
@@ -48,6 +47,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     match_template_seq_from_aln_to_struc,
     remap_template_chain_id,
 )
+from openfold3.core.data.primitives.structure.template_paths import TemplateEntry
 from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
 from openfold3.core.data.primitives.structure.metadata import (
     get_asym_id_to_canonical_seq_dict,
@@ -69,11 +69,12 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 )
 def test_get_cif_entry_id_and_filename(filename, entry_id, normalized_filename):
     result = _get_cif_entry_id_and_filename(Path(filename))
-    assert result == CifEntry(entry_id=entry_id, filename=normalized_filename)
+    assert result == TemplateEntry(entry_id=entry_id, path=Path(normalized_filename))
+    assert result.filename == normalized_filename
 
 
 def test_cif_entry_is_immutable():
-    entry = CifEntry(entry_id="3mb6", filename="3mb6.cif.gz")
+    entry = TemplateEntry(entry_id="3mb6", path=Path("3mb6.cif.gz"))
     with pytest.raises(AttributeError):
         entry.entry_id = "other"
 

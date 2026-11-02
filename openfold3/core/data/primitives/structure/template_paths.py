@@ -1,9 +1,40 @@
 """Utilities for resolving template structure paths."""
 
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 from tqdm import tqdm
+
+
+@dataclass(frozen=True)
+class TemplateEntry:
+    """A template entry ID paired with the structure file that contains it.
+
+    The path is retained rather than only its filename because template structures
+    may be discovered in a sharded directory. ``filename`` keeps the convenient
+    CIF-direct view for callers that only need the basename.
+    """
+
+    entry_id: str
+    path: Path
+
+    @property
+    def filename(self) -> str:
+        return self.path.name
+
+    @classmethod
+    def from_path(cls, path: Path, suffix: str) -> "TemplateEntry":
+        """Create an entry by removing the complete configured filename suffix."""
+        return cls(path.name.removesuffix(suffix), path)
+
+    @classmethod
+    def from_cif_path(cls, path: Path) -> "TemplateEntry":
+        """Create an entry from an uncompressed or gzip-compressed CIF path."""
+        for suffix in (".cif.gz", ".cif"):
+            if path.name.endswith(suffix):
+                return cls.from_path(path, suffix)
+        raise ValueError(f"CIF input must end in '.cif' or '.cif.gz': {path}")
 
 
 def resolve_template_structure_path(
@@ -62,3 +93,28 @@ def iter_template_structure_paths(
                 paths_by_name.setdefault(path.name, path)
 
     yield from (paths_by_name[name] for name in sorted(paths_by_name))
+
+
+def iter_template_structure_entries(
+    template_structures_directory: Path,
+    template_file_format: str,
+) -> Iterator[TemplateEntry]:
+    """Yield discovered template files with their normalized entry IDs."""
+    suffix = f".{template_file_format}"
+    for path in iter_template_structure_paths(
+        template_structures_directory, template_file_format
+    ):
+        yield TemplateEntry.from_path(path, suffix)
+
+
+def get_template_structure_paths(
+    template_structures_directory: Path,
+    template_file_format: str,
+) -> dict[str, Path]:
+    """Return template structure paths indexed by entry ID."""
+    return {
+        entry.entry_id: entry.path
+        for entry in iter_template_structure_entries(
+            template_structures_directory, template_file_format
+        )
+    }

@@ -20,7 +20,6 @@ import os
 import random
 import re
 import traceback
-from dataclasses import dataclass
 from datetime import date, datetime
 from functools import wraps
 from multiprocessing.pool import Pool, ThreadPool
@@ -102,6 +101,9 @@ from openfold3.core.data.primitives.structure.template import (
     clean_template_atom_array,
 )
 from openfold3.core.data.primitives.structure.template_paths import (
+    TemplateEntry,
+    get_template_structure_paths,
+    iter_template_structure_entries,
     iter_template_structure_paths,
     resolve_template_structure_path,
 )
@@ -115,24 +117,14 @@ from openfold3.projects.of3_all_atom.config.inference_query_format import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class CifEntry:
-    entry_id: str
-    filename: str
-
-
-def _get_cif_entry_id_and_filename(cif_path: Path) -> CifEntry:
+def _get_cif_entry_id_and_filename(cif_path: Path) -> TemplateEntry:
     """Return the entry ID and filename for a direct CIF input.
 
     ``Path.stem`` only removes the final suffix, so using it for a compressed CIF
     such as ``3mb6.cif.gz`` would incorrectly produce ``3mb6.cif``. Direct CIF
     inputs support exactly the two filename forms handled here.
     """
-    if cif_path.name.endswith(".cif.gz"):
-        return CifEntry(cif_path.name.removesuffix(".cif.gz"), cif_path.name)
-    if cif_path.name.endswith(".cif"):
-        return CifEntry(cif_path.name.removesuffix(".cif"), cif_path.name)
-    raise ValueError(f"CIF-direct input must end in '.cif' or '.cif.gz': {cif_path}")
+    return TemplateEntry.from_cif_path(cif_path)
 
 
 # TODO: rename variables to be PDB-agnostic
@@ -214,8 +206,9 @@ class _OF3TemplatePreCacheConstructor:
         self.log_dir = log_dir
 
     @wraps(create_template_precache_entry_for_template)
-    def __call__(self, template_entry: tuple[str, Path]) -> None:
-        template_pdb_id, template_structure_path = template_entry
+    def __call__(self, template_entry: TemplateEntry) -> None:
+        template_pdb_id = template_entry.entry_id
+        template_structure_path = template_entry.path
         try:
             # Create logger and set it as the context logger for the process
             TEMPLATE_PROCESS_LOGGER.set(
@@ -278,7 +271,7 @@ def create_template_precache_of3(
     # Get list of PDB IDs for which the precache is to be computed
     pattern = template_structures_filename + f".{template_file_format}"
     template_entries = [
-        (m.group("pdb"), f)
+        TemplateEntry(entry_id=m.group("pdb"), path=f)
         for f in iter_template_structure_paths(
             template_structures_directory, template_file_format
         )
@@ -1381,8 +1374,9 @@ class _OF3TemplateStructurePreprocessor:
         self.log_dir = log_dir
 
     @wraps(preprocess_template_structure_for_template_old)
-    def __call__(self, template_entry: tuple[str, Path]) -> None:
-        template_pdb_id, template_structure_path = template_entry
+    def __call__(self, template_entry: TemplateEntry) -> None:
+        template_pdb_id = template_entry.entry_id
+        template_structure_path = template_entry.path
         try:
             # Create logger and set it as the context logger for the process
             TEMPLATE_PROCESS_LOGGER.set(
@@ -1470,11 +1464,11 @@ def preprocess_template_structures(
     )
 
     # Get list of unique template PDB IDs, create per-entry dirs
-    template_entries = []
-    for f in iter_template_structure_paths(
-        template_structures_directory, template_file_format
-    ):
-        template_entries.append((f.stem.split(".")[0], f))
+    template_entries = list(
+        iter_template_structure_entries(
+            template_structures_directory, template_file_format
+        )
+    )
 
     # Make sure there is no bias in ordering which could potentially affect
     # preprocessing times
@@ -1486,18 +1480,18 @@ def preprocess_template_structures(
         completed_entries = pd.read_csv(completed_entries_file, sep="\t", header=0)
         completed_ids = set(completed_entries["entry"].tolist())
         template_entries = [
-            entry for entry in template_entries if entry[0] not in completed_ids
+            entry for entry in template_entries if entry.entry_id not in completed_ids
         ]
         print(f"Preprocessing {len(template_entries)} template structures.")
 
     # Pre-create directories for template structure arrays, otherwise IO issues
-    for template_pdb_id, _ in tqdm(
+    for template_entry in tqdm(
         template_entries,
         desc="1/2: Creating directories",
         total=len(template_entries),
     ):
         template_assembly_dir = template_structure_array_directory / Path(
-            f"{template_pdb_id}"
+            template_entry.entry_id
         )
         template_assembly_dir.mkdir(parents=True, exist_ok=True)
 
@@ -2805,12 +2799,9 @@ class TemplatePrecachePreprocessor:
         self.precache_directory = config.precache_directory
         self.min_f_resolved = config.min_f_resolved
 
-        self.template_structure_paths = {
-            f.name.removesuffix(f".{self.structure_file_format}"): f
-            for f in iter_template_structure_paths(
-                self.structure_directory, self.structure_file_format
-            )
-        }
+        self.template_structure_paths = get_template_structure_paths(
+            self.structure_directory, self.structure_file_format
+        )
         self.template_entry_ids = list(self.template_structure_paths)
 
         if not self.template_entry_ids:
@@ -2996,12 +2987,9 @@ class TemplateStructurePreprocessor:
         else:
             self.ccd = BiotiteCCDWrapper()
 
-        self.template_structure_paths = {
-            f.name.removesuffix(f".{self.structure_file_format}"): f
-            for f in iter_template_structure_paths(
-                self.structure_directory, self.structure_file_format
-            )
-        }
+        self.template_structure_paths = get_template_structure_paths(
+            self.structure_directory, self.structure_file_format
+        )
         self.template_entry_ids = list(self.template_structure_paths)
 
         if not self.template_entry_ids:
