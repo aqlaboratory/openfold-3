@@ -28,9 +28,9 @@ import numpy as np
 import pandas as pd
 
 from openfold3.core.data.io.sequence.fasta import parse_fasta
+from openfold3.core.data.primitives.structure.template_paths import TemplateEntry
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.core.data.tools.kalign import run_kalign
-from openfold3.core.data.primitives.structure.template_paths import TemplateEntry
 
 logger = logging.getLogger(__name__)
 
