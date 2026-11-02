@@ -22,10 +22,12 @@ import openfold3
 from openfold3.core.data.io.sequence.template import (
     A3mParser,
     CifDirectParser,
+    EntryChainId,
     M8Parser,
     StoParser,
     TemplateData,
     calculate_ids_hit,
+    parse_entry_chain_id,
 )
 from openfold3.core.data.io.structure.cif import _load_ciffile
 from openfold3.core.data.pipelines.preprocessing.template import (
@@ -45,6 +47,23 @@ MLNSFKLSLQYILPKLWLTRLAGWGASKRAGWLTKLVIDLFVKYYKVDMKEAQKPDTASYRTFNEFFVRPLRDEVRPIDT
 MPADGVISQLGKIEEDKILQAKGHNYSLEALLAGNYLMADLFRNGTFVTTYLSPRDYHRVHMPCNGILREMIYVPGDLFSVNHLTA
 QNVPNLFARNERVICLFDTEFGPMAQILVGATIVGSIETVWAGTITPPREGIIKRWTWPAGENDGSVALLKGQEMGRFKLG
 """.replace("\n", "")
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("3mb6", EntryChainId(entry_id="3mb6", chain_id="1")),
+        ("3mb6_A", EntryChainId(entry_id="3mb6", chain_id="A")),
+    ],
+)
+def test_parse_entry_chain_id(value, expected):
+    assert parse_entry_chain_id(value) == expected
+
+
+def test_parse_entry_chain_id_is_immutable():
+    parsed = parse_entry_chain_id("3mb6_A")
+    with pytest.raises(AttributeError):
+        parsed.entry_id = "other"
 
 
 @pytest.mark.parametrize(

@@ -438,8 +438,12 @@ def create_template_cache_entry_for_query(
 
     # Filter queries
     query = hits[0]
-    query_pdb_id, query_chain_id = parse_entry_chain_id(query_pdb_chain_id)
-    query_pdb_id_t, query_chain_id_t = parse_entry_chain_id(query.name)
+    query_entry = parse_entry_chain_id(query_pdb_chain_id)
+    query_pdb_id = query_entry.entry_id
+    query_chain_id = query_entry.chain_id
+    template_entry = parse_entry_chain_id(query.name)
+    query_pdb_id_t = template_entry.entry_id
+    query_chain_id_t = template_entry.chain_id
     template_cache_path_rep = template_cache_directory / Path(f"{rep_pdb_chain_id}.npz")
     if template_cache_path_rep.exists():
         template_process_logger.info(

@@ -20,6 +20,7 @@ import logging
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
@@ -92,7 +93,13 @@ class TemplateHit(NamedTuple):
     e_value: float | None
 
 
-def parse_entry_chain_id(entry_chain_id: str) -> tuple[str, str]:
+@dataclass(frozen=True)
+class EntryChainId:
+    entry_id: str
+    chain_id: str
+
+
+def parse_entry_chain_id(entry_chain_id: str) -> EntryChainId:
     """Extracts the chain ID from a query entry.
 
     Assumes the format ENTRY_CHAIN or ENTRY. If ENTRY, the chain ID is assumed to be 1.
@@ -102,14 +109,16 @@ def parse_entry_chain_id(entry_chain_id: str) -> tuple[str, str]:
             The entry-chain ID string.
 
     Returns:
-        tuple[str, str]:
-            The entry-chain ID tuple.
+        EntryChainId:
+            The parsed entry and chain IDs.
     """
     entry_chain_id_list = entry_chain_id.split("_")
     if len(entry_chain_id_list) == 1:
-        return entry_chain_id_list[0], "1"
+        return EntryChainId(entry_id=entry_chain_id_list[0], chain_id="1")
     elif len(entry_chain_id_list) == 2:
-        return entry_chain_id_list[0], entry_chain_id_list[1]
+        return EntryChainId(
+            entry_id=entry_chain_id_list[0], chain_id=entry_chain_id_list[1]
+        )
     else:
         raise ValueError(
             "Invalid entry-chain ID format. Must be 'ENTRY' or 'ENTRY_CHAIN'."
@@ -175,7 +184,9 @@ def _parse_hmmsearch_description(description: str, index: int) -> HitMetadata:
         desc = " ".join(desc_split[1:])
 
     # Parse the PDB ID, chain ID and start index
-    pdb_id, chain_id = parse_entry_chain_id(pdb_chain_id)
+    parsed_entry_chain_id = parse_entry_chain_id(pdb_chain_id)
+    pdb_id = parsed_entry_chain_id.entry_id
+    chain_id = parsed_entry_chain_id.chain_id
     if index == 0:
         start_index = 1
     else:
