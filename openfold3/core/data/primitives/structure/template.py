@@ -363,8 +363,8 @@ def parse_template_structure(
         AtomArray:
             The cleaned up template atom array for the given chain.
     """
-    # Parse template IDs
-    pdb_id, chain_id = template_pdb_chain_id.split("_")
+    # The entry ID comes from the CIF filename and may contain underscores.
+    entry_id, chain_id = template_pdb_chain_id.rsplit("_", 1)
 
     # Initialize cache if not provided
     if cif_assembly_cache is None:
@@ -374,7 +374,7 @@ def parse_template_structure(
     if template_structure_array_directory is not None:
         template_structure_array_file = (
             template_structure_array_directory
-            / f"{pdb_id}/{pdb_id}_{chain_id}.{template_file_format}"
+            / f"{entry_id}/{entry_id}_{chain_id}.{template_file_format}"
         )
 
         if template_file_format == "pkl":
@@ -412,8 +412,8 @@ def parse_template_structure(
     elif template_structures_directory is not None:
         template_structure_path = resolve_template_structure_path(
             template_structures_directory,
-            pdb_id,
-            f"{pdb_id}.{template_file_format}",
+            entry_id,
+            f"{entry_id}.{template_file_format}",
         )
         cache_key = str(template_structure_path)
         # Check cache first to avoid re-parsing the same CIF file for different chains
