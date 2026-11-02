@@ -24,7 +24,7 @@ from openfold3.core.model.layers.transition import SwiGLUTransition
 from openfold3.core.model.primitives.linear import Linear
 from openfold3.core.model.primitives.normalization import LayerNorm
 from openfold3.core.utils.chunk_utils import ChunkSizeTuner
-from openfold3.core.utils.relpos import relpos_complex
+from openfold3.core.utils.relpos import cyclic_residue_offset, relpos_complex
 
 
 class DiffusionConditioning(nn.Module):
@@ -172,6 +172,11 @@ class DiffusionConditioning(nn.Module):
             dtype=zij_trunk.dtype,
             device=zij_trunk.device,
         )
+
+        # A cyclic chain's offsets wrap across the whole ring, so they cannot be
+        # built per chunk. None when nothing is cyclic.
+        wrapped_offset = cyclic_residue_offset(batch)
+
         for i in range(0, n_token, chunk_size):
             row_slice = slice(i, min(i + chunk_size, n_token))
             relpos_chunk = relpos_complex(
@@ -179,6 +184,7 @@ class DiffusionConditioning(nn.Module):
                 max_relative_idx=self.max_relative_idx,
                 max_relative_chain=self.max_relative_chain,
                 row_slice=row_slice,
+                wrapped_offset=wrapped_offset,
             ).to(dtype=zij_trunk.dtype)
             cat_chunk = torch.cat(
                 [zij_trunk[..., row_slice, :, :], relpos_chunk], dim=-1

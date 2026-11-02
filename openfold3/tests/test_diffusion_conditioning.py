@@ -19,6 +19,7 @@ import numpy as np
 import torch
 
 from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
+from openfold3.core.utils import relpos
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.tests.config import consts
 
@@ -305,6 +306,33 @@ class TestEmbedZijChunking(unittest.TestCase):
 
         # One tuning, reused by the other two structures.
         assert len(dc.chunk_size_tuner.cached_chunk_sizes) == 1
+
+    def test_the_cyclic_wrap_is_built_once_however_many_chunks(self):
+        # Wrapping a ring needs every row of it, so it cannot be done per chunk.
+        # Building it inside the loop repeated the full [N, N] wrap once per
+        # chunk; the result was still correct, so only a call count sees it.
+        dc = self._make_dc(tune_chunk_size=False)
+        dc.eval()
+        batch = self._make_batch()
+        zij_trunk = torch.rand(
+            consts.batch_size, self.N_TOKEN, self.N_TOKEN, consts.c_z
+        )
+        real = relpos.apply_cyclic_offsets
+
+        # Five chunks, and the batch has a cyclic chain for the wrap to bite on.
+        with (
+            torch.no_grad(),
+            mock.patch.object(relpos, "apply_cyclic_offsets", wraps=real) as wrapped,
+        ):
+            dc._embed_zij(batch=batch, zij_trunk=zij_trunk, chunk_size=5)
+
+        wrapped_chains = [
+            call
+            for call in wrapped.call_args_list
+            if call.kwargs["cyclic_mask"] is not None
+            and bool(call.kwargs["cyclic_mask"].any())
+        ]
+        assert len(wrapped_chains) == 1, len(wrapped_chains)
 
 
 if __name__ == "__main__":
