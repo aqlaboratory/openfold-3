@@ -2397,6 +2397,21 @@ class TemplatePreprocessor:
             return _NO_WORKER_LOG
         return logging.getLogger(f"template_preprocess_{os.getpid()}")
 
+    def _resolve_template_structure_file(self, template: TemplateData) -> Path:
+        """Resolve the structure path for a parsed template."""
+        if template.cif_path is not None:
+            return template.cif_path
+
+        structure_filename = f"{template.entry_id}.{self.structure_file_format}"
+        try:
+            return resolve_template_structure_path(
+                self.structure_directory,
+                template.entry_id,
+                structure_filename,
+            )
+        except FileNotFoundError:
+            return self.structure_directory / structure_filename
+
     def _preprocess_templates_for_query(
         self,
         input_data: TemplatePreprocessorInputTrain | TemplatePreprocessorInputInference,
@@ -2499,26 +2514,9 @@ class TemplatePreprocessor:
                     continue
 
                 # B. Get which files are available
-                if (
-                    isinstance(input_data, TemplatePreprocessorInputInference)
-                    and input_data.template_cif_paths is not None
-                    and template.cif_path is not None
-                ):
-                    template_structure_file = template.cif_path
-                else:
-                    structure_filename = (
-                        f"{template.entry_id}.{self.structure_file_format}"
-                    )
-                    try:
-                        template_structure_file = resolve_template_structure_path(
-                            self.structure_directory,
-                            template.entry_id,
-                            structure_filename,
-                        )
-                    except FileNotFoundError:
-                        template_structure_file = (
-                            self.structure_directory / structure_filename
-                        )
+                template_structure_file = self._resolve_template_structure_file(
+                    template
+                )
                 structure_available = template_structure_file.exists()
                 if self.precache_directory is not None:
                     precache_entry_file = (
