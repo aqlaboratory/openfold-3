@@ -14,6 +14,8 @@
 
 """Primitives for aligning atom arrays."""
 
+from __future__ import annotations
+
 from typing import Any
 
 import biotite.structure as struc

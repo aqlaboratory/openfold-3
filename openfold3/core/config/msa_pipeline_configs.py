@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -36,17 +36,12 @@ class MsaChainDataTrain(BaseModel):
     alignment_representative_id: str | None
 
 
-class MsaKind(str, Enum):
+class MsaKind(StrEnum):
     """The kinds of MSA a chain can be given: main MSAs, stacked per chain, and
     paired MSAs, whose rows are aligned across the chains of a complex."""
 
     MAIN = "main"
     PAIRED = "paired"
-
-    def __str__(self) -> str:
-        # Render as the value in messages, also on Python >= 3.12, where format()
-        # of a str mixin enum otherwise gives "MsaKind.MAIN"
-        return self.value
 
 
 class MsaChainDataInference(BaseModel):

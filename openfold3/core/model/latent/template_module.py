@@ -552,7 +552,7 @@ class TemplateEmbedderAllAtom(nn.Module):
         batch_dims = z.shape[:-3]
         n_token = z.shape[-2]
         out_device = z.device
-        n_templ = batch["template_restype"].shape[-3]
+        n_templ = batch["template_restype"].shape[-2]
 
         # [*, 1, N_token, N_token]
         pair_mask = pair_mask[..., None, :, :].to(dtype=z.dtype)
@@ -675,7 +675,7 @@ class TemplateEmbedderAllAtom(nn.Module):
             t:
                 [*, N_token, N_token, C_z] Template embedding
         """
-        n_templ = batch["template_restype"].shape[-3]
+        n_templ = batch["template_restype"].shape[-2]
 
         if offload_inference:
             t = self._forward_offload(

@@ -224,6 +224,25 @@ def test_compute_conformer_timeout_propagates(ethanol):
     assert mock_ft.call_args.kwargs["timeout"] == 0.001
 
 
+@pytest.mark.parametrize("timeout", [None, 10.0], ids=["direct", "func_timeout"])
+def test_compute_conformer_rdkit_runtime_error_becomes_conformer_error(
+    ethanol, timeout
+):
+    # RDKit's embedder can throw from its minimizer ("Invariant Violation: bad
+    # direction in linearSearch") instead of returning -1. That must surface as a
+    # ConformerGenerationError so the strategy chain / fallback conformer handle it.
+    with (
+        patch(
+            "openfold3.core.data.primitives.structure.conformer.AllChem.EmbedMolecule",
+            side_effect=RuntimeError(
+                "Invariant Violation\n\tbad direction in linearSearch"
+            ),
+        ),
+        pytest.raises(ConformerGenerationError, match="bad direction"),
+    ):
+        _compute_conformer(ethanol, timeout=timeout)
+
+
 def test_compute_conformer_timeout_none_skips_func_timeout(ethanol):
     with (
         patch(

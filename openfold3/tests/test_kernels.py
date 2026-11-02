@@ -43,13 +43,9 @@ from openfold3.tests.utils.data_utils import (
 pytestmark = [pytest.mark.slow]
 
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(autouse=True)
 def _tf32_matmul():
-    """Needed to do backward for cuEq kernels with FP32.
-
-    Scoped to this module so that it does not change the precision for tests in
-    other modules.
-    """
+    """Needed to do backward for cuEq kernels with FP32."""
     with matmul_precision("high"):
         yield
 
@@ -739,14 +735,16 @@ class TestKernels:
         batch = {
             "token_mask": torch.ones((batch_size, n_token)),
             "asym_id": torch.ones((batch_size, n_token)),
-            "template_restype": torch.ones((batch_size, n_templ, n_token, 32)),
+            "template_restype": torch.zeros(
+                (batch_size, n_templ, n_token), dtype=torch.int32
+            ),
             "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)),
             "template_backbone_frame_mask": torch.ones((batch_size, n_templ, n_token)),
-            "template_distogram": torch.ones(
-                (batch_size, n_templ, n_token, n_token, 39)
+            "template_pseudo_beta_coords": torch.ones(
+                (batch_size, n_templ, n_token, 3)
             ),
-            "template_unit_vector": torch.ones(
-                (batch_size, n_templ, n_token, n_token, 3)
+            "template_frame_atom_coords": torch.ones(
+                (batch_size, n_templ, n_token, 3, 3)
             ),
         }
 

@@ -555,8 +555,9 @@ class OpenFold3(nn.Module):
                     "ref_space_uid" ([*, N_atom])
                         Numerical encoding of the chain id and residue
                         index (reference conformer)
-                    "msa": ([*, N_msa, N_token, 32])
-                        One-hot encoding of the processed MSA
+                    "msa": ([*, N_msa, N_token])
+                        Integer indices (uint8) of the processed MSA residues.
+                        Expanded to one-hot inside the msa module embedder.
                     "has_deletion" ([*, N_msa, N_token])
                         Binary feature indicating if there is a deletion to
                         the left of each MSA position
@@ -566,19 +567,22 @@ class OpenFold3(nn.Module):
                         Distribution across restypes in the main MSA
                     "deletion_mean" ([*, N_token])
                         Mean number of deletions at each position in the main MSA
-                    "template_restype": ([*, N_templ, N_token, 32])
-                        One-hot encoding of the template sequence
+                    "template_restype" ([*, N_templ, N_token])
+                        Integer indices of template residue types. One-hot
+                        encoded inside the template embedder.
                     "template_pseudo_beta_mask" ([*, N_templ, N_token])
                         Mask for template C_beta atoms (C_alpha for glycine)
                     "template_backbone_frame_mask" ([*, N_templ, N_token])
                         Mask indicating if required template atoms exist to
                         compute frames
-                    "template_distogram" ([*, N_templ, N_token, N_token, 39])
-                        A one-hot pairwise feature indicating the distance between
-                        C_beta atoms (C_alpha for glycine) in the template
-                    "template_unit_vector"([*, N_templ, N_token, N_token, 3])
-                        The unit vector between pairs of C_alpha atoms within
-                        the local frame of each template residue
+                    "template_pseudo_beta_coords" ([*, N_templ, N_token, 3])
+                        Coordinates of template C_beta atoms (C_alpha for glycine).
+                        The pairwise distogram is computed on-the-fly inside the
+                        template embedder.
+                    "template_frame_atom_coords" ([*, N_templ, N_token, 3, 3])
+                        Coordinates of the N, CA, C atoms (along dim -2).
+                        The pairwise unit-vector feature in each residue's
+                        local frame is computed inside the template embedder.
                     "token_bonds" ([*, N_token, N_token])
                         A 2D matrix indicating if there is a bond between
                         any atom in token i and token j

@@ -437,6 +437,7 @@ def _measure_bond_loss_fn(
     return measure_cuda_memory(lambda: fn(x=x, batch=batch, eps=1e-8), device)
 
 
+@pytest.mark.gpu
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="requires GPU")
 class TestBondLossMemory:
     """Compare dense vs sparse bond_loss memory across scales.

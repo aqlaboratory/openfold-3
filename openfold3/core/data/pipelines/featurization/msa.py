@@ -22,16 +22,10 @@ from openfold3.core.data.primitives.featurization.msa import (
     MsaFeaturePrecursorOF3,
     create_msa_feature_precursor_of3,
 )
-from openfold3.core.data.primitives.featurization.structure import (
-    encode_one_hot,
-)
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.sequence.msa import MsaArrayCollection
-from openfold3.core.data.resources.residues import (
-    STANDARD_RESIDUES_WITH_GAP_1,
-)
 
 
 class MsaFeaturizerOF3Config(BaseModel):
@@ -95,10 +89,11 @@ class MsaFeaturizerOF3:
             raise NotImplementedError("Subsampling with bands is not implemented yet.")
 
         features = {}
-        features["msa"] = encode_one_hot(
-            torch.tensor(msa_feature_precursor.msa_index, dtype=torch.int64),
-            len(STANDARD_RESIDUES_WITH_GAP_1),
-        ).to(torch.int32)
+
+        # Store as compact integer indices. The model expands to one-hot when needed.
+        features["msa"] = torch.tensor(
+            msa_feature_precursor.msa_index, dtype=torch.uint8
+        )
         deletion_matrix = torch.tensor(
             msa_feature_precursor.deletion_matrix, dtype=torch.int64
         )

@@ -105,6 +105,7 @@ def test_skipped_without_cuda(clean_env, set_allocator_settings):
     set_allocator_settings.assert_not_called()
 
 
+@pytest.mark.gpu
 @requires_cuda
 def test_expandable_segments_take_effect_via_cli_import_path():
     # Allocator settings are process-global, so check in a fresh interpreter

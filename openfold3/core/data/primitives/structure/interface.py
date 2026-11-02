@@ -16,11 +16,11 @@
 
 import logging
 from collections.abc import Generator
+from typing import Self
 
 import numpy as np
 from biotite.structure import AtomArray
 from scipy.spatial import KDTree
-from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 

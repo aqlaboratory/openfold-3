@@ -7,14 +7,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      
+
       # Check for linter compliance
       - name: Lint with Ruff
         uses: astral-sh/ruff-action@v3
+        with:
+          version-file: pyproject.toml
 
       # Check for formatter compliance
       - name: Check formatting with Ruff
         if: always()
         uses: astral-sh/ruff-action@v3
         with:
+          version-file: pyproject.toml
           args: 'format --check'

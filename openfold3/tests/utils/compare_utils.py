@@ -38,54 +38,29 @@ def _no_skip(reason: str):
     return pytest.mark.skipif(False, reason=reason)
 
 
-@functools.lru_cache(maxsize=1)
-def _ds4s_build_blocker() -> str | None:
-    """Return why the evoformer_attn op cannot be JIT built, or None if it can.
+def _requires_gpu(skip_mark):
+    """Apply ``skip_mark`` together with the ``gpu`` marker.
 
-    Importing DeepSpeed is not enough: the op is compiled on first use, which
-    needs CUTLASS headers (via ``$CUTLASS_PATH``), a CUDA toolchain matching
-    torch, and ninja.  Without them ``jit_load`` raises at test runtime rather
-    than the test being skipped.  Probing shells out to nvcc, so the result is
-    cached — this runs at collection time for every decorated test.
+    CPU CI skips every GPU-gated test and the GPU CI job selects ``-m "slow or gpu"``,
+    so a gated test without the marker would run nowhere. Works on functions and
+    classes, like a mark.
     """
-    try:
-        from deepspeed.ops.op_builder import EvoformerAttnBuilder
 
-        if not EvoformerAttnBuilder().is_compatible(verbose=False):
-            return (
-                "DeepSpeed cannot build the evoformer_attn op: set $CUTLASS_PATH "
-                "and ensure a CUDA toolchain matching torch is installed"
-            )
+    def apply(obj):
+        return pytest.mark.gpu(skip_mark(obj))
 
-        from torch.utils.cpp_extension import verify_ninja_availability
-
-        verify_ninja_availability()
-    except Exception as e:  # noqa: BLE001 - probing runs nvcc; never fail collection
-        return f"DeepSpeed evoformer_attn build probe failed: {e}"
-
-    return None
+    return apply
 
 
 def skip_unless_ds4s_installed():
-    deepspeed_is_installed = importlib.util.find_spec("deepspeed") is not None
-    ds4s_is_installed = (
-        deepspeed_is_installed
-        and importlib.util.find_spec("deepspeed.ops.deepspeed4science") is not None
+    """Skip DeepSpeed evoformer_attn tests unconditionally.
+
+    DeepSpeed is being deprecated, so these tests are off on every platform rather
+    than probing whether the op can be JIT built.
+    """
+    return _requires_gpu(
+        pytest.mark.skipif(True, reason="DeepSpeed is being deprecated in OpenFold3")
     )
-    is_rocm = torch.cuda.is_available() and torch.version.hip is not None
-
-    if not ds4s_is_installed:
-        blocker = "Requires DeepSpeed with version ≥ 0.10.4"
-    elif not torch.cuda.is_available():
-        # Checked before probing: the probe shells out to nvcc, and decorator
-        # order cannot spare us that — every guard is called at import time.
-        blocker = "Requires GPU (DeepSpeed evoformer_attn is CUDA-only)"
-    elif is_rocm:
-        blocker = "DeepSpeed evoformer_attn is not supported on ROCm/HIP"
-    else:
-        blocker = _ds4s_build_blocker()
-
-    return pytest.mark.skipif(blocker is not None, reason=blocker or "")
 
 
 def skip_unless_evo_attn_available():
@@ -98,7 +73,9 @@ def skip_unless_evo_attn_available():
     """
     is_rocm = torch.cuda.is_available() and torch.version.hip is not None
     if is_rocm:
-        return _no_skip("ROCm uses Triton triangle kernels; DeepSpeed not required")
+        return _requires_gpu(
+            _no_skip("ROCm uses Triton triangle kernels; DeepSpeed not required")
+        )
     return skip_unless_ds4s_installed()
 
 
@@ -109,7 +86,9 @@ def skip_unless_cueq_installed():
         reason = "Requires CUDA (cuequivariance is installed but no GPU available)"
     else:
         reason = "cuequivariance not available"
-    return pytest.mark.skipif(not is_cuequivariance_available(), reason=reason)
+    return _requires_gpu(
+        pytest.mark.skipif(not is_cuequivariance_available(), reason=reason)
+    )
 
 
 def skip_unless_triton_installed():
@@ -151,9 +130,11 @@ def skip_unless_accelerator_available(*required: str):
     wanted = required or ACCELERATORS
     current = current_accelerator()
     if current in wanted:
-        return _no_skip(f"Running on {current}")
-    return pytest.mark.skipif(
-        True, reason=f"Requires {' or '.join(wanted)}; found {current or 'cpu'}"
+        return _requires_gpu(_no_skip(f"Running on {current}"))
+    return _requires_gpu(
+        pytest.mark.skipif(
+            True, reason=f"Requires {' or '.join(wanted)}; found {current or 'cpu'}"
+        )
     )
 
 

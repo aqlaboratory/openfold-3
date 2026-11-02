@@ -592,7 +592,7 @@ class OpenFold3AllAtom(ModelRunner):
             logger.exception(f"Validation step failed with pdb id {', '.join(pdb_id)}")
             raise
 
-    def on_validation_epoch_start(self):
+    def on_validation_epoch_start(self) -> None:
         # At the start of validation, load the EMA weights if available
 
         assert self.cached_weights is None
@@ -833,7 +833,7 @@ class OpenFold3AllAtom(ModelRunner):
             f"next_dataset_indices={self.trainer.datamodule.next_dataset_indices}"
         )
 
-    def on_validation_epoch_end(self):
+    def on_validation_epoch_end(self) -> None:
         """Log aggregated epoch metrics for validation."""
         self._log_epoch_metrics(metrics=self.val_losses)
         self._log_epoch_metrics(metrics=self.val_metrics, compute_model_selection=True)
@@ -848,6 +848,15 @@ class OpenFold3AllAtom(ModelRunner):
         gc.collect()
         torch.cuda.empty_cache()
         self.trainer.strategy.barrier()
+
+    # trainer.test() fires the on_test_* hooks instead of on_validation_*, so
+    # without these the test mode would skip the EMA weight swap and the epoch
+    # metric aggregation.
+    def on_test_epoch_start(self) -> None:
+        self.on_validation_epoch_start()
+
+    def on_test_epoch_end(self) -> None:
+        self.on_validation_epoch_end()
 
     def configure_optimizers(self) -> dict:
         optimizer_config = self.config.settings.optimizer

@@ -25,7 +25,7 @@ import warnings
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import IntEnum
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -1114,7 +1114,7 @@ def _default_msa_output_root() -> Path:
 
 def _default_run_directory_name() -> str:
     """Return a readable, per-run MSA directory name."""
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     return f"msa-{getpass.getuser()}-{timestamp}-{secrets.token_hex(4)}"
 
 

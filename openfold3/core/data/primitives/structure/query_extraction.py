@@ -21,6 +21,8 @@ plus one `Chain` per distinct hetero/ligand group, suitable for assembling an
 inference `query.json` from an existing structure.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Any, NamedTuple
 

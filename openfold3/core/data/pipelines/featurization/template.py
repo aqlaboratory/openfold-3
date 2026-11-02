@@ -16,44 +16,33 @@
 
 import numpy as np
 import torch
-from biotite.structure import AtomArray
 
-from openfold3.core.data.primitives.featurization.padding import pad_token_dim
-from openfold3.core.data.primitives.featurization.structure import (
-    extract_starts_entities,
-)
 from openfold3.core.data.primitives.featurization.template import (
-    create_template_distogram,
     create_template_feature_precursor_of3,
-    create_template_restype,
-    create_template_unit_vector,
 )
 from openfold3.core.data.primitives.quality_control.logging_utils import (
     log_runtime_memory,
 )
 from openfold3.core.data.primitives.structure.template import TemplateSliceCollection
+from openfold3.core.data.resources.residues import get_with_unknown_3_to_idx
 
 
 def featurize_templates_dummy_of3(n_templ, n_token):
     """Temporary function to generate dummy template features."""
     return {
-        "template_restype": torch.ones((n_templ, n_token, 32)).int(),
+        "template_restype": torch.zeros((n_templ, n_token), dtype=torch.int32),
         "template_pseudo_beta_mask": torch.ones((n_templ, n_token)).float(),
         "template_backbone_frame_mask": torch.ones((n_templ, n_token)).float(),
-        "template_distogram": torch.ones((n_templ, n_token, n_token, 39)).int(),
-        "template_unit_vector": torch.ones((n_templ, n_token, n_token, 3)).float(),
+        "template_pseudo_beta_coords": torch.ones((n_templ, n_token, 3)).float(),
+        "template_frame_atom_coords": torch.ones((n_templ, n_token, 3, 3)).float(),
     }
 
 
 @log_runtime_memory(runtime_dict_key="runtime-template-feat")
 def featurize_template_structures_of3(
-    atom_array: AtomArray,
     template_slice_collection: TemplateSliceCollection,
     n_templates: int,
     n_tokens: int,
-    min_bin: float,
-    max_bin: float,
-    n_bins: int,
 ) -> dict[str, torch.Tensor]:
     """Featurizes template data for AF3.
 
@@ -65,11 +54,14 @@ def featurize_template_structures_of3(
             Mask indicating if backbone frame atoms (N, CA, C) are present in the
             corresponding token.
         - template_restype:
-            One-hot encoded residue types.
-        - template_distogram:
-            Distogram constructed from pseudo beta atoms distances.
-        - template_unit_vector:
-            Unit vector constructed from backbone frames.
+            Integer indices of template residue types. The model one-hots
+            these inside the template embedder.
+        - template_pseudo_beta_coords:
+            Coordinates of pseudo beta atoms. The pairwise distogram is
+            computed on-the-fly inside the template embedder.
+        - template_frame_atom_coords:
+            Coordinates of the N, CA, C atoms of each token. The model
+            constructs the rigid frame and unit vector features from these.
 
     Args:
         template_slice_collection (TemplateSliceCollection):
@@ -78,12 +70,6 @@ def featurize_template_structures_of3(
             Number of templates.
         n_tokens (int):
             Number of tokens in the target structure.
-        min_bin (float):
-            The minimum distance for the distogram bins.
-        max_bin (float):
-            The maximum distance for the distogram bins.
-        n_bins (int):
-            The number of bins in the distogram.
 
     Returns:
         dict[str, torch.Tensor]:
@@ -95,19 +81,6 @@ def featurize_template_structures_of3(
         n_tokens,
     )
 
-    # Create asym ID to mask inter-chain features and mask
-    token_starts_with_stop, _ = extract_starts_entities(atom_array)
-    token_starts = token_starts_with_stop[:-1]
-    chain_ids_token = atom_array.chain_id[token_starts]
-    _, renum_ids = np.unique(chain_ids_token, return_inverse=True)
-    asym_id = pad_token_dim(
-        {"asym_id": torch.tensor(renum_ids + 1, dtype=torch.int32)}, n_tokens
-    )["asym_id"]
-    multichain_pair_mask = (asym_id[..., None] == asym_id[..., None, :])[
-        ..., None, :, :, None
-    ]
-
-    # Create features
     features = {}
     features["template_pseudo_beta_mask"] = torch.tensor(
         ~np.isnan(template_feature_precursor.pseudo_beta_atom_coords).any(axis=-1),
@@ -117,21 +90,20 @@ def featurize_template_structures_of3(
         ~np.isnan(template_feature_precursor.frame_atom_coords).any(axis=(-2, -1)),
         dtype=torch.float,
     )
-    features["template_restype"] = create_template_restype(
-        template_feature_precursor.res_names,
-        features["template_pseudo_beta_mask"],
+    # Integer residue indices. Model one-hots inside the template embedder.
+    features["template_restype"] = torch.tensor(
+        get_with_unknown_3_to_idx(template_feature_precursor.res_names),
+        dtype=torch.int32,
     )
-    features["template_distogram"] = create_template_distogram(
-        template_feature_precursor.pseudo_beta_atom_coords,
-        features["template_pseudo_beta_mask"],
-        multichain_pair_mask,
-        min_bin,
-        max_bin,
-        n_bins,
+    # NaN positions correspond to absent atoms and are zeroed
+    features["template_pseudo_beta_coords"] = torch.nan_to_num(
+        torch.tensor(
+            template_feature_precursor.pseudo_beta_atom_coords, dtype=torch.float32
+        ),
+        nan=0.0,
     )
-    features["template_unit_vector"] = create_template_unit_vector(
-        template_feature_precursor.frame_atom_coords,
-        features["template_backbone_frame_mask"],
-        multichain_pair_mask,
+    features["template_frame_atom_coords"] = torch.nan_to_num(
+        torch.tensor(template_feature_precursor.frame_atom_coords, dtype=torch.float32),
+        nan=0.0,
     )
     return features

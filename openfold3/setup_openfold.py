@@ -84,6 +84,14 @@ class OpenFoldSetupConfig(pydantic.BaseModel):
         default=False,
         description="Whether to run integration tests after downloading parameters.",
     )
+    update_biotite_ccd: bool = Field(
+        default=True,
+        description=(
+            "If True, refresh Biotite's bundled CCD from the OpenFold3 S3 copy when it "
+            "is stale. Set False on read-only installs (e.g. shared HPC modules); "
+            "ligands given as CCD codes newer than Biotite's copy may then fail."
+        ),
+    )
 
     @pydantic.field_validator("selected_parameters")
     @classmethod
@@ -220,6 +228,14 @@ def setup_biotite_ccd(*, ccd_path: Path, force_download: bool) -> bool:
 INTEGRATION_TEST_PATH = Path(__file__).parent / "tests" / "inference"
 
 
+#: Shown when the Biotite CCD update is skipped, by request or otherwise.
+BIOTITE_CCD_SKIP_MESSAGE = (
+    "Skipping Biotite CCD update. Ligands given as CCD codes released after Biotite's "
+    "bundled CCD may fail to resolve "
+    "(https://github.com/aqlaboratory/openfold-3/issues/94)."
+)
+
+
 #: Shown wherever integration tests are wanted but cannot run.
 PYTEST_MISSING_MESSAGE = (
     "pytest is not installed, so the integration tests cannot run. Install it with "
@@ -289,7 +305,21 @@ def run_setup(config: OpenFoldSetupConfig) -> None:
         config.selected_parameters,
         force_download=config.force_download_parameters,
     )
-    setup_biotite_ccd(ccd_path=biotite.setup_ccd.OUTPUT_CCD, force_download=False)
+    if config.update_biotite_ccd:
+        # Biotite's CCD lives inside its own package directory and cannot be
+        # redirected, so read-only installs cannot update it at all.
+        try:
+            setup_biotite_ccd(
+                ccd_path=biotite.setup_ccd.OUTPUT_CCD, force_download=False
+            )
+        except PermissionError as err:
+            raise PermissionError(
+                f"Cannot write Biotite's CCD at {biotite.setup_ccd.OUTPUT_CCD}. On a "
+                "read-only install, re-run setup with --skip-biotite-ccd-update (or "
+                '"update_biotite_ccd": false in the --config JSON).'
+            ) from err
+    else:
+        logger.warning(BIOTITE_CCD_SKIP_MESSAGE)
 
     if run_integration_tests:
         _run_integration_tests()
@@ -311,7 +341,20 @@ def run_setup(config: OpenFoldSetupConfig) -> None:
     default=None,
     help="Path to a JSON file containing an OpenFoldSetupConfig.",
 )
-def main(non_interactive: bool = False, config_path: Path | None = None):
+@click.option(
+    "--skip-biotite-ccd-update",
+    is_flag=True,
+    default=False,
+    help=(
+        "Do not update Biotite's CCD. Use on read-only installs; overrides "
+        "update_biotite_ccd in --config."
+    ),
+)
+def main(
+    non_interactive: bool = False,
+    config_path: Path | None = None,
+    skip_biotite_ccd_update: bool = False,
+):
     """Set up OpenFold3 model parameters."""
     if config_path is not None:
         config = OpenFoldSetupConfig.model_validate_json(config_path.read_text())
@@ -319,6 +362,9 @@ def main(non_interactive: bool = False, config_path: Path | None = None):
         config = OpenFoldSetupConfig()
     else:
         config = _prompt_for_config()
+
+    if skip_biotite_ccd_update:
+        config = config.model_copy(update={"update_biotite_ccd": False})
 
     run_setup(config)
 

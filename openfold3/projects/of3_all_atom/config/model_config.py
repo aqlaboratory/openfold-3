@@ -225,9 +225,13 @@ model_config = mlc.ConfigDict(
                 "linear_init_params": lin_init.templ_module_init,
                 "template_pair_embedder": {
                     "c_in": c_z,
-                    "c_dgram": 39,
                     "c_aatype": 32,
                     "c_out": c_t,
+                    "distogram": {
+                        "min_bin": 3.25,
+                        "max_bin": 50.75,
+                        "n_bins": 39,
+                    },
                     "linear_init_params": lin_init.templ_pair_feat_emb_init,
                 },
                 "template_pair_stack": {

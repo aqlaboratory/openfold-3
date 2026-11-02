@@ -23,12 +23,18 @@ from openfold3.core.model.feature_embedders.input_embedders import (
 )
 from openfold3.core.model.feature_embedders.template_embedders import (
     TemplatePairEmbedderAllAtom,
+    dgram_from_positions,
+    unit_vector_from_frame_atom_coords,
 )
 from openfold3.core.model.latent.msa_module import MSAModuleStack
 from openfold3.core.model.latent.template_module import TemplateEmbedderAllAtom
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 from openfold3.tests.config import consts
-from openfold3.tests.utils.data_utils import random_asym_ids, random_of3_features
+from openfold3.tests.utils.data_utils import (
+    random_asym_ids,
+    random_of3_features,
+    random_template_features,
+)
 
 
 class TestInputEmbedderAllAtom:
@@ -111,7 +117,12 @@ class TestMSAModuleEmbedder:
             num_paired = torch.zeros((batch_size,), dtype=torch.long)
 
         batch = {
-            "msa": torch.rand((batch_size, n_total_msa_seq, n_token, one_hot_dim)),
+            "msa": torch.randint(
+                0,
+                one_hot_dim,
+                (batch_size, n_total_msa_seq, n_token),
+                dtype=torch.uint8,
+            ),
             "has_deletion": torch.ones((batch_size, n_total_msa_seq, n_token)),
             "deletion_value": torch.rand((batch_size, n_total_msa_seq, n_token)),
             "msa_mask": torch.ones((batch_size, n_total_msa_seq, n_token)),
@@ -142,23 +153,71 @@ class TestMSAModuleEmbedder:
                 )
 
 
+class TestTemplateFeatureConstruction:
+    def test_dgram_from_positions_bins_pairwise_distances(self):
+        min_bin, max_bin, n_bins = 3.25, 50.75, 39  # 1.25 A wide bins
+        # Points on the x-axis, so pairwise distances are differences in x:
+        # 4 (0,1), 6 (1,2), 10 (0,2), 50 (2,3), 60 (0,3)
+        positions = torch.tensor(
+            [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [10.0, 0.0, 0.0], [60.0, 0.0, 0.0]]
+        )
+
+        dgram = dgram_from_positions(positions, min_bin, max_bin, n_bins)
+
+        assert dgram.shape == (4, 4, n_bins)
+        assert torch.equal(dgram, dgram.transpose(0, 1))
+        # Self pairs sit below the first bin edge and set no bin at all
+        assert dgram.diagonal(dim1=0, dim2=1).sum() == 0
+        expected_bins = {
+            (0, 1): 0,  # 4 A  -> [3.25, 4.5)
+            (1, 2): 2,  # 6 A  -> [5.75, 7.0)
+            (0, 2): 5,  # 10 A -> [9.5, 10.75)
+            (2, 3): 37,  # 50 A -> [49.5, 50.75)
+            (0, 3): n_bins - 1,  # 60 A -> beyond max_bin, last bin
+        }
+        for (i, j), expected_bin in expected_bins.items():
+            assert dgram[i, j].sum() == 1
+            assert dgram[i, j].argmax().item() == expected_bin
+
+    def test_unit_vector_in_local_frame(self):
+        # Residue 0: canonical frame. CA at the origin, C on +x, N on +y, so its
+        # local frame is the identity.
+        # Residue 1: CA at (3, 4, 0), C along +z, N along +x, so its local axes
+        # are x=(0,0,1), y=(1,0,0), z=(0,1,0).
+        frame_atom_coords = torch.tensor(
+            [
+                [[0.0, 1.0, 0.0], [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],  # N, CA, C
+                [[4.0, 4.0, 0.0], [3.0, 4.0, 0.0], [3.0, 4.0, 1.0]],
+            ]
+        )
+
+        x, y, z = unit_vector_from_frame_atom_coords(frame_atom_coords)
+        unit_vector = torch.stack([x, y, z], dim=-1)
+
+        assert unit_vector.shape == (2, 2, 3)
+        # 0 -> 1 expressed in frame 0 is the global direction (3, 4, 0) / 5
+        torch.testing.assert_close(unit_vector[0, 1], torch.tensor([0.6, 0.8, 0.0]))
+        # 1 -> 0 is (-3, -4, 0) globally; on frame 1's axes that is (0, -3, -4) / 5
+        torch.testing.assert_close(unit_vector[1, 0], torch.tensor([0.0, -0.6, -0.8]))
+        # Self pairs are the zero vector
+        assert unit_vector[0, 0].abs().max() == 0
+        assert unit_vector[1, 1].abs().max() == 0
+
+
 class TestTemplateEmbedders:
     @pytest.fixture
-    def template_batch(self):
+    def template_batch(self, seeded_rng):
         batch_size = 2
         n_templ = 3
         n_token = 10
+
+        # Two chains so that the inter-chain pair masking is exercised
+        asym_id = torch.ones((batch_size, n_token))
+        asym_id[:, n_token // 2 :] = 2.0
+
         batch = {
-            "asym_id": torch.ones((batch_size, n_token)),
-            "template_restype": torch.ones((batch_size, n_templ, n_token, 32)),
-            "template_pseudo_beta_mask": torch.ones((batch_size, n_templ, n_token)),
-            "template_backbone_frame_mask": torch.ones((batch_size, n_templ, n_token)),
-            "template_distogram": torch.ones(
-                (batch_size, n_templ, n_token, n_token, 39)
-            ),
-            "template_unit_vector": torch.ones(
-                (batch_size, n_templ, n_token, n_token, 3)
-            ),
+            "asym_id": asym_id,
+            **random_template_features(batch_size, n_templ, n_token),
         }
         return {
             "batch_size": batch_size,

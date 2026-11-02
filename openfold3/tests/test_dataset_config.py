@@ -31,10 +31,13 @@ from openfold3.core.data.pipelines.preprocessing.template import (
 )
 from openfold3.core.data.tools.colabfold_msa_server import MsaComputationSettings
 from openfold3.projects.of3_all_atom.config.dataset_config_components import (
+    ChainCropSettings,
+    CropSettings,
+    CropWeights,
     MSASettings,
     SampleWeights,
-    TemplateDistogramSettings,
     TemplateSettings,
+    TokenCropSettings,
 )
 from openfold3.projects.of3_all_atom.config.dataset_configs import (
     DATASET_CONFIG_REGISTRY,
@@ -339,6 +342,40 @@ class TestOF3DatasetConfigConstruction:
 
         assert spec.config.sample_weights == SampleWeights(a_prot=9.0)
 
+    def test_partial_nested_crop_keeps_defaults(self, tmp_path):
+        # WeightedPDBConfig enables chain_crop on its instance default, unlike the
+        # ChainCropSettings class default. A partial update nested two levels deep
+        # must keep that instance default and the untouched crop_weights.
+        class_default_chain_crop_enabled = ChainCropSettings.model_fields[
+            "enabled"
+        ].default
+        instance_default_chain_crop_enabled = WeightedPDBConfig.model_fields[
+            "crop"
+        ].default.chain_crop.enabled
+        assert class_default_chain_crop_enabled != instance_default_chain_crop_enabled
+
+        token_budget = TokenCropSettings.model_fields["token_budget"].default + 1
+        data = {
+            "name": "train",
+            "mode": "train",
+            "dataset_class": "WeightedPDBDataset",
+            "config": {
+                "dataset_paths": self._dataset_paths(tmp_path),
+                "crop": {"token_crop": {"token_budget": token_budget}},
+            },
+        }
+        spec = TrainingDatasetSpec.model_validate(data)
+
+        assert spec.config.crop.token_crop.token_budget == token_budget
+        assert spec.config.crop.token_crop.crop_weights == CropWeights()
+        assert (
+            spec.config.crop.chain_crop.enabled == instance_default_chain_crop_enabled
+        )
+        assert spec.config.crop == CropSettings(
+            token_crop=TokenCropSettings(token_budget=token_budget),
+            chain_crop=ChainCropSettings(enabled=instance_default_chain_crop_enabled),
+        )
+
     def test_unknown_sample_weight_is_rejected(self, tmp_path):
         with pytest.raises(ValidationError, match="a_protein"):
             TrainingDatasetSpec.model_validate(
@@ -510,24 +547,6 @@ class TestInferenceConfigConstruction:
 
         from_instances = InferenceDatasetConfigKwargs(
             msa=MSASettings(subsample_main=self.class_default_subsample_main),
-        )
-        assert kwargs == from_instances
-        assert data == copy  # input not modified
-
-    def test_partial_nested_kwargs_keep_defaults(self):
-        max_bin = TemplateDistogramSettings.model_fields["max_bin"].default + 1
-        default_min_bin = TemplateDistogramSettings.model_fields["min_bin"].default
-        data = {"template": {"distogram": {"max_bin": max_bin}}}
-        copy = deepcopy(data)
-        kwargs = InferenceDatasetConfigKwargs.model_validate(data)
-
-        assert kwargs.template.distogram.max_bin == max_bin
-        assert kwargs.template.distogram.min_bin == default_min_bin
-
-        from_instances = InferenceDatasetConfigKwargs(
-            template=TemplateSettings(
-                distogram=TemplateDistogramSettings(max_bin=max_bin)
-            ),
         )
         assert kwargs == from_instances
         assert data == copy  # input not modified
