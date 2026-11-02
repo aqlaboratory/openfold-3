@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from functools import partial
+
 import torch
 from ml_collections import ConfigDict
 from torch import nn
@@ -197,8 +199,12 @@ class DiffusionConditioning(nn.Module):
             # No clone: this path only reads zij_trunk, and copying the full
             # pair here would cost more than the chunking saves.
             chunk_size = self.chunk_size_tuner.tune_chunk_size(
-                representative_fn=self._embed_zij_rows,
-                args=(batch, zij_trunk),
+                representative_fn=partial(self._embed_zij_rows, batch),
+                # Key on the pair alone. The batch carries per-datum leaves
+                # (query_id, pdb_id, sometimes numpy) that make every structure
+                # a separate key, and leaves the tuner cannot compare raise in
+                # _compare_arg_caches.
+                args=(zij_trunk,),
                 max_chunk_size=chunk_size,
             )
 

@@ -15,6 +15,7 @@
 import unittest
 from unittest import mock
 
+import numpy as np
 import torch
 
 from openfold3.core.model.layers.diffusion_conditioning import DiffusionConditioning
@@ -274,6 +275,36 @@ class TestEmbedZijChunking(unittest.TestCase):
         assert len(dc.chunk_size_tuner.cached_chunk_sizes) == 1
         _, max_chunk_size, _ = dc.chunk_size_tuner.cached_chunk_sizes[0]
         assert max_chunk_size == 8
+
+    def test_the_tuning_cache_ignores_per_datum_batch_leaves(self):
+        # Keying the tuner on the batch made every structure a separate cache
+        # entry, and leaves it cannot compare raised in _compare_arg_caches.
+        dc = self._make_dc(tune_chunk_size=True)
+        dc.eval()
+        zij_trunk = torch.rand(
+            consts.batch_size, self.N_TOKEN, self.N_TOKEN, consts.c_z
+        )
+
+        def batch_for(query_id):
+            batch = self._make_batch()
+            # The non-tensor leaves a real predict batch carries: per-datum ids
+            # that differ across structures, and an array that cannot be a bool.
+            batch["query_id"] = [query_id]
+            batch["pdb_id"] = [query_id]
+            batch["extra_array"] = np.zeros((2, 2))
+            return batch
+
+        with torch.no_grad():
+            expected = dc._embed_zij(batch=batch_for("A"), zij_trunk=zij_trunk)
+            for query_id in ("A", "B", "C"):
+                with self.subTest(query_id=query_id):
+                    actual = dc._embed_zij(
+                        batch=batch_for(query_id), zij_trunk=zij_trunk, chunk_size=8
+                    )
+                    torch.testing.assert_close(actual, expected)
+
+        # One tuning, reused by the other two structures.
+        assert len(dc.chunk_size_tuner.cached_chunk_sizes) == 1
 
 
 if __name__ == "__main__":
