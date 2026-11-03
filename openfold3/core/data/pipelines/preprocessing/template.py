@@ -136,12 +136,9 @@ def create_template_precache_entry_for_template(
     template_process_logger = TEMPLATE_PROCESS_LOGGER.get()
 
     try:
-        template_structure_path = (
-            template_structures_directory
-            / (
-                template_structures_filename.format(pdb=template_pdb_id)
-                + f".{template_file_format}"
-            )
+        template_structure_path = template_structures_directory / (
+            template_structures_filename.format(pdb=template_pdb_id)
+            + f".{template_file_format}"
         )
         cif_file = _load_ciffile(template_structure_path)
         chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)

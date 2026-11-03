@@ -14,18 +14,19 @@
 
 """Tests for the mmCIF parsers in `cif.py`."""
 
+from pathlib import Path
+
 import biotite.structure as struc
 import biotite.structure.io.pdbx as pdbx
 import numpy as np
-
-from openfold3.core.data.io.structure.cif import parse_RNA_monomer_cif_tmp
-from pathlib import Path
-
 import pytest
-from biotite.structure.io import pdbx
 
 import openfold3
-from openfold3.core.data.io.structure.cif import _load_ciffile
+from openfold3.core.data.io.structure.cif import (
+    _load_ciffile,
+    parse_RNA_monomer_cif_tmp,
+)
+
 
 def _write_rna_cif_with_author_numbering(path):
     """Writes a GAC trinucleotide numbered 1-3 in label_seq_id and 101-103 in
