@@ -354,7 +354,7 @@ MPS inference is currently ~3-5x faster than CPU-only inference for the same que
 (inference-cif-direct-templates)=
 #### 🧬 CIF Direct Template Mode
 
-OpenFold3 supports providing template structures directly as CIF files without requiring pre-computed template alignments. In this mode, the system automatically:
+OpenFold3 supports providing template structures directly as CIF files, including gzip-compressed `.cif.gz` files, without requiring pre-computed template alignments. Compressed CIF files can be supplied directly; manual decompression is not required. In this mode, the system automatically:
 1. Parses each provided CIF file
 2. Extracts all chains and their sequences
 3. Aligns each chain to your query sequence
@@ -376,7 +376,7 @@ In your query JSON, specify `template_cif_paths` instead of `template_alignment_
                     "chain_ids": ["A"],
                     "sequence": "MKLLVVDDAGQKFT...",
                     "template_cif_paths": [
-                        "path/to/template1.cif",
+                        "path/to/template1.cif.gz",
                         "path/to/template2.cif",
                         "path/to/template3.cif"
                     ],

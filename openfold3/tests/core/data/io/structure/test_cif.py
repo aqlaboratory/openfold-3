@@ -19,7 +19,13 @@ import biotite.structure.io.pdbx as pdbx
 import numpy as np
 
 from openfold3.core.data.io.structure.cif import parse_RNA_monomer_cif_tmp
+from pathlib import Path
 
+import pytest
+from biotite.structure.io import pdbx
+
+import openfold3
+from openfold3.core.data.io.structure.cif import _load_ciffile
 
 def _write_rna_cif_with_author_numbering(path):
     """Writes a GAC trinucleotide numbered 1-3 in label_seq_id and 101-103 in
@@ -49,3 +55,26 @@ def test_parse_rna_monomer_keeps_author_residue_numbering(tmp_path):
     atom_array = parse_RNA_monomer_cif_tmp(cif_path).atom_array
 
     np.testing.assert_array_equal(np.unique(atom_array.res_id), [101, 102, 103])
+
+
+TEMPLATE_STRUCTURES_DIR = (
+    Path(openfold3.__file__).parent
+    / "tests"
+    / "test_data"
+    / "template_preprocessing"
+    / "1fdl"
+    / "template_structures"
+)
+
+
+@pytest.mark.parametrize("as_string", [False, True])
+def test_load_ciffile_reads_gzipped_cif(as_string):
+    """Compressed CIF templates can be loaded from paths and strings."""
+    compressed_cif = TEMPLATE_STRUCTURES_DIR / "1fdl.cif.gz"
+    path = str(compressed_cif) if as_string else compressed_cif
+
+    cif_file = _load_ciffile(path)
+
+    assert isinstance(cif_file, pdbx.CIFFile)
+    assert "atom_site" in cif_file.block
+    assert "pdbx_poly_seq_scheme" in cif_file.block
