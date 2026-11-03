@@ -1482,3 +1482,28 @@ Fifth consecutive night the AMD self-hosted runner (`omsf-amd-aupcloud`) has fai
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #365, per this log's established convention).
+
+---
+
+## 2026-11-03
+
+### Run #367 — primary nightly (schedule `17 3 * * *`, main @ `ab517c1b` (unchanged since 10-31, PR #488 — CCD stereochemistry fix for polymer residues), [41571636139](https://github.com/aqlaboratory/openfold-3/actions/runs/41571636139))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 26 min | `test-openfold-docker-pixi` 03:28:17–03:54:41 (26m24s). |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 26 min | `test-openfold-docker-pixi` 03:28:07–03:54:02 (25m55s). |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 45 min | `test-openfold-docker-pixi-amd` 03:32:35–04:17:35 (45m00s). |
+
+**2026-11-03: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Fully clean night — first since 10-28/10-29's transition. The AMD self-hosted runner (`omsf-amd-aupcloud`)'s `EACCES` unlink of `.pytest_cache/.gitignore` during `actions/checkout`'s workspace-clean step, which had recurred every night since 10-29 (five consecutive nights through 11-02), did not recur tonight — no human intervention was recorded in this log for it, so treat this as unconfirmed recovery rather than a known fix; worth watching the next night or two to confirm it's actually cleared and not just a lucky run. Both Brev CUDA legs also passed clean, consistent with the rest of this week.
+
+### Run #368 — secondary nightly (schedule `17 4 * * *`, main @ `ab517c1b`, [41577510671](https://github.com/aqlaboratory/openfold-3/actions/runs/41577510671))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #367, per this log's established convention).
