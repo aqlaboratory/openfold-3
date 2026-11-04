@@ -15,13 +15,17 @@
 import numpy as np
 import pytest
 from biotite.structure import AtomArray
+from biotite.structure.io import pdbx
 
 from openfold3.core.data.primitives.structure.cleanup import (
+    check_ligand_atoms_in_ccd,
     convert_MSE_to_MET,
     fix_arginine_naming,
     remove_crystallization_aids,
+    remove_non_CCD_atoms,
     return_on_empty_atom_array,
 )
+from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.tests.utils.custom_assert_utils import assert_atomarray_equal
 
 
@@ -355,3 +359,132 @@ class TestRemoveCrystallizationAids:
         result = remove_crystallization_aids(empty_array)
 
         assert_atomarray_equal(empty_array, result)
+
+
+def _make_ccd(comp_id_to_atom_ids):
+    """Builds a minimal CCD that only defines the atom names of each component."""
+    ccd = pdbx.CIFFile()
+    for comp_id, atom_ids in comp_id_to_atom_ids.items():
+        block = pdbx.CIFBlock()
+        block["chem_comp_atom"] = pdbx.CIFCategory({"atom_id": np.array(atom_ids)})
+        ccd[comp_id] = block
+    return ccd
+
+
+def _make_residues(residues):
+    """Builds an AtomArray from (chain_id, res_id, res_name, molecule_type, atoms)."""
+    atoms = [
+        (chain_id, res_id, res_name, molecule_type, atom_name)
+        for chain_id, res_id, res_name, molecule_type, atom_names in residues
+        for atom_name in atom_names
+    ]
+    atom_array = AtomArray(len(atoms))
+    atom_array.chain_id[:] = [atom[0] for atom in atoms]
+    atom_array.res_id[:] = [atom[1] for atom in atoms]
+    atom_array.res_name[:] = [atom[2] for atom in atoms]
+    atom_array.atom_name[:] = [atom[4] for atom in atoms]
+    atom_array.set_annotation(
+        "molecule_type_id", np.array([atom[3] for atom in atoms], dtype=int)
+    )
+    return atom_array
+
+
+CCD = _make_ccd(
+    {
+        "ALA": ["N", "CA", "C", "O", "CB", "OXT"],
+        "LIG": ["C1", "C2", "O1", "O2"],
+    }
+)
+ALA_ATOMS = ["N", "CA", "C", "O", "CB"]
+
+
+class TestCheckLigandAtomsInCCD:
+    """Tests for the check_ligand_atoms_in_ccd function."""
+
+    def test_ligand_with_atoms_outside_ccd_entry_raises(self):
+        """A ligand with atoms that its CCD entry lacks raises and names them."""
+        atom_array = _make_residues(
+            [
+                ("A", 1, "ALA", MoleculeType.PROTEIN, ALA_ATOMS),
+                ("B", 2, "LIG", MoleculeType.LIGAND, ["C1", "C2", "S1", "O3"]),
+            ]
+        )
+
+        with pytest.raises(ValueError, match=r"\('B', 2, 'LIG', \['S1', 'O3'\]\)"):
+            check_ligand_atoms_in_ccd(atom_array, CCD)
+
+    def test_partially_resolved_ligand_passes(self):
+        """Atoms missing from the structure are not a mismatch."""
+        atom_array = _make_residues(
+            [("B", 1, "LIG", MoleculeType.LIGAND, ["C1", "O1"])]
+        )
+
+        check_ligand_atoms_in_ccd(atom_array, CCD)
+
+    def test_polymer_atoms_outside_ccd_entry_are_not_checked(self):
+        """Polymer residues keep the AF3 behavior of removing non-CCD atoms."""
+        atom_array = _make_residues(
+            [("A", 1, "ALA", MoleculeType.PROTEIN, [*ALA_ATOMS, "XX"])]
+        )
+
+        check_ligand_atoms_in_ccd(atom_array, CCD)
+
+    def test_unl_is_not_checked(self):
+        """UNL has no atoms in the CCD and is removed by remove_non_CCD_atoms."""
+        atom_array = _make_residues(
+            [("B", 1, "UNL", MoleculeType.LIGAND, ["C1", "O1"])]
+        )
+
+        check_ligand_atoms_in_ccd(atom_array, CCD)
+
+    def test_all_mismatched_ligands_reported_together(self):
+        """Every mismatched ligand is listed in a single error."""
+        atom_array = _make_residues(
+            [
+                ("B", 1, "LIG", MoleculeType.LIGAND, ["C1", "S1"]),
+                ("C", 1, "LIG", MoleculeType.LIGAND, ["C1", "CL1"]),
+            ]
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            check_ligand_atoms_in_ccd(atom_array, CCD)
+
+        message = str(exc_info.value)
+        assert "('B', 1, 'LIG', ['S1'])" in message
+        assert "('C', 1, 'LIG', ['CL1'])" in message
+
+
+class TestRemoveNonCCDAtoms:
+    """Tests for the remove_non_CCD_atoms function."""
+
+    def test_removes_polymer_atoms_outside_ccd_entry(self):
+        """Atoms that are not in the residue's CCD entry are removed (AF3 SI 2.5.4)."""
+        atom_array = _make_residues(
+            [("A", 1, "ALA", MoleculeType.PROTEIN, [*ALA_ATOMS, "XX"])]
+        )
+
+        result = remove_non_CCD_atoms(atom_array, CCD)
+
+        assert result.atom_name.tolist() == ALA_ATOMS
+
+    def test_removes_unl(self):
+        """UNL residues are removed entirely."""
+        atom_array = _make_residues(
+            [
+                ("A", 1, "ALA", MoleculeType.PROTEIN, ALA_ATOMS),
+                ("B", 2, "UNL", MoleculeType.LIGAND, ["C1", "O1"]),
+            ]
+        )
+
+        result = remove_non_CCD_atoms(atom_array, CCD)
+
+        assert result.res_name.tolist() == ["ALA"] * len(ALA_ATOMS)
+
+    def test_residue_not_in_ccd_raises(self):
+        """A residue name that is not in the CCD raises a ValueError naming it."""
+        atom_array = _make_residues([("B", 1, "LIG1", MoleculeType.LIGAND, ["C1"])])
+
+        with pytest.raises(
+            ValueError, match=r"Residue LIG1 \(chain B, residue 1\) is not in the CCD"
+        ):
+            remove_non_CCD_atoms(atom_array, CCD)

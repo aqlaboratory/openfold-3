@@ -12,9 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
+
+import numpy as np
 import pytest
 
-from openfold3.core.data.pipelines.preprocessing.structure import _discover_cif_files
+import openfold3
+from openfold3.core.data.io.structure.cif import parse_mmcif
+from openfold3.core.data.pipelines.preprocessing.structure import (
+    _discover_cif_files,
+    cleanup_structure_of3,
+)
+from openfold3.core.data.primitives.structure.metadata import get_cif_block
+
+MMCIFS_DIR = Path(openfold3.__file__).parent / "tests" / "test_data" / "mmcifs"
 
 
 def test_discover_cif_files_recursively_in_deterministic_order(tmp_path):
@@ -44,3 +55,64 @@ def test_discover_cif_files_rejects_duplicate_stems(tmp_path):
         match=r"unique stems.*1abc: first/1abc\.cif, second/1abc\.cif",
     ):
         _discover_cif_files(tmp_path)
+
+
+@pytest.fixture(scope="module")
+def parsed_7l39():
+    """7l39 (T4 lysozyme L99A with toluene, CCD code MBN) parsed as in preprocessing."""
+    cif_file, atom_array = parse_mmcif(
+        MMCIFS_DIR / "7l39.cif",
+        expand_bioassembly=True,
+        include_bonds=True,
+        renumber_chain_ids=True,
+    )
+    return get_cif_block(cif_file), atom_array
+
+
+def test_cleanup_structure_of3_keeps_ligand_that_matches_ccd(
+    parsed_7l39, biotite_ccd_wrapper
+):
+    cif_data, atom_array = parsed_7l39
+
+    cleaned = cleanup_structure_of3(atom_array, cif_data, biotite_ccd_wrapper)
+
+    toluene = cleaned[cleaned.res_name == "MBN"]
+    assert toluene.atom_name.tolist() == ["C", "C1", "C2", "C3", "C4", "C5", "C6"]
+    assert not np.isnan(toluene.coord).any()
+
+
+@pytest.mark.parametrize(
+    ("res_name", "methyl_carbon_name", "error_match"),
+    [
+        # TOL is tolrestat in the CCD, which has atoms C1-C6 but no atom named C
+        pytest.param(
+            "TOL",
+            "C",
+            r"\('4', 203, 'TOL', \['C'\]\)",
+            id="custom_ligand_reuses_ccd_code",
+        ),
+        pytest.param(
+            "MBN",
+            "C7",
+            r"\('4', 203, 'MBN', \['C7'\]\)",
+            id="ligand_atom_name_not_in_ccd_entry",
+        ),
+        pytest.param(
+            "LIG1",
+            "C",
+            r"Residue LIG1 \(chain 4, residue 203\) is not in the CCD",
+            id="ligand_code_not_in_ccd",
+        ),
+    ],
+)
+def test_cleanup_structure_of3_rejects_ligand_that_does_not_match_ccd(
+    parsed_7l39, biotite_ccd_wrapper, res_name, methyl_carbon_name, error_match
+):
+    cif_data, atom_array = parsed_7l39
+    atom_array = atom_array.copy()
+    toluene = atom_array.res_name == "MBN"
+    atom_array.atom_name[toluene & (atom_array.atom_name == "C")] = methyl_carbon_name
+    atom_array.res_name[toluene] = res_name
+
+    with pytest.raises(ValueError, match=error_match):
+        cleanup_structure_of3(atom_array, cif_data, biotite_ccd_wrapper)
