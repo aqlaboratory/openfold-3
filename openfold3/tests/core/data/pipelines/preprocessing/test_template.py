@@ -18,6 +18,7 @@ Train-mode tests live in test_template_train.py.
 """
 
 import getpass
+import gzip
 import os
 import shutil
 from datetime import datetime
@@ -25,6 +26,7 @@ from pathlib import Path
 from typing import Literal
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 
 import openfold3
@@ -37,6 +39,7 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     TemplatePreprocessorInputInference,
     TemplatePreprocessorSettings,
     TemplateStructurePreprocessor,
+    _get_cif_entry_id_and_filename,
     build_template_cache_key,
     collate_data_logs,
     data_log_to_tsv,
@@ -49,12 +52,37 @@ from openfold3.core.data.primitives.sequence.hash import get_sequence_hash
 from openfold3.core.data.primitives.structure.metadata import (
     get_asym_id_to_canonical_seq_dict,
 )
+from openfold3.core.data.primitives.structure.template_paths import TemplateEntry
 from openfold3.core.data.resources.residues import MoleculeType
 from openfold3.projects.of3_all_atom.config.inference_query_format import (
     Chain,
     InferenceQuerySet,
     Query,
 )
+
+
+@pytest.mark.parametrize(
+    ("filename", "entry_id", "normalized_filename"),
+    [
+        ("3juh.cif", "3juh", "3juh.cif"),
+        ("3mb6.cif.gz", "3mb6", "3mb6.cif.gz"),
+    ],
+)
+def test_get_cif_entry_id_and_filename(filename, entry_id, normalized_filename):
+    result = _get_cif_entry_id_and_filename(Path(filename))
+    assert result == TemplateEntry(entry_id=entry_id, path=Path(normalized_filename))
+    assert result.filename == normalized_filename
+
+
+def test_cif_entry_is_immutable():
+    entry = TemplateEntry(entry_id="3mb6", path=Path("3mb6.cif.gz"))
+    with pytest.raises(AttributeError):
+        entry.entry_id = "other"
+
+
+def test_get_cif_entry_id_and_filename_rejects_unsupported_suffix():
+    with pytest.raises(ValueError, match="must end in '.cif' or '.cif.gz'"):
+        _get_cif_entry_id_and_filename(Path("3mb6.pdb"))
 
 
 def _make_template(
@@ -896,6 +924,46 @@ def _two_source_query_set(tmp_path: Path, order: list[str]) -> InferenceQuerySet
     )
 
 
+def test_cif_direct_mixed_suffixes_use_provided_paths(tmp_path):
+    """CIF-direct mode preserves paths for underscore-containing entry IDs."""
+    plain_path = tmp_path / "2q2k.cif"
+    compressed_path = tmp_path / "2q2k_copy.cif.gz"
+    shutil.copy(MMCIFS_DIR / TEMPLATE_CIF, plain_path)
+    with plain_path.open("rb") as source, gzip.open(compressed_path, "wb") as target:
+        shutil.copyfileobj(source, target)
+
+    query_sequence = get_asym_id_to_canonical_seq_dict(_load_ciffile(plain_path))["B"]
+    query_set = InferenceQuerySet(
+        queries={
+            "mixed_suffixes": Query(
+                chains=[
+                    Chain(
+                        molecule_type="protein",
+                        chain_ids=["A"],
+                        sequence=query_sequence,
+                        template_cif_paths=[plain_path, compressed_path],
+                    )
+                ]
+            )
+        }
+    )
+    config = TemplatePreprocessorSettings(
+        output_directory=tmp_path / "intermediate",
+        fetch_missing_structures=False,
+        n_processes=1,
+    )
+
+    TemplatePreprocessor(query_set, config)()
+
+    chain = query_set.queries["mixed_suffixes"].chains[0]
+    assert chain.template_alignment_file_path is not None
+    assert chain.template_entry_chain_ids == ["2q2k_B", "2q2k_copy_B"]
+
+    with np.load(chain.template_alignment_file_path, allow_pickle=True) as cache:
+        assert cache["2q2k_B"].item()["cif_path"] == str(plain_path)
+        assert cache["2q2k_copy_B"].item()["cif_path"] == str(compressed_path)
+
+
 @pytest.mark.parametrize(
     "order",
     [
@@ -931,12 +999,12 @@ def test_template_sources_do_not_collide_across_queries(tmp_path, order):
     custom = iqs.queries["q_custom"].chains[0]
     colabfold = iqs.queries["q_colabfold"].chains[0]
 
-    assert custom.template_entry_chain_ids == ["2q2k_B"], (
-        "the custom CIF query did not get its own template"
-    )
-    assert colabfold.template_entry_chain_ids == ["2q2k_C"], (
-        "the ColabFold query did not get its own template"
-    )
+    assert custom.template_entry_chain_ids == [
+        "2q2k_B"
+    ], "the custom CIF query did not get its own template"
+    assert colabfold.template_entry_chain_ids == [
+        "2q2k_C"
+    ], "the ColabFold query did not get its own template"
     assert (
         custom.template_alignment_file_path != colabfold.template_alignment_file_path
     ), "both queries were pointed at the same template cache entry"
@@ -1010,16 +1078,16 @@ def test_requeued_query_set_keeps_cached_templates(tmp_path):
     preprocessor()
 
     requeued_cached = run_2_qs.queries["q_colabfold"].chains[0]
-    assert requeued_cached.template_alignment_file_path == cached_path, (
-        "the cached template entry was dropped when the query set was reused"
-    )
-    assert requeued_cached.template_entry_chain_ids == ["2q2k_C"], (
-        "the template ids were dropped when the query set was reused"
-    )
+    assert (
+        requeued_cached.template_alignment_file_path == cached_path
+    ), "the cached template entry was dropped when the query set was reused"
+    assert requeued_cached.template_entry_chain_ids == [
+        "2q2k_C"
+    ], "the template ids were dropped when the query set was reused"
     requeued_raw = run_2_qs.queries["q_custom"].chains[0]
-    assert requeued_raw.template_entry_chain_ids == ["2q2k_B"], (
-        "the raw source in the reused batch was not processed"
-    )
+    assert requeued_raw.template_entry_chain_ids == [
+        "2q2k_B"
+    ], "the raw source in the reused batch was not processed"
     # Only the raw source needs preprocessing; the cached entry must not be
     # re-parsed as an alignment.
     assert len(preprocessor.inputs) == 1

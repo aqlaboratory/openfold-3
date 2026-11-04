@@ -22,10 +22,12 @@ import openfold3
 from openfold3.core.data.io.sequence.template import (
     A3mParser,
     CifDirectParser,
+    EntryChainId,
     M8Parser,
     StoParser,
     TemplateData,
     calculate_ids_hit,
+    parse_entry_chain_id,
 )
 from openfold3.core.data.io.structure.cif import _load_ciffile
 from openfold3.core.data.pipelines.preprocessing.template import (
@@ -45,6 +47,23 @@ MLNSFKLSLQYILPKLWLTRLAGWGASKRAGWLTKLVIDLFVKYYKVDMKEAQKPDTASYRTFNEFFVRPLRDEVRPIDT
 MPADGVISQLGKIEEDKILQAKGHNYSLEALLAGNYLMADLFRNGTFVTTYLSPRDYHRVHMPCNGILREMIYVPGDLFSVNHLTA
 QNVPNLFARNERVICLFDTEFGPMAQILVGATIVGSIETVWAGTITPPREGIIKRWTWPAGENDGSVALLKGQEMGRFKLG
 """.replace("\n", "")
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("3mb6", EntryChainId(entry_id="3mb6", chain_id="1")),
+        ("3mb6_A", EntryChainId(entry_id="3mb6", chain_id="A")),
+    ],
+)
+def test_parse_entry_chain_id(value, expected):
+    assert parse_entry_chain_id(value) == expected
+
+
+def test_parse_entry_chain_id_is_immutable():
+    parsed = parse_entry_chain_id("3mb6_A")
+    with pytest.raises(AttributeError):
+        parsed.entry_id = "other"
 
 
 @pytest.mark.parametrize(
@@ -189,6 +208,14 @@ def _compare_template_data(actual, expected):
 
 
 MMCIFS_DIR = Path(openfold3.__file__).parent / "tests" / "test_data" / "mmcifs"
+TEMPLATE_STRUCTURES_DIR = (
+    Path(openfold3.__file__).parent
+    / "tests"
+    / "test_data"
+    / "template_preprocessing"
+    / "1fdl"
+    / "template_structures"
+)
 
 
 def _load_chain_id_seq_map(cif_path: Path) -> dict[str, str]:
@@ -238,6 +265,30 @@ def test_cif_direct_parser_specified_chain():
     assert len(result) == 1
     assert result[0].chain_id == "C"
     assert result[0].seq_id == pytest.approx(1.0)
+
+
+def test_cif_direct_parser_reads_gzipped_template():
+    """CIF-direct templates may be supplied as compressed CIF files."""
+    cif_path = TEMPLATE_STRUCTURES_DIR / "1fdl.cif.gz"
+    chain_id_seq_map = _load_chain_id_seq_map(cif_path)
+    chain_id, query_seq_str = next(iter(chain_id_seq_map.items()))
+
+    parser = CifDirectParser(max_sequences=None, min_score_threshold=0.1)
+    result = parser(
+        cif_file_path=cif_path,
+        query_seq_str=query_seq_str,
+        chain_id_seq_map=chain_id_seq_map,
+        entry_id="1fdl",
+        specified_chain_id=chain_id,
+    )
+
+    assert len(result) == 1
+    template = result[0]
+    assert template.entry_id == "1fdl"
+    assert template.chain_id == chain_id
+    assert template.seq_id == pytest.approx(1.0)
+    assert template.q_cov == pytest.approx(1.0)
+    assert template.seq == query_seq_str
 
 
 def test_cif_direct_parser_below_threshold_returns_empty():

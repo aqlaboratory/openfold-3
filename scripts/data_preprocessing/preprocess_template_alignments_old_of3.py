@@ -44,7 +44,6 @@ from openfold3.core.data.pipelines.preprocessing.template import (
     required=True,
     help="Directory containing the template structures.",
     type=click.Path(
-        exists=True,
         file_okay=False,
         dir_okay=True,
         path_type=Path,
