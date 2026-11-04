@@ -456,7 +456,24 @@ def assign_entity_ids(
     """
     # Cast entity IDs from string to int and shorten name
     if atom_array_source_format == "cif":
-        atom_array.set_annotation("entity_id", atom_array.label_entity_id.astype(int))
+        label_entity_ids = atom_array.label_entity_id
+        try:
+            entity_ids = label_entity_ids.astype(int)
+        except ValueError as error:
+            invalid_entity_ids = []
+            for entity_id in np.unique(label_entity_ids):
+                try:
+                    int(entity_id)
+                except ValueError:
+                    invalid_entity_ids.append(str(entity_id))
+
+            raise ValueError(
+                "`label_entity_id` values must be integers. Found non-numeric values: "
+                f"{invalid_entity_ids}. Renumber entities with integer IDs and update "
+                "all matching entity references in the mmCIF."
+            ) from error
+
+        atom_array.set_annotation("entity_id", entity_ids)
         atom_array.del_annotation("label_entity_id")
     elif atom_array_source_format == "pdb":
         raise NotImplementedError(
