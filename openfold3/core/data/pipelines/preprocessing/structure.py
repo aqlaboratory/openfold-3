@@ -58,6 +58,9 @@ from openfold3.core.data.io.structure.pdb import (
     parse_protein_monomer_pdb_tmp,
 )
 from openfold3.core.data.io.utils import encode_numpy_types
+from openfold3.core.data.pipelines.preprocessing.mmcif import (
+    validate_mmcif_for_preprocessing,
+)
 from openfold3.core.data.pipelines.preprocessing.utils import SharedSet
 from openfold3.core.data.primitives.caches.format import (
     DisorderedPreprocessingDataCache,
@@ -491,6 +494,15 @@ def preprocess_structure_and_write_outputs_of3(
     """
     # Log how long this is taking
     start_time = time.perf_counter()
+
+    # Validate all required mmCIF data items before the parser or cleanup pipeline can
+    # fail on them individually.
+    validate_mmcif_for_preprocessing(
+        CIFFile.read(input_cif),
+        source=input_cif,
+        expand_bioassembly=True,
+        max_polymer_chains=max_polymer_chains,
+    )
 
     # Parse the input CIF file
     parsed_mmcif = parse_mmcif(
