@@ -357,3 +357,15 @@ Note: third `aws-capacity` night in the last four (10-23, 10-24, 10-26) — toni
 - Required label: `[self-hosted, amd-gpu]` (`.github/workflows/ci-integration-test-pixi-amd-reusable.yml`).
 - Could not confirm the runner's live status: `GET /repos/aqlaboratory/openfold-3/actions/runners` returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this execution environment — same limitation as the 10-23/10-24 and earlier occurrences in this file. **Flagged for a human:** check Settings → Actions → Runners directly and restart/re-register the AMD box if it's offline.
 - Both Brev CUDA legs (`openfold3-cuda12`, `openfold3-cuda13`) passed clean on the same commit, unaffected — this is isolated to the self-hosted AMD runner, not an AWS/Brev capacity issue.
+
+
+### 2026-11-05 — Run [41961082772](https://github.com/aqlaboratory/openfold-3/actions/runs/41961082772) (run #371, primary nightly) — scanned while still in progress
+
+- **Branch:** main @ `37be44e9` (unchanged since run #369, 11-04)
+- **Scan date:** 2026-11-05T07:11Z
+- **Not an AWS failure — recorded here per this file's `runner-offline` scope.**
+- `test-pixi-amd (openfold3-rocm7)` — `test-openfold-docker-pixi-amd` (job 127027342625), event `schedule`, started 2026-11-05T03:21:31Z, status `queued`, zero steps recorded as of scan time 2026-11-05T07:11Z (queued 3h50m+, past this file's/`daily-status.md`'s 2h `QUEUED` threshold). Still open at scan time — may resolve (pass/fail/cancel) after this entry is written.
+- Required label: `[self-hosted, amd-gpu]` (`.github/workflows/ci-integration-test-pixi-amd-reusable.yml`).
+- **Second consecutive night.** Yesterday's (11-04) AMD job (job 126366241238) never picked up a runner either: it sat `queued` from 2026-11-04T03:21:15Z all the way to 2026-11-05T03:21:15Z — almost exactly 24 hours — and was only terminated (`conclusion: cancelled`) at that moment because tonight's run opened a new job in the same `cancel-in-progress: true` concurrency group, not because anything about the stale job itself resolved. AMD test coverage has now been completely dark for over 24 hours across two consecutive nightly runs — the same pattern as the 10-23/10-24 incident in this file (which recovered by 10-25 with no recorded intervention).
+- Could not confirm the runner's live status directly: `GET /repos/aqlaboratory/openfold-3/actions/runners` returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this execution environment — same limitation noted on 10-23, 10-24, and in `weekly-summary.md`'s data-source notes. **Flagged for a human, now urgently given the 24h+ dark streak:** check Settings → Actions → Runners directly for the self-hosted `amd-gpu` box and restart/re-register it.
+- Both Brev CUDA legs passed clean again on the same commit, unaffected.
