@@ -1507,3 +1507,28 @@ Fully clean night — first since 10-28/10-29's transition. The AMD self-hosted 
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #367, per this log's established convention).
+
+---
+
+## 2026-11-04
+
+### Run #369 — primary nightly (schedule `17 3 * * *`, main @ `37be44e9` — merge PR #502 "ci: update Brev runner cleanup to v1.1.0" (ethanholz), new since run #367/368's `ab517c1b`, [41766580564](https://github.com/aqlaboratory/openfold-3/actions/runs/41766580564))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 25 min | `test-openfold-docker-pixi` 03:27:58–03:53:20 (25m22s). |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 26 min | `test-openfold-docker-pixi` 03:28:10–03:53:57 (25m47s). |
+| test-pixi-amd (openfold3-rocm7) | **CANCELLED** | — | `test-openfold-docker-pixi-amd` (job 126366241238) sat `QUEUED` from 2026-11-04T03:21:15Z with zero steps ever recorded, then auto-cancelled at exactly 2026-11-05T03:21:15Z — the instant the next (11-05) run opened a new `test-pixi-amd` job in the same `cancel-in-progress: true` concurrency group, not because anything about the stale job itself resolved. Not a timeout-minutes cap (job never started), not manual. Required runner label: `[self-hosted, amd-gpu]` (`.github/workflows/ci-integration-test-pixi-amd-reusable.yml`). Job log unavailable (HTTP 404 — no steps ever ran). Candidate `runner-offline`, unconfirmed — `GET /repos/aqlaboratory/openfold-3/actions/runners` returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this execution environment. Full detail in `aws-outage-failures.md`. |
+
+**2026-11-04: 2/3 passed · 0 skipped · 0 queued · 1 need attention**
+
+First AMD dark night since the five-night `EACCES` streak cleared on 11-03 (10-29 through 11-02). Both Brev CUDA legs passed clean on main's new commit (`37be44e9`, PR #502 — Brev runner cleanup bump to v1.1.0, unrelated to AMD). `test-pixi-amd` never got a runner at all tonight; recorded `CANCELLED` only because the job sat queued the full ~24h and was superseded the moment the next night's run opened its own `test-pixi-amd` job in the same concurrency group — this is a different failure mode from the 10-29–11-02 `EACCES` streak (that one at least started and failed in `actions/checkout`; tonight's job never started at all). **Flagged for a human:** check the self-hosted `amd-gpu` runner's live status directly under Settings → Actions → Runners and restart/re-register it if offline.
+
+### Run #370 — secondary nightly (schedule `17 4 * * *`, main @ `37be44e9`, [41772547284](https://github.com/aqlaboratory/openfold-3/actions/runs/41772547284))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #369, per this log's established convention).

@@ -346,3 +346,14 @@ Note: second consecutive `aws-capacity` night (10-23, 10-24) after a 14-night cl
   - `test-pixi-cuda-brev (openfold3-cuda13)` — test-openfold-docker-pixi (job 121386823279), 39 min
 
 Note: third `aws-capacity` night in the last four (10-23, 10-24, 10-26) — tonight both legs hit the capacity wall directly and independently, the same pattern as 10-23 (unlike 10-24, where only cuda12 hit it directly and cuda13 was a fail-fast cascade). Both Brev legs passed clean on the new commit (`f87904d`, PR #478 — a test-marker-only change, no functional impact) in 39–42 minutes, reinforcing that Brev draws from a separate capacity pool than the AWS `g5.4xlarge` runners. No `runner-offline` entry tonight — `test-pixi-amd (openfold3-rocm7)` passed clean, its second consecutive clean night after the 10-23/10-24 dark streak.
+
+
+### 2026-11-04 — Run [41766580564](https://github.com/aqlaboratory/openfold-3/actions/runs/41766580564) (run #369, primary nightly)
+
+- **Branch:** main @ `37be44e9` (merge PR #502 "ci: update Brev runner cleanup to v1.1.0", ethanholz)
+- **Scan date:** 2026-11-05 (scanned the day after, as part of this scan's 24h window)
+- **Not an AWS failure — recorded here per this file's `runner-offline` scope.**
+- `test-pixi-amd (openfold3-rocm7)` — `test-openfold-docker-pixi-amd` (job 126366241238), event `schedule`, created/started 2026-11-04T03:21:15Z, zero steps ever recorded. Sat `queued` for the full ~24 hours and was only terminated (`conclusion: cancelled`) at 2026-11-05T03:21:15Z — the instant the next nightly run (11-05, run #371) opened a new job in the same `cancel-in-progress: true` concurrency group, not because anything about the stale job itself resolved. Job log unavailable (HTTP 404 — consistent with a job that never started).
+- Required label: `[self-hosted, amd-gpu]` (`.github/workflows/ci-integration-test-pixi-amd-reusable.yml`).
+- Could not confirm the runner's live status: `GET /repos/aqlaboratory/openfold-3/actions/runners` returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this execution environment — same limitation as the 10-23/10-24 and earlier occurrences in this file. **Flagged for a human:** check Settings → Actions → Runners directly and restart/re-register the AMD box if it's offline.
+- Both Brev CUDA legs (`openfold3-cuda12`, `openfold3-cuda13`) passed clean on the same commit, unaffected — this is isolated to the self-hosted AMD runner, not an AWS/Brev capacity issue.
