@@ -134,6 +134,7 @@ def create_template_precache_entry_for_template(
     """
 
     template_process_logger = TEMPLATE_PROCESS_LOGGER.get()
+    assert template_process_logger is not None
 
     try:
         template_structure_path = template_structures_directory / (
