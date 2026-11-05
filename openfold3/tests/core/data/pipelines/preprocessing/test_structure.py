@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
 from pathlib import Path
 
 import numpy as np
@@ -86,21 +87,15 @@ def test_cleanup_structure_of3_keeps_ligand_that_matches_ccd(
     [
         # TOL is tolrestat in the CCD, which has atoms C1-C6 but no atom named C
         pytest.param(
-            "TOL",
-            "C",
-            r"\('4', 203, 'TOL', \['C'\]\)",
-            id="custom_ligand_reuses_ccd_code",
+            "TOL", "C", "('4', 203, 'TOL', ['C'])", id="custom_ligand_reuses_ccd_code"
         ),
         pytest.param(
-            "MBN",
-            "C7",
-            r"\('4', 203, 'MBN', \['C7'\]\)",
-            id="ligand_atom_name_not_in_ccd_entry",
+            "MBN", "C7", "('4', 203, 'MBN', ['C7'])", id="atom_name_not_in_ccd_entry"
         ),
         pytest.param(
             "LIG1",
             "C",
-            r"Residue LIG1 \(chain 4, residue 203\) is not in the CCD",
+            "Residue LIG1 (chain 4, residue 203) is not in the CCD",
             id="ligand_code_not_in_ccd",
         ),
     ],
@@ -114,5 +109,5 @@ def test_cleanup_structure_of3_rejects_ligand_that_does_not_match_ccd(
     atom_array.atom_name[toluene & (atom_array.atom_name == "C")] = methyl_carbon_name
     atom_array.res_name[toluene] = res_name
 
-    with pytest.raises(ValueError, match=error_match):
+    with pytest.raises(ValueError, match=re.escape(error_match)):
         cleanup_structure_of3(atom_array, cif_data, biotite_ccd_wrapper)
