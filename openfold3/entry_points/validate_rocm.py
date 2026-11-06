@@ -100,14 +100,14 @@ def main() -> None:
     except Exception as e:
         all_ok &= _check("Triton backend is HIP", False, str(e))
 
-    # 6. OpenFold3 Triton evoformer kernel loads
+    # 6. geometric-nn-ops Triton triangle-attention kernel loads
     try:
-        from openfold3.core.kernels.triton.evoformer import TritonEvoformer
+        from geometric_nn_ops_torch.triangle import triangle_attention
 
-        kernel_ok = TritonEvoformer is not None
-        all_ok &= _check("Triton evoformer kernel loaded", kernel_ok)
+        kernel_ok = triangle_attention is not None
+        all_ok &= _check("Triton triangle-attention kernel loaded", kernel_ok)
     except Exception as e:
-        all_ok &= _check("Triton evoformer kernel loaded", False, str(e))
+        all_ok &= _check("Triton triangle-attention kernel loaded", False, str(e))
 
     # Summary
     print()

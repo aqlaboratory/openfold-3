@@ -96,11 +96,11 @@ To install GPU accelerated {doc}`cuEquivariance attention kernels <kernels>`, us
 pip install openfold3[cuequivariance]
 ```
 
-**Triton** To use AMD ROCm-compatible Triton kernels, first install the ROCm PyTorch wheel (which bundles ROCm Triton), then install openfold3:
+**Triton** To use AMD ROCm-compatible Triton kernels, first install the ROCm PyTorch wheel (which bundles ROCm Triton), then install openfold3 with the `triton` extra, which pulls in the [geometric-nn-ops](https://github.com/AMDResearch/geometric-nn-ops) triangle-attention kernel:
 
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
-pip install openfold3
+pip install openfold3[triton]
 ```
 
 For AMD system installation: After installation, verify your ROCm environment is correctly configured:
