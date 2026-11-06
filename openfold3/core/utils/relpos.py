@@ -107,8 +107,42 @@ def apply_cyclic_offsets(
     return flat_offsets.reshape(offset.shape)
 
 
+def cyclic_residue_offset(batch: dict) -> torch.Tensor | None:
+    """Full ``[*, N_token, N_token]`` residue offset with cyclic chains wrapped.
+
+    ``apply_cyclic_offsets`` rewrites offsets across a whole ring, so the result
+    for a row subset cannot be derived from that subset alone. Building it here
+    once and passing it to :func:`relpos_complex` as ``wrapped_offset`` keeps a
+    row-chunked caller from rebuilding it once per chunk.
+
+    Args:
+        batch:
+            Input feature dictionary
+
+    Returns:
+        [*, N_token, N_token] Offsets, cyclic within each cyclic chain, or None
+        when no chain is cyclic. Without a cyclic chain the caller would only be
+        handed the full offset it can build cheaply for its own rows.
+    """
+    cyclic_mask = batch.get("cyclic_mask")
+    if cyclic_mask is None or not cyclic_mask.any():
+        return None
+
+    pos = batch["residue_index"]
+    return apply_cyclic_offsets(
+        offset=pos[..., None] - pos[..., None, :],
+        pos=pos,
+        cyclic_mask=cyclic_mask,
+        asym_id=batch["asym_id"],
+    )
+
+
 def relpos_complex(
-    batch: dict, max_relative_idx: int, max_relative_chain: int
+    batch: dict,
+    max_relative_idx: int,
+    max_relative_chain: int,
+    row_slice: slice | None = None,
+    wrapped_offset: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
     Args:
@@ -118,18 +152,42 @@ def relpos_complex(
             Maximum relative position and token indices clipped
         max_relative_chain:
             Maximum relative chain indices clipped
+        row_slice:
+            Optional slice over the first spatial dimension (rows of the pair
+            tensor). When given, returns ``[*, chunk, N_token, C]`` instead of
+            ``[*, N_token, N_token, C]``, so the full ``[N, N, C]`` tensor is
+            never materialized. Used by the chunked diffusion conditioning
+            path.
+        wrapped_offset:
+            Optional precomputed :func:`cyclic_residue_offset` result for the
+            residue offset. Supplying it lets a row-chunked caller wrap the ring
+            once instead of once per chunk. Only meaningful for the residue
+            offset; the token and chain offsets are never cyclic.
 
     Returns:
-        [*, N_token, N_token, C_z] Relative position embedding
+        [*, N_token, N_token, C_z] Relative position embedding, or
+        [*, chunk, N_token, C_z] when ``row_slice`` is given
     """
     res_idx = batch["residue_index"]
     asym_id = batch["asym_id"]
     cyclic_mask = batch.get("cyclic_mask")
     entity_id = batch["entity_id"]
-    same_chain = asym_id[..., None] == asym_id[..., None, :]
 
-    same_res = res_idx[..., None] == res_idx[..., None, :]
-    same_entity = entity_id[..., None] == entity_id[..., None, :]
+    if row_slice is None:
+        same_chain = asym_id[..., None] == asym_id[..., None, :]
+        same_res = res_idx[..., None] == res_idx[..., None, :]
+        same_entity = entity_id[..., None] == entity_id[..., None, :]
+    else:
+        same_chain = asym_id[..., row_slice, None] == asym_id[..., None, :]
+        same_res = res_idx[..., row_slice, None] == res_idx[..., None, :]
+        same_entity = entity_id[..., row_slice, None] == entity_id[..., None, :]
+
+    # Only a row-sliced build can skip the full [N, N] offset, so the eager path
+    # does not pay for the device sync this costs. ``bool`` forces the sync here
+    # once rather than inside each of the three ``relpos`` calls.
+    has_cyclic = (
+        row_slice is not None and cyclic_mask is not None and bool(cyclic_mask.any())
+    )
 
     def relpos(
         pos: torch.Tensor,
@@ -155,10 +213,22 @@ def relpos_complex(
             rel_pos:
                 [*, N_token, N_token, 2 * rel_clip_idx + 2] Relative position embedding
         """
-        offset = pos[..., None] - pos[..., None, :]
-        offset = apply_cyclic_offsets(
-            offset=offset, pos=pos, cyclic_mask=cyclic_mask, asym_id=asym_id
-        )
+        # ``rel_token`` / ``rel_chain`` pass cyclic_mask=None, so they can always
+        # take the row-sliced path; only the residue offset can be cyclic.
+        if cyclic_mask is not None and has_cyclic:
+            # Wrapping rewrites a whole ring, so the requested rows cannot
+            # reproduce it. Take the offset the caller built once, or build it.
+            offset = wrapped_offset
+            if offset is None:
+                offset = cyclic_residue_offset(batch)
+            offset = offset[..., row_slice, :]
+        elif row_slice is not None:
+            offset = pos[..., row_slice, None] - pos[..., None, :]
+        else:
+            offset = pos[..., None] - pos[..., None, :]
+            offset = apply_cyclic_offsets(
+                offset=offset, pos=pos, cyclic_mask=cyclic_mask, asym_id=asym_id
+            )
 
         clipped_offset = torch.clamp(offset + rel_clip_idx, min=0, max=2 * rel_clip_idx)
         final_offset = torch.where(

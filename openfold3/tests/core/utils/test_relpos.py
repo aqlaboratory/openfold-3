@@ -513,3 +513,56 @@ class TestRelposComplex:
         out_false = self._relpos(batch_false)
         out_none = self._relpos(batch_none)
         assert torch.equal(out_false, out_none)
+
+    @pytest.mark.parametrize(
+        "chain_lengths, cyclic_flags",
+        [
+            ([9], [False]),
+            ([5, 4], [False, True]),
+            ([4, 5], [True, True]),
+        ],
+        ids=["linear", "linear_then_cyclic", "all_cyclic"],
+    )
+    # Row 0 alone, a span inside a chain, and a span inside the cyclic chain
+    @pytest.mark.parametrize("row_slice", [slice(0, 1), slice(2, 6), slice(7, 9)])
+    def test_row_slice_matches_the_same_rows_of_the_full_build(
+        self, chain_lengths, cyclic_flags, row_slice
+    ):
+        # Row slicing is how the chunked diffusion conditioning builds the pair
+        # conditioning without ever holding the full [N, N] tensor. Slicing
+        # after the fact has to give exactly the same encodings.
+        asym_ids = [i + 1 for i, n in enumerate(chain_lengths) for _ in range(n)]
+        cyclic_mask = [
+            flag
+            for flag, n in zip(cyclic_flags, chain_lengths, strict=True)
+            for _ in range(n)
+        ]
+        batch = _make_batch(sum(chain_lengths), asym_ids, cyclic_mask)
+
+        full = self._relpos(batch)
+        sliced = relpos_complex(
+            batch, self.MAX_IDX, self.MAX_CHAIN, row_slice=row_slice
+        )
+
+        # The cyclic wrap is computed over the whole chain and sliced afterwards,
+        # so a row slice of a cyclic chain still matches the full build.
+        assert sliced.shape == full[..., row_slice, :, :].shape
+        assert torch.equal(sliced, full[..., row_slice, :, :])
+
+    def test_row_slice_without_cyclic_mask_matches_all_false(self):
+        # Absent cyclic_mask means every chain is linear, which is the path that
+        # can skip the full [N, N] offset entirely.
+        n = 6
+        batch_false = _make_batch(n, [1] * n, [False] * n)
+        batch_none = _make_batch(n, [1] * n, [False] * n)
+        batch_none.pop("cyclic_mask")
+        row_slice = slice(1, 4)
+
+        out_false = relpos_complex(
+            batch_false, self.MAX_IDX, self.MAX_CHAIN, row_slice=row_slice
+        )
+        out_none = relpos_complex(
+            batch_none, self.MAX_IDX, self.MAX_CHAIN, row_slice=row_slice
+        )
+
+        assert torch.equal(out_false, out_none)
