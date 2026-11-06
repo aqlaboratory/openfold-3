@@ -23,6 +23,7 @@ from openfold3.core.metrics.confidence import (
 from openfold3.core.metrics.sample_ranking import (
     compute_has_clash,
     compute_ptm,
+    full_complex_sample_ranking_metric,
 )
 from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
 
@@ -188,6 +189,56 @@ class TestConfidenceMetrics(unittest.TestCase):
         w = self._make_two_bin_weights(N_d=3, bin_min=0.0, bin_max=2.0, no_bins=2)
         expected = w[0]  # bin0 (high-weight) used by (2,1)
         self.assertTrue(torch.allclose(iptm, expected.expand_as(iptm)))
+
+    def _ranking_inputs(self, asym_id: torch.Tensor, num_samples: int = 2):
+        """RNA-only toy complex: no disorder term, atoms far apart (no clash)."""
+        N = asym_id.shape[0]
+        no_bins = 64
+        gen = torch.Generator().manual_seed(0)
+        batch = {
+            "num_atoms_per_token": torch.ones(N, dtype=torch.long),
+            "atom_mask": torch.ones(N),
+            "token_mask": torch.ones(N),
+            "asym_id": asym_id,
+            "is_protein": torch.zeros(N, dtype=torch.bool),
+            "is_rna": torch.ones(N, dtype=torch.bool),
+            "is_dna": torch.zeros(N, dtype=torch.bool),
+        }
+        output = {
+            "atom_positions_predicted": torch.arange(num_samples * N * 3)
+            .float()
+            .reshape(num_samples, N, 3)
+            * 10.0,
+            "pae_logits": torch.randn(num_samples, N, N, no_bins, generator=gen),
+        }
+        has_frame = torch.ones(num_samples, N, dtype=torch.bool)
+        ptm_kwargs = {"bin_min": 0, "bin_max": 32, "no_bins": no_bins}
+        return batch, output, has_frame, ptm_kwargs
+
+    def test_sample_ranking_single_chain_uses_ptm(self):
+        # One chain: ipTM is 0 and must not drag the score down to 0.2 * pTM.
+        batch, output, has_frame, ptm_kwargs = self._ranking_inputs(
+            torch.ones(20, dtype=torch.long)
+        )
+        scores = full_complex_sample_ranking_metric(
+            batch=batch, output=output, has_frame=has_frame, **ptm_kwargs
+        )
+        self.assertTrue(torch.all(scores["has_clash"] == 0))
+        self.assertTrue(torch.all(scores["disorder"] == 0))
+        self.assertTrue(
+            torch.allclose(scores["sample_ranking_score"], scores["ptm"], atol=1e-6)
+        )
+
+    def test_sample_ranking_multi_chain_uses_iptm(self):
+        asym_id = torch.cat([torch.ones(10), 2 * torch.ones(10)]).long()
+        batch, output, has_frame, ptm_kwargs = self._ranking_inputs(asym_id)
+        scores = full_complex_sample_ranking_metric(
+            batch=batch, output=output, has_frame=has_frame, **ptm_kwargs
+        )
+        expected = 0.8 * scores["iptm"] + 0.2 * scores["ptm"]
+        self.assertTrue(
+            torch.allclose(scores["sample_ranking_score"], expected, atol=1e-6)
+        )
 
 
 if __name__ == "__main__":
