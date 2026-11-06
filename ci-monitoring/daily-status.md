@@ -1557,3 +1557,28 @@ Second consecutive night the self-hosted AMD runner has failed to pick up a job 
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot. Does not affect the day's coverage line above (based on the primary slot, run #371, per this log's established convention).
+
+---
+
+## 2026-11-06
+
+### Run #373 — primary nightly (schedule `17 3 * * *`, main @ `37be44e9` (unchanged since run #369, 11-04), [42155992871](https://github.com/aqlaboratory/openfold-3/actions/runs/42155992871))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 29 min | `test-openfold-docker-pixi` 03:27:50–03:56:26 (28m36s). |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 27 min | `test-openfold-docker-pixi` 03:27:36–03:54:56 (27m20s). |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 36 min | `test-openfold-docker-pixi-amd` 03:20:57–03:57:02 (36m05s). |
+
+**2026-11-06: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Fully clean night — first since 11-03. Closing the loop on 11-05's still-open AMD item: that night's `test-pixi-amd` job (127027342625) eventually picked up a runner at 2026-11-05T13:19:35Z (~10h after it went `queued`), started the `Build and push test image` step, then was cancelled 3 minutes later at 13:22:41Z — final conclusion `cancelled`, not a resolution via pass/fail. No newer run of this workflow was found in the same concurrency group around that time (checked `workflow_dispatch` history), and the runtime before cancellation is far short of any `timeout-minutes` cap, so this reads as a manual cancellation rather than a supersession or timeout — could not confirm who/what triggered it directly, since `GET /repos/.../actions/runners` is still blocked by this environment's egress proxy, the same limitation noted throughout this log. Tonight's AMD job (`omsf-amd-aupcloud`) ran clean start-to-finish with no sign of the 11-04/11-05 dark streak recurring. Both Brev CUDA legs also passed clean on the unchanged commit (`37be44e9`, PR #502) — third consecutive clean night for them.
+
+### Run #374 — secondary nightly (schedule `17 4 * * *`, main @ `d97abeff` — merge PR #501 "Feat/cif-gz-support" (WillGPoole), new since run #373's `37be44e9`, [42161923824](https://github.com/aqlaboratory/openfold-3/actions/runs/42161923824))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #373, per this log's established convention).
