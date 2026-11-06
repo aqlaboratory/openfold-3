@@ -166,6 +166,57 @@ class TestDiffusionConditioning(unittest.TestCase):
         self.assertTrue(si.shape == (batch_size, 1, n_token, c_s))
         self.assertTrue(zij.shape == (batch_size, 1, n_token, n_token, c_z))
 
+    def test_condition_pair_matches_forward(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        c_s_input = consts.c_s + 65
+        c_s = consts.c_s
+        c_z = consts.c_z
+
+        proj_entry = OF3ProjectEntry()
+        config = proj_entry.get_model_config_with_presets()
+        diff_cond_config = config.architecture.diffusion_module.diffusion_conditioning
+        diff_cond_config.update({"c_s": c_s, "c_s_input": c_s_input, "c_z": c_z})
+        dc = DiffusionConditioning(**diff_cond_config)
+        dc.eval()
+
+        si_input = torch.rand((batch_size, n_token, c_s_input))
+        si_trunk = torch.rand((batch_size, n_token, c_s))
+        zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
+        t = diff_cond_config.sigma_data * torch.exp(
+            -1.2 + 1.5 * torch.randn(batch_size, device=si_trunk.device)
+        )
+        batch = {
+            "token_index": torch.arange(0, n_token)[None, :].repeat((batch_size, 1)),
+            "token_mask": torch.ones((batch_size, n_token)),
+            "residue_index": torch.arange(0, n_token)[None, :].repeat((batch_size, 1)),
+            "sym_id": torch.zeros((batch_size, n_token)),
+            "asym_id": torch.zeros((batch_size, n_token)),
+            "entity_id": torch.zeros((batch_size, n_token)),
+            "cyclic_mask": torch.zeros((batch_size, 1, n_token), dtype=torch.bool),
+        }
+
+        kwargs = dict(
+            batch=batch,
+            si_input=si_input,
+            si_trunk=si_trunk,
+            use_conditioning=True,
+        )
+        with torch.no_grad():
+            si_fwd, zij_fwd = dc(t=t, zij_trunk=zij_trunk, **kwargs)
+            zij = dc.condition_pair(
+                batch=batch, zij_trunk=zij_trunk, use_conditioning=True
+            )
+            si_cached = dc.condition_single(t=t, **kwargs)
+
+        self.assertTrue(torch.equal(si_fwd, si_cached))
+        self.assertTrue(torch.equal(zij_fwd, zij))
+
+        t2 = t * 1.1
+        with torch.no_grad():
+            si_t2 = dc.condition_single(t=t2, **kwargs)
+        self.assertFalse(torch.equal(si_cached, si_t2))
+
 
 if __name__ == "__main__":
     unittest.main()
