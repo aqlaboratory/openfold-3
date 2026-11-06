@@ -118,6 +118,10 @@ model_config = mlc.ConfigDict(
                     "use_cueq_triangle_kernels": False,
                     "use_triton_triangle_kernels": True,
                     "use_lma": False,
+                    # Capture the diffusion denoising step in a CUDA graph and
+                    # replay it for every step of the rollout. Same outputs as
+                    # the eager step; fastest on small and medium inputs.
+                    "use_cuda_graph_diffusion": False,
                     "msa_module": {
                         "swiglu_chunk_token_cutoff": None,
                         "swiglu_seq_chunk_size": None,

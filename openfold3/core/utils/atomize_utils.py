@@ -192,6 +192,79 @@ def aggregate_atom_feat_to_tokens_segmented(
     return token_feat / (counts.unsqueeze(-1) + eps)
 
 
+def token_atom_gather_index(
+    num_atoms_per_token: torch.Tensor, n_atom: int
+) -> torch.Tensor:
+    """Index of each token's atoms in the packed, token-sorted atom dimension.
+
+    Reads the largest atom count back to the host, so it syncs the device once.
+
+    Args:
+        num_atoms_per_token:
+            [*, N_token] Number of atoms per token
+        n_atom:
+            Size of the atom dimension. Slots past a token's atom count hold
+            ``n_atom``, which ``aggregate_atom_feat_to_tokens_gathered`` maps to
+            a zero row.
+    Returns:
+        [*, N_token, K] Atom indices, K being the largest atom count of a token
+    """
+    lengths = num_atoms_per_token.long()
+    max_atoms = int(lengths.max())
+    starts = torch.cumsum(lengths, dim=-1) - lengths
+    slots = torch.arange(max_atoms, device=lengths.device)
+    index = starts.unsqueeze(-1) + slots
+    return torch.where(slots < lengths.unsqueeze(-1), index, n_atom)
+
+
+def aggregate_atom_feat_to_tokens_gathered(
+    token_atom_index: torch.Tensor,
+    atom_mask: torch.Tensor,
+    atom_feat: torch.Tensor,
+    eps: float = 1e-9,
+) -> torch.Tensor:
+    """``aggregate_atom_feat_to_tokens_segmented`` without device syncs.
+
+    ``torch.segment_reduce`` validates its lengths on the host, so it cannot be
+    CUDA-graph captured. This adds each token's atoms one slot at a time, in the
+    same order as the segmented sum, so the result is the same bit for bit.
+
+    Args:
+        token_atom_index:
+            [*, N_token, K] Output of ``token_atom_gather_index``
+        atom_mask:
+            [*, N_atom] Atom mask
+        atom_feat:
+            [*, N_atom, c] Atom-level features
+        eps:
+            Added to the atom counts before dividing
+    Returns:
+        [*, N_token, c] Mean of each token's atom features
+    """
+    batch_dims = atom_feat.shape[:-2]
+    channels = atom_feat.shape[-1]
+    atom_mask = _expand_to_batch(atom_mask, batch_dims)
+    index = token_atom_index.expand(*batch_dims, *token_atom_index.shape[-2:])
+
+    # Same operands as the segmented path. Append a zero row for the padding
+    # slots.
+    masked_feat = atom_feat * atom_mask.unsqueeze(-1)
+    masked_feat = torch.cat(
+        [masked_feat, masked_feat.new_zeros(*batch_dims, 1, channels)], dim=-2
+    )
+    counted = atom_mask.to(atom_feat.dtype)
+    counted = torch.cat([counted, counted.new_zeros(*batch_dims, 1)], dim=-1)
+
+    token_feat = masked_feat.new_zeros(*batch_dims, index.shape[-2], channels)
+    for slot in range(index.shape[-1]):
+        slot_index = index[..., slot].unsqueeze(-1).expand(*index.shape[:-1], channels)
+        token_feat = token_feat + torch.gather(masked_feat, -2, slot_index)
+
+    counts = torch.gather(counted, -1, index.flatten(-2)).reshape(index.shape)
+    counts = counts.sum(dim=-1)
+    return token_feat / (counts.unsqueeze(-1) + eps)
+
+
 def aggregate_atom_feat_to_tokens(
     token_mask: torch.Tensor,
     atom_to_token_index: torch.Tensor,

@@ -406,6 +406,9 @@ class OpenFold3(nn.Module):
                 chunk_size=mode_mem_settings.chunk_size,
                 use_high_precision_attention=True,
                 _mask_trans=True,
+                use_cuda_graph=(
+                    not self.training and mode_mem_settings.use_cuda_graph_diffusion
+                ),
             )
 
             self.clear_autocast_cache()
