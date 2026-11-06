@@ -382,6 +382,11 @@ def _get_residue_idx_lut(molecule_type: MoleculeType) -> np.ndarray:
     lut = np.full(256, unknown_idx, dtype=np.int16)
     for residue, idx in residues_pos_map.items():
         lut[ord(residue)] = idx
+    # RNA alignments from DNA databases may spell uracil as thymine, and these are
+    # accepted as a match for the query (see find_query_row_mismatches), so read
+    # T as U instead of as the unknown residue N
+    if molecule_type == MoleculeType.RNA:
+        lut[ord("T")] = residues_pos_map["U"]
     return lut
 
 
