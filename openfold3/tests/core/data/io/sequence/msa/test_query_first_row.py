@@ -222,6 +222,41 @@ def test_tolerated_query_row_warns(tmp_path, fmt, chains, match):
 @pytest.mark.parametrize(
     "chains",
     [
+        pytest.param(
+            [_chain(LONG, _main(mutate(LONG, 3, "W")))],
+            id="point_mutant_reusing_wild_type_main_msas",
+        ),
+        pytest.param(
+            [
+                _chain(
+                    LONG,
+                    _main(mutate(LONG, 0, "M")),
+                    {"colabfold_paired": mutate(LONG, 0, "M")},
+                ),
+                _chain(SHORT, _main(SHORT), {"colabfold_paired": SHORT}),
+            ],
+            id="point_mutant_in_heteromer_with_paired_msas",
+        ),
+    ],
+)
+def test_tolerated_query_row_is_replaced_by_sequence(tmp_path, fmt, chains):
+    """The msa feature's first row must be the chain's sequence, not the
+    sequence the reused alignment was built for."""
+    query = _build_query(tmp_path, fmt, chains)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        msa_array_collection = process(query, MSA_SETTINGS)
+
+    for chain_id, chain in zip("ABCD", chains, strict=False):
+        query_seq = msa_array_collection.chain_id_to_query_seq[chain_id]
+        assert "".join(query_seq.msa[0]) == chain["sequence"]
+
+
+@fmt_parametrize
+@pytest.mark.parametrize(
+    "chains",
+    [
         pytest.param([_chain(LONG, _main(LONG))], id="monomer"),
         pytest.param(
             [

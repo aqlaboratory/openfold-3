@@ -713,12 +713,38 @@ class MsaSampleProcessorInference(MsaSampleProcessor):
                     input=input, msa_array_collection=msa_array_collection
                 ),
             )
+            self.use_sequences_as_query_rows(
+                input=input, msa_array_collection=msa_array_collection
+            )
             chain_id_to_query_seq = self.query_seq_processor(
                 msa_array_collection=msa_array_collection
             )
         else:
             chain_id_to_query_seq = {}
         return chain_id_to_query_seq
+
+    @staticmethod
+    def use_sequences_as_query_rows(
+        input: MsaSampleProcessorInputInference,
+        msa_array_collection: MsaArrayCollection,
+    ) -> None:
+        """Replaces each representative's query row with the chain's own sequence.
+
+        The query row is taken from the first row of an alignment, which can differ
+        from the chain's sequence when that difference is tolerated, e.g. when a
+        point mutant reuses the wild-type MSAs (see `check_query_rows`). The query
+        row is the first row of the msa feature and should match the chain's
+        residues (restype), so the chain's sequence is used instead. Must run after
+        `check_query_rows`, which ensures the lengths match.
+        """
+        query_seqs = msa_array_collection.rep_id_to_query_seq
+        for rep_id, query_seq in list(query_seqs.items()):
+            sequence = input.msa_chain_data[rep_id].sequence
+            if sequence is None or len(sequence) != query_seq.size:
+                continue
+            query_seqs[rep_id] = np.array(
+                [list(sequence.upper())], dtype=query_seq.dtype
+            )  # type: ignore[assignment]
 
     def check_query_rows(
         self,
