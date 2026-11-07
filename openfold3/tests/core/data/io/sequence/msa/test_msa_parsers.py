@@ -46,33 +46,26 @@ def _msa_array(n_rows: int = 5) -> MsaArray:
     return MsaArray(msa=msa, deletion_matrix=deletion_matrix)
 
 
-@pytest.mark.parametrize("max_seq_count, expected_rows", [(None, 5), (3, 3), (1, 1)])
-def test_parse_a3m_respects_max_seq_count(max_seq_count, expected_rows):
-    """parse_a3m must cap the MSA at max_seq_count.
+@pytest.mark.parametrize(
+    "parser, build_msa_string",
+    [(parse_a3m, _a3m_string), (parse_stockholm, _stockholm_string)],
+)
+@pytest.mark.parametrize(
+    "max_seq_count, expected_rows", [(None, 5), (3, 3), (1, 1), (0, 0), (-1, 4)]
+)
+def test_parsers_respect_max_seq_count(
+    parser, build_msa_string, max_seq_count, expected_rows
+):
+    """The parsers must cap the MSA at max_seq_count, keeping the query width.
 
     Regression: truncate() was called without inplace=True, so the cap was a
     no-op and every sequence was kept.
     """
-    parsed = parse_a3m(_a3m_string(5), max_seq_count=max_seq_count)
+    parsed = parser(build_msa_string(5), max_seq_count=max_seq_count)
 
     assert len(parsed) == expected_rows
-    assert parsed.msa.shape[0] == expected_rows
-    assert parsed.deletion_matrix.shape[0] == expected_rows
-
-
-@pytest.mark.parametrize("max_seq_count, expected_rows", [(None, 5), (3, 3), (1, 1)])
-def test_parse_stockholm_respects_max_seq_count(max_seq_count, expected_rows):
-    """parse_stockholm must cap the MSA at max_seq_count.
-
-    Regression: same no-op truncate bug as parse_a3m. Stockholm is the format of
-    the main protein databases (uniref90, mgnify, bfd), so this path matters most
-    in practice.
-    """
-    parsed = parse_stockholm(_stockholm_string(5), max_seq_count=max_seq_count)
-
-    assert len(parsed) == expected_rows
-    assert parsed.msa.shape[0] == expected_rows
-    assert parsed.deletion_matrix.shape[0] == expected_rows
+    assert parsed.msa.shape == (expected_rows, QUERY_LEN)
+    assert parsed.deletion_matrix.shape == (expected_rows, QUERY_LEN)
 
 
 def test_truncate_int_returns_new_first_n_rows():
@@ -118,3 +111,76 @@ def test_truncate_over_length_keeps_all_rows():
 
     assert out is not None
     assert len(out) == 5
+
+
+def test_parse_a3m_counts_insertions_as_deletions():
+    """Lowercase residues are removed from the MSA and counted as deletions before
+    the next aligned column. Insertions after the last column are dropped."""
+    parsed = parse_a3m(">query\nACDE\n>hit\naaAcCD\nEzz\n")
+
+    assert parsed.msa.tolist() == [list("ACDE"), list("ACDE")]
+    assert parsed.deletion_matrix.tolist() == [[0, 0, 0, 0], [2, 1, 0, 0]]
+    assert parsed.metadata == ["query", "hit"]
+
+
+def test_parse_stockholm_removes_query_gap_columns():
+    """Columns with a gap in the query are removed, and residues in them are
+    counted as deletions. Residues after the last kept column are dropped.
+    Sequences can be split over several blocks."""
+    msa_string = (
+        "# STOCKHOLM 1.0\nquery AC-D\nhit   AcGD\n\nquery E.F-\nhit   EkFw\n//\n"
+    )
+
+    parsed = parse_stockholm(msa_string)
+
+    assert parsed.msa.tolist() == [list("ACDEF"), list("ACDEF")]
+    assert parsed.deletion_matrix.tolist() == [[0, 0, 0, 0, 0], [0, 0, 1, 0, 1]]
+    assert parsed.metadata == ["query", "hit"]
+
+
+def test_parse_stockholm_custom_gap_symbols():
+    """Only the given single-character symbols count as gaps."""
+    parsed = parse_stockholm("query A-.D\nhit   AGkD\n", gap_symbols={"-", "--"})
+
+    assert parsed.msa.tolist() == [list("A.D"), list("AKD")]
+    assert parsed.deletion_matrix.tolist() == [[0, 0, 0], [0, 1, 0]]
+
+
+@pytest.mark.parametrize(
+    "parser, msa_string",
+    [
+        (parse_a3m, ">query\nACDE\n>hit\nACD\n"),
+        (parse_stockholm, "query ACDE\nhit   ACD\n"),
+    ],
+)
+def test_parsers_reject_rows_of_different_length(parser, msa_string):
+    """Rows of different length fail the file, unless they come after
+    max_seq_count: those rows are not parsed."""
+    with pytest.raises(ValueError):
+        parser(msa_string)
+
+    assert parser(msa_string, max_seq_count=1).msa.tolist() == [list("ACDE")]
+
+
+@pytest.mark.parametrize(
+    "parser, msa_string",
+    [(parse_a3m, ""), (parse_stockholm, "# STOCKHOLM 1.0\n//\n")],
+)
+def test_parsers_reject_files_without_sequences(parser, msa_string):
+    with pytest.raises(ValueError, match="no sequences"):
+        parser(msa_string)
+
+
+@pytest.mark.parametrize(
+    "parser, msa_string",
+    [
+        (parse_a3m, ">query\nAÅC\n>hit\nAÅbC\n"),
+        (parse_stockholm, "query AÅ-C\nhit   AÅbC\n"),
+    ],
+)
+def test_parsers_accept_non_ascii(parser, msa_string):
+    """Non-ASCII text takes the slower code point path and gives the same result."""
+    parsed = parser(msa_string)
+
+    assert parsed.msa.tolist() == [list("AÅC"), list("AÅC")]
+    assert parsed.deletion_matrix.tolist() == [[0, 0, 0], [0, 0, 1]]
