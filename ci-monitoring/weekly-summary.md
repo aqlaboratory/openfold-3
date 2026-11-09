@@ -1,5 +1,53 @@
 # Weekly CI Summary
 
+## Week of 2026-11-03 – 2026-11-09
+
+**Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights, all under the current three-job scope (`test-pixi-cuda-brev (openfold3-cuda12)`, `test-pixi-cuda-brev (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`) — unchanged since PR #493 retired the AWS `test-pixi-cuda` jobs on 10-28. No off-schedule (`workflow_dispatch`) runs this week.
+
+### Days with coverage < full in-scope job count
+
+2 of 7 days — 11-04 and 11-05; the other five (11-03, 11-06, 11-07, 11-08, 11-09) were fully clean.
+
+| Date | Primary (03:17 UTC cron) | Secondary (04:17 UTC cron) |
+|---|---|---|
+| 2026-11-03 | 3/3 | SKIP (expected) |
+| 2026-11-04 | 2/3 | SKIP (expected) |
+| 2026-11-05 | 2/3 | SKIP (expected) |
+| 2026-11-06 | 3/3 | SKIP (expected) |
+| 2026-11-07 | 3/3 | SKIP (expected) |
+| 2026-11-08 | 3/3 | SKIP (expected) |
+| 2026-11-09 | 3/3 | SKIP (expected) |
+
+### Count per failure/non-pass class
+
+| Class | Count | Where |
+|---|---|---|
+| `runner-offline` (candidate, unconfirmed) | 2 | `test-pixi-amd (openfold3-rocm7)` never picked up a runner for two consecutive nights: 11-04 primary ([41766580564](https://github.com/aqlaboratory/openfold-3/actions/runs/41766580564)) sat `QUEUED` the full ~24h with zero steps recorded, auto-cancelled only when 11-05's run opened a new job in the same `cancel-in-progress: true` concurrency group; 11-05 primary ([41961082772](https://github.com/aqlaboratory/openfold-3/actions/runs/41961082772)) sat `QUEUED` past the 2h threshold at scan time, then — per 11-06's follow-up note — eventually got a runner ~10h late and was cancelled 3 minutes into the build-image step, so its final resolution was `cancelled`, not a confirmed runner recovery. `GET /repos/.../actions/runners` remained blocked by this environment's egress proxy both nights, so neither occurrence could be confirmed against live runner status. |
+
+**Most frequent class: `runner-offline` (candidate) — the only class observed this week (2 of 2 non-passes).** No `aws-capacity`, `gpu-unavailable`, `msa-hang`, `parameter-cache`, `build-push`, `code`, or `unclassified` occurrences this week — a marked improvement over the prior two weeks' AMD `EACCES` and ColabFold/AWS-capacity streaks.
+
+### Consecutive non-pass streak per job (as of 2026-11-09)
+
+| Job | Current streak | Detail |
+|---|---|---|
+| `test-pixi-cuda-brev (openfold3-cuda12)` | **0 — currently passing** | Clean every night this week (11-03 through 11-09) — 7 consecutive clean nights, extending the streak back through 10-31. |
+| `test-pixi-cuda-brev (openfold3-cuda13)` | **0 — currently passing** | Same — clean every night this week, 7 consecutive clean nights. |
+| `test-pixi-amd (openfold3-rocm7)` | **0 — currently passing** | 4 consecutive clean nights (11-06 through 11-09), since recovering from the 11-04/11-05 dark streak (the job never got picked up by a runner either night). |
+
+**Headline: the cleanest week in this log's recent history.** Only two non-passes all week, both the same AMD self-hosted-runner dark streak (11-04, 11-05) — the job never started, so there was no log to classify beyond the candidate `runner-offline` bucket; it cleared on its own by 11-06 with no human intervention recorded in this log, the same self-resolving pattern seen in the 10-23/10-24 incident. Both Brev CUDA legs passed every single night this week without exception. Zero `aws-capacity`, `code`, or `unclassified` occurrences — a sharp turnaround from the two preceding weeks (10-20–10-26: 6 of 7 nights non-passing; 10-27–11-02: 7 of 7 nights non-passing).
+
+### Brev vs. AWS retirement — already closed out
+
+No new action needed this week. As reported in the 10-28 weekly summary, the formal two-week Brev-vs-AWS comparison (due 10-28, two weeks after Brev jobs were added 10-14 in PR #448) found Brev at 95.5% post-fix pass rate, clearing the monitoring brief's 95% bar, and PR #493 "Remove aws GPU workflows" (Jennifer Wei) merged 2026-10-28 ~10:27 UTC, retiring the AWS `test-pixi-cuda` jobs outright. The three-job scope has now held for all 7 nights this week, and both Brev legs have remained healthy (7/7 clean nights) throughout.
+
+### Data-source notes
+
+- Built from `daily-status.md`/`aws-outage-failures.md` entries for 2026-11-03 through 2026-11-08; today's entry (run #379/#380, 11-09) was fetched live for this scan.
+- This session's `gh` CLI had an invalid `GH_TOKEN` (unauthenticated: "The token in GH_TOKEN is invalid."). Live data (workflow runs, job lists, job logs) was instead fetched via the GitHub MCP server's Actions tools (`actions_list`, `actions_get`, `get_job_logs`).
+- `GET /repos/.../actions/variables` is still blocked by this environment's egress proxy ("Access to this GitHub Actions path is not permitted through this proxy"), consistent with prior weeks' notes — `NIGHTLY_CRON`/`RUN_NIGHTLY` values were inferred from the workflow's `if:` guard and each run's observed `github.event.schedule`, not read directly.
+
+---
+
 ## Week of 2026-10-27 – 2026-11-02
 
 **Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights. Scope changed mid-week: 10-27 and 10-28 (runs #353, #355) were tracked under the five-job scope (`test-pixi-cuda (openfold3-cuda12)`, `test-pixi-cuda (openfold3-cuda13)`, `test-pixi-cuda-brev (openfold3-cuda12)`, `test-pixi-cuda-brev (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`); PR #493 "Remove aws GPU workflows" merged 2026-10-28 ~10:27 UTC deleted the AWS `test-pixi-cuda` job and its reusable workflow outright, so from 10-29 (run #357) onward the live scope is three jobs (`test-pixi-cuda-brev` cuda12/cuda13 + `test-pixi-amd`). No off-schedule (`workflow_dispatch`) runs this week.
