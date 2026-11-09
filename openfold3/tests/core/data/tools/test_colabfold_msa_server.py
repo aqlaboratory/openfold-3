@@ -818,6 +818,36 @@ class TestQueryColabFoldServerValidation:
         assert callback_paths == [tmp_path]
 
 
+class TestQueryColabFoldServerExtraction:
+    """Regression test for issue #508.
+
+    The downloaded archive is untrusted input, so extraction must stay inside the
+    destination directory rather than letting a member path escape it.
+    """
+
+    def test_member_cannot_escape_destination(self, tmp_path: Path) -> None:
+        """A member path pointing outside the destination is not written."""
+        prefix = tmp_path / "msas"
+        prefix.mkdir()
+        escaped = tmp_path / "escaped.a3m"
+
+        payload = b">101\nAAAA\n"
+        with tarfile.open(prefix / "out.tar.gz", "w:gz") as tar:
+            info = tarfile.TarInfo("../escaped.a3m")
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+
+        with pytest.raises(tarfile.OutsideDestinationError):
+            query_colabfold_msa_server(
+                ["AAAA", "CCCC"],
+                prefix=prefix,
+                user_agent="test-agent",
+                use_pairing=False,
+            )
+
+        assert not escaped.exists()
+
+
 class TestRemapObsoletePdb:
     """Regression test for GitHub issue #170.
 
