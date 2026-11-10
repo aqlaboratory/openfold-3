@@ -1657,3 +1657,28 @@ Fourth consecutive fully clean night (11-06, 11-07, 11-08, 11-09). All three job
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #379, per this log's established convention).
+
+---
+
+## 2026-11-10
+
+### Run #381 — primary nightly (schedule `17 3 * * *`, main @ `d97abeff` (unchanged since run #374, 11-06), [42748799854](https://github.com/aqlaboratory/openfold-3/actions/runs/42748799854))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 23 min | `test-openfold-docker-pixi` 03:32:16–03:55:23 (23m07s). |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 23 min | `test-openfold-docker-pixi` 03:30:59–03:53:32 (22m33s). |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 36 min | `test-openfold-docker-pixi-amd` 03:20:49–03:56:34 (35m45s). |
+
+**2026-11-10: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Fifth consecutive fully clean night (11-06 through 11-10). All three jobs ran start-to-finish with no cancellations and no queued delays, on the unchanged `d97abeff` commit (PR #501, merged 11-06). No new entries required in `aws-outage-failures.md` or `test-failures.md` tonight. The Brev-vs-AWS retirement question remains closed per the 10-28 and 11-02 weekly summaries: PR #493 retired the AWS `test-pixi-cuda` jobs outright on 2026-10-28 after Brev's two-week track record cleared the monitoring brief's 95%-pass-rate bar (96.4% excluding the pre-fix 10-20/10-21 catalog-rejection streak); no AWS counterpart remains to compare against, and the three-job scope has now held clean for 5 consecutive nights.
+
+### Run #382 — secondary nightly (schedule `17 4 * * *`, main @ `d97abeff` (unchanged), [42755207390](https://github.com/aqlaboratory/openfold-3/actions/runs/42755207390))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #381, per this log's established convention).
