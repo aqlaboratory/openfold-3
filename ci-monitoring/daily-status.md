@@ -1682,3 +1682,28 @@ Fifth consecutive fully clean night (11-06 through 11-10). All three jobs ran st
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #381, per this log's established convention).
+
+## 2026-11-11
+
+### Run #383 — primary nightly (schedule `17 3 * * *`, main @ `8d75e677` (PR #511 merged since run #381, 11-06 → 11-10 @ `d97abeff`), [42952175919](https://github.com/aqlaboratory/openfold-3/actions/runs/42952175919))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 24 min | `test-openfold-docker-pixi` 03:28:26–03:52:34 (24m08s). |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 23 min | `test-openfold-docker-pixi` 03:28:26–03:51:39 (23m13s). |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 43 min | `test-openfold-docker-pixi-amd` 03:21:11–04:03:57 (42m46s). |
+
+**2026-11-11: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Sixth consecutive fully clean night (11-06 through 11-11). All three jobs ran start-to-finish with no cancellations and no queued delays. `main` advanced to `8d75e677` (PR #511, "Validate MSA archive paths on extraction") between the 11-10 and 11-11 runs; no regression observed. No new entries required in `aws-outage-failures.md` or `test-failures.md` tonight.
+
+A `workflow_dispatch` run (#384, [42952377916](https://github.com/aqlaboratory/openfold-3/actions/runs/42952377916)) also fired in this window on branch `temp/ci/pr-512-rocm10`, manually testing an added `openfold3-rocm10` matrix entry for PR #512; it concluded `failure`. This is an ad-hoc dev-triggered run outside the standard nightly matrix (different branch, extra experimental job) and is out of scope for nightly coverage — excluded from the coverage line and table above, consistent with this log's convention of tracking only the two scheduled (`event=schedule`) nightly slots.
+
+### Run #385 — secondary nightly (schedule `17 4 * * *`, main @ `8d75e677` (unchanged), [42958610684](https://github.com/aqlaboratory/openfold-3/actions/runs/42958610684))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #383, per this log's established convention).
