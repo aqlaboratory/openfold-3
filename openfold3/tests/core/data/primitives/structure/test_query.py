@@ -1,11 +1,21 @@
+import random
 from collections import Counter
 
 import pytest
+from biotite.interface.rdkit import to_mol
 from rdkit import Chem
 
 from openfold3.core.data.primitives.structure.query import (
+    atom_array_from_ccd_code,
     structure_with_ref_mol_from_ccd_code,
     structure_with_ref_mol_from_smiles,
+    structure_with_ref_mols_from_sequence,
+)
+from openfold3.core.data.resources.residues import (
+    DNA_RESTYPE_1TO3,
+    PROTEIN_RESTYPE_1TO3,
+    RNA_RESTYPE_1TO3,
+    MoleculeType,
 )
 
 
@@ -101,3 +111,56 @@ def test_ccd_double_bond_stereochemistry_matches_smiles():
 
     assert smiles_orientations
     assert ccd_orientations == smiles_orientations
+
+
+def _named_stereocenters_from_3d(mol: Chem.Mol, atom_names: list[str]) -> dict:
+    """CIP label of each stereocenter as set by the 3D coordinates, keyed by name."""
+    mol = Chem.Mol(mol)
+    Chem.AssignStereochemistryFrom3D(mol)
+    return {
+        atom_names[idx]: label
+        for idx, label in Chem.FindMolChiralCenters(mol, includeUnassigned=True)
+    }
+
+
+_STANDARD_POLYMER_RESIDUES = [
+    pytest.param(poly_type, res_1, res_3, id=f"{poly_type.name}-{res_3}")
+    for poly_type, mapping in [
+        (MoleculeType.PROTEIN, PROTEIN_RESTYPE_1TO3),
+        (MoleculeType.RNA, RNA_RESTYPE_1TO3),
+        (MoleculeType.DNA, DNA_RESTYPE_1TO3),
+    ]
+    for res_1, res_3 in mapping.items()
+    if res_3 not in ("UNK", "N", "DN")
+]
+
+
+@pytest.mark.parametrize("poly_type, res_1, res_3", _STANDARD_POLYMER_RESIDUES)
+def test_sequence_residue_conformer_keeps_ccd_stereochemistry(poly_type, res_1, res_3):
+    """Reference conformers of residues built from a sequence must keep the CCD
+    stereochemistry (e.g. L-amino acids, D-ribose), independent of the seed.
+
+    Previously stereochemistry was only assigned from the CCD coordinates for
+    ligands, so polymer residue conformers were regenerated with random chirality.
+    """
+    ccd_array = atom_array_from_ccd_code(res_3, chain_id="A", molecule_type=poly_type)
+    ccd_mol = to_mol(ccd_array, kekulize=True)
+    Chem.SanitizeMol(ccd_mol)
+    expected = _named_stereocenters_from_3d(ccd_mol, list(ccd_array.atom_name))
+
+    for seed in range(3):
+        structure = structure_with_ref_mols_from_sequence(
+            res_1, poly_type, chain_id="A", rng=random.Random(seed)
+        )
+        mol = structure.processed_reference_mols[0].mol
+        names = [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
+        assert _named_stereocenters_from_3d(mol, names) == expected
+
+
+def test_sequence_alanine_is_l_alanine():
+    structure = structure_with_ref_mols_from_sequence(
+        "A", MoleculeType.PROTEIN, chain_id="A", rng=random.Random(0)
+    )
+    mol = structure.processed_reference_mols[0].mol
+    names = [atom.GetProp("annot_atom_name") for atom in mol.GetAtoms()]
+    assert _named_stereocenters_from_3d(mol, names) == {"CA": "S"}

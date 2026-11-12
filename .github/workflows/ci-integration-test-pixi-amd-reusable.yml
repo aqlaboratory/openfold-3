@@ -45,6 +45,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build and push test image
+        id: build
         uses: docker/build-push-action@v7.4.0
         with:
           context: .
@@ -55,7 +56,7 @@ jobs:
             PIXI_ENV=${{ inputs.pixi_env }}
             BASE_IMAGE=${{ inputs.base_image }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.event.pull_request.head.sha || github.sha }}
           # Keyed by the lockfile that produced the environment layer; see
           # ci-test-pixi-reusable.yml for why an unkeyed tag is unsafe across
           # branches whose dependencies differ.
@@ -107,7 +108,7 @@ jobs:
             --security-opt seccomp=unconfined \
             -v ${{ github.workspace }}:/opt/openfold3 \
             -v ~/.openfold3:/root/.openfold3 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} \
             pytest -x openfold3/tests/ -m "slow or gpu" -vvv -s \
               -o faulthandler_timeout=900
 
@@ -121,5 +122,5 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/opt/openfold3 \
             --entrypoint chown \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} \
             -R "$(id -u):$(id -g)" /opt/openfold3

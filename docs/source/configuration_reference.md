@@ -48,16 +48,21 @@ Configures the PyTorch Lightning trainer for distributed training and multi-GPU 
 
 **Pydantic Model**: [`PlTrainerArgs`](https://github.com/aqlaboratory/openfold-3/blob/main/openfold3/entry_points/validator.py#L121)
 
-**All Options**:
-- `max_epochs` *(int)*: Maximum number of training epochs (default: `1000`)
+Any [`pl.Trainer` argument](https://lightning.ai/docs/pytorch/stable/common/trainer.html#trainer-class-api) can be set here and is passed through to `pl.Trainer`. The options below are the ones OpenFold3 adds, uses itself, or gives a different default from Lightning's. OpenFold3 sets `default_root_dir` (to `experiment_settings.output_dir`), `strategy`, `callbacks` and `logger` itself, so setting them here is an error. `profiler` cannot be set here when the top-level `profiler.enabled` is `true`.
+
+**OpenFold3 Defaults and Options**:
+- `max_epochs` *(int)*: Maximum number of training epochs (default: `1000` always, even when `max_steps` is set)
 - `accelerator` *(str)*: Device type - `gpu` or `cpu` (default: `gpu`)
 - `precision` *(int | str)*: Numerical precision - `32-true`, `16-mixed`, etc. (default: `32-true`)
 - `num_nodes` *(int)*: Number of compute nodes (default: `1`)
-- `devices` *(int)*: Number of GPUs per node (default: `1`)
-- `profiler` *(str | None)*: Profiler to use (default: `null`)
+- `devices` *(int)*: Number of GPUs per node; must be positive (default: `1`)
 - `log_every_n_steps` *(int)*: Logging frequency in steps (default: `1`)
-- `enable_checkpointing` *(bool)*: Enable checkpointing (default: `true`)
+- `enable_checkpointing` *(bool)*: Save checkpoints during training, as configured in `checkpoint_config` (default: `true`)
 - `enable_model_summary` *(bool)*: Enable model summary (default: `false`)
+- `enable_progress_bar` *(bool)*: Show the progress bar (default: `true`)
+- `accumulate_grad_batches` *(int)*: Number of batches to accumulate gradients over (default: `1`)
+- `gradient_clip_val`, `gradient_clip_algorithm`: Set during training from the model config's `settings.gradient_clipping`; setting a different value here is an error
+- `use_distributed_sampler` *(bool)*: Split prediction data across devices; must be `true` for training (default: `true`)
 - `deepspeed_config_path` *(Path | None)*: Path to DeepSpeed configuration file (default: `null`)
 - `distributed_timeout` *(timedelta | None)*: Timeout for distributed operations (default: `PT30M`)
 - `mpi_plugin` *(bool)*: Use MPI plugin (default: `false`)
