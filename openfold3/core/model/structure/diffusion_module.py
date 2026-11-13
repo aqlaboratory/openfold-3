@@ -132,6 +132,26 @@ class DiffusionModule(nn.Module):
 
         self.atom_attn_dec = AtomAttentionDecoder(**config.atom_attn_dec)
 
+    def prepare_cache(
+        self,
+        batch: dict,
+        zij_trunk: torch.Tensor,
+        use_conditioning: bool,
+        chunk_size: int | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """t-independent tensors reused across denoising steps.
+
+        Pair only for now. Add later caches here, not at the sampler.
+        """
+        return {
+            "zij": self.diffusion_conditioning.condition_pair(
+                batch=batch,
+                zij_trunk=zij_trunk,
+                use_conditioning=use_conditioning,
+                chunk_size=chunk_size,
+            )
+        }
+
     def forward(
         self,
         batch: dict,
@@ -150,6 +170,7 @@ class DiffusionModule(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        cache: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -185,18 +206,31 @@ class DiffusionModule(nn.Module):
                 Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
+            cache:
+                Output of ``prepare_cache``. Training omits this and pair
+                conditioning runs inside ``diffusion_conditioning``.
         Returns:
             [*, N_atom, 3] Denoised atom positions
         """
-        si, zij = self.diffusion_conditioning(
-            batch=batch,
-            t=t,
-            si_input=si_input,
-            si_trunk=si_trunk,
-            zij_trunk=zij_trunk,
-            use_conditioning=use_conditioning,
-            chunk_size=chunk_size,
-        )
+        if cache is None:
+            si, zij = self.diffusion_conditioning(
+                batch=batch,
+                t=t,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                use_conditioning=use_conditioning,
+                chunk_size=chunk_size,
+            )
+        else:
+            zij = cache["zij"]
+            si = self.diffusion_conditioning.condition_single(
+                batch=batch,
+                t=t,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                use_conditioning=use_conditioning,
+            )
 
         xl_noisy = xl_noisy * atom_mask[..., None]
 
@@ -306,6 +340,12 @@ class SampleDiffusion(nn.Module):
         _mask_trans: bool = True,
     ) -> torch.Tensor:
         """Run the standard OF3 denoising loop from a chosen schedule index."""
+        cache = self.diffusion_module.prepare_cache(
+            batch=batch,
+            zij_trunk=zij_trunk,
+            use_conditioning=use_conditioning,
+            chunk_size=chunk_size,
+        )
         for tau, c_tau in enumerate(noise_schedule[1:]):
             if tau < start_step:
                 continue
@@ -337,6 +377,7 @@ class SampleDiffusion(nn.Module):
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
+                cache=cache,
             )
 
             delta = (xl_noisy - xl_denoised) / t
