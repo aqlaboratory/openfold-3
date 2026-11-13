@@ -52,7 +52,7 @@ def main() -> None:
         print("\nInstall PyTorch for ROCm first:")
         print(
             "  pip install torch torchvision torchaudio"
-            " --index-url https://download.pytorch.org/whl/rocm7.2"
+            " --index-url https://download.pytorch.org/whl/rocm10.0"
         )
         sys.exit(1)
 
@@ -86,7 +86,7 @@ def main() -> None:
         print("Re-install PyTorch for ROCm:")
         print(
             "  pip install torch torchvision torchaudio"
-            " --index-url https://download.pytorch.org/whl/rocm7.2"
+            " --index-url https://download.pytorch.org/whl/rocm10.0"
         )
         sys.exit(1)
 

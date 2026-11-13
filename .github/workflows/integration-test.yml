@@ -43,9 +43,14 @@ jobs:
       contents: read
       packages: write
     strategy:
+      # One persistent amd-gpu box: run envs one at a time so they don't
+      # compete for the GPU, and let each finish even if another fails.
+      max-parallel: 1
+      fail-fast: false
       matrix:
         include:
           - pixi_env: "openfold3-rocm7"
+          - pixi_env: "openfold3-rocm10"
     concurrency:
       group: ${{ github.workflow }}-pixi-amd-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
       cancel-in-progress: true
