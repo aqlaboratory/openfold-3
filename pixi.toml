@@ -305,10 +305,14 @@ pytorch = "*"
 [feature.pytorch-pypi-cuda12.pypi-dependencies]
 pytorch-lightning = "<=2.6.1"
 torch = { version = "*", index = "https://download.pytorch.org/whl/cu129" }
+# Vendor-neutral Triton triangle-attention kernel (used by use_triton_triangle_kernels).
+geometric-nn-ops-torch = { git = "https://github.com/AMDResearch/geometric-nn-ops.git" }
 
 [feature.pytorch-pypi-cuda13.pypi-dependencies]
 pytorch-lightning = "<=2.6.1"
 torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
+# Vendor-neutral Triton triangle-attention kernel (used by use_triton_triangle_kernels).
+geometric-nn-ops-torch = { git = "https://github.com/AMDResearch/geometric-nn-ops.git" }
 
 [feature.pytorch-pypi-rocm7]
 
@@ -328,6 +332,8 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   [feature.pytorch-pypi-rocm7.pypi-dependencies]
   torch = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
   triton-rocm = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
+  # Vendor-neutral Triton triangle-attention kernel (used by use_triton_triangle_kernels).
+  geometric-nn-ops-torch = { git = "https://github.com/AMDResearch/geometric-nn-ops.git" }
 
 [feature.pytorch-pypi-rocm10]
 

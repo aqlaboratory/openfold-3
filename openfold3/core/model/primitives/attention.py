@@ -51,15 +51,13 @@ if ds4s_is_installed:
     from deepspeed.ops.deepspeed4science import DS4Sci_EvoformerAttention
 
 try:
-    from openfold3.core.kernels.triton.evoformer import (
-        TritonEvoformer,
-        TritonEvoformerDynamic,
+    from geometric_nn_ops_torch.triangle import (
+        triangle_attention as geometric_nn_ops_triangle_attention,
     )
 except ImportError:
-    TritonEvoformer = None
-    TritonEvoformerDynamic = None
+    geometric_nn_ops_triangle_attention = None
 
-TRITON_AVAILABLE = TritonEvoformer is not None
+TRITON_AVAILABLE = geometric_nn_ops_triangle_attention is not None
 
 cueq_is_installed = is_cuequivariance_available()
 if cueq_is_installed:
@@ -84,28 +82,6 @@ if cueq_is_installed:
 
 DEFAULT_LMA_Q_CHUNK_SIZE = 1024
 DEFAULT_LMA_KV_CHUNK_SIZE = 4096
-
-# Cache of all-zero pair-bias tensors used when the Triton kernel requires a pair_bias
-# argument but the caller has none (e.g. MSA column attention). Keyed by
-# (device_str, dtype, B, H, L) so tensors are never reused across incompatible shapes.
-_ZERO_PAIR_BIAS_CACHE: dict = {}
-
-
-def _get_zero_pair_bias(
-    device: torch.device, dtype: torch.dtype, B: int, H: int, L: int
-) -> torch.Tensor:
-    """Return a cached [B, 1, H, L, L] zero tensor, allocating only on first call"""
-    key = (str(device), dtype, int(B), int(H), int(L))
-    t = _ZERO_PAIR_BIAS_CACHE.get(key)
-    if t is None or t.shape != (B, 1, H, L, L):
-        t = torch.zeros((B, 1, H, L, L), device=device, dtype=dtype)
-        _ZERO_PAIR_BIAS_CACHE[key] = t
-    return t
-
-
-def clear_zero_pair_bias_cache():
-    """Clear the cached zero pair-bias tensors."""
-    _ZERO_PAIR_BIAS_CACHE.clear()
 
 
 @torch.jit.ignore
@@ -447,13 +423,14 @@ class Attention(nn.Module):
                 )
             o = _deepspeed_evo_attn(q, k, v, biases)
         elif use_triton_triangle_kernels:
-            if not TRITON_AVAILABLE or TritonEvoformer is None:
+            if not TRITON_AVAILABLE:
                 raise RuntimeError(
                     "Triton kernels requested (use_triton_triangle_kernels=True) "
-                    "but openfold3.core.kernels.triton is not available. "
-                    "Ensure the package is installed with Triton support."
+                    "but geometric_nn_ops_torch is not available. Install it with "
+                    "`pip install openfold3[triton]`."
                 )
-            o = _triton_evo_attn(q, k, v, biases)
+            scale = 1.0 / math.sqrt(self.c_hidden)
+            o = _triton_evo_attn(q, k, v, biases, scale=scale)
 
         elif use_lma:
             biases = [
@@ -619,9 +596,10 @@ def _triton_evo_attn(
     k: torch.Tensor,
     v: torch.Tensor,
     biases: list[torch.Tensor],
+    scale: float,
 ):
     """
-    Compute attention using the Triton EvoformerAttention kernel.
+    Compute attention using the geometric-nn-ops Triton triangle-attention kernel.
 
     Args:
         q:
@@ -631,50 +609,32 @@ def _triton_evo_attn(
         v:
             [*, H, V, C_hidden] value data
         biases:
-            List of biases that broadcast to [*, H, Q, K]
+            ``[mask_bias]`` or ``[mask_bias, triangle_bias]``: additive biases
+            (0 = keep, -inf = mask) that broadcast to [*, H, Q, K]
+        scale:
+            Softmax scale (1/sqrt(c_hidden))
     """
+    if len(biases) not in (1, 2):
+        raise ValueError("use_triton_triangle_kernels requires one or two bias terms")
+    mask_bias = biases[0]
+    pair_bias = biases[1] if len(biases) == 2 else None
 
-    def reshape_dims(x):
-        no_batch_dims = len(x.shape[:-3])
-        if no_batch_dims < 2:
-            return x.reshape(*((1,) * (2 - no_batch_dims) + x.shape))
-        if no_batch_dims > 2:
-            return x.reshape(*((x.shape[0], -1) + x.shape[-3:]))
-        return x
-
-    # [*, Q/K, H, C_hidden]
+    # [*, Q/K, H, C_hidden] -> [*, Q/K, C_hidden] layout expected by the kernel
     q = q.transpose(-2, -3)
     k = k.transpose(-2, -3)
     v = v.transpose(-2, -3)
 
-    # Reshape to [B, N_seq, N_res, H, C_hidden] as required by the kernel.
-    orig_shape = q.shape
-    if len(orig_shape[:-3]) != 2:
-        q = reshape_dims(q)
-        k = reshape_dims(k)
-        v = reshape_dims(v)
-        biases = [reshape_dims(b) for b in biases]
+    # Convert additive mask (0 = keep, -inf = mask) to boolean (True = keep).
+    mask = mask_bias == 0
 
-    # When there is no pair bias (e.g. MSA column attention), pass a zero tensor
-    # and set HAS_PAIR_BIAS=False so the kernel skips all pair_bias loads.
-    has_pair_bias = len(biases) == 2
-    if not has_pair_bias:
-        Batch, N_seq, N_res, Head, Dim = q.shape
-        biases.append(_get_zero_pair_bias(q.device, q.dtype, Batch, Head, N_res))
-
-    # Kernel runs bf16/fp16/fp32 natively (fp32 accumulators); pass through as-is.
     # Opt-in variable-shape entry point: one Triton compile across all sequence
     # lengths (for variable-size / cold-cache callers, e.g. variable inference).
     # Off by default; the specialized kernel stays the default everywhere else.
-    _kernel = (
-        TritonEvoformerDynamic
-        if os.environ.get("OF3_TRITON_DYNAMIC_SHAPES") == "1"
-        else TritonEvoformer
-    )
-    o = _kernel(q, k, v, biases[0], biases[1], has_pair_bias)
+    dynamic = os.environ.get("OF3_TRITON_DYNAMIC_SHAPES") == "1"
 
-    o = o.reshape(orig_shape)
-    return o
+    return geometric_nn_ops_triangle_attention(
+        q, k, v, bias=pair_bias, mask=mask, scale=scale, dynamic=dynamic
+    )
 
 
 def _lma(
