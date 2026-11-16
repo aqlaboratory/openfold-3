@@ -192,9 +192,7 @@ class DiffusionConditioning(nn.Module):
                 max_chunk_size=chunk_size,
             )
 
-        return self._forward_pair(
-            zij=zij, token_mask=token_mask, chunk_size=chunk_size
-        )
+        return self._forward_pair(zij=zij, token_mask=token_mask, chunk_size=chunk_size)
 
     def condition_pair(
         self,
