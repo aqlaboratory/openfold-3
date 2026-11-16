@@ -132,25 +132,64 @@ class DiffusionModule(nn.Module):
 
         self.atom_attn_dec = AtomAttentionDecoder(**config.atom_attn_dec)
 
+        # Inference-only, and it costs ``3.00U`` at production shapes, so it is
+        # opt-in. See ``prepare_cache``.
+        self.cache_pair_bias = config.diffusion_module.get("cache_pair_bias", False)
+
     def prepare_cache(
         self,
         batch: dict,
         zij_trunk: torch.Tensor,
         use_conditioning: bool,
         chunk_size: int | None = None,
-    ) -> dict[str, torch.Tensor]:
+    ) -> dict[str, torch.Tensor | list[torch.Tensor]]:
         """t-independent tensors reused across denoising steps.
 
-        Pair only for now. Add later caches here, not at the sampler.
+        Pair conditioning and everything projected from it depend only on the
+        trunk pair representation. Add later caches here, not at the sampler.
+
+        The atom encoder's pair term is always cached: it is ``0.15U`` and
+        removes the only per-step use of ``zij`` inside the atom stack.
+
+        The per-block attention bias is opt-in at ``3.00U`` for 24 blocks,
+        because that is anti-scalable for the low-memory path. The two caches
+        decide whether the conditioned pair itself is still needed:
+
+        - bias cache off: the transformer reads ``zij`` every step, so keep it
+          (``zij`` + ``atom_pair_term`` = ``1.15U``).
+        - bias cache on: the atom stack has its pair term and the transformer
+          has its bias, so ``zij`` has no reader left and is dropped
+          (``atom_pair_term`` + ``pair_bias`` = ``3.15U``).
         """
-        return {
-            "zij": self.diffusion_conditioning.condition_pair(
-                batch=batch,
-                zij_trunk=zij_trunk,
-                use_conditioning=use_conditioning,
-                chunk_size=chunk_size,
-            )
+        zij = self.diffusion_conditioning.condition_pair(
+            batch=batch,
+            zij_trunk=zij_trunk,
+            use_conditioning=use_conditioning,
+            chunk_size=chunk_size,
+        )
+        if torch.is_grad_enabled():
+            return {"zij": zij}
+
+        cache = {
+            "atom_pair_term": self.atom_attn_enc.project_atom_pair_term(
+                batch=batch, zij_trunk=zij
+            ),
         }
+
+        if self.cache_pair_bias:
+            pair_bias = self.diffusion_transformer.prepare_pair_bias_cache(
+                self.diffusion_transformer.layer_norm_z(zij)
+            )
+            cache["pair_bias"] = pair_bias
+
+            # Cross-attention blocks project their pair bias from sequence-local
+            # blocks inside the block, so they still read ``zij``.
+            if any(b is None for b in pair_bias):
+                cache["zij"] = zij
+        else:
+            cache["zij"] = zij
+
+        return cache
 
     def forward(
         self,
@@ -208,7 +247,8 @@ class DiffusionModule(nn.Module):
                 Whether to mask the output of the transition layer
             cache:
                 Output of ``prepare_cache``. Training omits this and pair
-                conditioning runs inside ``diffusion_conditioning``.
+                conditioning runs inside ``diffusion_conditioning``. ``zij`` is
+                absent when every consumer has a cached projection of it.
         Returns:
             [*, N_atom, 3] Denoised atom positions
         """
@@ -222,8 +262,12 @@ class DiffusionModule(nn.Module):
                 use_conditioning=use_conditioning,
                 chunk_size=chunk_size,
             )
+            atom_pair_term = None
+            pair_bias = None
         else:
-            zij = cache["zij"]
+            zij = cache.get("zij")
+            atom_pair_term = cache["atom_pair_term"]
+            pair_bias = cache.get("pair_bias")
             si = self.diffusion_conditioning.condition_single(
                 batch=batch,
                 t=t,
@@ -243,6 +287,7 @@ class DiffusionModule(nn.Module):
             rl=rl_noisy,
             si_trunk=si_trunk,
             zij_trunk=zij,  # Use conditioned trunk representation
+            atom_pair_term=atom_pair_term,
             use_high_precision_attention=use_high_precision_attention,
         )
 
@@ -259,6 +304,7 @@ class DiffusionModule(nn.Module):
             use_lma=use_lma,
             use_high_precision_attention=use_high_precision_attention,
             _mask_trans=_mask_trans,
+            pair_bias_cache=pair_bias,
         )
 
         ai = self.layer_norm_a(ai)

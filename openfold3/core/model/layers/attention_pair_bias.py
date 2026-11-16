@@ -209,6 +209,36 @@ class AttentionPairBias(nn.Module):
         return a
 
 
+def build_mask_bias(
+    a: torch.Tensor,
+    mask: torch.Tensor | None,
+    inf: float,
+) -> torch.Tensor | None:
+    """Build the additive mask bias shared by every layer of a block stack.
+
+    Args:
+        a:
+            [*, N, C] Token or atom-level embedding
+        mask:
+            [*, N] Mask for token or atom-level embedding. When None there is
+            nothing to mask and no bias is needed.
+        inf:
+            Large constant used to create mask for attention logits
+
+    Returns:
+        [*, 1, 1, N] Mask bias, or None if ``mask`` is None.
+    """
+    if mask is None:
+        return None
+
+    # DS kernel has strict shape asserts and expects the mask to be
+    # tiled to the correct shape for the batch dims
+    mask = mask.expand((*a.shape[:-2], -1))
+
+    # [*, 1, 1, N]
+    return (inf * (mask - 1))[..., None, None, :]
+
+
 class DiffusionAttentionPairBias(nn.Module):
     """Attention layer with pair bias.
 
@@ -280,48 +310,45 @@ class DiffusionAttentionPairBias(nn.Module):
 
         self.sigmoid = nn.Sigmoid()
 
+    def project_pair_bias(self, z: torch.Tensor) -> torch.Tensor:
+        """Project a pair embedding to a per-head attention bias.
+
+        Args:
+            z:
+                [*, N, N, C_z] Pair embedding
+
+        Returns:
+            [*, no_heads, N, N] Pair bias
+        """
+        return permute_final_dims(self.linear_z(z), [2, 0, 1])
+
     def _prep_bias(
         self,
-        a: torch.Tensor,
         z: torch.Tensor,
-        mask: torch.Tensor | None,
+        mask_bias: torch.Tensor | None,
+        pair_bias: torch.Tensor | None = None,
     ) -> list[torch.Tensor]:
         """
         Args:
-            a:
-                [*, N, C_token] Token or atom-level embedding
             z:
                 [*, N, N, C_z] Pair embedding
-            mask:
-                [*, N] Mask for token or atom-level embedding
+            mask_bias:
+                [*, 1, 1, N] Mask bias, or None when there is nothing to mask
+            pair_bias:
+                [*, no_heads, N, N] Precomputed pair bias, or None to project
+                ``z`` here
 
         Returns:
-            List of bias terms. Includes the pair bias and attention mask.
+            List of bias terms. Includes the pair bias and, when present, the
+            attention mask.
         """
-        if mask is None:
-            # [*, N]
-            mask = a.new_ones(
-                a.shape[:-1],
-            )
+        if pair_bias is None:
+            pair_bias = self.project_pair_bias(z)
 
-        # DS kernel has strict shape asserts and expects the mask to be
-        # tiled to the correct shape for the batch dims
-        batch_dims = a.shape[:-2]
-        mask = mask.expand((*batch_dims, -1))
+        if mask_bias is None:
+            return [pair_bias]
 
-        # [*, 1, 1, N]
-        mask_bias = (self.inf * (mask - 1))[..., None, None, :]
-        biases = [mask_bias]
-
-        # [*, N, N, no_heads]
-        z = self.linear_z(z)
-
-        # [*, no_heads, N, N]
-        z = permute_final_dims(z, [2, 0, 1])
-
-        biases.append(z)
-
-        return biases
+        return [mask_bias, pair_bias]
 
     def forward(
         self,
@@ -334,6 +361,8 @@ class DiffusionAttentionPairBias(nn.Module):
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
+        mask_bias: torch.Tensor | None = None,
+        pair_bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -344,7 +373,8 @@ class DiffusionAttentionPairBias(nn.Module):
             s:
                 [*, N, C_s] Single embedding. Used in AdaLN.
             mask:
-                [*, N] Mask for token or atom-level embedding
+                [*, N] Mask for token or atom-level embedding. Ignored when
+                ``mask_bias`` is given.
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_cueq_triangle_kernels:
@@ -355,12 +385,21 @@ class DiffusionAttentionPairBias(nn.Module):
                 Whether to use LMA
             use_high_precision_attention:
                 Whether to run attention in high precision
+            mask_bias:
+                [*, 1, 1, N] Mask bias shared across the block stack. Built
+                from ``mask`` when omitted.
+            pair_bias:
+                [*, no_heads, N, N] Pair bias precomputed once per rollout.
+                Projected from ``z`` when omitted.
         Returns
             [*, N, C_q] attention updated token or atom-level embedding
         """
         a = self.layer_norm_a(a, s)
 
-        biases = self._prep_bias(a=a, z=z, mask=mask)
+        if mask_bias is None:
+            mask_bias = build_mask_bias(a=a, mask=mask, inf=self.inf)
+
+        biases = self._prep_bias(z=z, mask_bias=mask_bias, pair_bias=pair_bias)
 
         # TODO: Make this less awkward, DS kernel has strict shape asserts
         #  and expects batch and seq dims to exist
