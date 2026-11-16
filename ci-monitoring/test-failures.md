@@ -971,3 +971,28 @@ No code regression indicated — both Brev CUDA legs passed clean on tonight's c
 No code regression indicated — both Brev CUDA legs passed clean on tonight's commit (`ab517c1b`, unchanged since 10-31). **Flagged for a human:** (1) the AMD self-hosted runner `omsf-amd-aupcloud` has now failed five consecutive nights (10-29 through 11-02) on the identical `EACCES` unlink of `.pytest_cache/.gitignore` — this needs a manual `sudo rm -rf`/ownership fix on the runner host itself, this log cannot clear it; (2) the cuda13 Brev leg's `stop-brev-runner` cleanup job (job 125085096942) failed tonight with `Failed to remove instances check your provider console: Brev instances were not deleted: runner-5ylpwt09` — this runs after the test job completes and does not affect the leg's PASSED result, but may leave a Brev instance running; worth a check of the Brev console for an orphaned `runner-5ylpwt09` instance. cuda12's `stop-brev-runner` succeeded tonight.
 
 ---
+
+## 2026-11-16
+
+**Cause:** `code` × 3 — all three in-scope jobs failed on the identical pytest signature; both Brev CUDA legs and the AMD leg hit an external ColabFold MSA server timeout mid-run.
+
+- **Run ID:** [43798012521](https://github.com/aqlaboratory/openfold-3/actions/runs/43798012521) (run #394 per this log's numbering, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `c3934bb8453a50410e4273b23f7d7e34a53de92d` (unchanged since run #392/11-15; PR #512, "Add an openfold3-rocm10 pixi env")
+
+### Failed/cancelled jobs
+
+| Job | Job ID | Time | Notes |
+|-----|--------|------|-------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | 133071183182 | 03:37:21–03:59:35 (22m14s, "Run integration test" step) | **FAILED**: `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` (`1 failed, 50 passed, 1 skipped, 1953 deselected`). Preceding log shows 6 retries of `colabfold_msa_server.py`'s `download()`, each hitting `urllib3.exceptions.ReadTimeoutError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.`, before pytest gave up and exited 1 (`--maxfail`-style stop after 1 failure). |
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | 133073017337 | 03:46:09–03:59:22 (13m13s, "Run integration test" step) | **FAILED**: `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` (`1 failed, 47 passed, 1953 deselected`). Same `colabfold_msa_server.py` retry-then-timeout pattern as the AMD leg. |
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | 133073029436 | 03:51:32–04:05:09 (13m37s, "Run integration test" step) | **FAILED**: `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` (`1 failed, 47 passed, 1953 deselected`). Same pattern as the other two legs. |
+
+### Passing jobs
+
+None — all three in-scope jobs failed tonight. (The `start-brev-runner` / `stop-brev-runner` support jobs for both Brev legs succeeded; only the `test-openfold-docker-pixi*` test jobs themselves failed.)
+
+### Assessment
+
+No evidence of an OpenFold3 code regression: all three runners (two independent Brev CUDA instances plus the dedicated AMD host) failed on the exact same pytest case family (`test_inference_writes_outputs[msa-*-ubiquitin]`) with the exact same exception (`requests.exceptions.ConnectionError` wrapping `urllib3.exceptions.ReadTimeoutError` against `api.colabfold.com:443`) within a 40-minute window on an unchanged commit (`c3934bb8`, unchanged since 11-15's clean run). This is consistent with a transient outage or rate-limit on the external ColabFold MSA server, not a defect in this repository. It is filed under `code` rather than a dedicated infra bucket only because this log's classification table has no `msa-server-unavailable` class and the literal `msa-hang` signature (`CANCELLED` at the timeout cap, or the exact string `TimeoutError: MSA server`) does not match — these jobs completed as `failure` (pytest's own `--maxfail`-equivalent exit), not `cancelled`, and the log shows `ReadTimeoutError`/`ConnectionError`, not `TimeoutError: MSA server`. **Flagged for a human:** consider adding a dedicated classification bucket for ColabFold MSA server outages (distinct from `msa-hang`'s cancellation-based signature) if this recurs, since three simultaneous failures on an unchanged commit, all against the same external host, strongly suggests the MSA server side rather than this codebase. No action needed against `main` itself.
+
+---

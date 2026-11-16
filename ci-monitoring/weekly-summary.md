@@ -1,5 +1,53 @@
 # Weekly CI Summary
 
+## Week of 2026-11-10 – 2026-11-16
+
+**Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights, all under the current three-job scope (`test-pixi-cuda-brev (openfold3-cuda12)`, `test-pixi-cuda-brev (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`) — unchanged since PR #493 retired the AWS `test-pixi-cuda` jobs on 10-28. No off-schedule (`workflow_dispatch`) runs this week.
+
+### Days with coverage < full in-scope job count
+
+1 of 7 days — 11-16; the other six (11-10 through 11-15) were fully clean.
+
+| Date | Primary (03:17–03:24 UTC cron) | Secondary (04:17–04:24 UTC cron) |
+|---|---|---|
+| 2026-11-10 | 3/3 | SKIP (expected) |
+| 2026-11-11 | 3/3 | SKIP (expected) |
+| 2026-11-12 | 3/3 | SKIP (expected) |
+| 2026-11-13 | 3/3 | SKIP (expected) |
+| 2026-11-14 | 3/3 | SKIP (expected) |
+| 2026-11-15 | 3/3 | SKIP (expected) |
+| 2026-11-16 | 0/3 | SKIP (expected) |
+
+### Count per failure/non-pass class
+
+| Class | Count | Where |
+|---|---|---|
+| `code` | 3 | All three in-scope jobs on 11-16 primary ([43798012521](https://github.com/aqlaboratory/openfold-3/actions/runs/43798012521)): `test-pixi-amd (openfold3-rocm7)`, `test-pixi-cuda-brev (openfold3-cuda12)`, `test-pixi-cuda-brev (openfold3-cuda13)` all failed on the identical pytest signature — `test_inference_writes_outputs[msa-*-ubiquitin]` raising `requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` after 5 retries inside `colabfold_msa_server.py`. Filed under `code` per this log's strict signature-matching rule (no literal `TimeoutError: MSA server` string, and none of the three jobs were `cancelled` at a timeout cap, so `msa-hang` does not match), but the simultaneous failure of all three independent runners on an unchanged commit points to an external ColabFold MSA server outage rather than an OpenFold3 defect — see `test-failures.md` 2026-11-16 for the full assessment. |
+
+**Most frequent class: `code` — the only class observed this week (3 of 3 non-passes, all one incident on one night).** No `aws-capacity`, `gpu-unavailable`, `runner-offline`, `msa-hang`, `parameter-cache`, `build-push`, or `unclassified` occurrences this week.
+
+### Consecutive non-pass streak per job (as of 2026-11-16)
+
+| Job | Current streak | Detail |
+|---|---|---|
+| `test-pixi-cuda-brev (openfold3-cuda12)` | **1 — currently failing** | Clean 11-10 through 11-15 (6 consecutive clean nights), then failed tonight (11-16) on the ColabFold MSA server timeout. |
+| `test-pixi-cuda-brev (openfold3-cuda13)` | **1 — currently failing** | Same — clean 11-10 through 11-15, failed tonight on the identical signature. |
+| `test-pixi-amd (openfold3-rocm7)` | **1 — currently failing** | Same — clean 11-10 through 11-15, failed tonight on the identical signature. |
+
+**Headline: six clean nights followed by a single synchronized external-service outage.** 11-10 through 11-15 extended the clean streak that began 11-05 to eleven consecutive nights before 11-16 broke it — but the break was not a code regression: all three jobs failed within the same 40-minute window on an unchanged commit (`c3934bb8`, unchanged since 11-15), all on the exact same pytest case family and exception, all against the same external host (`api.colabfold.com`). This is the first `code`-classified incident in this log in recent weeks that is almost certainly infrastructure (MSA server) rather than application code; see the `test-failures.md` entry for 11-16 for the recommendation to add a dedicated classification bucket for this signature if it recurs.
+
+### Brev vs. AWS retirement — already closed out
+
+No new action needed this week. As reported in the 10-28 weekly summary, the formal two-week Brev-vs-AWS comparison (due 10-28, two weeks after Brev jobs were added 10-14 in PR #448) found Brev at 95.5% post-fix pass rate, clearing the monitoring brief's 95% bar, and PR #493 "Remove aws GPU workflows" (Jennifer Wei) merged 2026-10-28 ~10:27 UTC, retiring the AWS `test-pixi-cuda` jobs outright. The three-job scope has now held for all 7 nights this week; both Brev legs' only non-pass this week (11-16) was shared identically with the AMD leg, so it says nothing new about Brev reliability specifically.
+
+### Data-source notes
+
+- Built from `daily-status.md`/`test-failures.md` entries for 2026-11-10 through 2026-11-16; today's entry (run #394/#395, 11-16) was fetched live for this scan.
+- This session's `gh` CLI had an invalid `GH_TOKEN` (unauthenticated: "The token in GH_TOKEN is invalid."). Live data (workflow runs, job lists, job logs) was instead fetched via the GitHub MCP server's Actions tools (`actions_list`, `actions_get`, `get_job_logs`).
+- `GET /repos/.../actions/variables` was not queried this week; `NIGHTLY_CRON`/`RUN_NIGHTLY` values continue to be inferred from the workflow's `if:` guard (confirmed directly against `main`'s `.github/workflows/integration-test.yml` this week) and each run's observed `github.event.schedule`, not read from the live variables API.
+
+---
+
 ## Week of 2026-11-03 – 2026-11-09
 
 **Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights, all under the current three-job scope (`test-pixi-cuda-brev (openfold3-cuda12)`, `test-pixi-cuda-brev (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`) — unchanged since PR #493 retired the AWS `test-pixi-cuda` jobs on 10-28. No off-schedule (`workflow_dispatch`) runs this week.

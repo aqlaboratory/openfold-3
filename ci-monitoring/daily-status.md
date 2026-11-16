@@ -1799,3 +1799,26 @@ Tenth consecutive fully clean night (11-06 through 11-15). All three jobs ran st
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #392, per this log's established convention).
+
+## 2026-11-16
+
+### Run #394 — primary nightly (schedule `17 3 * * *`, main @ `c3934bb8` (unchanged since run #392, 11-15; PR #512 "Add an openfold3-rocm10 pixi env"), [43798012521](https://github.com/aqlaboratory/openfold-3/actions/runs/43798012521))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **FAILED** | 35 min | code — `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` at "Run integration test" step. |
+| test-pixi-cuda-brev (openfold3-cuda13) | **FAILED** | 29 min | code — `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-no_templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` at "Run integration test" step. |
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | 35 min | code — `FAILED openfold3/tests/inference/test_inference_full.py::test_inference_writes_outputs[msa-templates-ubiquitin] - requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` at "Run integration test" step. |
+
+**2026-11-16: 0/3 passed · 0 skipped · 0 queued · 3 need attention**
+
+First non-clean night since 10-29 (eleven consecutive clean nights, 11-05 through 11-15, broken). All three jobs failed at the "Run integration test" step on the identical signature: pytest's `test_inference_writes_outputs[msa-*-ubiquitin]` case raised `requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.colabfold.com', port=443): Read timed out.` after exhausting 5 retries inside `colabfold_msa_server.py`'s `download()` — the external ColabFold MSA server was unreachable/timing out for all three runners (two Brev CUDA legs and the AMD leg) within the same ~40-minute window. This reads as an external-service outage, not an OpenFold3 code regression, but per this log's strict signature-matching rule it files under `code`: no literal `TimeoutError: MSA server` string is present (the log shows `ReadTimeoutError`/`ConnectionError` instead) and none of the three jobs were `cancelled` at a timeout cap, so the `msa-hang` signature does not match. `main` unchanged @ `c3934bb8` (PR #512, "Add an openfold3-rocm10 pixi env") since 11-15. See `test-failures.md` for full detail.
+
+### Run #395 — secondary nightly (schedule `17 4 * * *`, main @ `c3934bb8` (unchanged), [43803914255](https://github.com/aqlaboratory/openfold-3/actions/runs/43803914255))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #394, per this log's established convention).
