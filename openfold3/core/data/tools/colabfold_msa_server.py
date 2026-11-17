@@ -398,7 +398,7 @@ def query_colabfold_msa_server(
     # Extract a3m files
     if any(not os.path.isfile(a3m_file) for a3m_file in a3m_files):
         with tarfile.open(tar_gz_file) as tar_gz:
-            tar_gz.extractall(path)
+            tar_gz.extractall(path, filter="data")
 
     # Validate the download produced the expected outputs before any downstream
     # code blindly opens them (issue #269).
@@ -454,7 +454,7 @@ def query_colabfold_msa_server(
                         continue
                     break
                 with tarfile.open(fileobj=response.raw, mode="r|gz") as tar:
-                    tar.extractall(path=TMPL_PATH)
+                    tar.extractall(path=TMPL_PATH, filter="data")
                 os.symlink("pdb70_a3m.ffindex", f"{TMPL_PATH}/pdb70_cs219.ffindex")
                 with open(f"{TMPL_PATH}/pdb70_cs219.ffdata", "w") as f:
                     f.write("")

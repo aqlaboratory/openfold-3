@@ -77,3 +77,39 @@ def test_matched_token_counts_succeeds():
 
     assert isinstance(result, dict)
     assert len(result) == 2
+
+
+def test_unresolved_gt_copies_are_not_assigned_twice():
+    """Each ground-truth copy is assigned to at most one predicted copy.
+
+    Homotrimer where only GT copy 1 is resolved. Copy 1 is taken first, the
+    second predicted copy gets an unresolved GT copy (2), and the third must get
+    the remaining one (3). Previously, the "unresolved -> finfo.max" placeholder
+    was applied after the "already used -> inf" exclusion and overwrote it, so
+    GT copy 2 tied with copy 3 and argmin picked copy 2 a second time.
+    """
+    n_tokens = 2
+    n_chains = 3
+    n_total = n_tokens * n_chains
+
+    entity_ids = torch.ones(n_total, dtype=torch.long)
+    sym_ids = torch.arange(1, n_chains + 1).repeat_interleave(n_tokens)
+    sym_token_index = torch.arange(n_tokens).repeat(n_chains)
+
+    gt_coords = torch.randn(1, n_total, 3)
+    gt_resolved = torch.zeros(n_total)
+    gt_resolved[:n_tokens] = 1  # only GT copy 1 is resolved
+
+    result = find_greedy_optimal_mol_permutation(
+        gt_token_center_positions_transformed=gt_coords,
+        gt_token_center_resolved_mask=gt_resolved,
+        gt_mol_entity_ids=entity_ids,
+        gt_mol_sym_ids=sym_ids,
+        gt_mol_sym_token_index=sym_token_index,
+        pred_token_center_positions=torch.randn(n_total, 3),
+        pred_mol_entity_ids=entity_ids.clone(),
+        pred_mol_sym_ids=sym_ids.clone(),
+        pred_mol_sym_token_index=sym_token_index.clone(),
+    )
+
+    assert sorted(result.values()) == [(1, 1), (1, 2), (1, 3)]

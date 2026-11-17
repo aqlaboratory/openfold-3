@@ -761,15 +761,6 @@ def find_greedy_optimal_mol_permutation(
                     .sum(dim=-1)
                 )
 
-                # Mask already used IDs
-                used_gt_sym_ids_mask = torch.isin(
-                    gt_unique_sym_ids_entity,
-                    torch.tensor(
-                        used_gt_sym_ids, device=gt_unique_sym_ids_entity.device
-                    ),
-                )
-                pred_gt_dists_sq[used_gt_sym_ids_mask] = torch.inf
-
                 # Make sure that entirely unresolved ground-truth centroids are picked
                 # last (by setting higher than any other dist but lower than inf)
                 gt_any_resolved_mask_centroid = gt_resolved_mask_entity_segment.any(
@@ -778,6 +769,16 @@ def find_greedy_optimal_mol_permutation(
                 pred_gt_dists_sq[~gt_any_resolved_mask_centroid] = torch.finfo(
                     pred_gt_dists_sq.dtype
                 ).max
+
+                # Mask already used IDs (after the above, so that used unresolved IDs
+                # stay at inf instead of being reset to the placeholder)
+                used_gt_sym_ids_mask = torch.isin(
+                    gt_unique_sym_ids_entity,
+                    torch.tensor(
+                        used_gt_sym_ids, device=gt_unique_sym_ids_entity.device
+                    ),
+                )
+                pred_gt_dists_sq[used_gt_sym_ids_mask] = torch.inf
 
                 # Get the best matching ground-truth symmetry ID
                 best_gt_index = torch.argmin(pred_gt_dists_sq)
