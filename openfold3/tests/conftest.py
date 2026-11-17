@@ -49,7 +49,7 @@ def device(request) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True, scope="function")
 def _restore_environ():
     """Undo any os.environ changes a test makes, including ones by code under test.
 
