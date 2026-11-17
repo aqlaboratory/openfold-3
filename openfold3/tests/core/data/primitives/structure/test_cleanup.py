@@ -398,7 +398,7 @@ class Residue(NamedTuple):
 def _make_residues(residues: list[Residue]) -> AtomArray:
     """Builds an AtomArray with the atoms of each residue."""
     n_atoms = [len(residue.atom_names) for residue in residues]
-    atom_array = AtomArray(sum(n_atoms))
+    atom_array: AtomArray = AtomArray(sum(n_atoms))
     atom_array.chain_id[:] = np.repeat([r.chain_id for r in residues], n_atoms)
     atom_array.res_id[:] = np.repeat([r.res_id for r in residues], n_atoms)
     atom_array.res_name[:] = np.repeat([r.res_name for r in residues], n_atoms)
