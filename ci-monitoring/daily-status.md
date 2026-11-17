@@ -1822,3 +1822,26 @@ First non-clean night since 10-29 (eleven consecutive clean nights, 11-05 throug
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #394, per this log's established convention).
+
+## 2026-11-17
+
+### Run #396 — primary nightly (schedule `17 3 * * *`, main @ `6f2d059a` (merge PR #514 "Recommend ROCm 10 and add rocm10 to the AMD integration matrix", new since run #394/11-16's `c3934bb8`), [44009624638](https://github.com/aqlaboratory/openfold-3/actions/runs/44009624638))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **FAILED** | 3s (`start-brev-runner` only — test job never ran) | unclassified — `start-brev-runner`'s "Create Brev runner" step: `tls: failed to verify certificate: x509: certificate is valid for 491a065969ac868b34dd6908026a488a.7329f305b50dc87bb15ebc8a6d9c784c.traefik.default, not brevapi.us-west-2-prod.control-plane.brev.dev` → `subprocess.CalledProcessError: ... returned non-zero exit status 1.` Not `aws-capacity` (wrong job, wrong signature). See test-failures.md. |
+| test-pixi-cuda-brev (openfold3-cuda13) | **CANCELLED** | 21s (`start-brev-runner` only — test job never ran) | Not a timeout-cap hit, concurrency supersede, or confirmed manual cancel — reads as a matrix fail-fast cascade from cuda12's failure (`test-pixi-cuda-brev`'s strategy has no `fail-fast: false`, unlike `test-pixi-amd`'s). Brev instance `runner-73wctabh` had just been created when `KeyboardInterrupt`/`##[error]The operation was canceled.` hit, ~2s after cuda12's failure completed. See test-failures.md. |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 41 min | `test-openfold-docker-pixi-amd` 03:21:31–04:02:26 (40m55s); `Run integration test` step 03:27:33–04:02:19. |
+
+**2026-11-17: 1/3 passed · 0 skipped · 0 queued · 2 need attention**
+
+First non-clean night since 11-16's ColabFold MSA timeout (which itself broke an 11-night clean streak, 11-05 through 11-15). Tonight's two non-passes are new signatures not seen before in this log: cuda12's `start-brev-runner` failed a TLS certificate check against Brev's own control-plane API (not an AWS, GPU, or MSA-server issue — see `test-failures.md` for detail), and cuda13 was taken out as a fail-fast cascade of that same incident before its own freshly-created Brev instance could finish booting. The AMD leg passed clean and unaffected on the same commit. Neither non-pass matches any of `aws-outage-failures.md`'s three signatures (`aws-capacity`, `gpu-unavailable`, `runner-offline`), so both are recorded in `test-failures.md` as `unclassified` rather than guessed into the AWS bucket. `main` advanced to `6f2d059a` (PR #514, "Recommend ROCm 10 and add rocm10 to the AMD integration matrix", merged since run #394/11-16's `c3934bb8`) — this PR also added a new `openfold3-rocm10` leg to `test-pixi-amd`'s matrix (ran serially after rocm7 tonight per `max-parallel: 1`; hit its 60-minute `timeout-minutes` cap and was `cancelled`, 04:02:27–05:02:49). `openfold3-rocm10` is not one of this log's three tracked jobs, so it is not counted in the coverage line above, consistent with this log's established scope — noted here for awareness only.
+
+### Run #397 — secondary nightly (schedule `17 4 * * *`, main @ `6f2d059a` (unchanged), [44016515981](https://github.com/aqlaboratory/openfold-3/actions/runs/44016515981))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #396, per this log's established convention).
