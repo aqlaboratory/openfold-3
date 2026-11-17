@@ -25,6 +25,10 @@ from openfold3.core.data.pipelines.preprocessing.structure import (
     cleanup_structure_of3,
 )
 from openfold3.core.data.primitives.structure.metadata import get_cif_block
+from openfold3.tests.utils.ccd_error_utils import (
+    ligand_mismatch_message,
+    residue_not_in_ccd_message,
+)
 
 MMCIFS_DIR = Path(openfold3.__file__).parent / "tests" / "test_data" / "mmcifs"
 
@@ -87,15 +91,21 @@ def test_cleanup_structure_of3_keeps_ligand_that_matches_ccd(
     [
         # TOL is tolrestat in the CCD, which has atoms C1-C6 but no atom named C
         pytest.param(
-            "TOL", "C", "('4', 203, 'TOL', ['C'])", id="custom_ligand_reuses_ccd_code"
+            "TOL",
+            "C",
+            ligand_mismatch_message(("4", 203, "TOL", ["C"])),
+            id="custom_ligand_reuses_ccd_code",
         ),
         pytest.param(
-            "MBN", "C7", "('4', 203, 'MBN', ['C7'])", id="atom_name_not_in_ccd_entry"
+            "MBN",
+            "C7",
+            ligand_mismatch_message(("4", 203, "MBN", ["C7"])),
+            id="atom_name_not_in_ccd_entry",
         ),
         pytest.param(
             "LIG1",
             "C",
-            "Residue LIG1 (chain 4, residue 203) is not in the CCD",
+            residue_not_in_ccd_message("LIG1", "4", 203),
             id="ligand_code_not_in_ccd",
         ),
     ],
