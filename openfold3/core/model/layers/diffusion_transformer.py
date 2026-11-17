@@ -285,7 +285,7 @@ class DiffusionTransformer(nn.Module):
             from sequence-local blocks inside the block.
         """
         return [
-            b.attention_pair_bias.project_pair_bias(z)
+            b.attention_pair_bias.project_cached_pair_bias(z)
             if not b.use_cross_attention
             else None
             for b in self.blocks
