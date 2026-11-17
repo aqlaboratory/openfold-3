@@ -134,15 +134,14 @@ def create_template_precache_entry_for_template(
     """
 
     template_process_logger = TEMPLATE_PROCESS_LOGGER.get()
+    assert template_process_logger is not None
 
     try:
-        cif_file = _load_ciffile(
-            template_structures_directory
-            / (
-                template_structures_filename.format(pdb=template_pdb_id)
-                + f".{template_file_format}"
-            )
+        template_structure_path = template_structures_directory / (
+            template_structures_filename.format(pdb=template_pdb_id)
+            + f".{template_file_format}"
         )
+        cif_file = _load_ciffile(template_structure_path)
         chain_id_seq_map = get_asym_id_to_canonical_seq_dict(cif_file)
         release_date = get_release_date(get_cif_block(cif_file)).strftime("%Y-%m-%d")
 
@@ -150,16 +149,22 @@ def create_template_precache_entry_for_template(
             "release_date": release_date,
             "chain_id_seq_map": chain_id_seq_map,
         }
-
+        template_process_logger.info(
+            "Template precache dir:"
+            f" {template_precache_dir / Path(f'{template_pdb_id}.npz')}"
+        )
         np.savez_compressed(
             template_precache_dir / Path(f"{template_pdb_id}.npz"),
             **template_precache,
         )
         template_process_logger.info(f"Sequence cache for {template_pdb_id} saved.")
-    except FileNotFoundError:
-        template_process_logger.info(
-            f"Template structure {template_pdb_id} not found in "
-            f"{template_structures_directory}. Skipping this template."
+    except FileNotFoundError as exc:
+        template_process_logger.warning(
+            "Could not create template precache entry; structure file is missing:\n"
+            f"  entry_id: {template_pdb_id}\n"
+            f"  expected path: {template_structure_path}\n"
+            f"  exception: {exc}",
+            exc_info=True,
         )
         return
 
@@ -1766,12 +1771,12 @@ class TemplatePreprocessorSettings(BaseModel):
     @model_validator(mode="after")
     def _prepare_output_directories(self) -> "TemplatePreprocessorSettings":
         # TODO: add .pdb support
-        if self.structure_file_format not in ["cif", "npz"]:
+        if self.structure_file_format not in ["cif", "npz", "cif.gz"]:
             raise NotImplementedError(
                 f"structure_file_format {self.structure_file_format} was provided but "
-                "currently, only cif and npz file format is supported for template "
-                "structure preprocessing due to metadata requirements of the template "
-                "pipeline."
+                "currently, only cif, cif.gz and npz file format is supported "
+                "for template structure preprocessing due to metadata requirements "
+                "of the template pipeline."
             )
 
         if self.output_directory is None:
@@ -2337,6 +2342,13 @@ class TemplatePreprocessor:
                 f"\n\nType:\n{type(e).__name__}"
                 f"\n\nTraceback:\n{traceback.format_exc()}"
             )
+        finally:
+            if self.create_logs:
+                worker_logger = logging.getLogger(f"template_preprocess_{os.getpid()}")
+                for handler in list(worker_logger.handlers):
+                    handler.flush()
+                    worker_logger.removeHandler(handler)
+                    handler.close()
 
     def _worker_logger(self) -> logging.Logger:
         """This worker's preprocessing log, or a disabled stand-in for it.
@@ -2360,9 +2372,11 @@ class TemplatePreprocessor:
             handler.setLevel(logging.INFO)
             formatter = logging.Formatter("%(message)s")
             handler.setFormatter(formatter)
-            if not worker_logger.hasHandlers():
-                worker_logger.addHandler(handler)
-            worker_logger.propagate = False
+            worker_logger.addHandler(handler)
+            worker_logger.info(
+                f"Template worker logging initialized: {handler.baseFilename}"
+            )
+            handler.flush()
 
         # preprocess templates for a single chain
         # 1. Parse template alignment file or CIF files
@@ -2498,13 +2512,28 @@ class TemplatePreprocessor:
                                 format="cif",
                                 target_path=self.structure_directory,
                             )
-                        except RequestError as _:
+                            if not template_structure_file.exists():
+                                message = (
+                                    "Structure fetch completed, but the expected "
+                                    "file is still missing:\n"
+                                    f"  entry_id: {template.entry_id}\n"
+                                    f"  expected path: {template_structure_file}\n"
+                                    f"  structure directory: {self.structure_directory}"
+                                )
+                                if self.create_logs:
+                                    worker_logger.error(message)
+                                else:
+                                    print(message)
+                                continue
+                        except RequestError:
                             msg = (
-                                f" {template.entry_id} is not a valid PDB ID."
-                                " Skipping this template."
+                                f"Template {template.entry_id} could not be fetched "
+                                "from the RCSB structure service. "
+                                f"Expected path: {template_structure_file}. "
+                                "Skipping this template."
                             )
                             if self.create_logs:
-                                worker_logger.info(msg)
+                                worker_logger.warning(msg, exc_info=True)
                             else:
                                 print(msg)
                             continue
