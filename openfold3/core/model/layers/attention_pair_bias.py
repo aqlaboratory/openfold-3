@@ -209,10 +209,21 @@ class AttentionPairBias(nn.Module):
         return a
 
 
+def mask_bias_from_mask(mask: torch.Tensor, inf: float) -> torch.Tensor:
+    """Turn a [*, N] mask into the [*, 1, 1, N] additive attention bias.
+
+    Kept separate from ``build_mask_bias`` so a caller that already has the
+    mask in the right shape -- the pair-bias cache, which folds it in once per
+    rollout -- does not have to fake an ``a`` operand.
+    """
+    return (inf * (mask - 1))[..., None, None, :]
+
+
 def build_mask_bias(
     a: torch.Tensor,
     mask: torch.Tensor | None,
     inf: float,
+    tile_batch: bool = False,
 ) -> torch.Tensor | None:
     """Build the additive mask bias shared by every layer of a block stack.
 
@@ -224,6 +235,12 @@ def build_mask_bias(
             nothing to mask and no bias is needed.
         inf:
             Large constant used to create mask for attention logits
+        tile_batch:
+            Materialize the mask over the batch dims of ``a``. The DeepSpeed,
+            cuEq, and Triton kernels assert on concrete batch dims, so they need
+            the tiled form. The eager and SDPA paths broadcast a leading
+            singleton instead, which keeps one copy when the rollout sample dim
+            is shared and preserves the stride-zero mask fast path.
 
     Returns:
         [*, 1, 1, N] Mask bias, or None if ``mask`` is None.
@@ -231,12 +248,16 @@ def build_mask_bias(
     if mask is None:
         return None
 
-    # DS kernel has strict shape asserts and expects the mask to be
-    # tiled to the correct shape for the batch dims
-    mask = mask.expand((*a.shape[:-2], -1))
+    if tile_batch:
+        mask = mask.expand((*a.shape[:-2], -1))
+    else:
+        # Pad on the left with singletons so the mask keeps its own batch dims
+        # but broadcasts across any batch dims it does not have (the rollout
+        # sample dim, and the atom stack's block axis).
+        n_lead = max(len(a.shape) - 1 - mask.dim(), 0)
+        mask = mask.reshape((1,) * n_lead + tuple(mask.shape))
 
-    # [*, 1, 1, N]
-    return (inf * (mask - 1))[..., None, None, :]
+    return mask_bias_from_mask(mask=mask, inf=inf)
 
 
 class DiffusionAttentionPairBias(nn.Module):
@@ -385,6 +406,7 @@ class DiffusionAttentionPairBias(nn.Module):
         use_high_precision_attention: bool = False,
         mask_bias: torch.Tensor | None = None,
         pair_bias: torch.Tensor | None = None,
+        mask_bias_folded: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -396,7 +418,7 @@ class DiffusionAttentionPairBias(nn.Module):
                 [*, N, C_s] Single embedding. Used in AdaLN.
             mask:
                 [*, N] Mask for token or atom-level embedding. Ignored when
-                ``mask_bias`` is given.
+                ``mask_bias`` is given or ``mask_bias_folded`` is set.
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_cueq_triangle_kernels:
@@ -418,8 +440,17 @@ class DiffusionAttentionPairBias(nn.Module):
         """
         a = self.layer_norm_a(a, s)
 
-        if mask_bias is None:
-            mask_bias = build_mask_bias(a=a, mask=mask, inf=self.inf)
+        if mask_bias is None and not mask_bias_folded:
+            mask_bias = build_mask_bias(
+                a=a,
+                mask=mask,
+                inf=self.inf,
+                tile_batch=(
+                    use_deepspeed_evo_attention
+                    or use_cueq_triangle_kernels
+                    or use_triton_triangle_kernels
+                ),
+            )
 
         biases = self._prep_bias(z=z, mask_bias=mask_bias, pair_bias=pair_bias)
 

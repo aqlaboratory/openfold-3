@@ -142,6 +142,7 @@ class DiffusionModule(nn.Module):
         zij_trunk: torch.Tensor,
         use_conditioning: bool,
         chunk_size: int | None = None,
+        mask: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor | list[torch.Tensor]]:
         """t-independent tensors reused across denoising steps.
 
@@ -178,9 +179,14 @@ class DiffusionModule(nn.Module):
 
         if self.cache_pair_bias:
             pair_bias = self.diffusion_transformer.prepare_pair_bias_cache(
-                self.diffusion_transformer.layer_norm_z(zij)
+                self.diffusion_transformer.layer_norm_z(zij),
+                # The token mask is fixed for the whole rollout, so folding its
+                # additive bias in here removes a 97.5 MiB sum per block per
+                # step from the token stack.
+                mask=mask,
             )
             cache["pair_bias"] = pair_bias
+            cache["mask_bias_folded"] = mask is not None
 
             # Cross-attention blocks project their pair bias from sequence-local
             # blocks inside the block, so they still read ``zij``.
@@ -264,10 +270,12 @@ class DiffusionModule(nn.Module):
             )
             atom_pair_term = None
             pair_bias = None
+            mask_bias_folded = False
         else:
             zij = cache.get("zij")
             atom_pair_term = cache["atom_pair_term"]
             pair_bias = cache.get("pair_bias")
+            mask_bias_folded = cache.get("mask_bias_folded", False)
             si = self.diffusion_conditioning.condition_single(
                 batch=batch,
                 t=t,
@@ -305,6 +313,7 @@ class DiffusionModule(nn.Module):
             use_high_precision_attention=use_high_precision_attention,
             _mask_trans=_mask_trans,
             pair_bias_cache=pair_bias,
+            mask_bias_folded=mask_bias_folded,
         )
 
         ai = self.layer_norm_a(ai)
@@ -391,6 +400,10 @@ class SampleDiffusion(nn.Module):
             zij_trunk=zij_trunk,
             use_conditioning=use_conditioning,
             chunk_size=chunk_size,
+            # The token mask is constant across the rollout, so it is folded
+            # into the cached pair bias once instead of being summed into every
+            # block's logits on every step.
+            mask=batch["token_mask"],
         )
         for tau, c_tau in enumerate(noise_schedule[1:]):
             if tau < start_step:
