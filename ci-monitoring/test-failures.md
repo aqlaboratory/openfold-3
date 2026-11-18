@@ -1022,3 +1022,29 @@ No evidence of an OpenFold3 code regression: all three runners (two independent 
 No evidence of an OpenFold3 code regression — neither non-pass reached any test code; both were infrastructure-provisioning failures on the Brev CUDA path, and the AMD leg (a different, self-hosted runner) passed clean on the same commit. The primary incident (cuda12) is a TLS certificate-verification error against Brev's own control-plane API — `brevapi.us-west-2-prod.control-plane.brev.dev` served back a certificate issued for an internal Traefik hostname (`491a065969ac868b34dd6908026a488a.7329f305b50dc87bb15ebc8a6d9c784c.traefik.default`) instead of its own — which looks like a transient ingress/cert-rotation issue on Brev's side, not something fixable from this repository's CI config. cuda13 is a secondary, cascading cancellation of that same incident via GitHub's default matrix fail-fast, not an independent failure, so it is not double-counted as its own incident. Neither matches any of this log's seven defined signatures, so both are recorded `unclassified` rather than guessed into `aws-capacity` or any other bucket. **Flagged for a human:** (1) check the Brev console for an orphaned `runner-73wctabh` instance from the cuda13 cascade and delete it manually if present — `stop-brev-runner` never ran `brev delete` for either leg tonight, since both legs' `start-brev-runner` outputs were empty when it ran; (2) if this TLS signature recurs, consider whether `start-brev-gha-runner`'s pinned `brev` CLI needs a version bump (tonight's log shows `v0.6.335` is one release behind `v0.6.337`) or whether Brev support should be contacted; (3) consider setting `fail-fast: false` on `test-pixi-cuda-brev`'s matrix strategy (as `test-pixi-amd`'s already has), so one leg's independent provisioning failure doesn't prevent its sibling from getting a chance to run and report its own result.
 
 ---
+
+## 2026-11-18
+
+**Cause:** `unclassified` × 1 — recurrence of the AMD self-hosted runner's workspace-permission fault first seen 10-29 through 11-02 (absent 11-03 through 11-17 inclusive); both Brev CUDA legs passed clean, and both resolved 11-17's `start-brev-runner` TLS failure.
+
+- **Run ID:** [44229867604](https://github.com/aqlaboratory/openfold-3/actions/runs/44229867604) (run #398 per this log's numbering, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `86c44062ee8ba56ab22e352fc51e0ba1fe306ead` (merge PR #515 "update Brev runner actions to latest releases" and PR #473 "fix/test-environ-isolation" (incl. PR #504 "fix: raise on ligand atoms that are not in their CCD entry"), new since run #396/11-17's `6f2d059a`)
+
+### Failed/cancelled jobs
+
+| Job | Job ID | Time | Notes |
+|-----|--------|------|-------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | 134551981644 | 03:21:43–03:21:50 (7s, `actions/checkout@v7`'s workspace-clean sub-step) | **FAILED**: `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner-public/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'`. Same runner (`omsf-amd-aupcloud`) and same file as the 10-29 through 11-02 incidents, now recurring after a clean two-week gap (11-03 through 11-17, including both 11-16's MSA-timeout night and 11-17's Brev-incident night, where the AMD leg itself passed clean both times) and under a renamed working-directory path (`actions-runner-public` vs. the earlier `actions-runner`), consistent with the runner host having been reconfigured since it last misbehaved. Checkout never completed; no test or build step ran. The subsequent "Run docker run ... --entrypoint chown" step also failed (`docker: invalid reference format`), an unrelated secondary effect of the test image never having been built (gated behind the skipped build step) — not itself diagnostic. |
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | 134554381459 | 24m27s |
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 134554337782 | 23m51s |
+
+### Assessment
+
+No code regression indicated — both Brev CUDA legs passed clean on tonight's commit (`86c44062`, PR #515, "update Brev runner actions to latest releases"). Notably, both legs' `start-brev-runner` steps succeeded cleanly tonight, confirming that 11-17's TLS-certificate verification failure against Brev's control-plane API (`brevapi.us-west-2-prod.control-plane.brev.dev`) did not recur — PR #515 bumped the pinned `omsf-eco-infra/start-brev-gha-runner`/`stop-brev-gha-runner` action versions, which plausibly explains the fix, though this log cannot confirm causation directly. **Flagged for a human:** (1) the AMD self-hosted runner `omsf-amd-aupcloud` has recurred on the identical `EACCES` unlink of `.pytest_cache/.gitignore` first seen 10-29 through 11-02 — needs the same manual `sudo rm -rf`/ownership fix on the runner host, now apparently relocated to `/home/jan/actions-runner-public/` (previously `/home/jan/actions-runner/`); this log cannot clear it; (2) cuda12's `stop-brev-runner` cleanup job (job 134563663054) failed tonight with `Command '['brev', 'ls', '--json']' returned non-zero exit status 1.` / "Failed to remove instances check your provider console" — the same signature seen on 11-02 — this runs after the test job completes and does not affect cuda12's PASSED result, but may leave Brev instance `runner-bztn9wyc` running; worth a check of the Brev console for an orphaned instance. cuda13's `stop-brev-runner` succeeded tonight.
+
+---

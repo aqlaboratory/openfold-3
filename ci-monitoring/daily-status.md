@@ -1845,3 +1845,26 @@ First non-clean night since 11-16's ColabFold MSA timeout (which itself broke an
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #396, per this log's established convention).
+
+## 2026-11-18
+
+### Run #398 — primary nightly (schedule `17 3 * * *`, main @ `86c44062` (merge PR #515 "update Brev runner actions to latest releases" and PR #473 "fix/test-environ-isolation", new since run #396/11-17's `6f2d059a`), [44229867604](https://github.com/aqlaboratory/openfold-3/actions/runs/44229867604))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 24m27s | `test-openfold-docker-pixi` 03:27:55–03:52:22. |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 23m51s | `test-openfold-docker-pixi` 03:27:48–03:51:39. |
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | 7s (`actions/checkout@v7` workspace-clean sub-step only — test job never ran) | unclassified — `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner-public/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'` on runner `omsf-amd-aupcloud`. See test-failures.md. |
+
+**2026-11-18: 2/3 passed · 0 skipped · 0 queued · 1 need attention**
+
+First non-clean night since 11-17's Brev TLS/cascade incident. Tonight's single non-pass is a recurrence of the AMD runner's `.pytest_cache/.gitignore` EACCES permission fault last seen 10-29 through 11-02 (clean for the two weeks since, including 11-16 and 11-17), now under a renamed working-directory path (`actions-runner-public` vs the earlier `actions-runner`), consistent with the runner host having been reconfigured since it last appeared. Both Brev CUDA legs passed clean, and notably both `start-brev-runner` steps succeeded this time — 11-17's Brev control-plane TLS-certificate failure did not recur. `main` advanced to `86c44062` (PR #515, "update Brev runner actions to latest releases", merged since run #396/11-17's `6f2d059a`), which bumped the pinned `omsf-eco-infra/*-brev-gha-runner` action versions and plausibly explains the fix. cuda12's `stop-brev-runner` cleanup job (job 134563663054) failed tonight on the same `brev ls --json` non-zero exit signature seen on 11-02 — runs after the test job completes, does not affect cuda12's PASSED result, but may leave Brev instance `runner-bztn9wyc` orphaned; flagged in test-failures.md. cuda13's `stop-brev-runner` succeeded.
+
+### Run #399 — secondary nightly (schedule `17 4 * * *`, main @ `86c44062` (unchanged), [44236662887](https://github.com/aqlaboratory/openfold-3/actions/runs/44236662887))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #398, per this log's established convention).
