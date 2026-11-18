@@ -18,13 +18,22 @@ Covers the ``max_seq_count`` cap in ``parse_a3m`` / ``parse_stockholm`` and the
 ``MsaArray.truncate`` int/slice handling.
 """
 
+import os
+from pathlib import Path
+
 import numpy as np
 import pytest
 
-from openfold3.core.data.io.sequence.msa import parse_a3m, parse_stockholm
+import openfold3
+from openfold3.core.data.io.sequence.msa import (
+    MSA_PARSER_REGISTRY,
+    parse_a3m,
+    parse_stockholm,
+)
 from openfold3.core.data.primitives.sequence.msa import MsaArray
 
 QUERY_LEN = 4
+MSA_PARITY_DIR = Path(openfold3.__file__).parent / "tests" / "test_data" / "msa_parity"
 
 
 def _a3m_string(n_seqs: int) -> str:
@@ -184,3 +193,63 @@ def test_parsers_accept_non_ascii(parser, msa_string):
 
     assert parsed.msa.tolist() == [list("AÅC"), list("AÅC")]
     assert parsed.deletion_matrix.tolist() == [[0, 0, 0], [0, 0, 1]]
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted(MSA_PARITY_DIR.glob("*/*")),
+    ids=lambda path: f"{path.parent.name}-{path.name}",
+)
+def test_parsers_match_snapshots(path, ndarrays_regression):
+    """Real protein and RNA alignments from the PDB training set parse to the
+    snapshots, which the previous parsers made. Large files are cut to their first
+    50 sequences."""
+    parsed = MSA_PARSER_REGISTRY[path.suffix](path.read_text())
+
+    ndarrays_regression.check(
+        {
+            "msa": parsed.msa,
+            "deletion_matrix": parsed.deletion_matrix,
+            "metadata": np.array(parsed.metadata),
+        }
+    )
+
+
+@pytest.mark.skipif(
+    "OPENFOLD3_PREPARSED_MSA_DIR" not in os.environ,
+    reason="set OPENFOLD3_PREPARSED_MSA_DIR to compare against preparsed .npz files",
+)
+def test_parsers_match_preparsed_npz():
+    """Raw alignments parse to the same arrays as their preparsed .npz files.
+
+    OPENFOLD3_PREPARSED_MSA_DIR must contain msas/<chain>/ and npz/<chain>.npz, as
+    in s3://openfold3-data (msas/pdb_msas_completed and
+    pdb_training_set/alignment_arrays). Each alignment is parsed up to the number
+    of rows in its .npz.
+    """
+    root = Path(os.environ["OPENFOLD3_PREPARSED_MSA_DIR"])
+    # Some .npz keys keep the names the raw files had when they were preparsed
+    raw_names = {"cfdb_hits": "cfdb_uniref30", "nucleotide_collection_hits": "nt_hits"}
+    compared = 0
+    for npz_path in sorted((root / "npz").glob("*.npz")):
+        preparsed = np.load(npz_path, allow_pickle=True)
+        for key in preparsed.files:
+            expected = preparsed[key].item()
+            name = raw_names.get(key, key)
+            chain_dir = root / "msas" / npz_path.stem
+            # The .npz files were made from the .sto file when both formats exist
+            raw_path = next(
+                path
+                for path in (chain_dir / f"{name}.sto", chain_dir / f"{name}.a3m")
+                if path.exists()
+            )
+            parsed = MSA_PARSER_REGISTRY[raw_path.suffix](
+                raw_path.read_text(), len(expected["msa"])
+            )
+            np.testing.assert_array_equal(parsed.msa, expected["msa"])
+            np.testing.assert_array_equal(
+                parsed.deletion_matrix, expected["deletion_matrix"]
+            )
+            assert list(parsed.metadata) == list(expected["metadata"])
+            compared += 1
+    assert compared > 0
