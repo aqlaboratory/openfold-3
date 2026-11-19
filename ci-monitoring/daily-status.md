@@ -1868,3 +1868,26 @@ First non-clean night since 11-17's Brev TLS/cascade incident. Tonight's single 
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #398, per this log's established convention).
+
+## 2026-11-19
+
+### Run #400 — primary nightly (schedule `17 3 * * *`, main @ `86c44062` (unchanged since run #398, 11-18; PR #515 "update Brev runner actions to latest releases"), [44450887173](https://github.com/aqlaboratory/openfold-3/actions/runs/44450887173))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 24m26s | `test-openfold-docker-pixi` 03:29:29–03:53:55. |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 24m00s | `test-openfold-docker-pixi` 03:29:38–03:53:38. |
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | 6s (`actions/checkout@v7` only — test job never ran) | unclassified — `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner-public/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'` at the "Run actions/checkout@v7" step on runner `omsf-amd-aupcloud`. Second consecutive night on this exact signature (see 11-18). See test-failures.md. |
+
+**2026-11-19: 2/3 passed · 0 skipped · 0 queued · 1 need attention**
+
+Second consecutive night of the recurring AMD runner `.pytest_cache/.gitignore` EACCES permission fault (11-18, 11-19), under the same `actions-runner-public` working-directory path introduced 11-18. Both Brev CUDA legs passed clean on `main` @ `86c44062` (unchanged since 11-18). Note: a sixth job in this run, `test-pixi-amd (openfold3-rocm10)` (added by PR #514, not one of this log's three tracked jobs), failed on the identical checkout/EACCES signature at the identical timestamp — consistent with both AMD matrix legs sharing the same dirty workspace on `omsf-aupcloud`; not counted in the coverage line above per this log's established scope.
+
+### Run #401 — secondary nightly (schedule `17 4 * * *`, main @ `86c44062` (unchanged), [44457693390](https://github.com/aqlaboratory/openfold-3/actions/runs/44457693390))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #400, per this log's established convention).

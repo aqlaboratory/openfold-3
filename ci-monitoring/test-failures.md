@@ -1048,3 +1048,30 @@ No evidence of an OpenFold3 code regression — neither non-pass reached any tes
 No code regression indicated — both Brev CUDA legs passed clean on tonight's commit (`86c44062`, PR #515, "update Brev runner actions to latest releases"). Notably, both legs' `start-brev-runner` steps succeeded cleanly tonight, confirming that 11-17's TLS-certificate verification failure against Brev's control-plane API (`brevapi.us-west-2-prod.control-plane.brev.dev`) did not recur — PR #515 bumped the pinned `omsf-eco-infra/start-brev-gha-runner`/`stop-brev-gha-runner` action versions, which plausibly explains the fix, though this log cannot confirm causation directly. **Flagged for a human:** (1) the AMD self-hosted runner `omsf-amd-aupcloud` has recurred on the identical `EACCES` unlink of `.pytest_cache/.gitignore` first seen 10-29 through 11-02 — needs the same manual `sudo rm -rf`/ownership fix on the runner host, now apparently relocated to `/home/jan/actions-runner-public/` (previously `/home/jan/actions-runner/`); this log cannot clear it; (2) cuda12's `stop-brev-runner` cleanup job (job 134563663054) failed tonight with `Command '['brev', 'ls', '--json']' returned non-zero exit status 1.` / "Failed to remove instances check your provider console" — the same signature seen on 11-02 — this runs after the test job completes and does not affect cuda12's PASSED result, but may leave Brev instance `runner-bztn9wyc` running; worth a check of the Brev console for an orphaned instance. cuda13's `stop-brev-runner` succeeded tonight.
 
 ---
+
+## 2026-11-19
+
+**Cause:** `unclassified` × 1 — second consecutive night of the recurring AMD self-hosted runner's workspace-permission fault (first seen 10-29 through 11-02, recurred 11-18); both Brev CUDA legs passed clean.
+
+- **Run ID:** [44450887173](https://github.com/aqlaboratory/openfold-3/actions/runs/44450887173) (run #400 per this log's numbering, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `86c44062ee8ba56ab22e352fc51e0ba1fe306ead` (unchanged since run #398, 11-18; PR #515 "update Brev runner actions to latest releases")
+
+### Failed/cancelled jobs
+
+| Job | Job ID | Time | Notes |
+|-----|--------|------|-------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | 135314240722 | 03:21:45–03:21:51 (6s, `actions/checkout@v7`'s workspace-clean sub-step) | **FAILED**: `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner-public/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'`. Identical signature, identical path (`actions-runner-public`), and identical runner (`omsf-amd-aupcloud`) to 11-18 — second consecutive night, no gap this time. Checkout never completed; no test or build step ran. The subsequent "Reclaim workspace ownership" step (`docker run ... --entrypoint chown`) also failed (`docker: invalid reference format`), the same unrelated secondary effect noted 11-18 — not itself diagnostic. |
+| `test-pixi-amd (openfold3-rocm10) / test-openfold-docker-pixi-amd` | 135314293996 | 03:21:53–03:22:00 (7s) | **FAILED**: identical signature, same step, same runner, ~8s after the rocm7 leg — both AMD matrix legs share the one `omsf-amd-aupcloud` runner and the same dirty workspace. Not one of this log's three tracked jobs (added by PR #514, not in scope); noted here for completeness only, not double-counted as a separate incident. |
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | 135316631310 | 24m26s |
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 135316721666 | 24m00s |
+
+### Assessment
+
+No code regression indicated — both Brev CUDA legs passed clean on tonight's unchanged commit (`86c44062`). The AMD runner's `EACCES` unlink of `.pytest_cache/.gitignore` has now recurred two nights running (11-18, 11-19) with no gap between them, under the renamed `actions-runner-public` working-directory path, affecting both AMD matrix legs (`rocm7`, `rocm10`) identically each night. This does not match any of `aws-outage-failures.md`'s three signatures (`aws-capacity`, `gpu-unavailable`, `runner-offline`) — the runner picks the job up immediately, it is not a capacity or GPU-availability issue, and it is not a provisioning/queue problem — so it remains `unclassified` per this log's rule, rather than guessed into another bucket. **Flagged for a human, now two nights running:** a stray `.pytest_cache/.gitignore` (or its containing directory) on the `omsf-amd-aupcloud` runner host under `/home/jan/actions-runner-public/_work/openfold-3/openfold-3/` is owned by a different user/permission set than the runner process, and needs a manual `sudo rm -rf`/ownership fix directly on the host — this log cannot clear it from here. If it recurs a third night, consider whether the workflow's checkout step needs an explicit pre-clean (e.g. `docker run --entrypoint chown ...` *before* checkout rather than only after) to make the runner self-healing.
+
+---
