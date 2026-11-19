@@ -25,6 +25,8 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.attention_pair_bias import (
     CrossAttentionPairBias,
     DiffusionAttentionPairBias,
+    build_mask_bias,
+    mask_bias_from_mask,
 )
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
 from openfold3.core.model.primitives import LayerNorm
@@ -124,6 +126,9 @@ class DiffusionTransformerBlock(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        mask_bias: torch.Tensor | None = None,
+        pair_bias: torch.Tensor | None = None,
+        mask_bias_folded: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -147,6 +152,12 @@ class DiffusionTransformerBlock(nn.Module):
                 Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
+            mask_bias:
+                [*, 1, 1, N] Mask bias shared by all blocks in the stack
+            pair_bias:
+                [*, no_heads, N, N] Pair bias precomputed for this block
+            mask_bias_folded:
+                Whether ``pair_bias`` already carries the mask bias
         """
         # Note: Differs from SI, residual connection added.
 
@@ -161,6 +172,9 @@ class DiffusionTransformerBlock(nn.Module):
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
+                mask_bias=mask_bias,
+                pair_bias=pair_bias,
+                mask_bias_folded=mask_bias_folded,
             )
         else:
             a = a + self.attention_pair_bias(
@@ -263,6 +277,44 @@ class DiffusionTransformer(nn.Module):
             ]
         )
 
+    def prepare_pair_bias_cache(
+        self, z: torch.Tensor, mask: torch.Tensor | None = None
+    ) -> list[torch.Tensor | None]:
+        """Project the pair bias of every block once per rollout.
+
+        Args:
+            z:
+                [*, N, N, C_z] Normalized pair embedding
+            mask:
+                [*, N] Token mask. When given, its additive bias is folded in
+                here so the stack does not re-add a separate 97.5 MiB term on
+                every denoising step. ``forward`` must then be called with
+                ``mask_bias_folded=True``.
+
+        Returns:
+            One [*, no_heads, N, N] pair bias per block, in block order.
+            Cross-attention blocks get None because their pair bias is built
+            from sequence-local blocks inside the block.
+        """
+        mask_bias = None
+        if mask is not None:
+            # Built directly from the mask so it keeps the mask's own batch
+            # dims and broadcasts over the rollout sample dim later. The token
+            # mask carries its batch dims already, so there is no ``a`` to
+            # consult for the leading singleton count.
+            mask_bias = mask_bias_from_mask(
+                mask=mask, inf=self.blocks[0].attention_pair_bias.inf
+            )
+
+        cache = []
+        for b in self.blocks:
+            if b.use_cross_attention:
+                cache.append(None)
+                continue
+            bias = b.attention_pair_bias.project_cached_pair_bias(z)
+            cache.append(bias if mask_bias is None else bias + mask_bias)
+        return cache
+
     def forward(
         self,
         a: torch.Tensor,
@@ -275,6 +327,8 @@ class DiffusionTransformer(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        pair_bias_cache: list[torch.Tensor] | None = None,
+        mask_bias_folded: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -298,9 +352,42 @@ class DiffusionTransformer(nn.Module):
                 Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
+            pair_bias_cache:
+                Output of ``prepare_pair_bias_cache``. Only valid for inference
+                at a fixed ``z``; training omits it and every block projects
+                its own bias.
+            mask_bias_folded:
+                Set when the cache was built with the mask already added in.
+                The stack then passes no mask bias to the blocks, which avoids
+                summing a second 97.5 MiB term into the attention logits on
+                every step. Only valid with ``pair_bias_cache``.
         """
-        # Single layer norm for atom attention enc/dec diffusion transformer
-        z = self.layer_norm_z(z)
+        # Single layer norm for atom attention enc/dec diffusion transformer.
+        # A full pair bias cache was projected from the normalized pair, so
+        # normalizing again would only repeat work every rollout step. Any
+        # block without a cached entry (cross-attention) still needs it.
+        if pair_bias_cache is None or any(b is None for b in pair_bias_cache):
+            z = self.layer_norm_z(z)
+
+        if mask_bias_folded:
+            if pair_bias_cache is None:
+                raise ValueError("mask_bias_folded requires a pair_bias_cache")
+            mask_bias = None
+        else:
+            # The mask bias is block-invariant, so build it once for the whole
+            # stack. It is None when there is no mask, and then no bias is
+            # added.
+            first = self.blocks[0].attention_pair_bias
+            mask_bias = build_mask_bias(
+                a=a,
+                mask=mask,
+                inf=first.inf,
+                tile_batch=(
+                    use_deepspeed_evo_attention
+                    or use_cueq_triangle_kernels
+                    or use_triton_triangle_kernels
+                ),
+            )
 
         blocks = [
             partial(
@@ -314,8 +401,11 @@ class DiffusionTransformer(nn.Module):
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
+                mask_bias=mask_bias,
+                pair_bias=(pair_bias_cache[i] if pair_bias_cache is not None else None),
+                mask_bias_folded=mask_bias_folded,
             )
-            for b in self.blocks
+            for i, b in enumerate(self.blocks)
         ]
 
         blocks_per_ckpt = self.blocks_per_ckpt

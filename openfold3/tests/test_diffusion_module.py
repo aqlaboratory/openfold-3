@@ -175,6 +175,53 @@ class TestDiffusionModule(unittest.TestCase):
                 self.assertTrue(torch.equal(xl_cached, xl_uncached))
 
 
+class TestPairBiasCache(unittest.TestCase):
+    def test_cached_bias_is_contiguous_and_matches_uncached(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        config, dm = _build_diffusion_module()
+        dm.cache_pair_bias = True
+
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
+
+        batch = random_of3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        step_kwargs = dict(
+            batch=batch,
+            xl_noisy=torch.randn((batch_size, n_atom, 3)),
+            t=torch.ones(1),
+            token_mask=batch["token_mask"],
+            atom_mask=torch.ones((batch_size, n_atom)),
+            si_input=torch.rand((batch_size, n_token, c_s_input)),
+            si_trunk=torch.rand((batch_size, n_token, c_s)),
+            zij_trunk=torch.rand((batch_size, n_token, n_token, c_z)),
+        )
+
+        with torch.no_grad():
+            cache = dm.prepare_cache(
+                batch=batch,
+                zij_trunk=step_kwargs["zij_trunk"],
+                use_conditioning=True,
+            )
+            xl_cached = dm(**step_kwargs, use_conditioning=True, cache=cache)
+            xl_uncached = dm(**step_kwargs, use_conditioning=True, cache=None)
+
+        # The strided view of ``permute_final_dims`` costs ~3x the bandwidth
+        # when every block reads it, so the cache must be materialized.
+        for bias in cache["pair_bias"]:
+            if bias is not None:
+                self.assertTrue(bias.is_contiguous())
+
+        self.assertTrue(torch.equal(xl_cached, xl_uncached))
+
+
 class TestSampleDiffusion(unittest.TestCase):
     def test_shape(self):
         batch_size = consts.batch_size
