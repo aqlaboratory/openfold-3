@@ -66,6 +66,14 @@ run_openfold predict --query_json=examples/example_inference_inputs/query_ubiqui
 
 More information on how to customize your inference prediction can be found at our documentation home at https://openfold-3.readthedocs.io/en/latest/. More examples for inputs and outputs can be found in our [HuggingFace examples](https://huggingface.co/OpenFold/OpenFold3/tree/main/examples/common_examples).
 
+### Intel GPU precision
+
+With XPU-enabled PyTorch, single-device inference accepts
+`pl_trainer_args: {accelerator: xpu, devices: 1, precision: bf16-mixed}` in the
+runner YAML. BF16 uses XPU autocast rather than Lightning's default CUDA AMP
+plugin. FP32 remains the default; CUDA behavior is unchanged. This does not
+validate distributed XPU inference or training.
+
 ## Benchmarking
 
 **OpenFold3-preview-2 results:**
