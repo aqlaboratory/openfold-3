@@ -61,6 +61,13 @@ except ImportError:
 
 TRITON_AVAILABLE = TritonEvoformer is not None
 
+try:
+    from megafold.model.FusedEvoAttention.evoattention import (
+        TritonEvoformer as MTritonEvoformer,
+    )
+except ImportError:
+    MTritonEvoformer = None
+
 cueq_is_installed = is_cuequivariance_available()
 if cueq_is_installed:
     from cuequivariance_ops_torch.triangle_attention import (
@@ -347,6 +354,7 @@ class Attention(nn.Module):
         use_cueq_triangle_kernels: bool = False,
         use_triton_triangle_kernels: bool = False,
         use_lma: bool = False,
+        use_megafold_single_attention: bool = False,
         lma_q_chunk_size: int = DEFAULT_LMA_Q_CHUNK_SIZE,
         lma_kv_chunk_size: int = DEFAULT_LMA_KV_CHUNK_SIZE,
         use_high_precision: bool = False,
@@ -370,9 +378,12 @@ class Attention(nn.Module):
                 Whether to use Triton-based memory-efficient attention kernel.
                 Mutually exclusive with other kernel options.
             use_lma:
-                Whether to use low-memory attention (Staats & Rabe 2021). If
-                none of the "use_<...>" flags are True, a stock PyTorch
-                implementation is used instead
+                Whether to use low-memory attention (Staats & Rabe 2021).
+            use_megafold_single_attention:
+                Whether to use MegaFold's EvoFlash-3D single attention
+                pair bias. Mutually exclusive with use_deepspeed_evo_attention
+                and use_lma. If none of the "use_<...>" flags are True, a stock
+                PyTorch implementation is used instead
             lma_q_chunk_size:
                 Query chunk size (for LMA)
             lma_kv_chunk_size:
@@ -407,9 +418,15 @@ class Attention(nn.Module):
             use_triton_triangle_kernels = False
 
         attn_options = [
-            use_deepspeed_evo_attention
-            or use_cueq_triangle_kernels
-            or use_triton_triangle_kernels,
+            # Can mix and match among following 4 options except
+            # use_deepspeed_evo_attention and use_megafold_single_attention
+            (
+                use_deepspeed_evo_attention
+                or use_megafold_single_attention
+                or use_cueq_triangle_kernels
+                or use_triton_triangle_kernels
+            )
+            + (use_deepspeed_evo_attention and use_megafold_single_attention),
             use_lma,
             use_high_precision,
         ]
@@ -427,6 +444,7 @@ class Attention(nn.Module):
                 use_deepspeed_evo_attention
                 or use_cueq_triangle_kernels
                 or use_triton_triangle_kernels
+                or use_megafold_single_attention
             ),
         )
 
@@ -454,6 +472,14 @@ class Attention(nn.Module):
                     "Ensure the package is installed with Triton support."
                 )
             o = _triton_evo_attn(q, k, v, biases)
+        elif use_megafold_single_attention:
+            if MTritonEvoformer is None:
+                raise RuntimeError(
+                    "MegaFold EvoFlash-3D single attention with pair bias requested "
+                    "(use_megafold_single_attention=True) but "
+                    "megafold.model.FusedEvoAttention.evoattention is not available."
+                )
+            o = _megafold_single_attn(q, k, v, biases)
 
         elif use_lma:
             biases = [
@@ -818,5 +844,105 @@ def _cueq_triangle_attn(q, k, v, biases, scale):
         o = o.view(batch, n_tmpl, *o.shape[1:])
 
     o = o.transpose(-2, -3)
+
+    return o
+
+
+@torch.compiler.disable
+def _megafold_single_attn(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    biases: list[torch.Tensor],
+) -> torch.Tensor:
+    """
+    Args:
+        q:
+            [*, H, Q, C_hidden] query data
+        k:
+            [*, H, K, C_hidden] key data
+        v:
+            [*, H, V, C_hidden] value data
+        biases:
+            List of biases that broadcast to [*, H, Q, K]
+
+    Required input format:
+    Q, K, V:     [Batch, 1, N_res, Head, Dim]
+    mask:        [Batch, 1, 1, 1, N_res]
+    pair_bias:   [Batch, 1, Head, N_res, N_res]
+    """
+    # Get the dimensions passed through *
+    batch_dims = q.shape[:-3]
+
+    # Combine batch dimensions into one dimension
+    flat_batch_size = math.prod(batch_dims) if batch_dims else 1
+
+    # Get remaining dimensions to reconstruct q, k, v into required shape
+    # Q = K = V = N_res
+    # [*, H, N_res, Dim] -> [Batch, H, N_res, Dim]
+    q = q.reshape(flat_batch_size, *q.shape[-3:])
+    k = k.reshape(flat_batch_size, *k.shape[-3:])
+    v = v.reshape(flat_batch_size, *v.shape[-3:])
+
+    # [Batch, H, N_res, Dim] -> [Batch, N_res, H, Dim]
+    q = q.transpose(-2, -3)
+    k = k.transpose(-2, -3)
+    v = v.transpose(-2, -3)
+
+    # [Batch, N_res, H, Dim] -> [Batch, 1, N_res, H, Dim]
+    q = q.unsqueeze(1)
+    k = k.unsqueeze(1)
+    v = v.unsqueeze(1)
+
+    # Combine batch dimensions of biases into one dimension
+    mask, pair_bias = biases
+    mask_batch_dims = mask.shape[:-3]
+    pair_batch_dims = pair_bias.shape[:-3]
+
+    # [*, 1, 1, N_res] -> [Batch, 1, 1, N_res]
+    mask_flat_batch_size = math.prod(mask_batch_dims) if mask_batch_dims else 1
+    mask = mask.reshape(mask_flat_batch_size, *mask.shape[-3:])
+    # [*, H, N_res, N_res] -> [Batch, H, N_res, N_res]
+    pair_flat_batch_size = math.prod(pair_batch_dims) if pair_batch_dims else 1
+    pair_bias = pair_bias.reshape(pair_flat_batch_size, *pair_bias.shape[-3:])
+
+    # Ensure dimensions are the same as q/k/v
+    if mask_flat_batch_size < flat_batch_size:
+        mask = mask.expand(flat_batch_size, *mask.shape[-3:])
+    if pair_flat_batch_size < flat_batch_size:
+        pair_bias = pair_bias.expand(flat_batch_size, *pair_bias.shape[-3:])
+
+    # [Batch, 1, 1, N_res] -> [Batch, 1, 1, 1, N_res]
+    mask = mask.unsqueeze(1)
+    # [Batch, H, N_res, N_res] -> [Batch, 1, H, N_res, N_res]
+    pair_bias = pair_bias.unsqueeze(1)
+
+    # Ensure data is stored in contiguous memory and appropriate dtype
+    # (Ideal conditions for Triton kernels)
+    q = q.contiguous()
+    k = k.contiguous()
+    v = v.contiguous()
+    mask = mask.contiguous()
+    pair_bias = pair_bias.contiguous()
+    orig_dtype = q.dtype
+    if orig_dtype != torch.bfloat16 and orig_dtype != torch.float16:
+        q = q.bfloat16()
+        k = k.bfloat16()
+        v = v.bfloat16()
+        mask = mask.bfloat16()
+        pair_bias = pair_bias.bfloat16()
+
+    o = TritonEvoformer(q, k, v, mask, pair_bias)
+
+    # Restore original data type
+    o = o.to(dtype=orig_dtype)
+
+    # Remove added 1 dimension at index 1
+    # [Batch, 1, N_res, H, Dim] -> [Batch, N_res, H, Dim]
+    o = o.squeeze(1)
+
+    # Unflatten batch dimensions
+    # [Batch, N_res, H, Dim] -> [*, N_res, H, Dim]
+    o = o.reshape(*batch_dims, *o.shape[-3:])
 
     return o

@@ -316,6 +316,7 @@ class OpenFold3(nn.Module):
                     use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
                     use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                     use_lma=mode_mem_settings.use_lma,
+                    use_megafold_single_attention=mode_mem_settings.use_megafold_single_attention,
                     inplace_safe=inplace_safe,
                     _mask_trans=True,
                 )
@@ -405,6 +406,7 @@ class OpenFold3(nn.Module):
                 use_conditioning=True,
                 chunk_size=mode_mem_settings.chunk_size,
                 use_high_precision_attention=True,
+                use_megafold_single_attention=use_megafold_single_attention,
                 _mask_trans=True,
             )
 
@@ -432,6 +434,7 @@ class OpenFold3(nn.Module):
                     use_triton_triangle_kernels=mode_mem_settings.use_triton_triangle_kernels,
                     use_cueq_triangle_kernels=mode_mem_settings.use_cueq_triangle_kernels,
                     use_lma=mode_mem_settings.use_lma,
+                    use_megafold_single_attention=mode_mem_settings.use_megafold_single_attention,
                     inplace_safe=inplace_safe,
                     offload_inference=offload_confidence_heads,
                     _mask_trans=True,
