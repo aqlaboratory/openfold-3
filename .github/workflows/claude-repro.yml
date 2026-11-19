@@ -1,0 +1,61 @@
+name: Claude issue reproduction (AMD GPU)
+
+# A maintainer comments `@claude` on an issue; Claude tries to reproduce the
+# report on the persistent AMD/ROCm runner and replies with a verdict. The
+# procedure it follows lives in the "Reproducing issues" section of CLAUDE.md.
+on:
+  issue_comment:
+    types: [created]
+
+# There is a single GPU box, so queue repro jobs rather than cancelling one
+# that is half way through a reproduction.
+concurrency:
+  group: gpu-repro
+  cancel-in-progress: false
+
+jobs:
+  repro:
+    # Issues only (PR comments go to claude-review.yml), and only when the
+    # commenter is a maintainer. The action re-checks write access itself, but
+    # gating here keeps untrusted comments from ever reaching the GPU runner.
+    if: >-
+      !github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@claude') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: [self-hosted, amd-gpu]
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      # Exchanged for a Claude GitHub App token, which is what lets Claude
+      # open the draft PR (GITHUB_TOKEN may not create PRs in this repo).
+      id-token: write
+    env:
+      # Best-effort scrub of the OAuth/GitHub tokens from the environment of
+      # every command Claude runs. The issue text is untrusted, and on this
+      # persistent runner a python subprocess could otherwise read them.
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      # pixi is already installed for the runner user and its package cache is
+      # warm, so this is a few seconds of hardlinking rather than a download.
+      # The checkout above wipes .pixi/, hence the install on every run.
+      - name: Install the ROCm pixi environment
+        run: |
+          echo "$HOME/.pixi/bin" >> "$GITHUB_PATH"
+          "$HOME/.pixi/bin/pixi" install --locked -e openfold3-rocm7
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Tag mode already grants Read/Glob/Grep, in-workspace file edits and
+          # git add/commit/push. Everything below is what a reproduction needs
+          # on top of that: running Python in the ROCm env, reading GPU state,
+          # inspecting history and opening the draft PR with the failing test.
+          # Note that `python` is itself general purpose; the maintainer gate
+          # above is the real boundary, this list just keeps Claude on task.
+          claude_args: |
+            --append-system-prompt "You are running on the self-hosted AMD ROCm GPU runner. Follow the 'Reproducing issues' section of CLAUDE.md exactly."
+            --allowedTools "Bash(pixi run -e openfold3-rocm7 python:*),Bash(pixi run -e openfold3-rocm7 pytest:*),Bash(pixi list -e openfold3-rocm7:*),Bash(rocm-smi:*),Bash(amd-smi:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),mcp__github__create_pull_request"
