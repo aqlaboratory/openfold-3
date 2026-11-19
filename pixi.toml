@@ -224,7 +224,7 @@ ml-collections = "*"
 
 # --- Handling molecules
 rdkit = "*"
-biotite = ">=1.6"
+biotite = ">=1.6,<2"
 pdbeccdutils = "*"
 
 # --- Bioinformatics & Workflows

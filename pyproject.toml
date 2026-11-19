@@ -33,7 +33,7 @@ dependencies = [
     "torch", # ==2.5.1",
     "ml-collections",
     "pytorch-lightning >=2.1",
-    "biotite>=1.6",
+    "biotite>=1.6,<2",
     "rdkit",
     "pdbeccdutils",
     "kalign-python",
