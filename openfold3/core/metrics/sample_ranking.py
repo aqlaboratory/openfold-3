@@ -35,6 +35,8 @@ def full_complex_sample_ranking_metric(
     """
     AlphaFold3 sample ranking metric for the full complex (SI §5.9.3, item 1).
     Computes: 0.8·ipTM + 0.2·pTM + 0.5·disorder - 100·has_clash
+    For a single chain ipTM is undefined, so pTM takes its place in the score
+    (i.e. 1.0·pTM + 0.5·disorder - 100·has_clash), as in AlphaFold3.
     This is per-batch operation, expects batch dimension dropped.
 
     Args:
@@ -97,6 +99,11 @@ def full_complex_sample_ranking_metric(
             dtype=atom_positions_predicted.dtype,
         )
 
+    # ipTM only looks at inter-chain pairs, so it is 0 for a single chain.
+    # Use pTM in its place so a monomer is ranked on pTM rather than on disorder.
+    num_chains = torch.unique(asym_id[token_mask.bool()]).numel()
+    iptm_for_ranking = iptm if num_chains > 1 else ptm
+
     scores = {}
     scores["iptm"] = iptm.detach().clone()
     scores["ptm"] = ptm.detach().clone()
@@ -104,7 +111,7 @@ def full_complex_sample_ranking_metric(
     scores["has_clash"] = has_clash
     scores["sample_ranking_score"] = (
         (
-            iptm_weight * iptm
+            iptm_weight * iptm_for_ranking
             + ptm_weight * ptm
             + disorder_weight * disorder
             - has_clash_weight * has_clash
