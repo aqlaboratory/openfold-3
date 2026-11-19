@@ -1,0 +1,48 @@
+# STOCKHOLM 1.0
+
+3d0u_A                                    ..GGACGGAGGCGCGCCCGAGAUGAGUAGGCUGUCC..CAUCA..GG..GGAGGAA..UCGGGGA...CGGCUGAAAGGCGAGGGCGCCGAAGCG..AGCA.....GAGUUCCUCCCGCUCUGCUUG..GCUGGGGGUGAGGGGAAUACCCUUACCACUGUCGC........G.........AAA......GCGGAGAGC
+#=GR 3d0u_A                            PP ..689*******************************..*****..**..*******..*******...***************************..****.....*********************..***********************************........*.........***......*********
+AE000512.1/1519251-1519073/7-152          ..-GACGGAGGCGCGCCCGAGAUGAGUAGGCUGUCC..CAUCA..GG..GGAGGAA..UCGGGGA...CGGCUGAAAGGCGAGGGCGCCGAAGGG..UGCA.....GAGUUCCUCCCGCUCUGCAUG..CCUGGGGGUAUGGGGAAUACCCAUACCACUGUCAC........G.........GA-......---------
+#=GR AE000512.1/1519251-1519073/7-152  PP ...689******************************..*****..**..*******..*******...***************************..****.....*********************..********************************998........8.........65................
+CP000716.1/1858268-1858445/9-170          ..---CGGAGGUGCGUCCGAGAUGAGUAGGAUUCUC..CAUCA..AG..GGGAGAAuaUCGGGAG...AAUCUGAAAGGCGAGGACGCCGAAGGG..UGUG.....AGGUUUCUCCCGCUUCACACG..CCUGGUGGUACAGGGAAUACCUGUAUCACUGUCAC........G.........GGAuaauccGUGGAGAGC
+#=GR CP000716.1/1858268-1858445/9-170  PP .....5899***************************..****9..88..8777775226788888...889************************..****.....*********************..********************************999........8.........654233333567777777
+CP001185.1/164726-164903/9-170            ..---CGGAGGCGCGUCCGAGAUGAGUAAGGUUCUC..UUUCA..AG..GGGAGAAuaUUGAGAG...AGCCUGAAAGGCGAGGACGCCGAAGGG..UGUA.....AGGUUUCUCCCACCUUACAUG..CCUGGGGGUACAGGGAAUACCUGUGCCACUGUCAC........G.........GAAauauccGUGGAGAGC
+#=GR CP001185.1/164726-164903/9-170    PP .....589*******************988877777..77777..66..6555554114566666...7889***********************..****.....*********************..**********************************9........9.........887444444567888887
+CP001634.1/124382-124208/9-144            ca-----GAGGUGCACCGGAGAUGAGUAAACCGUC-..CAUCA..UG..G---GGA..UCGGGAC...GGAUUGAAAGGCGAAGGUGCCGAAGGA..UACA.....GGGUACCCCAAGCUCUGUACU..CCUGGGUAUACGGGGAAUACCCGUAUAACUGUCAC........-.........---......---------
+#=GR CP001634.1/124382-124208/9-144    PP 75.....7999**********************97...57888..76..5...457..9998877...78899**********************..****.....*********************..******************************99876....................................
+CP003257.1/589253-589077/8-170            ..--ACGGAGGCGCAACCAAGAAGAGUAAUCUAUCUauCGCCC..GG..GUAGGCU..U--GGGA...UAGAUGAAAGGCGAGGUUGCCGAAGGG..UACA.....GGACUU-ACCCAUCCUGUAUG..CCUGGUUAUAUGGGGAAUACCCAUGUAACUGUCGCauuugagaA.........AAU......GCGGAGAGC
+#=GR CP003257.1/589253-589077/8-170    PP ....589**********************99988642255677..88..8888865..5..6789...99***********************99..9999.....865544.566778899999**..********************************997433333223.........677......999****99
+CP003532.1/1163155-1163321/8-158          ..--ACGGAGGAGCACCCGAGAUGAGUAGACG--UC..CAUCA..GG..----GAA..UCGGGAC...GGAUCGAAAGGCGAGGGUGCCGAAGAA..GGCG.....GAAGCCCCAGCGACCGACUU-..-CUGGGCAUACGGGAAAUACCUGUAUGACUGUCAC........G.........AAGaa.ugcGUGGAGAG-
+#=GR CP003532.1/1163155-1163321/8-158  PP ....5899********************9874..57..89999..86......588..9988777...777889*********************..****.....*9999998888888888876....8999999**************************9........9.........87422.22245566665.
+LN824141.1/2028019-2027840/9-172          ..---CGGAGGCGCAACCAAGAUUAGUAGCUUCUCU..UAUUGauGA..GGCGGAA..AAGA---...--AGCGAAAGGCGAGGUUGCCGAAGGGguAUAA.....AAGUAGCCUCAACUUUUAUAAccCCUGGGUAUGUAGGGAAUACCUACAUAACUGUCAC........GuuuugucccAAC......GUGGAGAGC
+#=GR LN824141.1/2028019-2027840/9-172  PP .....5899********************9999998..887531133..3444444..4332........23689*****************976333455.....6677666666666665544331157899999999********************9987........6444444444677......888888888
+CP002216.1/1038810-1038627/9-154          ua-----GAGGCGCGUCUUUUAAGAGUAGGCAGGCG..GAUGU..GAaaGAAGACA..CAGAUGAaacCUGCUGAAAGGAAAAGACGCCGAAGGG..AGUU.....UCUUUCUUCUUGG-AAACUUC..CCUGGGUGCAUGGAGAAUAUCCAUGCAACUGUCAC........-.........---......---------
+#=GR CP002216.1/1038810-1038627/9-154  PP 97.....7899*********************9998..88754..32112222222..22222222226799*********************99..9877.....6666665555543.3457888..89*****************************9876....................................
+FP929062.1/2490021-2490202/15-149         uu----------GCGCCUGACAUGAGUAGACCGGCA..GAUAA..UG..GGA--AA..UGGCUGC...CGGAGAAAAGGGGAUGGCGCCGAAGAG..ACAGgaaguGAAUCCCUAAGGCUCC-CGUU..UCUGGGCAUGCGGCGAAGAACCGUAUGACUGUC--........-.........---......---------
+#=GR FP929062.1/2490021-2490202/15-149 PP 96..........7899********************..***99..99..876..78..8888999...999999******************998..7544111114556677777777775.4455..79999********************99999986......................................
+#=GC PP_cons                              ..6777999********************9999988..88888..77..7777666..7777778...88899********************99..9988.....888888988888898898888..99*****************************9998........8.........777......778888888
+#=GC RF                                   ..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx..xxxxx..xx..xxxxxxx..xxxxxxx...xxxxxxxxxxxxxxxxxxxxxxxxxxx..xxxx.....xxxxxxxxxxxxxxxxxxxxx..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx........x.........xxx......xxxxxxxxx
+
+3d0u_A                                    CGUCCA...
+#=GR 3d0u_A                            PP **9985...
+AE000512.1/1519251-1519073/7-152          ------gg.
+#=GR AE000512.1/1519251-1519073/7-152  PP ......67.
+CP000716.1/1858268-1858445/9-170          C-----g..
+#=GR CP000716.1/1858268-1858445/9-170  PP 6.....6..
+CP001185.1/164726-164903/9-170            C-----g..
+#=GR CP001185.1/164726-164903/9-170    PP 6.....6..
+CP001634.1/124382-124208/9-144            ------g..
+#=GR CP001634.1/124382-124208/9-144    PP ......6..
+CP003257.1/589253-589077/8-170            CGU---...
+#=GR CP003257.1/589253-589077/8-170    PP 985......
+CP003532.1/1163155-1163321/8-158          ------cc.
+#=GR CP003532.1/1163155-1163321/8-158  PP ......57.
+LN824141.1/2028019-2027840/9-172          C-----g..
+#=GR LN824141.1/2028019-2027840/9-172  PP 7.....5..
+CP002216.1/1038810-1038627/9-154          ------caa
+#=GR CP002216.1/1038810-1038627/9-154  PP ......567
+FP929062.1/2490021-2490202/15-149         ------a..
+#=GR FP929062.1/2490021-2490202/15-149 PP ......8..
+#=GC PP_cons                              797985...
+#=GC RF                                   xxxxxx...
+//
