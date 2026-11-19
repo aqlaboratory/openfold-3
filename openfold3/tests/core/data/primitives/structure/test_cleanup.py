@@ -12,15 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+from typing import NamedTuple
+
 import numpy as np
 import pytest
 from biotite.structure import AtomArray
+from biotite.structure.io import pdbx
 
 from openfold3.core.data.primitives.structure.cleanup import (
+    check_ligand_atoms_in_ccd,
     convert_MSE_to_MET,
     fix_arginine_naming,
     remove_crystallization_aids,
+    remove_non_CCD_atoms,
     return_on_empty_atom_array,
+)
+from openfold3.core.data.resources.residues import MoleculeType
+from openfold3.tests.utils.ccd_error_utils import (
+    ligand_mismatch_message,
+    residue_not_in_ccd_message,
 )
 from openfold3.tests.utils.custom_assert_utils import assert_atomarray_equal
 
@@ -355,3 +366,121 @@ class TestRemoveCrystallizationAids:
         result = remove_crystallization_aids(empty_array)
 
         assert_atomarray_equal(empty_array, result)
+
+
+PROTEIN = MoleculeType.PROTEIN
+LIGAND = MoleculeType.LIGAND
+
+# Minimal CCD that only defines the atom names of each component
+CCD = pdbx.CIFFile(
+    {
+        comp_id: pdbx.CIFBlock(
+            {"chem_comp_atom": pdbx.CIFCategory({"atom_id": np.array(atom_ids)})}
+        )
+        for comp_id, atom_ids in [
+            ("ALA", ["N", "CA", "C", "O", "CB", "OXT"]),
+            ("LIG", ["C1", "C2", "O1", "O2"]),
+        ]
+    }
+)
+
+
+class Residue(NamedTuple):
+    """A residue of a test AtomArray, with the atoms that are present in it."""
+
+    chain_id: str
+    res_id: int
+    res_name: str
+    molecule_type: MoleculeType
+    atom_names: list[str]
+
+
+def _make_residues(residues: list[Residue]) -> AtomArray:
+    """Builds an AtomArray with the atoms of each residue."""
+    n_atoms = [len(residue.atom_names) for residue in residues]
+    atom_array: AtomArray = AtomArray(sum(n_atoms))
+    atom_array.chain_id[:] = np.repeat([r.chain_id for r in residues], n_atoms)
+    atom_array.res_id[:] = np.repeat([r.res_id for r in residues], n_atoms)
+    atom_array.res_name[:] = np.repeat([r.res_name for r in residues], n_atoms)
+    atom_array.atom_name[:] = np.concatenate([r.atom_names for r in residues])
+    atom_array.set_annotation(
+        "molecule_type_id", np.repeat([r.molecule_type for r in residues], n_atoms)
+    )
+    return atom_array
+
+
+ALA_ATOMS = ["N", "CA", "C", "O", "CB"]
+ALA = Residue("A", 1, "ALA", PROTEIN, ALA_ATOMS)
+ALA_WITH_NON_CCD_ATOM = Residue("A", 1, "ALA", PROTEIN, [*ALA_ATOMS, "XX"])
+UNL = Residue("B", 2, "UNL", LIGAND, ["C1", "O1"])
+
+
+class TestCheckLigandAtomsInCCD:
+    """Tests for the check_ligand_atoms_in_ccd function."""
+
+    @pytest.mark.parametrize(
+        "residues",
+        [
+            pytest.param(
+                [Residue("B", 1, "LIG", LIGAND, ["C1", "O1"])],
+                id="partially_resolved_ligand",
+            ),
+            pytest.param([ALA_WITH_NON_CCD_ATOM], id="polymer_not_checked"),
+            pytest.param([UNL], id="unl_not_checked"),
+        ],
+    )
+    def test_does_not_raise(self, residues):
+        """Missing ligand atoms are not a mismatch, and polymers and UNL are skipped."""
+        check_ligand_atoms_in_ccd(_make_residues(residues), CCD)
+
+    @pytest.mark.parametrize(
+        ("residues", "error_match"),
+        [
+            pytest.param(
+                [ALA, Residue("B", 2, "LIG", LIGAND, ["C1", "C2", "S1", "O3"])],
+                # S1 and O3 are not atoms of the LIG entry (C1, C2, O1, O2)
+                ligand_mismatch_message(("B", 2, "LIG", ["S1", "O3"])),
+                id="one_ligand",
+            ),
+            pytest.param(
+                [
+                    Residue("B", 1, "LIG", LIGAND, ["C1", "S1"]),
+                    Residue("C", 1, "LIG", LIGAND, ["C1", "CL1"]),
+                ],
+                ligand_mismatch_message(
+                    ("B", 1, "LIG", ["S1"]), ("C", 1, "LIG", ["CL1"])
+                ),
+                id="all_ligands_in_one_error",
+            ),
+        ],
+    )
+    def test_raises_on_ligand_atoms_not_in_ccd_entry(self, residues, error_match):
+        """The error names each ligand and its atoms that its CCD entry lacks."""
+        with pytest.raises(ValueError, match=re.escape(error_match)):
+            check_ligand_atoms_in_ccd(_make_residues(residues), CCD)
+
+
+class TestRemoveNonCCDAtoms:
+    """Tests for the remove_non_CCD_atoms function."""
+
+    @pytest.mark.parametrize(
+        "residues",
+        [
+            pytest.param([ALA_WITH_NON_CCD_ATOM], id="polymer_atom_not_in_ccd_entry"),
+            pytest.param([ALA, UNL], id="unl_removed"),
+        ],
+    )
+    def test_removes_atoms_not_in_ccd_entry(self, residues):
+        """Only the atoms in each residue's CCD entry are kept (AF3 SI 2.5.4)."""
+        result = remove_non_CCD_atoms(_make_residues(residues), CCD)
+
+        assert_atomarray_equal(result, _make_residues([ALA]))
+
+    def test_residue_not_in_ccd_raises(self):
+        """A residue name that is not in the CCD raises a ValueError naming it."""
+        atom_array = _make_residues([Residue("B", 1, "LIG1", LIGAND, ["C1"])])
+
+        with pytest.raises(
+            ValueError, match=re.escape(residue_not_in_ccd_message("LIG1", "B", 1))
+        ):
+            remove_non_CCD_atoms(atom_array, CCD)

@@ -12,8 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import logging
 from functools import wraps
+from typing import Any
 
 import biotite.structure as struc
 import numpy as np
@@ -539,6 +542,10 @@ def get_res_atoms_in_ccd_mask(
 
     Returns:
         Mask for atoms in the residue that are present in the CCD
+
+    Raises:
+        ValueError:
+            If the residue name is not in the CCD.
     """
     res_name = res_atom_array.res_name[0]
 
@@ -548,10 +555,76 @@ def get_res_atoms_in_ccd_mask(
     if res_name == "UNL":
         return np.zeros(len(res_atom_array), dtype=bool)
 
-    allowed_atoms = ccd[res_name]["chem_comp_atom"]["atom_id"].as_array()
+    try:
+        ccd_entry = ccd[res_name]
+    except KeyError:
+        raise ValueError(
+            f"Residue {res_name} (chain {res_atom_array.chain_id[0]}, residue "
+            f"{res_atom_array.res_id[0]}) is not in the CCD. Add its definition to the "
+            "CCD, or use a CCD version that includes it."
+        ) from None
+
+    allowed_atoms = ccd_entry["chem_comp_atom"]["atom_id"].as_array()
 
     mask = np.isin(res_atom_array.atom_name, allowed_atoms)
     return mask
+
+
+def check_ligand_atoms_in_ccd(atom_array: AtomArray[Any], ccd: CIFFile) -> None:
+    """Raises if a ligand has atoms that are not in the CCD entry of its residue name.
+
+    Ligands are matched to the CCD by residue name only. `remove_non_CCD_atoms` then
+    removes every atom that this CCD entry does not define, `add_unresolved_atoms` adds
+    the entry's missing atoms with NaN coordinates, and the reference molecule is built
+    from the entry. A ligand whose atom names are not all in the entry would therefore
+    silently become a different molecule. This happens to a custom ligand that reuses an
+    existing CCD code (e.g. LIG), to a ligand whose atom names differ from its CCD
+    entry, and to a PDB ligand whose atoms were renamed in a newer CCD version.
+
+    Polymer residues are not checked: for them, removing atoms that are not in the CCD
+    is the intended behavior (AlphaFold3 SI 2.5.4). UNL is not checked either, because
+    its CCD entry has no atoms and `remove_non_CCD_atoms` removes it on purpose.
+
+    Args:
+        atom_array:
+            AtomArray containing the structure to check, with a molecule_type_id
+            annotation
+        ccd:
+            CIFFile containing the parsed CCD (components.cif)
+
+    Raises:
+        ValueError:
+            If any ligand has atoms that are not in the CCD entry of its residue name
+            (all such ligands are listed in one error), or if the residue name of a
+            ligand is not in the CCD.
+    """
+    mismatched_ligands: list[tuple[str, int, str, list[str]]] = []
+
+    for residue_view in residue_view_iter(atom_array):
+        res_name = residue_view.res_name[0].item()
+
+        if residue_view.molecule_type_id[0] != MoleculeType.LIGAND or res_name == "UNL":
+            continue
+
+        in_ccd_mask = get_res_atoms_in_ccd_mask(residue_view, ccd)
+
+        if not in_ccd_mask.all():
+            mismatched_ligands.append(
+                (
+                    residue_view.chain_id[0].item(),
+                    residue_view.res_id[0].item(),
+                    res_name,
+                    residue_view.atom_name[~in_ccd_mask].tolist(),
+                )
+            )
+
+    if mismatched_ligands:
+        raise ValueError(
+            "Found ligand atoms that are not in the CCD entry of their residue name, "
+            "as (chain_id, res_id, res_name, atom names): "
+            f"{mismatched_ligands}. Check each ligand's residue name and atom names "
+            "against its CCD entry, and the CCD version against the structure files."
+        )
 
 
 @return_on_empty_atom_array

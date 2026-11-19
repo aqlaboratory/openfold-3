@@ -858,6 +858,36 @@ class TestRemapObsoletePdb:
         assert remapped_ids[1] == "4pqx_A"
 
 
+class TestQueryColabFoldServerFilesExtractionValidation:
+    """Regression test for issue #508.
+
+    The files from MSA server are untrusted. Validations are required.
+    """
+
+    @staticmethod
+    def _write_tarball(out_tar_gz: Path, members: dict[str, bytes]) -> None:
+        """Write a gzipped tar of ``members`` (name -> bytes) at ``out_tar_gz``."""
+        with tarfile.open(out_tar_gz, "w:gz") as tar:
+            for name, data in members.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tar.addfile(info, io.BytesIO(data))
+
+    def test_files_extraction_validation(self, tmp_path):
+        path = tmp_path / "destination"
+        path.mkdir()
+
+        tar_gz_file = f"{path}/out.tar.gz"
+        self._write_tarball(tar_gz_file, {"../attack": b">101\nAAAA\n\x00>102\nCCCC\n"})
+
+        with pytest.raises(tarfile.OutsideDestinationError):
+            query_colabfold_msa_server(
+                ["AAAA", "CCCC"], prefix=path, user_agent="test-agent"
+            )
+
+        assert not (tmp_path / "attack").exists()
+
+
 class TestMsaComputationSettings:
     def test_setting_workspace_parent_does_not_create_it(self, tmp_path):
         settings = MsaComputationSettings()

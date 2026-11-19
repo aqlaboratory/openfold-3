@@ -31,7 +31,21 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      # Named so the cleanup step can stop the container if the job is cancelled
+      # or times out; unique per run so the two runners on this box cannot clash.
+      TEST_CONTAINER: openfold3-test-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.pixi_env }}
     steps:
+      # A previous job may have left root-owned files in this persistent
+      # workspace (see "Reclaim workspace ownership" below), which makes checkout
+      # fail with EACCES. Uses busybox rather than the test image so it works
+      # before anything has been built.
+      - name: Reclaim workspace ownership (pre-checkout)
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/opt/openfold3 \
+            busybox chown -R "$(id -u):$(id -g)" /opt/openfold3
+
       - uses: actions/checkout@v7
 
       - name: Log in to GHCR
@@ -101,6 +115,7 @@ jobs:
           )
 
           docker run --rm \
+            --name "$TEST_CONTAINER" \
             --device=/dev/kfd \
             --device=/dev/dri \
             "${rocm_group_args[@]}" \
@@ -117,10 +132,12 @@ jobs:
         # bind-mounted workspace, leaving root-owned files that this persistent
         # self-hosted runner's user cannot delete on the next checkout. Chown them
         # back to the runner user. Runs on failure too (pytest -x may exit non-zero).
+        # Cancelling the job kills the `docker run` client but not the container,
+        # so stop it first or it keeps writing root-owned files after the chown.
+        # Uses busybox so this does not depend on the build step having succeeded.
         if: always()
         run: |
+          docker rm -f "$TEST_CONTAINER" 2>/dev/null || true
           docker run --rm \
             -v ${{ github.workspace }}:/opt/openfold3 \
-            --entrypoint chown \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} \
-            -R "$(id -u):$(id -g)" /opt/openfold3
+            busybox chown -R "$(id -u):$(id -g)" /opt/openfold3

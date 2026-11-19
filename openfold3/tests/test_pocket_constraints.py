@@ -603,6 +603,9 @@ class _IdentityDenoiser(torch.nn.Module):
         super().__init__()
         self.calls = 0
 
+    def prepare_cache(self, **_kwargs):
+        return {}
+
     def forward(self, *, xl_noisy, **_kwargs):
         self.calls += 1
         return xl_noisy
