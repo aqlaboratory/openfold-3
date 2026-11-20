@@ -1891,3 +1891,26 @@ Second consecutive night of the recurring AMD runner `.pytest_cache/.gitignore` 
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #400, per this log's established convention).
+
+## 2026-11-20
+
+### Run #402 — primary nightly (schedule `17 3 * * *`, main @ `4b59bbf3` (direct commit "ci: AMD runner workspace ownership", no associated PR found, new since run #400/11-19's `86c44062`), [44667192746](https://github.com/aqlaboratory/openfold-3/actions/runs/44667192746))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 29m10s | `test-openfold-docker-pixi` 03:32:42–04:01:52. |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 26m28s | `test-openfold-docker-pixi` 03:32:51–03:59:19. |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 40m53s | `test-openfold-docker-pixi-amd` 03:21:46–04:02:39. |
+
+**2026-11-20: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+First fully clean night after the two-night (11-18, 11-19) AMD `.pytest_cache/.gitignore` EACCES streak — tonight's `main` @ `4b59bbf3` is a direct commit titled "ci: AMD runner workspace ownership" (single parent `86c44062`, no PR found via commit search), which plausibly resolves that fault directly; this log cannot confirm causation beyond the title match, but the AMD leg ran clean for the first time in three nights. Both Brev CUDA legs also passed clean. Note: a fourth job in this run, `test-pixi-amd (openfold3-rocm10)` (added by PR #514, not one of this log's three tracked jobs), concluded `failure` tonight — its log shows the job stuck mid-"Build and push test image" step with no further step status recorded, suggestive of a hung build rather than a repeat of the EACCES signature; not counted in the coverage line above per this log's established scope, but worth a human glance if it recurs. No new entries required in `aws-outage-failures.md` or `test-failures.md` tonight.
+
+### Run #403 — secondary nightly (schedule `17 4 * * *`, main @ `4b59bbf3` (unchanged), [44673832575](https://github.com/aqlaboratory/openfold-3/actions/runs/44673832575))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #402, per this log's established convention).
