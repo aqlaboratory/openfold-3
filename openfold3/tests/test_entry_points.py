@@ -464,6 +464,39 @@ class TestAcceleratorWillUseXpu:
             assert _accelerator_will_use_xpu("xpu")
 
 
+class TestXpuInferencePrecision:
+    @pytest.mark.parametrize("precision", ["32-true", "bf16-mixed"])
+    def test_explicit_xpu_precision_when_cuda_is_visible(
+        self, dummy_ckpt_file, precision
+    ):
+        from pytorch_lightning.plugins.precision import MixedPrecision
+
+        config = InferenceExperimentConfig(
+            inference_ckpt_path=dummy_ckpt_file,
+            pl_trainer_args={
+                "accelerator": "xpu",
+                "devices": 1,
+                "precision": precision,
+            },
+        )
+        with (
+            patch(
+                "openfold3.core.utils.xpu_accelerator.XPUAccelerator.is_available",
+                return_value=True,
+            ),
+            patch("torch.cuda.is_available", return_value=True),
+        ):
+            strategy = InferenceExperimentRunner(config).strategy
+        assert strategy.root_device.type == "xpu"
+        plugin = strategy.precision_plugin
+        if precision == "bf16-mixed":
+            assert isinstance(plugin, MixedPrecision)
+            assert plugin.device == "xpu"
+            assert plugin.precision == precision
+        else:
+            assert not isinstance(plugin, MixedPrecision)
+
+
 class DummyWandbExperiment:
     def __init__(self, directory):
         self.dir = directory

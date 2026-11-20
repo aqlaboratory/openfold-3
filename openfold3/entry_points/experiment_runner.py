@@ -34,6 +34,7 @@ from pytorch_lightning.callbacks.lr_monitor import LearningRateMonitor
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.plugins.environments import MPIEnvironment
+from pytorch_lightning.plugins.precision import MixedPrecision
 from pytorch_lightning.profilers import PyTorchProfiler
 from pytorch_lightning.strategies import (
     DDPStrategy,
@@ -295,7 +296,13 @@ class ExperimentRunner(ABC):
                     timeout=self.pl_trainer_args.distributed_timeout,
                 )
             return SingleDeviceStrategy(
-                device=xpu_devices[0], accelerator=XPUAccelerator()
+                device=xpu_devices[0],
+                accelerator=XPUAccelerator(),
+                precision_plugin=(
+                    MixedPrecision("bf16-mixed", device="xpu")
+                    if self.pl_trainer_args.precision == "bf16-mixed"
+                    else None
+                ),
             )
 
         if self.is_distributed:
