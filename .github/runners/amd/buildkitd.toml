@@ -1,0 +1,12 @@
+# BuildKit config for the shared `openfold3-ci` buildx builder on the AMD
+# self-hosted runner box. Applied when the builder is created by the
+# "Set up Docker Buildx" step in
+# .github/workflows/ci-integration-test-pixi-amd-reusable.yml.
+#
+# The layer cache that matters lives in GHCR (cache-from/cache-to), so the
+# local cache only needs to be big enough for one build. Cap it so it cannot
+# fill the box's disk, which other users share.
+[worker.oci]
+  gc = true
+  reservedSpace = "10GB"
+  maxUsedSpace = "40GB"
