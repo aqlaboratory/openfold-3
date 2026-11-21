@@ -1075,3 +1075,30 @@ No code regression indicated — both Brev CUDA legs passed clean on tonight's c
 No code regression indicated — both Brev CUDA legs passed clean on tonight's unchanged commit (`86c44062`). The AMD runner's `EACCES` unlink of `.pytest_cache/.gitignore` has now recurred two nights running (11-18, 11-19) with no gap between them, under the renamed `actions-runner-public` working-directory path, affecting both AMD matrix legs (`rocm7`, `rocm10`) identically each night. This does not match any of `aws-outage-failures.md`'s three signatures (`aws-capacity`, `gpu-unavailable`, `runner-offline`) — the runner picks the job up immediately, it is not a capacity or GPU-availability issue, and it is not a provisioning/queue problem — so it remains `unclassified` per this log's rule, rather than guessed into another bucket. **Flagged for a human, now two nights running:** a stray `.pytest_cache/.gitignore` (or its containing directory) on the `omsf-amd-aupcloud` runner host under `/home/jan/actions-runner-public/_work/openfold-3/openfold-3/` is owned by a different user/permission set than the runner process, and needs a manual `sudo rm -rf`/ownership fix directly on the host — this log cannot clear it from here. If it recurs a third night, consider whether the workflow's checkout step needs an explicit pre-clean (e.g. `docker run --entrypoint chown ...` *before* checkout rather than only after) to make the runner self-healing.
 
 ---
+
+## 2026-11-21
+
+**Cause:** `unclassified (log unavailable)` × 1 — AMD leg failed mid "Build and push test image" step; the job log could not be retrieved from the Actions API or the run-level log archive (`BlobNotFound`/HTTP 404), so the failure cannot be classified from its signature line. Both Brev CUDA legs passed clean.
+
+- **Run ID:** [44860634719](https://github.com/aqlaboratory/openfold-3/actions/runs/44860634719) (run #405, primary nightly, schedule `17 3 * * *`)
+- **Branch:** main @ `4b59bbf39a31b4aef7c33e5b567d25d7b4a61bf3` (unchanged since run #403, 11-20)
+
+### Failed/cancelled jobs
+
+| Job | Job ID | Time | Notes |
+|-----|--------|------|-------|
+| `test-pixi-amd (openfold3-rocm7) / test-openfold-docker-pixi-amd` | 136712948366 | 03:20:55–03:23:35 (2m40s, "Build and push test image" step, per job step API) | **FAILED**: job log unavailable — the Actions jobs-logs API (`.../actions/jobs/136712948366/logs`) and a direct download of the full run-level log archive (`.../actions/runs/44860634719/logs`) both fail to produce content for this job; the API returns HTTP 404 with an underlying `BlobNotFound` error, and the archive itself contains logs only for the two Brev CUDA jobs, none for either AMD job. The job step timeline shows "Build and push test image" started at 03:20:55 and the job concluded `failure` at 03:23:35 with no later step ever starting ("Create parameter cache directory" onward stayed `pending`), but the actual error line cannot be confirmed from here. Classified `unclassified (log unavailable)` per this log's rule — never bin on a guess. |
+| `test-pixi-amd (openfold3-rocm10) / test-openfold-docker-pixi-amd` | 136713746908 | 03:25:19–03:27:48 (2m29s, same step) | **FAILED**: identical pattern — same step, same runner (`omsf-amd-aupcloud`), log equally unavailable. Not one of this log's three tracked jobs (added by PR #514); noted for completeness only, not double-counted as a separate incident. |
+
+### Passing jobs
+
+| Job | Status | Job ID | Duration |
+|-----|--------|--------|----------|
+| `test-pixi-cuda-brev (openfold3-cuda12) / test-openfold-docker-pixi` | **success** | 136714713210 | 44m00s |
+| `test-pixi-cuda-brev (openfold3-cuda13) / test-openfold-docker-pixi` | **success** | 136714726770 | 38m06s |
+
+### Assessment
+
+No code regression indicated on the Brev CUDA side — both legs passed clean on `main` @ `4b59bbf3` (unchanged since 11-20). The AMD leg's failure is new in kind: unlike the `.pytest_cache/.gitignore` EACCES unlink seen 10-29–11-02 and again 11-18/11-19 (which failed early at `actions/checkout@v7`, with a readable log each time), tonight's failure happened later, inside "Build and push test image," and both AMD jobs' logs are entirely missing — not merely terse, but absent — from both the per-job Actions API and the run-level log archive, while the same archive successfully contained full logs for the two Brev jobs from the same run. This points at a problem specific to the self-hosted `omsf-amd-aupcloud` runner's log upload (or the runner itself, mid-build) rather than necessarily a build failure proper. **Flagged for a human:** check the `omsf-amd-aupcloud` host directly for the actual Docker build error and for whether its Actions Runner log-upload path is healthy — this log cannot recover the signature remotely, so this entry cannot be upgraded from `unclassified` without that access.
+
+---

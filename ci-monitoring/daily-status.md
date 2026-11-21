@@ -1914,3 +1914,26 @@ First fully clean night after the two-night (11-18, 11-19) AMD `.pytest_cache/.g
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #402, per this log's established convention).
+
+## 2026-11-21
+
+### Run #405 — primary nightly (schedule `17 3 * * *`, main @ `4b59bbf3` (unchanged since run #403, 11-20), [44860634719](https://github.com/aqlaboratory/openfold-3/actions/runs/44860634719))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 44m00s | `test-openfold-docker-pixi` 03:27:08–04:11:08. |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 38m06s | `test-openfold-docker-pixi` 03:27:10–04:05:16. |
+| test-pixi-amd (openfold3-rocm7) | **FAILED** | 2m40s (failed mid "Build and push test image" step, per job step API) | unclassified (log unavailable) — the job log returns `BlobNotFound`/HTTP 404 from both the Actions jobs-logs API and the run-level log archive (the downloaded zip contains only the two Brev CUDA jobs' logs; the AMD jobs' logs are entirely absent). Cannot confirm the actual failure line. See test-failures.md. |
+
+**2026-11-21: 2/3 passed · 0 skipped · 0 queued · 1 need attention**
+
+Both Brev CUDA legs passed clean on `main` @ `4b59bbf3` (unchanged since 11-20). The AMD leg failed for the first time since clearing the `.pytest_cache/.gitignore` EACCES streak (last seen 11-18/11-19) — but unlike that fault, which failed early at `actions/checkout@v7` with a readable log, tonight's failure happened later, inside "Build and push test image," and this log could not retrieve either AMD job's log from the GitHub Actions API or the run-level log archive to identify the actual error (`BlobNotFound`). A second, untracked matrix leg in this run, `test-pixi-amd (openfold3-rocm10)`, failed identically at the same step with the same missing-log symptom (not counted in the coverage line above per this log's established scope). See test-failures.md for detail; flagged for a human to check the `omsf-amd-aupcloud` runner host directly, since the failure's own signature cannot be recovered remotely.
+
+### Run #406 — secondary nightly (schedule `17 4 * * *`, main @ `4b59bbf3` (unchanged), [44865583856](https://github.com/aqlaboratory/openfold-3/actions/runs/44865583856))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #405, per this log's established convention).
