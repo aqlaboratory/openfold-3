@@ -23,15 +23,22 @@ from openfold3.core.model.structure.diffusion_module import (
     create_noise_schedule,
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.projects.of3_all_atom.project_entry import (
+    ModelUpdate,
+    OF3ProjectEntry,
+)
 from openfold3.tests.config import consts
 from openfold3.tests.utils.data_utils import random_of3_features
 from openfold3.tests.utils.model_utils import initialize_model_weights
 
 
-def _build_diffusion_module():
+def _build_diffusion_module(custom: dict | None = None):
+    """Build a diffusion module from the project config.
+
+    ``custom`` is the same mapping a user puts under ``model_update.custom``.
+    """
     proj_entry = OF3ProjectEntry()
-    config = proj_entry.get_model_config_with_presets()
+    config = proj_entry.get_model_config_with_update(ModelUpdate(custom=custom or {}))
     dm = DiffusionModule(config=config.architecture.diffusion_module)
     initialize_model_weights(dm)
     dm.eval()
@@ -179,8 +186,16 @@ class TestPairBiasCache(unittest.TestCase):
     def test_cached_bias_is_contiguous_and_matches_uncached(self):
         batch_size = consts.batch_size
         n_token = consts.n_res
-        config, dm = _build_diffusion_module()
-        dm.cache_pair_bias = True
+        config, dm = _build_diffusion_module(
+            custom={
+                "architecture": {
+                    "diffusion_module": {
+                        "diffusion_module": {"cache_pair_bias": True},
+                    },
+                },
+            },
+        )
+        self.assertTrue(dm.cache_pair_bias)
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
