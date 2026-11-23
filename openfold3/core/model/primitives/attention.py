@@ -139,34 +139,10 @@ def _sdpa_is_eligible(
     value: torch.Tensor,
     biases: list[torch.Tensor],
 ) -> bool:
-    """Whether ``torch.nn.functional.scaled_dot_product_attention`` is a drop-in.
+    """Whether SDPA is a drop-in for these operands.
 
-    Every guard here is a precondition SDPA itself imposes -- same-dtype
-    operands, dtypes it accepts, head/seq layout, biases that broadcast to the
-    full score shape -- not a numerical policy choice. Everything else falls
-    back to the eager implementation.
-
-    This deliberately does not consult ``use_high_precision``. That flag is
-    about the arithmetic of the *eager* path, and it cannot be honoured here for
-    two independent reasons:
-
-    - It does nothing to fp32 inputs. ``_attention`` implements it as
-      ``torch.amp.autocast("cuda", dtype=torch.float32)``, but fp32 is autocast's
-      default dtype, so the context does not convert its operands -- spying on
-      the einsums shows bf16 inputs arriving as bf16 with the flag either way.
-      At production precision the flag is bitwise a no-op (max diff 0.0 at both
-      ``"highest"`` and ``"high"``).
-    - Where it does do something (bf16 inputs) SDPA is not measurably worse.
-      Against an fp64 reference it is 1.2e-03 with the flag's intent at
-      1.1e-03, because both paths are bounded by the bf16 storage of q/k/v
-      rather than by the einsum precision.
-
-    The remaining numerical difference is that the eager einsum honours
-    ``float32_matmul_precision`` while SDPA does not consult it at all -- which
-    kernel SDPA dispatches to is internal, and varies by device, build and
-    backend. On the device these numbers were measured on that made SDPA more
-    accurate under production ``"high"`` (1.9e-06 vs 4.1e-04 against fp64), not
-    less; do not read that as a guarantee for every device.
+    Extra batch dims are folded into a 4D mask, and a bias batch dim must be
+    1 or the full batch. Anything else stays on the eager path.
     """
     if query.device.type != "cuda":
         return False
@@ -258,25 +234,11 @@ def _sdpa_attention(
         for extra in biases[1:]:
             mask = mask + extra
 
-        # A strided bias costs ~3x bandwidth to read and blocks the fused
-        # kernel; a pair bias from ``permute_final_dims`` is exactly that view.
-        # It is materialized once per rollout, so copying here is cheap.
-        #
-        # Fold the bias's batch dims to match the flattened queries. SDPA takes
-        # a mask whose batch dim either is 1 or equals ``n_batch``; anything in
-        # between is rejected, so a partially broadcast bias would raise rather
-        # than run. Two shapes hit that: ``(B, 1, H, N, N)`` against
-        # ``(B, S, H, N, N)`` queries -- what ``random_attention_inputs``
-        # builds, and therefore what most attention tests use -- and
-        # ``(S, H, N, N)``, which carries fewer batch dims than the query and so
-        # skipped the fold entirely when this was gated on ``mask.dim() > 4``.
-        #
-        # Right-align the bias batch dims against the query's, since that is how
-        # broadcasting reads them, then materialize only the dims that are
-        # genuinely shared. Production keeps every batch dim at 1, so the fold
-        # stays at 1 and SDPA broadcasts without tiling the pair bias across the
-        # rollout sample dim; expanding unconditionally would pay that copy once
-        # per sample.
+        # SDPA takes a 4D mask whose batch dim is 1 or exactly n_batch.
+        # Right-align the bias batch dims with the query and fold them.
+        # Production keeps those dims at 1, so SDPA broadcasts instead of
+        # tiling the pair bias per sample. A size in between, such as
+        # (B, 1) against (B, S), used to raise.
         if need_flat:
             bias_batch = tuple(mask.shape[:-3])
             padded = (1,) * max(len(batch_dims) - len(bias_batch), 0) + bias_batch

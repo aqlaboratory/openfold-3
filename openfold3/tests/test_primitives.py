@@ -63,6 +63,14 @@ class TestLMA(unittest.TestCase):
         self.assertTrue(err < consts.eps, f"Error: {err}")
 
 
+requires_cuda = pytest.mark.skipif(
+    not torch.cuda.is_available() or torch.version.hip is not None,
+    reason="requires an NVIDIA GPU",
+)
+
+
+@pytest.mark.gpu
+@requires_cuda
 class TestSDPA(unittest.TestCase):
     """``_sdpa_attention`` must match ``_attention`` for every bias layout.
 
