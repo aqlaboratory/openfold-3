@@ -101,7 +101,10 @@ platforms = [
 #     maybe we should lobby for system-requiremets to be an alternative
 #     and not deprecated
 #   * as we now use wildcard platform target selectors (this helped)
-requires-pixi = ">=0.80.0"
+# - 0.82.1:
+#   * earlier versions trust the revoked eMudhra emSign root CA certificate
+#     https://github.com/aqlaboratory/openfold-3/issues/520
+requires-pixi = ">=0.82.1"
 
 # --- Environments
 
