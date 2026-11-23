@@ -1960,3 +1960,26 @@ First fully clean night since 11-20 — the AMD leg recovered from 11-21's unrea
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #407, per this log's established convention).
+
+## 2026-11-23
+
+### Run #409 — primary nightly (schedule `17 3 * * *`, main @ `4b59bbf3` (unchanged since 11-20), [45105759917](https://github.com/aqlaboratory/openfold-3/actions/runs/45105759917))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **PASSED** | 26m03s | `test-openfold-docker-pixi` 03:30:02–03:56:05. |
+| test-pixi-cuda-brev (openfold3-cuda13) | **PASSED** | 25m09s | `test-openfold-docker-pixi` 03:30:15–03:55:24. |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 36m58s | `test-openfold-docker-pixi-amd` 03:24:09–04:01:07. |
+
+**2026-11-23: 3/3 passed · 0 skipped · 0 queued · 0 need attention**
+
+Second consecutive clean night (following run #407 on 11-22) on unchanged `main` @ `4b59bbf3`. Note: a fourth job in this run, `test-pixi-amd (openfold3-rocm10)` (added by PR #514, not one of this log's three tracked jobs), also passed tonight, 04:01:09–04:39:34 — not counted in the coverage line above per this log's established scope. No new entries required in `aws-outage-failures.md` or `test-failures.md` tonight.
+
+### Run #410 — secondary nightly (schedule `17 4 * * *`, main @ `4b59bbf3` (unchanged), [45111527970](https://github.com/aqlaboratory/openfold-3/actions/runs/45111527970))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #409, per this log's established convention).

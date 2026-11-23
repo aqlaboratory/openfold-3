@@ -1,5 +1,53 @@
 # Weekly CI Summary
 
+## Week of 2026-11-17 – 2026-11-23
+
+**Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights, all under the current three-job scope (`test-pixi-cuda-brev (openfold3-cuda12)`, `test-pixi-cuda-brev (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`) — unchanged since PR #493 retired the AWS `test-pixi-cuda` jobs on 10-28. No off-schedule (`workflow_dispatch`) runs this week.
+
+### Days with coverage < full in-scope job count
+
+4 of 7 days — 11-17, 11-18, 11-19, 11-21; the other three (11-20, 11-22, 11-23) were fully clean.
+
+| Date | Primary (03:17–03:24 UTC cron) | Secondary (04:17–04:23 UTC cron) |
+|---|---|---|
+| 2026-11-17 | 1/3 | SKIP (expected) |
+| 2026-11-18 | 2/3 | SKIP (expected) |
+| 2026-11-19 | 2/3 | SKIP (expected) |
+| 2026-11-20 | 3/3 | SKIP (expected) |
+| 2026-11-21 | 2/3 | SKIP (expected) |
+| 2026-11-22 | 3/3 | SKIP (expected) |
+| 2026-11-23 | 3/3 | SKIP (expected) |
+
+### Count per failure/non-pass class
+
+| Class | Count | Where |
+|---|---|---|
+| `unclassified` | 5 | 11-17 primary ([44009624638](https://github.com/aqlaboratory/openfold-3/actions/runs/44009624638)): `test-pixi-cuda-brev (openfold3-cuda12)` failed `start-brev-runner`'s "Create Brev runner" step on a TLS certificate mismatch against Brev's own control-plane API (`tls: failed to verify certificate: ... not brevapi.us-west-2-prod.control-plane.brev.dev`); `test-pixi-cuda-brev (openfold3-cuda13)` was cancelled as a matrix fail-fast cascade of that same incident before its own Brev instance finished booting. Neither matches any defined signature (not `aws-capacity`, wrong job/wrong text). 11-18 primary ([44229867604](https://github.com/aqlaboratory/openfold-3/actions/runs/44229867604)) and 11-19 primary ([44450887173](https://github.com/aqlaboratory/openfold-3/actions/runs/44450887173)): `test-pixi-amd (openfold3-rocm7)` failed `actions/checkout@v7`'s workspace-clean sub-step both nights on `##[error]File was unable to be removed Error: EACCES: permission denied, unlink '/home/jan/actions-runner-public/_work/openfold-3/openfold-3/.pytest_cache/.gitignore'` — no defined signature covers a checkout-step EACCES. 11-21 primary ([44860634719](https://github.com/aqlaboratory/openfold-3/actions/runs/44860634719)): `test-pixi-amd (openfold3-rocm7)` failed mid "Build and push test image" step, but both the Actions jobs-logs API and the run-level log archive returned `BlobNotFound`/404 for the AMD jobs — recorded as `unclassified (log unavailable)` per this log's rule, since the actual failure line could not be confirmed. |
+
+**Most frequent class: `unclassified` — the only class observed this week (5 of 5 non-passes), spanning three distinct incidents (a Brev control-plane TLS failure, a two-night AMD runner `.pytest_cache` EACCES permission fault, and an AMD build-push failure with unrecoverable logs).** No `aws-capacity`, `gpu-unavailable`, `runner-offline`, `msa-hang`, `parameter-cache`, `build-push`, or `code` occurrences this week.
+
+### Consecutive non-pass streak per job (as of 2026-11-23)
+
+| Job | Current streak | Detail |
+|---|---|---|
+| `test-pixi-cuda-brev (openfold3-cuda12)` | **0 — currently passing** | Failed 11-17 (Brev control-plane TLS certificate error), then clean 11-18 through 11-23 — 6 consecutive clean nights. |
+| `test-pixi-cuda-brev (openfold3-cuda13)` | **0 — currently passing** | Cancelled 11-17 (fail-fast cascade from cuda12's TLS failure), then clean 11-18 through 11-23 — 6 consecutive clean nights. |
+| `test-pixi-amd (openfold3-rocm7)` | **0 — currently passing** | Failed 11-18 and 11-19 (`.pytest_cache` EACCES), clean 11-20, failed again 11-21 (unreadable build-push failure), then clean 11-22 and 11-23 — 2 consecutive clean nights. |
+
+**Headline: a rockier week than the prior two — four non-clean nights out of seven, but no recurrence of any previously-tracked AWS/GPU/MSA signature.** All five non-passes this week were one-off or short-lived infrastructure faults outside this log's defined classes: a Brev control-plane TLS certificate mismatch (11-17, not recurring since), a two-night AMD runner workspace-permission fault (11-18/11-19, not recurring since — distinct working-directory path from the 10-29–11-02 occurrence of the same symptom), and a single night of an AMD build-push failure whose log could not be retrieved from the GitHub API (11-21). The week closed with three consecutive clean nights (11-21 was the last non-pass); both Brev CUDA legs have now gone 6 nights clean since 11-17, and the AMD leg 2 nights clean since 11-21.
+
+### Brev vs. AWS retirement — already closed out
+
+No new action needed this week. As reported in the 10-28 weekly summary, the formal two-week Brev-vs-AWS comparison found Brev at 95.5% post-fix pass rate, clearing the monitoring brief's 95% bar, and PR #493 "Remove aws GPU workflows" (Jennifer Wei) merged 2026-10-28, retiring the AWS `test-pixi-cuda` jobs outright. The three-job scope has now held for all 7 nights this week.
+
+### Data-source notes
+
+- Built from `daily-status.md` entries for 2026-11-17 through 2026-11-23; today's entries (run #409/#410, 11-23) were fetched live for this scan.
+- This session's `gh` CLI had an invalid `GH_TOKEN` (unauthenticated: "The token in GH_TOKEN is invalid."). Live data (workflow runs, job lists, workflow file contents) was instead fetched via the GitHub MCP server's Actions tools (`actions_list`, `actions_get`, `get_job_logs`, `get_file_contents`).
+- No repository-variables API call was made this week; `NIGHTLY_CRON`/`RUN_NIGHTLY` continue to be inferred from the workflow's `if:` guard (confirmed against `main`'s `.github/workflows/integration-test.yml` this week) and each run's observed `github.event.schedule`, not read from the live variables API.
+
+---
+
 ## Week of 2026-11-10 – 2026-11-16
 
 **Scope:** 7 primary nightly runs (`17 3 * * *`) + 7 secondary nightly runs (`17 4 * * *`, all expected-skip) across 7 nights, all under the current three-job scope (`test-pixi-cuda-brev (openfold3-cuda12)`, `test-pixi-cuda-brev (openfold3-cuda13)`, `test-pixi-amd (openfold3-rocm7)`) — unchanged since PR #493 retired the AWS `test-pixi-cuda` jobs on 10-28. No off-schedule (`workflow_dispatch`) runs this week.
