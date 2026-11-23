@@ -392,18 +392,13 @@ class SampleDiffusion(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        cache: DiffusionRolloutCache | None = None,
     ) -> torch.Tensor:
-        """Run the standard OF3 denoising loop from a chosen schedule index."""
-        cache = self.diffusion_module.prepare_cache(
-            batch=batch,
-            zij_trunk=zij_trunk,
-            use_conditioning=use_conditioning,
-            chunk_size=chunk_size,
-            # The token mask is constant across the rollout, so it is folded
-            # into the cached pair bias once instead of being summed into every
-            # block's logits on every step.
-            mask=batch["token_mask"],
-        )
+        """Run the standard OF3 denoising loop from a chosen schedule index.
+
+        ``cache`` is built once by ``forward`` and shared by every rollout,
+        including the pocket-sampling pass.
+        """
         for tau, c_tau in enumerate(noise_schedule[1:]):
             if tau < start_step:
                 continue
@@ -503,6 +498,16 @@ class SampleDiffusion(nn.Module):
             dtype=atom_mask.dtype,
         )
 
+        # One cache for every rollout in this call. The pocket pass reuses it
+        # because the trunk pair, the token mask, and the block weights do not
+        # change between the two loops.
+        cache = self.diffusion_module.prepare_cache(
+            batch=batch,
+            zij_trunk=zij_trunk,
+            use_conditioning=use_conditioning,
+            chunk_size=chunk_size,
+            mask=batch["token_mask"],
+        )
         rollout_kwargs = {
             "batch": batch,
             "atom_mask": atom_mask,
@@ -518,6 +523,7 @@ class SampleDiffusion(nn.Module):
             "use_lma": use_lma,
             "use_high_precision_attention": use_high_precision_attention,
             "_mask_trans": _mask_trans,
+            "cache": cache,
         }
 
         pocket_sampling_enabled = _pocket_sampling_enabled(batch)
