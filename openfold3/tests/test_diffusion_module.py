@@ -209,15 +209,15 @@ class TestPairBiasCache(unittest.TestCase):
                 batch=batch,
                 zij_trunk=step_kwargs["zij_trunk"],
                 use_conditioning=True,
+                mask=batch["token_mask"],
             )
             xl_cached = dm(**step_kwargs, use_conditioning=True, cache=cache)
             xl_uncached = dm(**step_kwargs, use_conditioning=True, cache=None)
 
         # The strided view of ``permute_final_dims`` costs ~3x the bandwidth
         # when every block reads it, so the cache must be materialized.
-        for bias in cache["pair_bias"]:
-            if bias is not None:
-                self.assertTrue(bias.is_contiguous())
+        for bias in cache.pair_bias:
+            self.assertTrue(bias.is_contiguous())
 
         self.assertTrue(torch.equal(xl_cached, xl_uncached))
 

@@ -20,6 +20,7 @@ Supplementary Information.
 """
 
 import logging
+from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
@@ -46,6 +47,18 @@ from openfold3.core.model.structure.pocket_constraints import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DiffusionRolloutCache:
+    """t-independent tensors reused across denoising steps.
+
+    A None field means the consumer computes that value itself each step.
+    """
+
+    zij: torch.Tensor | None = None
+    atom_pair_term: torch.Tensor | None = None
+    pair_bias: list[torch.Tensor] | None = None
 
 
 # Move this somewhere else?
@@ -143,23 +156,25 @@ class DiffusionModule(nn.Module):
         use_conditioning: bool,
         chunk_size: int | None = None,
         mask: torch.Tensor | None = None,
-    ) -> dict[str, torch.Tensor | list[torch.Tensor]]:
+    ) -> DiffusionRolloutCache:
         """t-independent tensors reused across denoising steps.
 
         Pair conditioning and everything projected from it depend only on the
         trunk pair representation. Add later caches here, not at the sampler.
+        Only the sampler calls this. Training leaves ``cache`` empty and runs
+        pair conditioning inside the step.
 
         The atom encoder's pair term is always cached: it is ``0.15U`` and
         removes the only per-step use of ``zij`` inside the atom stack.
 
         The per-block attention bias is opt-in at ``3.00U`` for 24 blocks,
-        because that is anti-scalable for the low-memory path. The two caches
-        decide whether the conditioned pair itself is still needed:
+        because that is anti-scalable for the low-memory path. Exactly one of
+        ``zij`` and ``pair_bias`` is set:
 
-        - bias cache off: the transformer reads ``zij`` every step, so keep it
+        - bias cache off: the transformer reads ``zij`` every step
           (``zij`` + ``atom_pair_term`` = ``1.15U``).
-        - bias cache on: the atom stack has its pair term and the transformer
-          has its bias, so ``zij`` has no reader left and is dropped
+        - bias cache on: the transformer reads ``pair_bias``, which already
+          includes the token-mask bias, so ``zij`` is left unset
           (``atom_pair_term`` + ``pair_bias`` = ``3.15U``).
         """
         zij = self.diffusion_conditioning.condition_pair(
@@ -168,33 +183,20 @@ class DiffusionModule(nn.Module):
             use_conditioning=use_conditioning,
             chunk_size=chunk_size,
         )
-        if torch.is_grad_enabled():
-            return {"zij": zij}
-
-        cache = {
-            "atom_pair_term": self.atom_attn_enc.project_atom_pair_term(
+        cache = DiffusionRolloutCache(
+            atom_pair_term=self.atom_attn_enc.project_atom_pair_term(
                 batch=batch, zij_trunk=zij
             ),
-        }
-
+        )
         if self.cache_pair_bias:
-            pair_bias = self.diffusion_transformer.prepare_pair_bias_cache(
+            # The token mask is fixed for the whole rollout, so folding its
+            # additive bias in here removes a per-block sum on every step.
+            cache.pair_bias = self.diffusion_transformer.prepare_pair_bias_cache(
                 self.diffusion_transformer.layer_norm_z(zij),
-                # The token mask is fixed for the whole rollout, so folding its
-                # additive bias in here removes a 97.5 MiB sum per block per
-                # step from the token stack.
                 mask=mask,
             )
-            cache["pair_bias"] = pair_bias
-            cache["mask_bias_folded"] = mask is not None
-
-            # Cross-attention blocks project their pair bias from sequence-local
-            # blocks inside the block, so they still read ``zij``.
-            if any(b is None for b in pair_bias):
-                cache["zij"] = zij
         else:
-            cache["zij"] = zij
-
+            cache.zij = zij
         return cache
 
     def forward(
@@ -215,7 +217,7 @@ class DiffusionModule(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
-        cache: dict[str, torch.Tensor] | None = None,
+        cache: DiffusionRolloutCache | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -254,7 +256,7 @@ class DiffusionModule(nn.Module):
             cache:
                 Output of ``prepare_cache``. Training omits this and pair
                 conditioning runs inside ``diffusion_conditioning``. ``zij`` is
-                absent when every consumer has a cached projection of it.
+                absent when ``pair_bias`` already holds that projection.
         Returns:
             [*, N_atom, 3] Denoised atom positions
         """
@@ -270,12 +272,10 @@ class DiffusionModule(nn.Module):
             )
             atom_pair_term = None
             pair_bias = None
-            mask_bias_folded = False
         else:
-            zij = cache.get("zij")
-            atom_pair_term = cache["atom_pair_term"]
-            pair_bias = cache.get("pair_bias")
-            mask_bias_folded = cache.get("mask_bias_folded", False)
+            zij = cache.zij
+            atom_pair_term = cache.atom_pair_term
+            pair_bias = cache.pair_bias
             si = self.diffusion_conditioning.condition_single(
                 batch=batch,
                 t=t,
@@ -313,7 +313,6 @@ class DiffusionModule(nn.Module):
             use_high_precision_attention=use_high_precision_attention,
             _mask_trans=_mask_trans,
             pair_bias_cache=pair_bias,
-            mask_bias_folded=mask_bias_folded,
         )
 
         ai = self.layer_norm_a(ai)

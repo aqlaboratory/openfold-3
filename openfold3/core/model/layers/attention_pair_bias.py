@@ -16,6 +16,8 @@
 
 """Attention layer with pair bias."""
 
+from typing import cast
+
 import torch
 from ml_collections import ConfigDict
 from torch import nn
@@ -343,7 +345,7 @@ class DiffusionAttentionPairBias(nn.Module):
             view and is left strided; ``project_cached_pair_bias`` is the
             variant for a bias that will be read more than once.
         """
-        return permute_final_dims(self.linear_z(z), [2, 0, 1])
+        return cast(torch.Tensor, permute_final_dims(self.linear_z(z), [2, 0, 1]))
 
     def project_cached_pair_bias(self, z: torch.Tensor) -> torch.Tensor:
         """Project a pair bias that will be reused across denoising steps.
@@ -406,7 +408,6 @@ class DiffusionAttentionPairBias(nn.Module):
         use_high_precision_attention: bool = False,
         mask_bias: torch.Tensor | None = None,
         pair_bias: torch.Tensor | None = None,
-        mask_bias_folded: bool = False,
     ) -> torch.Tensor:
         """
         Args:
@@ -418,7 +419,8 @@ class DiffusionAttentionPairBias(nn.Module):
                 [*, N, C_s] Single embedding. Used in AdaLN.
             mask:
                 [*, N] Mask for token or atom-level embedding. Ignored when
-                ``mask_bias`` is given or ``mask_bias_folded`` is set.
+                ``mask_bias`` or ``pair_bias`` is given. The cached pair bias
+                already carries the token mask.
             use_deepspeed_evo_attention:
                 Whether to use DeepSpeed Evo Attention kernel
             use_cueq_triangle_kernels:
@@ -440,7 +442,7 @@ class DiffusionAttentionPairBias(nn.Module):
         """
         a = self.layer_norm_a(a, s)
 
-        if mask_bias is None and not mask_bias_folded:
+        if mask_bias is None and pair_bias is None:
             mask_bias = build_mask_bias(
                 a=a,
                 mask=mask,
