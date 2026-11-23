@@ -33,8 +33,11 @@ jobs:
       packages: write
     env:
       # Named so the cleanup step can stop the container if the job is cancelled
-      # or times out; unique per run so the two runners on this box cannot clash.
+      # or times out; unique per run so concurrent jobs on this box cannot clash.
       TEST_CONTAINER: openfold3-test-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.pixi_env }}
+      # One long-lived builder shared by every job on this box; see the
+      # "Set up Docker Buildx" step.
+      BUILDX_BUILDER_NAME: openfold3-ci
     steps:
       # A previous job may have left root-owned files in this persistent
       # workspace (see "Reclaim workspace ownership" below), which makes checkout
@@ -46,6 +49,16 @@ jobs:
             -v ${{ github.workspace }}:/opt/openfold3 \
             busybox chown -R "$(id -u):$(id -g)" /opt/openfold3
 
+      # Each run pulls the ~19 GB test image into the local Docker store. The
+      # cleanup step at the end removes it, but that step never runs if the
+      # runner itself dies, so sweep up anything an earlier job left behind.
+      # Scoped to this repository's image so other users' images on this shared
+      # box are untouched.
+      - name: Remove leftover test images
+        run: |
+          docker images -q "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | sort -u \
+            | xargs -r docker rmi -f || true
+
       - uses: actions/checkout@v7
 
       - name: Log in to GHCR
@@ -55,8 +68,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # docker/setup-buildx-action creates a throwaway builder per job and only
+      # removes it in its post step; on this persistent box every killed job
+      # leaked a builder with up to ~20 GB of cache until the disk filled.
+      # Instead, reuse one named builder whose cache is capped by
+      # .github/runners/amd/buildkitd.toml, creating it if it is missing (new
+      # box, or someone removed it). The inspect retry covers two jobs racing
+      # to create it.
+      # The config is only read at creation: after editing buildkitd.toml, run
+      # `docker buildx rm openfold3-ci` on the box and the next job recreates it.
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        run: |
+          if ! docker buildx inspect "$BUILDX_BUILDER_NAME" >/dev/null 2>&1; then
+            echo "builder $BUILDX_BUILDER_NAME not found; creating it"
+            docker buildx create \
+              --name "$BUILDX_BUILDER_NAME" \
+              --driver docker-container \
+              --buildkitd-config .github/runners/amd/buildkitd.toml \
+              || docker buildx inspect "$BUILDX_BUILDER_NAME" >/dev/null
+          fi
+          docker buildx inspect --bootstrap "$BUILDX_BUILDER_NAME"
 
       - name: Build and push test image
         id: build
@@ -66,6 +97,7 @@ jobs:
           file: docker/Dockerfile.pixi
           target: test
           push: true
+          builder: ${{ env.BUILDX_BUILDER_NAME }}
           build-args: |
             PIXI_ENV=${{ inputs.pixi_env }}
             BASE_IMAGE=${{ inputs.base_image }}
@@ -141,3 +173,11 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/opt/openfold3 \
             busybox chown -R "$(id -u):$(id -g)" /opt/openfold3
+
+      - name: Remove test image
+        # The image is already in GHCR; keeping a local copy per nightly run is
+        # what filled this box's disk. The digest is empty if the build failed.
+        if: always() && steps.build.outputs.digest != ''
+        run: |
+          docker rmi -f \
+            "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}" || true
