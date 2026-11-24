@@ -28,6 +28,13 @@ curl -fsSL https://pixi.sh/install.sh | sh
 # Optionally, you can also install shell completions for pixi.
 ```
 
+OpenFold3 requires pixi 0.82.1 or newer (older versions trust a revoked CA certificate, see [#520](https://github.com/aqlaboratory/openfold-3/issues/520)). If you already have pixi installed, check your version and upgrade if needed:
+
+```shell
+pixi --version
+pixi self-update
+```
+
 Next, clone the OpenFold3 repository:
 
 ```shell
