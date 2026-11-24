@@ -1983,3 +1983,26 @@ Second consecutive clean night (following run #407 on 11-22) on unchanged `main`
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #409, per this log's established convention).
+
+## 2026-11-24
+
+### Run #411 — primary nightly (schedule `17 3 * * *`, main @ `6c5a857` (merge PR #519 "ci: amd runner disk usage", new since run #409/#410, 11-23's `4b59bbf3`), [45319089243](https://github.com/aqlaboratory/openfold-3/actions/runs/45319089243))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **FAILED** | 37s (`start-brev-runner` / "Create Brev runner" step) | `test-openfold-docker-pixi` never ran (**SKIPPED**, gated behind the failed `start-brev-runner`). unclassified — see test-failures.md. |
+| test-pixi-cuda-brev (openfold3-cuda13) | **FAILED** | 32s (`start-brev-runner` / "Create Brev runner" step) | `test-openfold-docker-pixi` never ran (**SKIPPED**, gated behind the failed `start-brev-runner`). unclassified — see test-failures.md. |
+| test-pixi-amd (openfold3-rocm7) | **CANCELLED** | 60m21s total job; cancelled 39m30s into "Run integration test" | Hit the job's `timeout-minutes: 60` cap. unclassified — see test-failures.md. |
+
+**2026-11-24: 0/3 passed · 0 skipped · 0 queued · 3 need attention**
+
+First fully non-clean night since this log began tracking the three-job scope (10-28) — all three tracked jobs failed or were cancelled. Both Brev CUDA legs (cuda12, cuda13) failed within 5 seconds of each other at `start-brev-runner`'s "Create Brev runner" step with `instance ... failed: internal server error` from the Brev control-plane API — a message not seen before in this log (distinct from 10-29–11-02's checkout EACCES, 11-17's TLS-certificate mismatch, or 11-02's `brev ls --json` cleanup failure) and not a match for `aws-outage-failures.md`'s `aws-capacity` signature (`InsufficientInstanceCapacity`), since that exact string is absent from the log — classified `unclassified`. The AMD leg (`rocm7`) completed "Build and push test image" and started "Run integration test" normally, then was cancelled 39m30s into that step when the job's own `timeout-minutes: 60` cap was reached (job started 03:22:47, cancelled 04:22:59); the last completed pytest case before the cancel was `test_of3_model.py::TestOF3Model::test_shape_large_eval[dtype=torch.float32]` (**PASSED** at 04:22:51), with the next test's setup line printed but its node ID never logged before the cancel — not an MSA-related test case, so this does not match the `msa-hang` signature either; classified `unclassified`. Note: a fourth job in this run, `test-pixi-amd (openfold3-rocm10)`, was also cancelled at the same 60-minute cap immediately after the serial `rocm7` leg finished (job started 04:23:10, cancelled 05:23:23) — not one of this log's three tracked jobs, noted for completeness only, not double-counted. See test-failures.md for full detail on all three in-scope entries. No new entries required in `aws-outage-failures.md` tonight — neither failure matches a tracked AWS-outage signature. Main advanced to `6c5a857` (PR #519 "ci: amd runner disk usage") since 11-23's `4b59bbf3`; no reason to suspect that change caused tonight's faults (one Brev-side 500, one a plain timeout with no error of its own), but noted for completeness.
+
+### Run #412 — secondary nightly (schedule `17 4 * * *`, main @ `6c5a857` (unchanged), [45325773844](https://github.com/aqlaboratory/openfold-3/actions/runs/45325773844))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #411, per this log's established convention).
