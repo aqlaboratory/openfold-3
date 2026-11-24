@@ -28,6 +28,13 @@ curl -fsSL https://pixi.sh/install.sh | sh
 # Optionally, you can also install shell completions for pixi.
 ```
 
+OpenFold3 requires pixi 0.82.1 or newer (older versions trust a revoked CA certificate, see [#520](https://github.com/aqlaboratory/openfold-3/issues/520)). If you already have pixi installed, check your version and upgrade if needed:
+
+```shell
+pixi --version
+pixi self-update
+```
+
 Next, clone the OpenFold3 repository:
 
 ```shell
@@ -54,7 +61,7 @@ Available pixi environments:
 | `openfold3-rocm7`  | `linux-64`                                         | AMD GPU environment using ROCm 7.                                    |
 | `openfold3-rocm10` | `linux-64`                                         | AMD GPU environment using ROCm 10.                                   |
 
-Choose the environment that matches your system. For example, use `openfold3-base` for non-CUDA/ROCm installations (including Apple Silicon), `openfold3-cuda12` or `openfold3-cuda13` for NVIDIA GPU systems, and `openfold3-rocm7` or `openfold3-rocm10` for AMD ROCm systems.
+Choose the environment that matches your system. For example, use `openfold3-base` for non-CUDA/ROCm installations (including Apple Silicon), `openfold3-cuda12` or `openfold3-cuda13` for NVIDIA GPU systems, and `openfold3-rocm10` for AMD ROCm systems (`openfold3-rocm7` remains available for systems that cannot use ROCm 10).
 
 For more information, including rationale, tips and tricks, see [Modern Conda Environments with Pixi](./modern-conda-environments-with-pixi.md).
 
@@ -100,9 +107,11 @@ pip install openfold3[cuequivariance]
 **Triton** To use AMD ROCm-compatible Triton kernels, first install the ROCm PyTorch wheel (which bundles ROCm Triton), then install openfold3:
 
 ```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm10.0
 pip install openfold3
 ```
+
+We recommend ROCm 10. If your system requires ROCm 7, use `--index-url https://download.pytorch.org/whl/rocm7.2` instead.
 
 For AMD system installation: After installation, verify your ROCm environment is correctly configured:
 
