@@ -16,6 +16,7 @@
 """Diffusion transformer block and stack."""
 
 from functools import partial
+from typing import cast
 
 import torch
 import torch.nn as nn
@@ -25,6 +26,8 @@ import openfold3.core.config.default_linear_init_config as lin_init
 from openfold3.core.model.layers.attention_pair_bias import (
     CrossAttentionPairBias,
     DiffusionAttentionPairBias,
+    build_mask_bias,
+    mask_bias_from_mask,
 )
 from openfold3.core.model.layers.transition import ConditionedTransitionBlock
 from openfold3.core.model.primitives import LayerNorm
@@ -124,6 +127,8 @@ class DiffusionTransformerBlock(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        mask_bias: torch.Tensor | None = None,
+        pair_bias: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -147,6 +152,12 @@ class DiffusionTransformerBlock(nn.Module):
                 Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
+            mask_bias:
+                [*, 1, 1, N] Mask bias shared by all blocks in the stack
+            pair_bias:
+                [*, no_heads, N, N] Pair bias precomputed for this block.
+                When set, the token mask is already inside it, so attention
+                is called with no mask.
         """
         # Note: Differs from SI, residual connection added.
 
@@ -155,12 +166,14 @@ class DiffusionTransformerBlock(nn.Module):
                 a=a,
                 z=z,
                 s=s,
-                mask=mask,
+                mask=None if pair_bias is not None else mask,
                 use_deepspeed_evo_attention=use_deepspeed_evo_attention,
                 use_cueq_triangle_kernels=use_cueq_triangle_kernels,
                 use_triton_triangle_kernels=use_triton_triangle_kernels,
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
+                mask_bias=mask_bias,
+                pair_bias=pair_bias,
             )
         else:
             a = a + self.attention_pair_bias(
@@ -242,6 +255,7 @@ class DiffusionTransformer(nn.Module):
 
         self.blocks_per_ckpt = blocks_per_ckpt
         self.use_reentrant = use_reentrant
+        self.inf = inf
 
         self.layer_norm_z = LayerNorm(c_z, create_offset=False)
 
@@ -263,6 +277,48 @@ class DiffusionTransformer(nn.Module):
             ]
         )
 
+    def prepare_pair_bias_cache(
+        self, z: torch.Tensor, mask: torch.Tensor | None = None
+    ) -> list[torch.Tensor]:
+        """Project the pair bias of every block once per rollout.
+
+        Args:
+            z:
+                [*, N, N, C_z] Normalized pair embedding
+            mask:
+                [*, N] Token mask. When given, its additive bias is folded in
+                here so ``forward`` passes no separate mask into attention.
+
+        Returns:
+            One [*, no_heads, N, N] pair bias per block, in block order.
+
+        Raises:
+            ValueError: A block uses cross attention. That bias is built from
+                sequence-local blocks inside the block, so it cannot be cached
+                from this token pair.
+        """
+        if any(b.use_cross_attention for b in self.blocks):
+            raise ValueError(
+                "pair bias cache requires self-attention blocks; "
+                "cross-attention projects its bias inside the block"
+            )
+
+        mask_bias = None
+        if mask is not None:
+            # Built directly from the mask so it keeps the mask's own batch
+            # dims and broadcasts over the rollout sample dim later. The token
+            # mask carries its batch dims already, so there is no ``a`` to
+            # consult for the leading singleton count.
+            mask_bias = mask_bias_from_mask(mask=mask, inf=self.inf)
+
+        cache: list[torch.Tensor] = []
+        for module in self.blocks:
+            # ModuleList yields nn.Module, which hides this block's methods.
+            block = cast(DiffusionTransformerBlock, module)
+            bias = block.attention_pair_bias.project_cached_pair_bias(z)
+            cache.append(bias if mask_bias is None else bias + mask_bias)
+        return cache
+
     def forward(
         self,
         a: torch.Tensor,
@@ -275,6 +331,7 @@ class DiffusionTransformer(nn.Module):
         use_lma: bool = False,
         use_high_precision_attention: bool = False,
         _mask_trans: bool = True,
+        pair_bias_cache: list[torch.Tensor] | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -298,9 +355,32 @@ class DiffusionTransformer(nn.Module):
                 Whether to run attention in high precision
             _mask_trans:
                 Whether to mask the output of the transition layer
+            pair_bias_cache:
+                Output of ``prepare_pair_bias_cache``. Only valid for inference
+                at a fixed ``z``; training omits it and every block projects
+                its own bias. When set, each entry already includes the token
+                mask, so no separate mask bias is built.
         """
-        # Single layer norm for atom attention enc/dec diffusion transformer
-        z = self.layer_norm_z(z)
+        # Single layer norm for atom attention enc/dec diffusion transformer.
+        # A pair bias cache was projected from the normalized pair, so
+        # normalizing again would only repeat work every rollout step.
+        if pair_bias_cache is None:
+            z = self.layer_norm_z(z)
+            # The mask bias is block-invariant, so build it once for the whole
+            # stack. It is None when there is no mask, and then no bias is
+            # added.
+            mask_bias = build_mask_bias(
+                a=a,
+                mask=mask,
+                inf=self.inf,
+                tile_batch=(
+                    use_deepspeed_evo_attention
+                    or use_cueq_triangle_kernels
+                    or use_triton_triangle_kernels
+                ),
+            )
+        else:
+            mask_bias = None
 
         blocks = [
             partial(
@@ -314,8 +394,10 @@ class DiffusionTransformer(nn.Module):
                 use_lma=use_lma,
                 use_high_precision_attention=use_high_precision_attention,
                 _mask_trans=_mask_trans,
+                mask_bias=mask_bias,
+                pair_bias=(pair_bias_cache[i] if pair_bias_cache is not None else None),
             )
-            for b in self.blocks
+            for i, b in enumerate(self.blocks)
         ]
 
         blocks_per_ckpt = self.blocks_per_ckpt

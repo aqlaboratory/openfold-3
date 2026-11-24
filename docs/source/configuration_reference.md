@@ -91,7 +91,12 @@ Specifies model presets and custom architecture modifications.
 - `presets` *(list[str])*: List of model presets to apply (default: `[]`)
   - `predict`: Inference configuration (required for inference)
   - `low_mem`: Low memory mode for large structures
-- `custom` *(dict)*: Custom model configuration overrides (default: `{}`)
+- `custom` *(dict)*: Custom model configuration overrides (default: `{}`).
+  Keys follow the model config tree.
+  `architecture.diffusion_module.diffusion_module.cache_pair_bias`
+  *(bool, default `false`)* caches each diffusion block's pair bias
+  across denoising steps. Inference only, about 3.00U when enabled.
+  The atom-pair term is always cached and has no flag.
 
 **Example**:
 ```yaml
@@ -99,7 +104,11 @@ model_update:
   presets:
     - predict
     - low_mem
-  custom: {}
+  custom:
+    architecture:
+      diffusion_module:
+        diffusion_module:
+          cache_pair_bias: false
 ```
 
 ---
