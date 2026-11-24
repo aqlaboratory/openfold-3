@@ -602,12 +602,17 @@ class _IdentityDenoiser(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.calls = 0
+        self.cache_calls = 0
+        self.seen_caches = []
 
     def prepare_cache(self, **_kwargs):
-        return {}
+        self.cache_calls += 1
+        self.cache = {"shared": self.cache_calls}
+        return self.cache
 
-    def forward(self, *, xl_noisy, **_kwargs):
+    def forward(self, *, xl_noisy, cache=None, **_kwargs):
         self.calls += 1
+        self.seen_caches.append(cache)
         return xl_noisy
 
 
@@ -721,6 +726,9 @@ def test_sample_diffusion_runs_second_pass_when_pocket_sampling_enabled():
 
     assert result.shape == (1, 2, 5, 3)
     assert denoiser.calls == 3
+    assert denoiser.cache_calls == 1
+    assert denoiser.seen_caches
+    assert all(cache is denoiser.cache for cache in denoiser.seen_caches)
 
 
 def test_sample_diffusion_applies_independent_rigid_ligand_jitter():

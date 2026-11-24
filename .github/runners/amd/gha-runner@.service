@@ -1,0 +1,17 @@
+# systemd *user* unit template for the GitHub Actions runners on the AMD box.
+# Install to ~/.config/systemd/user/gha-runner@.service; the instance name is
+# the runner's directory under $HOME, e.g. gha-runner@actions-runner-public.
+# See README.md in this directory.
+[Unit]
+Description=GitHub Actions runner %i
+
+[Service]
+WorkingDirectory=%h/%i
+# screen stays in the foreground (-D -m) so systemd supervises it, while
+# `screen -r %i` still attaches to the runner's console.
+ExecStart=/usr/bin/screen -DmS %i ./run.sh
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=default.target

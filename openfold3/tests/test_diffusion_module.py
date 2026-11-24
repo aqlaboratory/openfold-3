@@ -23,15 +23,22 @@ from openfold3.core.model.structure.diffusion_module import (
     create_noise_schedule,
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.projects.of3_all_atom.project_entry import (
+    ModelUpdate,
+    OF3ProjectEntry,
+)
 from openfold3.tests.config import consts
 from openfold3.tests.utils.data_utils import random_of3_features
 from openfold3.tests.utils.model_utils import initialize_model_weights
 
 
-def _build_diffusion_module():
+def _build_diffusion_module(custom: dict | None = None):
+    """Build a diffusion module from the project config.
+
+    ``custom`` is the same mapping a user puts under ``model_update.custom``.
+    """
     proj_entry = OF3ProjectEntry()
-    config = proj_entry.get_model_config_with_presets()
+    config = proj_entry.get_model_config_with_update(ModelUpdate(custom=custom or {}))
     dm = DiffusionModule(config=config.architecture.diffusion_module)
     initialize_model_weights(dm)
     dm.eval()
@@ -173,6 +180,61 @@ class TestDiffusionModule(unittest.TestCase):
                         cache=None,
                     )
                 self.assertTrue(torch.equal(xl_cached, xl_uncached))
+
+
+class TestPairBiasCache(unittest.TestCase):
+    def test_cached_bias_is_contiguous_and_matches_uncached(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        config, dm = _build_diffusion_module(
+            custom={
+                "architecture": {
+                    "diffusion_module": {
+                        "diffusion_module": {"cache_pair_bias": True},
+                    },
+                },
+            },
+        )
+        self.assertTrue(dm.cache_pair_bias)
+
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
+
+        batch = random_of3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        step_kwargs = dict(
+            batch=batch,
+            xl_noisy=torch.randn((batch_size, n_atom, 3)),
+            t=torch.ones(1),
+            token_mask=batch["token_mask"],
+            atom_mask=torch.ones((batch_size, n_atom)),
+            si_input=torch.rand((batch_size, n_token, c_s_input)),
+            si_trunk=torch.rand((batch_size, n_token, c_s)),
+            zij_trunk=torch.rand((batch_size, n_token, n_token, c_z)),
+        )
+
+        with torch.no_grad():
+            cache = dm.prepare_cache(
+                batch=batch,
+                zij_trunk=step_kwargs["zij_trunk"],
+                use_conditioning=True,
+                mask=batch["token_mask"],
+            )
+            xl_cached = dm(**step_kwargs, use_conditioning=True, cache=cache)
+            xl_uncached = dm(**step_kwargs, use_conditioning=True, cache=None)
+
+        # The strided view of ``permute_final_dims`` costs ~3x the bandwidth
+        # when every block reads it, so the cache must be materialized.
+        for bias in cache.pair_bias:
+            self.assertTrue(bias.is_contiguous())
+
+        self.assertTrue(torch.equal(xl_cached, xl_uncached))
 
 
 class TestSampleDiffusion(unittest.TestCase):

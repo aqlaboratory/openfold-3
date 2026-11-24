@@ -43,7 +43,14 @@ model_update:
   presets:   # [train | predict | low_mem ]
     - predict
     - low_mem
-  custom: {}
+  # Inference-only. false re-projects the 24 diffusion attention biases
+  # every denoising step. true caches them (~3.00U). The atom-pair term
+  # is always cached on the inference path and has no flag.
+  custom:
+    architecture:
+      diffusion_module:
+        diffusion_module:
+          cache_pair_bias: false
 
 # Checkpoint path: [default: $HOME/.openfold3/of3_ft3_v1.pt]
 inference_ckpt_path: $HOME/.openfold3/of3_ft3_v1.pt
