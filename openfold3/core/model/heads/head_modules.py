@@ -27,6 +27,7 @@ from openfold3.core.model.heads.prediction_heads import (
     PredictedAlignedErrorHead,
     PredictedDistanceErrorHead,
 )
+from openfold3.core.model.memory import storage_weak_ref
 from openfold3.core.utils.atomize_utils import (
     broadcast_token_feat_to_atoms,
     get_token_representative_atoms,
@@ -95,6 +96,7 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         si_input: torch.Tensor,
         output: dict,
         use_zij_trunk_embedding: bool,
+        release_zij_trunk: bool = False,
         chunk_size: int | None = None,
         use_deepspeed_evo_attention: bool = False,
         use_cueq_triangle_kernels: bool = False,
@@ -122,6 +124,10 @@ class AuxiliaryHeadsAllAtom(nn.Module):
             use_zij_trunk_embedding:
                 Whether to use the zij trunk embedding in the confidence Pairformer
                 embedding.
+            release_zij_trunk:
+                Drop the caller's ``zij_trunk`` once it has been cloned, so the
+                trunk pair can be freed before the confidence Pairformer runs.
+                Inference only; training and validation keep the pair.
             chunk_size:
                 Inference-time subbatch size. Associated with PairFormer embedding.
             use_deepspeed_evo_attention:
@@ -174,6 +180,16 @@ class AuxiliaryHeadsAllAtom(nn.Module):
         si_input = si_input.detach().clone()
         si = si.detach().clone()
         zij = zij.detach().clone()
+        if release_zij_trunk:
+            # Drop the caller's reference so the trunk pair is freed before the
+            # confidence Pairformer; only the clone above stays alive. The
+            # assertion catches a leftover reference that would silently keep
+            # the pair resident through the Pairformer.
+            storage = storage_weak_ref(output["zij_trunk"])
+            del output["zij_trunk"]
+            assert storage.expired(), (
+                "Trunk pair storage is still referenced after release"
+            )
         atom_positions_predicted = atom_positions_predicted.detach().clone()
 
         token_mask = batch["token_mask"]

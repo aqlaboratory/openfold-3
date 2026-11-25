@@ -125,6 +125,9 @@ model_config = mlc.ConfigDict(
                     "per_sample_token_cutoff": per_sample_token_cutoff,
                     "per_sample_atom_cutoff": per_sample_atom_cutoff,
                     "low_mem_validation": low_mem_validation,
+                    # Drop the trunk pair after the confidence clone frees it.
+                    # Training and validation keep it for the diffusion loss.
+                    "release_trunk_pair": False,
                     "offload_inference": {
                         "template_module": False,
                         "msa_module": False,
