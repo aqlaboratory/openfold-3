@@ -100,9 +100,10 @@ def full_complex_sample_ranking_metric(
         )
 
     # ipTM only looks at inter-chain pairs, so it is 0 for a single chain.
-    # Use pTM in its place so a monomer is ranked on pTM rather than on disorder.
+    # For single chains, reweight ptm to be 1 p
     num_chains = torch.unique(asym_id[token_mask.bool()]).numel()
-    iptm_for_ranking = iptm if num_chains > 1 else ptm
+    if num_chains <= 1:
+        ptm_weight = iptm_weight + ptm_weight
 
     scores = {}
     scores["iptm"] = iptm.detach().clone()
@@ -111,7 +112,7 @@ def full_complex_sample_ranking_metric(
     scores["has_clash"] = has_clash
     scores["sample_ranking_score"] = (
         (
-            iptm_weight * iptm_for_ranking
+            iptm_weight * iptm
             + ptm_weight * ptm
             + disorder_weight * disorder
             - has_clash_weight * has_clash

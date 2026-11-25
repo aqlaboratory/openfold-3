@@ -223,11 +223,9 @@ class TestConfidenceMetrics(unittest.TestCase):
         scores = full_complex_sample_ranking_metric(
             batch=batch, output=output, has_frame=has_frame, **ptm_kwargs
         )
-        self.assertTrue(torch.all(scores["has_clash"] == 0))
-        self.assertTrue(torch.all(scores["disorder"] == 0))
-        self.assertTrue(
-            torch.allclose(scores["sample_ranking_score"], scores["ptm"], atol=1e-6)
-        )
+        assert torch.all(scores["has_clash"] == 0)
+        assert torch.all(scores["disorder"] == 0)
+        assert torch.allclose(scores["sample_ranking_score"], scores["ptm"], atol=1e-6)
 
     def test_sample_ranking_multi_chain_uses_iptm(self):
         asym_id = torch.cat([torch.ones(10), 2 * torch.ones(10)]).long()
@@ -236,9 +234,7 @@ class TestConfidenceMetrics(unittest.TestCase):
             batch=batch, output=output, has_frame=has_frame, **ptm_kwargs
         )
         expected = 0.8 * scores["iptm"] + 0.2 * scores["ptm"]
-        self.assertTrue(
-            torch.allclose(scores["sample_ranking_score"], expected, atol=1e-6)
-        )
+        assert torch.allclose(scores["sample_ranking_score"], expected, atol=1e-6)
 
 
 if __name__ == "__main__":
