@@ -19,6 +19,7 @@ from biotite.structure import Atom, AtomArray, array
 from openfold3.core.data.primitives.structure.labels import (
     AtomArrayView,
     assign_atom_indices,
+    assign_entity_ids,
     residue_view_iter,
 )
 from openfold3.tests.utils.custom_assert_utils import assert_atomarray_equal
@@ -102,6 +103,33 @@ class TestAssignAtomIndices:
         assert np.array_equal(
             dummy_atom_array._atom_idx, np.arange(len(dummy_atom_array))
         )
+
+
+class TestAssignEntityIds:
+    def test_assigns_numeric_entity_ids(self):
+        atom_array = AtomArray(3)
+        atom_array.set_annotation("label_entity_id", np.array(["1", "2", "2"]))
+
+        assign_entity_ids(atom_array)
+
+        np.testing.assert_array_equal(atom_array.entity_id, np.array([1, 2, 2]))
+        assert "label_entity_id" not in atom_array.get_annotation_categories()
+
+    def test_rejects_all_non_numeric_entity_ids(self):
+        atom_array = AtomArray(3)
+        atom_array.set_annotation(
+            "label_entity_id",
+            np.array(["chain_A", "2", "chain_B"]),
+        )
+
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"must be integers.*Found non-numeric values: "
+                r"\['chain_A', 'chain_B'\].*update all matching entity references"
+            ),
+        ):
+            assign_entity_ids(atom_array)
 
 
 class TestResidueViewIter:
