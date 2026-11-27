@@ -22,6 +22,8 @@ jobs:
       contents: read
       packages: write
     strategy:
+      # Do not interrupt sibling provisioning before its cleanup mapping exists.
+      fail-fast: false
       matrix:
         include:
           - pixi_env: "openfold3-cuda12"
