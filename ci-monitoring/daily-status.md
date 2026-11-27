@@ -2052,3 +2052,26 @@ Second consecutive clean night, following 11-25's recovery from 11-24's fully no
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #415, per this log's established convention).
+
+## 2026-11-27
+
+### Run #417 — primary nightly (schedule `17 3 * * *`, main @ `24a7871` (unchanged since 11-26, PR #505), [45933775173](https://github.com/aqlaboratory/openfold-3/actions/runs/45933775173))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **CANCELLED** | 4m43s (`start-brev-runner` / "Create Brev runner" step, 03:22:44–03:27:27) | `test-openfold-docker-pixi` never started; the dependency `start-brev-runner` was itself cancelled mid "Create Brev runner" step (instance `runner-v60cwfp8` provisioned fine, then cancelled ~4m37s into "Waiting for instance(s) to be ready"). Not a `timeout-minutes` cap (step ran under 5m vs. no cap set on `start-brev-runner`, and `test-openfold-docker-pixi` carries 60m, not reached). Not concurrency-supersession (the job's `concurrency.group` key includes `matrix.pixi_env`, so cuda12 and cuda13 are in separate groups, and no other run of this workflow fired in the window). By elimination: **manual**. Could not confirm the actor: `GET /repos/aqlaboratory/openfold-3/actions/runners` returns `403 Access to this GitHub Actions path is not permitted through this proxy` in this environment, same limitation noted on 11-06 and earlier. unclassified — see test-failures.md. |
+| test-pixi-cuda-brev (openfold3-cuda13) | **FAILED** | 4m24s (`start-brev-runner` / "Create Brev runner" step, 03:22:39–03:27:03) | `instance oaxudkr8o failed: build failed` → `1/1 instance(s) failed to become ready` → `subprocess.CalledProcessError: Command '[... brev create ...]' returned non-zero exit status 1`. New message, distinct from 11-24's Brev "internal server error" — does not match `aws-outage-failures.md`'s `aws-capacity` signature (`InsufficientInstanceCapacity`, absent here). `test-openfold-docker-pixi` never ran (**SKIPPED**, gated behind the failed `start-brev-runner`). unclassified — see test-failures.md. |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 44m21s | `test-openfold-docker-pixi-amd` 03:22:22–04:06:43. |
+
+**2026-11-27: 1/3 passed · 0 skipped · 0 queued · 2 need attention**
+
+Both Brev CUDA legs failed/cancelled tonight, each on an apparently distinct fault: cuda13's `start-brev-runner` failed outright with a new Brev-side message ("build failed" on the created instance, not the 11-24 "internal server error"); cuda12's instance provisioned successfully but the job was cancelled ~24s after cuda13's failure completed, with no mechanism found in the workflow (`fail-fast: false` is set explicitly on this matrix, and cuda12/cuda13 use separate `concurrency` groups keyed by `matrix.pixi_env`) to explain an automatic cross-leg cancellation — recorded as `manual` by elimination, same reasoning this log used on 11-06. The AMD `rocm7` leg ran clean, 44m21s, well inside its `timeout-minutes: 60` cap. Main unchanged at `24a7871` (PR #505) since 11-26, so this is not attributable to a code change landing tonight. Note: a fourth job in this run, `test-pixi-amd (openfold3-rocm10)` (not one of this log's three tracked jobs), also passed tonight, 04:06:45–04:56:44 — not counted in the coverage line above per this log's established scope. No new entries required in `aws-outage-failures.md` tonight (neither failure matches a tracked AWS-outage signature); both non-passes are recorded in `test-failures.md`.
+
+### Run #418 — secondary nightly (schedule `17 4 * * *`, main @ `24a7871` (unchanged), [45939450510](https://github.com/aqlaboratory/openfold-3/actions/runs/45939450510))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #417, per this log's established convention).
