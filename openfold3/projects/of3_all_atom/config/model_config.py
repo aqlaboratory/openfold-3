@@ -316,6 +316,10 @@ model_config = mlc.ConfigDict(
                     "c_token": c_token_diffusion,
                     "sigma_data": sigma_data,
                     "linear_init_params": lin_init.diffusion_module_init,
+                    # Inference-only. The per-block attention bias is 3.00U, so
+                    # it is opt-in; the low-memory path keeps the conditioned
+                    # pair and re-projects it per step.
+                    "cache_pair_bias": False,
                 },
                 "diffusion_conditioning": {
                     "c_s_input": c_s_input,
