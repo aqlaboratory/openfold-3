@@ -1,0 +1,156 @@
+# STOCKHOLM 1.0
+
+#=GS tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/95-139      DE [subseq from] 8955_t:CDS:1 OS=Acaulospora morrowiae OX=94023 GN=AMORRO_LOCUS6589 PE=4 SV=1
+#=GS tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/142-182     DE [subseq from] 8955_t:CDS:1 OS=Acaulospora morrowiae OX=94023 GN=AMORRO_LOCUS6589 PE=4 SV=1
+#=GS tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/183-221     DE [subseq from] 8955_t:CDS:1 OS=Acaulospora morrowiae OX=94023 GN=AMORRO_LOCUS6589 PE=4 SV=1
+#=GS tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/222-260     DE [subseq from] 8955_t:CDS:1 OS=Acaulospora morrowiae OX=94023 GN=AMORRO_LOCUS6589 PE=4 SV=1
+#=GS tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/261-299     DE [subseq from] 8955_t:CDS:1 OS=Acaulospora morrowiae OX=94023 GN=AMORRO_LOCUS6589 PE=4 SV=1
+#=GS tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/302-339     DE [subseq from] 8955_t:CDS:1 OS=Acaulospora morrowiae OX=94023 GN=AMORRO_LOCUS6589 PE=4 SV=1
+#=GS tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/342-381     DE [subseq from] 8955_t:CDS:1 OS=Acaulospora morrowiae OX=94023 GN=AMORRO_LOCUS6589 PE=4 SV=1
+#=GS tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/381-421     DE [subseq from] 8955_t:CDS:1 OS=Acaulospora morrowiae OX=94023 GN=AMORRO_LOCUS6589 PE=4 SV=1
+#=GS tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/422-458     DE [subseq from] 8955_t:CDS:1 OS=Acaulospora morrowiae OX=94023 GN=AMORRO_LOCUS6589 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/88-132      DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/114-154     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/136-175     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/157-198     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/180-220     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/202-242     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/223-264     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/245-286     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/268-308     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/290-330     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/311-351     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/334-373     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/377-420     DE [subseq from] Zinc knuckle transcription factor CnjB OS=Gigaspora margarita OX=4874 GN=F8M41_011935 PE=4 SV=1
+#=GS tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/30-71       DE [subseq from] CCHC-type domain-containing protein OS=Rhizophagus clarus OX=94130 GN=RclHR1_13640008 PE=4 SV=1
+#=GS tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/107-146     DE [subseq from] CCHC-type domain-containing protein OS=Rhizophagus clarus OX=94130 GN=RclHR1_13640008 PE=4 SV=1
+#=GS tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/214-252     DE [subseq from] CCHC-type domain-containing protein OS=Rhizophagus clarus OX=94130 GN=RclHR1_13640008 PE=4 SV=1
+#=GS tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/254-294     DE [subseq from] CCHC-type domain-containing protein OS=Rhizophagus clarus OX=94130 GN=RclHR1_13640008 PE=4 SV=1
+#=GS tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/63-104      DE [subseq from] DNA-binding protein HEXBP-like OS=Rhizophagus clarus OX=94130 GN=RCL2_001763800 PE=4 SV=1
+#=GS tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/140-179     DE [subseq from] DNA-binding protein HEXBP-like OS=Rhizophagus clarus OX=94130 GN=RCL2_001763800 PE=4 SV=1
+#=GS tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/247-285     DE [subseq from] DNA-binding protein HEXBP-like OS=Rhizophagus clarus OX=94130 GN=RCL2_001763800 PE=4 SV=1
+#=GS tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/287-327     DE [subseq from] DNA-binding protein HEXBP-like OS=Rhizophagus clarus OX=94130 GN=RCL2_001763800 PE=4 SV=1
+#=GS tr|A0A1D1XG57|A0A1D1XG57_9ARAE/26-73       DE [subseq from] DNA-binding protein HEXBP OS=Anthurium amnicola OX=1678845 GN=HEXBP_1 PE=4 SV=1
+#=GS tr|A0A1D1XG57|A0A1D1XG57_9ARAE/93-136      DE [subseq from] DNA-binding protein HEXBP OS=Anthurium amnicola OX=1678845 GN=HEXBP_1 PE=4 SV=1
+#=GS tr|A0A1D1XG57|A0A1D1XG57_9ARAE/203-241     DE [subseq from] DNA-binding protein HEXBP OS=Anthurium amnicola OX=1678845 GN=HEXBP_1 PE=4 SV=1
+#=GS tr|A0A1D1XG57|A0A1D1XG57_9ARAE/241-283     DE [subseq from] DNA-binding protein HEXBP OS=Anthurium amnicola OX=1678845 GN=HEXBP_1 PE=4 SV=1
+#=GS tr|A0A139WJA1|A0A139WJA1_TRICA/266-304     DE [subseq from] Uncharacterized protein OS=Tribolium castaneum OX=7070 GN=AUGUSTUS-3.0.2_32776 PE=4 SV=1
+#=GS tr|A0A139WJA1|A0A139WJA1_TRICA/4040-4078   DE [subseq from] Uncharacterized protein OS=Tribolium castaneum OX=7070 GN=AUGUSTUS-3.0.2_32776 PE=4 SV=1
+#=GS tr|A0A139WJA1|A0A139WJA1_TRICA/5412-5450   DE [subseq from] Uncharacterized protein OS=Tribolium castaneum OX=7070 GN=AUGUSTUS-3.0.2_32776 PE=4 SV=1
+#=GS tr|A0A139WJA1|A0A139WJA1_TRICA/6551-6589   DE [subseq from] Uncharacterized protein OS=Tribolium castaneum OX=7070 GN=AUGUSTUS-3.0.2_32776 PE=4 SV=1
+#=GS tr|A0A139WJA1|A0A139WJA1_TRICA/8049-8087   DE [subseq from] Uncharacterized protein OS=Tribolium castaneum OX=7070 GN=AUGUSTUS-3.0.2_32776 PE=4 SV=1
+#=GS tr|A0A139WJA1|A0A139WJA1_TRICA/9392-9430   DE [subseq from] Uncharacterized protein OS=Tribolium castaneum OX=7070 GN=AUGUSTUS-3.0.2_32776 PE=4 SV=1
+#=GS tr|A0A139WJA1|A0A139WJA1_TRICA/10748-10786 DE [subseq from] Uncharacterized protein OS=Tribolium castaneum OX=7070 GN=AUGUSTUS-3.0.2_32776 PE=4 SV=1
+#=GS tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/205-250     DE [subseq from] CCHC-type domain-containing protein OS=Podila minutissima OX=64525 GN=BG006_004879 PE=4 SV=1
+#=GS tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/250-293     DE [subseq from] CCHC-type domain-containing protein OS=Podila minutissima OX=64525 GN=BG006_004879 PE=4 SV=1
+#=GS tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/294-336     DE [subseq from] CCHC-type domain-containing protein OS=Podila minutissima OX=64525 GN=BG006_004879 PE=4 SV=1
+#=GS tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/338-382     DE [subseq from] CCHC-type domain-containing protein OS=Podila minutissima OX=64525 GN=BG006_004879 PE=4 SV=1
+#=GS tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/384-422     DE [subseq from] CCHC-type domain-containing protein OS=Podila minutissima OX=64525 GN=BG006_004879 PE=4 SV=1
+#=GS tr|A0A915ZS51|A0A915ZS51_9GLOM/33-76       DE [subseq from] CCHC-type domain-containing protein OS=Rhizophagus irregularis OX=588596 GN=CHRIB12_LOCUS19136 PE=4 SV=1
+#=GS tr|A0A915ZS51|A0A915ZS51_9GLOM/81-123      DE [subseq from] CCHC-type domain-containing protein OS=Rhizophagus irregularis OX=588596 GN=CHRIB12_LOCUS19136 PE=4 SV=1
+#=GS tr|A0A915ZS51|A0A915ZS51_9GLOM/139-177     DE [subseq from] CCHC-type domain-containing protein OS=Rhizophagus irregularis OX=588596 GN=CHRIB12_LOCUS19136 PE=4 SV=1
+
+1a1t_2                                             MQK-G--N--F--R-N--Q---R--K---T---V---K------C-F---N----C-G-K-------E-G-H----I------A---K----N--C---------R------------A---------P----------R-----------K---------K---------G-----------C---W-K------C---
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/95-139              ----------A--K-N--R---Q--V---G---K---K------C-I---H----C-G-E-------T-G-H----L------A---N----D--C---------S------------T---------L----------L-----------M---------K---------E-----------C---H-R------C---
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/142-182             ---------------------------------M---E------C-D---R----C-G-E-------T-G-H----L------A---K----N--C---------Y------------L---------S----------L-----------V---------M---------T-----------C---H-L------C---
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/183-221             -------------------------------------K------C-G---R----C-G-E-------T-G-H----L------A---K----Y--C---------S------------I---------P----------S-----------V---------K---------T-----------C---H-R------C---
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/222-260             -------------------------------------K------C-S---R----C-G-E-------T-G-H----L------A---K----Y--C---------T------------I---------P----------S-----------L---------R---------A-----------C---H-R------C---
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/261-299             ---------------------------------K---K------C-N---R----C-G-E-------T-G-H----L------V---K----N--C---------S------------I---------P----------S-----------I---------K---------T-----------C---H-R------C---
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/302-339             -------------------------------------K------C-N---R----C-G-E-------T-G-H----L------V---K----N--C---------S------------I---------P----------F-----------V---------K---------T-----------C---H-R------C---
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/342-381             -------------------------------------K------C-N---R----C-G-E-------T-G-H----L------A---K----N--C---------S------------I---------P----------F-----------V---------K---------I-----------C---H-R------C---
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/381-421             ---------------------------------K---K------C-G---R----C-G-E-------T-G-H----L------A---K----D--C---------S------------I---------P----------S-----------V---------K---------T-----------C---H-R------C---
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/422-458             -------------------------------------K------C-N---R----C-G-E-------T-G-H----L------A---K----D--C---------S------------T---------P----------S-----------V---------K---------K-----------C---H-R------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/88-132              -------------N-S--R---R--S---T---I---T------C-E---N----C-G-R-------E-G-H----N------I---Q----T--C---------I------------Y---------G----------T-----------K--------TI---------T-----------C---G-N------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/114-154             -------------------------K---T---I---T------C-G---N----C-G-R-------E-G-H----N------A---R----T--C---------S-----------YS---------N----------R-----------V---------T---------T-----------C---G-N------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/136-175             -------------------------R---V---T---T------C-G---N----C-G-R-------E-G-H----N------A---R----N--C---------I------------Y---------G----------T-----------K--------TI---------T-----------C---E-N------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/157-198             ----------------------T--K---T---I---T------C-E---N----C-G-R-------E-G-H----N------I---Q----T--C---------I------------Y---------G----------I-----------K--------TI---------T-----------C---G-N------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/180-220             -------------------------K---T---I---T------C-G---N----C-G-R-------E-G-H----N------V---R----T--C---------S-----------YS---------N----------R-----------V---------T---------T-----------C---G-N------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/202-242             -------------------------R---V---T---T------C-G---N----C-G-R-------E-G-H----N------A---R----N--C---------I------------H---------G---------TK-----------T---------I---------T-----------C---V-N------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/223-264             ----------------------T--K---T---I---T------C-V---N----C-G-R-------E-G-H----N------I---Q----T--C---------I------------Y---------N----------T-----------K---------T--------IT-----------C---G-N------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/245-286             ----------------------T--K---T---I---T------C-G---N----C-G-K-------E-G-H----N------A---R----T--C---------S-----------YS---------N----------R-----------V---------T---------T-----------C---G-N------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/268-308             -------------------------R---V---T---T------C-G---N----C-G-R-------E-G-H----N------A---R----N--C---------I------------Y---------G----------T-----------K--------TI---------T-----------C---G-N------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/290-330             -------------------------K---T---I---T------C-G---N----C-G-K-------E-G-H----N------I---Q----T--C---------I------------Y---------N----------T-----------K---------T--------IT-----------C---G-S------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/311-351             ----------------------T--K---T---I---T------C-G---S----C-G-R-------E-G-H----N------V---R----T--C---------N-----------YS---------N----------R-----------V---------T---------T-----------C---G-N------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/334-373             -------------------------R---V---T---T------C-G---N----C-G-R-------E-G-H----N------A---R----T--C---------I------------Y---------G----------N-----------K---------T--------IT-----------C---G-N------C---
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/377-420             ----------------------T--K---T---I---T------C-G---N----C-G-R-------E-G-H----N------A---R----T--C---------S------------Y---------S----------N-----------K--------VT---------I-----------C---G-N------C---
+tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/30-71               -------------------------------------V------C-Y---N----C-G-K-------E-G-H----I------S---R----N--CDE-----QPK------------E---------N----------R-----------E---------K---------S-----------C---Y-K------C---
+tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/107-146             -------------------------------------S------C-Y---N----C-G-K-------H-G-H----L------S---R----D--C---------P-----------DS---------G----------N-----------G---------E---------K-----------C---Y-K------C---
+tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/214-252             -------------------------------------E------C-Y---N----C-G-K-------T-G-H----M------A---R----N--C---------N------------S--------IG----------N-----------S---------K---------K-----------C---Y-A------C---
+tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/254-294             ---------------------------------K---K------C-Y---N----C-G-R-------P-G-H----Q------S---R----D--C---------E------------L---------P----------Q----------DS---------K---------V-----------C---Y-N------C---
+tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/63-104              -------------------------------------V------C-Y---N----C-G-K-------E-G-H----I------S---R----N--CDE-----QPK------------E---------N----------R-----------E---------K---------S-----------C---Y-K------C---
+tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/140-179             -------------------------------------S------C-Y---N----C-G-K-------H-G-H----L------S---R----D--C---------P-----------DS---------G----------N-----------G---------E---------K-----------C---Y-K------C---
+tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/247-285             -------------------------------------E------C-Y---N----C-G-K-------T-G-H----M------A---R----N--C---------N------------S--------IG----------N-----------S---------K---------K-----------C---Y-A------C---
+tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/287-327             ---------------------------------K---K------C-Y---N----C-G-R-------P-G-H----Q------S---R----D--C---------E------------L---------P----------Q----------DS---------K---------V-----------C---Y-N------C---
+tr|A0A1D1XG57|A0A1D1XG57_9ARAE/26-73               ------------------Q---S--N---D---V---R------C-Y---N----C-G-R-------E-G-H----I------S---R----N--C---------E------------E---------P----------P-----------K---------E---------GKD-------KEC---Y-N------C---
+tr|A0A1D1XG57|A0A1D1XG57_9ARAE/93-136              -----------------------------S---K---D------C-Y---N----C-G-K-------S-G-H----L------S---R----D--C---------P------------D---------SG-------SHS-----------G---------N---------R-----------C---H-K------C---
+tr|A0A1D1XG57|A0A1D1XG57_9ARAE/203-241             -------------------------R---S---N---E------C-Y---N----C-G-K-------S-G-H----I------A---R----N--C---------N------------N--------------------------------N---------K---------K-----------C---Y-S------C---
+tr|A0A1D1XG57|A0A1D1XG57_9ARAE/241-283             -------------------------K---E---P---K------C-Y---N----C-G-Q-------P-G-H----Q------S---K----D--C---------D------------L---------P----------Q----------DS---------K---------V-----------C---Y-N------C---
+tr|A0A139WJA1|A0A139WJA1_TRICA/266-304             -------------------------S---S---V---R------C-Y---N----C-R-N-------R-G-H----V------A---T----K--C---------P------------K---------P----------R-----------I---------E---------------------C---K-K------C---
+tr|A0A139WJA1|A0A139WJA1_TRICA/4040-4078           -------------------------S---S---V---R------C-Y---N----C-R-N-------R-G-H----V------A---T----K--C---------P------------K---------P----------R-----------I---------E---------------------C---K-K------C---
+tr|A0A139WJA1|A0A139WJA1_TRICA/5412-5450           -------------------------S---S---V---R------C-Y---N----C-R-N-------R-G-H----V------A---T----K--C---------P------------K---------P----------R-----------I---------E---------------------C---K-K------C---
+tr|A0A139WJA1|A0A139WJA1_TRICA/6551-6589           -------------------------S---S---V---R------C-Y---N----C-R-N-------R-G-H----V------A---T----K--C---------P------------K---------P----------R-----------I---------E---------------------C---K-K------C---
+tr|A0A139WJA1|A0A139WJA1_TRICA/8049-8087           -------------------------S---S---V---R------C-Y---N----C-R-N-------R-G-H----V------A---T----K--C---------P------------K---------P----------R-----------I---------E---------------------C---K-K------C---
+tr|A0A139WJA1|A0A139WJA1_TRICA/9392-9430           -------------------------S---S---V---R------C-Y---N----C-R-N-------R-G-H----V------A---T----K--C---------P------------K---------P----------R-----------I---------E---------------------C---K-K------C---
+tr|A0A139WJA1|A0A139WJA1_TRICA/10748-10786         -------------------------S---S---V---R------C-Y---N----C-R-N-------R-G-H----V------A---T----K--C---------P------------K---------P----------R-----------I---------E---------------------C---K-K------C---
+tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/205-250             ------------------E---R--K---V---I---T------C-N---N----C-G-K-------E-G-H----I------S---K----N--C---------I------------E---------E----------L-----------K--------AP---------V-----------C---N-R------C---
+tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/250-293             ----------------------R--T---D---I---S------C-H---R----C-G-E-------I-G-H----M------A---R----D--C---------S------------H---------P----------R-----------T---------D--------IS-----------C---N-R------C---
+tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/294-336             ----------------------R--N---D---I---T------C-H---R----C-G-E-------I-G-H----M------A---R----D--C---------S------------Q---------P----------R-----------N---------D--------IT-----------C---N-R------C---
+tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/338-382             ----------------------R--N---D---I---Q------C-N---R----C-G-E-------I-G-H----M------S---R----N--C---------S------------Q---------P----------P----------PE---------I---------I-----------C---R-T------C---
+tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/384-422             -------------------------------------A------C-Y---R----C-G-A-------E-G-H----I------S---A----E--C---------D------------A---------Q----------G-----------E---------T---------I-----------C---Y-V------C---
+tr|A0A915ZS51|A0A915ZS51_9GLOM/33-76               -------------Q-S--G---R--S---S---S---G------C-Y---K----C-G-G-------D---H----F------A---R----D--C---------H------------N---------T----------------------N---------D---------G-----------C---Y-K------C---
+tr|A0A915ZS51|A0A915ZS51_9GLOM/81-123              ------------------R---E----------K---T------C-Y---T----C-G-K-------P-G-H----L------S---R----E--C---------R------------S---------D----------S-----------N---------S---------G----------EC---Y-K------C---
+tr|A0A915ZS51|A0A915ZS51_9GLOM/139-177             -------------------------------------S------C-Y---T----C-G-Q-------H-G-H----L------S---R----D--C---------P------------N---------S----------G-----------S---------G---------G----------RC---H-K------C---
+#=GC RF                                            xxx.x..x..x..x.x..x...x..x...x...x...x......x.x...x....x.x.x.......x.x.x....x......x...x....x..x.........x............x.........x..........x...........x.........x.........x...........x...x.x......x...
+
+1a1t_2                                             G--K-E-G--H----Q-MK---DC----T---E--RQAN
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/95-139              G--S-T-E--H----E-IK---DC----L----------
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/142-182             D--S-T-E--H----E-IK---DC----P---D--RK--
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/183-221             G--T-E----H----E-IK---YC----P---D--RK--
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/222-260             G--S-T-E--H----E-IK---DC----P---D--K---
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/261-299             G--S-T-E--H----E-IK---DC----P---D------
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/302-339             G--S-T-E--H----E-IK---DC----P---D------
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/342-381             G--S-T-E--H----E-IK---DC----P---D--RK--
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/381-421             G--S-T-E--H----E-IK---DC----P---D--RK--
+tr|A0A9N9BMX1|A0A9N9BMX1_9GLOM/422-458             G--S-T-E--H----E-VK---DC----L----------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/88-132              G--R-E-G--H----N-AR---TC----S----------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/114-154             G--R-E-G--H----N-AR---NC----I----------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/136-175             G--R-E-G--H----N-IQ---TC---------------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/157-198             G--R-E-G--H----N-VR---TC----S----------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/180-220             G--R-E-G--H----N-AR---NC----I----------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/202-242             G--R-E-G--H----N-IQ---TC----I----------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/223-264             G--K-E-G--H----N-AR---TC----S----------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/245-286             G--R-E-G--H----N-AR---NC----I----------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/268-308             G--K-E-G--H----N-IQ---TC----I----------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/290-330             G--R-E-G--H----N-VR---TC----N----------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/311-351             G--R-E-G--H----N-AR---TC---------------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/334-373             G--K-E-G--H----N-IQ---TC---------------
+tr|A0A8H4ATL1|A0A8H4ATL1_GIGMA/377-420             G--R-E-G--H----N-AR---TC----N---Q--K---
+tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/30-71               G--K-P-G--H----L-SR---DC----R---D------
+tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/107-146             G--Q-E-G--H----F-AR---DC----T---E--Y---
+tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/214-252             G--E-H-G--H----I-QR---DC----D---R------
+tr|A0A2Z6QQG1|A0A2Z6QQG1_9GLOM/254-294             K--Q-E-G--H----I-RR---DC----T---S--S---
+tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/63-104              G--K-P-G--H----L-SR---DC----R---D------
+tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/140-179             G--Q-E-G--H----F-AR---DC----T---E--Y---
+tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/247-285             G--E-H-G--H----I-QR---DC----D---R------
+tr|A0A8H3QSR2|A0A8H3QSR2_9GLOM/287-327             K--Q-E-G--H----I-RR---DC----T---S--S---
+tr|A0A1D1XG57|A0A1D1XG57_9ARAE/26-73               G--K-I-G--H----L-SR---DC----H---E--Y---
+tr|A0A1D1XG57|A0A1D1XG57_9ARAE/93-136              G--Q-E-G--H----F-AR---DC----S---E--Y---
+tr|A0A1D1XG57|A0A1D1XG57_9ARAE/203-241             G--E-H-G--H----L-QR---DC----D---K------
+tr|A0A1D1XG57|A0A1D1XG57_9ARAE/241-283             K--Q-E-G--H----V-KK---DC----T---S--S---
+tr|A0A139WJA1|A0A139WJA1_TRICA/266-304             G--R-I-G--H----V-DA---EC----R----------
+tr|A0A139WJA1|A0A139WJA1_TRICA/4040-4078           G--R-I-G--H----V-DA---EC----R----------
+tr|A0A139WJA1|A0A139WJA1_TRICA/5412-5450           G--R-I-G--H----V-DA---EC----R----------
+tr|A0A139WJA1|A0A139WJA1_TRICA/6551-6589           G--R-I-G--H----V-DA---EC----R----------
+tr|A0A139WJA1|A0A139WJA1_TRICA/8049-8087           G--R-I-G--H----V-DA---EC----R----------
+tr|A0A139WJA1|A0A139WJA1_TRICA/9392-9430           G--R-I-G--H----V-DA---EC----R----------
+tr|A0A139WJA1|A0A139WJA1_TRICA/10748-10786         G--R-I-G--H----V-DA---EC----R----------
+tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/205-250             H--A-E-G--H----M-AR---DC----T---E--PR--
+tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/250-293             H--A-E-G--H----M-AR---DC----T---E--P---
+tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/294-336             G--E-I-G--H----M-AR---DC----S---Q------
+tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/338-382             N--A-E-G--H----I-AR---DC----P---D--RK--
+tr|A0A9P5SNQ2|A0A9P5SNQ2_9FUNG/384-422             N--Q-T-G--H----Q-AR---DC----P---G--R---
+tr|A0A915ZS51|A0A915ZS51_9GLOM/33-76               G--K-E-G--H----I-SR---NC----D---E--Q---
+tr|A0A915ZS51|A0A915ZS51_9GLOM/81-123              G--K-Q-G--H----I-AR---NC----D---A--D---
+tr|A0A915ZS51|A0A915ZS51_9GLOM/139-177             G--Q-V-G--H----F-AR---DC----T---D------
+#=GC RF                                            x..x.x.x..x....x.xx...xx....x...x..xxxx
+//
