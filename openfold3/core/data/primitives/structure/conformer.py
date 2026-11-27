@@ -142,12 +142,21 @@ def _compute_conformer(
 
     # Disable overly verbose conformer generation warnings
     with rdBase.BlockLogs():
-        if timeout:
-            conf_id = func_timeout(
-                timeout=timeout, func=AllChem.EmbedMolecule, args=(mol, strategy)
-            )
-        else:
-            conf_id = AllChem.EmbedMolecule(mol, strategy)
+        try:
+            if timeout:
+                conf_id = func_timeout(
+                    timeout=timeout, func=AllChem.EmbedMolecule, args=(mol, strategy)
+                )
+            else:
+                conf_id = AllChem.EmbedMolecule(mol, strategy)
+        except RuntimeError as e:
+            # RDKit occasionally fails inside its own minimizer (e.g. "Invariant
+            # Violation: bad direction in linearSearch" from BFGSOpt.h) and throws
+            # instead of returning -1. Treat it like any other embedding failure so
+            # the strategy chain and the fallback conformer can take over.
+            raise ConformerGenerationError(
+                f"RDKit raised during conformer embedding: {e}"
+            ) from e
 
     if remove_hs:
         mol = safe_remove_all_hs(mol)
@@ -213,9 +222,7 @@ def multistrategy_compute_conformer(
                 **strat.kwargs,
             )
         except (ConformerGenerationError, FunctionTimedOut) as e:
-            logger.warning(
-                f"Conformer strategy {strat.name!r} failed for {smiles}: {e}"
-            )
+            logger.debug(f"Conformer strategy {strat.name!r} failed for {smiles}: {e}")
             last_exc = e
             continue
         return ConformerResult(mol=mol_out, conf_id=conf_id, strategy=strat.name)

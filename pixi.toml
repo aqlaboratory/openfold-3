@@ -25,6 +25,7 @@
 #                                                     keeping the environments as sane and consistent as possible
 #                                                     (useful if requiring deps not yet in conda-forge)
 #   - openfold3-rocm7: environment for AMD GPU support with ROCm 7.x (linux-64 only at the moment)
+#   - openfold3-rocm10: environment for AMD GPU support with ROCm 10.0 (linux-64 only at the moment)
 #   - openfold3-msa: environment for OpenFold3 style MSA generation (with snakemake, hmmer, and hhsuite)
 #
 # The current environments pass all inference tests available in each platform.
@@ -74,7 +75,7 @@
 
 [workspace]
 name = "openfold3"
-version = "0.4.2"
+version = "0.5.1"
 authors = ["OpenFold Team <support@openfold.io>"]
 channels = ["conda-forge", "bioconda"]
 platforms = [
@@ -100,7 +101,10 @@ platforms = [
 #     maybe we should lobby for system-requiremets to be an alternative
 #     and not deprecated
 #   * as we now use wildcard platform target selectors (this helped)
-requires-pixi = ">=0.80.0"
+# - 0.82.1:
+#   * earlier versions trust the revoked eMudhra emSign root CA certificate
+#     https://github.com/aqlaboratory/openfold-3/issues/520
+requires-pixi = ">=0.82.1"
 
 # --- Environments
 
@@ -166,6 +170,14 @@ openfold3-rocm7 = { no-default-feature = true, features = [
     "openfold3-editable",
     "tests",
 ] }
+openfold3-rocm10 = { no-default-feature = true, features = [
+    "python",
+    "openfold3-base",
+    "pytorch-pypi-rocm10",
+    "not-in-pypi",
+    "openfold3-editable",
+    "tests",
+] }
 openfold3-msa = { no-default-feature = true, features = [
     "openfold3-msa",
 ] }
@@ -214,9 +226,7 @@ pandas = "*"
 ml-collections = "*"
 
 # --- Handling molecules
-# with newer rdkit we are failing one test:
-# openfold3/tests/core/data/primitives/structure/test_conformer.py::test_compute_conformer_snapshot[paracetamol_default_no_hs]
-rdkit = "<2026"
+rdkit = "*"
 biotite = ">=1.6"
 pdbeccdutils = "*"
 
@@ -250,7 +260,7 @@ pytest-vcr = "*"
 
 # --- Dev and documentation optionals
 # We do not put on a feature to avoid combinatorial explosion.
-ruff = "*"
+ruff = "==0.16.0"  # keep in sync with pyproject.toml (used by the lint CI workflow)
 mypy = "*"
 sphinx = "*"
 myst-parser = "*"
@@ -321,6 +331,28 @@ torch = { version = "*", index = "https://download.pytorch.org/whl/cu130" }
   [feature.pytorch-pypi-rocm7.pypi-dependencies]
   torch = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
   triton-rocm = { version = "*", index = "https://download.pytorch.org/whl/rocm7.2" }
+
+[feature.pytorch-pypi-rocm10]
+
+  platforms = ["linux-64"]
+
+  [feature.pytorch-pypi-rocm10.dependencies]
+  # See the comment in pytorch-pypi-rocm7 on why the compilers are needed.
+  c-compiler = "*"
+  cxx-compiler = "*"
+
+  [feature.pytorch-pypi-rocm10.pypi-dependencies]
+  torch = { version = "*", index = "https://download.pytorch.org/whl/rocm10.0" }
+  triton-rocm = { version = "*", index = "https://download.pytorch.org/whl/rocm10.0" }
+  # The PyTorch index (extra index below) mirrors old versions of these, which
+  # would otherwise win over PyPI.
+  lightning-utilities = { version = "*", index = "https://pypi.org/simple" }
+  torchmetrics = { version = "*", index = "https://pypi.org/simple" }
+
+  # torch depends on `rocm[device-all,libraries]`, whose `rocm-sdk-*` packages
+  # aren't on PyPI.
+  [feature.pytorch-pypi-rocm10.pypi-options]
+  extra-index-urls = ["https://download.pytorch.org/whl/rocm10.0"]
 
 [feature.cuda12]
 

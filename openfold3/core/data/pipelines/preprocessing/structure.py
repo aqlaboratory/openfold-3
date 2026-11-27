@@ -74,6 +74,7 @@ from openfold3.core.data.primitives.structure.alignment import (
 )
 from openfold3.core.data.primitives.structure.cleanup import (
     canonicalize_atom_order,
+    check_ligand_atoms_in_ccd,
     convert_MSE_to_MET,
     fix_arginine_naming,
     prefilter_bonds,
@@ -190,6 +191,7 @@ def cleanup_structure_of3(
     atom_array = remove_clashing_chains(
         atom_array, clash_distance=1.7, clash_percentage=0.3
     )
+    check_ligand_atoms_in_ccd(atom_array, ccd)
     atom_array = remove_non_CCD_atoms(atom_array, ccd)
     atom_array = canonicalize_atom_order(atom_array, ccd)
     atom_array = remove_chains_with_CA_gaps(atom_array, distance_threshold=10.0)

@@ -34,7 +34,7 @@ dependencies = [
     "ml-collections",
     "pytorch-lightning >=2.1",
     "biotite>=1.6",
-    "rdkit<2026", # aqlaboratory/openfold-3/issues/285 
+    "rdkit",
     "pdbeccdutils",
     "kalign-python",
     "requests",
@@ -52,13 +52,13 @@ dependencies = [
 ]
 
 optional-dependencies.dev = [
-    "pytest",
+    "pytest<9.2",  # until pytest-benchmark/issues/321 is resolved
     "pytest-xdist",
     "pytest-cov",
     "pytest-benchmark",
     "pytest-regressions",
     "pytest-vcr",
-    "ruff",
+    "ruff==0.16.0",  # keep in sync with pixi.toml
     "mypy",
     "mypy-baseline",
     "pre-commit",
@@ -90,7 +90,7 @@ validate-openfold3-rocm="openfold3.entry_points.validate_rocm:main"
 [dependency-groups]
 test = [
     "pytest",
-    "ruff",
+    "ruff==0.16.0",  # keep in sync with pixi.toml
     "awscli",
     "aria2",
     "pytest-xdist",
@@ -103,7 +103,7 @@ test = [
 
 
 [tool.setuptools_scm]
-fallback_version = "0.5.0"
+fallback_version = "0.5.1"
 
 [tool.setuptools]
 include-package-data = true

@@ -138,11 +138,11 @@ MSA usage toggles (`use_msas`, `use_main_msas`, `use_paired_msas`) are set at th
     - If using the ColabFold MSA server, this field is automatically populated and will **override any user-provided path**.
 
   - `template_cif_paths` *(list[str], optional, default = null)*
-    - List of paths to CIF files to use as templates for this chain.
+    - List of paths to CIF files, including gzip-compressed `.cif.gz` files, to use as templates for this chain. Compressed files are read directly and do not need to be decompressed first.
     - Enables **CIF-direct template mode**, which parses templates directly from CIF files without requiring pre-computed alignments.
     - Alignments are computed on-the-fly using Kalign.
     - This is useful when you have known template structures but no pre-computed MSA/template alignments.
-    - Example: `["/path/to/template1.cif", "/path/to/template2.cif"]`
+    - Example: `["/path/to/template1.cif.gz", "/path/to/template2.cif"]`
 
   - `template_cif_chain_ids` *(list[str | null], optional, default = null)*
     - List of chain IDs to use from each corresponding CIF file in `template_cif_paths`.

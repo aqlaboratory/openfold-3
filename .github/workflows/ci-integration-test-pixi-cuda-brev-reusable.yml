@@ -1,9 +1,8 @@
 name: Reusable Docker Test for running heavy test loads on Brev (Pixi)
 
-# Brev counterpart of ci-integration-test-aws-pixi-cuda.yml. The test job
-# is the same; only the runner lifecycle differs. Brev picks the machine image
-# (Ubuntu with Docker and the NVIDIA Container Toolkit) and the disk size comes
-# with the instance type, so there is no AMI lookup or root device size here.
+# Brev picks the machine image (Ubuntu with Docker and the NVIDIA Container
+# Toolkit) and the disk size comes with the instance type, so there is no AMI
+# lookup or root device size here.
 
 on:
   # Can only be called by another workflow, not directly by the user
@@ -24,8 +23,23 @@ on:
         type: string
       coverage:
         description: >-
-          Measure coverage on this run: the whole suite, without `-x`. See the
-          same input in ci-integration-test-aws-pixi-cuda.yml for why.
+          Measure coverage on this run: the *whole* suite rather than
+          `-m "slow or gpu"`, and without `-x`.
+
+          Both matter. Coverage from the GPU selection alone would miss
+          everything the unit tests reach, and the fast CI tier cannot supply
+          the remainder -- it runs on a CPU-only box with no weights, so every
+          accelerator-gated test self-skips there. Running the lot on one GPU
+          runner is what lets a single data file cover the CPU *and* GPU paths,
+          with no cross-workflow `coverage combine` and no risk of line numbers
+          from a different commit being attributed to this one.
+
+          `-x` has to go because a fail-fast run measures only the code up to the
+          first failure, which reports as a collapsed coverage number rather than
+          as an error.
+
+          Note this makes the job stop being a fast red signal: it runs longer and
+          reports every failure instead of the first.
         required: false
         type: boolean
         default: false
@@ -51,7 +65,7 @@ jobs:
       # set when it was created.
       - name: Create Brev runner
         id: brev-start
-        uses: omsf-eco-infra/start-brev-gha-runner@8caae6a56ffe6f455278dea33e20b9b8dc003d4e # v1
+        uses: omsf-eco-infra/start-brev-gha-runner@281d77842f8f4d29900d0c954f1d8a1ae59fd334 # v1.0.1
         with:
           brev_instance_type: ${{ inputs.brev_instance_type }}
           brev_timeout: 900
@@ -97,6 +111,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Build and push test image
+        id: build
         uses: docker/build-push-action@v7.4.0
         with:
           context: .
@@ -107,9 +122,9 @@ jobs:
             PIXI_ENV=${{ inputs.pixi_env }}
             BASE_IMAGE=${{ inputs.base_image }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }},mode=max
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.event.pull_request.head.sha || github.sha }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}-${{ hashFiles('pixi.lock') }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:cache-pixi-${{ inputs.pixi_env }}-${{ hashFiles('pixi.lock') }},mode=max
 
       - name: Create parameter cache directory
         run: mkdir -p ~/.openfold3
@@ -140,7 +155,7 @@ jobs:
 
       - name: Run integration test
         run: |
-          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }}"
+          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
           run_pytest() {
             docker run --rm --gpus all \
               --shm-size=8g \
@@ -154,28 +169,39 @@ jobs:
             exit
           fi
 
-          # Same invocation as the AWS workflow; see the comment there.
+          # One invocation over the whole suite, so one .coverage file with no
+          # `coverage combine` and no --cov-append bookkeeping.
+          #
+          # `--dist loadgroup` is what makes that affordable. The conftest puts
+          # every `slow` and `gpu` test in one xdist group, and loadgroup runs a
+          # group on a single worker -- so the accelerator tests serialise
+          # against each other on the one GPU while the CPU-bound rest of the
+          # suite still fans out. Without it this would have to run serially and
+          # cost roughly half an hour more of GPU instance time.
+          #
+          # No -x: fail-fast would measure only the code up to the first failure
+          # and report it as a collapsed coverage number. No -s either: xdist
+          # workers cannot stream output to the terminal.
           run_pytest openfold3/tests/ -vvv -n auto --dist loadgroup \
             --cov=openfold3 --cov-report=xml --cov-report=term
 
       - name: Reclaim workspace ownership
         # The container runs as root, so coverage.xml and .coverage land in the
         # bind-mounted workspace owned by root and the runner user cannot read
-        # them to upload.
+        # them to upload. Runs on failure too, since a coverage run has no -x and
+        # a partial result is still worth collecting.
         if: ${{ always() && inputs.coverage }}
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/opt/openfold3 \
             --entrypoint chown \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:test-pixi-${{ inputs.pixi_env }}-${{ github.sha }} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} \
             -R "$(id -u):$(id -g)" /opt/openfold3
 
       - name: Upload coverage report
         if: ${{ always() && inputs.coverage }}
         uses: actions/upload-artifact@v7
         with:
-          # Distinct from the AWS job's name: both run in the same workflow run
-          # and artifact names must be unique within it.
           name: coverage-report-integration-brev-${{ inputs.pixi_env }}
           path: |
             coverage.xml
@@ -184,6 +210,8 @@ jobs:
           retention-days: 30
 
       - name: Publish coverage summary
+        # Puts the number on the job summary page so reading it does not mean
+        # downloading an artifact.
         if: ${{ always() && inputs.coverage }}
         run: |
           if [ ! -f coverage.xml ]; then
@@ -218,9 +246,10 @@ jobs:
       # keep billing for the disk.
       - name: Delete Brev runner
         if: ${{ needs.start-brev-runner.outputs.mapping }}
-        uses: omsf-eco-infra/stop-brev-gha-runner@4b88a4d25877aafb37ca29f5f49996ab0af76ab6 # v1
+        uses: omsf-eco-infra/stop-brev-gha-runner@8a106670bde9bb88c4b983bf8233a2a15feb3d15 # v1.1.1
         with:
           instance_mapping: ${{ needs.start-brev-runner.outputs.mapping }}
+          timeout: 1200
         env:
           BREV_API_KEY: ${{ secrets.BREV_API_KEY }}
           GH_PAT: ${{ secrets.GH_PAT }}

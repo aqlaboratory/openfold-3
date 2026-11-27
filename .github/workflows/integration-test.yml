@@ -4,7 +4,7 @@ on:
   schedule:
     # GitHub-hosted schedulers see heavy contention on the hour; offsetting by
     # 17 minutes reduces queue delay and avoids colliding with other
-    # AWS-runner-launching workflows that fire on :00.
+    # brev-runner-launching workflows that fire on :00.
     #
     # `on.schedule` cron entries can't be conditioned on `github.repository`
     # (no expression context is available there), so both times are
@@ -14,40 +14,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-pixi-cuda:
-    if: |
-      github.event_name != 'schedule' ||
-      (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)
-    permissions:
-      id-token: write
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        include:
-          # One entry carries coverage. It is a matrix field rather than a
-          # separate job so the number costs no extra GPU runner, and cuda12
-          # rather than cuda13 only because it is the primary environment.
-          #
-          # This entry stops being a fail-fast gate: it runs the whole suite
-          # without -x, so it takes appreciably longer and reports every failure
-          # instead of the first. cuda13 keeps the original `-x -m "slow or gpu"` form, so
-          # a quick red signal is still available from this workflow.
-          - pixi_env: "openfold3-cuda12"
-            coverage: true
-          - pixi_env: "openfold3-cuda13"
-            coverage: false
-    concurrency:
-      group: ${{ github.workflow }}-pixi-cuda-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
-      cancel-in-progress: true
-    uses: ./.github/workflows/ci-integration-test-aws-pixi-cuda.yml
-    with:
-      pixi_env: ${{ matrix.pixi_env }}
-      coverage: ${{ matrix.coverage }}
-    secrets: inherit
-
-  # Runs alongside test-pixi-cuda on Brev while we compare the two; intended to
-  # replace it.
   test-pixi-cuda-brev:
     if: |
       github.event_name != 'schedule' ||
@@ -56,9 +22,18 @@ jobs:
       contents: read
       packages: write
     strategy:
+      # Do not interrupt sibling provisioning before its cleanup mapping exists.
+      fail-fast: false
       matrix:
         include:
-          # Coverage split as in test-pixi-cuda above.
+          # One entry carries coverage. It is a matrix field rather than a
+          # separate job so the number costs no extra GPU runner, and cuda12
+          # rather than cuda13 only because it is the primary environment.
+          #
+          # This entry stops being a fail-fast gate: it runs the whole suite
+          # without -x, so it takes appreciably longer and reports every failure
+          # instead of the first. cuda13 keeps the original `-x -m "slow or gpu"`
+          # form, so a quick red signal is still available from this workflow.
           - pixi_env: "openfold3-cuda12"
             coverage: true
           - pixi_env: "openfold3-cuda13"
@@ -81,9 +56,14 @@ jobs:
       contents: read
       packages: write
     strategy:
+      # One persistent amd-gpu box: run envs one at a time so they don't
+      # compete for the GPU, and let each finish even if another fails.
+      max-parallel: 1
+      fail-fast: false
       matrix:
         include:
           - pixi_env: "openfold3-rocm7"
+          - pixi_env: "openfold3-rocm10"
     concurrency:
       group: ${{ github.workflow }}-pixi-amd-${{ github.head_ref || github.ref }}-${{ matrix.pixi_env }}
       cancel-in-progress: true

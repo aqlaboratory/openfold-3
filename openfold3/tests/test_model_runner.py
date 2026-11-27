@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 import torch
@@ -131,3 +131,37 @@ def test_version_registration():
     # Check that the version property returns the expected version string
     expected_version = "2.0.0"
     assert model_runner.version == expected_version
+
+
+def test_test_mode_uses_ema_weights():
+    """trainer.test() fires on_test_epoch_* instead of on_validation_epoch_*.
+
+    Test mode should still swap in the EMA weights for the epoch, aggregate the
+    epoch metrics, and restore the live weights afterwards, like eval mode.
+    """
+    project_entry = OF3ProjectEntry()
+    config = project_entry.get_model_config_with_presets()
+    model_runner = OpenFold3AllAtom(model_config=config)
+    model_runner._log_epoch_metrics = MagicMock()
+
+    model_runner.ema.init_params(model_runner.model)
+    name, live_param = next(iter(model_runner.model.named_parameters()))
+    live_weight = live_param.detach().clone()
+    with torch.no_grad():
+        model_runner.ema.params[name].add_(5.0)
+    ema_weight = model_runner.ema.params[name].clone()
+
+    with patch.object(
+        OpenFold3AllAtom, "trainer", new_callable=PropertyMock
+    ) as mock_trainer:
+        mock_trainer.return_value = MagicMock()
+        model_runner.setup(stage="test")
+
+        model_runner.on_test_epoch_start()
+        assert torch.equal(model_runner.model.get_parameter(name), ema_weight)
+
+        model_runner.on_test_epoch_end()
+        assert torch.equal(model_runner.model.get_parameter(name), live_weight)
+
+    assert model_runner.cached_weights is None
+    model_runner._log_epoch_metrics.assert_called()

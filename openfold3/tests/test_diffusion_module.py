@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import unittest
+from unittest.mock import patch
 
 import torch
 
@@ -22,9 +23,26 @@ from openfold3.core.model.structure.diffusion_module import (
     create_noise_schedule,
 )
 from openfold3.core.utils.tensor_utils import tensor_tree_map
-from openfold3.projects.of3_all_atom.project_entry import OF3ProjectEntry
+from openfold3.projects.of3_all_atom.project_entry import (
+    ModelUpdate,
+    OF3ProjectEntry,
+)
 from openfold3.tests.config import consts
 from openfold3.tests.utils.data_utils import random_of3_features
+from openfold3.tests.utils.model_utils import initialize_model_weights
+
+
+def _build_diffusion_module(custom: dict | None = None):
+    """Build a diffusion module from the project config.
+
+    ``custom`` is the same mapping a user puts under ``model_update.custom``.
+    """
+    proj_entry = OF3ProjectEntry()
+    config = proj_entry.get_model_config_with_update(ModelUpdate(custom=custom or {}))
+    dm = DiffusionModule(config=config.architecture.diffusion_module)
+    initialize_model_weights(dm)
+    dm.eval()
+    return config, dm
 
 
 class TestDiffusionModule(unittest.TestCase):
@@ -32,14 +50,11 @@ class TestDiffusionModule(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = OF3ProjectEntry()
-        config = proj_entry.get_model_config_with_presets()
+        config, dm = _build_diffusion_module()
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
         c_z = config.architecture.shared.c_z
-
-        dm = DiffusionModule(config=config.architecture.diffusion_module)
 
         batch = random_of3_features(
             batch_size=batch_size,
@@ -56,17 +71,18 @@ class TestDiffusionModule(unittest.TestCase):
         si_trunk = torch.rand((batch_size, n_token, c_s))
         zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
 
-        xl = dm(
-            batch=batch,
-            xl_noisy=xl_noisy,
-            t=t,
-            token_mask=batch["token_mask"],
-            atom_mask=atom_mask,
-            si_input=si_input,
-            si_trunk=si_trunk,
-            zij_trunk=zij_trunk,
-            use_conditioning=True,
-        )
+        with torch.no_grad():
+            xl = dm(
+                batch=batch,
+                xl_noisy=xl_noisy,
+                t=t,
+                token_mask=batch["token_mask"],
+                atom_mask=atom_mask,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                use_conditioning=True,
+            )
 
         self.assertTrue(xl.shape == (batch_size, n_atom, 3))
 
@@ -75,14 +91,11 @@ class TestDiffusionModule(unittest.TestCase):
         n_token = consts.n_res
         n_sample = 3
 
-        proj_entry = OF3ProjectEntry()
-        config = proj_entry.get_model_config_with_presets()
+        config, dm = _build_diffusion_module()
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
         c_z = config.architecture.shared.c_z
-
-        dm = DiffusionModule(config=config.architecture.diffusion_module)
 
         batch = random_of3_features(
             batch_size=batch_size,
@@ -100,19 +113,128 @@ class TestDiffusionModule(unittest.TestCase):
         si_trunk = torch.rand((batch_size, 1, n_token, c_s))
         zij_trunk = torch.rand((batch_size, 1, n_token, n_token, c_z))
 
-        xl = dm(
+        with torch.no_grad():
+            xl = dm(
+                batch=batch,
+                xl_noisy=xl_noisy,
+                token_mask=batch["token_mask"],
+                atom_mask=atom_mask,
+                t=t,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                use_conditioning=True,
+            )
+
+        self.assertTrue(xl.shape == (batch_size, n_sample, n_atom, 3))
+
+    def test_cached_matches_uncached(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        config, dm = _build_diffusion_module()
+
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
+
+        batch = random_of3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        xl_noisy = torch.randn((batch_size, n_atom, 3))
+        t = torch.ones(1)
+        atom_mask = torch.ones((batch_size, n_atom))
+        si_input = torch.rand((batch_size, n_token, c_s_input))
+        si_trunk = torch.rand((batch_size, n_token, c_s))
+        zij_trunk = torch.rand((batch_size, n_token, n_token, c_z))
+        step_kwargs = dict(
             batch=batch,
             xl_noisy=xl_noisy,
+            t=t,
             token_mask=batch["token_mask"],
             atom_mask=atom_mask,
-            t=t,
             si_input=si_input,
             si_trunk=si_trunk,
             zij_trunk=zij_trunk,
-            use_conditioning=True,
         )
 
-        self.assertTrue(xl.shape == (batch_size, n_sample, n_atom, 3))
+        for use_conditioning in (True, False):
+            with self.subTest(use_conditioning=use_conditioning):
+                with torch.no_grad():
+                    cache = dm.prepare_cache(
+                        batch=batch,
+                        zij_trunk=zij_trunk,
+                        use_conditioning=use_conditioning,
+                    )
+                    xl_cached = dm(
+                        **step_kwargs,
+                        use_conditioning=use_conditioning,
+                        cache=cache,
+                    )
+                    xl_uncached = dm(
+                        **step_kwargs,
+                        use_conditioning=use_conditioning,
+                        cache=None,
+                    )
+                self.assertTrue(torch.equal(xl_cached, xl_uncached))
+
+
+class TestPairBiasCache(unittest.TestCase):
+    def test_cached_bias_is_contiguous_and_matches_uncached(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        config, dm = _build_diffusion_module(
+            custom={
+                "architecture": {
+                    "diffusion_module": {
+                        "diffusion_module": {"cache_pair_bias": True},
+                    },
+                },
+            },
+        )
+        self.assertTrue(dm.cache_pair_bias)
+
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
+
+        batch = random_of3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
+        n_atom = torch.max(batch["num_atoms_per_token"].sum(dim=-1)).int().item()
+        step_kwargs = dict(
+            batch=batch,
+            xl_noisy=torch.randn((batch_size, n_atom, 3)),
+            t=torch.ones(1),
+            token_mask=batch["token_mask"],
+            atom_mask=torch.ones((batch_size, n_atom)),
+            si_input=torch.rand((batch_size, n_token, c_s_input)),
+            si_trunk=torch.rand((batch_size, n_token, c_s)),
+            zij_trunk=torch.rand((batch_size, n_token, n_token, c_z)),
+        )
+
+        with torch.no_grad():
+            cache = dm.prepare_cache(
+                batch=batch,
+                zij_trunk=step_kwargs["zij_trunk"],
+                use_conditioning=True,
+                mask=batch["token_mask"],
+            )
+            xl_cached = dm(**step_kwargs, use_conditioning=True, cache=cache)
+            xl_uncached = dm(**step_kwargs, use_conditioning=True, cache=None)
+
+        # The strided view of ``permute_final_dims`` costs ~3x the bandwidth
+        # when every block reads it, so the cache must be materialized.
+        for bias in cache.pair_bias:
+            self.assertTrue(bias.is_contiguous())
+
+        self.assertTrue(torch.equal(xl_cached, xl_uncached))
 
 
 class TestSampleDiffusion(unittest.TestCase):
@@ -120,8 +242,7 @@ class TestSampleDiffusion(unittest.TestCase):
         batch_size = consts.batch_size
         n_token = consts.n_res
 
-        proj_entry = OF3ProjectEntry()
-        config = proj_entry.get_model_config_with_presets()
+        config, dm = _build_diffusion_module()
 
         c_s_input = config.architecture.shared.c_s_input
         c_s = config.architecture.shared.c_s
@@ -129,8 +250,6 @@ class TestSampleDiffusion(unittest.TestCase):
         no_rollout_samples = 5
 
         sample_config = config.architecture.sample_diffusion
-
-        dm = DiffusionModule(config=config.architecture.diffusion_module)
         sd = SampleDiffusion(**sample_config, diffusion_module=dm)
 
         batch = random_of3_features(
@@ -166,6 +285,59 @@ class TestSampleDiffusion(unittest.TestCase):
             )
 
         self.assertTrue(xl.shape == (batch_size, no_rollout_samples, n_atom, 3))
+
+    def test_prepare_cache_called_once_per_rollout(self):
+        batch_size = consts.batch_size
+        n_token = consts.n_res
+        no_rollout_samples = 5
+        no_rollout_steps = 2
+
+        config, dm = _build_diffusion_module()
+        sd = SampleDiffusion(
+            **config.architecture.sample_diffusion, diffusion_module=dm
+        )
+
+        batch = random_of3_features(
+            batch_size=batch_size,
+            n_token=n_token,
+            n_msa=consts.n_seq,
+            n_templ=consts.n_templ,
+        )
+        batch = tensor_tree_map(lambda t: t.unsqueeze(1), batch)
+        c_s_input = config.architecture.shared.c_s_input
+        c_s = config.architecture.shared.c_s
+        c_z = config.architecture.shared.c_z
+        si_input = torch.rand((batch_size, 1, n_token, c_s_input))
+        si_trunk = torch.rand((batch_size, 1, n_token, c_s))
+        zij_trunk = torch.rand((batch_size, 1, n_token, n_token, c_z))
+        noise_schedule = create_noise_schedule(
+            no_rollout_steps=no_rollout_steps,
+            **config.architecture.noise_schedule,
+            dtype=si_input.dtype,
+            device=si_input.device,
+        )
+
+        with (
+            patch.object(dm, "prepare_cache", wraps=dm.prepare_cache) as mock_cache,
+            patch.object(
+                dm.diffusion_conditioning,
+                "condition_pair",
+                wraps=dm.diffusion_conditioning.condition_pair,
+            ) as mock_pair,
+            torch.no_grad(),
+        ):
+            sd(
+                batch=batch,
+                si_input=si_input,
+                si_trunk=si_trunk,
+                zij_trunk=zij_trunk,
+                noise_schedule=noise_schedule,
+                no_rollout_samples=no_rollout_samples,
+                use_conditioning=True,
+            )
+
+        self.assertEqual(mock_cache.call_count, 1)
+        self.assertEqual(mock_pair.call_count, 1)
 
 
 if __name__ == "__main__":
