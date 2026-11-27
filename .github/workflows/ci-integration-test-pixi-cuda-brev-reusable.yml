@@ -55,7 +55,9 @@ jobs:
     runs-on: ${{ fromJSON(needs.start-brev-runner.outputs.instances) }}
     needs:
       - start-brev-runner
-    timeout-minutes: 60
+    # The GPU-only selection took ~40 min; this adds the rest of the suite and
+    # the tracing overhead on the serialised slow tests.
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: write
@@ -130,14 +132,76 @@ jobs:
           fi
 
       - name: Run integration test
+        # The whole suite under coverage, not just `-m "slow or gpu"`. The PR
+        # tier runs on a CPU-only box with no weights, so every accelerator-gated
+        # test self-skips there; running everything here is what lets one
+        # .coverage file span the CPU and GPU paths, with no `coverage combine`
+        # across workflows.
+        #
+        # `--dist loadgroup`: the conftest puts every `slow` and `gpu` test in
+        # one xdist group, which loadgroup runs on a single worker, so those
+        # serialise on the one GPU while the CPU-bound rest fans out.
+        #
+        # No -x: a fail-fast run measures only the code up to the first failure
+        # and reports it as a collapsed coverage number. No -s: xdist workers
+        # cannot stream output to the terminal.
         run: |
           docker run --rm --gpus all \
             --shm-size=8g \
             -v ${{ github.workspace }}:/opt/openfold3 \
             -v ~/.openfold3:/root/.openfold3 \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} \
-            pytest -x openfold3/tests/ -m "slow or gpu" -vvv -s \
+            pytest openfold3/tests/ -vvv -n auto --dist loadgroup \
+              --cov=openfold3 --cov-report=xml --cov-report=term \
               -o faulthandler_timeout=900
+
+      - name: Reclaim workspace ownership
+        # The container runs as root, so coverage.xml and .coverage land in the
+        # bind-mounted workspace owned by root and the runner user cannot read
+        # them to upload. Runs on failure too: a partial result is still worth
+        # collecting.
+        if: always()
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/opt/openfold3 \
+            --entrypoint chown \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} \
+            -R "$(id -u):$(id -g)" /opt/openfold3
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report-integration-brev-${{ inputs.pixi_env }}
+          path: |
+            coverage.xml
+            .coverage
+          include-hidden-files: true
+          retention-days: 30
+
+      - name: Publish coverage summary
+        # Puts the number on the job summary page so reading it does not mean
+        # downloading an artifact.
+        if: always()
+        run: |
+          if [ ! -f coverage.xml ]; then
+            echo "No coverage.xml produced -- the test run likely died early." \
+              >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse("coverage.xml").getroot()
+          covered = int(root.get("lines-covered"))
+          valid = int(root.get("lines-valid"))
+          print("## Coverage — full suite on GPU (${{ inputs.pixi_env }})")
+          print()
+          print(f"**{float(root.get('line-rate')) * 100:.1f}%** ({covered:,} / {valid:,} lines)")
+          print()
+          print("Whole suite in one pass on a GPU runner, so this covers the")
+          print("accelerator paths the CPU-only PR tier has to skip.")
+          PY
 
   stop-brev-runner:
     runs-on: ubuntu-latest
