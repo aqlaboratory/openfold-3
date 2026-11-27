@@ -21,28 +21,6 @@ on:
         description: 'Brev instance type, or a comma-separated fallback chain. Find values with `brev search`.'
         required: true
         type: string
-      coverage:
-        description: >-
-          Measure coverage on this run: the *whole* suite rather than
-          `-m "slow or gpu"`, and without `-x`.
-
-          Both matter. Coverage from the GPU selection alone would miss
-          everything the unit tests reach, and the fast CI tier cannot supply
-          the remainder -- it runs on a CPU-only box with no weights, so every
-          accelerator-gated test self-skips there. Running the lot on one GPU
-          runner is what lets a single data file cover the CPU *and* GPU paths,
-          with no cross-workflow `coverage combine` and no risk of line numbers
-          from a different commit being attributed to this one.
-
-          `-x` has to go because a fail-fast run measures only the code up to the
-          first failure, which reports as a collapsed coverage number rather than
-          as an error.
-
-          Note this makes the job stop being a fast red signal: it runs longer and
-          reports every failure instead of the first.
-        required: false
-        type: boolean
-        default: false
 
 env:
   REGISTRY: ghcr.io
@@ -77,9 +55,9 @@ jobs:
     runs-on: ${{ fromJSON(needs.start-brev-runner.outputs.instances) }}
     needs:
       - start-brev-runner
-    # The plain run already takes ~40 min; the coverage run adds the rest of the
-    # suite and the tracing overhead on the serialised slow tests.
-    timeout-minutes: ${{ inputs.coverage && 90 || 60 }}
+    # The GPU-only selection took ~40 min; this adds the rest of the suite and
+    # the tracing overhead on the serialised slow tests.
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: write
@@ -154,43 +132,35 @@ jobs:
           fi
 
       - name: Run integration test
+        # The whole suite under coverage, not just `-m "slow or gpu"`. The PR
+        # tier runs on a CPU-only box with no weights, so every accelerator-gated
+        # test self-skips there; running everything here is what lets one
+        # .coverage file span the CPU and GPU paths, with no `coverage combine`
+        # across workflows.
+        #
+        # `--dist loadgroup`: the conftest puts every `slow` and `gpu` test in
+        # one xdist group, which loadgroup runs on a single worker, so those
+        # serialise on the one GPU while the CPU-bound rest fans out.
+        #
+        # No -x: a fail-fast run measures only the code up to the first failure
+        # and reports it as a collapsed coverage number. No -s: xdist workers
+        # cannot stream output to the terminal.
         run: |
-          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
-          run_pytest() {
-            docker run --rm --gpus all \
-              --shm-size=8g \
-              -v ${{ github.workspace }}:/opt/openfold3 \
-              -v ~/.openfold3:/root/.openfold3 \
-              "$image" pytest "$@" -o faulthandler_timeout=900
-          }
-
-          if [ "${{ inputs.coverage }}" != "true" ]; then
-            run_pytest -x openfold3/tests/ -m "slow or gpu" -vvv -s
-            exit
-          fi
-
-          # One invocation over the whole suite, so one .coverage file with no
-          # `coverage combine` and no --cov-append bookkeeping.
-          #
-          # `--dist loadgroup` is what makes that affordable. The conftest puts
-          # every `slow` and `gpu` test in one xdist group, and loadgroup runs a
-          # group on a single worker -- so the accelerator tests serialise
-          # against each other on the one GPU while the CPU-bound rest of the
-          # suite still fans out. Without it this would have to run serially and
-          # cost roughly half an hour more of GPU instance time.
-          #
-          # No -x: fail-fast would measure only the code up to the first failure
-          # and report it as a collapsed coverage number. No -s either: xdist
-          # workers cannot stream output to the terminal.
-          run_pytest openfold3/tests/ -vvv -n auto --dist loadgroup \
-            --cov=openfold3 --cov-report=xml --cov-report=term
+          docker run --rm --gpus all \
+            --shm-size=8g \
+            -v ${{ github.workspace }}:/opt/openfold3 \
+            -v ~/.openfold3:/root/.openfold3 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }} \
+            pytest openfold3/tests/ -vvv -n auto --dist loadgroup \
+              --cov=openfold3 --cov-report=xml --cov-report=term \
+              -o faulthandler_timeout=900
 
       - name: Reclaim workspace ownership
         # The container runs as root, so coverage.xml and .coverage land in the
         # bind-mounted workspace owned by root and the runner user cannot read
-        # them to upload. Runs on failure too, since a coverage run has no -x and
-        # a partial result is still worth collecting.
-        if: ${{ always() && inputs.coverage }}
+        # them to upload. Runs on failure too: a partial result is still worth
+        # collecting.
+        if: always()
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/opt/openfold3 \
@@ -199,7 +169,7 @@ jobs:
             -R "$(id -u):$(id -g)" /opt/openfold3
 
       - name: Upload coverage report
-        if: ${{ always() && inputs.coverage }}
+        if: always()
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report-integration-brev-${{ inputs.pixi_env }}
@@ -212,7 +182,7 @@ jobs:
       - name: Publish coverage summary
         # Puts the number on the job summary page so reading it does not mean
         # downloading an artifact.
-        if: ${{ always() && inputs.coverage }}
+        if: always()
         run: |
           if [ ! -f coverage.xml ]; then
             echo "No coverage.xml produced -- the test run likely died early." \
@@ -225,7 +195,7 @@ jobs:
           root = ET.parse("coverage.xml").getroot()
           covered = int(root.get("lines-covered"))
           valid = int(root.get("lines-valid"))
-          print("## Coverage — full suite on GPU (Brev)")
+          print("## Coverage — full suite on GPU (${{ inputs.pixi_env }})")
           print()
           print(f"**{float(root.get('line-rate')) * 100:.1f}%** ({covered:,} / {valid:,} lines)")
           print()
