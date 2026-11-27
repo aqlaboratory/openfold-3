@@ -17,8 +17,8 @@
 For each alignment hit, `_preprocess_templates_for_query` reads the structure from the
 structure directory or a precache entry, or downloads it, and can write a precache
 entry and per-chain structure arrays on the way. An earlier run's cache entry skips
-all of that. These tests pin today's behaviour, including two bugs that their
-docstrings point out.
+all of that. Two cases assert the intended behaviour for known bugs and are marked
+`xfail(strict=True)`, so fixing either bug fails the run until its mark is removed.
 
 Workers run as threads (see `_settings`), so `unittest.mock.patch` reaches them.
 """
@@ -113,20 +113,28 @@ def _download_2q2k(*, pdb_ids: str, target_path: Path, **_) -> None:
     ("structure_file", "precache_entry", "template_ids"),
     [
         pytest.param(True, False, ["2q2k_C"], id="structure_file"),
-        # A bug, see the docstring
-        pytest.param(False, True, ["2q2k_C"], id="precache_entry_only"),
+        pytest.param(
+            False,
+            True,
+            [],
+            id="precache_entry_only",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="a precache entry is accepted without its structure",
+            ),
+        ),
         pytest.param(False, False, [], id="neither"),
     ],
 )
 def test_template_needs_its_structure_file_or_precache_entry(
     tmp_path, structure_file, precache_entry, template_ids
 ):
-    """With fetching off, a template is kept if either is on disk.
+    """With fetching off, a template is kept only if its structure is on disk.
 
-    `precache_entry_only` pins a bug: the loop's comment says a precache entry counts
-    only together with structure arrays, which aren't checked. Featurization still
-    needs the structure file, so this template later raises FileNotFoundError there,
-    which invalidates the whole query.
+    `precache_entry_only` is a known bug (xfail): the loop's comment says a precache
+    entry counts only together with structure arrays, which aren't checked, so the
+    template is kept. Featurization still needs the structure, so this template
+    later raises FileNotFoundError there, which invalidates the whole query.
     """
     precache_dir = tmp_path / "precache"
     precache_dir.mkdir()
@@ -154,8 +162,15 @@ def test_template_needs_its_structure_file_or_precache_entry(
     [
         pytest.param(_download_2q2k, ["9xyz_C", "2q2k_C"], id="downloaded"),
         pytest.param(RequestError("No entries found"), ["2q2k_C"], id="unknown_pdb_id"),
-        # A bug, see the docstring
-        pytest.param(ConnectionError("Network unreachable"), [], id="network_error"),
+        pytest.param(
+            ConnectionError("Network unreachable"),
+            ["2q2k_C"],
+            id="network_error",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="a fetch error other than RequestError drops the whole chain",
+            ),
+        ),
     ],
 )
 def test_missing_structure_is_downloaded_when_fetching_is_on(
@@ -163,9 +178,9 @@ def test_missing_structure_is_downloaded_when_fetching_is_on(
 ):
     """Of the two hits, only 9xyz's structure is missing, so only it is downloaded.
 
-    `network_error` pins a bug: only RequestError is caught around `fetch`, so any
-    other download error aborts the chain, losing 2q2k_C too although its structure
-    is on disk.
+    `network_error` is a known bug (xfail): only RequestError is caught around
+    `fetch`, so any other download error aborts the chain, losing 2q2k_C too although
+    its structure is on disk.
     """
     settings = _settings(tmp_path, fetch_missing_structures=True)
 
