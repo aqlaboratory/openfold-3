@@ -2075,3 +2075,26 @@ Both Brev CUDA legs failed/cancelled tonight, each on an apparently distinct fau
 | test-pixi-amd | **SKIPPED** | — | same guard |
 
 Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #417, per this log's established convention).
+
+## 2026-11-28
+
+### Run #419 — primary nightly (schedule `17 3 * * *`, main @ `5f59472` (merge PR #526 "Revert \"test(templates): characterize where the preprocessor gets template structures\"", new since run #417/#418, 11-27's `24a7871`), [46102465817](https://github.com/aqlaboratory/openfold-3/actions/runs/46102465817))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev (openfold3-cuda12) | **FAILED** | 4m58s (`start-brev-runner` / "Create Brev runner" step, 03:21:51–03:26:31) | `runner-4ltqtgp7: instance j9tidzauy failed: build failed` → `1/1 instance(s) failed to become ready` → `subprocess.CalledProcessError: Command '['brev', 'create', 'runner-4ltqtgp7', ...]' returned non-zero exit status 1.` Same "build failed" message first seen on 11-27's cuda13 leg. Does not match `aws-outage-failures.md`'s `aws-capacity` signature (`InsufficientInstanceCapacity`, absent). `test-openfold-docker-pixi` never ran (**SKIPPED**, gated behind the failed `start-brev-runner`). unclassified — see test-failures.md. |
+| test-pixi-cuda-brev (openfold3-cuda13) | **FAILED** | 9m28s (`start-brev-runner` / "Create Brev runner" step, 03:21:50–03:31:18) | `runner-is5oyd5f: instance lqtgp8k3f failed: build failed` → identical cascade to cuda12 tonight, on a separate instance. `test-openfold-docker-pixi` never ran (**SKIPPED**). unclassified — see test-failures.md. |
+| test-pixi-amd (openfold3-rocm7) | **PASSED** | 36m05s | `test-openfold-docker-pixi-amd` 03:21:53–03:57:32 (job 03:21:33–03:57:38). |
+
+**2026-11-28: 1/3 passed · 0 skipped · 0 queued · 2 need attention**
+
+Both Brev CUDA legs failed tonight on the exact "build failed" message (`instance ... failed: build failed`) that first appeared on 11-27's cuda13 leg — tonight it hit both cuda12 and cuda13, roughly 12 hours after a manual `workflow_dispatch` run ([46024657547](https://github.com/aqlaboratory/openfold-3/actions/runs/46024657547), triggered by `jandom` at 15:24 UTC on 11-27, main still at `24a7871`) independently hit the identical "build failed" string on both legs (`instance 2ahdosfqn failed: build failed` on cuda13, `instance 71xcoukxe failed: build failed` on cuda12) — three occurrences of the same signature across roughly 16 hours now, all on separate Brev-provisioned instances, which points at something failing inside the Brev-side instance build/startup-script step rather than a one-off fluke; still not a match for the `aws-capacity` signature (`InsufficientInstanceCapacity`, absent in all three logs), so it stays `unclassified` here rather than in `aws-outage-failures.md`. The AMD `rocm7` leg was unaffected, passing clean in 36m05s, comfortably inside its `timeout-minutes: 60` cap. Main advanced to `5f59472` (PR #526, a revert of an accidentally-pushed test commit) since 11-27's `24a7871`; the reverted commits only touched template-preprocessor test characterization, not the Brev provisioning path, so there is no reason to suspect tonight's change caused the CUDA failures. Note: a fourth job in this run, `test-pixi-amd (openfold3-rocm10)` (not one of this log's three tracked jobs), also passed tonight, 03:57:40–04:53:48 — not counted in the coverage line above per this log's established scope. The same afternoon manual run's AMD `rocm7` leg also failed, but its job log could not be retrieved (`BlobNotFound`/HTTP 404, same pattern as 11-21) — not one of this log's tracked nightly runs, noted for corroborating context only. No new entries required in `aws-outage-failures.md` tonight; both non-passes are recorded in `test-failures.md`.
+
+### Run #420 — secondary nightly (schedule `17 4 * * *`, main @ `5f59472` (unchanged), [46107061351](https://github.com/aqlaboratory/openfold-3/actions/runs/46107061351))
+
+| Job | State | Duration | Notes |
+|-----|-------|----------|-------|
+| test-pixi-cuda-brev | **SKIPPED** | — | `if:` guard: `github.event_name != 'schedule' \|\| (vars.RUN_NIGHTLY == 'true' && github.event.schedule == vars.NIGHTLY_CRON)` evaluated false on this slot (`17 4 * * *`) — job-level skip before matrix expansion |
+| test-pixi-amd | **SKIPPED** | — | same guard |
+
+Expected skip on the secondary slot (intended for other repos, not `aqlaboratory/openfold-3`) — same pattern as every prior night in this log. Does not affect the day's coverage line above (based on the primary slot, run #419, per this log's established convention).
