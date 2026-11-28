@@ -127,6 +127,155 @@ def softmax_no_cast(t: torch.Tensor, dim: int = -1) -> torch.Tensor:
     return s
 
 
+# SDPA refuses a null-vs-real mask asymmetry we rely on: Flash bails on any
+# non-null ``attn_mask``, so an additive pair bias always lands on the memory
+# efficient or math backend. Keep the input dtypes here in sync with that.
+_SDPA_DTYPES = (torch.float32, torch.bfloat16, torch.float16)
+
+
+def _sdpa_is_eligible(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    biases: list[torch.Tensor],
+) -> bool:
+    """Whether SDPA is a drop-in for these operands.
+
+    Extra batch dims are folded into a 4D mask, and a bias batch dim must be
+    1 or the full batch. Anything else stays on the eager path.
+    """
+    if query.device.type != "cuda":
+        return False
+
+    if query.dtype not in _SDPA_DTYPES:
+        return False
+
+    if not (query.dtype == key.dtype == value.dtype):
+        return False
+
+    if query.dim() < 3 or key.dim() < 3:
+        return False
+
+    # 4D is already flat. 5D is the diffusion transformer's [B, S, H, Q, C];
+    # 6D is the atom stack's [B, S, N_blocks, H, Q, C]. Both are folded to 4D in
+    # ``_sdpa_attention``. Anything else stays on the eager path.
+    if query.dim() not in (4, 5, 6):
+        return False
+
+    # Attention over the last two dims only: [*, H, Q/K/V, C].
+    if query.shape[-1] != key.shape[-1] or query.shape[-1] != value.shape[-1]:
+        return False
+    if key.shape[-2] != value.shape[-2]:
+        return False
+    if query.shape[:-2] != key.shape[:-2] or query.shape[:-2] != value.shape[:-2]:
+        return False
+
+    n_heads, n_query, n_key = query.shape[-3], query.shape[-2], key.shape[-2]
+    broadcast_shape = (*query.shape[:-3], n_heads, n_query, n_key)
+
+    for b in biases:
+        if b.dtype != query.dtype:
+            return False
+        # Must broadcast to the full score shape, not merely reduce onto it.
+        try:
+            if (
+                torch.broadcast_shapes(  # type: ignore[no-untyped-call]
+                    b.shape, broadcast_shape
+                )
+                != broadcast_shape
+            ):
+                return False
+        except RuntimeError:
+            return False
+
+    return True
+
+
+def _flat_batch_size(t: torch.Tensor) -> int:
+    """Product of every batch dim of a [*, H, Q, C] tensor."""
+    n = 1
+    for d in t.shape[:-3]:
+        n *= d
+    return n
+
+
+def _sdpa_attention(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    biases: list[torch.Tensor],
+) -> torch.Tensor:
+    """Memory-efficient attention with additive biases.
+
+    Args:
+        query, key, value: [*, H, Q/K/V, C_hidden], already scaled by
+            ``1 / sqrt(C_hidden)`` by ``_prep_qkv``.
+        biases: Additive terms broadcasting to [*, H, Q, K]
+
+    Returns:
+        [*, H, Q, C_hidden]
+    """
+    # The efficient backend only accepts 4D [B, H, Q, K]. Extra batch dims (the
+    # rollout sample dim, or the atom stack's block axis) are folded into the
+    # first one, or the call lands on the math backend, which is slower than
+    # this module's eager path.
+    batch_dims = query.shape[:-3]
+    need_flat = len(batch_dims) > 1
+
+    if need_flat:
+        n_batch = _flat_batch_size(query)
+        query = query.reshape((n_batch, *query.shape[-3:]))
+        key = key.reshape((n_batch, *key.shape[-3:]))
+        value = value.reshape((n_batch, *value.shape[-3:]))
+
+    mask = None
+    if biases:
+        mask = biases[0]
+        for extra in biases[1:]:
+            mask = mask + extra
+
+        # SDPA takes a 4D mask whose batch dim is 1 or exactly n_batch.
+        # Right-align the bias batch dims with the query and fold them.
+        # Production keeps those dims at 1, so SDPA broadcasts instead of
+        # tiling the pair bias per sample. A size in between, such as
+        # (B, 1) against (B, S), used to raise.
+        if need_flat:
+            bias_batch = tuple(mask.shape[:-3])
+            padded = (1,) * max(len(batch_dims) - len(bias_batch), 0) + bias_batch
+            # ``_sdpa_is_eligible`` guarantees every bias dim is 1 or equal to
+            # the query's, so this is a real invariant rather than a guess.
+            assert len(padded) == len(batch_dims) and all(
+                bb == 1 or bb == qb for bb, qb in zip(padded, batch_dims)
+            ), f"bias batch {bias_batch} vs query {tuple(batch_dims)}"
+
+            if all(bb == 1 for bb in padded):
+                # Entirely shared: fold to 1 and let SDPA broadcast. This is the
+                # production case, and it must not tile.
+                mask = mask.reshape((1, *mask.shape[-3:]))
+            else:
+                # Partially shared: materialize the shared dims so the fold
+                # reaches n_batch.
+                if any(bb == 1 and qb != 1 for bb, qb in zip(padded, batch_dims)):
+                    mask = mask.expand((*batch_dims, *mask.shape[-3:]))
+                mask = mask.reshape((_flat_batch_size(mask), *mask.shape[-3:]))
+        if not mask.is_contiguous():
+            mask = mask.contiguous()
+
+    out = torch.nn.functional.scaled_dot_product_attention(
+        query,
+        key,
+        value,
+        attn_mask=mask,
+        # ``_prep_qkv`` already scaled by 1/sqrt(C_hidden); SDPA would repeat it.
+        scale=1.0,
+    )
+
+    if need_flat:
+        out = out.reshape((*batch_dims, *out.shape[-3:]))
+
+    return out
+
+
 # @torch.jit.script
 def _attention(
     query: torch.Tensor,
@@ -461,6 +610,9 @@ class Attention(nn.Module):
                 for b in biases
             ]
             o = _lma(q, k, v, biases, lma_q_chunk_size, lma_kv_chunk_size)
+            o = o.transpose(-2, -3)
+        elif _sdpa_is_eligible(q, k, v, biases):
+            o = _sdpa_attention(q, k, v, biases)
             o = o.transpose(-2, -3)
         else:
             o = _attention(q, k, v, biases, use_high_precision=use_high_precision)
